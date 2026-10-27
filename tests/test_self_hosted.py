@@ -213,3 +213,20 @@ def test_loopback_models_bypass_system_proxy_for_all_four_kinds(tmp_path, monkey
         assert len(calls)==6
     finally:
         server.shutdown();server.server_close();thread.join(timeout=5)
+
+
+def test_self_hosted_speech_uses_the_server_default_or_chosen_voice(tmp_path):
+    store=LocalProjects(tmp_path); voices=[]
+    def handle(request):
+        voices.append(json.loads(request.content)['voice'])
+        return httpx.Response(200,content=b'audio')
+    provider=GenerationProviders(store,httpx.MockTransport(handle))
+    config={'kind':'audio','protocol':'openai','connectionType':'self_hosted','modelId':'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
+            'url':'http://localhost:9999/v1','apiKey':'','authMode':'none'}
+    async def run():
+        async def submitted(value): pass
+        for parameters in ({},{'voice':'vivian'}):
+            task={'kind':'audio','projectId':'owner','prompt':'你好','referenceIds':[],'parameters':parameters}
+            assert await provider.generate(config,task,submitted)==('mp3',b'audio')
+    asyncio.run(run())
+    assert voices==['default','vivian']

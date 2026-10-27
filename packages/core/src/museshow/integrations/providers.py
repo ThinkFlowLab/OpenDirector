@@ -123,7 +123,9 @@ class GenerationProviders(VolcengineGeneration):
                             raise protocol_failure('poll')
                         await asyncio.sleep(self.poll_interval)
                 if kind == 'audio':
-                    payload = {'model': config['modelId'], 'input': task['prompt'], 'voice': 'alloy', 'response_format': 'mp3'}
+                    # vLLM-Omni speech servers name their own speakers; "default" selects the model's.
+                    voice = task['parameters'].get('voice') or ('default' if config.get('connectionType') == 'self_hosted' else 'alloy')
+                    payload = {'model': config['modelId'], 'input': task['prompt'], 'voice': voice, 'response_format': 'mp3'}
                     async with client.stream('POST', endpoint(config['url'], '/audio/speech'), headers=auth_headers(config), json=payload) as response:
                         return 'mp3', await bounded(response, stage='submit', secrets=secrets)
                 if kind == 'image':
