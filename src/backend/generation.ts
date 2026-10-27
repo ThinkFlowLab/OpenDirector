@@ -268,17 +268,19 @@ export async function downloadAsset(
   };
 }
 
-const wait = (ms: number, signal: AbortSignal) =>
+/** Resolves after the delay; the abort listener never outlives the wait. */
+export const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, ms);
+    const cancel = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", cancel);
   });
 
 const FAILED = new Set(["failed", "cancelled", "interrupted"]);
