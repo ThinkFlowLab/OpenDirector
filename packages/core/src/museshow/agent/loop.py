@@ -26,6 +26,15 @@ from museshow.agent import production_tools, storyboard_tools
 from museshow.domain.production import ProductionRequest
 
 
+
+def argument_error(failure):
+    """Name the rejected fields so the model can correct its next call; never echo values."""
+    if not isinstance(failure, ValidationError):
+        return "工具参数或文本格式无效，未执行。"
+    problems = "；".join(f"{'.'.join(map(str, item['loc'])) or '参数'}：{item['msg']}"
+                         for item in failure.errors(include_input=False, include_url=False)[:5])
+    return f"工具参数无效，未执行（{problems}）。请只使用工具定义中的字段并修正后重试。"
+
 class Arguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -307,7 +316,7 @@ class AgentLoop:
                         except (ProjectError, ValidationError, UnicodeError, ValueError) as failure:
                             if name == 'repair_production_step':
                                 repair_failed = True
-                            result = {"error": str(failure) if isinstance(failure, ProjectError) else "工具参数或文本格式无效，未执行。"}
+                            result = {"error": str(failure) if isinstance(failure, ProjectError) else argument_error(failure)}
                             step["status"] = "failed"
                         step["result"] = result
                     result_message = {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, ensure_ascii=False)}

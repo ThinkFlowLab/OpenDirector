@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import httpx
+import pytest
 
 from museshow.infrastructure.local_projects import LocalProjects, read_json
 from museshow.infrastructure.model_configs import ModelConfigs
@@ -105,3 +106,13 @@ def test_agent_cannot_overwrite_a_node_using_a_stale_read(tmp_path):
     with pytest.raises(ProjectError, match='expectedRevision'):
         asyncio.run(loop.execute(turn, 'save_text_asset', {'name': '旧内容.md', 'text': '不能覆盖', 'nodeId': item['id'], 'expectedRevision': 1}, str(uuid4())))
     assert generation.canvas.snapshot(project['id']) == before
+
+
+def test_rejected_tool_arguments_name_the_fields_without_their_values():
+    from pydantic import ValidationError
+    from museshow.agent.loop import SCHEMAS, argument_error
+    with pytest.raises(ValidationError) as failure:
+        SCHEMAS['generate_asset'][0].model_validate_json('{"kind": "image", "prompt": "雨夜", "modelConfigId": "secret-value"}')
+    message = argument_error(failure.value)
+    assert 'modelConfigId' in message and 'secret-value' not in message
+    assert argument_error(ValueError('x')) == '工具参数或文本格式无效，未执行。'
