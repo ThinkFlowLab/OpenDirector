@@ -27,6 +27,7 @@ from opendirector.infrastructure.local_projects import child
 from opendirector.infrastructure.execution import read_generation_task
 from opendirector.infrastructure.generation_results import GenerationResults
 from opendirector.infrastructure.adoption import decision, fingerprints, node_basis, reason
+from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.fasth3 import video_parameters, finalize_video_edit
 from opendirector.integrations.generation_errors import transport_failure
@@ -328,6 +329,7 @@ class Generation:
     async def _run(self, task, pinned, config, mode='submit'):
         stage = 'save'
         cache = GenerationResults(pinned, task['id'])
+        trace_token = MODEL_JOB_CONTEXT.set((str(task['projectId']), str(task['id'])))
         async def save():
             # Cancelling to_thread does not stop the underlying write. Drain it
             # before saving the terminal state so an old running receipt cannot
@@ -454,6 +456,7 @@ class Generation:
                         await asyncio.to_thread(cache.clear)
                 except (OSError, ProjectError):
                     pass  # Original task receipt remains available for startup reconciliation.
+            MODEL_JOB_CONTEXT.reset(trace_token)
             self.cancelled.discard(task["id"])
             self.committing.discard(task["id"])
 
@@ -489,7 +492,11 @@ class Generation:
             config = self.configs.resolve(task['modelConfigId'], task['kind'])
             if config['url'] != task['baseURL'] or config['modelId'] != task['model'] or config.get('protocol') != task.get('protocol'):
                 raise ProjectError('原模型配置已变化，云端取消未确认。', 409)
-            await self.provider.cancel(config, task['externalTaskId'])
+            trace_token = MODEL_JOB_CONTEXT.set((str(project_id), str(task_id)))
+            try:
+                await self.provider.cancel(config, task['externalTaskId'])
+            finally:
+                MODEL_JOB_CONTEXT.reset(trace_token)
             with self.store.transaction():
                 current = read_generation_task(path)
                 if current['status'] in {'interrupted', 'failed'} and current.get('externalTaskId') == task['externalTaskId']:

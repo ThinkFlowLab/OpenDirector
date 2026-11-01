@@ -18,6 +18,7 @@ def main():
     parser.add_argument("mode", choices=("dev", "serve"), nargs="?", default="serve")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--web-port", type=int, default=5173)
+    parser.add_argument("--log-level", choices=("debug", "info", "warning", "error", "critical"), default="info")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535 or not 1 <= args.web_port <= 65535:
         parser.error("端口必须在 1–65535 之间。")
@@ -26,7 +27,7 @@ def main():
     environment = {**os.environ, "OPENDIRECTOR_ROOT": str(ROOT), "OPENDIRECTOR_API_URL": f"http://127.0.0.1:{args.port}"}
     processes = []
     try:
-        api = subprocess.Popen([sys.executable, "-m", "uvicorn", "opendirector_api.main:create_app", "--factory", "--host", "127.0.0.1", "--port", str(args.port)], cwd=ROOT, env=environment)
+        api = subprocess.Popen([sys.executable, "-m", "opendirector_api.server", "--port", str(args.port), "--log-level", args.log_level], cwd=ROOT, env=environment)
         processes.append(api)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for _ in range(100):

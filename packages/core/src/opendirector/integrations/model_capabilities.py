@@ -1,17 +1,21 @@
 """Read an optional, explicit videoCapabilities extension on GET /models."""
 import json
+import logging
 
 import httpx
 
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.video_capabilities import VideoCapabilities
-from opendirector.integrations.http_settings import auth_headers, trust_environment
+from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.volcengine import endpoint
+
+
+logger = logging.getLogger(__name__)
 
 
 async def read_service_models(config, transport=None):
     try:
-        async with httpx.AsyncClient(transport=transport, trust_env=trust_environment(config['url'], config=config),
+        async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=transport, trust_env=trust_environment(config['url'], config=config),
                                      timeout=15, follow_redirects=False) as client:
             async with client.stream('GET', endpoint(config['url'], '/models'), headers=auth_headers(config)) as response:
                 if response.status_code != 200:
@@ -26,7 +30,11 @@ async def read_service_models(config, transport=None):
                                                or not item['id'].strip() or len(item['id']) > 200 for item in models):
             raise ProjectError('服务返回的模型列表格式无效。')
         return models
-    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+    except ProjectError as error:
+        logger.error(f'model.error {json.dumps({"stage": "models", "error_type": type(error).__name__, "model": config["modelId"]})}')
+        raise
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as error:
+        logger.error(f'model.error {json.dumps({"stage": "models", "error_type": type(error).__name__, "model": config["modelId"]})}')
         raise ProjectError('无法读取模型列表，请检查服务地址、鉴权和 /models 接口。') from None
 
 

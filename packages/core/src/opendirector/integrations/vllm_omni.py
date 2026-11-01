@@ -15,7 +15,7 @@ import httpx
 
 from opendirector.domain.generation import GenerationError, GenerationFailure
 from opendirector.domain.projects import ProjectError
-from opendirector.integrations.http_settings import auth_headers, trust_environment
+from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.reference_inputs import generation_references
 from opendirector.integrations.volcengine import bounded, endpoint
@@ -102,7 +102,7 @@ class VllmOmniGeneration:
         base = endpoint(config['url'], '/videos')
         stage = 'submit'
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15),
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15),
                                          follow_redirects=False) as client:
                 external_id = task.get('externalTaskId')
                 if not external_id:
@@ -110,7 +110,7 @@ class VllmOmniGeneration:
                     fields, files = self.form(config, task, prepared)
                     # Always multipart, as the API documents, even without uploads.
                     parts = [(name, (None, value)) for name, value in fields.items()] + files
-                    async with client.stream('POST', base, headers=headers, files=parts) as response:
+                    async with client.stream('POST', base, headers=headers, files=parts, extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:
                         if response.status_code == 400 and task.get('videoMode') == 'continuation':
                             value = json.loads(await response.aread())
                             raise _continuation_failure(stage) if _missing_latents(value) else provider_failure(
@@ -153,7 +153,7 @@ class VllmOmniGeneration:
 
     async def resume_result(self, config, suffix, url):
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15)) as client:
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15)) as client:
                 return suffix, await self._download(client, config, url)
         except httpx.TimeoutException:
             raise transport_failure('download', timeout=True) from None
@@ -162,7 +162,7 @@ class VllmOmniGeneration:
 
     async def cancel(self, config, external_id):
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
                 async with client.stream('DELETE', endpoint(config['url'], '/videos') + '/' + quote(external_id, safe=''),
                                          headers=auth_headers(config)) as response:
                     await checked(response, stage='cancel', secrets=(config.get('apiKey', ''),))

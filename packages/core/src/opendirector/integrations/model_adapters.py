@@ -19,13 +19,13 @@ from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, EditMa
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
-from opendirector.integrations.http_settings import auth_headers, trust_environment
+from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.volcengine import bounded, endpoint
 from opendirector.media import processing as media
 
 
 def _client(adapter, config, timeout=240):
-    return httpx.AsyncClient(transport=adapter.transport, trust_env=trust_environment(config['url'], config=config),
+    return httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=adapter.transport, trust_env=trust_environment(config['url'], config=config),
                              timeout=httpx.Timeout(timeout, connect=15), follow_redirects=False)
 
 
@@ -136,7 +136,7 @@ class OpenAIImages(ModelAdapter):
                         form['strength'] = f'{min(max(request.strength, 0.0), 1.0):.3f}'
                     files = [('image', (f'image_{index}.png', data, 'image/png')) for index, data in enumerate(images, 1)]
                     async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
-                                             data=form, files=files) as response:
+                                             data=form, files=files, extensions={'model_parameters': {'fields': form, 'file_count': len(files)}}) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
                 result = value['data'][0]
                 if result.get('b64_json'):
@@ -215,7 +215,7 @@ class VllmOmniVideo(ModelAdapter):
         try:
             async with _client(self, config) as client:
                 parts = [(name, (None, value)) for name, value in fields.items()] + files
-                async with client.stream('POST', base, headers=headers, files=parts) as response:
+                async with client.stream('POST', base, headers=headers, files=parts, extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:
                     external_id = json.loads(await bounded(response, stage=stage, secrets=secrets))['id']
                 if not isinstance(external_id, str) or not external_id or len(external_id) > 200:
                     raise protocol_failure(stage)
@@ -343,7 +343,8 @@ class VllmOmniSegmentation(ModelAdapter):
         async def work():
             async with _client(self, config) as client:
                 async with client.stream('POST', endpoint(config['url'], '/images/segmentations'), headers=auth_headers(config),
-                                         data=form, files=[('image', ('image.png', request.image, 'image/png'))]) as response:
+                                         data=form, files=[('image', ('image.png', request.image, 'image/png'))],
+                                         extensions={'model_parameters': {'fields': form, 'file_count': 1}}) as response:
                     value = json.loads(await bounded(response, stage='submit', secrets=(config.get('apiKey', ''),)))
             return [Segment(base64.b64decode(item['mask'], validate=True), tuple(float(v) for v in item['box']), float(item['score']))
                     for item in value['data']]
@@ -357,7 +358,8 @@ class VllmOmniSegmentation(ModelAdapter):
             # Tracking costs grow with the number of objects; long clips take minutes.
             async with _client(self, config, timeout=3600) as client:
                 async with client.stream('POST', endpoint(config['url'], '/videos/segmentations'), headers=auth_headers(config),
-                                         data=form, files=[('video', ('clip.mp4', request.video, 'video/mp4'))]) as response:
+                                         data=form, files=[('video', ('clip.mp4', request.video, 'video/mp4'))],
+                                         extensions={'model_parameters': {'fields': form, 'file_count': 1}}) as response:
                     value = json.loads(await bounded(response, stage='submit', secrets=(config.get('apiKey', ''),),
                                                      limit=512 * 1024 * 1024))
             frames = tuple(tuple(tuple(int(count) for count in item['mask']['counts']) for item in frame['instances'])

@@ -37,6 +37,8 @@ Windows 将上述 `.venv/bin/python` 替换为 `.venv\Scripts\python.exe`。如�
 .venv/bin/python scripts/opendirector.py serve --port 8001
 ```
 
+默认日志级别为 INFO。排查模型请求参数时，启动命令追加 `--log-level debug`；访问日志与模型调用日志使用相同格式。
+
 ## 创建和管理画布
 
 首次打开时会创建“未命名画布”，之后打开应用可恢复最近使用的项目。

@@ -30,6 +30,7 @@ from opendirector.domain.video_output import apply_video_resolution
 from opendirector.infrastructure.generation_results import GenerationResults
 from opendirector.infrastructure.creation_projects import directory
 from opendirector.infrastructure.local_projects import child
+from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.media.filenames import with_extension
@@ -497,7 +498,11 @@ class CreationGeneration(Generation):
                 config = self.configs.resolve(task['modelConfigId'], 'agent' if task['kind'] == 'text' else task['kind'])
                 if (config['url'], config['modelId'], config['protocol']) != (task['baseURL'], task['model'], task['protocol']):
                     raise ProjectError('原模型配置已变化，供应商取消未确认。', 409)
-                await self.provider.cancel(config, job.externalTaskId)
+                trace_token = MODEL_JOB_CONTEXT.set((str(project_id), str(job_id)))
+                try:
+                    await self.provider.cancel(config, job.externalTaskId)
+                finally:
+                    MODEL_JOB_CONTEXT.reset(trace_token)
                 task.update(status='cancelled', recovery='remote', resumeAllowed=True, errorDetails=None)
             except (ProjectError, OSError):
                 from opendirector.domain.generation import GenerationFailure

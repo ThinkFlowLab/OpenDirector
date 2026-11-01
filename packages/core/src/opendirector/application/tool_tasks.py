@@ -17,6 +17,7 @@ from opendirector.domain.capabilities import LABELS
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.infrastructure.local_projects import child, read_json, write_json
+from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.model_adapters import adapter_for, capabilities_of
 from opendirector.media import processing as media
 from opendirector.media.filenames import with_extension
@@ -269,6 +270,7 @@ class ToolTasks:
     async def _run(self, task, directory, records):
         key = (task['projectId'], task['id'])
         spec = TOOLS[task['tool']]
+        trace_token = MODEL_JOB_CONTEXT.set((str(task['projectId']), str(task['id'])))
         try:
             async with self.limit:
                 await self._update(directory, task, status='running', phase='准备素材')
@@ -368,6 +370,7 @@ class ToolTasks:
             await self._update(directory, task, status='failed', phase=None, error='工具执行出错，请检查素材和参数后重试。', finishedAt=_now())
             raise
         finally:
+            MODEL_JOB_CONTEXT.reset(trace_token)
             self.remote.pop(key, None)
 
     async def cancel(self, project_id, task_id, session):

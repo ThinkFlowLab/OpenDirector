@@ -6,7 +6,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from opendirector.integrations.http_settings import auth_headers, trust_environment
+from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.input_rules import input_rules
@@ -54,6 +54,8 @@ class GenerationProviders(VolcengineGeneration):
             raise ProjectError('视频模型请选择 vLLM-Omni 视频接口。')
 
     async def _json(self, client, method, url, config, **kwargs):
+        if kwargs.get('files'):
+            kwargs['extensions'] = {'model_parameters': {'fields': kwargs.get('data'), 'file_count': len(kwargs['files'])}}
         async with client.stream(method, url, headers=auth_headers(config), **kwargs) as response:
             await checked(response, stage='poll' if method == 'GET' else 'submit', secrets=(config.get('apiKey', ''),))
             data = bytearray()
@@ -73,7 +75,7 @@ class GenerationProviders(VolcengineGeneration):
         base, target = urlsplit(config['url']), urlsplit(url)
         headers = auth_headers(config) if (base.scheme, base.netloc) == (target.scheme, target.netloc) else {}
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15)) as client:
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15)) as client:
                 async with client.stream('GET', url, headers=headers, follow_redirects=False) as response:
                     return suffix, await bounded(response, stage='download', secrets=(config.get('apiKey', ''),))
         except httpx.TimeoutException:
@@ -90,7 +92,7 @@ class GenerationProviders(VolcengineGeneration):
         kind, stage = task['kind'], 'submit'
         secrets = (config.get('apiKey', ''),)
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
                 if kind == 'video':
                     url = endpoint(config['url'], '/videos')
                     external_id = task.get('externalTaskId')
@@ -141,7 +143,8 @@ class GenerationProviders(VolcengineGeneration):
                         files = [('image', (meta['name'], data, image_type(data)))
                                  for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']) if source_kind == 'image']
                         async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
-                            data={'model': config['modelId'], 'prompt': prepared['prompt'], 'size': '1024x1024'}, files=files) as response:
+                            data={'model': config['modelId'], 'prompt': prepared['prompt'], 'size': '1024x1024'}, files=files,
+                            extensions={'model_parameters': {'fields': {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': '1024x1024'}, 'file_count': len(files)}}) as response:
                             value = json.loads(await bounded(response, stage=stage, secrets=secrets))
                     else:
                         async with client.stream('POST', endpoint(config['url'], '/images/generations'), headers=auth_headers(config),
@@ -170,7 +173,7 @@ class GenerationProviders(VolcengineGeneration):
         if config.get('protocol') != 'vllm_omni':
             return await super().cancel(config, external_id)
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
                 async with client.stream('DELETE', endpoint(config['url'], '/videos') + '/' + quote(external_id, safe=''), headers=auth_headers(config)) as response:
                     await checked(response, stage='cancel', secrets=(config.get('apiKey', ''),))
         except httpx.TimeoutException:

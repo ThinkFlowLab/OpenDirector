@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from opendirector.integrations.http_settings import trust_environment
+from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, trust_environment
 
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.reference_inputs import reference_content  # noqa: F401  # Re-exported for tests.
@@ -34,7 +34,7 @@ class ChatCompletions:
         url = config["url"].rstrip("/") + "/chat/completions"
         # No automatic retry: retrying a paid request after a timeout can duplicate it.
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
+            async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
                 async with client.stream("POST", url, headers=({"Authorization": f"Bearer {config['apiKey']}"} if config.get("apiKey") and config.get("authMode") != "none" else {}), json=payload) as response:
                     if response.status_code != 200:
                         await checked(response, stage='submit', secrets=(config.get('apiKey', ''),))

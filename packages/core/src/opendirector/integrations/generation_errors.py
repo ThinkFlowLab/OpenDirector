@@ -1,11 +1,15 @@
 """Safe provider diagnostics: allowlisted identifiers, never raw response text."""
 
 import json
+import logging
 import re
 from urllib.parse import unquote
 
 from opendirector.domain.generation import GenerationError, GenerationFailure
+from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 
+
+logger = logging.getLogger(__name__)
 
 _REASONS = {
     'input': ('生成服务拒绝了输入内容或参数。', '请检查生成要求、参数和模型支持范围。'),
@@ -93,6 +97,8 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
     if terminal_status == 'failed' and category == 'temporary':
         category, message = 'provider', '生成服务任务已失败。'
         suggestion = '请排查任务失败原因，确认后可重新生成。'
+    context = MODEL_JOB_CONTEXT.get()
+    logger.error(f'model.error {json.dumps({"project_id": context[0] if context else None, "job_id": context[1] if context else None, "stage": stage, "error_type": "ProviderError", "status": http_status, "request_id": request_id, "provider_code": code})}')
     return GenerationError(GenerationFailure(category=category, stage=stage, message=message,
         suggestion=suggestion, providerCode=code, requestId=request_id, httpStatus=http_status,
         providerStatus=terminal_status))
@@ -125,6 +131,8 @@ async def checked(response, *, stage, secrets=()):
 
 
 def transport_failure(stage, *, timeout=False, status=None):
+    context = MODEL_JOB_CONTEXT.get()
+    logger.error(f'model.error {json.dumps({"project_id": context[0] if context else None, "job_id": context[1] if context else None, "stage": stage, "error_type": "TimeoutException" if timeout else "HTTPError"})}')
     unknown = stage == 'submit'
     return GenerationError(GenerationFailure(category='submission_unknown' if unknown else 'temporary', stage=stage,
         message='生成请求的提交结果不明。' if unknown else '生成服务连接超时或中断。',
@@ -133,6 +141,8 @@ def transport_failure(stage, *, timeout=False, status=None):
 
 
 def protocol_failure(stage, *, message='生成服务返回了无法识别或不完整的结果。'):
+    context = MODEL_JOB_CONTEXT.get()
+    logger.error(f'model.error {json.dumps({"project_id": context[0] if context else None, "job_id": context[1] if context else None, "stage": stage, "error_type": "ProtocolError"})}')
     unknown = stage == 'submit'
     return GenerationError(GenerationFailure(category='submission_unknown' if unknown else 'protocol', stage=stage,
         message=message,
