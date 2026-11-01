@@ -52,7 +52,8 @@ import type { LinkedMediaResult } from "./linkedResults";
 export interface TimelineEditorProps {
   node: CanvasNode;
   resources?: CanvasResource[];
-  onApply: (data: TimelineData) => void;
+  /** Returns false when the canvas rejected the edit, so the session stays open. */
+  onApply: (data: TimelineData) => boolean | void;
   onRender: (result: LinkedMediaResult) => boolean;
   onClose: () => void;
 }
@@ -113,6 +114,7 @@ export function TimelineEditor({
       past: [],
       future: [],
     });
+  const coalesce = useRef<string | null>(null);
   const [, refreshHistory] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null),
     media = useRef(new Map<string, HTMLMediaElement>()),
@@ -350,17 +352,24 @@ export function TimelineEditor({
     }
   }, [position, playing, timeline]);
 
-  const change = (operation: (current: TimelineData) => TimelineData) => {
+  /** Continuous edits name themselves so one gesture stays a single undo step. */
+  const change = (
+    operation: (current: TimelineData) => TimelineData,
+    gesture?: string,
+  ) => {
     try {
       const next = operation(timelineRef.current);
       const invalid = timelineError(next);
       if (invalid) throw new Error(invalid);
       if (next !== timelineRef.current) {
-        history.current.past = [
-          ...history.current.past.slice(-49),
-          timelineRef.current,
-        ];
-        history.current.future = [];
+        if (!gesture || gesture !== coalesce.current) {
+          history.current.past = [
+            ...history.current.past.slice(-49),
+            timelineRef.current,
+          ];
+          history.current.future = [];
+        }
+        coalesce.current = gesture ?? null;
       }
       timelineRef.current = next;
       setTimeline(next);
@@ -616,6 +625,8 @@ export function TimelineEditor({
     timelineRef.current = next;
     setTimeline(next);
     setPlaying(false);
+    // A new gesture after undo or redo must not merge into the popped entry.
+    coalesce.current = null;
     setSelectedId(null);
     refreshHistory((value) => value + 1);
   };
@@ -706,9 +717,26 @@ export function TimelineEditor({
       clip.inPoint + Math.max(0, positionRef.current - start) * clip.speed,
     );
   };
-  const patchSelected = (patch: Parameters<typeof updateTimelineClip>[2]) => {
+  const patchSelected = (
+    patch: Parameters<typeof updateTimelineClip>[2],
+    gesture?: string,
+  ) => {
     if (selected)
-      change((current) => updateTimelineClip(current, selected.clip.id, patch));
+      change(
+        (current) => updateTimelineClip(current, selected.clip.id, patch),
+        gesture && `${gesture}:${selected.clip.id}`,
+      );
+  };
+  /** A cleared field means "no change"; Number("") would silently move the clip to 0. */
+  const patchNumber = (
+    field: "inPoint" | "outPoint" | "start",
+    text: string,
+  ) => {
+    const value = Number(text);
+    if (!text.trim() || !Number.isFinite(value)) return;
+    patchSelected({ [field]: value } as Parameters<
+      typeof updateTimelineClip
+    >[2], field);
   };
 
   return (
@@ -718,7 +746,9 @@ export function TimelineEditor({
       className="cw-timeline-dialog"
       onClose={onClose}
       onApply={() => {
-        onApply(copyTimeline(timelineRef.current));
+        // Keep the session when the canvas rejected the edit; closing would drop
+        // the whole timeline behind a transient notice.
+        if (onApply(copyTimeline(timelineRef.current)) === false) return;
         onClose();
       }}
       disabled={busy || node.locked}
@@ -1090,7 +1120,7 @@ export function TimelineEditor({
                       step={1 / timeline.fps}
                       value={selected.clip.inPoint}
                       onChange={(event) =>
-                        patchSelected({ inPoint: Number(event.target.value) })
+                        patchNumber("inPoint", event.target.value)
                       }
                     />
                   </label>
@@ -1105,7 +1135,7 @@ export function TimelineEditor({
                     step={1 / timeline.fps}
                     value={selected.clip.outPoint}
                     onChange={(event) =>
-                      patchSelected({ outPoint: Number(event.target.value) })
+                      patchNumber("outPoint", event.target.value)
                     }
                   />
                 </label>
@@ -1135,7 +1165,7 @@ export function TimelineEditor({
                       step={0.1}
                       value={selected.clip.start}
                       onChange={(event) =>
-                        patchSelected({ start: Number(event.target.value) })
+                        patchNumber("start", event.target.value)
                       }
                     />
                   </label>
@@ -1151,7 +1181,10 @@ export function TimelineEditor({
                         step={0.01}
                         value={selected.clip.volume}
                         onChange={(event) =>
-                          patchSelected({ volume: Number(event.target.value) })
+                          patchSelected(
+                            { volume: Number(event.target.value) },
+                            "volume",
+                          )
                         }
                       />
                     </label>

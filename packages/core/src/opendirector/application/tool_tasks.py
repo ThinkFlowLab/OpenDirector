@@ -265,7 +265,15 @@ class ToolTasks:
 
     async def _update(self, directory, task, **changes):
         task.update(changes)
-        await asyncio.to_thread(self._write, directory, task)
+        # Cancelling to_thread does not stop the underlying write. Drain it before
+        # recording a terminal state, or a stale running receipt lands afterwards.
+        # The snapshot also keeps the writer from serializing a dict being mutated.
+        pending = asyncio.create_task(asyncio.to_thread(self._write, directory, dict(task)))
+        try:
+            await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            await pending
+            raise
 
     async def _run(self, task, directory, records):
         key = (task['projectId'], task['id'])

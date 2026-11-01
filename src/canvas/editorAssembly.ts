@@ -61,7 +61,11 @@ export function assemblyIssue(source: CanvasNode, target: CanvasNode) {
 export function assembleNode(source: CanvasNode, target: CanvasNode) {
   const resource = sourceResource(source);
   if (target.type === "subject") {
-    const subject = target.data.subject!;
+    const subject = target.data.subject ?? {
+      description: "",
+      category: "character",
+      auxiliaries: [],
+    };
     const main = !subject.main;
     return {
       slotId: main ? "main" : resource.id,

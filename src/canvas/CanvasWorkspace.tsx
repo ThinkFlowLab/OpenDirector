@@ -2344,10 +2344,11 @@ function Workspace() {
       lockedNodeIds(current.nodes).has(target.id)
     ) {
       notify("编辑来源已改变、删除或锁定，本次修改未应用。");
-      return;
+      return false;
     }
     command({ type: "update-node", id: target.id, patch: { data } });
     notify("修改已应用到画布，可以撤销。");
+    return true;
   };
   const addLinkedOutputs = (
     source: ResultSource,

@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import subprocess
+import time
 from uuid import uuid4
 
 import httpx
@@ -668,3 +669,37 @@ def test_video_matting_keeps_the_tracked_subject_over_the_chosen_background(proj
     task = run(store, configs, httpx.MockTransport(tracking_server(log, empty=True)), project_id, session,
                {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'black'}})
     assert task['status'] == 'failed' and '没有识别到「人物」' in task['error']
+
+
+def test_cancel_drains_an_inflight_write_so_the_task_never_stays_running(project):
+    """A cancelled task must not be resurrected by the write it interrupted."""
+    store, project_id, session = project
+    configs = configure(store, H3)
+    source = upload(store, project_id, session, 'poster.png', png((64, 36)))
+    log = []
+
+    async def cancel():
+        tools = ToolTasks(store, configs, CanvasProjects(store).assets,
+                          transport=httpx.MockTransport(video_server(log, hold=True)), poll_interval=0.01)
+        write = tools._write
+        running = asyncio.Event()
+
+        def slow_write(directory, task):
+            if task.get('status') == 'running':
+                running.set()
+                time.sleep(0.2)  # Still on disk when the cancellation arrives.
+            write(directory, task)
+
+        tools._write = slow_write
+        submitted = await tools.submit(project_id, {'id': str(uuid4()), 'tool': 'dynamic-poster',
+                                                    'sourceAssetIds': [source], 'parameters': {}}, session)
+        while not running.is_set():
+            await asyncio.sleep(0.01)
+        cancelled = await tools.cancel(project_id, submitted['id'], session)
+        await asyncio.sleep(0.4)  # Any stale receipt would land in this window.
+        return cancelled, tools.get(project_id, submitted['id'], session)
+
+    cancelled, final = asyncio.run(cancel())
+    assert cancelled['status'] == 'cancelled'
+    assert final['status'] == 'cancelled', final['status']
+    assert final['finishedAt'] == cancelled['finishedAt']

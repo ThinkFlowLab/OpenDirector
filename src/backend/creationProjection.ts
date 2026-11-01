@@ -601,7 +601,12 @@ export class CreationProjection {
     const ref = (resource: CanvasResource) => this.importResource(resource);
     switch (kind) {
       case "subject": {
-        const data = node.data.subject!;
+        // A partially populated node must not throw while projecting the canvas.
+        const data = node.data.subject ?? {
+          description: "",
+          category: "",
+          auxiliaries: [],
+        };
         return {
           ...common,
           kind,

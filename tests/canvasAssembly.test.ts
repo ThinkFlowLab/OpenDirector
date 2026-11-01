@@ -11,6 +11,9 @@ import {
   referenceIssue,
 } from "../src/canvas/connectionPolicy.ts";
 import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
+import { assembleNode, assemblyIssue } from "../src/canvas/editorAssembly.ts";
+import { subjectWithResource } from "../src/canvas/subjectMedia.ts";
+import { subjectError } from "../src/canvas/dataBoundary.ts";
 import { copySelection, pasteFragment } from "../src/canvas/operations.ts";
 import {
   createHistory,
@@ -262,4 +265,35 @@ test("editing an assembled subject removes obsolete links and disconnect removes
     ),
     "locked",
   );
+});
+
+test("a subject node without subject data assembles instead of throwing", () => {
+  const source = media("image"),
+    subject = createNode("subject");
+  delete (subject.data as { subject?: unknown }).subject;
+  // Loading such a node is accepted, so assembly must not dereference it blindly.
+  assert.equal(assemblyIssue(source, subject), null);
+  const assembled = assembleNode(source, subject);
+  const data = assembled.node.data.subject!;
+  assert.equal(data.main?.nodeId, source.id);
+  assert.deepEqual(data.auxiliaries, []);
+});
+
+test("subject media picks share the slot rules so an invalid subject is never built", () => {
+  const audio = media("audio"),
+    image = media("image"),
+    video = media("video", 20);
+  const resource = (node: CanvasNode) => ({
+    id: node.id,
+    kind: node.type as "image" | "video" | "audio",
+    title: node.data.title,
+    src: node.data.src!,
+    ...node.data.media,
+  });
+  // Voice without a main image used to reach the document and block every save.
+  assert.throws(() => subjectWithResource(undefined, resource(audio)), /主图片/);
+  assert.throws(() => subjectWithResource(undefined, resource(video)), /15 秒/);
+  const filled = subjectWithResource(undefined, resource(image));
+  assert.equal(filled.main?.id, image.id);
+  assert.equal(subjectError(filled), null);
 });
