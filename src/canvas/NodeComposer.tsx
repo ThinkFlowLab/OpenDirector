@@ -649,16 +649,14 @@ export function NodeComposer({
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
-          aria-label={
-            running ? "取消生成" : backend ? "提交生成" : "创建本地任务"
-          }
+          aria-label={running ? "取消生成" : "提交生成"}
           label={
             running
               ? "取消生成"
               : canRun
                 ? backend
                   ? "提交到本地服务"
-                  : "创建本地任务 · 未连接生成服务"
+                  : "生成 · 请先接入模型服务"
                 : (blocker ?? "请补全创作参数")
           }
           shortcut={

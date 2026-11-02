@@ -82,6 +82,10 @@ import { NodeInfoButton } from "./NodeInfoButton";
 import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
 import { useSelectionPresentation } from "./useSelectionPresentation";
 import { CanvasIcon } from "./CanvasIcon";
+import {
+  CanvasNotifications,
+  useCanvasNotifications,
+} from "./CanvasNotifications";
 import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
@@ -243,10 +247,6 @@ import {
   type ToolSource,
 } from "./toolCatalog";
 import {
-  generationBlocker,
-  generationActiveReferences,
-} from "./generationCatalog";
-import {
   createDocument,
   createNode,
   applyCommand,
@@ -381,7 +381,6 @@ const kinds: CanvasNodeKind[] = [
   "file",
   "group",
 ];
-const ORIGINAL_CANVAS_URL = "https://jimeng.jianying.com/ai-tool/ai-canvas";
 type EditorMode =
   | "default"
   | "layers"
@@ -514,7 +513,7 @@ function Workspace() {
   const connectionStarted = useRef<Point | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
-  const [toast, setToast] = useState("");
+  const { notifications, notify, dismiss } = useCanvasNotifications();
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("default");
@@ -527,19 +526,10 @@ function Workspace() {
   const [actionMedia, setActionMedia] = useState<HTMLDivElement | null>(null);
   const quickAction = useRef<AbortController | null>(null);
   const [maskTool, setMaskTool] = useState<CanvasToolId>("cutout");
-  const [generationTarget, setGenerationTarget] = useState<{
-    documentId: string;
-    nodeId: string;
-    jobId: string;
-  } | null>(null);
-  const [resultBusy, setResultBusy] = useState(false);
   const resultInput = useRef<HTMLInputElement>(null);
   const resultBinding = useRef<
     | (ResultSource & {
-        expectedKind?: "image" | "video" | "audio";
-        placement: "generation" | "post-edit";
         actionToken?: string;
-        jobId?: string;
       })
     | null
   >(null);
@@ -557,7 +547,7 @@ function Workspace() {
   } | null>(null);
   const [jobs, setJobs, readJobs] = useGenerationJobs(
     doc.id,
-    setToast,
+    notify,
     ready && backendCatalog.connected,
   );
   const toolCatalog = useToolCatalog(
@@ -842,7 +832,6 @@ function Workspace() {
       window.removeEventListener("blur", blur);
     };
   }, [cancelDrag]);
-  const notify = useCallback((message: string) => setToast(message), []);
   const showAssistant = () => {
     setPanel(null);
     setAssistantOpen(true);
@@ -1170,8 +1159,6 @@ function Workspace() {
       importAbort.current?.abort();
       importAbort.current = null;
       resultBinding.current = null;
-      setResultBusy(false);
-      setGenerationTarget(null);
       setEditing(null);
       setActionSession(null);
       quickAction.current?.abort();
@@ -1437,11 +1424,6 @@ function Workspace() {
       result?.removeEventListener("cancel", cancelResult);
     };
   }, []);
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(""), 3800);
-    return () => clearTimeout(timeout);
-  }, [toast]);
   useEffect(() => {
     const flush = () => {
       setPageVisible(!document.hidden);
@@ -1823,9 +1805,7 @@ function Workspace() {
     previousTool.current = { hand, spacePressed };
     clearToolInteraction();
   }, [hand, spacePressed, clearToolInteraction]);
-  const selectionControls = Boolean(
-    single && !editing && !preview && !generationTarget,
-  );
+  const selectionControls = Boolean(single && !editing && !preview);
   const hasComposer = Boolean(
     selectionControls &&
     !activeAction &&
@@ -2346,7 +2326,6 @@ function Workspace() {
     setEditorMode(mode);
     setEditing(node);
     setMenu(null);
-    setGenerationTarget(null);
   };
   const closeEditor = () => {
     setEditing(null);
@@ -2429,7 +2408,6 @@ function Workspace() {
       return;
     }
     setMenu(null);
-    setGenerationTarget(null);
     setPanel(null);
     if (tool === "video-extend") {
       const next = createVideoExtensionDraft(
@@ -2496,7 +2474,6 @@ function Workspace() {
     saveActionDraft(session, task);
     resultBinding.current = {
       ...session,
-      placement: "post-edit",
       actionToken: session.token,
     };
     if (resultInput.current) {
@@ -3483,106 +3460,11 @@ function Workspace() {
       }
       return;
     }
-    const blocked = generationBlocker(settings, incoming);
-    if (blocked) {
-      notify(blocked);
-      return;
-    }
-    const jobId = crypto.randomUUID();
-    setGenerationTarget({ documentId: current.id, nodeId: node.id, jobId });
-    setJobs((current) => [
-      {
-        id: jobId,
-        nodeId: node.id,
-        title: node.data.prompt || node.data.title,
-        status: "draft",
-        request: {
-          kind: settings.mode,
-          title: node.data.title,
-          prompt: node.data.prompt,
-          settings: structuredClone(settings),
-        },
-        time: new Date().toLocaleTimeString("zh-CN", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      },
-      ...current,
-    ]);
-  };
-  const generationNode =
-    generationTarget?.documentId === doc.id
-      ? doc.nodes.find((node) => node.id === generationTarget.nodeId)
-      : undefined;
-  const generationIncoming = incomingNodes(doc, generationNode?.id);
-  const generationSettings = generationNode
-    ? getNodeGenerationSettings(generationNode)
-    : undefined;
-  const generationDraft =
-    generationNode && generationSettings
-      ? {
-          format: "opendirector-generation-request",
-          version: 1,
-          status: "draft",
-          sourcePage: ORIGINAL_CANVAS_URL,
-          documentId: doc.id,
-          targetNodeId: generationNode.id,
-          requestId: generationTarget?.jobId,
-          title: generationNode.data.title,
-          prompt: generationNode.data.prompt,
-          settings: generationSettings,
-          references: generationActiveReferences(
-            generationSettings,
-            generationIncoming,
-          ).map(({ node, role }) => ({
-            nodeId: node.id,
-            title: node.data.title,
-            kind: node.type,
-            role,
-            ...(node.data.src
-              ? {
-                  src: node.data.src,
-                  mimeType: node.data.mimeType,
-                  media: node.data.media,
-                }
-              : {}),
-            ...(node.data.subject ? { subject: node.data.subject } : {}),
-            ...(node.data.tool ? { tool: node.data.tool } : {}),
-            ...(node.data.text ? { text: node.data.text } : {}),
-          })),
-        }
-      : undefined;
-  const exportGenerationDraft = () => {
-    if (!generationDraft || !generationNode) return;
-    downloadFile(
-      new Blob([JSON.stringify(generationDraft, null, 2)], {
-        type: "application/json",
-      }),
-      `${generationNode.data.title}.request.json`,
+    notify(
+      "当前未选择可用的生成模型，请先在“设置 → 模型接入”中配置服务，再选择模型。",
     );
-    notify("已导出生成请求草稿，没有向服务提交任务。");
   };
-  const pickGenerationResults = () => {
-    if (
-      !generationNode ||
-      !["image", "video", "audio"].includes(generationNode.type)
-    )
-      return;
-    resultBinding.current = {
-      documentId: doc.id,
-      nodeId: generationNode.id,
-      kind: generationNode.type,
-      expectedKind: generationNode.type as "image" | "video" | "audio",
-      src: generationNode.data.src,
-      jobId: generationTarget?.jobId,
-      placement: "generation",
-    };
-    if (resultInput.current) {
-      resultInput.current.accept = `${generationNode.type}/*`;
-      resultInput.current.click();
-    }
-  };
-  const importGenerationResults = async (files: File[]) => {
+  const importActionResultFiles = async (files: File[]) => {
     const binding = resultBinding.current;
     resultBinding.current = null;
     if (!binding || !files.length) return;
@@ -3597,17 +3479,12 @@ function Workspace() {
     const controller = new AbortController();
     importAbort.current?.abort();
     importAbort.current = controller;
-    setResultBusy(true);
     try {
       const outputs: LinkedMediaResult[] = [];
       for (const file of files) {
         const resource = await readEditorResource(file, controller.signal);
         if (resource.kind === "file" || resource.kind === "text")
           throw new Error("结果必须是实际图片、视频或音频文件。");
-        if (binding.expectedKind && resource.kind !== binding.expectedKind)
-          throw new Error(
-            `该任务需要${labels[binding.expectedKind]}结果，文件「${file.name}」类型不匹配。`,
-          );
         outputs.push({
           kind: resource.kind,
           src: resource.src!,
@@ -3623,44 +3500,18 @@ function Workspace() {
         });
       }
       if (controller.signal.aborted) return;
-      const placed =
-        binding.placement === "post-edit"
-          ? appendLinkedMediaResults(
-              historyRef.current.present,
-              origin,
-              outputs,
-            )
-          : applyGenerationResults(historyRef.current.present, origin, outputs);
-      setJobs((current) =>
-        current.map((job) =>
-          job.id === binding.jobId
-            ? {
-                ...job,
-                status: "imported",
-                resultSource: origin,
-                resultMode: "replace",
-                outputs,
-                message: placed.error ?? "已更新到画布",
-              }
-            : job,
-        ),
+      const placed = appendLinkedMediaResults(
+        historyRef.current.present,
+        origin,
+        outputs,
       );
       if (placed.error) notify(placed.error);
       else if (placed.ids.length) {
         change(() => placed.document);
         revealResults(placed.ids);
-        if (binding.placement === "generation")
-          setGenerationTarget((target) =>
-            target?.documentId === binding.documentId &&
-            target.nodeId === binding.nodeId &&
-            target.jobId === binding.jobId
-              ? null
-              : target,
-          );
         // A late file decode may finish after another tool or node was selected.
         // Keep its frozen output provenance without closing the newer workflow.
         if (
-          binding.placement === "post-edit" &&
           actionSessionRef.current?.token === binding.actionToken &&
           selectedRef.current.length === 1 &&
           selectedRef.current[0] === binding.nodeId
@@ -3675,16 +3526,13 @@ function Workspace() {
     } finally {
       if (importAbort.current === controller) {
         importAbort.current = null;
-        setResultBusy(false);
       }
     }
   };
 
-  const closeGeneration = () => {
+  const cancelResultImport = () => {
     importAbort.current?.abort();
     resultBinding.current = null;
-    setResultBusy(false);
-    setGenerationTarget(null);
   };
 
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -3701,7 +3549,6 @@ function Workspace() {
       !activeAction &&
       !preview &&
       !editing &&
-      !generationTarget &&
       !settingsOpen &&
       !help &&
       !event.altKey &&
@@ -3750,7 +3597,7 @@ function Workspace() {
       setMenu(null);
       setPreview(null);
       setEditing(null);
-      closeGeneration();
+      cancelResultImport();
       setRename(null);
       setHelp(false);
       setZoomMenu(false);
@@ -3764,7 +3611,6 @@ function Workspace() {
       preview ||
       editing ||
       help ||
-      generationTarget ||
       settingsOpen ||
       el.closest("button,a,video,audio,[role=dialog]") ||
       (el !== root.current && !el.closest(".react-flow"))
@@ -3876,7 +3722,6 @@ function Workspace() {
       if (!ready || switchPending.current) return;
       if (
         editing ||
-        generationTarget ||
         preview ||
         (event.target as HTMLElement).closest("[role=dialog]")
       )
@@ -5333,7 +5178,6 @@ function Workspace() {
                 }
                 onRun={() => prepareGeneration(composerNode.id)}
                 onCancel={() => {
-                  setGenerationTarget(null);
                   cancelServiceRuns(composerNode.id);
                 }}
                 onPickReference={() => {
@@ -6050,15 +5894,11 @@ function Workspace() {
         aria-label="导入真实生成结果"
         onChange={(event) => {
           if (event.target.files?.length)
-            void importGenerationResults([...event.target.files]);
+            void importActionResultFiles([...event.target.files]);
           event.target.value = "";
         }}
       />
-      {toast && (
-        <div className="cw-toast" role="status">
-          {toast}
-        </div>
-      )}
+      <CanvasNotifications notifications={notifications} onDismiss={dismiss} />
       {preview && (
         <div
           className="cw-modal-backdrop cw-preview"
@@ -6272,68 +6112,6 @@ function Workspace() {
           initialCategory={settingsCategory}
           onClose={() => setSettingsOpen(false)}
         />
-      )}
-      {generationNode && generationSettings && generationDraft && (
-        <EditorModal
-          title={`本地任务 · ${generationNode.data.title}`}
-          subtitle="真实生成服务尚未接入。这里仅保留创作参数；不会调用模型，也不会扣除积分。"
-          onClose={closeGeneration}
-          className="cw-generation-dialog"
-          actions={
-            <>
-              <button onClick={exportGenerationDraft}>导出任务草稿</button>
-              <a href={ORIGINAL_CANVAS_URL} target="_blank" rel="noreferrer">
-                在原站生成 ↗
-              </a>
-            </>
-          }
-        >
-          <div className="cw-generation-summary">
-            <span>待提交 · 本地草稿</span>
-            <strong>{generationSettings.model}</strong>
-            <small>
-              {generationSettings.aspectRatio} · {generationSettings.resolution}{" "}
-              · {generationDraft.references.length} 个参考
-            </small>
-          </div>
-          <label className="cw-generation-prompt">
-            提示词
-            <textarea
-              readOnly
-              value={generationNode.data.prompt}
-              aria-label="任务提示词"
-            />
-          </label>
-          <div className="cw-generation-references">
-            {generationDraft.references.map((reference) => (
-              <div key={reference.nodeId}>
-                <CanvasIcon name={reference.kind} size={17} />
-                <span>{reference.title}</span>
-                <small>
-                  {
-                    {
-                      reference: "参考",
-                      firstFrame: "首帧",
-                      lastFrame: "尾帧",
-                      tool: "工具参数",
-                    }[reference.role]
-                  }
-                </small>
-              </div>
-            ))}
-          </div>
-          <div className="cw-generation-import">
-            <h3>导入实际生成结果</h3>
-            <p>
-              在原站完成生成并下载后，选择实际媒体文件。首个结果会更新到本次任务节点，可撤销；多份结果保留为额外节点。
-            </p>
-            <button onClick={pickGenerationResults} disabled={resultBusy}>
-              {resultBusy
-                ? "正在读取结果…"
-                : `导入${labels[generationNode.type]}结果`}
-            </button>
-          </div>
-        </EditorModal>
       )}
       {help && (
         <div className="cw-modal-backdrop" onClick={() => setHelp(false)}>

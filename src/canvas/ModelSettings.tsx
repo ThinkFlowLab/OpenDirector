@@ -86,13 +86,15 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                 </h3>
                 <p>管理服务地址、鉴权和已启用模型。</p>
               </div>
-              <button
-                className="cw-settings-button cw-settings-button-primary"
-                onClick={() => setEditing({ kind: category })}
-              >
-                <CanvasIcon name="plus" size={15} />
-                添加服务
-              </button>
+              {services.length > 0 && (
+                <button
+                  className="cw-settings-button cw-settings-button-primary"
+                  onClick={() => setEditing({ kind: category })}
+                >
+                  <CanvasIcon name="plus" size={15} />
+                  添加服务
+                </button>
+              )}
             </div>
             {error && (
               <p className="cw-model-feedback" role="alert">

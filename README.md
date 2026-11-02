@@ -1,152 +1,242 @@
-# OpenDirector · 本地创作画布
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="src/assets/opendirector-readme-logo.png" />
+    <img src="src/assets/opendirector-readme-logo.gif" alt="OpenDirector — animated clapperboard logo" width="660" />
+  </picture>
+</p>
 
-在画布上整理素材、生成图片和视频、编辑媒体，并通过时间线编排和导出视频。
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-## 安装与启动
+# OpenDirector
 
-准备以下环境：
+**From an idea to a downloadable short film: generate through chat, organize on a canvas, edit media, and export from a timeline.**
 
-- Node.js 24.22.1 或更新版本。
-- Python 3.11 或更新版本。
-- `ffmpeg` 和 `ffprobe`，安装后可在终端直接运行。
+OpenDirector is an AI video creation workspace that runs locally and is accessed through your browser. Discuss ideas with the assistant and generate assets, organize and iterate on them on the canvas, edit images, video, and audio, then arrange your material on a timeline and export an MP4.
 
-下载项目并安装依赖：
+Use it to explore visual ideas, refine assets, and make short films. Projects stay on your machine; generation uses the provider APIs or self-hosted model services you choose.
+
+[Quick start](#quick-start) · [Connect models](#connect-models) · [Make your first short film](#make-your-first-short-film) · [Troubleshooting](#troubleshooting) · [More documentation](#more-documentation)
+
+## What you can do
+
+- **Work with AI**: Describe what you want to create, reference canvas assets, and ask the assistant to save text or generate content with your configured models.
+- **Canvas and reference assets**: Upload files, connect nodes, or use `@` to add references. Organize assets in one place and review generation history.
+- **Media editing**: Crop, adjust colors, and work with layers and clips. AI tools such as image extension, erasing, and background removal depend on the connected models' capabilities.
+- **Timeline editing**: Arrange assets, adjust start and end points, speed, and volume, then preview and render an MP4. You can also export JSON, FCPXML, and asset bundles.
+- **Local projects, your choice of models**: The canvas saves automatically to your machine. Configure multiple models for a service and switch between them as needed.
+
+## Quick start
+
+### 1. Prepare your environment
+
+| Dependency | Requirement |
+| --- | --- |
+| Node.js and npm | Node.js `24.22.1` or later, with npm |
+| Python | `3.11` or later |
+| FFmpeg | Both `ffmpeg` and `ffprobe` must be available in your terminal for media processing |
+| Model service | A working service URL, Model ID, and any API key or other authentication information required by the service |
+
+Installing dependencies and calling remote models require a network connection. Prepare self-hosted model services separately; starting this application does not install or deploy models.
+
+First, check that the media tools are available:
 
 ```sh
-git clone --branch rea --single-branch https://github.com/ThinkFlowLab/OpenDirector.git
+ffmpeg -version
+ffprobe -version
+```
+
+### 2. Get the source
+
+```sh
+git clone https://github.com/ThinkFlowLab/OpenDirector.git
 cd OpenDirector
+```
+
+You can also download and extract the source. Run all the following commands from the repository root.
+
+### 3. Install and start
+
+#### macOS, Linux, and WSL
+
+```sh
 npm ci
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm run build
-```
-
-启动应用：
-
-```sh
 .venv/bin/python scripts/opendirector.py serve
 ```
 
-在浏览器打开终端显示的地址，默认是 `http://127.0.0.1:8000`。使用期间保持终端运行，按 `Ctrl+C` 退出。
+#### Windows (PowerShell)
 
-Windows 将上述 `.venv/bin/python` 替换为 `.venv\Scripts\python.exe`。如果系统使用 `python` 命令，创建虚拟环境时使用 `python -m venv .venv`。
+```powershell
+npm.cmd ci
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+npm.cmd run build
+.\.venv\Scripts\python.exe scripts/opendirector.py serve
+```
 
-端口被占用时可以更换：
+If the `py` command is unavailable but Python is on your PATH, create the virtual environment with `python -m venv .venv`.
+
+Open the address shown in the terminal in your browser. The default is <http://127.0.0.1:8000>. Keep the terminal running while using the application; press `Ctrl+C` to stop it.
+
+- **Start again**: Run the final `serve` command for your operating system from the repository root.
+- **Update the source**: Stop the application and back up your projects first. After updating, reinstall dependencies, rebuild the frontend, and start the application.
+- **Port conflict**: Append `--port 8001` to the corresponding `serve` command and open <http://127.0.0.1:8001>:
 
 ```sh
+# macOS, Linux, and WSL
 .venv/bin/python scripts/opendirector.py serve --port 8001
 ```
 
-默认日志级别为 INFO。排查模型请求参数时，启动命令追加 `--log-level debug`；访问日志与模型调用日志使用相同格式。
+```powershell
+# Windows (PowerShell)
+.\.venv\Scripts\python.exe scripts/opendirector.py serve --port 8001
+```
 
-## 创建和管理画布
+The default log level is INFO. To inspect model request parameters, append `--log-level debug` to the startup command. Access logs and model call logs use the same format.
 
-首次打开时会创建“未命名画布”，之后打开应用可恢复最近使用的项目。
+## Connect models
 
-- 点击左上角项目名称修改名称，按 `Enter` 或点击其他位置保存，按 `Esc` 取消。
-- 点击名称右侧的箭头切换项目，选择“新建画布项目”创建项目。
-- 通过左侧工具栏或双击空白画布创建文本、图片、视频、音频、时间线或主体节点。
-- 右键空白画布可新建节点、粘贴、撤销或重做。
-- 点击左侧“上传”或将文件拖入画布添加素材；“资产库”可选择已有素材。
-- 双击节点名称重命名；双击节点内容进入相应编辑或预览界面。
+Click the gear at the bottom left to open **Settings (设置)**, then open **Model connections (模型接入)**. Add models for chat, image, video, or audio generation as needed.
 
-画布会自动保存。关闭或切换前，请确认左上角显示“已保存到本机”；若显示保存失败，保留页面并按提示处理。
+1. Choose the connection type and API protocol.
+2. Enter the service URL, Model ID, and the credentials or authentication method required by the service.
+3. For video models, check the adapter, supported modes, resolutions, and durations.
+4. Save the model, then select it in the generation panel or chat.
 
-## 接入模型
+Use the following guide to check the configuration fields:
 
-点击左下角齿轮进入“设置”，打开“模型接入”，按用途添加对话、图片、视频或音频模型。
+| Field | What to enter |
+| --- | --- |
+| Connection type | Choose **Provider API (服务商 API)** or **Self-hosted service (自部署服务)** to match your service |
+| API protocol | Choose a protocol that matches the service's actual API and the model category; matching names alone do not guarantee media compatibility |
+| Service URL (Base URL) | Enter an address reachable from the machine running the application; for an SSH tunnel, use the locally forwarded address |
+| API Key | Enter the key required by the service. If the service does not require authentication, select **No key required (无需密钥)**; a placeholder key is unnecessary |
+| Model ID | Use the model name actually exposed by the service; select it with **Fetch models (获取模型)** or add it manually |
 
-1. 选择接入方式和接口协议。
-2. 填写服务地址、Model ID，以及服务要求的密钥或鉴权方式。
-3. 对视频模型检查适配方式、支持的模式、分辨率和时长。
-4. 保存模型，然后在生成面板或对话框中选择它。
+A service can provide multiple models within the same category. After entering its URL and authentication settings, click **Fetch models (获取模型)**, search for and select the models you need, then save. Use **Add manually (手动添加)** for models that are not listed. Chat models can be tested individually in the list. The service URL and credentials are stored once and can be updated together by editing the service. Deselecting a model removes its configuration; wherever that configuration was selected, you will need to select a model again.
 
-同一类别下，一个服务可启用多个模型：填写地址和鉴权后，点击“获取模型”，搜索并勾选需要的模型后保存。未列出的模型可通过“手动添加”补充；对话模型可在列表中逐个测试。服务地址和密钥只保存一份，编辑服务时可统一更新；取消勾选会移除对应模型配置，已选用该配置的位置需要重新选择。
+The service URL and Model ID must match your model service. Self-hosted service URLs typically include `/v1`; use the model name actually exposed by the service as the Model ID. For third-party services, follow the information provided by the service.
 
-服务地址和 Model ID 应与自己的模型服务一致。自部署服务的地址通常包含 `/v1`，Model ID 使用服务实际公开的模型名称；第三方服务按其提供的信息填写。
+For detailed video settings, see [Video model capability configuration (Chinese)](docs/guides/video-model-capabilities.md). When no explicit output specification is provided, use **Auto (自动)** or **Service default duration (服务默认时长)**.
 
-视频模型的详细配置见 [视频模型能力配置](docs/guides/video-model-capabilities.md)。未提供明确输出规格时，使用“自动”或“服务默认时长”。
+Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
 
-自动识别图片选区或视频抠像需要具备分割能力的模型；生成图片、编辑图片仍需选择对应的生成或编辑模型。
+In **General (通用)** settings, you can switch themes and adjust the watermark removal option. Watermark settings affect only content generated afterward, and the actual effect depends on support from the model service.
 
-在设置的“通用”页中可切换主题、调整去除水印选项。水印设置仅影响后续生成的内容，实际效果取决于模型服务是否支持。
+## Make your first short film
 
-## 生成内容与添加参考
+Start by generating and exporting a single shot, then expand to more clips.
 
-1. 创建文本、图片、视频或音频节点，点击节点打开生成面板。
-2. 选择模型，填写提示词，并设置可用的参数。
-3. 将有内容的来源节点连接到目标节点，或在输入框中输入 `@` 选择参考素材。
-4. 检查参考和参数，点击生成。完成后在节点或“生成历史”中查看结果。
+1. **Connect models**: In **Settings → Model connections (设置 → 模型接入)**, configure the image and video models you need. Add an audio model if you want narration.
+2. **Prepare an image**: Create an image node and generate an image, or upload one you already have. For example, try “a street on a morning after rain, soft morning light, reflections on the ground.”
+3. **Generate a video**: Create a video node, choose a video model, and connect the image node containing your image as a reference. Describe the motion using a mode the model supports, then generate. Check progress and results in **Generation history (生成历史)**.
+4. **Refine your assets**: Check the result and edit the image or video as needed. For narration, create an audio node, enter the text to be read aloud, and choose a voice supported by the service.
+5. **Arrange the timeline**: Create a timeline node and open its editor. Add your prepared visuals and audio, adjust their order, start and end points, speed, and volume, then preview the result.
+6. **Download your film**: Click **Render MP4 (合成 MP4)** and keep the page open until it finishes. Download the result or add it to the canvas.
 
-输入 `@` 后可用上下方向键选择素材、左右方向键切换分类，按 `Enter` 插入，按 `Esc` 关闭选择。引用以整体形式插入正文；删除同一来源的最后一次引用会移除相应参考连线。
+You can also [chat with AI](#chat-with-ai) first to develop ideas, save text, or generate assets, then continue editing on the canvas and timeline. If something fails, check the [generation task status](#monitor-and-manage-generation-tasks) and identify the cause before deciding whether to submit again.
 
-空白节点需要先上传、保存文本或生成内容，才能作为其他节点的有效参考。向已有节点上传本体素材时，文件类型应与节点一致；添加参考请使用连线、`@` 或生成面板的添加入口。
+## Create and manage canvases
 
-视频生成时按模型能力选择模式：
+The first launch creates an untitled canvas (未命名画布). Later launches can restore the most recently used project.
 
-- **全能参考**：添加模型支持的图片、视频、音频或文字参考。
-- **首尾帧**：最多连接两个图片来源，按槽位选择首帧和尾帧；能否使用尾帧以模型能力和界面提示为准。
-- **接续**：选择支持该功能的模型和来源视频。服务重启或来源不再可用时，可能需要重新生成来源视频。
+- Click the project name at the top left to rename it. Press `Enter` or click elsewhere to save, or press `Esc` to cancel.
+- Click the arrow next to the name to switch projects. Choose **New canvas project (新建画布项目)** to create one.
+- Use the left toolbar or double-click empty canvas space to create text, image, video, audio, timeline, or subject nodes.
+- Right-click empty canvas space to create a node, paste, undo, or redo.
+- Click **Upload (上传)** on the left or drag files onto the canvas to add assets. Use **Asset library (资产库)** to choose existing assets.
+- Double-click a node's name to rename it. Double-click its content to open the appropriate editor or preview.
 
-音频生成时，在提示词中填写需要朗读的正文，在参数中选择服务支持的音色。
+The canvas saves automatically. Before closing it or switching projects, check that the top-left status reads **Saved locally (已保存到本机)**. If saving fails, keep the page open and follow the error message.
 
-## 查看和处理生成任务
+## Generate content and add references
 
-打开右上角“生成历史”，查看任务进度、结果和失败原因。
+1. Create a text, image, video, or audio node, then click it to open the generation panel.
+2. Choose a model, enter a prompt, and set the available parameters.
+3. Connect a source node that has content to the target node, or type `@` in the input field to select reference assets.
+4. Check the references and parameters, then generate. When the task finishes, view its result in the node or **Generation history (生成历史)**.
 
-- 排队或执行中的任务可请求取消。
-- 可恢复的中断任务可选择“继续查询原任务”。
-- 提交状态不明时，先核对服务端是否已接受任务，再决定是否重新生成，避免重复提交。
-- 切换服务地址、模型或协议后，旧任务可能无法继续查询。
+After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
 
-## 与 AI 对话
+An empty node must first receive an upload, saved text, or generated content before it can serve as a valid reference for other nodes. When uploading a node's own content, the file type must match the node. To add references, use connections, `@`, or the reference controls in the generation panel.
 
-点击右下角“与 AI 对话”，选择对话模型后输入创作要求。可上传、拖放、粘贴素材，或输入 `@` 引用画布中的内容。助手可按要求保存文本，并调用已配置的生成模型制作素材。
+For video generation, choose a mode supported by the model:
 
-- `Enter` 发送，`Shift+Enter` 换行。
-- 回复过程中可停止输出。
-- 点击右上角收起按钮隐藏对话框；拖动左边缘调整宽度。
+- **Multimodal references (全能参考)**: Add image, video, audio, or text references supported by the model.
+- **First and last frames (首尾帧)**: Connect up to two image sources and assign them to the first- and last-frame slots. Last-frame support depends on the model's capabilities and the guidance in the interface.
+- **Continuation (接续)**: Select a model that supports continuation and a source video. If the service restarts or the source is no longer available, you may need to regenerate the source video.
 
-素材生成可能在回复结束后继续进行，可在“生成历史”查看进度。
+For audio generation, enter the text to be read aloud in the prompt and choose a voice supported by the service in the parameters.
 
-## 编辑图片、视频和音频
+## Monitor and manage generation tasks
 
-选中节点，通过工具栏选择所需操作。
+Open **Generation history (生成历史)** at the top right to view task progress, results, and failure details.
 
-- **图片**：裁剪、旋转、翻转、调色、图层、文字、形状、标注和选区编辑。
-- **视频与音频**：取帧、裁剪、音轨提取和片段处理。
-- **AI 工具**：扩图、消除、抠图、智能改图、超清等，是否可用取决于已接入模型。
+- You can request cancellation of queued or running tasks.
+- For recoverable interrupted tasks, choose **Continue checking the original task (继续查询原任务)**.
+- If the submission status is unknown, first check whether the server accepted the task before deciding to generate again. This avoids duplicate submissions.
+- After changing the service URL, model, or protocol, you may no longer be able to query older tasks.
 
-需要局部修改时先标记区域或创建选区，再填写要求并确认执行。缺少所需模型能力时，按工具提示补充配置；灰色入口以悬停提示为准。
+## Chat with AI
 
-## 编排和导出视频
+Click **Chat with AI (与 AI 对话)** at the bottom right, select a chat model, and describe what you want to create. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
-1. 创建时间线节点并打开编辑器。
-2. 添加图片、视频和音频，调整顺序、起止点、速度及音量。
-3. 预览并检查画面和声音。
-4. 点击“合成 MP4”，完成后下载，或将结果加入画布。
+- Press `Enter` to send, or `Shift+Enter` for a new line.
+- You can stop the response while it is being generated.
+- Click the collapse button at the top right to hide the chat panel. Drag its left edge to resize it.
 
-时间线还支持 JSON、FCPXML 和素材包导出，按用途选择。若浏览器提示不支持所需编码能力，请使用支持的浏览器后重试。
+Asset generation may continue after the reply ends. Check its progress in **Generation history (生成历史)**.
 
-合成期间保持页面打开。关闭编辑器或取消合成会停止本次处理。
+## Edit images, video, and audio
 
-## 保存、备份和下载
+Select a node, then choose an action from its toolbar.
 
-- 节点中的下载入口用于保存对应素材。
-- 右上角“导出画布”用于保存画布 JSON 副本。
-- 本地项目保存在项目目录下的 `projects/` 文件夹。需要保留完整项目时，停止应用后备份该目录。
-- 模型配置保存在本机，包含凭证时请妥善保管。
+- **Images**: Crop, rotate, flip, adjust colors, work with layers, add text, shapes, or annotations, and edit selections.
+- **Video and audio**: Extract frames, trim, extract audio tracks, and process clips.
+- **AI tools**: Extend images, erase content, remove backgrounds, edit images with AI, upscale, and more. Availability depends on the connected models.
 
-发送给模型的参考素材会传递至所选服务，请根据素材用途选择合适的服务。
+For a local edit, mark an area or create a selection first, then enter your instructions and confirm the action. If a required model capability is missing, follow the tool's instructions to configure it. Hover over a disabled control for an explanation.
 
-## 常见问题
+## Arrange and export videos
 
-**无法打开应用或提示服务不可用**：确认启动终端仍在运行，使用终端显示的地址打开，并检查启动错误。只运行 `npm run dev` 不能提供完整应用服务。
+1. Create a timeline node and open its editor.
+2. Add images, videos, and audio. Adjust their order, start and end points, speed, and volume.
+3. Preview and check the picture and sound.
+4. Click **Render MP4 (合成 MP4)**. When rendering finishes, download the result or add it to the canvas.
 
-**模型不能生成或工具置灰**：检查模型是否已保存、是否在面板中选中，以及它是否支持当前输入和功能。
+The timeline also supports JSON, FCPXML, and asset bundle exports. Choose the format that fits your needs. If your browser reports that a required encoding capability is unavailable, try again in a browser that supports it.
 
-**上传被拒绝**：检查文件类型是否匹配节点或槽位，并按提示检查文件大小、格式和时长。
+Keep the page open while rendering. Closing the editor or canceling the render stops the current operation.
 
-**视频无法导出**：检查浏览器的编码支持，以及素材是否可正常读取和播放。
+## Save, back up, and download
 
-**修改没有保存**：保持页面打开，检查“已保存到本机”状态和错误提示，避免在保存失败时直接关闭页面。
+- Use a node's download control to save its asset.
+- Use **Export canvas (导出画布)** at the top right to save a JSON copy of the canvas.
+- Local projects are stored in the `projects/` folder inside the repository directory. To preserve complete projects, stop the application and back up that folder.
+- Model settings are stored in `.opendirector/models.json` and may contain API keys. Keep backups secure and exclude these credentials when sharing projects or logs.
+
+Saving projects locally does not imply offline inference. Generation prompts and selected reference assets are sent to the configured model service. Usage costs and data handling depend on that service; choose one appropriate for your assets.
+
+## Troubleshooting
+
+| Symptom | What to check first |
+| --- | --- |
+| The page will not open, or the service is unavailable | Check that the startup terminal is still running, use the address it displays, and check for startup errors or port conflicts. Running only `npm run dev` does not start the complete application service |
+| A message asks you to build the frontend first | Run `npm run build` from the repository root, or `npm.cmd run build` on Windows, then restart |
+| A model cannot generate content, or a tool is disabled | Check that the model is saved and selected in the panel, and that the service URL, protocol, Model ID, authentication, and required capabilities match |
+| An upload is rejected | Check that the file type matches the node or reference slot, then check the size, format, and duration against the error message |
+| Media processing fails | Run `ffmpeg -version` and `ffprobe -version` in your terminal to check that the tools are available; restart the application after installing them |
+| A video cannot be rendered or exported | Check your browser's encoding support and whether the assets can be read and played correctly. Keep the page and editor open while rendering |
+| A task is interrupted, or its submission status is unknown | Check **Generation history (生成历史)**. Use **Continue checking the original task (继续查询原任务)** for recoverable tasks. If the status is unknown, check whether the server accepted the task before submitting again |
+| Changes have not been saved | Keep the page open, check the **Saved locally (已保存到本机)** status and any error messages, and resolve the save failure before closing or switching |
+
+## More documentation
+
+- [Video model capability configuration (Chinese)](docs/guides/video-model-capabilities.md): Configure video adapters, modes, and output specifications.
+- [Documentation index (Chinese)](docs/README.md): Find the project architecture, development guidance, and validation guide.
+
+To report a problem, open an [issue](https://github.com/ThinkFlowLab/OpenDirector/issues) with your operating system, relevant tool versions, reproduction steps, and the expected and actual results. Remove credentials and sensitive assets before sharing logs.
