@@ -151,6 +151,14 @@ def object_changes(before, after, command):
     return changed
 
 
+# Every read validates the whole commit chain, and each record holds a full
+# project snapshot. The cache must fit a long project's history: below that,
+# each read reparses every record from disk and holds the catalog lock long
+# enough to expire sessions and interrupt running jobs.
+RECORD_CACHE_ENTRIES = 4096
+RECORD_CACHE_BYTES = 512 * 1024 * 1024
+
+
 class CreationProjects:
     """Authoritative repository for lifecycle and shared creation commands.
 
@@ -247,7 +255,7 @@ class CreationProjects:
             if os.name != 'nt' and before[2] <= 8 * 1024 * 1024:
                 self._records_cache[file] = (before, record)
                 self._records_cache_bytes += before[2]
-                while len(self._records_cache) > 128 or self._records_cache_bytes > 8 * 1024 * 1024:
+                while len(self._records_cache) > RECORD_CACHE_ENTRIES or self._records_cache_bytes > RECORD_CACHE_BYTES:
                     _, removed = self._records_cache.popitem(last=False)
                     self._records_cache_bytes -= removed[0][2]
             return record

@@ -332,6 +332,26 @@ def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(
         projects.snapshot(created.projectId)
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Commit signature caching requires POSIX change time')
+def test_long_history_is_validated_from_disk_only_once(projects, monkeypatch):
+    # Each read validates the whole chain; a cache smaller than the history
+    # would reparse every record on every read of a long project.
+    from opendirector.infrastructure import creation_projects as module
+    created = create(projects)
+    for revision in range(1, 200):
+        assert projects.execute(rename(created, f'Renamed {revision}', revision)).status == 'applied'
+    projects.snapshot(created.projectId)
+    reads = []
+    original = module.read_json
+    def reading(path):
+        if path.parent.name == 'commits':
+            reads.append(path)
+        return original(path)
+    monkeypatch.setattr(module, 'read_json', reading)
+    assert projects.snapshot(created.projectId).project.name == 'Renamed 199'
+    assert reads == []
+
+
 def test_returned_snapshots_and_history_cannot_mutate_record_cache(projects):
     created = create(projects)
     session = str(uuid4())
