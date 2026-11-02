@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -11,6 +12,30 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def port_in_use(port: int) -> bool:
+    """True when something already accepts connections on the local port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.25)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def suggested_port(port: int) -> int | None:
+    for candidate in range(port + 1, min(port + 50, 65536)):
+        if not port_in_use(candidate):
+            return candidate
+    return None
+
+
+def require_free_port(port: int, flag: str) -> None:
+    """Fail before spawning anything: a bound port must name the real remedy."""
+    if not port_in_use(port):
+        return
+    alternative = suggested_port(port)
+    raise RuntimeError(
+        f"端口 {port} 已被占用：请关闭占用该端口的程序，或用 {flag} "
+        f"{alternative if alternative else '<端口>'} 指定其他端口。")
 
 
 def main():
@@ -27,12 +52,17 @@ def main():
     environment = {**os.environ, "OPENDIRECTOR_ROOT": str(ROOT), "OPENDIRECTOR_API_URL": f"http://127.0.0.1:{args.port}"}
     processes = []
     try:
+        # Fail before spawning anything: a bound port must name the real remedy.
+        require_free_port(args.port, "--port")
+        if args.mode == "dev":
+            require_free_port(args.web_port, "--web-port")
         api = subprocess.Popen([sys.executable, "-m", "opendirector_api.server", "--port", str(args.port), "--log-level", args.log_level], cwd=ROOT, env=environment)
         processes.append(api)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for _ in range(100):
             if api.poll() is not None:
-                raise RuntimeError("本地 API 启动失败，请检查上方错误和 Python 依赖。")
+                raise RuntimeError("本地 API 启动失败（进程已退出）。请查看上方错误输出；"
+                                   "若提示地址已被占用，请用 --port 换一个端口后重试。")
             try:
                 request = urllib.request.Request(f"http://127.0.0.1:{args.port}/api/health", headers={"X-OpenDirector-Request": "1"})
                 with opener.open(request, timeout=0.3) as response:
