@@ -240,3 +240,9 @@ Saving projects locally does not imply offline inference. Generation prompts and
 - [Documentation index (Chinese)](docs/README.md): Find the project architecture, development guidance, and validation guide.
 
 To report a problem, open an [issue](https://github.com/ThinkFlowLab/OpenDirector/issues) with your operating system, relevant tool versions, reproduction steps, and the expected and actual results. Remove credentials and sensitive assets before sharing logs.
+
+## License
+
+OpenDirector is released under the [Apache License 2.0](LICENSE). See
+[NOTICE](NOTICE) for the third-party components distributed with this
+application and for the artwork under `src/assets`.

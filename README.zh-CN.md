@@ -240,3 +240,8 @@ npm.cmd run build
 - [文档索引](docs/README.md)：查阅项目架构、开发指导和验证指南。
 
 遇到问题可在 [Issues](https://github.com/ThinkFlowLab/OpenDirector/issues) 中提供操作系统、相关工具版本、复现步骤，以及预期和实际结果。分享日志前请移除密钥和敏感素材。
+
+## 许可
+
+OpenDirector 以 [Apache License 2.0](LICENSE) 发布。随本应用分发的第三方组件，
+以及 `src/assets` 下的美术资源，见 [NOTICE](NOTICE)。

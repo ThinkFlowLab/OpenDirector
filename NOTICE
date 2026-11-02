@@ -1,0 +1,21 @@
+OpenDirector
+Copyright (c) 2026 ThinkFlowLab and the OpenDirector contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party components distributed with this application:
+
+  mediabunny                MPL-2.0   https://github.com/Vanilagy/mediabunny
+  @mediabunny/aac-encoder   MPL-2.0   https://github.com/Vanilagy/mediabunny
+  @xyflow/react             MIT
+  react, react-dom          MIT
+  three                     MIT
+
+The MPL-2.0 components are consumed unmodified from npm; this repository does
+not vendor or patch them. Their corresponding source is available from the
+upstream projects above and from the exact versions pinned in package-lock.json.
+A copy of the MPL-2.0 text is available at https://mozilla.org/MPL/2.0/.
+
+Artwork under src/assets (the OpenDirector logo and README artwork) was
+contributed to this repository by its contributors and is distributed under the
+same license as the rest of this repository.
