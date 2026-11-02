@@ -55,6 +55,18 @@ CREATION_WEB_URL=http://127.0.0.1:5179 CREATION_API_URL=http://127.0.0.1:8019 \
   node scripts/verify_creation_browser.mjs
 ```
 
+同一套隔离服务下的浏览器检查：
+
+```sh
+node scripts/verify_creation_browser.mjs       # UI/API 主流程与重载
+node tests/browser/reference_reconnect.mjs     # 参考连线删除后重连
+node tests/browser/context_menu_dismissal.mjs  # 右键菜单关闭
+node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件 AAC）
+```
+
+`mp4_export.mjs` 以 640x360 渲染：没有 GPU 的无头浏览器只在该尺寸暴露 H.264
+编码能力，1080p 导出仍需在桌面浏览器人工验收。
+
 脚本需要可导入的 Playwright 模块和 Chromium。按脚本约定通过 `PLAYWRIGHT_MODULE`、`CHROMIUM_PATH` 指定本机安装；它们不是所有环境中默认可用的项目依赖。以上环境变量语法适用于 POSIX shell，其他终端使用对应设置方式。测试使用的工程入口和前置条件以脚本为准。
 
 ## 证据记录
