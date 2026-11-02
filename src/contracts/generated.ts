@@ -1441,8 +1441,8 @@ export interface AudioExecution extends Contract {
   readonly speaker: string | null;
   readonly format: "mp3" | "wav";
   readonly sampleRate: number | null;
-  readonly creationType: "audio" | "music";
-  readonly maxDurationSeconds: number | null;
+  readonly creationType?: "audio" | "music";
+  readonly maxDurationSeconds?: number | null;
 }
 
 export interface AudioGenerationSpec extends GenerationSpecBase {
@@ -1454,8 +1454,8 @@ export interface AudioParameters extends Contract {
   readonly creationType: "audio" | "music";
   readonly mode: "tts" | "unified";
   readonly voice: string | null;
-  readonly lyrics: string;
-  readonly durationSeconds: number | null;
+  readonly lyrics?: string;
+  readonly durationSeconds?: number | null;
 }
 
 export interface BatchCommand extends CommandBase {

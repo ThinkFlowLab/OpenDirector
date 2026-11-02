@@ -12636,9 +12636,7 @@
           "voice",
           "speaker",
           "format",
-          "sampleRate",
-          "creationType",
-          "maxDurationSeconds"
+          "sampleRate"
         ],
         "title": "AudioExecution",
         "type": "object"
@@ -12814,9 +12812,7 @@
         "required": [
           "creationType",
           "mode",
-          "voice",
-          "lyrics",
-          "durationSeconds"
+          "voice"
         ],
         "title": "AudioParameters",
         "type": "object"

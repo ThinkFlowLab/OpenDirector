@@ -42,8 +42,11 @@ class AudioParameters(Contract):
     mode: Literal['tts', 'unified'] = 'tts'
     voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
     # Music only: the prompt is the style description; empty lyrics ask for an instrumental piece.
-    lyrics: str = Field(default='', max_length=5000)
-    durationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = None
+    # Unset music fields stay out of the dump, so specs and job fingerprints
+    # recorded before music support keep their identity.
+    lyrics: str = Field(default='', max_length=5000, exclude_if=lambda value: value == '')
+    durationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
 
 
 class PromptText(Contract):
@@ -206,9 +209,10 @@ class AudioExecution(Contract):
     speaker: str | None = None
     format: Literal['mp3', 'wav']
     sampleRate: PositiveInt | None = None
-    creationType: Literal['audio', 'music'] = 'audio'
+    creationType: Literal['audio', 'music'] = Field(default='audio', exclude_if=lambda value: value == 'audio')
     # A music model may end the piece earlier than this cap.
-    maxDurationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = None
+    maxDurationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
 
 
 class TextExecution(TextParameters):

@@ -445,3 +445,14 @@ def test_effective_video_mode_uses_transmitted_media_and_keeps_editable_intent(k
     assert execution_spec(effective, (ref,), rules) == effective
     continuation = video_spec(videoMode='continuation')
     assert execution_spec(continuation, (), rules) is continuation
+
+
+def test_music_fields_leave_speech_fingerprints_unchanged():
+    # Jobs recorded before music support fingerprint these exact dumps; extra
+    # default keys would make every saved speech job fail validation on load.
+    from opendirector.domain.creation.generation import AudioExecution, AudioParameters
+    assert AudioParameters().model_dump(mode='json') == {'creationType': 'audio', 'mode': 'tts', 'voice': None}
+    assert AudioExecution(kind='audio', format='mp3').model_dump(mode='json') == {
+        'kind': 'audio', 'voice': None, 'speaker': None, 'format': 'mp3', 'sampleRate': None}
+    music = AudioParameters(creationType='music', lyrics='[verse]\n雨', durationSeconds=45)
+    assert music.model_dump(mode='json')['lyrics'] == '[verse]\n雨' and music.model_dump()['durationSeconds'] == 45
