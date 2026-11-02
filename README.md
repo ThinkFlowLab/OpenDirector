@@ -133,6 +133,10 @@ A service can provide multiple models within the same category. After entering i
 
 The service URL and Model ID must match your model service. Self-hosted service URLs typically include `/v1`; use the model name actually exposed by the service as the Model ID. For third-party services, follow the information provided by the service.
 
+For a self-hosted chat service, allow at least 8192 tokens of context: the
+application sends `max_tokens: 8192`, so a smaller `--max-model-len` (for
+example vLLM's 4096 default) rejects every request with HTTP 400.
+
 For detailed video settings, see [Video model capability configuration (Chinese)](docs/guides/video-model-capabilities.md). When no explicit output specification is provided, use **Auto (自动)** or **Service default duration (服务默认时长)**.
 
 Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
