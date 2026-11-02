@@ -275,6 +275,9 @@
 :root[data-theme="light"] .cw-prompt-input::placeholder {
   color: #8b929e;
 }
+:root[data-theme="light"] .cw-composer {
+  --cw-lyrics-divider: #e2e5ea;
+}
 /* The empty-prompt hint is a ::before pseudo element, so it takes a variable
    rather than the ::placeholder colour above. */
 :root[data-theme="light"] :is(.cw-composer, .cw-assistant-composer) {

@@ -159,9 +159,11 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                           ? "火山引擎"
                           : model.protocol === "vllm_omni_segmentation"
                             ? "视觉分割"
-                            : model.protocol === "vllm_omni"
-                              ? "视频接口"
-                              : "OpenAI 兼容"}{" "}
+                            : model.protocol === "vllm_omni_music"
+                              ? "音乐生成"
+                              : model.protocol === "vllm_omni"
+                                ? "视频接口"
+                                : "OpenAI 兼容"}{" "}
                         ·{" "}
                         {model.authMode === "none" ? "无需密钥" : "密钥已配置"}
                       </span>

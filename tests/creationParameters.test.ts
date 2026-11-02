@@ -51,9 +51,21 @@ const cases = [
     patch: { voiceName: "voice_2" },
     expected: { voice: "voice_2" },
   },
+  {
+    kind: "audio",
+    parameters: {
+      voice: null,
+      creationType: "music",
+      mode: "tts",
+      lyrics: "[verse]\n雨落在窗前",
+      durationSeconds: 45,
+    },
+    patch: { lyrics: "", durationSeconds: 120 },
+    expected: { creationType: "music", lyrics: "", durationSeconds: 120 },
+  },
 ] as const;
 for (const scenario of cases)
-  test(`${scenario.kind}: saved parameters reopen, edit and submit from the same spec`, async () => {
+  test(`${scenario.kind}${"creationType" in scenario.parameters ? ` (${scenario.parameters.creationType})` : ""}: saved parameters reopen, edit and submit from the same spec`, async () => {
     const base = JSON.parse(
       readFileSync(
         new URL("./fixtures/creation-project.json", import.meta.url),
@@ -125,9 +137,20 @@ for (const scenario of cases)
       assert.equal(settings.resolution, "自动");
       assert.equal(settings.frameSlotsInitialized, true);
     }
-    if (scenario.kind === "audio") {
+    if (
+      scenario.kind === "audio" &&
+      scenario.parameters.creationType === "audio"
+    ) {
       assert.equal(settings.voiceName, "voice-1");
       assert.equal(settings.audioMode, "tts");
+    }
+    if (
+      scenario.kind === "audio" &&
+      scenario.parameters.creationType === "music"
+    ) {
+      assert.equal(settings.audioCreationType, "music");
+      assert.equal(settings.lyrics, "[verse]\n雨落在窗前");
+      assert.equal(settings.durationSeconds, 45);
     }
     projection.baseline = restored;
     projection.basis = snapshot;
@@ -201,4 +224,62 @@ test("image controls and validation derive from declared protocol output choices
     config,
   );
   assert.equal(changed.resolution, "自动");
+});
+
+test("an audio node composes with a music model and reads aloud with a speech model", () => {
+  const audioConfig = (protocol: ModelConfig["protocol"]): ModelConfig => ({
+    id: crypto.randomUUID(),
+    kind: "audio",
+    url: "http://127.0.0.1:8240/v1",
+    modelId: protocol === "vllm_omni_music" ? "m-a-p/YuE2-3B" : "tts",
+    connectionType: "self_hosted",
+    protocol,
+    authMode: "none",
+    inputRules: {
+      profile: protocol === "vllm_omni_music" ? "vllm-omni-music" : "tts",
+      allowedKinds: [],
+      maxImages: 0,
+      maxVideos: 0,
+      maxAudios: 0,
+      videoModes: [],
+    } as unknown as ModelConfig["inputRules"],
+  });
+  const music = audioConfig("vllm_omni_music");
+  const speech = audioConfig("openai");
+  const reading = {
+    ...generationDefaults("audio"),
+    modelConfigId: speech.id,
+    audioMode: "tts" as const,
+    prompt: "温暖的钢琴与弦乐",
+  };
+  const composing = serviceGenerationSettings(
+    { ...reading, modelConfigId: music.id },
+    music,
+    [],
+    true,
+  );
+  // Speech nodes keep their 5 s default, which is no valid music length.
+  assert.equal(composing.audioCreationType, "music");
+  assert.equal(composing.durationSeconds, 30);
+  assert.equal(backendBlocker(composing, [], [music, speech]), null);
+  assert.match(
+    backendBlocker({ ...composing, prompt: " " }, [], [music])!,
+    /音乐风格/,
+  );
+  assert.match(
+    backendBlocker({ ...composing, durationSeconds: 400 }, [], [music])!,
+    /8–360/,
+  );
+  assert.match(
+    backendBlocker({ ...composing, audioCreationType: "audio" }, [], [music])!,
+    /音乐生成/,
+  );
+  const back = serviceGenerationSettings(
+    { ...composing, modelConfigId: speech.id },
+    speech,
+    [],
+    true,
+  );
+  assert.equal(back.audioCreationType, "audio");
+  assert.equal(backendBlocker(back, [], [speech]), null);
 });

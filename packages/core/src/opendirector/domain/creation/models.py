@@ -11,7 +11,7 @@ from opendirector.domain.projects import ProjectError
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
-Protocol = Literal['openai', 'volcengine', 'vllm_omni', 'vllm_omni_segmentation']
+Protocol = Literal['openai', 'volcengine', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music']
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 Count = Annotated[int, Field(strict=True, ge=0)]
 
@@ -92,7 +92,7 @@ class ModelConnection(Contract):
     def connection(self):
         allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
                    'video': {'vllm_omni', 'volcengine', 'vllm_omni_segmentation'},
-                   'audio': {'openai', 'volcengine'}, 'vision': {'vllm_omni'}}
+                   'audio': {'openai', 'volcengine', 'vllm_omni_music'}, 'vision': {'vllm_omni'}}
         if self.protocol not in allowed[self.kind]:
             raise ValueError('Protocol is incompatible with model category')
         try:

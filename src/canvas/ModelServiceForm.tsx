@@ -40,6 +40,7 @@ const PROTOCOLS: Record<
   audio: [
     ["openai", "OpenAI 兼容语音合成（含 vLLM-Omni TTS）"],
     ["volcengine", "火山引擎语音 / Agent Plan"],
+    ["vllm_omni_music", "vLLM-Omni 音乐生成（MiniMax Music 3、YuE2）"],
   ],
 };
 
@@ -50,6 +51,10 @@ const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
   audio: ["http://127.0.0.1:8220/v1", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"],
   vision: ["http://127.0.0.1:8230/v1", "facebook/sam3"],
 };
+const MUSIC_PLACEHOLDERS: [string, string] = [
+  "http://127.0.0.1:8240/v1",
+  "m-a-p/YuE2-3B",
+];
 
 export function ModelServiceForm({
   kind,
@@ -106,7 +111,10 @@ export function ModelServiceForm({
   const [connectionOpen, setConnectionOpen] = useState(!existing);
   const locked = busy || discovering || testing;
   const segmentation = value.protocol === "vllm_omni_segmentation";
-  const placeholders = PLACEHOLDERS[segmentation ? "vision" : kind];
+  const placeholders =
+    value.protocol === "vllm_omni_music"
+      ? MUSIC_PLACEHOLDERS
+      : PLACEHOLDERS[segmentation ? "vision" : kind];
   const hasSavedKey = Boolean(
     existing &&
     existing.authMode === "bearer" &&

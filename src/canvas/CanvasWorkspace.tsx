@@ -54,6 +54,7 @@ import {
   backendReferences,
   backendVideoMode,
   modelLabel,
+  serviceAudioSettings,
   serviceVoice,
 } from "../backend/rules.ts";
 import {
@@ -1404,16 +1405,18 @@ function Workspace() {
         : {};
     }
     if (kind !== "image" && kind !== "video" && kind !== "audio") return {};
-    return {
-      settings: applyModelResolution(
-        generationDefaults(kind),
-        resolveGenerationModel(
-          { modelConfigId: undefined },
-          kind,
-          backendCatalog.models,
-          assistantModels,
-        ),
+    const settings = applyModelResolution(
+      generationDefaults(kind),
+      resolveGenerationModel(
+        { modelConfigId: undefined },
+        kind,
+        backendCatalog.models,
+        assistantModels,
       ),
+    );
+    const config = backendModel(settings, backendCatalog.models);
+    return {
+      settings: config ? serviceAudioSettings(settings, config) : settings,
     };
   };
   const addNode = (

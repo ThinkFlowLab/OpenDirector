@@ -26,6 +26,9 @@ import {
   backendReferences,
   modelLabel,
   isGenerationModel,
+  isMusicModel,
+  MUSIC_SECONDS,
+  serviceAudioSettings,
   type ModelConfig,
 } from "../backend/rules.ts";
 import {
@@ -115,7 +118,12 @@ export function getNodeGenerationSettings(
   // has to be the resolved one: reading and running then agree, and reopening a
   // node never drifts to whatever the catalog happens to define.
   if (!models) return next;
-  return applyModelResolution(next, resolveGenerationModel(next, mode, models));
+  const resolved = applyModelResolution(
+    next,
+    resolveGenerationModel(next, mode, models),
+  );
+  const config = backendModel(resolved, models);
+  return config ? serviceAudioSettings(resolved, config) : resolved;
 }
 
 export function NodeComposer({
@@ -170,7 +178,10 @@ export function NodeComposer({
   const firstLast = mode === "video" && settings.videoMode === "first-last";
   // Service speech models only read text aloud.
   const music =
-    !backend && mode === "audio" && settings.audioCreationType === "music";
+    mode === "audio" &&
+    (backend
+      ? Boolean(config && isMusicModel(config))
+      : settings.audioCreationType === "music");
   const reading =
     mode === "audio" && !music && (backend || settings.audioMode === "tts");
   const frameCandidates = incomingNodes.filter(
@@ -182,7 +193,9 @@ export function NodeComposer({
       ? serviceSeconds.length
         ? { min: serviceSeconds[0]!, max: serviceSeconds.at(-1)!, step: 1 }
         : undefined
-      : model?.duration;
+      : backend && music
+        ? { min: MUSIC_SECONDS.min, max: MUSIC_SECONDS.max, step: 1 }
+        : model?.duration;
   const durationValues =
     backend && mode === "video"
       ? serviceSeconds
@@ -427,7 +440,7 @@ export function NodeComposer({
           onRun={() => {
             if (canRun && !running) onRun();
           }}
-          label={reading ? "朗读文本" : "生成提示词"}
+          label={reading ? "朗读文本" : music ? "音乐风格" : "生成提示词"}
           placeholder={
             mode === "image"
               ? "上传参考图、输入文字或 @ 主体，描述你想要生成的图片"
@@ -438,10 +451,24 @@ export function NodeComposer({
                 : reading
                   ? "输入需要朗读的文本…"
                   : music
-                    ? "描述音乐风格、情绪、节奏和乐器…"
+                    ? "描述音乐风格：流派、乐器、速度、情绪和人声…"
                     : "描述台词、音色和声音场景，可添加音频参考…"
           }
         />
+        {backend && music && (
+          <textarea
+            className="cw-prompt-input cw-lyrics-input"
+            aria-label="歌词"
+            value={settings.lyrics ?? ""}
+            maxLength={5000}
+            disabled={running}
+            spellCheck={false}
+            placeholder={
+              "歌词（可选，留空生成纯音乐）。段落标签单独成一行，例如：\n[verse]\n雨落在窗前\n[chorus]\n说不出的话，让旋律回答"
+            }
+            onChange={(event) => updateSettings({ lyrics: event.target.value })}
+          />
+        )}
       </div>
 
       <div className="cw-composer-footer">
@@ -487,7 +514,7 @@ export function NodeComposer({
             <span>
               {mode === "audio"
                 ? music
-                  ? `${settings.durationSeconds} 秒`
+                  ? `${backend ? "最长 " : ""}${settings.durationSeconds} 秒`
                   : reading
                     ? "文本朗读"
                     : "全能配音"
@@ -588,7 +615,7 @@ export function NodeComposer({
                 )}
               </>
             )}
-            {mode === "audio" && backend && (
+            {mode === "audio" && backend && !music && (
               <input
                 aria-label="服务音色"
                 value={settings.voiceName ?? ""}
@@ -795,12 +822,19 @@ export function NodeComposer({
           )}
           {music && (
             <div className="cw-parameter-section">
-              <span className="cw-field-label">时长</span>
+              <span className="cw-field-label">
+                {backend ? "最长时长（模型可能提前结束）" : "时长"}
+              </span>
               {duration ? (
                 <DurationControl
                   values={durationValues}
                   value={settings.durationSeconds}
                   disabled={running}
+                  scale={
+                    backend
+                      ? { min: 0, max: MUSIC_SECONDS.max, step: 60 }
+                      : undefined
+                  }
                   onChange={(durationSeconds) =>
                     updateSettings({ durationSeconds })
                   }

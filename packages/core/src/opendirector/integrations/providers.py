@@ -16,8 +16,8 @@ from opendirector.integrations.volcengine import VolcengineGeneration, bounded, 
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import OpenAISpeech
-from opendirector.domain.capabilities import SpeechRequest
+from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic
+from opendirector.domain.capabilities import MusicRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
 
@@ -134,6 +134,10 @@ class GenerationProviders(VolcengineGeneration):
                         if value.get('status') not in {'queued', 'in_progress', 'running'}:
                             raise protocol_failure('poll')
                         await asyncio.sleep(self.poll_interval)
+                if kind == 'audio' and task['parameters'].get('creation_type') == 'music':
+                    params = task['parameters']
+                    result = await VllmOmniMusic(self.transport).music(config, MusicRequest(task['prompt'], params.get('lyrics', ''), params['duration']))
+                    return result.suffix, result.data
                 if kind == 'audio':
                     result = await OpenAISpeech(self.transport).speech(config, SpeechRequest(task['prompt'], task['parameters'].get('voice')))
                     return result.suffix, result.data

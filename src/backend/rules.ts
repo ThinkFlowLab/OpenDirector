@@ -49,6 +49,7 @@ export interface ModelConfig {
     | "volcengine"
     | "vllm_omni"
     | "vllm_omni_segmentation"
+    | "vllm_omni_music"
     | null;
   authMode: "none" | "bearer" | null;
   inputRules: InputRules;
@@ -66,6 +67,32 @@ export function isSegmentationModel(
   model: Pick<ModelConfig, "kind" | "protocol">,
 ) {
   return model.kind === "vision" || model.protocol === "vllm_omni_segmentation";
+}
+
+/** vLLM-Omni music models read a style description and lyrics instead of text to speak. */
+export function isMusicModel(model: Pick<ModelConfig, "kind" | "protocol">) {
+  return model.kind === "audio" && model.protocol === "vllm_omni_music";
+}
+
+/** Music models count audio frames at 25 per second, between 200 and 9000 frames. */
+export const MUSIC_SECONDS = { min: 8, max: 360, initial: 30 } as const;
+
+/** The audio node's role follows its model: a music model composes, any other reads aloud. */
+export function serviceAudioSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+): GenerationSettings {
+  if (settings.mode !== "audio") return settings;
+  const music = isMusicModel(config);
+  const seconds = settings.durationSeconds;
+  return {
+    ...settings,
+    audioCreationType: music ? "music" : "audio",
+    audioMode: "tts",
+    ...(music && !(seconds >= MUSIC_SECONDS.min && seconds <= MUSIC_SECONDS.max)
+      ? { durationSeconds: MUSIC_SECONDS.initial }
+      : {}),
+  };
 }
 
 export function isGenerationModel(
@@ -325,10 +352,9 @@ export function serviceGenerationSettings(
     )
       next.resolution = "自动";
   }
+  next = serviceAudioSettings(next, config);
   if (modelChanged) {
     next.imagePreset = "none";
-    next.audioCreationType = "audio";
-    next.audioMode = "tts";
     if (!/^[A-Za-z0-9_.-]{1,64}$/.test(next.voiceName ?? ""))
       next.voiceName = undefined;
     if (config.protocol !== "volcengine") next.audioEnabled = true;
@@ -381,9 +407,11 @@ export function backendBlocker(
   if (!isGenerationModel(config))
     return "视觉分割模型仅用于选区、分割和抠像，请选择生成模型。";
   if (!settings.prompt.trim())
-    return settings.mode === "audio"
-      ? "请输入要合成的文字。"
-      : "请输入生成要求。";
+    return settings.mode !== "audio"
+      ? "请输入生成要求。"
+      : isMusicModel(config)
+        ? "请描述音乐风格。"
+        : "请输入要合成的文字。";
   const rules = config.inputRules;
   if (settings.mode === "image") {
     if (settings.imagePreset && settings.imagePreset !== "none")
@@ -394,7 +422,18 @@ export function backendBlocker(
     )
       return "当前图片适配器不支持所选比例或尺寸，请重新选择。";
   }
-  if (
+  if (settings.mode === "audio" && isMusicModel(config)) {
+    if (settings.audioCreationType !== "music")
+      return "所选模型用于音乐生成，请重新选择模型。";
+    if (
+      !(
+        settings.durationSeconds >= MUSIC_SECONDS.min &&
+        settings.durationSeconds <= MUSIC_SECONDS.max
+      )
+    )
+      return `音乐最长时长需在 ${MUSIC_SECONDS.min}–${MUSIC_SECONDS.max} 秒之间。`;
+    if ((settings.lyrics ?? "").length > 5000) return "歌词最多 5000 字。";
+  } else if (
     settings.mode === "audio" &&
     ((settings.audioCreationType && settings.audioCreationType !== "audio") ||
       (settings.audioMode && settings.audioMode !== "tts"))

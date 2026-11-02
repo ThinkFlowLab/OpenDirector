@@ -201,7 +201,31 @@ async def test_audio_voice_reaches_actual_protocol_and_reopens(project,protocol)
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('lyrics,expected', [('[verse]\n雨落在窗前', '[verse]\n雨落在窗前'), ('', '[intro]\n[verse]\n[chorus]\n[outro]')])
+async def test_music_style_lyrics_and_length_reach_vllm_omni_music(project,lyrics,expected):
+    store,pid,_=project
+    calls=[]
+    audio=subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','0.3','-ac','2','-threads','1','-f','mp3','pipe:1'],capture_output=True,check=True).stdout
+    def handler(request):
+        assert request.url.path=='/v1/audio/speech'
+        calls.append(json.loads(request.content))
+        return httpx.Response(200,content=audio)
+    runner,target,spec_id=setup(project,'audio',dict(creationType='music',lyrics=lyrics,durationSeconds=45),handler,protocol='vllm_omni_music',model='m-a-p/YuE2-3B')
+    try:
+        _,receipt=await submit(project,runner,target,spec_id)
+        assert receipt.status=='accepted',receipt
+        await done(runner)
+        job=store.snapshot(pid).jobs[-1]
+        assert job.status=='succeeded',job.errorDetails
+        assert calls==[{'model':'m-a-p/YuE2-3B','input':expected,'instructions':'Make an output','response_format':'mp3','max_new_tokens':1125}]
+        assert job.execution.creationType=='music' and job.execution.maxDurationSeconds==45
+        assert job.inputSnapshot.model.inputRules.profile=='vllm-omni-music'
+    finally: await runner.close()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize('kind,parameters,protocol', [
+    ('audio',dict(creationType='audio'), 'vllm_omni_music'),
     ('image',dict(aspectRatio='16:9'), 'openai'),
     ('image',dict(size='4096x4096'), 'openai'),
     ('image',dict(preset='product-views'), 'openai'),

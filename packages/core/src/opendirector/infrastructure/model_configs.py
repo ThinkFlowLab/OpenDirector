@@ -24,7 +24,7 @@ def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None
                             else 'vllm_omni' if connection_type == 'self_hosted' else 'volcengine')
     allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
                'video': {'vllm_omni', 'volcengine', 'vllm_omni_segmentation'},
-               'audio': {'openai', 'volcengine'}, 'vision': {'vllm_omni'}}
+               'audio': {'openai', 'volcengine', 'vllm_omni_music'}, 'vision': {'vllm_omni'}}
     auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
     if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'}:
         raise ProjectError('接口协议或鉴权方式与模型类别不兼容。')

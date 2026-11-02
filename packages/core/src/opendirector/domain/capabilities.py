@@ -10,7 +10,7 @@ from typing import Literal
 
 Capability = Literal[
     'text.chat', 'image.generate', 'image.edit', 'image.cutout', 'video.generate', 'video.first_frame', 'video.edit',
-    'audio.speech', 'image.segment', 'video.matting',
+    'audio.speech', 'audio.music', 'image.segment', 'video.matting',
     # Declared so operations can name what they lack; no current adapter offers them.
     'audio.separate', 'video.motion_capture',
 ]
@@ -23,6 +23,7 @@ LABELS: dict[str, str] = {
     'video.generate': '文生视频',
     'video.first_frame': '首帧生视频',
     'audio.speech': '语音合成',
+    'audio.music': '音乐生成',
     'image.segment': '图像分割',
     'video.edit': '视频局部重绘',
     'video.matting': '视频抠像',
@@ -130,6 +131,14 @@ class VideoEditRequest:
 class SpeechRequest:
     text: str
     voice: str | None = None
+
+
+@dataclass(frozen=True)
+class MusicRequest:
+    """A song or score from a style description; empty lyrics ask for an instrumental piece."""
+    style: str
+    lyrics: str = ''
+    max_seconds: float = 30
 
 
 @dataclass(frozen=True)

@@ -32,10 +32,18 @@ class VideoParameters(Contract):
     resolution: str = Field(default='auto', pattern=r'^(?:auto|[A-Z0-9][A-Z0-9_.-]{0,23})$')
 
 
+# Music models count audio frames at 25 per second, between 200 and 9000 frames.
+MUSIC_SECONDS = (8, 360)
+DEFAULT_MUSIC_SECONDS = 30
+
+
 class AudioParameters(Contract):
     creationType: Literal['audio', 'music'] = 'audio'
     mode: Literal['tts', 'unified'] = 'tts'
     voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
+    # Music only: the prompt is the style description; empty lyrics ask for an instrumental piece.
+    lyrics: str = Field(default='', max_length=5000)
+    durationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = None
 
 
 class PromptText(Contract):
@@ -198,6 +206,9 @@ class AudioExecution(Contract):
     speaker: str | None = None
     format: Literal['mp3', 'wav']
     sampleRate: PositiveInt | None = None
+    creationType: Literal['audio', 'music'] = 'audio'
+    # A music model may end the piece earlier than this cap.
+    maxDurationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = None
 
 
 class TextExecution(TextParameters):
@@ -312,7 +323,10 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         if spec.parameters.preset != 'none':
             raise ValueError('当前服务不支持产品三视图预设，请使用自由创作。')
         resolve_image_output(model.model_dump(), rules.model_dump(), spec.parameters.model_dump())
-    if spec.kind == 'audio' and (spec.parameters.creationType != 'audio' or spec.parameters.mode != 'tts'):
+    if spec.kind == 'audio' and rules.profile == 'vllm-omni-music':
+        if spec.parameters.creationType != 'music':
+            raise ValueError('所选模型用于音乐生成，请切换为音乐生成。')
+    elif spec.kind == 'audio' and (spec.parameters.creationType != 'audio' or spec.parameters.mode != 'tts'):
         raise ValueError('当前语音服务仅支持文本朗读。')
     if spec.kind == 'audio' and spec.promptContent is not None and not any(part.type == 'text' and part.text.strip() for part in spec.promptContent):
         raise ValueError('Speech generation requires actual text, not reference labels')

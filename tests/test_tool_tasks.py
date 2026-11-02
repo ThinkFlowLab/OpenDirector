@@ -89,6 +89,8 @@ def test_adapters_declare_capabilities_from_profiles_not_operations():
     assert capabilities_of(config(*ZIMAGE)) == {'image.generate', 'image.edit'}
     assert capabilities_of(config(*H3, protocol='vllm_omni')) == {'video.generate', 'video.first_frame', 'video.edit'}
     assert capabilities_of(config(*TTS)) == {'audio.speech'}
+    # Music models share /audio/speech with TTS; the protocol, not the model name, selects the role.
+    assert capabilities_of(config('audio', 'http://gpu:8240/v1', 'm-a-p/YuE2-3B', 'vllm_omni_music')) == {'audio.music'}
     assert capabilities_of(config(*CHAT)) == {'text.chat'}
     assert capabilities_of(config(*SAM3, protocol='vllm_omni')) == {'image.segment', 'video.matting'}
     assert capabilities_of(config('video', 'https://ark.cn-beijing.volces.com/api/plan/v3', 'doubao-seedance-2.0', None)) == set()

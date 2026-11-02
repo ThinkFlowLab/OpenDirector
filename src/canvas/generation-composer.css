@@ -101,3 +101,12 @@
   min-width: 0;
   min-height: 32px;
 }
+
+/* Music models take lyrics apart from the style prompt; tags sit on their own lines. */
+.cw-workspace .cw-composer .cw-prompt-input.cw-lyrics-input {
+  flex: 0 0 auto;
+  height: 72px;
+  padding-top: 6px;
+  border-top: 1px solid var(--cw-lyrics-divider, #ffffff1a);
+  font-family: inherit;
+}

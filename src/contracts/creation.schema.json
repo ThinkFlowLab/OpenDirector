@@ -751,6 +751,29 @@
             ],
             "default": null,
             "title": "Samplerate"
+          },
+          "creationType": {
+            "default": "audio",
+            "enum": [
+              "audio",
+              "music"
+            ],
+            "title": "Creationtype",
+            "type": "string"
+          },
+          "maxDurationSeconds": {
+            "anyOf": [
+              {
+                "maximum": 360,
+                "minimum": 8,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maxdurationseconds"
           }
         },
         "required": [
@@ -899,6 +922,26 @@
             ],
             "default": null,
             "title": "Voice"
+          },
+          "lyrics": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Lyrics",
+            "type": "string"
+          },
+          "durationSeconds": {
+            "anyOf": [
+              {
+                "maximum": 360,
+                "minimum": 8,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Durationseconds"
           }
         },
         "title": "AudioParameters",
@@ -6432,7 +6475,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -6542,7 +6586,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -6643,7 +6688,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -6726,7 +6772,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -12559,6 +12606,29 @@
             ],
             "default": null,
             "title": "Samplerate"
+          },
+          "creationType": {
+            "default": "audio",
+            "enum": [
+              "audio",
+              "music"
+            ],
+            "title": "Creationtype",
+            "type": "string"
+          },
+          "maxDurationSeconds": {
+            "anyOf": [
+              {
+                "maximum": 360,
+                "minimum": 8,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maxdurationseconds"
           }
         },
         "required": [
@@ -12566,7 +12636,9 @@
           "voice",
           "speaker",
           "format",
-          "sampleRate"
+          "sampleRate",
+          "creationType",
+          "maxDurationSeconds"
         ],
         "title": "AudioExecution",
         "type": "object"
@@ -12717,12 +12789,34 @@
             ],
             "default": null,
             "title": "Voice"
+          },
+          "lyrics": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Lyrics",
+            "type": "string"
+          },
+          "durationSeconds": {
+            "anyOf": [
+              {
+                "maximum": 360,
+                "minimum": 8,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Durationseconds"
           }
         },
         "required": [
           "creationType",
           "mode",
-          "voice"
+          "voice",
+          "lyrics",
+          "durationSeconds"
         ],
         "title": "AudioParameters",
         "type": "object"
@@ -18510,7 +18604,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -18609,7 +18704,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -18713,7 +18809,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"
@@ -18798,7 +18895,8 @@
               "openai",
               "volcengine",
               "vllm_omni",
-              "vllm_omni_segmentation"
+              "vllm_omni_segmentation",
+              "vllm_omni_music"
             ],
             "title": "Protocol",
             "type": "string"

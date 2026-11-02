@@ -14,8 +14,8 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
-from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, EditMask, ImageRequest, MediaResult, Segment, SegmentRequest,
-                                          SpeechRequest, TrackRequest, Tracks, VideoEditRequest, VideoRequest)
+from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, EditMask, ImageRequest, MediaResult, MusicRequest, Segment,
+                                          SegmentRequest, SpeechRequest, TrackRequest, Tracks, VideoEditRequest, VideoRequest)
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
@@ -63,6 +63,9 @@ class ModelAdapter:
 
     async def speech(self, config, request: SpeechRequest) -> MediaResult:
         raise ProjectError('所选模型不支持语音合成。', 409)
+
+    async def music(self, config, request: MusicRequest) -> MediaResult:
+        raise ProjectError('所选模型不支持音乐生成。', 409)
 
     async def chat(self, config, request: ChatRequest) -> str:
         raise ProjectError('所选模型不支持对话。', 409)
@@ -308,6 +311,33 @@ class OpenAISpeech(ModelAdapter):
         return MediaResult(await _call('submit', work), 'mp3')
 
 
+class VllmOmniMusic(ModelAdapter):
+    """vLLM-Omni music models (MiniMax Music 3, YuE2) on /audio/speech.
+
+    ``input`` carries the lyrics and ``instructions`` the style caption; both are
+    required. ``max_new_tokens`` caps the length in audio frames at 25 per second.
+    """
+
+    capabilities = frozenset({'audio.music'})
+    FRAMES_PER_SECOND = 25
+    # Section tags without words: the models need non-empty lyrics, and an
+    # arrangement with no sung text yields an instrumental piece.
+    INSTRUMENTAL = '[intro]\n[verse]\n[chorus]\n[outro]'
+
+    async def music(self, config, request: MusicRequest) -> MediaResult:
+        payload = {'model': config['modelId'], 'input': request.lyrics.strip() or self.INSTRUMENTAL,
+                   'instructions': request.style, 'response_format': 'mp3',
+                   'max_new_tokens': round(request.max_seconds * self.FRAMES_PER_SECOND)}
+
+        async def work():
+            # A full song is delivered only once the whole piece is rendered.
+            async with _client(self, config, timeout=1800) as client:
+                async with client.stream('POST', endpoint(config['url'], '/audio/speech'), headers=auth_headers(config),
+                                         json=payload) as response:
+                    return await bounded(response, stage='submit', secrets=(config.get('apiKey', ''),))
+        return MediaResult(await _call('submit', work), 'mp3')
+
+
 class OpenAIChat(ModelAdapter):
     """Non-streaming Chat Completions for short operation-internal requests."""
 
@@ -384,6 +414,8 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return OpenAIImages(transport, poll_interval)
     if kind == 'video' and profile == 'vllm-omni-h3':
         return VllmOmniVideo(transport, poll_interval)
+    if kind == 'audio' and profile == 'vllm-omni-music':
+        return VllmOmniMusic(transport, poll_interval)
     if kind == 'audio' and protocol in {'openai', 'vllm_omni'}:
         return OpenAISpeech(transport, poll_interval)
     return None

@@ -63,7 +63,10 @@ def _adapter_rules(config):
         # documents are inlined as text and reference images are not accepted.
         rules.update(profile='vllm-omni-image', allowedKinds=['text'], maxImages=0)
     if kind == 'audio':
-        rules.update(profile='tts', allowedKinds=[], maxImages=0)
+        # vLLM-Omni music models (MiniMax Music 3, YuE2) share /audio/speech with
+        # TTS but read a style caption and lyrics, so the protocol names the role.
+        music = config.get('protocol') == 'vllm_omni_music'
+        rules.update(profile='vllm-omni-music' if music else 'tts', allowedKinds=[], maxImages=0)
     return rules
 
 

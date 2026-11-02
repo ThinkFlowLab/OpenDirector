@@ -29,6 +29,7 @@ import {
 import { mediaBlobDataUrl } from "../canvas/localMediaRuntime.ts";
 import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
 import { assemblyResource } from "../canvas/editorAssembly.ts";
+import { MUSIC_SECONDS } from "./rules.ts";
 import {
   assetReference,
   CreationClient,
@@ -585,6 +586,14 @@ export class CreationProjection {
                     voiceName: spec.parameters.voice ?? undefined,
                     audioCreationType: spec.parameters.creationType,
                     audioMode: spec.parameters.mode,
+                    ...(spec.parameters.creationType === "music"
+                      ? {
+                          lyrics: spec.parameters.lyrics,
+                          durationSeconds:
+                            spec.parameters.durationSeconds ??
+                            MUSIC_SECONDS.initial,
+                        }
+                      : {}),
                   }
                 : {}),
             };
@@ -760,6 +769,13 @@ export class CreationProjection {
             voice: node.data.settings?.voiceName ?? null,
             creationType: node.data.settings?.audioCreationType ?? "audio",
             mode: node.data.settings?.audioMode ?? "tts",
+            ...(node.data.settings?.audioCreationType === "music"
+              ? {
+                  lyrics: node.data.settings.lyrics ?? "",
+                  durationSeconds:
+                    node.data.settings.durationSeconds ?? MUSIC_SECONDS.initial,
+                }
+              : {}),
           },
         };
       case "video": {
