@@ -96,6 +96,13 @@ npm.cmd run build
 .\.venv\Scripts\python.exe scripts/opendirector.py serve
 ```
 
+If `node -v` reports a version below `24.22.1`, install the version pinned in
+`.nvmrc` first; on Windows the official Node.js zip works without administrator
+rights. If `npm ci` fails with `ECONNRESET`, point npm at a mirror
+(`npm config set registry <mirror-url>`) and retry. Running the test suite on
+Windows additionally needs Developer Mode, because some tests create symbolic
+links.
+
 If the `py` command is unavailable but Python is on your PATH, create the virtual environment with `python -m venv .venv`.
 
 Open the address shown in the terminal in your browser. The default is <http://127.0.0.1:8000>. Keep the terminal running while using the application; press `Ctrl+C` to stop it.

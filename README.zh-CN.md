@@ -96,6 +96,11 @@ npm.cmd run build
 .\.venv\Scripts\python.exe scripts/opendirector.py serve
 ```
 
+如果 `node -v` 低于 `24.22.1`，先安装 `.nvmrc` 指定的版本；Windows 上使用官方 zip
+包即可，无需管理员权限。若 `npm ci` 报 `ECONNRESET`，把 npm 源切换到镜像
+（`npm config set registry <镜像地址>`）后重试。在 Windows 上运行测试还需要开启
+“开发者模式”，因为部分测试会创建符号链接。
+
 如果系统没有 `py` 命令，但已将 Python 加入 PATH，创建虚拟环境时使用 `python -m venv .venv`。
 
 在浏览器打开终端显示的地址，默认是 <http://127.0.0.1:8000>。使用期间保持终端运行，按 `Ctrl+C` 退出。
