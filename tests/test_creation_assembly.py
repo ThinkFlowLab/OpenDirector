@@ -134,7 +134,7 @@ def test_typescript_and_python_publish_the_same_type_matrix():
     import json
     from pathlib import Path
     import re
-    code = (Path(__file__).resolve().parents[1] / 'src/canvas/connectionPolicy.ts').read_text()
+    code = (Path(__file__).resolve().parents[1] / 'src/canvas/connectionPolicy.ts').read_text(encoding='utf-8')
     table = code.split('> = {', 1)[1].split('};', 1)[0]
     pairs = re.findall(r'(\w+):\s*(\[[^\]]*\])', table)
     assert {kind: set(json.loads(values)) for kind, values in pairs} == DOWNSTREAM

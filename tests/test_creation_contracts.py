@@ -132,7 +132,7 @@ def test_all_retained_nodes_and_editors_roundtrip_and_share_base():
 
 
 def test_cross_language_fixture_matches_normalized_python_contract():
-    assert json.loads((ROOT / 'tests/fixtures/creation-project.json').read_text()) == wire()
+    assert json.loads((ROOT / 'tests/fixtures/creation-project.json').read_text(encoding='utf-8')) == wire()
 
 
 @pytest.mark.parametrize(('role', 'action', 'expected'), [
@@ -420,7 +420,7 @@ def test_delete_requires_impact_preview_and_rejected_receipt_cannot_claim_change
 
 def test_generated_schemas_are_current_and_distinguish_defaults():
     subprocess.run([sys.executable, str(ROOT / 'scripts/generate_contracts.py'), '--check'], check=True, cwd=ROOT)
-    catalog = json.loads((ROOT / 'src/contracts/creation.schema.json').read_text())
+    catalog = json.loads((ROOT / 'src/contracts/creation.schema.json').read_text(encoding='utf-8'))
     assert 'width' not in catalog['input']['$defs']['ImageCanvasItem']['required']
     assert 'width' in catalog['output']['$defs']['ImageCanvasItem']['required']
     assert catalog['input']['$defs']['CanvasShow']['properties']['item']['discriminator']['propertyName'] == 'kind'

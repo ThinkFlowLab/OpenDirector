@@ -130,11 +130,13 @@ def main():
     stale = []
     for path, contents in artifacts().items():
         if args.check:
-            if not path.is_file() or path.read_text() != contents:
+            if not path.is_file() or path.read_text(encoding='utf-8') != contents:
                 stale.append(str(path.relative_to(ROOT)))
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(contents)
+            # Generated contracts contain non-ASCII text; the locale default (GBK on
+            # Chinese Windows) cannot round-trip them.
+            path.write_text(contents, encoding='utf-8')
     if stale:
         parser.error('Out-of-date generated contracts: ' + ', '.join(stale))
     print('Creation contracts ' + ('verified' if args.check else 'generated'))
