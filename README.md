@@ -58,6 +58,10 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 
 Installing dependencies and calling remote models require a network connection. Prepare self-hosted model services separately; starting this application does not install or deploy models.
 
+MP4 export needs a browser with an H.264 WebCodecs encoder. Chrome and Edge
+provide one; Firefox does not, so Firefox can be used for the canvas, generation
+and editing, but the final export must run in Chrome or Edge.
+
 First, check that the media tools are available:
 
 ```sh

@@ -58,6 +58,9 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 
 安装依赖和调用远程模型需要网络。自部署模型服务需另外准备，启动本应用不会自动安装或部署模型。
 
+合成 MP4 需要浏览器提供 H.264 的 WebCodecs 编码器。Chrome 与 Edge 具备该能力，
+Firefox 不具备：Firefox 可用于画布、生成与编辑，但最终导出需在 Chrome 或 Edge 中完成。
+
 先确认媒体工具可用：
 
 ```sh
