@@ -2,9 +2,7 @@
  * Set PLAYWRIGHT_MODULE and CHROMIUM_PATH when using an existing installation.
  */
 import assert from "node:assert/strict";
-const { chromium } = await import(
-  process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
-);
+import { launchBrowser } from "../tests/browser/engine.mjs";
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 const api = process.env.CREATION_API_URL ?? "http://127.0.0.1:8019";
 const headers = {
@@ -27,13 +25,7 @@ assert.equal(
   true,
   "Use the isolated fixture server",
 );
-const browser = await chromium.launch({
-  headless: true,
-  ...(process.env.CHROMIUM_PATH
-    ? { executablePath: process.env.CHROMIUM_PATH }
-    : {}),
-  args: ["--no-sandbox"],
-});
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 page.setDefaultTimeout(15000);
 const errors = [];

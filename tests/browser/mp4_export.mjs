@@ -3,18 +3,10 @@
  * Set PLAYWRIGHT_MODULE, CHROMIUM_PATH and CREATION_WEB_URL when needed.
  */
 import assert from "node:assert/strict";
-const { chromium } = await import(
-  process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
-);
+import { launchBrowser } from "./engine.mjs";
 const web = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 
-const browser = await chromium.launch({
-  headless: true,
-  ...(process.env.CHROMIUM_PATH
-    ? { executablePath: process.env.CHROMIUM_PATH }
-    : {}),
-  args: ["--no-sandbox", "--disable-dev-shm-usage"],
-});
+const browser = await launchBrowser();
 const page = await browser.newPage();
 page.setDefaultTimeout(180000);
 try {
