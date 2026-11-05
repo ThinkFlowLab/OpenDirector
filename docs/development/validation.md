@@ -69,6 +69,7 @@ node scripts/verify_creation_browser.mjs       # UI/API 主流程与重载
 node tests/browser/reference_reconnect.mjs     # 参考连线删除后重连
 node tests/browser/context_menu_dismissal.mjs  # 右键菜单关闭
 node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件 AAC）
+node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选适配器的比例与尺寸
 ```
 
 `mp4_export.mjs` 以 640x360 渲染：没有 GPU 的无头浏览器只在该尺寸暴露 H.264
