@@ -105,11 +105,9 @@ try {
   const videoId = created.canvasItems.find(
     (item) => !images.includes(item.id),
   ).id;
-  const picked = await page
-    .getByRole("combobox", { name: "生成模型", exact: true })
-    .textContent();
-  if (!picked.includes("MiniMax-H3"))
-    await chooseGenerationModel(page, { label: "MiniMax-H3" });
+  // Other checks may register their own MiniMax-H3 configs on the shared
+  // fixture, so pick this exact configuration by id rather than by name.
+  await chooseGenerationModel(page, `config:${minimax.id}`);
   await page
     .getByLabel("视频创作模式", { exact: true })
     .selectOption("first-last");
