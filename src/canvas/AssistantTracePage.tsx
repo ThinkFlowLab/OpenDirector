@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { traceCategory } from "./traceCategory.ts";
+import { useT } from "../i18n/I18nProvider";
 
 import { normalizeDeepseekTrace } from "./deepseekTrace.ts";
 
@@ -31,19 +32,21 @@ type TraceRecord = {
   };
 };
 
-const labels: Record<string, [string, string]> = {
-  system: ["系统", "System"], user: ["用户", "User"], context: ["上下文", "Context"],
-  assistant: ["助手", "Assistant"], tool: ["工具", "Tool"], model: ["模型", "Model"],
-  event: ["事件", "Event"], reasoning: ["思考", "Thinking"],
-};
+const labels = {
+  system: "assistant.trace.kind.system", user: "assistant.trace.kind.user",
+  context: "assistant.trace.kind.context", assistant: "assistant.trace.kind.assistant",
+  tool: "assistant.trace.kind.tool", model: "assistant.trace.kind.model",
+  event: "assistant.trace.kind.event", reasoning: "assistant.trace.kind.reasoning",
+} as const;
 
-function TraceRow({ kind, summary, value, chinese }: {
-  kind: string; summary: string; value: unknown; chinese: boolean;
+function TraceRow({ kind, summary, value }: {
+  kind: keyof typeof labels; summary: string; value: unknown;
 }) {
+  const t = useT();
   return (
     <details className="cw-trace-row">
       <summary>
-        <span className={`cw-trace-badge is-${kind}`}>{labels[kind][chinese ? 0 : 1]}</span>
+        <span className={`cw-trace-badge is-${kind}`}>{t(labels[kind])}</span>
         <span className="cw-trace-preview">{summary}</span>
       </summary>
       <pre>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>
@@ -51,7 +54,8 @@ function TraceRow({ kind, summary, value, chinese }: {
   );
 }
 
-function TraceEntries({ traces, chinese, rawModel }: { traces: string[]; chinese: boolean; rawModel: boolean }) {
+function TraceEntries({ traces, rawModel }: { traces: string[]; rawModel: boolean }) {
+  const t = useT();
   const entries = useMemo(() => {
     const parsed = traces.flatMap((trace, sourceIndex) => {
     let timestamp = 0;
@@ -93,9 +97,9 @@ function TraceEntries({ traces, chinese, rawModel }: { traces: string[]; chinese
         message.role === "user" && message.content === "Generate a title for this conversation:");
       if (rawModel) {
         request++;
-        const label = titleRequest ? (chinese ? "生成会话标题" : "Generate conversation title") :
-          (chinese ? `第 ${request} 次模型请求` : `Model request ${request}`);
-        return <TraceRow key={key} kind="model" summary={`${label} · ${payload.model ?? ""}`} value={record} chinese={chinese} />;
+        const label = titleRequest ? t("assistant.trace.titleRequest") :
+          t("assistant.trace.modelRequest", { count: request });
+        return <TraceRow key={key} kind="model" summary={`${label} · ${payload.model ?? ""}`} value={record} />;
       }
       const thoughts = (payload.messages ?? []).flatMap((message, index) => {
         const text = message.reasoning_content?.trim();
@@ -104,7 +108,7 @@ function TraceEntries({ traces, chinese, rawModel }: { traces: string[]; chinese
         if (seenReasoning.has(identity)) return [];
         seenReasoning.add(identity);
         if (hasStreamedReasoning || firstModelRequest || titleRequest) return [];
-        return [<TraceRow key={`reasoning:${index}`} kind="reasoning" summary={text} value={text} chinese={chinese} />];
+        return [<TraceRow key={`reasoning:${index}`} kind="reasoning" summary={text} value={text} />];
       });
       if (!titleRequest) firstModelRequest = false;
       const inputs = titleRequest ? [] : (payload.messages ?? []).flatMap((message, index) => {
@@ -114,34 +118,34 @@ function TraceEntries({ traces, chinese, rawModel }: { traces: string[]; chinese
         seenInputs.add(identity);
         const content = typeof message.content === "string" ? message.content : identity;
         return [<TraceRow key={index} kind="system"
-          summary={chinese ? "系统提示词" : "System prompt"}
-          value={content} chinese={chinese} />];
+          summary={t("assistant.trace.systemPrompt")}
+          value={content} />];
       });
       const toolsKey = payload.tools?.length ? JSON.stringify(payload.tools) : undefined;
       if (toolsKey && !seenInputs.has(toolsKey)) {
         seenInputs.add(toolsKey);
         inputs.push(<TraceRow key="tools" kind="context"
-          summary={chinese ? `工具定义 · ${payload.tools?.length}` : `Tool definitions · ${payload.tools?.length}`}
-          value={payload.tools} chinese={chinese} />);
+          summary={t("assistant.trace.toolDefinitions", { count: payload.tools?.length ?? 0 })}
+          value={payload.tools} />);
       }
       return <div key={key}>{thoughts}{inputs}</div>;
     }
     const type = record?.native?.event_type ?? record?.native?.type ?? record?.event ?? record?.type;
     const part = record?.native?.part;
     if (type === "model.reasoning" && record?.text) {
-      return <TraceRow key={key} kind="reasoning" summary={record.text.trim()} value={record.text} chinese={chinese} />;
+      return <TraceRow key={key} kind="reasoning" summary={record.text.trim()} value={record.text} />;
     }
     if (!rawModel && type?.startsWith("model.")) return null;
     if (type === "reasoning" && part?.text?.trim()) {
       if (hasStreamedReasoning) return null;
-      return <TraceRow key={key} kind="reasoning" summary={part.text.trim()} value={part.text} chinese={chinese} />;
+      return <TraceRow key={key} kind="reasoning" summary={part.text.trim()} value={part.text} />;
     }
     const assistantText = type === "text" || type === "reasoning" ? part?.text :
       type === "item.completed" && record?.native?.item?.type === "agent_message" ? record.native.item.text :
       type === "assistant" ? record?.native?.message?.content
         ?.filter((block) => block.type === "text").map((block) => block.text).join("\n") : undefined;
     if (assistantText?.trim()) {
-      return <TraceRow key={key} kind="assistant" summary={assistantText.trim()} value={assistantText} chinese={chinese} />;
+      return <TraceRow key={key} kind="assistant" summary={assistantText.trim()} value={assistantText} />;
     }
     if (type === "step_start" || type === "text" || type === "reasoning") return null;
     const kind = traceCategory(
@@ -153,7 +157,7 @@ function TraceEntries({ traces, chinese, rawModel }: { traces: string[]; chinese
       part?.state?.status ?? part?.reason ?? record?.error ?? record?.status,
       record?.elapsedMs === undefined ? undefined : `${record.elapsedMs} ms`,
     ].filter(Boolean).join(" · ") || line;
-    return <TraceRow key={key} kind={kind} summary={summary} value={record ?? line} chinese={chinese} />;
+    return <TraceRow key={key} kind={kind} summary={summary} value={record ?? line} />;
   });
 }
 
@@ -167,7 +171,7 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
   const [showModel, setShowModel] = useState(false);
   const rawModel = runtime === "opencode" && showModel;
   const [status, setStatus] = useState<number | null>(null);
-  const chinese = navigator.language.startsWith("zh");
+  const t = useT();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -213,31 +217,31 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
   return (
     <main className="cw-trace-page">
       <header className="cw-trace-header">
-      <h1>{chinese ? "助手轨迹" : "Assistant trace"}</h1>
+      <h1>{t("assistant.trace.title")}</h1>
       <p><code>{turn}</code></p>
       {runtime === "opencode" && (
-        <nav className="cw-trace-tabs" aria-label={chinese ? "轨迹视图" : "Trace views"}>
+        <nav className="cw-trace-tabs" aria-label={t("assistant.trace.views")}>
           <button type="button" aria-pressed={!rawModel} onClick={() => setShowModel(false)}>
-            {chinese ? "助手轨迹" : "Assistant trace"}
+            {t("assistant.trace.title")}
           </button>
           <button type="button" aria-pressed={rawModel} onClick={() => setShowModel(true)}>
-            {chinese ? "模型原始请求" : "Raw model requests"}
+            {t("assistant.trace.rawRequests")}
           </button>
         </nav>
       )}
       </header>
-      {!rawModel && input !== null && <TraceRow kind="user" summary={input} value={input} chinese={chinese} />}
+      {!rawModel && input !== null && <TraceRow kind="user" summary={input} value={input} />}
       {status === 200 ? (
         rawModel && !traces[0]?.trim() ? (
-          <p role="status">{chinese ? "该轮暂无模型请求记录。" : "No model requests recorded for this turn."}</p>
+          <p role="status">{t("assistant.trace.noModelRequests")}</p>
         ) : (
-          <TraceEntries traces={rawModel ? traces.slice(0, 1) : traces} chinese={chinese} rawModel={rawModel} />
+          <TraceEntries traces={rawModel ? traces.slice(0, 1) : traces} rawModel={rawModel} />
         )
       ) : (
-        <p role="status">{status === null ? (chinese ? "加载中…" : "Loading…") :
-          status === 404 && live ? (chinese ? "等待首条轨迹…" : "Waiting for trace events…") :
-          status === 404 ? (chinese ? "该轮没有此类轨迹。" : "No trace of this type for this turn.") :
-          (chinese ? "轨迹加载失败。" : "Could not load trace.")}</p>
+        <p role="status">{status === null ? t("assistant.trace.loading") :
+          status === 404 && live ? t("assistant.trace.waiting") :
+          status === 404 ? t("assistant.trace.missing") :
+          t("assistant.trace.failed")}</p>
       )}
     </main>
   );

@@ -1,5 +1,8 @@
 /** Semantic colors are shared by every harness, independent of its event names. */
-export function traceCategory(type?: string, role?: string): string {
+export type TraceCategory =
+  | "system" | "user" | "context" | "reasoning" | "tool" | "assistant" | "model" | "event";
+
+export function traceCategory(type?: string, role?: string): TraceCategory {
   if (role === "system" || role === "developer" || type === "system") return "system";
   if (role === "user" || type === "user" || type === "user_message") return "user";
   if (type === "plan" || type === "context" || type === "session_meta" || type === "turn_context") return "context";
