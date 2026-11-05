@@ -1238,8 +1238,12 @@ export class CreationProjection {
                 // A canvas archive carried this generation node's picture in
                 // with the source it was exported from. Declaring it here lets
                 // the backend keep the generation binding without inventing a
-                // job, which a plain upload could never justify.
-                importedFrom: this.archiveSource(node),
+                // job, which a plain upload could never justify. Only a node
+                // the project does not hold yet can come from an archive: an
+                // existing item's new picture (a crop or layer edit output, a
+                // replaced file) is an ordinary upload, and marking it as
+                // imported makes the backend reject the edit.
+                importedFrom: item ? undefined : this.archiveSource(node),
               });
           if (layerEdit && source) {
             editedOutputs.set(node.id, {
