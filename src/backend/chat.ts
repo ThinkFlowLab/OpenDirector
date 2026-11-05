@@ -154,7 +154,15 @@ export async function chatRuntimes(id: string, onUpdate?: (items: RuntimeInfo[])
   }));
   return rows;
 }
-export const conversation = (id: string) => request<Conversation>(path(id));
+/** The saved conversation, plus the turn still running for it, if any. */
+export async function conversation(
+  id: string,
+): Promise<{ conversation: Conversation; activeTurnId: string | null }> {
+  const { activeTurnId, ...saved } = await request<
+    Conversation & { activeTurnId?: string }
+  >(path(id));
+  return { conversation: saved, activeTurnId: activeTurnId ?? null };
+}
 export const saveChatDraft = (id: string, draft: ChatDraft) =>
   request(path(id) + "/draft", json("PUT", draft));
 export const chatSkills = (id: string, signal?: AbortSignal) =>
@@ -173,6 +181,37 @@ export async function streamChat(
     headers: { ...headers, "Content-Type": "application/json" },
     signal,
   });
+  await readChatEvents(response, onEvent, t);
+}
+
+/** Thrown when the turn already ended; read the conversation instead. */
+export class ChatTurnEnded extends Error {}
+
+/**
+ * Attach to a turn that is still running, for example after returning to the
+ * project. The server replays the turn from its start event; closing this
+ * stream only detaches the viewer and never stops the Agent.
+ */
+export async function attachChat(
+  id: string,
+  turn: string,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+) {
+  const response = await fetch("/api" + path(id) + `/turns/${turn}/events`, {
+    headers,
+    signal,
+  });
+  if (response.status === 404) throw new ChatTurnEnded();
+  await readChatEvents(response, onEvent, t);
+}
+
+async function readChatEvents(
+  response: Response,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate,
+) {
   if (!response.ok) throw await responseError(response);
   if (!response.body) throw new Error(t("assistant.stream.unavailable"));
   const reader = response.body.getReader();

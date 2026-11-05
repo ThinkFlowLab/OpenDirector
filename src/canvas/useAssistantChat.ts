@@ -2,6 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { rememberAgentSelection, restoreAgentSelection } from "./agentPreferences";
 import { errorMessage } from "../backend/api";
 import {
+  attachChat,
+  ChatTurnEnded,
+  type ChatEvent,
   conversation,
   conversations,
   activateConversation,
@@ -51,10 +54,15 @@ const empty = (): Conversation => ({
   modelSelections: {},
 });
 
-function restoreConversation(projectId: string, saved: Conversation): Conversation {
+/** A streaming reply is interrupted unless its turn is still running on the server. */
+function restoreConversation(
+  projectId: string,
+  saved: Conversation,
+  running = false,
+): Conversation {
   return {
     ...restoreAgentSelection(projectId, saved),
-    messages: saved.messages.map(message => message.status === "streaming"
+    messages: saved.messages.map(message => message.status === "streaming" && !running
       ? { ...message, status: "interrupted" } : message),
   };
 }
@@ -92,6 +100,7 @@ export function useAssistantChat(
   const submitting = useRef(false);
   const uploading = useRef(false);
   const turnId = useRef<string | null>(null);
+  const resume = useRef<(turn: string) => Promise<void>>(async () => {});
   const current = useRef(value);
   current.current = value;
   // Retain metadata for editor undo after a reference is removed from the draft.
@@ -171,10 +180,12 @@ export function useAssistantChat(
       });
     void refreshConversations();
     void conversation(projectId)
-      .then((saved) => {
+      .then(({ conversation: saved, activeTurnId }) => {
         if (cancelled) return;
-        setValue(restoreConversation(projectId, saved));
+        setValue(restoreConversation(projectId, saved, Boolean(activeTurnId)));
         setLoaded(true);
+        // Navigation only detached the previous view; pick the run back up.
+        if (activeTurnId) void resume.current(activeTurnId);
       })
       .catch((reason) => {
         if (!cancelled)
@@ -185,7 +196,16 @@ export function useAssistantChat(
     return () => {
       cancelled = true;
       alive.current = false;
+      // Closing the stream detaches this view only; the server keeps the
+      // turn running. Release the turn now so the next project starts idle.
       controller.current?.abort();
+      controller.current = null;
+      submitting.current = false;
+      turnId.current = null;
+      setSending(false);
+      setStarted(false);
+      setStopping(false);
+      setThinkingNow(false);
       uploadController.current?.abort();
       listController.current?.abort();
     };
@@ -398,18 +418,8 @@ export function useAssistantChat(
       !current.current.draft.trim()
     )
       return;
-    submitting.current = true;
-    setSending(true);
-    setStarted(false);
-    setError("");
-    setThinkingNow(false);
-    const abort = new AbortController();
-    controller.current = abort;
-    const id = crypto.randomUUID();
-    turnId.current = id;
     const input = current.current;
-    const assistantId = crypto.randomUUID();
-    try {
+    await follow(crypto.randomUUID(), async (id, signal, onEvent) => {
       await flushChatDraft(projectId);
       await streamChat(
         projectId,
@@ -426,6 +436,47 @@ export function useAssistantChat(
           modelSelections: input.modelSelections,
           skills: input.skills ?? [],
         },
+        signal,
+        onEvent,
+        t,
+      );
+    });
+  };
+  /** Re-attach to a turn that kept running while this project was not shown. */
+  resume.current = async (id: string) => {
+    if (switching.current || submitting.current) return;
+    await follow(id, async (turn, signal, onEvent) => {
+      try {
+        await attachChat(projectId, turn, signal, onEvent, t);
+      } catch (reason) {
+        if (!(reason instanceof ChatTurnEnded)) throw reason;
+        // It finished in between: the saved conversation has the final reply.
+        const { conversation: saved } = await conversation(projectId);
+        if (alive.current && !signal.aborted)
+          setValue(restoreConversation(projectId, saved));
+      }
+    });
+  };
+  const follow = async (
+    id: string,
+    run: (
+      id: string,
+      signal: AbortSignal,
+      onEvent: (event: ChatEvent) => void,
+    ) => Promise<void>,
+  ) => {
+    submitting.current = true;
+    setSending(true);
+    setStarted(false);
+    setError("");
+    setThinkingNow(false);
+    const abort = new AbortController();
+    controller.current = abort;
+    turnId.current = id;
+    const assistantId = crypto.randomUUID();
+    try {
+      await run(
+        id,
         abort.signal,
         (event) => {
           if (!alive.current) return;
@@ -479,16 +530,20 @@ export function useAssistantChat(
             if (event.error) setError(displayError(event.error));
           }
         },
-        t,
       );
     } catch (reason) {
       if (alive.current && !abort.signal.aborted)
         setError(displayError(errorMessage(reason)));
     } finally {
-      submitting.current = false;
-      turnId.current = null;
-      controller.current = null;
-      if (alive.current) {
+      // A newer view may already own these refs after a project switch.
+      if (controller.current === abort) {
+        submitting.current = false;
+        turnId.current = null;
+        controller.current = null;
+      }
+      if (alive.current && !abort.signal.aborted) {
+        // Aborting only detaches this view (project switch, unmount); the
+        // turn keeps running on the server and is resumed on return.
         setSending(false);
         setStarted(false);
         setStopping(false);

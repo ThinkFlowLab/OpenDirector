@@ -205,15 +205,69 @@ def test_stop_releases_project_after_saving_partial_reply(assistant, monkeypatch
     assert frames(reply)[-1]['conversation']['messages'][-1]['text'] == '新回复'
 
 
-def test_sse_disconnect_saves_partial_reply_and_releases_project(assistant, monkeypatch):
+def test_sse_disconnect_keeps_the_run_and_a_new_stream_resumes_it(assistant, monkeypatch):
+    """#81: leaving the project closes the stream but must not stop the Agent."""
+    client, path, _ = assistant
+    release, attached = threading.Event(), threading.Event()
+    async def stream(self, run):
+        yield {'type': 'delta', 'text': '断线前的回复'}
+        await asyncio.to_thread(release.wait, 10)
+        yield {'type': 'delta', 'text': '，返回后完成'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    follow, calls = agent.RunEvents.follow, []
+    async def counted(self):
+        calls.append(self)
+        if len(calls) > 1:
+            attached.set()
+        async for item in follow(self):
+            yield item
+    monkeypatch.setattr(agent.RunEvents, 'follow', counted)
+    turn_id = str(uuid4())
+    disconnect_turn(client, path, turn_id)
+
+    current = client.get(path).json()
+    assert current['activeTurnId'] == turn_id
+    assert current['messages'][-1]['status'] == 'streaming'
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 409
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.get, path + f'/turns/{turn_id}/events')
+        try:
+            assert attached.wait(5)
+        finally:
+            release.set()
+        events = frames(pending.result(timeout=10))
+    assert events[0]['type'] == 'start'
+    assert [item['text'] for item in events if item['type'] == 'delta'] == ['断线前的回复', '，返回后完成']
+    saved = events[-1]['conversation']['messages'][-1]
+    assert events[-1]['type'] == 'end' and events[-1]['error'] is None
+    assert saved['status'] == 'complete' and saved['text'] == '断线前的回复，返回后完成'
+    assert 'activeTurnId' not in client.get(path).json()
+    assert client.get(path + f'/turns/{turn_id}/events').status_code == 404
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+
+
+def test_explicit_stop_after_disconnect_still_stops_the_run(assistant, monkeypatch):
     client, path, _ = assistant
     async def stream(self, run):
         yield {'type': 'delta', 'text': '断线前的回复'}
         await asyncio.Event().wait()
     monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    turn_id = str(uuid4())
+    disconnect_turn(client, path, turn_id)
+    assert client.get(path).json()['activeTurnId'] == turn_id
+    assert client.post(path + f'/turns/{turn_id}/stop').status_code == 200
+    current = client.get(path).json()
+    assert 'activeTurnId' not in current
+    assert current['messages'][-1]['status'] == 'stopped'
+    assert current['messages'][-1]['text'] == '断线前的回复'
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+
+
+def disconnect_turn(client, path, turn_id):
+    """Start a turn over raw ASGI and close the stream after its first delta."""
     async def disconnect():
         disconnected = asyncio.Event()
-        body = json.dumps({'id': str(uuid4()), 'runtime': 'default', 'text': '断线测试'}).encode()
+        body = json.dumps({'id': turn_id, 'runtime': 'default', 'text': '断线测试'}).encode()
         requested = False
         async def receive():
             nonlocal requested
@@ -235,7 +289,3 @@ def test_sse_disconnect_saves_partial_reply_and_releases_project(assistant, monk
         await asyncio.wait_for(client.app(scope, receive, send_event), 5)
         assert disconnected.is_set()
     client.portal.call(disconnect)
-    saved = client.get(path).json()['messages'][-1]
-    assert saved['status'] == 'stopped'
-    assert saved['text'] == '断线前的回复'
-    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200

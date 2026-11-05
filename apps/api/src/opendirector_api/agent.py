@@ -149,6 +149,35 @@ class ConversationCreate(BaseModel):
     id: UUID
 
 
+class RunEvents:
+    """Events of one accepted turn, kept until the turn ends.
+
+    The run belongs to the project, not to the HTTP request that started it:
+    leaving the project closes the stream, and returning attaches a new one that
+    replays from the beginning. Only an explicit stop cancels the run.
+    """
+
+    def __init__(self):
+        self.items: list[dict] = []
+        self.changed = asyncio.Event()
+
+    def put(self, event: dict) -> None:
+        self.items.append(event)
+        self.changed.set()
+        self.changed = asyncio.Event()
+
+    async def follow(self):
+        index = 0
+        while True:
+            while index < len(self.items):
+                event = self.items[index]
+                index += 1
+                yield 'data: ' + json.dumps(event, ensure_ascii=False) + '\n\n'
+                if event['type'] == 'end':
+                    return
+            await self.changed.wait()
+
+
 def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
     router = APIRouter(prefix='/api/creation/projects/{project_id}/assistant')
     conversations = Conversations(projects)
@@ -174,12 +203,18 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             raise ProjectError('轨迹文件不存在。', 404)
         return FileResponse(file, media_type='text/plain', headers={'Cache-Control': 'no-store'})
 
-    active: dict[UUID, tuple[UUID, asyncio.Task]] = {}
+    active: dict[UUID, tuple[UUID, asyncio.Task, RunEvents]] = {}
     admission: dict[UUID, asyncio.Lock] = {}
 
     @router.get('')
     async def conversation(project_id: UUID):
-        return await asyncio.to_thread(conversations.update, project_id)
+        value = await asyncio.to_thread(conversations.update, project_id)
+        running = active.get(project_id)
+        # A streaming message without an active turn was interrupted (for
+        # example by a restart); with one, the client can attach to it.
+        if running and not running[1].done():
+            value = {**value, 'activeTurnId': str(running[0])}
+        return value
 
     @router.get('/conversations')
     async def list_conversations(project_id: UUID):
@@ -244,6 +279,14 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                     await running[1]
         return {'ok': True}
 
+    @router.get('/turns/{turn_id}/events')
+    async def turn_events(project_id: UUID, turn_id: UUID):
+        await asyncio.to_thread(conversations.path, project_id)
+        running = active.get(project_id)
+        if not running or running[0] != turn_id:
+            raise ProjectError('这轮回复已结束，请重新读取对话。', 404)
+        return StreamingResponse(running[2].follow(), media_type='text/event-stream')
+
     @router.post('/turns')
     async def turn(project_id: UUID, value: Turn, x_opendirector_session: UUID = Header(),
                    accept_language: str | None = Header(default=None, alias='Accept-Language')):
@@ -273,7 +316,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             model_names = {row['id']: row['modelId'] for row in configs.list()}
             preferences = {kind: {'modelConfigId': model_id, 'modelName': model_names.get(model_id)}
                 for kind, model_id in model_selections.items() if model_id}
-            queue: asyncio.Queue = asyncio.Queue(maxsize=128)
+            events = RunEvents()
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
@@ -288,7 +331,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                         'model': model, 'status': 'complete'}
                     saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user, conversation_id=value.conversationId)
                     accepted = True
-                    await queue.put({'type': 'start', 'conversation': saved})
+                    events.put({'type': 'start', 'conversation': saved})
                     context = []
                     for message in saved['messages'][:-1]:
                         content = message['text'] or '(empty reply)'
@@ -326,7 +369,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                                 else:
                                     activities[activities.index(previous)] = activity
                                 event = {'type': 'tool', **activity}
-                            await queue.put(event)
+                            events.put(event)
                 except asyncio.CancelledError:
                     status = 'stopped'
                     raise
@@ -355,33 +398,19 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                             **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId)
                     else:
                         saved = None
-                    if asyncio.current_task().cancelling():
-                        while not queue.empty():
-                            queue.get_nowait()
-                    await queue.put({'type': 'end', 'conversation': saved, 'error': error})
+                    events.put({'type': 'end', 'conversation': saved, 'error': error})
 
             if project_id in active:
                 raise ProjectError('当前工程已有回复正在执行。', 409)
             task = asyncio.create_task(produce())
-            active[project_id] = (value.id, task)
+            active[project_id] = (value.id, task, events)
             def release(completed: asyncio.Task) -> None:
-                if active.get(project_id) == (value.id, completed):
+                running = active.get(project_id)
+                if running and running[0] == value.id and running[1] is completed:
                     active.pop(project_id)
             task.add_done_callback(release)
-            async def events():
-                try:
-                    while True:
-                        event = await queue.get()
-                        yield 'data: ' + json.dumps(event, ensure_ascii=False) + '\n\n'
-                        if event['type'] == 'end':
-                            break
-                finally:
-                    # A disconnected SSE request must not cancel persistence during cleanup.
-                    with CancelScope(shield=True):
-                        if not task.done() and not task.cancelling():
-                            task.cancel()
-                        with suppress(asyncio.CancelledError):
-                            await task
-            return StreamingResponse(events(), media_type='text/event-stream')
+            # Closing this stream (switching projects, reloading) only detaches
+            # the viewer; the run continues and can be attached again.
+            return StreamingResponse(events.follow(), media_type='text/event-stream')
 
     return router
