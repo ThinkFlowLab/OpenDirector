@@ -3,6 +3,7 @@ import test from "node:test";
 import type { ModelConfig } from "../src/backend/rules.ts";
 import {
   applyModelResolution,
+  newNodeGenerationSettings,
   resolveGenerationModel,
 } from "../src/canvas/modelResolution.ts";
 
@@ -157,4 +158,40 @@ test("orphaned and unconfigured keep the stored values untouched", () => {
     ),
     unconfigured,
   );
+});
+
+test("a new image node takes the selected adapter's ratio and size instead of the catalog 1:1", () => {
+  const seedream = config("image", "doubao-seedream-5.0-flash", {
+    protocol: "volcengine",
+    inputRules: {
+      ...image.inputRules,
+      imageOutputs: [{ aspectRatio: "auto", size: "2K" }],
+    },
+  });
+  const settings = newNodeGenerationSettings("image", [seedream]);
+  assert.equal(settings.modelConfigId, seedream.id);
+  assert.equal(settings.aspectRatio, "auto");
+  assert.ok(["auto", "2K"].includes(settings.resolution));
+});
+
+test("a new image node keeps a ratio the adapter declares", () => {
+  const fixed = config("image", "fixed-sizes", {
+    inputRules: {
+      ...image.inputRules,
+      imageOutputs: [
+        { aspectRatio: "1:1", size: "1024x1024" },
+        { aspectRatio: "3:2", size: "1536x1024" },
+      ],
+    },
+  });
+  const settings = newNodeGenerationSettings("image", [fixed]);
+  assert.equal(settings.aspectRatio, "1:1");
+  assert.ok(["auto", "1024x1024"].includes(settings.resolution));
+});
+
+test("without a configured model a new node keeps the catalog defaults", () => {
+  const settings = newNodeGenerationSettings("image", []);
+  assert.equal(settings.modelConfigId, undefined);
+  assert.equal(settings.aspectRatio, "1:1");
+  assert.equal(settings.resolution, "2K");
 });

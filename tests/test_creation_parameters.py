@@ -433,3 +433,26 @@ async def test_seedance_audio_ratio_duration_and_resolution_reach_wire(project, 
         assert calls[0]['resolution']==job.execution.resolution=='720p'
         assert job.adopted
     finally: await runner.close()
+
+
+def test_unsupported_image_output_draft_blocks_only_its_own_generation(project):
+    """#86: a 1:1 draft on an auto-only adapter must not make the canvas query fail."""
+    from opendirector.application.creation_canvas import CreationCanvas
+    store, pid, session = project
+
+    def handler(request):  # pragma: no cover - the query must never call the model
+        raise AssertionError('canvas query must not reach the model service')
+
+    runner, item, spec_id = setup(project, 'image', dict(size='2K', aspectRatio='1:1'), handler,
+                                  model='doubao-seedream-5.0-flash', protocol='volcengine')
+    canvas = CreationCanvas(store)
+    projection = canvas.projection(pid)
+    assert projection['capabilities'][str(item.id)].canGenerate is False
+    assert projection['capabilities'][str(item.id)].canConfigureGeneration is True
+    assert not store.snapshot(pid).jobs
+
+    spec = next(s for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+    fixed = spec.model_copy(update={'parameters': type(spec.parameters).model_validate(dict(size='2K', aspectRatio=None))})
+    assert send(store, pid, 'generationSpec.update', session=session,
+                versions=[ver('generation_spec', spec)], spec=fixed).status == 'applied'
+    assert canvas.projection(pid)['capabilities'][str(item.id)].canGenerate is True

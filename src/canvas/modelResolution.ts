@@ -1,8 +1,11 @@
 import {
+  backendModel,
   isGenerationModel,
   modelLabel,
+  serviceGenerationSettings,
   type ModelConfig,
 } from "../backend/rules.ts";
+import { generationDefaults } from "./generationCatalog.ts";
 import type { GenerationSettings } from "./model.ts";
 
 export type GenerationKind = "image" | "video" | "audio";
@@ -85,4 +88,31 @@ export function applyModelResolution<
       modelConfigId: resolution.modelConfigId,
     };
   return settings;
+}
+
+/**
+ * Settings for a node created on the canvas. The catalog defaults describe no
+ * particular service, so once a configured model is chosen its published
+ * outputs decide the ratio and size, exactly as picking that model in the
+ * composer would. Otherwise a new image node could save a ratio the adapter
+ * cannot produce.
+ */
+export function newNodeGenerationSettings(
+  mode: GenerationKind,
+  models: readonly ModelConfig[],
+  preferred?: PreferredModels,
+): GenerationSettings {
+  const settings = applyModelResolution(
+    generationDefaults(mode),
+    resolveGenerationModel(
+      { modelConfigId: undefined },
+      mode,
+      models,
+      preferred,
+    ),
+  );
+  const config = backendModel(settings, [...models]);
+  return config
+    ? serviceGenerationSettings(settings, config, [], true)
+    : settings;
 }

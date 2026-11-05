@@ -57,7 +57,6 @@ import {
   backendReferences,
   backendVideoMode,
   modelLabel,
-  serviceAudioSettings,
   serviceVoice,
 } from "../backend/rules.ts";
 import {
@@ -200,11 +199,7 @@ import {
   type LinkedMediaResult,
   type ResultSource,
 } from "./linkedResults";
-import { generationDefaults } from "./generationCatalog.ts";
-import {
-  applyModelResolution,
-  resolveGenerationModel,
-} from "./modelResolution.ts";
+import { newNodeGenerationSettings } from "./modelResolution.ts";
 import { LocalImageTools } from "./LocalImageTools";
 import { LocalMediaEditor } from "./LocalMediaEditor";
 import {
@@ -1757,18 +1752,12 @@ function Workspace() {
         : {};
     }
     if (kind !== "image" && kind !== "video" && kind !== "audio") return {};
-    const settings = applyModelResolution(
-      generationDefaults(kind),
-      resolveGenerationModel(
-        { modelConfigId: undefined },
+    return {
+      settings: newNodeGenerationSettings(
         kind,
         backendCatalog.models,
         assistantModels,
       ),
-    );
-    const config = backendModel(settings, backendCatalog.models);
-    return {
-      settings: config ? serviceAudioSettings(settings, config) : settings,
     };
   };
   const addNode = (
