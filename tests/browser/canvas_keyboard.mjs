@@ -21,6 +21,10 @@ assert.ok(created.ok);
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
 try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // Skip the first-run model setup welcome; it covers the canvas.
+  await page.addInitScript(() =>
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+  );
   await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
   const nodes = page.locator(".react-flow__node");
   const selected = page.locator(".react-flow__node.selected");

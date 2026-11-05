@@ -16,6 +16,10 @@ await call(`/api/creation/projects/${id}/commands`, { projectId: id, commandId: 
 const browser = await launchBrowser();
 try {
   const page = await browser.newPage({ viewport: { width: 420, height: 760 } });
+  // Skip the first-run model setup welcome; it covers the canvas.
+  await page.addInitScript(() =>
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+  );
   page.setDefaultTimeout(15000);
   // Twenty legacy projects each add one warning line, as in a long-lived workspace.
   await page.route(/\/api\/creation\/projects(\?.*)?$/, async (route) => {

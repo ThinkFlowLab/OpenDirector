@@ -77,6 +77,10 @@ try {
     const page = await browser.newPage({
       viewport: { width: 1600, height: 1100 },
     });
+    // Skip the first-run model setup welcome; it covers the canvas.
+    await page.addInitScript(() =>
+      localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+    );
     page.setDefaultTimeout(15000);
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${base}/ai-tool/ai-canvas/${id}`);

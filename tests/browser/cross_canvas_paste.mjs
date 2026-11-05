@@ -34,6 +34,10 @@ const browser = await launchBrowser();
 const errors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  // Skip the first-run model setup welcome; it covers the canvas.
+  await page.addInitScript(() =>
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+  );
   page.setDefaultTimeout(15000);
   page.on("pageerror", (error) => errors.push(error.message));
   const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();

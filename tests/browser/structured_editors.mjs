@@ -12,6 +12,10 @@ const browser = await chromium.launch({
   args: ["--no-sandbox", "--enable-unsafe-swiftshader"],
 });
 const page = await browser.newPage({ viewport: { width: 1700, height: 1100 } });
+// Skip the first-run model setup welcome; it covers the canvas.
+await page.addInitScript(() =>
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+);
 page.setDefaultTimeout(20000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
