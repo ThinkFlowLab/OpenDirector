@@ -44,7 +44,9 @@ try {
     ).isolated,
     true,
   );
-  for (const unified of [false, true].filter(
+  // The legacy /api/projects workspace routes were removed; only the unified
+  // creation project remains to verify.
+  for (const unified of [true].filter(
     (value) =>
       !process.env.TOOL_PLACEHOLDER_MODE ||
       (value ? "unified" : "workspace") === process.env.TOOL_PLACEHOLDER_MODE,

@@ -1,5 +1,6 @@
 /** Selection owns canvas shortcuts; only explicit editing owns text input. */
 import assert from "node:assert/strict";
+import { chooseGenerationModel } from "./model_picker.mjs";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
 );
@@ -80,9 +81,7 @@ try {
         (model) => model.modelId === "Qwen/Qwen-Image-2.1",
       );
       assert.ok(model);
-      await page
-        .getByLabel("生成模型", { exact: true })
-        .selectOption(`config:${model.id}`);
+      await chooseGenerationModel(page, `config:${model.id}`);
       await saved();
     }
     const node = page.locator(`.react-flow__node[data-id="${original.id}"]`);

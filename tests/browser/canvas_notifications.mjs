@@ -53,6 +53,8 @@ try {
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   const toasts = page.locator(".cw-toast");
   const run = page.getByRole("button", { name: "提交生成", exact: true });
+  // Without a configured model, submitting is disabled and the button itself
+  // explains where to add one; the draft prompt is kept.
   for (const kind of ["图片", "视频", "音频"]) {
     await page
       .getByRole("toolbar", { name: "画布创作工具" })
@@ -63,22 +65,35 @@ try {
       exact: true,
     });
     await prompt.fill(`测试${kind}生成提示词`);
-    await run.click();
-    await toasts.last().waitFor();
-    assert.match(await toasts.last().innerText(), /设置 → 模型接入/);
+    assert.equal(await run.isDisabled(), true);
+    await run.hover({ force: true });
+    await page
+      .getByRole("tooltip")
+      .filter({ hasText: "设置 → 模型接入" })
+      .waitFor();
     assert.equal(await page.getByRole("dialog").count(), 0);
     assert.equal(await prompt.innerText(), `测试${kind}生成提示词`);
-    await toasts.last().getByRole("button", { name: "关闭提示" }).click();
     await page.mouse.move(1400, 900);
-    await toasts.waitFor({ state: "detached" });
-    assert.equal(await toasts.count(), 0);
   }
+  // The toast mechanics below need a repeatable notification without side
+  // effects: cutting with nothing selected reports that nothing can be cut.
+  const pane = page.locator(".react-flow__pane");
+  const notifyOnce = async () => {
+    await pane.click({ position: { x: 1200, y: 160 } });
+    await page.keyboard.press("ControlOrMeta+x");
+  };
+  await notifyOnce();
+  await toasts.last().waitFor();
+  assert.match(await toasts.last().innerText(), /请先选择可编辑的节点/);
+  await toasts.last().getByRole("button", { name: "关闭提示" }).click();
+  await page.mouse.move(1400, 900);
+  await toasts.waitFor({ state: "detached" });
   // Identical notifications must coexist, and the older timer must not erase the newer one.
-  await run.click();
+  await notifyOnce();
   await page.mouse.move(1400, 900);
   await toasts.waitFor();
   await new Promise((resolve) => setTimeout(resolve, 2000));
-  await run.click();
+  await notifyOnce();
   await page.mouse.move(1400, 900);
   assert.equal(await toasts.count(), 2);
   const boxes = await toasts.evaluateAll((items) =>
@@ -102,8 +117,8 @@ try {
   await toasts.waitFor({ state: "detached", timeout: 5000 });
   assert.equal(await toasts.count(), 0);
   // Keyboard focus also pauses expiry while the unfocused sibling expires.
-  await run.click();
-  await run.click();
+  await notifyOnce();
+  await notifyOnce();
   await toasts.first().getByRole("button", { name: "关闭提示" }).focus();
   await toasts.nth(1).waitFor({ state: "detached", timeout: 9000 });
   assert.equal(await toasts.count(), 1);
@@ -113,7 +128,7 @@ try {
   // Record actual frame positions: removing a top or middle item must move
   // every following message through intermediate positions instead of jumping.
   for (const closingIndex of [0, 1]) {
-    for (let i = 0; i < 3; i++) await run.click();
+    for (let i = 0; i < 3; i++) await notifyOnce();
     await page.mouse.move(1400, 900);
     await toasts.evaluateAll((items) =>
       Promise.all(

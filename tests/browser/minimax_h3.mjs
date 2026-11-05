@@ -25,15 +25,18 @@ await page.addInitScript(() =>
 );
 page.setDefaultTimeout(15000);
 try {
-  const model = await call("/api/model-configs", {
+  // One official connection with both models, as the provider settings save
+  // them; the picker step below switches between the two.
+  const saved = await call("/api/model-configs/batch", {
     kind: "video",
     url: "https://fixture.invalid/v2",
-    modelId: "MiniMax-H3",
+    modelIds: ["MiniMax-H3", "MiniMax-H3-Lite"],
     apiKey: "fixture",
     protocol: "minimax_video_v2",
     connectionType: "api",
     authMode: "bearer",
   });
+  const model = saved.find((item) => item.modelId === "MiniMax-H3");
   assert.deepEqual(model.inputRules.frameRoles, ["first_frame", "last_frame"]);
   const projectId = crypto.randomUUID();
   await call(`/api/creation/projects/${projectId}/commands`, {

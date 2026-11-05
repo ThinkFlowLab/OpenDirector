@@ -62,6 +62,18 @@ const config = await call("/api/model-configs", {
     dimensionStep: 2,
   },
 });
+// A configured service that does not publish its duration limits.
+const unknown = await call("/api/model-configs", {
+  kind: "video",
+  modelId: "fixture-duration-unknown",
+  url: "http://127.0.0.1:12345/v1",
+  apiKey: "",
+  connectionType: "self_hosted",
+  protocol: "vllm_omni",
+  authMode: "none",
+  videoAdapter: "standard",
+});
+assert.equal(unknown.inputRules.videoCapabilities ?? null, null);
 const projectId = crypto.randomUUID();
 const created = await call(`/api/creation/projects/${projectId}/commands`, {
   commandId: crypto.randomUUID(),
@@ -159,7 +171,7 @@ try {
   );
   await popup
     .getByRole("status")
-    .getByText("当前模型支持的时长在4到15秒之间", { exact: true })
+    .getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true })
     .waitFor();
   await select.fill("10");
   await select.press("Enter");
@@ -182,14 +194,14 @@ try {
   assert.equal(await trigger.innerText(), "4 秒");
   await popup
     .getByRole("status")
-    .getByText("当前模型支持的时长在4到15秒之间", { exact: true })
+    .getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true })
     .waitFor();
   await clickSeconds(25);
   assert.equal(await slider.inputValue(), "15");
   assert.equal(await trigger.innerText(), "15 秒");
   await popup
     .getByRole("status")
-    .getByText("当前模型支持的时长在4到15秒之间", { exact: true })
+    .getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true })
     .waitFor();
   const box = await slider.boundingBox();
   if (process.env.DURATION_SCREENSHOT_DIR)
@@ -277,21 +289,9 @@ try {
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   await page.locator(".react-flow__node").click();
   assert.equal(await trigger.innerText(), "7 秒");
-  await chooseGenerationModel(page, { label: "Seedance 1.0 Fast" });
-  await trigger.click();
-  await popup.waitFor();
-  assert.equal(await slider.isDisabled(), true);
-  assert.deepEqual(await popup.locator(".cw-duration-tick").allTextContents(), [
-    "0",
-    "5",
-    "10",
-    "15",
-    "20",
-    "25",
-    "30",
-  ]);
-  await popup.press("Escape");
-  await chooseGenerationModel(page, { label: "Wan 3.0" });
+  // The picker only lists configured services; one without published
+  // durations must not offer invented choices.
+  await chooseGenerationModel(page, `config:${unknown.id}`);
   assert.equal(
     await trigger.isDisabled(),
     true,

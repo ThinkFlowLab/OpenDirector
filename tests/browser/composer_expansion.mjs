@@ -1,6 +1,7 @@
 /** Isolated fixture only: compact spacing and an expanded editor keep one draft. */
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { chooseGenerationModel } from "./model_picker.mjs";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
 );
@@ -62,9 +63,7 @@ try {
         (model) => model.modelId === "Qwen/Qwen-Image-2.1",
       );
       assert.ok(model);
-      await page
-        .getByLabel("生成模型", { exact: true })
-        .selectOption(`config:${model.id}`);
+      await chooseGenerationModel(page, `config:${model.id}`);
     }
     const editor = page.getByRole("textbox", {
       name: "生成提示词",

@@ -14,6 +14,10 @@ const browser = await chromium.launch({
   args: ["--no-sandbox"],
 });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+// Skip the first-run model setup welcome; it covers the canvas.
+await page.addInitScript(() =>
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+);
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -40,7 +44,9 @@ try {
     ).isolated,
     true,
   );
-  for (const unified of [false, true].filter(
+  // The legacy /api/projects workspace routes were removed; only the unified
+  // creation project remains to verify.
+  for (const unified of [true].filter(
     (value) =>
       !process.env.TOOL_PLACEHOLDER_MODE ||
       (value ? "unified" : "workspace") === process.env.TOOL_PLACEHOLDER_MODE,
