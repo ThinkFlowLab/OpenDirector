@@ -124,5 +124,22 @@ test("voice_not_found identifies the voice before generic 404 or input failures"
       "该音色不存在或当前账户无权使用，请在 MOSS 音色库核对音色 ID。");
   } finally {
     setActiveLocale("zh-CN");
-  }
+  };
+test("provider moderation verdicts are explained in both languages", () => {
+  const moderated = (message: string) =>
+    failure({ stage: "poll", httpStatus: 200, providerStatus: "failed", providerCode: "1027", message });
+  setActiveLocale("en-US");
+  assert.match(
+    generationFailureMessage(moderated("供应商判定输入内容涉及敏感信息，已拒绝生成。")),
+    /flagged the input as sensitive/,
+  );
+  assert.match(
+    generationFailureMessage(moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。")),
+    /flagged the generated content as sensitive/,
+  );
+  setActiveLocale("zh-CN");
+  assert.match(
+    generationFailureMessage(moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。")),
+    /生成内容涉及敏感信息/,
+  );
 });

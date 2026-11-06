@@ -21,6 +21,7 @@ FAKE = r'''
 import json, os, subprocess, sys
 from pathlib import Path
 assert sys.argv[1:3] == ['--profile','acp']
+assert len(sys.argv) == 5 and sys.argv[3] == '--patch', sys.argv[1::2]
 mode = os.getenv('DEEPSEEK_TEST', 'success')
 sid = 'owned-session'
 def write(record):
@@ -28,10 +29,18 @@ def write(record):
 def result(req, value): write(dict(id=req['id'], result=value))
 def read(): return json.loads(sys.stdin.readline())
 req=read(); assert req['method']=='initialize'
+if mode == 'initialize_exit' and Path.cwd().name == 'work':
+ print('ACP startup diagnostic', file=sys.stderr, flush=True)
+ raise SystemExit(42)
 result(req, dict(protocolVersion=0 if mode=='bad_version' else 1))
 req=read(); assert req['method'] in {'session/new','session/resume'}
 resumed=req['method']=='session/resume'
 if resumed: assert req['params']['sessionId']==sid
+workspace_marker = Path('.continuation-test')
+if resumed:
+ assert workspace_marker.read_text() == str(Path.cwd())
+else:
+ workspace_marker.write_text(str(Path.cwd()))
 servers=req['params']['mcpServers']
 assert Path(req['params']['cwd']).resolve() == Path.cwd(), req['params']['cwd']
 model=dict(id='model',currentValue='route/default',options=[dict(group='route',options=[dict(value='route/default',name='Default model')])])
@@ -100,6 +109,9 @@ def cli(tmp_path, monkeypatch):
     skill = tmp_path / '.opendirector/skills/example'
     skill.mkdir(parents=True)
     (skill / 'SKILL.md').write_text('---\nname: example\ndescription: Test\n---\nTest skill')
+    async def fixture_skills(*args):
+        return [{'name': 'example', 'description': 'Test', 'filePath': str(skill / 'SKILL.md')}]
+    monkeypatch.setattr('opendirector_api.agent.skills', fixture_skills)
     return binary
 
 
@@ -196,3 +208,23 @@ def test_selected_model_efforts_keep_native_default_identity(cli, monkeypatch):
     rows = asyncio.run(deepseek.model_choices('route/other'))
     assert rows[0]['isDefault'] is True and rows[0]['efforts'] == []
     assert rows[1]['isDefault'] is False and rows[1]['efforts'] == ['low', 'high']
+
+
+def test_initialize_exit_records_stderr(cli, tmp_path, monkeypatch):
+    monkeypatch.setenv('DEEPSEEK_TEST', 'initialize_exit')
+    local = LocalProjects(tmp_path)
+    with TestClient(create_app(local), headers={'X-OpenDirector-Request': '1',
+            'X-OpenDirector-Session': str(uuid4())}) as client:
+        pid, turn = str(uuid4()), str(uuid4())
+        path = '/api/creation/projects/' + pid
+        assert client.post(path + '/commands', json=dict(type='project.create', projectId=pid,
+            commandId=str(uuid4()), payload={'name': 'DeepSeek exit'})).status_code == 200
+        assert client.post(path + '/open').status_code == 200
+        response = client.post(path + '/assistant/turns', json=dict(id=turn, runtime='deepseek', runtimeModel='route/default', text='Hello'))
+        assert response.status_code == 200, response.text
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
+        assert events[-1]['error']
+        trace = next(local.root.rglob(f'{turn}.deepseek.jsonl'))
+        diagnostics = [json.loads(line).get('native', {}) for line in trace.read_text().splitlines()]
+        assert any(item.get('exitCode') == 42 and 'ACP startup diagnostic' in item.get('stderr', '')
+                   for item in diagnostics)

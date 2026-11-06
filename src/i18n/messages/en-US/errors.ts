@@ -683,6 +683,10 @@ export const errors = {
     "The provider rejected the reference type or input combination.",
   "errors.generationFailure.privacy":
     "The provider rejected the reference image because it may contain a real person.",
+  "errors.generationFailure.sensitiveInput":
+    "The provider flagged the input as sensitive content and declined to generate. Change the prompt or reference media before generating again.",
+  "errors.generationFailure.sensitiveOutput":
+    "The provider flagged the generated content as sensitive and withheld it. Adjust the prompt or reference media before generating again.",
   "errors.history.failed":
     "Generation failed. Check the service log.",
   "errors.connection.endpointMissing": "The node no longer exists",

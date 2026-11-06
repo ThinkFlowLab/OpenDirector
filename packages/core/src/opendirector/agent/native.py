@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from uuid import UUID
 import secrets
 import shutil
 import subprocess
@@ -112,9 +113,10 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
             args += ['-c', setting]
     else:
         plugin = work / 'plugin'
-        (plugin / '.claude-plugin').mkdir(parents=True)
+        (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
         (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.0'}))
-        (plugin / 'skills').symlink_to(work / '.agents/skills', target_is_directory=True)
+        if not (plugin / 'skills').is_symlink():
+            (plugin / 'skills').symlink_to(work / '.agents/skills', target_is_directory=True)
         args = [binary, '-p', '--verbose', '--system-prompt', SYSTEM,
             '--output-format', 'stream-json', '--plugin-dir', str(plugin), '--tools', 'Skill,Bash,Read',
             '--strict-mcp-config', '--mcp-config', json.dumps({'mcpServers': {}}),
@@ -154,15 +156,23 @@ class NativeRuntime:
         selection = {'model': runtime_model, 'thinking': thinking}
         if config:
             selection.update(config=config.get('id'), modelId=config['modelId'])
-        session_id = run.native_session_id(selection)
+        saved = run.native_session(selection)
+        work_turn_id = turn_id
+        session_id = None
+        if saved and saved.get('workTurnId'):
+            previous_turn_id = UUID(saved['workTurnId'])
+            if (directory / 'agent-runs' / str(previous_turn_id) / 'work').is_dir():
+                work_turn_id = previous_turn_id
+                session_id = saved['sessionId']
         queue = asyncio.Queue(maxsize=128)
         pending = set()
         token = secrets.token_urlsafe(32)
         process = pump = stderr_task = None
         with TemporaryDirectory(prefix='od-agent-', dir=None if os.name == 'nt' else '/tmp') as temporary:
-            work = (directory / 'agent-runs' / str(turn_id) / 'work').resolve()
-            work.mkdir(parents=True, exist_ok=False)
-            if runtime == 'opencode':
+            work = (directory / 'agent-runs' / str(work_turn_id) / 'work').resolve()
+            work.mkdir(parents=True, exist_ok=session_id is not None)
+            gateway.execution_directory = work
+            if runtime == 'opencode' and session_id is None:
                 # Keep OpenCode's workspace discovery inside the canvas execution directory.
                 git = await asyncio.create_subprocess_exec(
                     'git', 'init', '--quiet', '--template=', cwd=work,
@@ -180,7 +190,7 @@ class NativeRuntime:
             if run.runtime == 'default':
                 model = ModelGateway(
                     config, thinking, token, str(project_id), str(turn_id), self.transport,
-                    trace_path=work.parent.with_suffix('.model.jsonl'),
+                    trace_path=directory / 'agent-runs' / f'{turn_id}.model.jsonl',
                 )
             model_server = await asyncio.start_server(model.connect, '127.0.0.1', 0) if model else None
             try:
@@ -197,7 +207,7 @@ class NativeRuntime:
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':
                     args += ['--effort', thinking]
-                if session_id:
+                if session_id and runtime != 'deepseek':
                     if runtime == 'codex':
                         args += ['resume', session_id, '-']
                     else:
@@ -238,6 +248,13 @@ class NativeRuntime:
                     process.stdin.write(prompt.encode() + b'\n')
                     await process.stdin.drain()
                     process.stdin.close()
+                async def record_exit():
+                    await stderr_task
+                    diagnostic = stderr_tail.decode('utf-8', errors='replace').replace(token, '[redacted]')
+                    if config and config.get('apiKey'):
+                        diagnostic = diagnostic.replace(config['apiKey'], '[redacted]')
+                    await queue.put({'native': {'type': 'diagnostic', 'stderr': diagnostic,
+                                                'exitCode': process.returncode}})
                 async def output():
                     try:
                         reported_session = None
@@ -266,14 +283,14 @@ class NativeRuntime:
                                     raise ProjectError('Harness 返回了不同的会话 ID。', 502)
                                 await queue.put({'native': raw})
                         if await process.wait():
-                            await stderr_task
-                            diagnostic = stderr_tail.decode('utf-8', errors='replace').replace(token, '[redacted]')
-                            if config and config.get('apiKey'):
-                                diagnostic = diagnostic.replace(config['apiKey'], '[redacted]')
-                            await queue.put({'native': {'type': 'diagnostic', 'stderr': diagnostic}})
+                            await record_exit()
                             raise ProjectError(f'{runtime} 进程退出（{process.returncode}），请检查 CLI 登录和配置。', 502)
                         if reported_session:
-                            run.save_native_session(reported_session, selection)
+                            run.save_native_session(reported_session, selection, work_turn_id=work_turn_id)
+                    except ProjectError:
+                        if runtime == 'deepseek' and process.returncode:
+                            await record_exit()
+                        raise
                     finally:
                         await queue.put(None)
                 pump = asyncio.create_task(output())

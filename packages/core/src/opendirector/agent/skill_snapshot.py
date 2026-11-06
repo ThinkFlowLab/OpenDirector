@@ -7,6 +7,10 @@ from opendirector.domain.projects import ProjectError
 
 def prepare_skills(directory: Path, catalog: list[dict]) -> list[Path]:
     root = directory / '.agents/skills'
+    if root.parent.is_symlink() or root.is_symlink():
+        raise ProjectError('技能快照目录不能是符号链接。')
+    if root.is_dir():
+        shutil.rmtree(root)
     root.mkdir(parents=True)
     for item in catalog:
         source = Path(item['filePath']).parent

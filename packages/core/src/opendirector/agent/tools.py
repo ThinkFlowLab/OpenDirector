@@ -234,7 +234,8 @@ class AgentTools:
         self.assets = CreationAssets(projects)
 
     async def execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
-                      name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None) -> JsonValue:
+                      name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None,
+                      execution_directory: Path | None = None) -> JsonValue:
         if name == 'read_project':
             snapshot = await asyncio.to_thread(self.projects.snapshot, project_id)
             return {'project': snapshot.model_dump(mode='json'), 'models': self.configs.list(), 'commands': list(COMMANDS),
@@ -248,7 +249,7 @@ class AgentTools:
             if query.type == 'asset.preview' and 'preview' in result:
                 with self.projects.local.transaction() as db:
                     project_directory, _, _ = self.projects._load(db, project_id)
-                target = directory(project_directory / 'agent-runs' / str(turn_id) / 'work' / 'previews')
+                target = directory((execution_directory or project_directory / 'agent-runs' / str(turn_id) / 'work') / 'previews')
                 target.mkdir(parents=True, exist_ok=True)
                 source = Path(result['preview']['path'])
                 destination = child(target, source.name)
@@ -330,7 +331,7 @@ class AgentTools:
                 with self.projects.local.transaction() as db:
                     project_directory, _, _ = self.projects._load(db, project_id)
                 receipt = await asyncio.to_thread(publish_artifact, self.assets, command,
-                    execution_directory=project_directory / 'agent-runs' / str(turn_id) / 'work', session=session, provenance=provenance)
+                    execution_directory=execution_directory or project_directory / 'agent-runs' / str(turn_id) / 'work', session=session, provenance=provenance)
             else:
                 receipt = await asyncio.to_thread(self.assets.execute, command, session=session, source='agent', provenance=provenance)
         else:

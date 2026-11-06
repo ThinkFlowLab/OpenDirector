@@ -34,18 +34,23 @@ class RunContext:
             return None
         return self.directory / 'agent-runs' / f'{self.runtime}-sessions' / str(self.conversation_id)
 
-    def native_session_id(self, selection: dict) -> str | None:
+    def native_session(self, selection: dict) -> dict | None:
         directory = self.native_session_path()
         if directory is None or not (directory / 'session.json').is_file():
             return None
         saved = json.loads((directory / 'session.json').read_text(encoding='utf-8'))
         if saved['selection'] == selection and saved['messages'] == len(self.messages) - 1:
-            return saved['sessionId']
+            return saved
         return None
 
-    def save_native_session(self, session_id: str, selection: dict) -> None:
+    def native_session_id(self, selection: dict) -> str | None:
+        saved = self.native_session(selection)
+        return saved['sessionId'] if saved else None
+
+    def save_native_session(self, session_id: str, selection: dict, *, work_turn_id: UUID | None = None) -> None:
         directory = self.native_session_path()
         if directory is not None:
             directory.mkdir(parents=True, exist_ok=True)
             write_json(directory / 'session.json', {'sessionId': session_id, 'selection': selection,
-                                                    'messages': len(self.messages) + 1})
+                                                    'messages': len(self.messages) + 1,
+                                                    'workTurnId': str(work_turn_id) if work_turn_id else None})

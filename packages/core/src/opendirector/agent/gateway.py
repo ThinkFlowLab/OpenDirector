@@ -29,6 +29,7 @@ class ToolGateway:
         self.business = business
         self.run = run
         self.model_selections = dict(run.model_selections)
+        self.execution_directory: Path | None = None
         self.roots: list[Path] = []
         self.closed = False
         self.calls: dict[str, tuple[str, asyncio.Task[ToolResult]]] = {}
@@ -65,7 +66,8 @@ class ToolGateway:
                     raise ProjectError('工具参数缺失或包含未定义字段。')
                 value = await self.business.execute(self.run.project_id, self.run.turn_id, self.run.session,
                     call_id, name, arguments, self.roots, self.run.config,
-                    self.run.runtime if self.run.config is None else None)
+                    self.run.runtime if self.run.config is None else None,
+                    self.execution_directory)
                 if name == 'read_project':
                     value['modelSelections'] = dict(self.model_selections)
                 error = None

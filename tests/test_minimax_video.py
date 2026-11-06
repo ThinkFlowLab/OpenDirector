@@ -265,3 +265,27 @@ def test_official_variants_enforce_native_outputs(model, resolutions, minimum):
         adapter.payload(configured, {'parameters': {'resolution': invalid}}, prepared)
     with pytest.raises(ProjectError, match='输出规格无效'):
         adapter.payload(configured, {'parameters': {'duration': minimum - 1}}, prepared)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(('code', 'message'), [(1026, '输入内容涉及敏感信息'), (1027, '生成内容涉及敏感信息')])
+async def test_moderation_failures_say_the_content_was_rejected_instead_of_a_generic_provider_error(code, message):
+    def handle(request):
+        if request.method == 'POST':
+            return httpx.Response(200, json={'task_id': 'task-1'})
+        return httpx.Response(200, json={'task': {'id': 'task-1', 'status': 'failed',
+            'error': {'code': code, 'message': 'private moderation detail'}}})
+    accepted = []
+    async def submitted(identity):
+        accepted.append(identity)
+    adapter = MinimaxVideoGeneration(None, httpx.MockTransport(handle), poll_interval=0)
+    adapter.prepare_inputs = lambda *args: {'content': [{'type': 'text', 'text': 'test'}]}
+    with pytest.raises(GenerationError) as failure:
+        await adapter.generate(config(), task('project'), submitted)
+    details = failure.value.details
+    assert accepted == ['task-1']
+    assert details.category == 'input' and details.stage == 'poll' and details.providerStatus == 'failed'
+    assert details.providerCode == str(code) and message in details.message
+    # Moderation is deterministic: the suggestion must not invite an unchanged retry.
+    assert '相同输入重试仍会被拒绝' in details.suggestion
+    assert 'private moderation detail' not in str(failure.value)

@@ -22,6 +22,14 @@ _REASONS = {
     'provider': ('生成服务未能完成当前操作。', '请核对原任务；错误码和请求标识可用于向供应商排查。'),
 }
 
+# MiniMax content moderation: 1026 rejects the input, 1027 the generated output.
+MINIMAX_SENSITIVE = {
+    '1026': ('供应商判定输入内容涉及敏感信息，已拒绝生成。',
+             '请修改提示词或更换参考素材后再生成；相同输入重试仍会被拒绝。'),
+    '1027': ('供应商判定生成内容涉及敏感信息，已拒绝交付。',
+             '请调整提示词或参考素材，避免可能触发审核的角色或内容后再生成；相同输入重试仍会被拒绝。'),
+}
+
 
 def _identifier(value, limit, secrets):
     if isinstance(value, int) and not isinstance(value, bool):
@@ -83,6 +91,10 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         suggestion = '请检查音色 ID 是否属于当前账户可用的音色。'
     elif name == 'inputimagesensitivecontentdetected.privacyinformation':
         message = '供应商判定参考图片可能包含真人，已拒绝生成。'
+    elif code in MINIMAX_SENSITIVE:
+        # A moderation verdict is deterministic: the same input fails again, so
+        # the suggestion must lead to changing it rather than retrying.
+        category, (message, suggestion) = 'input', MINIMAX_SENSITIVE[code]
     elif category == 'provider' and value.get('status') in {'cancelled', 'expired'}:
         message = '供应商任务已取消。' if value['status'] == 'cancelled' else '供应商任务已过期。'
     elif http_status == 404:

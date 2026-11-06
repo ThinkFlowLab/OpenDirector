@@ -475,6 +475,8 @@ export const errors = {
   "errors.generationFailure.referenceAudio": "音频参考不能单独使用，请搭配参考图片。",
   "errors.generationFailure.referenceUnsupported": "供应商拒绝了参考类型或输入组合。",
   "errors.generationFailure.privacy": "供应商判定参考图片可能包含真人，已拒绝生成。",
+  "errors.generationFailure.sensitiveInput": "供应商判定输入内容涉及敏感信息，已拒绝生成。请修改提示词或参考素材后再生成。",
+  "errors.generationFailure.sensitiveOutput": "供应商判定生成内容涉及敏感信息，已拒绝交付。请调整提示词或参考素材后再生成。",
   "errors.history.failed": "生成失败，请检查服务日志。",
   "errors.connection.endpointMissing": "节点已不存在",
   "errors.connection.sourceEmpty": "当前节点内容为空，请先上传或生成节点内容",

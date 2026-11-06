@@ -54,6 +54,11 @@ if 'Continue plan' in request['input']:
  assert request['session_id']==sid and 'Save plan' not in request['input']
 else:
  assert 'session_id' not in request
+workspace_marker = Path('.continuation-test')
+if 'Continue plan' in request['input']:
+ assert workspace_marker.read_text() == str(Path.cwd())
+else:
+ workspace_marker.write_text(str(Path.cwd()))
 if mode == 'quota':
  emit('result',status='failed',exit_code=1,error={'code':'RUNTIME_ERROR','message':'HTTP 429: Token Plan quota exceeded (2056)'},output=None)
  raise SystemExit(1)

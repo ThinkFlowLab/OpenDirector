@@ -19,7 +19,7 @@ OpenDirector is an AI video creation workspace that runs locally and is accessed
 
 Use it to explore visual ideas, refine assets, and make short films. Projects stay on your machine; generation uses the provider APIs or self-hosted model services you choose.
 
-[News](#news) · [Example film](#example-film-we-can-still-win) · [Quick start](#quick-start) · [Documentation](#documentation) · [Contributing](#contributing)
+[News](#news) · [Example film](#example-film-we-can-still-win) · [Quick start](#quick-start) · [Documentation](#documentation) · [Community](#community) · [Contributing](#contributing)
 
 ## News
 
@@ -90,6 +90,16 @@ Use Chrome or Edge for MP4 export, and keep the page and editor open while rende
 - [Troubleshooting](docs/guides/user-guide.md#troubleshooting): Installation, generation, saving, and export issues.
 - [Business CLI (Chinese)](docs/guides/cli.md): Work with projects through a terminal or Agent Shell.
 - [Documentation index (Chinese)](docs/README.md): Architecture, development, and validation documents.
+
+## Community
+
+Join the **OpenDirector with vLLM-Omni (2)** WeChat group to discuss OpenDirector and share your creations. Scan the QR code below in WeChat, or click the image to view it at full resolution.
+
+<p align="center">
+  <a href="docs/guides/assets/opendirector-wechat-group-2.png">
+    <img src="docs/guides/assets/opendirector-wechat-group-2.png" alt="QR code for the OpenDirector with vLLM-Omni (2) WeChat group" width="360" />
+  </a>
+</p>
 
 ## Contributing
 

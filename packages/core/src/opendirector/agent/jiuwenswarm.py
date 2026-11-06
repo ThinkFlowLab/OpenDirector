@@ -4,6 +4,7 @@ from contextlib import suppress
 import json
 import os
 from pathlib import Path
+from uuid import UUID
 import shutil
 from tempfile import TemporaryDirectory
 from uuid import uuid4
@@ -134,16 +135,25 @@ class JiuwenSwarmRuntime:
         if run.thinking != 'auto':
             raise ProjectError('JiuwenSwarm 的思考级别由本机模型配置管理，请选择自动。')
         await query('protocol.capabilities')
-        work = (run.directory / 'agent-runs' / str(run.turn_id) / 'work').resolve()
-        work.mkdir(parents=True, exist_ok=False)
+        selection = {'model': run.runtime_model, 'thinking': run.thinking}
+        saved = run.native_session(selection)
+        runs = run.directory / 'agent-runs'
+        work_turn_id = run.turn_id
+        session_id = None
+        if saved and saved.get('workTurnId'):
+            previous_turn_id = UUID(saved['workTurnId'])
+            if (runs / str(previous_turn_id) / 'work').is_dir():
+                work_turn_id = previous_turn_id
+                session_id = saved['sessionId']
+        work = (runs / str(work_turn_id) / 'work').resolve()
+        work.mkdir(parents=True, exist_ok=session_id is not None)
+        gateway.execution_directory = work
         gateway.roots = prepare_skills(work, run.skills)
         queue = asyncio.Queue(maxsize=128)
         cancel = asyncio.Event()
         stopping = False
         emitted_chars = 0
         terminal_written = False
-        selection = {'model': run.runtime_model, 'thinking': run.thinking}
-        session_id = run.native_session_id(selection)
         with TemporaryDirectory(prefix='od-jiuwen-') as temporary:
             async with cli_transport.turn_environment(work, gateway, queue, temporary) as cli_env:
                 state = run.native_session_path() or Path(temporary)
@@ -190,7 +200,7 @@ class JiuwenSwarmRuntime:
                     request['session_id'] = session_id
                 if run.runtime_model:
                     request['model'] = run.runtime_model
-                trace_path = work.parent / f'{run.turn_id}.jiuwenswarm.jsonl'
+                trace_path = runs / f'{run.turn_id}.jiuwenswarm.jsonl'
                 with trace_path.open('a', encoding='utf-8') as trace:
                     async def emit(event):
                         if not stopping:
@@ -237,7 +247,7 @@ class JiuwenSwarmRuntime:
                             raise ProjectError(f"JiuwenSwarm 执行未完成（{result['status']}），请检查原生轨迹。", 502)
                         if session_id and session_id != result['session_id']:
                             raise ProjectError('JiuwenSwarm 返回了不同的会话 ID。', 502)
-                        run.save_native_session(result['session_id'], selection)
+                        run.save_native_session(result['session_id'], selection, work_turn_id=work_turn_id)
                         # The terminal output includes the deltas and any unflushed final tail.
                         remaining = (result.get('output') or '')[emitted_chars:]
                         if remaining:

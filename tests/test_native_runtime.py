@@ -32,7 +32,12 @@ if 'Continue plan' in prompt:
  assert 'Save a plan' not in prompt
  runtime = os.environ['TEST_RUNTIME']
  resume_args = {'codex': ['resume', 'test-native', '-'], 'claude': ['--resume', 'test-native']}
- assert sys.argv[1:] == resume_args.get(runtime, ['--session', 'test-native'])
+ assert sys.argv[2:] == resume_args.get(runtime, ['--session', 'test-native'])
+workspace_marker = Path('.continuation-test')
+if 'Continue plan' in prompt:
+ assert workspace_marker.read_text() == str(Path.cwd())
+else:
+ workspace_marker.write_text(str(Path.cwd()))
 assert list(Path('.agents/skills').glob('*/SKILL.md'))
 assert str(Path.cwd()) in prompt
 subprocess.run(['sh', '-c', 'printf \"native execution works\" > environment-check.txt'], check=True)
@@ -113,11 +118,15 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime)
     monkeypatch.setattr(CreationAssets, 'preview', lambda self, project_id, asset_id, target:
         {'preview': {'path': str(preview), 'mimeType': 'image/webp'}})
     def command(kind, work, socket, token, model, model_url, catalog, **kwargs):
-        return [sys.executable, str(script)], {**os.environ, 'TEST_RUNTIME':kind,
+        return [sys.executable, str(script), "--"], {**os.environ, 'TEST_RUNTIME':kind,
             'OPENDIRECTOR_AGENT_SOCKET':socket,
             'OD':str(native.ROOT / 'scripts/opendirector.py')}
     monkeypatch.setattr(native, 'command', command)
     monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
+    async def fixture_skills(*args):
+        entry = tmp_path / '.opendirector/skills/character-replacement/SKILL.md'
+        return [{'name': 'character-replacement', 'description': 'Test', 'filePath': str(entry)}]
+    monkeypatch.setattr('opendirector_api.agent.skills', fixture_skills)
     with TestClient(create_app(local), headers={'X-OpenDirector-Request':'1','X-OpenDirector-Session':str(uuid4())}) as client:
         path = project(client)
         turn = {'id':str(uuid4()),'runtime':runtime,'runtimeModel':'test-model','text':'Save a plan','skills':['character-replacement']}
