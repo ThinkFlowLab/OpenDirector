@@ -265,6 +265,18 @@ export class CreationClient {
     };
     return perform;
   }
+  /** The settled receipt of an earlier command, or null if the server never
+   * accepted it. Reading it never executes anything. */
+  async receipt(commandId: string): Promise<CommandReceipt | null> {
+    try {
+      return await storageRequest<CommandReceipt>(
+        `${creationPath(this.id)}/receipts/${commandId}`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
   batch(operations: CreationOperation[], versions: readonly ObjectVersion[]) {
     return operations.length
       ? this.command("creation.batch", { operations }, versions)

@@ -101,7 +101,10 @@ async def test_hidden_source_generation_frozen_history_restart_and_idempotent_co
     assert snapshot.jobs[0].status == 'succeeded', snapshot.jobs[0]
     assert snapshot.jobs[0].adopted
     assert len(snapshot.results) == 1
-    assert snapshot.jobs[0].inputSnapshot.references[0].asset.assetId == asset.id
+    # A source hidden before submission is not a current input (21471764);
+    # the saved reference itself is kept for when the source is shown again.
+    assert snapshot.jobs[0].inputSnapshot.references == ()
+    assert any(ref.id == ref_id and ref.active for ref in snapshot.references)
     assert not any(i.visible for i in snapshot.canvasItems)
     assert (await runner.execute(command, session=session)) == receipt
     assert len(provider.calls) == 1
@@ -111,6 +114,50 @@ async def test_hidden_source_generation_frozen_history_restart_and_idempotent_co
     reopened = CreationProjects(LocalProjects(store.local.repository)).snapshot(pid)
     assert reopened == snapshot
     assert len(reopened.canvasItems) == 2  # No per-request execution node.
+
+
+@pytest.mark.anyio
+async def test_hiding_a_mentioned_source_during_generation_keeps_the_saved_prompt(project):
+    """Comparing current inputs drops hidden sources from a projected prompt.
+
+    That projection must not be written back: it changed the stored spec
+    without a new revision, so registering the finished result was rejected
+    and the job failed.
+    """
+    from opendirector.infrastructure.creation_projects import object_index
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    source, _ = text_material(project)
+    target, spec = configure(project, config)
+    current = lambda: [ver(kind, obj) for (kind, _), obj in object_index(store.snapshot(pid)).items()]
+    ref_id = uuid4()
+    assert send(store, pid, 'reference.add', session=session, versions=current(),
+        reference=dict(id=ref_id, projectId=pid, targetSpecId=spec.id, binding='follow_current',
+                       source=dict(id=source.id))).status == 'applied'
+    content = [dict(type='text', text='Based on '), dict(type='reference', referenceId=ref_id)]
+    assert send(store, pid, 'generationSpec.setPrompt', session=session, versions=current(),
+        specId=spec.id, prompt='', promptContent=content).status == 'applied'
+    before = store.snapshot(pid)
+    spec = next(s for s in before.generationSpecs if s.id == spec.id)
+    target = next(i for i in before.canvasItems if i.id == target.id)
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+        expectedVersions=[ver('canvas_item', target), ver('generation_spec', spec)],
+        payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+    assert (await runner.execute(command, session=session)).status == 'accepted'
+    await asyncio.wait_for(provider.started.wait(), 3)
+    source = next(i for i in store.snapshot(pid).canvasItems if i.id == source.id)
+    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)],
+                itemId=source.id).status == 'applied'
+    provider.finish.set()
+    await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
+    snapshot = store.snapshot(pid)
+    assert snapshot.jobs[0].status == 'succeeded', snapshot.jobs[0].errorDetails
+    assert len(snapshot.results) == 1
+    saved = next(s for s in snapshot.generationSpecs if s.id == spec.id)
+    assert saved.promptContent == spec.promptContent
+    assert saved.prompt == spec.prompt
+    await runner.close()
 
 
 @pytest.mark.anyio

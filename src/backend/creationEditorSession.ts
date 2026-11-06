@@ -71,9 +71,26 @@ export class CreationEditorSession {
   async apply(data: Partial<CanvasNodeData>) {
     if (this.active) throw new Error(tNow("errors.backend.editSaving"));
     const key = JSON.stringify(data);
-    const resolvingPrevious = !!this.pending && this.pending.key !== key;
+    let resolvingPrevious = !!this.pending && this.pending.key !== key;
     this.active = true;
     try {
+      // A page can reload after the server committed the previous edit but
+      // before this session forgot it. When the server has already settled
+      // that command, it is no longer unknown: drop it instead of replaying it
+      // and turning the user's new edit away. The fresh plan below still uses
+      // the current version basis, so nothing newer is overwritten.
+      if (resolvingPrevious && this.pending) {
+        const settled = await this.projection.client.receipt(this.pending.id);
+        if (settled) {
+          await this.projection.client.refresh();
+          if (settled.status === "applied")
+            this.projection.baseline = this.pending.document;
+          this.projection.basis = this.projection.client.snapshot;
+          this.pending = undefined;
+          this.storePending();
+          resolvingPrevious = false;
+        }
+      }
       if (!this.pending) {
         const document = this.draft(data);
         const plan = await this.projection.prepare(document);

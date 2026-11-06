@@ -169,6 +169,8 @@ test("a lost delivery survives a new editor session and resolves before a change
     if (calls.length === 1) throw Error("unknown reply");
     return { status: "applied" } as CommandReceipt;
   };
+  // The server never accepted the lost request, so its outcome is unknown.
+  client.receipt = async () => null;
   await assert.rejects(
     new CreationEditorSession(client, document, item.id).apply({ timeline }),
     /unknown reply/,
@@ -179,6 +181,58 @@ test("a lost delivery survives a new editor session and resolves before a change
     /上一次编辑保存已确认/,
   );
   assert.deepEqual(calls[0], calls[1]);
+  assert.equal(saved.size, 0);
+});
+
+test("an edit already committed before a reload does not turn away the next edit", async (t) => {
+  const original = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "sessionStorage",
+  );
+  const saved = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string) => saved.get(k) ?? null,
+      setItem: (k: string, v: string) => saved.set(k, v),
+      removeItem: (k: string) => saved.delete(k),
+    },
+  });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, "sessionStorage", original);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  });
+  const { client, document, item } = await fixture();
+  const timeline = structuredClone(
+    document.nodes.find((n) => n.id === item.id)!.data.timeline!,
+  );
+  timeline.width += 2;
+  const calls: { commandId?: string; payload: unknown }[] = [];
+  client.command = async (_type, payload, _versions, _preview, commandId) => {
+    calls.push({ commandId, payload: structuredClone(payload) });
+    // The first save commits, but the page reloads before it hears back.
+    if (calls.length === 1) throw Error("page reloaded");
+    return { status: "applied", changed: [] } as unknown as CommandReceipt;
+  };
+  await assert.rejects(
+    new CreationEditorSession(client, document, item.id).apply({ timeline }),
+    /page reloaded/,
+  );
+  assert.equal(saved.size, 1, "the unconfirmed save is kept across reloads");
+  const firstId = calls[0]!.commandId;
+  const lookups: string[] = [];
+  client.receipt = async (commandId) => {
+    lookups.push(commandId);
+    return { status: "applied", changed: [] } as unknown as CommandReceipt;
+  };
+  client.refresh = async () => client.snapshot;
+  const resumed = new CreationEditorSession(client, document, item.id);
+  const next = { ...timeline, width: timeline.width + 2 };
+  await resumed.apply({ timeline: next });
+  assert.deepEqual(lookups, [firstId]);
+  assert.equal(calls.length, 2, "the committed save is not replayed");
+  assert.notEqual(calls[1]!.commandId, firstId);
+  assert.ok(JSON.stringify(calls[1]!.payload).includes(`"width":${next.width}`));
   assert.equal(saved.size, 0);
 });
 
