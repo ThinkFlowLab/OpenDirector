@@ -8,6 +8,7 @@ This directory is the entry point for the repository's shared documentation. The
 | --- | --- | --- |
 | [Development guidance](../AGENTS.md) | Product direction and enduring principles | Architecture principles or product boundaries change |
 | [Unified project architecture](architecture/unified-project.md) | Business objects, shared entry points, and interaction rules | Object responsibilities, commands, persistence, or interaction rules change |
+| [Test contracts](architecture/test-contracts.md) | Test/production boundaries, how to avoid stale assertions and environment-dependent red runs | Test infrastructure, capability gates, or contract ownership change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
 | [macOS installation validation](development/macos-install-validation.md) | Installation and usage scenarios verified on Apple Silicon | The corresponding acceptance checks are repeated |
