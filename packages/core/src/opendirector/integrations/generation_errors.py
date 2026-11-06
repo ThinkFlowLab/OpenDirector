@@ -70,10 +70,14 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         category = 'authentication'
     elif name.startswith(('permissiondenied', 'accessdenied', 'forbidden')):
         category = 'permission'
-    elif name.startswith(('quotaexceeded', 'insufficientquota', 'insufficient_quota', 'insufficientbalance', 'accountoverdue')):
+    elif name.startswith(('quotaexceeded', 'insufficientquota', 'insufficient_quota', 'insufficientbalance', 'accountoverdue',
+                          'billinghardlimit', 'billing_hard_limit', 'organizationquota', 'organization_quota')):
         category = 'quota'
     elif name.startswith(('ratelimit', 'rate_limit', 'throttl')):
         category = 'rate_limit'
+    elif name.startswith(('moderation_blocked', 'moderationblocked', 'content_policy', 'contentpolicy', 'safety_system', 'safetysystem')):
+        # OpenAI Images reports refused prompts or pictures as a moderation block.
+        category = 'input'
     elif code == '55000000':
         category = 'temporary'
     message, suggestion = _REASONS[category]
@@ -92,6 +96,9 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         # A moderation verdict is deterministic: the same input fails again, so
         # the suggestion must lead to changing it rather than retrying.
         category, (message, suggestion) = 'input', MINIMAX_SENSITIVE[code]
+    elif name.startswith(('moderation_blocked', 'moderationblocked')):
+        message, suggestion = ('供应商判定提示词或参考图片违反内容政策，已拒绝生成。',
+                               '请调整提示词或参考素材后再生成；当前输入和已有结果保留。')
     elif category == 'provider' and value.get('status') in {'cancelled', 'expired'}:
         message = '供应商任务已取消。' if value['status'] == 'cancelled' else '供应商任务已过期。'
     elif http_status == 404:

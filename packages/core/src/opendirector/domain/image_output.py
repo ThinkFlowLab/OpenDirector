@@ -23,6 +23,10 @@ def image_outputs(config, profile):
             width, height = (max(256, round(value * scale / 16) * 16) for value in (width, height))
             outputs.append(dict(aspectRatio=ratio, size=f'{width}x{height}'))
         return outputs
+    if profile == 'openai-gpt-image':
+        # gpt-image renders exactly these three wire sizes; other ratios are resampled.
+        return [dict(aspectRatio=ratio, size=size) for ratio, size in
+                [('1:1', '1024x1024'), ('3:2', '1536x1024'), ('2:3', '1024x1536')]]
     return [dict(aspectRatio=ratio, size=size) for ratio, size in
             [('1:1', '1024x1024'), ('3:2', '1536x1024'), ('2:3', '1024x1536')]]
 

@@ -164,6 +164,9 @@ class GenerationProviders(VolcengineGeneration):
                     if prepared['images']:
                         files = [('image', (meta['name'], data, image_type(data)))
                                  for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']) if source_kind == 'image']
+                        if len(files) > 1 and input_rules(config)['profile'] == 'openai-gpt-image':
+                            # OpenAI reads several reference pictures as repeated `image[]` parts.
+                            files = [('image[]', value) for _, value in files]
                         async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                             data=fields, files=files,
                             extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:

@@ -43,6 +43,18 @@ async def _call(stage, work):
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         raise protocol_failure(stage) from None
 
+def _decoded(data):
+    """Identify a returned picture by signature, never by the service's label."""
+    if len(data) > MAX_ASSET_BYTES:
+        raise ProjectError('生成图片超过 50 MB。', 413)
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return MediaResult(data, 'png')
+    if data.startswith(b'\xff\xd8'):
+        return MediaResult(data, 'jpg')
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return MediaResult(data, 'webp')
+    raise protocol_failure('submit')
+
 
 class ModelAdapter:
     capabilities: frozenset[str] = frozenset()
@@ -95,17 +107,22 @@ class OpenAIImages(ModelAdapter):
     """OpenAI Images API: /images/generations and multipart /images/edits.
 
     vLLM-Omni serves the same routes and also honours `strength` and free sizes.
+    `gpt-image` models always answer with base64 and reject `response_format`, so
+    those configurations turn the flag off and send multiple references as
+    repeated `image[]` parts.
     """
 
     capabilities = frozenset({'image.generate', 'image.edit'})
     OPENAI_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
 
     def __init__(self, transport=None, poll_interval=3, *, free_size=False, max_edge=1536, grid=16, strength=False, max_images=1,
-                 transparent=False):
+                 transparent=False, response_format=True, reference_field='image'):
         super().__init__(transport, poll_interval)
         self.free_size, self.max_edge, self.grid = free_size, max_edge, grid
         # img2img services honour strength; instruction editors ignore it.
         self.strength, self.max_images = strength, max_images
+        # gpt-image omits `response_format`: it is documented base64 output only.
+        self.response_format, self.reference_field = response_format, reference_field
         # Models with an RGBA decoder can lift a subject onto transparency.
         self.capabilities = type(self).capabilities | ({'image.cutout'} if transparent else set())
 
@@ -142,16 +159,22 @@ class OpenAIImages(ModelAdapter):
             async with _client(self, config) as client:
                 if not images:
                     payload = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                               'n': 1, 'response_format': 'b64_json', **extra}
+                               'n': 1, **extra}
+                    if self.response_format:
+                        payload['response_format'] = 'b64_json'
                     async with client.stream('POST', endpoint(config['url'], '/images/generations'),
                                              headers=auth_headers(config), json=payload) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
                 else:
                     form = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                            'response_format': 'b64_json', **{key: str(item) for key, item in extra.items()}}
+                            **{key: str(item) for key, item in extra.items()}}
+                    if self.response_format:
+                        form['response_format'] = 'b64_json'
                     if request.strength is not None and self.strength:
                         form['strength'] = f'{min(max(request.strength, 0.0), 1.0):.3f}'
-                    files = [('image', (f'image_{index}.png', data, 'image/png')) for index, data in enumerate(images, 1)]
+                    # OpenAI reads repeated parts as `image[]`; a single image keeps the plain field.
+                    field = self.reference_field if len(images) > 1 else 'image'
+                    files = [(field, (f'image_{index}.png', data, 'image/png')) for index, data in enumerate(images, 1)]
                     async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                                              data=form, files=files, extensions={'model_parameters': {'fields': form, 'file_count': len(files)}}) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
@@ -164,16 +187,7 @@ class OpenAIImages(ModelAdapter):
                 async with client.stream('GET', result['url'], headers=auth_headers(config)) as response:
                     return await bounded(response, stage='download', secrets=secrets)
 
-        data = await _call('submit', work)
-        if len(data) > MAX_ASSET_BYTES:
-            raise ProjectError('生成图片超过 50 MB。', 413)
-        if data.startswith(b'\x89PNG\r\n\x1a\n'):
-            return MediaResult(data, 'png')
-        if data.startswith(b'\xff\xd8'):
-            return MediaResult(data, 'jpg')
-        if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
-            return MediaResult(data, 'webp')
-        raise protocol_failure('submit')
+        return _decoded(await _call('submit', work))
 
 
 class ArkImageEdits(ModelAdapter):
@@ -551,6 +565,10 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return OpenAIImages(transport, poll_interval, free_size=True, max_edge=2048, grid=32, max_images=4, transparent=True)
     if kind == 'image' and protocol == 'volcengine':
         return ArkImageEdits(transport, poll_interval)
+    if kind == 'image' and profile == 'openai-gpt-image':
+        # gpt-image: base64 answers only, 16 reference images, documented sizes.
+        return OpenAIImages(transport, poll_interval, max_images=16, transparent=True,
+                            response_format=False, reference_field='image[]')
     if kind == 'image' and protocol == 'openai':
         return OpenAIImages(transport, poll_interval)
     if kind == 'video' and profile == 'vllm-omni-h3':
