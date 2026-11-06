@@ -102,6 +102,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         request_size(result['content'], rules['requestBytes'])
         return result
     if kind == 'audio':
+        if rules.get('referencesAllowed') is False and task['referenceIds']:
+            raise ProjectError('MOSS 语音生成不支持参考素材，请直接填写朗读文本和音色 ID。', 422, code='moss_speech_reference')
         # Historical context remains recorded; it is never appended to speech.
         result['manifest'] = [{'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'context_only'}
                               for _, meta, source_kind in references(store, task['projectId'], task['referenceIds'], overrides)]
@@ -127,6 +129,13 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         if source_kind == 'video' and not (kind == 'video' and mode == 'reference' and rules.get('maxVideos')):
             raise ProjectError(f'“{meta["name"]}”：当前模型不支持视频参考，请尝试使用其他模型的素材参考模式。')
         if source_kind == 'text':
+            if rules['profile'] == 'moss-image':
+                try:
+                    layout = json.loads(prompt)
+                except ValueError:
+                    layout = None
+                if isinstance(layout, dict):
+                    raise ProjectError('MOSS 布局 JSON 不支持附加文本参考，请将要求写入 JSON 或移除文本参考。', 422, code='moss_layout_reference')
             result['prompt'] += f'\n\n参考{index}：{meta["name"]}\n{reference_text(data)}'
             text_context.append(f'\n\n参考{index}：{meta["name"]}\n{reference_text(data)}')
             entry['role'] = 'text'
@@ -190,6 +199,9 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     if rules['profile'] == 'fasth3-omni':
         from opendirector.integrations.fasth3 import native_prompt
         result['prompt'] = native_prompt(task, source_metadata) + ''.join(text_context)
+    if rules['profile'] == 'moss-image':
+        from opendirector.domain.moss_image import validate_moss_image_prompt
+        validate_moss_image_prompt(result['prompt'])
     if len(result['prompt']) > 20000:
         raise ProjectError('正文及文本参考超过当前生成长度限制，请缩短后重试。')
     request_size({key: result[key] for key in ('prompt', 'images', 'audios', 'videos')}, rules['requestBytes'] - 4096)

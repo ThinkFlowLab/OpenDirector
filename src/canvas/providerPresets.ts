@@ -6,6 +6,7 @@ import { getActiveLocale } from "../i18n/messages.ts";
 const EN_NAMES: Record<string, string> = {
   "OpenAI 兼容": "OpenAI compatible",
   "MiniMax 官方视频": "MiniMax official video",
+  "MOSS 开放平台": "MOSS Open Platform",
   "火山方舟 / Agent Plan": "Volcano Ark / Agent Plan",
   "vLLM-Omni 图片接口": "vLLM-Omni image API",
   "vLLM-Omni 语音合成接口": "vLLM-Omni speech synthesis API",
@@ -57,6 +58,7 @@ export interface ProviderPreset {
   protocol: ModelConfigInput["protocol"];
   connectionType: ModelConfigInput["connectionType"];
   authMode: ModelConfigInput["authMode"];
+  modelsByKind?: Partial<Record<ModelKind, readonly string[]>>;
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -90,6 +92,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     protocol: "minimax_video_v2",
     connectionType: "api",
     authMode: "bearer",
+    modelsByKind: {
+      video: ["MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite", "MiniMax-H3-Max"],
+    },
   },
   {
     id: "deepseek",
@@ -100,6 +105,20 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     protocol: "openai",
     connectionType: "api",
     authMode: "bearer",
+  },
+  {
+    id: "moss",
+    logoOrganization: "OpenMOSS-Team",
+    name: "MOSS 开放平台",
+    kinds: ["image", "audio"],
+    url: "https://api.mosi.cn/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: {
+      image: ["moss-image-sft-1.0", "moss-image-base-1.0"],
+      audio: ["moss-tts-1.5-flash"],
+    },
   },
 
   {

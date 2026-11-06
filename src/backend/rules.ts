@@ -30,6 +30,9 @@ export interface InputRules {
   imageBytes?: number;
   videoBytes?: number;
   requestBytes?: number;
+  maxPromptCharacters?: number | null;
+  voiceRequired?: boolean | null;
+  referencesAllowed?: boolean | null;
   maxVideos: number;
   maxAudios: number;
   videoModes: BackendVideoMode[];
@@ -476,6 +479,23 @@ export function backendBlocker(
         ? tNow("errors.rules.musicStyle")
         : tNow("errors.rules.speechText");
   const rules = config.inputRules;
+  if (rules.referencesAllowed === false && incoming.length)
+    return tNow("errors.rules.referencesUnsupported");
+  if (rules.voiceRequired && !serviceVoice(settings))
+    return tNow("errors.rules.voiceRequired");
+  if (rules.profile === "moss-image" && incoming.some((node) => node.data.kind === "text")) {
+    let layout: unknown;
+    try {
+      layout = JSON.parse(settings.prompt);
+    } catch {}
+    if (layout !== null && typeof layout === "object" && !Array.isArray(layout))
+      return tNow("errors.rules.layoutReferences");
+  }
+  if (
+    rules.maxPromptCharacters != null &&
+    Array.from(settings.prompt).length > rules.maxPromptCharacters
+  )
+    return tNow("errors.rules.promptTooLong", { limit: rules.maxPromptCharacters });
   if (settings.mode === "image") {
     if (settings.imagePreset && settings.imagePreset !== "none")
       return tNow("errors.rules.productViews");

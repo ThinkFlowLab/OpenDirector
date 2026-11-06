@@ -659,6 +659,9 @@ export interface ImageParametersInput extends ContractInput {
 
 export interface InputRulesInput extends ContractInput {
   readonly profile: string;
+  readonly maxPromptCharacters?: number | null;
+  readonly voiceRequired?: boolean | null;
+  readonly referencesAllowed?: boolean | null;
   readonly allowedKinds: ReadonlyArray<"text" | "image" | "video" | "audio">;
   readonly maxImages: number;
   readonly maxVideos: number;
@@ -2108,6 +2111,9 @@ export interface ImageParameters extends Contract {
 
 export interface InputRules extends Contract {
   readonly profile: string;
+  readonly maxPromptCharacters?: number | null;
+  readonly voiceRequired?: boolean | null;
+  readonly referencesAllowed?: boolean | null;
   readonly allowedKinds: ReadonlyArray<"text" | "image" | "video" | "audio">;
   readonly maxImages: number;
   readonly maxVideos: number;

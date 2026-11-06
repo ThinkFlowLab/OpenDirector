@@ -1,4 +1,5 @@
 """Fixtures submit real unified commands and expose the fixed adapter snapshot."""
+import asyncio
 from uuid import UUID, uuid4
 
 from opendirector.application.creation_canvas import asset_ref
@@ -58,6 +59,10 @@ def prepared(runner, project, config, **kwargs):
 
 def tasks(runner, pid):
     return [runner.task(job) for job in runner.projects.snapshot(pid).jobs]
+
+
+async def settled(runner):
+    await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
 
 
 async def cancel(runner, pid, job_id, session):

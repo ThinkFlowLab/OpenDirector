@@ -195,6 +195,10 @@ class CreationGeneration(GenerationRuntime):
                 params.update(fps=FPS, num_frames=h3_frames(params['duration']))
         if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
+        if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
+            params.update(prompt_enhance=False, watermark=not self.settings.get()['removeWatermark'])
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
+            params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
         return params
 
     @staticmethod
@@ -204,12 +208,14 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' else None,
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile == 'moss-image' else None,
                 outputFormat='png', watermark=parameters.get('watermark'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
                         scoreMode=parameters.get('score_mode'))
         if kind == 'audio':
+            if input_rules(config)['profile'] == 'moss-speech':
+                return dict(kind=kind, voice=parameters['voice'], format='mp3')
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
                 speaker=parameters.get('speaker') if config['protocol'] != 'openai' else None,
                 format='mp3', sampleRate=24000 if config['protocol'] != 'openai' else None)

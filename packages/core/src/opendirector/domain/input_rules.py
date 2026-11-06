@@ -1,6 +1,8 @@
 """Explicit adapter profiles, not model-name guesses or online capability probes."""
 from urllib.parse import urlsplit
 from typing import Literal
+from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
+from .moss_speech import is_moss_speech
 from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
 
 MAX_REFERENCES = 64  # Storage/structure guard; provider budgets are checked separately.
@@ -15,6 +17,14 @@ def _adapter_rules(config):
              'maxAudios': 0, 'imageBytes': 8 * 1024 * 1024, 'requestBytes': 48 * 1024 * 1024,
              'videoModes': ['first_frame'] if kind == 'video' else []}
     rules.update(maxVideos=0, videoBytes=50 * 1024 * 1024)
+    if is_moss_image(config):
+        rules.update(profile='moss-image', allowedKinds=['text'], maxImages=0,
+                     maxPromptCharacters=MOSS_IMAGE_PROMPT_CHARACTERS)
+        return rules
+    if is_moss_speech(config):
+        rules.update(profile='moss-speech', allowedKinds=[], maxImages=0,
+                     voiceRequired=True, referencesAllowed=False)
+        return rules
     if kind == 'vision' or config.get('protocol') == 'vllm_omni_segmentation':
         # Shared image segmentation / video tracking service, never a generator.
         rules.update(profile='vllm-omni-segmentation', allowedKinds=[], maxImages=0, videoModes=[])

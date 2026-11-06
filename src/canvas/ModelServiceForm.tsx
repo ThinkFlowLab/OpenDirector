@@ -203,9 +203,13 @@ export function ModelServiceForm({
     setDiscovering(true);
     setDiscoveryError("");
     try {
-      const result = await discoverModels(value, connection?.id);
-      setModelIds(result.models);
-      if (value.protocol === "minimax_video_v2" && !connection) setSelectedModels(result.models);
+      const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
+      const presetModels = preset?.modelsByKind?.[kind];
+      const models = presetModels
+        ? [...presetModels]
+        : (await discoverModels(value, connection?.id)).models;
+      setModelIds(models);
+      if (presetModels && !connection) setSelectedModels(models);
       setLoaded(true);
       setConnectionOpen(false);
     } catch (failure) {
@@ -275,9 +279,9 @@ export function ModelServiceForm({
     const preset = PROVIDER_PRESETS.find((item) => item.id === id);
     setPresetId(id);
     setConnection(undefined);
-    const officialModels = ["MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite", "MiniMax-H3-Max"];
-    setSelectedModels(id === "minimax-video" ? officialModels : []);
-    setModelIds(id === "minimax-video" ? officialModels : []);
+    const presetModels = [...(preset?.modelsByKind?.[kind] ?? [])];
+    setSelectedModels(presetModels);
+    setModelIds(presetModels);
     setModelOptions({});
     setModelErrors({});
     setLoaded(false);
@@ -529,7 +533,7 @@ export function ModelServiceForm({
           onTest={kind === "agent" ? (id) => void test(id) : undefined}
           results={results}
           fetchLabel={
-            value.protocol === "minimax_video_v2"
+            PROVIDER_PRESETS.find((item) => item.id === presetId)?.modelsByKind?.[kind]
               ? t("models.service.loadSupportedModels")
               : undefined
           }

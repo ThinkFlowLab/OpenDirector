@@ -329,6 +329,18 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if (spec.promptContent is not None and not any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)) or (spec.promptContent is None and not spec.prompt.strip()):
         raise ValueError('请填写生成提示词。')
     rules = model.inputRules
+    if rules.referencesAllowed is False and references:
+        raise ValueError('当前模型不支持参考素材，请移除参考后重试。')
+    if spec.kind == 'audio' and rules.voiceRequired and not spec.parameters.voice:
+        raise ValueError('请填写服务音色 ID。')
+    if rules.profile == 'moss-speech':
+        from opendirector.domain.moss_speech import validate_moss_speech_input
+        from opendirector.domain.projects import ProjectError
+        text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
+        try:
+            validate_moss_speech_input(text, spec.parameters.voice)
+        except ProjectError as error:
+            raise ValueError(str(error)) from error
     if len(references) > 64:
         raise ValueError('参考素材数量超过上限。')
     unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')

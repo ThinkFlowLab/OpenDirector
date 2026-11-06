@@ -6436,6 +6436,46 @@
             "title": "Profile",
             "type": "string"
           },
+          "maxPromptCharacters": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum characters in the final prompt including text references.",
+            "title": "Maxpromptcharacters"
+          },
+          "voiceRequired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether speech generation requires an explicit service voice ID.",
+            "title": "Voicerequired"
+          },
+          "referencesAllowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether references may be attached, including context-only references.",
+            "title": "Referencesallowed"
+          },
           "allowedKinds": {
             "description": "Accepted reference media kinds.",
             "items": {
@@ -20787,6 +20827,46 @@
             "minLength": 1,
             "title": "Profile",
             "type": "string"
+          },
+          "maxPromptCharacters": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum characters in the final prompt including text references.",
+            "title": "Maxpromptcharacters"
+          },
+          "voiceRequired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether speech generation requires an explicit service voice ID.",
+            "title": "Voicerequired"
+          },
+          "referencesAllowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether references may be attached, including context-only references.",
+            "title": "Referencesallowed"
           },
           "allowedKinds": {
             "description": "Accepted reference media kinds.",
