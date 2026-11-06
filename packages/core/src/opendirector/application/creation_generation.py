@@ -314,7 +314,7 @@ class CreationGeneration(GenerationRuntime):
             try:
                 validate_generation(spec, public, resolved)
             except (ValueError, ProjectError) as error:
-                raise ContractError('invalid_input', str(error), spec.id) from error
+                raise ContractError.from_error(error, spec.id) from error
             for reference in resolved:
                 if reference.transmission != 'context_only':
                     self.assets.reference_available(command.projectId, reference.asset.assetId)
@@ -337,7 +337,7 @@ class CreationGeneration(GenerationRuntime):
                     self.provider.prepare_inputs(str(command.projectId), task, config)
                 parameters = self._parameters(spec, config, task, records)
             except ProjectError as error:
-                raise ContractError('invalid_input', str(error), spec.id) from error
+                raise ContractError.from_error(error, spec.id) from error
             job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
             data['jobs'].append(job.model_dump(mode='json'))
             return ProjectSnapshot.model_validate(data)

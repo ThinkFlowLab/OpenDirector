@@ -214,6 +214,6 @@ def apply_node_version(history, before, command):
     if model:
         try:
             validate_generation(configured, model, resolved)
-        except ValueError as error:
-            raise ContractError('invalid_input', str(error), item.id) from error
+        except (ValueError, ProjectError) as error:
+            raise ContractError.from_error(error, item.id) from error
     return after

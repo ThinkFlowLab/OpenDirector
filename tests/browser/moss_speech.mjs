@@ -38,8 +38,8 @@ assert.equal(config.inputRules.voiceRequired, true);
 assert.equal(config.inputRules.referencesAllowed, false);
 await mkdir(output, { recursive: true });
 const copy = {
-  "zh-CN": { tools: "画布创作工具", add: "添加音频", picker: "生成模型", prompt: "朗读文本", voice: "音色 ID（必填）", placeholder: "请输入音色 ID", library: "MOSS 音色库", generate: "提交生成", saved: "已保存到本机" },
-  "en-US": { tools: "Canvas creation tools", add: "Add Audio", picker: "Generation model", prompt: "Text to read", voice: "Voice ID (required)", placeholder: "Enter a Voice ID", library: "MOSS voice library", generate: "Generate", saved: "Saved on this device" },
+  "zh-CN": { tools: "画布创作工具", add: "添加音频", picker: "生成模型", prompt: "朗读文本", voice: "音色 ID（必填）", placeholder: "请输入音色 ID", library: "MOSS 音色库", generate: "提交生成", saved: "已保存到本机", voiceError: "请填写 MOSS 账户可用的音色 ID。" },
+  "en-US": { tools: "Canvas creation tools", add: "Add Audio", picker: "Generation model", prompt: "Text to read", voice: "Voice ID (required)", placeholder: "Enter a Voice ID", library: "MOSS voice library", generate: "Generate", saved: "Saved on this device", voiceError: "Enter a Voice ID available to your MOSS account." },
 };
 const browser = await launchBrowser();
 const errors = [];
@@ -76,6 +76,49 @@ try {
       const generate = page.getByRole("button", { name: labels.generate, exact: true });
       assert.equal(await generate.isDisabled(), true);
       await page.screenshot({ path: join(output, `${locale}-mock-speech-voice-required.png`), fullPage: true });
+      await voice.fill("音色");
+      await until(async () => (await state()).generationSpecs[0]?.parameters.voice === "音色");
+      assert.equal(await generate.isDisabled(), true);
+      await voice.fill(voiceId);
+      await until(async () => (await state()).generationSpecs[0]?.parameters.voice === voiceId);
+      const callsBefore = (await call("/api/creation-test-health")).calls.length;
+      const rejectSubmission = async route => {
+        const body = route.request().postDataJSON();
+        if (body?.type !== "generation.submit") return route.continue();
+        const spec = (await state()).generationSpecs.find(spec => spec.id === body.payload.specId);
+        const updateResponse = await route.fetch({ postData: JSON.stringify({
+          commandId: crypto.randomUUID(), projectId, type: "generationSpec.update",
+          expectedVersions: [{ objectType: "generation_spec", id: spec.id, revision: spec.revision }],
+          payload: { spec: { ...spec, parameters: { ...spec.parameters, voice: "音色" } } },
+        }) });
+        const updated = await updateResponse.json();
+        assert.equal(updated.status, "applied");
+        const revision = updated.changed.find(change => change.objectType === "generation_spec").revision;
+        const response = await route.fetch({ postData: JSON.stringify({
+          ...body,
+          expectedVersions: body.expectedVersions.map(version =>
+            version.objectType === "generation_spec" ? { ...version, revision } : version),
+          payload: { ...body.payload, expectedSpecRevision: revision },
+        }) });
+        await route.fulfill({ response });
+      };
+      await page.route("**/commands", rejectSubmission);
+      const [rejectedResponse] = await Promise.all([
+        page.waitForResponse(response =>
+          response.url().endsWith(`/api/creation/projects/${projectId}/commands`)
+            && response.request().method() === "POST"
+            && response.request().postDataJSON()?.type === "generation.submit"),
+        generate.click(),
+      ]);
+      await page.unroute("**/commands", rejectSubmission);
+      const rejected = await rejectedResponse.json();
+      assert.equal(rejected.status, "rejected");
+      assert.equal(rejected.issues[0].code, "moss_speech_voice");
+      assert.equal(rejected.issues[0].message, labels.voiceError);
+      await page.getByText(labels.voiceError, { exact: true }).waitFor();
+      assert.equal((await state()).jobs.length, 0);
+      assert.equal((await call("/api/creation-test-health")).calls.length, callsBefore);
+      await page.screenshot({ path: join(output, `${locale}-mock-speech-invalid-voice.png`), fullPage: true });
       await voice.fill(voiceId);
       await until(async () => (await state()).generationSpecs[0]?.parameters.voice === voiceId);
       assert.equal(await generate.isEnabled(), true);
@@ -108,7 +151,7 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, fixture: "local WAV, no real MOSS synthesis", locales: Object.keys(copy), projects, screenshotDirectory: output,
-    checks: ["required manual Voice ID", "missing voice blocks generation", "UUID persists and reopens", "audio asset", "actual audio element playback", "reopen without duplicate generation"] }));
+    checks: ["required manual Voice ID", "missing voice blocks generation", "invalid voice preserves code and localized rejection without a job or model call", "UUID persists and reopens", "audio asset", "actual audio element playback", "reopen without duplicate generation"] }));
 } finally {
   await browser.close();
 }

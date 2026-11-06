@@ -6,10 +6,11 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from generation_helpers import command, prepared, settled
 from opendirector.application.creation_assets import CreationAssets
-from opendirector.application.creation_canvas import asset_ref
+from opendirector.application.creation_canvas import CreationCanvas, asset_ref
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.domain.capabilities import ImageRequest, SpeechRequest
@@ -25,6 +26,7 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.model_adapters import MossImages, MossSpeech, OpenAISpeech
 from opendirector.integrations.providers import GenerationProviders
+from opendirector_api.main import create_app
 from test_creation_canvas_service import project, send, ver
 from test_creation_generation_service import anyio_backend
 from test_creation_parameters import png
@@ -322,15 +324,22 @@ async def test_speech_voice_not_found_is_readable_safe_and_never_reposted():
 
 @pytest.mark.parametrize('context', MODEL_CASES[:2], indirect=True)
 @pytest.mark.parametrize('reference_kind', ['image', 'expanded_text'])
-def test_unified_preflight_rejects_images_and_prompt_after_text_expansion(context, reference_kind):
+@pytest.mark.parametrize('source', ['ui', 'agent'])
+def test_unified_preflight_rejects_images_and_prompt_after_text_expansion(context, reference_kind, source):
     project, _, config = context
     store, pid, session = project
     data, name = (png(), 'reference.png') if reference_kind == 'image' else (('x' * 4000).encode(), 'reference.md')
     asset = CreationToolAssets(store).import_file(str(pid), str(uuid4()), name, data, session)
     runner = runner_for(context, lambda request: pytest.fail('preflight rejection must not submit'))
-    with pytest.raises(ProjectError):
-        prepared(runner, project, config, prompt='Draw a lake', references=[asset['id']])
-    assert not store.snapshot(pid).jobs
+    request = command(project, config, prompt='Draw a lake', references=[asset['id']])
+    before = store.snapshot(pid)
+    receipt = runner.prepare(request, session=session, source=source)
+    assert receipt.status == 'rejected', receipt
+    assert receipt.issues[0].code == ('moss_prompt_limit' if reference_kind == 'expanded_text' else 'invalid_input')
+    assert receipt.issues[0].objectId == request.payload.specId
+    assert not receipt.changed and not receipt.jobIds
+    assert store.snapshot(pid) == before
+    assert runner.prepare(request, session=session, source=source) == receipt
 
 
 @pytest.mark.parametrize('context', MODEL_CASES[:2], indirect=True)
@@ -346,7 +355,7 @@ def test_unified_preflight_rejects_layout_json_with_text_reference(context, sour
         references=[note['id']])
     receipt = runner.prepare(request, session=session, source=source)
     assert receipt.status == 'rejected', receipt
-    assert receipt.issues[0].code == 'invalid_input'
+    assert receipt.issues[0].code == 'moss_layout_reference'
     assert 'JSON' in receipt.issues[0].message and '文本参考' in receipt.issues[0].message
     assert not store.snapshot(pid).jobs
     assert not calls
@@ -378,12 +387,58 @@ async def test_unified_command_preserves_layout_json_without_references(context)
 
 @pytest.mark.parametrize('context', MODEL_CASES[2:], indirect=True)
 @pytest.mark.parametrize('voice', [None, '音色'])
-def test_speech_preflight_requires_valid_voice_without_creating_job(context, voice):
+@pytest.mark.parametrize('source', ['ui', 'agent'])
+def test_speech_preflight_requires_valid_voice_without_creating_job(context, voice, source):
     project, _, config = context
+    store, pid, session = project
     runner = runner_for(context, lambda _: pytest.fail('preflight must not submit'))
-    with pytest.raises(ProjectError):
-        prepared(runner, project, config, prompt='Read this', parameters={'voice': voice})
-    assert not project[0].snapshot(project[1]).jobs
+    request = command(project, config, prompt='Read this', parameters={'voice': voice})
+    before = store.snapshot(pid)
+    receipt = runner.prepare(request, session=session, source=source)
+    assert receipt.status == 'rejected', receipt
+    assert receipt.issues[0].code == 'moss_speech_voice'
+    assert receipt.issues[0].objectId == request.payload.specId
+    assert not receipt.changed and not receipt.jobIds
+    assert store.snapshot(pid) == before
+    assert runner.prepare(request, session=session, source=source) == receipt
+    projection = CreationCanvas(store).projection(pid)
+    assert not projection['capabilities'][str(request.payload.originItemId)].canGenerate
+
+
+def test_http_preflight_localizes_submission_replay_and_receipt_without_changing_storage(context):
+    project, _, config = context
+    store, pid, session = project
+    runner = runner_for(context, lambda _: pytest.fail('preflight must not submit'))
+    if config['kind'] == 'audio':
+        request = command(project, config, prompt='Read this', parameters={'voice': '音色'})
+        code = 'moss_speech_voice'
+        english = 'Enter a Voice ID available to your MOSS account.'
+    else:
+        note = CreationToolAssets(store).import_file(str(pid), str(uuid4()), 'note.md', b'x' * 4000, session)
+        request = command(project, config, prompt='Draw a lake', references=[note['id']])
+        code = 'moss_prompt_limit'
+        english = 'MOSS requires a nonempty prompt of at most 4,000 characters, including text references.'
+    before = store.snapshot(pid)
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session, 'Accept-Language': 'en-US'}
+    path = f'/api/creation/projects/{pid}'
+    body = request.model_dump(mode='json')
+    with TestClient(create_app(store.local, generation_provider=runner.provider), headers=headers) as client:
+        response = client.post(path + '/commands', json=body)
+        assert response.status_code == 200, response.text
+        receipt = response.json()
+        assert receipt['status'] == 'rejected'
+        assert receipt['issues'][0]['code'] == code
+        assert receipt['issues'][0]['message'] == english
+        assert not receipt['changed'] and not receipt['jobIds']
+        assert client.post(path + '/commands', json=body).json() == receipt
+        assert client.get(path + f'/receipts/{request.commandId}').json() == receipt
+        stored = store.receipt(pid, request.commandId).model_dump(mode='json')
+        assert stored['issues'][0]['code'] == code
+        assert stored['issues'][0]['message'] != english
+        assert client.get(path + f'/receipts/{request.commandId}', headers={'Accept-Language': 'zh-CN'}).json() == stored
+        assert client.post(path + '/commands', json=body, headers={'Accept-Language': 'zh-CN'}).json() == stored
+        assert store.receipt(pid, request.commandId).model_dump(mode='json') == stored
+        assert store.snapshot(pid) == before
 
 
 @pytest.mark.parametrize('context', MODEL_CASES[2:], indirect=True)

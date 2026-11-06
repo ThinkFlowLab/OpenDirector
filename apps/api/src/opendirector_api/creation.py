@@ -21,6 +21,7 @@ from opendirector.domain.creation.project import ProjectSnapshot, ViewState
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector_api.models import AssetSource, Session
+from opendirector_api.localization import localized_receipt
 
 
 def creation_routes(projects: CreationProjects, generation=None):
@@ -62,7 +63,7 @@ def creation_routes(projects: CreationProjects, generation=None):
         return {'ok': True}
 
     @router.post('/projects/{project_id}/commands', response_model=CommandReceipt)
-    async def execute(project_id: UUID, value: Command, x_opendirector_session: UUID | None = Header(default=None),
+    async def execute(project_id: UUID, value: Command, request: Request, x_opendirector_session: UUID | None = Header(default=None),
                       x_canvas_import: str | None = Header(default=None)):
         # Source is selected by the trusted entrypoint, never by a payload flag.
         if value.projectId != project_id:
@@ -80,8 +81,10 @@ def creation_routes(projects: CreationProjects, generation=None):
         if value.type in {'generation.submit', 'job.cancel', 'job.recover'}:
             if generation is None:
                 raise ProjectError('任务服务不可用。', 503)
-            return await generation.execute(value, session=session)
-        return await run_in_threadpool(projects.execute, value, session=session, imported_from=imported_from)
+            receipt = await generation.execute(value, session=session)
+        else:
+            receipt = await run_in_threadpool(projects.execute, value, session=session, imported_from=imported_from)
+        return localized_receipt(request, receipt)
 
     @router.get('/projects/{project_id}/canvas/{item_id}/status')
     async def item_status(project_id: UUID, item_id: UUID, wait_seconds: float = Query(default=0, ge=0, le=30)):
@@ -145,8 +148,8 @@ def creation_routes(projects: CreationProjects, generation=None):
             raise ProjectError('删除选择无效。') from None
 
     @router.get('/projects/{project_id}/receipts/{command_id}', response_model=CommandReceipt)
-    def receipt(project_id: UUID, command_id: UUID):
-        return projects.receipt(project_id, command_id)
+    def receipt(project_id: UUID, command_id: UUID, request: Request):
+        return localized_receipt(request, projects.receipt(project_id, command_id))
 
     @router.get('/projects/{project_id}/changes')
     def changes(project_id: UUID, after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200)):

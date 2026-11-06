@@ -6,6 +6,8 @@ English, so a missing translation never leaks Chinese into an English UI.
 """
 from fastapi import Request
 
+from opendirector.domain.creation.commands import CommandReceipt
+
 ENGLISH_BY_CODE = {
     "moss_speech_text": "Enter the text to read aloud.",
     "moss_speech_voice": "Enter a Voice ID available to your MOSS account.",
@@ -95,3 +97,10 @@ def localized_error(
         status=status,
         code=code,
     )
+
+
+def localized_receipt(request: Request, receipt: CommandReceipt) -> CommandReceipt:
+    return receipt.model_copy(update={'issues': tuple(
+        issue.model_copy(update={'message': localized_error(request, chinese=issue.message, status=422, code=issue.code)})
+        for issue in receipt.issues
+    )})

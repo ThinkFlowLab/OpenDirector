@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from opendirector.domain.projects import ProjectError
+
 from .assets import AssetRef
 from .base import CanvasItemVersion, Contract, Identifier, Point, Positive, ProjectEntity, unique
 from .generation import FollowingSource, GenerationSpec, ResolvedReference, validate_generation
@@ -243,7 +245,7 @@ def node_capabilities(item: CanvasItem, *, spec: GenerationSpec | None = None,
         try:
             validate_generation(spec, model, references)
             generate = True
-        except ValueError:
+        except (ValueError, ProjectError):
             pass
     return NodeCapabilities(
         canEdit=editable and (role == 'editor' or role == 'material' and assetAvailable
