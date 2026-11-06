@@ -86,7 +86,7 @@ async def runtime_readiness(engine: str) -> str:
         except ProjectError:
             return 'unknown'
     if engine == 'jiuwenswarm':
-        return await jiuwenswarm.readiness()
+        return await jiuwenswarm.readiness(executable)
     if engine == 'opencode':
         return 'ready'
     args = ['--version'] if engine == 'default' else ['login', 'status'] if engine == 'codex' else ['auth', 'status', '--json']

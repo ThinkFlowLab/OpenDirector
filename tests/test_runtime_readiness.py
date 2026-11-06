@@ -143,3 +143,18 @@ def test_skill_endpoint_reports_incomplete_bundled_install(tmp_path, monkeypatch
         assert 'pip install' in english.json()['detail']
         assert 'Bundled Agent' in english.json()['detail']
         assert '磁盘空间' not in response.json()['detail']
+
+def test_jiuwenswarm_readiness_uses_the_executable_installation_resolved(monkeypatch):
+    """Only runtime.installation() is mocked: the resolved path must reach the CLI call."""
+    from opendirector.agent import jiuwenswarm
+    seen = []
+    async def query(operation, *, binary=None):
+        seen.append((operation, binary))
+        return {'models': [{'selection_key': 'local/m', 'display_name': 'm', 'is_default': True}]}
+    monkeypatch.setattr(runtime, 'installation', lambda _: '/resolved/jiuwenswarm')
+    monkeypatch.setattr(jiuwenswarm, 'query', query)
+    def path_lookup():
+        raise AssertionError('readiness must not probe PATH again')
+    monkeypatch.setattr(jiuwenswarm, 'executable', path_lookup)
+    assert asyncio.run(runtime.runtime_readiness('jiuwenswarm')) == 'ready'
+    assert seen == [('protocol.capabilities', '/resolved/jiuwenswarm'), ('model.list', '/resolved/jiuwenswarm')]
