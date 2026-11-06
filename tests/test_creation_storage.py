@@ -10,6 +10,8 @@ from uuid import uuid4
 
 import pytest
 
+from capabilities import requires_posix
+
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.projects import ProjectError
@@ -377,6 +379,7 @@ def test_destination_appearing_during_recovery_is_never_overwritten(projects):
     assert restored.snapshot(command.projectId).project.name == 'New'
 
 
+@requires_posix()
 def test_symlinks_and_missing_commit_records_are_not_followed_or_replaced(projects, tmp_path):
     created = create(projects)
     commits = projects.root / 'Example' / 'commits'

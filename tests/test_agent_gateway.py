@@ -3,6 +3,8 @@ from uuid import uuid4
 
 import pytest
 
+from capabilities import requires_posix
+
 from opendirector.agent.context import RunContext
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.tools import AgentTools
@@ -102,6 +104,7 @@ async def test_rejected_receipt_and_forged_scope_are_consistent(gateway, monkeyp
 
 
 @pytest.mark.anyio
+@requires_posix()
 async def test_skill_read_resolves_directory_alias_and_preserves_boundary(gateway, tmp_path):
     skill = tmp_path / 'skills' / 'character-replacement'
     skill.mkdir(parents=True)
