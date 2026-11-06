@@ -7,6 +7,7 @@ This directory is the entry point for the repository's shared documentation. The
 | Document | What it covers | When to update it |
 | --- | --- | --- |
 | [Development guidance](../AGENTS.md) | Product direction and enduring principles | Architecture principles or product boundaries change |
+| [Contributing](../CONTRIBUTING.md) | Label taxonomy, how to pick labels, and what a PR must satisfy | Process, labels, or submission requirements change |
 | [Unified project architecture](architecture/unified-project.md) | Business objects, shared entry points, and interaction rules | Object responsibilities, commands, persistence, or interaction rules change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
@@ -15,6 +16,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Python installation and packaging](development/packaging.md) | Installation, platform wheel builds, and isolated verification | Packaging, resource paths, or build process changes |
 | [Business CLI](guides/cli.md) | Querying, editing, and generating through a terminal or Agent Shell | Commands, authorization, or receipt semantics change |
 | [Video model capabilities](guides/video-model-capabilities.md) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
+| [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
 | [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture | Runtime architecture changes |
 
 The root [README](../README.md) introduces the product and examples and links to quick-start and documentation. See [installation and updates](guides/installation.md) ([中文](guides/installation.zh-CN.md)) for installation, and the [user guide](guides/user-guide.md) ([中文](guides/user-guide.zh-CN.md)) for configuration, creation, and troubleshooting. The README does not contain the full manual, implementation architecture, development tests, research sources, or iteration history. Source code and generated contracts describe the implementation; architecture and roadmap documents describe goals and do not establish that a capability is already available.
