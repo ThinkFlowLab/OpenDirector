@@ -119,7 +119,7 @@ Cancellation is an explicit `opendirector_cancel` action. Aborting a tool reques
 
 Tools return canonical JSON for programmatic use. Submission, progress, candidate selection, and cancellation render short localized summaries with the project name, useful IDs, next step, and project link. A full project/model read is available when the agent needs it.
 
-The bundle contributes native tools. The built-in DSH Web Client uses its generic tool presentation; this package does not ship a custom Web card or embedded canvas.
+DSH Web shows saved images and videos on result cards. The card actions prepare a draft for the current conversation. Use the canvas link to keep editing the project in OpenDirector.
 
 ## Development checks
 
