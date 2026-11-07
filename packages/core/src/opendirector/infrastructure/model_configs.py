@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from filelock import FileLock
 
@@ -13,20 +13,29 @@ from opendirector.domain.projects import ProjectError, identifier
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.capabilities import agent_input_modalities
 from opendirector.domain.video_capabilities import check_video_config
+from opendirector.domain.creation.models import BUILTIN_PLACEHOLDER_URL
 from opendirector.infrastructure.local_projects import child, read_json, write_json
 
 MODEL_KINDS = ("agent", "image", "video", "audio", "vision")
 
+# Deterministic identity for the built-in placeholder generator, so every
+# installation resolves the same config ID and reseeding stays idempotent.
+BUILTIN_PLACEHOLDER_IMAGE_ID = str(uuid5(NAMESPACE_URL, 'opendirector/builtin/placeholder-image'))
+BUILTIN_PLACEHOLDER = {'kind': 'image', 'modelId': 'placeholder'}
+
 
 def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None):
-    if connection_type not in {'api', 'self_hosted'}:
+    if connection_type not in {'api', 'self_hosted', 'builtin'}:
         raise ProjectError('无效的接入方式。')
+    if connection_type == 'builtin':
+        # The built-in placeholder never dials a network: no URL, no credentials.
+        protocol, auth_mode, proxy_mode = 'placeholder', 'none', 'direct'
     protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind not in {'video', 'vision'}
                             else 'vllm_omni' if connection_type == 'self_hosted' else 'volcengine')
-    allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
+    allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation', 'placeholder'},
                'video': {'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
-    auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
+    auth_mode = auth_mode or ('none' if connection_type in {'self_hosted', 'builtin'} else 'bearer')
     proxy_mode = proxy_mode if proxy_mode is not None else 'system'
     if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'} or proxy_mode not in {'system', 'direct'}:
         raise ProjectError('接口协议或鉴权方式与模型类别不兼容。')
@@ -86,7 +95,11 @@ class ModelConfigs:
                 if item["id"] in seen or item["kind"] not in MODEL_KINDS:
                     raise ValueError()
                 seen.add(item["id"])
-                fields = model_fields(item["url"], item["modelId"], item["apiKey"])
+                # Built-in entries carry a marker URL that is never dialed; the
+                # HTTP(S) service validation does not apply to them.
+                fields = (model_fields(item["url"], item["modelId"], item["apiKey"])
+                          if item.get('connectionType') != 'builtin'
+                          else {'url': item['url'], 'modelId': item['modelId'], 'apiKey': ''})
                 item.update(connection_fields(item['kind'], item.get('connectionType', 'api'), item.get('protocol'), item.get('authMode'), item.get('proxyMode')))
                 # Old /videos entries used the FastH3 request shape for every name.
                 # Pin that adapter while new configurations use explicit detection.
@@ -119,6 +132,20 @@ class ModelConfigs:
             if item is None:
                 raise ProjectError("所选模型不存在或类别不符，请在设置中配置并重新选择。", 409)
             return dict(item)
+
+    def ensure_builtin(self) -> dict:
+        """Seed the built-in placeholder image generator once; idempotent per install."""
+        with self.lock:
+            models = self._read()
+            existing = next((item for item in models
+                             if item['kind'] == BUILTIN_PLACEHOLDER['kind'] and item['modelId'] == BUILTIN_PLACEHOLDER['modelId']), None)
+            if existing is not None:
+                return self._public(existing)
+            models.append({'id': BUILTIN_PLACEHOLDER_IMAGE_ID, 'url': BUILTIN_PLACEHOLDER_URL, 'apiKey': '',
+                           **BUILTIN_PLACEHOLDER, **connection_fields(BUILTIN_PLACEHOLDER['kind'], 'builtin')})
+            self._write(models)
+            # Reread so the stored entry gets the same normalization as any other.
+            return next(self._public(item) for item in self._read() if item['id'] == BUILTIN_PLACEHOLDER_IMAGE_ID)
 
     def save(self, kind: str, url: str, model_id: str, api_key: str, config_id: str | None = None, *, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None, video_adapter=None, video_capabilities=None, capabilities_supplied=False, input_modalities=None) -> dict:
         if kind not in MODEL_KINDS:

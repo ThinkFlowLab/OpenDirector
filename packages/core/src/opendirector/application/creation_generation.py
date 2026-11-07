@@ -45,11 +45,13 @@ def version(kind, obj):
 
 def media_record(asset):
     meta = asset.metadata
+    provenance = asset.provenance
     return dict(id=str(asset.id), name=asset.name, kind=asset.kind, type=meta.mimeType, size=meta.size,
         fingerprint=asset.fingerprint, width=meta.width, height=meta.height,
         durationMs=round(meta.durationSeconds * 1000) if meta.durationSeconds is not None else None,
         frameRate=meta.frameRate, hasAudio=meta.hasAudio, sampleRate=meta.sampleRate, channels=meta.channels,
-        generationTaskId=str(asset.provenance.jobId) if asset.provenance.jobId else None)
+        generationTaskId=str(provenance.jobId) if provenance.jobId else None,
+        placeholder=bool(provenance.modelSnapshot and provenance.modelSnapshot.protocol == 'placeholder'))
 
 
 class ProviderMedia:
@@ -492,6 +494,7 @@ class CreationGeneration(GenerationRuntime):
                 'canvasItems': (*tuple(adopted_item if item and i.id == item.id else i for i in current.canvasItems), *([additional] if additional else [])),
                 'generationSpecs': tuple(adopted_spec if s.id == spec.id else s for s in current.generationSpecs)})
         provenance = AssetProvenance(source='generated', jobId=job.id, inputFingerprint=job.inputFingerprint,
+            modelSnapshot=job.inputSnapshot.model,
             sources=tuple({r.asset.assetId: r.asset for r in job.inputSnapshot.references}.values()))
         receipt = self.assets.register(command, source='background', provenance=provenance, apply=apply)
         if receipt.status == 'rejected':
