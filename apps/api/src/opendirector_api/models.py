@@ -23,8 +23,8 @@ class AssetSource(Model):
 
 
 class ModelConnection(Model):
-    connectionType: Literal['api', 'self_hosted'] = 'api'
-    protocol: Literal['openai', 'volcengine', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
+    connectionType: Literal['api', 'self_hosted', 'builtin'] = 'api'
+    protocol: Literal['openai', 'volcengine', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score', 'placeholder'] | None = None
     authMode: Literal['none', 'bearer'] | None = None
     proxyMode: Literal['system', 'direct'] | None = None
 

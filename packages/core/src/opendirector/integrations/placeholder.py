@@ -11,7 +11,9 @@ from io import BytesIO
 
 from PIL import Image, ImageDraw
 
+from opendirector.domain.capabilities import ImageRequest, MediaResult
 from opendirector.domain.projects import ProjectError
+from opendirector.integrations.model_adapters import ModelAdapter
 
 MAX_PLACEHOLDER_EDGE = 2048
 MIN_PLACEHOLDER_EDGE = 64
@@ -77,7 +79,6 @@ def _ridges(draw, size, accent, ink):
 
 class PlaceholderGeneration:
     """Deterministic local compositions for generation kinds without a model."""
-
     def validate(self, kind, config):
         if kind != 'image':
             raise ProjectError('占位生成器当前仅支持图片；视频与音频占位将在后续版本提供。', 409,
@@ -91,28 +92,43 @@ class PlaceholderGeneration:
     async def generate(self, config, task, submitted, *, result_ready=None):
         if task['kind'] != 'image':
             self.validate(task['kind'], config)
-        width, height = _clamp_size(task['parameters'].get('size'))
-        data = await asyncio.to_thread(
-            self._composition, task['prompt'], task['parameters'].get('size'), width, height)
+        size = task['parameters'].get('size')
+        width, height = _clamp_size(size)
+        data = await asyncio.to_thread(composition_bytes, task['prompt'], width, height)
         return 'png', data
 
-    def _composition(self, prompt, size, width, height):
-        seed = hashlib.sha256(f"placeholder|{prompt}|{size or ''}".encode('utf-8')).digest()
-        base, accent, ink = _palette(seed)
-        image = Image.new('RGB', (width, height), base)
-        _gradient(image, base, accent)
-        overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
-        shape = (seed[0] + seed[1]) % 3
-        ink_layer = (*ink, 150)
-        accent_layer = (*accent, 190)
-        if shape == 0:
-            _orbits(draw, (width, height), accent_layer, ink_layer)
-        elif shape == 1:
-            _waves(draw, (width, height), accent_layer, ink_layer)
-        else:
-            _ridges(draw, (width, height), accent_layer, ink_layer)
-        image = Image.alpha_composite(image.convert('RGBA'), overlay).convert('RGB')
-        out = BytesIO()
-        image.save(out, 'PNG')
-        return out.getvalue()
+
+def composition_bytes(prompt, width, height):
+    """The deterministic composition shared by both placeholder adapters."""
+    seed = hashlib.sha256(f"placeholder|{prompt}|{width}x{height}".encode('utf-8')).digest()
+    base, accent, ink = _palette(seed)
+    image = Image.new('RGB', (width, height), base)
+    _gradient(image, base, accent)
+    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    shape = (seed[0] + seed[1]) % 3
+    ink_layer = (*ink, 150)
+    accent_layer = (*accent, 190)
+    if shape == 0:
+        _orbits(draw, (width, height), accent_layer, ink_layer)
+    elif shape == 1:
+        _waves(draw, (width, height), accent_layer, ink_layer)
+    else:
+        _ridges(draw, (width, height), accent_layer, ink_layer)
+    image = Image.alpha_composite(image.convert('RGBA'), overlay).convert('RGB')
+    out = BytesIO()
+    image.save(out, 'PNG')
+    return out.getvalue()
+
+
+class PlaceholderImages(ModelAdapter):
+    """Capability adapter so the composer lists the placeholder as a generator.
+
+    Generation itself runs through GenerationProviders; image editing keeps
+    the base adapter's honest refusal because placeholders have no edit path.
+    """
+
+    capabilities = frozenset({'image.generate'})
+
+    async def image(self, config, request: ImageRequest) -> MediaResult:
+        return MediaResult(composition_bytes(request.prompt, request.width, request.height), 'png')

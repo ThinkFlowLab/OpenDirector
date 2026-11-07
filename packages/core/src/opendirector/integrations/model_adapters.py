@@ -656,6 +656,9 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
     """The adapter serving a configuration, chosen from its explicit profile and protocol."""
     kind, protocol = config['kind'], config.get('protocol')
     profile = input_rules(config)['profile']
+    if protocol == 'placeholder':
+        from opendirector.integrations.placeholder import PlaceholderImages
+        return PlaceholderImages()
     if profile == 'vllm-omni-segmentation':
         return VllmOmniSegmentation(transport, poll_interval)
     if profile == 'vllm-omni-depth':
