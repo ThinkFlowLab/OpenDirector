@@ -48,7 +48,7 @@ def test_adapter_drops_response_format_only_for_gpt_image():
     adapter = adapter_for(GPT_IMAGE)
     assert isinstance(adapter, OpenAIImages) and adapter.response_format is False
     assert adapter.reference_field == 'image[]' and adapter.max_images == 16
-    assert adapter.capabilities == {'image.generate', 'image.edit', 'image.cutout'}
+    assert adapter.capabilities == {'image.generate', 'image.edit'}
     assert adapter.size(1600, 900) == (1536, 1024)
     # OpenAI-compatible services keep the vLLM-Omni request shape.
     compatible = adapter_for({**GPT_IMAGE, 'modelId': 'Tongyi-MAI/Z-Image-Turbo', 'url': 'http://gpu-box:8200/v1'})

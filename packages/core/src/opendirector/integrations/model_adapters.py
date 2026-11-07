@@ -676,7 +676,10 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return ArkImageEdits(transport, poll_interval)
     if kind == 'image' and profile == 'openai-gpt-image':
         # gpt-image: base64 answers only, 16 reference images, documented sizes.
-        return OpenAIImages(transport, poll_interval, max_images=16, transparent=True,
+        # No subject cutout: its edits redraw and move the subject, so a returned
+        # alpha does not line up with the source pixels, and gpt-image-2 rejects
+        # transparent backgrounds outright.
+        return OpenAIImages(transport, poll_interval, max_images=16,
                             response_format=False, reference_field='image[]')
     if kind == 'image' and protocol == 'openai':
         return OpenAIImages(transport, poll_interval)
