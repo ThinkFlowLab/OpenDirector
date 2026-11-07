@@ -20,7 +20,7 @@ assert.ok(created.ok);
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
 try {
-  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1400, height: 900 } });
   // Skip the first-run model setup welcome; it covers the canvas.
   await page.addInitScript(() =>
     localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),

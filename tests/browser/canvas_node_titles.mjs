@@ -12,6 +12,7 @@ const browser = await chromium.launch({
 });
 try {
   const page = await browser.newPage({
+    locale: "zh-CN",
     viewport: { width: 1500, height: 1000 },
   });
   page.setDefaultTimeout(15000);

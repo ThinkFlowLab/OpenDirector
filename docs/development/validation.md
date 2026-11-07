@@ -79,6 +79,10 @@ node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选�
 
 脚本需要可导入的 Playwright 模块和 Chromium。按脚本约定通过 `PLAYWRIGHT_MODULE`、`CHROMIUM_PATH` 指定本机安装；它们不是所有环境中默认可用的项目依赖。以上环境变量语法适用于 POSIX shell，其他终端使用对应设置方式。测试使用的工程入口和前置条件以脚本为准。
 
+每个浏览器脚本都用 `browser.newPage({ locale: "en-US" | "zh-CN" })` 固定页面语言：界面在没有保存偏好时跟随浏览器语言，不固定就会在英文 CI 环境里等中文文案。`npm run check:browser-locale` 检查这条约定，CI 在启动浏览器任务前执行。`npm run test:browser` 按固定顺序运行整套浏览器清单，单个脚本失败也会继续执行其余脚本，最后集中报告失败项。
+
+页面语言也可以用 `addInitScript` 写入 `opendirector.locale.v1` 偏好：应用优先使用已保存的偏好，语言同样确定，`check:browser-locale` 认可这种写法。
+
 AI 多会话检查使用同一隔离 API，但启动 `creation_server.py` 时额外传入 `--assistant-fixture`，再运行 `node tests/browser/assistant_sessions.mjs`。该检查通过真实 UI、接口与项目文件验证新建、历史搜索、切换、草稿和附件恢复、刷新、失败重试及输入撤销隔离；仅模型回复使用可暂停的替身，不调用真实模型。同一环境下运行 `node tests/browser/assistant_run_navigation.mjs`，验证回复进行中切换项目只断开当前视图：Agent 继续运行，返回后重新接入并收到完整回复，全程不调用停止接口；切走再返回后显式停止仍然有效。
 
 聊天与辅助面板共存检查运行 `node tests/browser/assistant_auxiliary_panels.mjs`，同样需要 `--assistant-fixture`。它通过真实界面切换中英文，在宽窄窗口和助手调整宽度后检查资产列表、生成历史的可操作性与聊天展开状态，并验证草稿、对话和执行中的回复／生成任务保持。可设置 `CREATION_SCREENSHOTS` 保存代表性截图。此检查会控制隔离服务的模型替身 gate，应与其他使用同一 gate 的浏览器用例顺序运行。

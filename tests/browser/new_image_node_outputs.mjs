@@ -80,7 +80,7 @@ const snapshot = () => call(project);
 const submitted = (await call("/api/creation-test-health")).calls.length;
 
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1100 } });
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));

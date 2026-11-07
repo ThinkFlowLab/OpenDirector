@@ -47,6 +47,8 @@ jobs:
         run: npm test
       - name: Check bilingual catalogs
         run: npm run check:i18n
+      - name: Check browser locale pins
+        run: npm run check:browser-locale
       - name: Check layer imports
         run: lint-imports
       # Runs before the Python suite: a failing or hanging test run must not hide
@@ -84,25 +86,7 @@ jobs:
           done
           curl --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/creation-test-health"
           curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
-          node tests/browser/locale.mjs
-          node scripts/verify_creation_browser.mjs
-          node tests/browser/assistant_activity.mjs
-          node tests/browser/canvas_generation_reference.mjs
-          node tests/browser/minimax_h3.mjs
-          node tests/browser/provider_settings.mjs
-          node tests/browser/created_node_focus.mjs
-          node tests/browser/cross_canvas_paste.mjs
-          node tests/browser/reference_reconnect.mjs
-          node tests/browser/context_menu_dismissal.mjs
-          node tests/browser/project_list_overflow.mjs
-          node tests/browser/mp4_export.mjs
-          node tests/browser/editor_save.mjs
-          node tests/browser/canvas_crop.mjs
-          node tests/browser/canvas_layers.mjs --generated
-          node tests/browser/canvas_switch.mjs
-          node tests/browser/structured_editors.mjs --publish
-          node tests/browser/local_output_delivery.mjs
-          PYTHON=python node tests/browser/timeline_workflow.mjs --full-creation
+          node scripts/run-browser-suite.mjs
       - name: Assistant auxiliary panels
         timeout-minutes: 5
         env:

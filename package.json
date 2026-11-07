@@ -11,7 +11,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*.test.ts",
-    "check:i18n": "node scripts/check-i18n.mjs"
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:browser-locale": "node scripts/check-browser-locale.mjs",
+    "test:browser": "node scripts/run-browser-suite.mjs"
   },
   "dependencies": {
     "@lobehub/icons-static-svg": "1.102.0",

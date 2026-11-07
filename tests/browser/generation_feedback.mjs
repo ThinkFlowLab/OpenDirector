@@ -68,6 +68,7 @@ async function setup(kind = "image") {
     payload: { name: `Feedback ${id.slice(0, 8)}` },
   });
   const page = await browser.newPage({
+    locale: "zh-CN",
     viewport: { width: 1500, height: 1000 },
   });
   page.setDefaultTimeout(15000);
