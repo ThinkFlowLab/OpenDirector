@@ -1,6 +1,7 @@
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Real image/layer editing against the isolated creation fixture; no model calls. */
 import assert from "node:assert/strict";
+import { applyLayers } from "./layerApply.mjs";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
 );
@@ -111,10 +112,7 @@ try {
   await page
     .getByLabel("Layer text content", { exact: true })
     .fill("Editable after reopen");
-  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
-  // The button becomes "Processing…" before acknowledgement; only the dialog's
-  // removal confirms that the editor finished saving and cleared its delivery.
-  await page.locator(".lb-dialog").waitFor({ state: "detached" });
+  await applyLayers(page);
   snapshot = await until((value) =>
     value.editorDocuments.some(
       (doc) => doc.kind === "layers" && doc.data.layers.length === 2,
@@ -136,8 +134,7 @@ try {
     "Editable after reopen",
   );
   await page.getByLabel("Layer text content", { exact: true }).fill("Edited again");
-  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
-  await page.locator(".lb-dialog").waitFor({ state: "detached" });
+  await applyLayers(page);
   snapshot = await until((value) =>
     value.editorDocuments.some(
       (doc) =>

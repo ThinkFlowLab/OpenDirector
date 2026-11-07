@@ -1,6 +1,7 @@
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Real image/layer editing against the isolated creation fixture; no model calls. */
 import assert from "node:assert/strict";
+import { applyLayers } from "./layerApply.mjs";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
 );
@@ -220,10 +221,7 @@ try {
   await page
     .getByLabel("Layer text content", { exact: true })
     .fill("Crop then layers");
-  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Apply to canvas", exact: true })
-    .waitFor({ state: "hidden" });
+  await applyLayers(page);
   snapshot = await until((s) =>
     s.canvasItems
       .find((i) => i.id === copy.id)
