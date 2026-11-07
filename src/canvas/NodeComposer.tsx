@@ -724,7 +724,7 @@ export function NodeComposer({
             {reading && mossVoice && (
               <a
                 id={voiceHelpId}
-                href="https://create.moss.cn/"
+                href="https://create.moss.cn/voice/library"
                 target="_blank"
                 rel="noreferrer"
                 title={t("generation.field.mossVoiceHelp")}

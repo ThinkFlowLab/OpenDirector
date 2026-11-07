@@ -124,7 +124,9 @@ test("voice_not_found identifies the voice before generic 404 or input failures"
       "该音色不存在或当前账户无权使用，请在 MOSS 音色库核对音色 ID。");
   } finally {
     setActiveLocale("zh-CN");
-  };
+  }
+});
+
 test("provider moderation verdicts are explained in both languages", () => {
   const moderated = (message: string) =>
     failure({ stage: "poll", httpStatus: 200, providerStatus: "failed", providerCode: "1027", message });

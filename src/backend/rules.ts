@@ -414,6 +414,12 @@ export function serviceGenerationSettings(
     if (!/^[A-Za-z0-9_.-]{1,64}$/.test(next.voiceName ?? ""))
       next.voiceName = undefined;
     if (
+      next.mode === "audio" &&
+      config.inputRules.profile === "moss-speech" &&
+      !next.voiceName
+    )
+      next.voiceName = "2890a3a4-0012-4997-a545-8b045fe83bbe";
+    if (
       !(
         config.inputRules.generateAudioOptions?.includes(false) ??
         config.protocol === "volcengine"

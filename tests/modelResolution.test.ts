@@ -1,6 +1,6 @@
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
 import { createNode } from "../src/canvas/model.ts";
-import { backendBlocker, serviceVoice } from "../src/backend/rules.ts";
+import { backendBlocker, serviceAudioSettings, serviceGenerationSettings, serviceVoice } from "../src/backend/rules.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ModelConfig } from "../src/backend/rules.ts";
@@ -263,13 +263,21 @@ test("MOSS layout JSON rejects text references with a localized explanation", ()
   }
 });
 
-test("MOSS speech requires an explicit valid Voice ID and keeps UUID voice identifiers", () => {
+test("MOSS speech prefills a valid Voice ID and preserves selected or cleared voices", () => {
   const model = config("audio", "moss-tts-1.5-flash", {
     inputRules: { profile: "moss-speech", allowedKinds: [], maxImages: 0,
       maxVideos: 0, maxAudios: 0, videoModes: [], voiceRequired: true, referencesAllowed: false },
   });
   const settings = { ...newNodeGenerationSettings("audio", [model]), prompt: "Read this text." };
+  assert.equal(settings.voiceName, "2890a3a4-0012-4997-a545-8b045fe83bbe");
+  assert.equal(backendBlocker(settings, [], [model]), null);
   const voiceName = "7b6d1cef-9d2b-431d-b963-345678901234";
+  assert.equal(serviceGenerationSettings({ ...settings, voiceName }, model, [], true).voiceName, voiceName);
+  const cleared = { ...settings, voiceName: undefined };
+  assert.equal(serviceGenerationSettings(cleared, model).voiceName, undefined);
+  assert.equal(serviceAudioSettings(cleared, model).voiceName, undefined);
+  const otherSpeech = { ...model, inputRules: { ...model.inputRules, profile: "other-speech" } };
+  assert.equal(newNodeGenerationSettings("audio", [otherSpeech]).voiceName, undefined);
   const previous = getActiveLocale();
   try {
     for (const locale of ["zh-CN", "en-US"] as const) {
