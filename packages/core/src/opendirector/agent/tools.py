@@ -31,22 +31,21 @@ QUERY_TYPES = tuple(sorted(get_args(model.model_fields['type'].annotation)[0] fo
 
 
 def query_guidance(failure):
-    """Explain an unusable query with the values the union actually accepts.
+    """Explain an unusable query without losing the detail the caller needs.
 
-    A model that guesses a plural name (`canvas_items`) should be told the close
-    match instead of only that its tag was rejected.
+    A guessed type (`canvas_items`) is answered with the accepted values and the
+    closest match. Every other problem keeps pydantic's field-level message: the
+    field name and constraint are what let the caller fix the argument, so a
+    generic summary here would be a regression (see test_agent_artifacts, which
+    asserts that an unexpected `waitSeconds` is named).
     """
-    listed = ', '.join(QUERY_TYPES)
     for issue in failure.errors(include_input=False, include_url=False):
         if issue['type'] == 'union_tag_invalid':
             given = issue.get('ctx', {}).get('tag', '')
             closest = difflib.get_close_matches(str(given), QUERY_TYPES, n=1, cutoff=0.4)
             hint = f' Did you mean {closest[0]}?' if closest else ''
-            return f'Unsupported query type {given!r}.{hint} Valid types: {listed}.'
-        if issue['type'] == 'missing':
-            field = '.'.join(str(part) for part in issue['loc'])
-            return f'Query is missing the required field {field}. Valid types: {listed}.'
-    return f'Query does not match any supported shape. Valid types: {listed}.'
+            return f'Unsupported query type {given!r}.{hint} Valid types: {", ".join(QUERY_TYPES)}.'
+    return str(failure)
 COMMANDS = {name: model for name, model in COMMAND_MODELS.items()
             if name not in EXCLUDED}
 for command_name, command_model in COMMANDS.items():

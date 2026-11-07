@@ -34,3 +34,8 @@ def test_an_unknown_type_is_answered_with_the_closest_legal_one():
 def test_a_missing_field_is_named():
     message = guidance({'type': 'canvas.status'})
     assert 'objectId' in message
+
+def test_an_unexpected_field_keeps_its_name():
+    """Field-level detail must survive: test_agent_artifacts relies on it."""
+    message = guidance({'type': 'object.get', 'objectId': str(uuid4()), 'waitSeconds': 1})
+    assert 'waitSeconds' in message
