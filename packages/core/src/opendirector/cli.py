@@ -29,6 +29,7 @@ app = typer.Typer(no_args_is_help=True, help="Start OpenDirector and create or e
 GROUP_HELP = {
     "project": "List, inspect, create, rename, trash or restore projects.",
     "model": "Inspect available model configurations and input capabilities.",
+    "voice": "List, create or delete voices on a configured speech service.",
     "asset": "Import files, write text and manage registered project assets.",
     "canvas": "Display, arrange, hide and configure canvas items.",
     "video": "Create video generation nodes with model settings and references.",
@@ -542,6 +543,61 @@ def main():
     except (ProjectError, OSError, ValueError, httpx.HTTPError) as error:
         emit({"error": str(error)})
         raise SystemExit(1)
+
+
+@group('voice').command('list', help='Read the voice library and model requirements. For large MOSS libraries use --page-size 150.')
+def voice_list(ctx: typer.Context,
+               model: Annotated[UUID, typer.Option(help='Speech model configuration UUID.')],
+               page_size: Annotated[int | None, typer.Option(min=1, max=150, help='MOSS voices per page. Omit to read the full library.')] = None,
+               after: Annotated[str | None, typer.Option(help='Continue from the previous nextCursor using --page-size and --connection.')] = None,
+               connection: Annotated[str | None, typer.Option(help='Connection ID from the previous page.')] = None):
+    client = ctx.obj
+    client.command = ctx.command_path
+    arguments = {'modelConfigId': str(model)}
+    if page_size is not None: arguments['pageSize'] = page_size
+    if after is not None: arguments['after'] = after
+    if connection is not None: arguments['connectionId'] = connection
+    emit(client.call('voice_list', arguments) if client.live else client.request('GET', '/api/voices', params=arguments))
+
+
+@group('voice').command('create', help='Upload an authorized recording to the speech model voice library.')
+def voice_create(ctx: typer.Context,
+                 file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+                 model: Annotated[UUID, typer.Option(help='Speech model configuration UUID.')],
+                 connection: Annotated[str, typer.Option(help='Connection identity from voice list.')],
+                 name: Annotated[str, typer.Option(help='Readable voice name.')],
+                 consent: Annotated[str | None, typer.Option(help='Consent recording ID (required by vLLM-Omni).')] = None,
+                 ref_text: Annotated[str | None, typer.Option(help='Accurate transcript, required by some models.')] = None,
+                 speaker_description: Annotated[str | None, typer.Option(help='Optional provider voice description.')] = None):
+    client = ctx.obj
+    client.command = ctx.command_path
+    fields = dict(connectionId=connection, name=name)
+    if consent is not None: fields['consent'] = consent
+    if ref_text is not None: fields['refText'] = ref_text
+    if speaker_description is not None: fields['speakerDescription'] = speaker_description
+    if client.live:
+        emit(client.call('voice_create', {**fields, 'modelConfigId': str(model), 'path': str(file.resolve())}))
+    else:
+        from opendirector.domain.voices import voice_error
+        with file.open('rb') as stream: data = stream.read(10 * 1024 * 1024 + 1)
+        if len(data) > 10 * 1024 * 1024: raise voice_error('voice_size', 413)
+        emit(client.request('POST', '/api/voices', params={'modelConfigId': str(model)},
+                            data=fields, files={'audio_sample': (file.name, data)}))
+
+
+@group('voice').command('delete', help='Delete a provider-supported uploaded voice with explicit authorization.')
+def voice_delete(ctx: typer.Context,
+                 voice_id: Annotated[str, typer.Argument(help='Provider voice identity.')],
+                 model: Annotated[UUID, typer.Option(help='Speech model configuration UUID.')],
+                 connection: Annotated[str, typer.Option(help='Connection identity from voice list.')]):
+    client = ctx.obj
+    client.command = ctx.command_path
+    arguments = dict(modelConfigId=str(model), connectionId=connection, voiceId=voice_id)
+    if client.live: emit(client.call('voice_delete', arguments))
+    else:
+        response = client.http.delete('/api/voices/' + quote(voice_id, safe=''), params={'modelConfigId': str(model), 'connectionId': connection})
+        if not response.is_success: raise ProjectError(response.text, response.status_code)
+        emit({'deleted': True, 'voiceId': voice_id, 'connectionId': connection})
 
 
 if __name__ == "__main__":

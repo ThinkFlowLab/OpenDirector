@@ -48,6 +48,7 @@ const SETTINGS_KEYS = [
   "audioCreationType",
   "audioMode",
   "voiceName",
+  "voiceSelection",
   "lyrics",
   "scoreMode",
   "durationFromReference",
@@ -118,6 +119,18 @@ export function isGenerationSettings(
       value.audioMode === "unified" ||
       value.audioMode === "tts") &&
     optionalString(value.voiceName) &&
+    (value.voiceSelection === undefined ||
+      (record(value.voiceSelection) &&
+        nonempty(value.voiceSelection.connectionId) &&
+        nonempty(value.voiceSelection.voiceId) &&
+        ["builtin", "uploaded"].includes(String(value.voiceSelection.source)) &&
+        nonempty(value.voiceSelection.name) &&
+        typeof value.voiceSelection.hasReferenceAudio === "boolean" &&
+        (value.voiceSelection.embeddingDim === null ||
+          (Number.isSafeInteger(value.voiceSelection.embeddingDim) &&
+            Number(value.voiceSelection.embeddingDim) > 0)) &&
+        (value.voiceSelection.refText === null ||
+          typeof value.voiceSelection.refText === "string"))) &&
     (value.lyrics === undefined || typeof value.lyrics === "string") &&
     (value.scoreMode === undefined ||
       value.scoreMode === "melody" ||
@@ -140,6 +153,7 @@ export function copyGenerationSettings(
       value[key],
     ]),
   ) as unknown as GenerationSettings;
+  if (next.voiceSelection) next.voiceSelection = { ...next.voiceSelection };
   // Documents written before the locale split stored the rendered "自动" label.
   if (next.aspectRatio === "自动") next.aspectRatio = "auto";
   if (next.resolution === "自动") next.resolution = "auto";

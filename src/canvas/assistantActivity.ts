@@ -4,6 +4,9 @@ import type { MessageKey } from "../i18n/types.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
 
 const TOOL_NAMES: Readonly<Partial<Record<string, MessageKey>>> = {
+  voice_list: "voiceLibrary.tool.list",
+  voice_create: "voiceLibrary.tool.create",
+  voice_delete: "voiceLibrary.tool.delete",
   query: "assistant.tool.query",
   read: "assistant.tool.read",
   command_schema: "assistant.tool.command_schema",
@@ -36,7 +39,9 @@ export type ReplyPart =
   | { type: "text"; id: string; text: string }
   | { type: "tools"; id: string; tools: ChatTool[] };
 
-export function replyParts(message: Pick<ChatMessage, "text" | "tools">): ReplyPart[] {
+export function replyParts(
+  message: Pick<ChatMessage, "text" | "tools">,
+): ReplyPart[] {
   // The backend records textOffset in Unicode code points, as Python len does.
   const text = Array.from(message.text);
   const parts: ReplyPart[] = [];
@@ -44,7 +49,11 @@ export function replyParts(message: Pick<ChatMessage, "text" | "tools">): ReplyP
   for (const tool of message.tools ?? []) {
     const end = Math.max(offset, Math.min(tool.textOffset, text.length));
     if (end > offset) {
-      parts.push({ type: "text", id: `text-${tool.id}`, text: text.slice(offset, end).join("") });
+      parts.push({
+        type: "text",
+        id: `text-${tool.id}`,
+        text: text.slice(offset, end).join(""),
+      });
     }
     const previous = parts.at(-1);
     if (previous?.type === "tools") previous.tools.push(tool);
@@ -76,7 +85,9 @@ export function activityProgress(
 }
 
 /** Intermediate narration belongs to execution history; only the final tail is public reply. */
-export function replySections(message: Pick<ChatMessage, "text" | "tools" | "status">) {
+export function replySections(
+  message: Pick<ChatMessage, "text" | "tools" | "status">,
+) {
   const parts = replyParts(message);
   if (!message.tools?.length) return { activity: [], reply: parts };
   const tail = parts.at(-1);

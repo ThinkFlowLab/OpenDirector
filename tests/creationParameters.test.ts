@@ -50,9 +50,22 @@ const cases = [
   },
   {
     kind: "audio",
-    parameters: { voice: "voice-1", creationType: "audio", mode: "tts" },
-    patch: { voiceName: "voice_2" },
-    expected: { voice: "voice_2" },
+    parameters: {
+      voice: "voice-1",
+      creationType: "audio",
+      mode: "tts",
+      voiceSelection: {
+        connectionId: "connection-a",
+        voiceId: "voice-1",
+        source: "uploaded",
+        name: "Narrator",
+        hasReferenceAudio: true,
+        embeddingDim: null,
+        refText: "Hello",
+      },
+    },
+    patch: { voiceName: "voice_2", voiceSelection: undefined },
+    expected: { voice: "voice_2", voiceSelection: undefined },
   },
   {
     kind: "audio",
@@ -145,6 +158,10 @@ for (const scenario of cases)
       scenario.parameters.creationType === "audio"
     ) {
       assert.equal(settings.voiceName, "voice-1");
+      assert.deepEqual(
+        settings.voiceSelection,
+        scenario.parameters.voiceSelection,
+      );
       assert.equal(settings.audioMode, "tts");
     }
     if (

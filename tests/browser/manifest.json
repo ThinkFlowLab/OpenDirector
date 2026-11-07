@@ -273,10 +273,8 @@
     },
     {
       "file": "moss_speech.mjs",
-      "previewSafe": true,
-      "lanes": [
-        "extended"
-      ]
+      "helper": true,
+      "note": "Compatibility entry point for voice_library.mjs, which runs in the gate with the voice fixture."
     },
     {
       "file": "mp4_export.mjs",
@@ -414,6 +412,14 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "voice_library.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Runs with voice_library_server.py in the Release checks voice library phase."
     }
   ]
 }

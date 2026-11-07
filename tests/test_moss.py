@@ -13,6 +13,7 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_tool_assets import CreationToolAssets
+from opendirector.application.voice_library import VoiceLibrary
 from opendirector.domain.capabilities import ImageRequest, SpeechRequest
 from opendirector.domain.creation.generation import ResolvedReference, validate_generation
 from opendirector.domain.creation.models import ModelConfigPublic
@@ -24,7 +25,7 @@ from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
-from opendirector.integrations.model_adapters import MossImages, MossSpeech, OpenAISpeech
+from opendirector.integrations.model_adapters import MossImages, MossSpeech, OpenAISpeech, adapter_for
 from opendirector.integrations.providers import GenerationProviders
 from opendirector_api.main import create_app
 from test_creation_canvas_service import project, send, ver
@@ -37,7 +38,9 @@ VOICE = '5c8cd24a-dfd6-4fd8-8f47-93e9aec17328'
 OTHER_VOICE = 'f0827524-a19e-4e1c-859d-afc9fd17133e'
 LOCATOR = 'https://cdn.moss.test/output?signature=private-result-signature'
 MODELS = ('moss-image-sft-1.0', 'moss-image-base-1.0')
-SPEECH_MODEL = 'moss-tts-1.5-flash'
+SPEECH_MODELS = ('moss-tts-1.5-flash', 'moss-tts-1.0-pro',
+                 'moss-tts-1.5-flash-2026-06-26', 'moss-tts-1.0-pro-2026-02-07')
+SPEECH_MODEL = SPEECH_MODELS[0]
 MODEL_CASES = [('image', model) for model in MODELS] + [('audio', SPEECH_MODEL)]
 CONFIG = dict(kind='image', url='https://api.mosi.cn/v1', modelId=MODELS[0],
               protocol='openai', connectionType='api', authMode='bearer', apiKey=SECRET)
@@ -88,6 +91,31 @@ def test_official_profile_exposes_input_rules_without_credentials(context):
         assert rules['allowedKinds'] == []
         assert rules['maxImages'] == rules['maxVideos'] == rules['maxAudios'] == 0
         assert rules.get('maxPromptCharacters') != 4000
+
+
+def test_single_speaker_models_share_the_official_account_library(tmp_path):
+    configs = ModelConfigs(tmp_path)
+    saved = configs.save_many('audio', CONFIG['url'], list(SPEECH_MODELS), SECRET, protocol='openai')
+    libraries = [item['inputRules']['voiceLibrary'] for item in saved]
+    assert all(library['provider'] == 'moss' for library in libraries)
+    assert len({library['connectionId'] for library in libraries}) == 1
+
+    def handle(request):
+        assert request.method == 'GET' and request.url.path == '/v1/audio/voices'
+        return httpx.Response(200, json={'data': [{'id': VOICE, 'name': 'Alice'}], 'has_more': False})
+
+    registry = VoiceLibrary(configs, httpx.MockTransport(handle))
+    selected = registry.list(saved[0]['id'])['voices'][0]
+    for model in saved:
+        registry.validate_selection(configs.resolve(model['id'], 'audio'), VOICE, selected)
+
+
+@pytest.mark.parametrize('model_id', SPEECH_MODELS)
+def test_self_hosted_names_stay_on_their_own_speech_adapter(model_id):
+    local = {**SPEECH_CONFIG, 'url': 'http://localhost:8090/v1', 'connectionType': 'self_hosted', 'modelId': model_id}
+    assert input_rules(local)['voiceLibrary']['provider'] == 'vllm_omni'
+    assert isinstance(adapter_for(local), OpenAISpeech)
+    assert not is_moss_speech({**local, 'url': CONFIG['url']})
 
 
 @pytest.mark.parametrize('patch', [
@@ -242,7 +270,8 @@ async def test_capability_rejects_invalid_speech_inputs_before_http(text, voice)
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('metadata', [{}, {'object': 'audio.speech', 'status': 'SUCCESS', 'response_format': 'mp3'}])
-async def test_wire_request_and_url_checkpoint_precede_cross_origin_mp3_download(mp3, metadata):
+@pytest.mark.parametrize('model_id', SPEECH_MODELS)
+async def test_wire_request_and_url_checkpoint_precede_cross_origin_mp3_download(mp3, metadata, model_id):
     calls, ready = [], []
     async def result_ready(suffix, url):
         ready.append((suffix, url))
@@ -252,14 +281,16 @@ async def test_wire_request_and_url_checkpoint_precede_cross_origin_mp3_download
             assert str(request.url) == 'https://api.mosi.cn/v1/audio/speech'
             assert request.headers['authorization'] == f'Bearer {SECRET}'
             assert request.extensions['timeout']['read'] == 240
-            assert json.loads(request.content) == dict(model=SPEECH_MODEL, input='Read a blue lake',
+            assert json.loads(request.content) == dict(model=model_id, input='Read a blue lake',
                 voice_id=VOICE, response_format='mp3', delivery_method='url', stream=False)
             return httpx.Response(200, json={'url': LOCATOR, **metadata})
         assert ready == [('mp3', LOCATOR)]
         assert str(request.url) == LOCATOR and 'authorization' not in request.headers
         return httpx.Response(200, content=mp3)
-    result = await MossSpeech(httpx.MockTransport(handle)).speech(
-        SPEECH_CONFIG, SpeechRequest('Read a blue lake', VOICE), result_ready=result_ready)
+    config = {**SPEECH_CONFIG, 'modelId': model_id}
+    adapter = adapter_for(config, httpx.MockTransport(handle))
+    assert isinstance(adapter, MossSpeech)
+    result = await adapter.speech(config, SpeechRequest('Read a blue lake', VOICE), result_ready=result_ready)
     assert result.data == mp3 and result.suffix == 'mp3'
     assert [request.method for request in calls] == ['POST', 'GET']
 

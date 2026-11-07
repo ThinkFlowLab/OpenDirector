@@ -10,6 +10,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from opendirector.application.creation_artifacts import publish_artifact
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas
+from opendirector.application.voice_library import VoiceLibrary
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.base import ObjectVersion
 from opendirector.domain.creation.commands import Query, COMMAND_MODELS, parse_command
@@ -248,6 +249,23 @@ def tools() -> list[dict]:
                               {'type': 'object', 'properties': {'type': command_type, 'payload': {'type': 'object'},
                                'expectedVersions': versions, 'expectedPreview': {'type': ['string', 'null']}}, '$defs': definitions,
                                'required': ['type', 'payload'], 'additionalProperties': False}))
+    for name, description, properties, required in [
+        ('voice_list', 'Read the selected model voice library and compatibility requirements. For large MOSS libraries use pageSize 150. '
+         'Continue with nextCursor as after and the returned connectionId until nextCursor is null.',
+         {'modelConfigId': {'type': 'string', 'format': 'uuid'},
+          'pageSize': {'type': 'integer', 'minimum': 1, 'maximum': 150, 'description': 'MOSS voices per page. Omit to read the full library.'},
+          'after': {'type': 'string', 'minLength': 1, 'maxLength': 2048, 'description': 'Opaque nextCursor from the previous page. Supply pageSize and connectionId.'},
+          'connectionId': {'type': 'string', 'minLength': 1, 'maxLength': 200, 'description': 'Connection identity from the previous page.'}}, ['modelConfigId']),
+        ('voice_create', 'Register an authorized local recording as a reusable provider voice. For vLLM-Omni, supply the consent recording ID. Check voice_list for adapter requirements.',
+         {'modelConfigId': {'type': 'string', 'format': 'uuid'}, 'connectionId': {'type': 'string'},
+          'path': {'type': 'string'}, 'name': {'type': 'string'}, 'consent': {'type': 'string', 'minLength': 1, 'description': 'Consent recording ID for vLLM-Omni.'},
+          'refText': {'type': 'string'}, 'speakerDescription': {'type': 'string'}},
+         ['modelConfigId', 'connectionId', 'path', 'name']),
+        ('voice_delete', 'Delete an uploaded voice when the provider supports deletion. Requires the user to authorize deletion.',
+         {'modelConfigId': {'type': 'string', 'format': 'uuid'}, 'connectionId': {'type': 'string'}, 'voiceId': {'type': 'string'}},
+         ['modelConfigId', 'connectionId', 'voiceId']),
+    ]:
+        result.append(tool_schema(name, description, {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}))
     return result
 
 
@@ -257,10 +275,30 @@ class AgentTools:
         self.generation = generation
         self.configs = configs
         self.assets = CreationAssets(projects)
+        self.voices = getattr(generation, 'voices', None) or VoiceLibrary(configs)
 
     async def execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
                       name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None,
                       execution_directory: Path | None = None) -> JsonValue:
+        if name in {'voice_list', 'voice_create', 'voice_delete'}:
+            model_id = str(UUID(arguments['modelConfigId']))
+            if name == 'voice_list':
+                return await asyncio.to_thread(self.voices.list, model_id, page_size=arguments.get('pageSize'),
+                                               after=arguments.get('after'), connection_id=arguments.get('connectionId'))
+            if name == 'voice_delete':
+                await asyncio.to_thread(self.voices.delete, model_id, arguments['voiceId'], arguments['connectionId'])
+                return {'deleted': True, 'voiceId': arguments['voiceId'], 'connectionId': arguments['connectionId']}
+            target = Path(arguments['path']).resolve()
+            if execution_directory is None or not target.is_relative_to(execution_directory.resolve()):
+                raise ProjectError('只能上传本轮执行目录内的录音。', 403)
+            _, capabilities = self.voices._config(model_id)
+            def recording():
+                with target.open('rb') as stream:
+                    return stream.read(capabilities['maxBytes'] + 1)
+            data = await asyncio.to_thread(recording)
+            return await asyncio.to_thread(self.voices.create, model_id, data, filename=target.name,
+                name=arguments['name'], consent=arguments.get('consent'), connection_id=arguments['connectionId'],
+                ref_text=arguments.get('refText'), speaker_description=arguments.get('speakerDescription'))
         if name == 'read_project':
             snapshot = await asyncio.to_thread(self.projects.snapshot, project_id)
             return {'project': snapshot.model_dump(mode='json'), 'models': self.configs.list(), 'commands': list(COMMANDS),

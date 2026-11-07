@@ -1,5 +1,6 @@
 """Generation intent, references and fixed execution facts, independent of nodes."""
 import math
+import re
 from typing import Annotated, Literal
 from datetime import datetime
 from uuid import UUID
@@ -53,10 +54,22 @@ def reference_music_seconds(reference_seconds):
     return min(MUSIC_SECONDS[1], max(MUSIC_SECONDS[0], math.ceil(reference_seconds * REFERENCE_LENGTH_HEADROOM)))
 
 
+class VoiceSelection(Contract):
+    connectionId: str = Field(min_length=1, max_length=200, description='Opaque voice service identity.')
+    voiceId: str = Field(min_length=1, max_length=200, pattern=r'^[^/\\\x00-\x1f\x7f]+$', description='Provider voice identity.')
+    name: str = Field(min_length=1, max_length=255, description='Readable provider voice name.')
+    source: Literal['builtin', 'uploaded'] = Field(description='Provider voice source; used to check checkpoint compatibility.')
+    hasReferenceAudio: bool = Field(description='Provider reports a registered reference recording.')
+    embeddingDim: int | None = Field(default=None, ge=1, le=65536, description='Registered reference embedding dimension, when the provider reports one.')
+    refText: str | None = Field(default=None, max_length=100000, description='Provider reference transcript, when available.')
+
+
 class AudioParameters(Contract):
     creationType: Literal['audio', 'music'] = Field(default='audio', description='Speech or music creation mode.')
     mode: Literal['tts', 'unified'] = Field(default='tts', description='Operation mode within this contract variant.')
-    voice: str | None = Field(default=None, pattern=STORED_VOICE_PATTERN, description='Provider voice identifier or name.')
+    voice: str | None = Field(default=None, max_length=200, description='Provider voice identifier or name; library voices retain provider naming.')
+    voiceSelection: VoiceSelection | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Connection-scoped voice selection; validated against the live registry before generation.')
     # Legacy: a release stored an explicit instrumental choice. It stays readable
     # so those specs and job fingerprints still load; generation ignores it.
     instrumental: bool = Field(default=False, exclude_if=lambda value: value is False, description='Legacy explicit instrumental choice retained for stored records.')
@@ -74,6 +87,15 @@ class AudioParameters(Contract):
         default=None, exclude_if=lambda value: value is None,
         description='Music with one audio reference: cap the length at the reference length (unset follows it) '
                     'instead of durationSeconds')
+
+    @model_validator(mode='after')
+    def voice_identity(self):
+        if self.voiceSelection is not None:
+            if self.voice != self.voiceSelection.voiceId:
+                raise ValueError('Selected voice must match the provider voice identity')
+        elif self.voice is not None and not re.fullmatch(STORED_VOICE_PATTERN, self.voice):
+            raise ValueError('Invalid service voice identity; select a voice from the library')
+        return self
 
 
 class PromptText(Contract):

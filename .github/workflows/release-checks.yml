@@ -104,6 +104,28 @@ jobs:
           curl --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/creation-test-health"
           curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
           node scripts/run-browser-suite.mjs
+      - name: Voice library workflows
+        if: always() && steps.install.outcome == 'success'
+        timeout-minutes: 5
+        env:
+          CREATION_WEB_URL: http://127.0.0.1:5190
+          CREATION_API_URL: http://127.0.0.1:8030
+        run: |
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/opendirector-browser/node_modules/playwright-core/index.mjs"
+          python tests/browser/voice_library_server.py --port 8030 >"$RUNNER_TEMP/voice-server.log" 2>&1 &
+          api_pid=$!
+          OPENDIRECTOR_API_URL="$CREATION_API_URL" node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5190 --strictPort >"$RUNNER_TEMP/voice-vite.log" 2>&1 &
+          web_pid=$!
+          trap 'kill "$api_pid" "$web_pid" 2>/dev/null || true; wait "$api_pid" "$web_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --silent --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/voice-test-health" >/dev/null && curl --silent --fail "$CREATION_WEB_URL/" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/voice-test-health"
+          curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
+          node tests/browser/voice_library.mjs
       - name: Assistant auxiliary panels
         if: always() && steps.install.outcome == 'success'
         timeout-minutes: 5
@@ -129,6 +151,6 @@ jobs:
       - name: Print isolated service logs on failure
         if: failure()
         run: |
-          for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log" "$RUNNER_TEMP/assistant-creation-server.log" "$RUNNER_TEMP/assistant-vite.log"; do
+          for log in "$RUNNER_TEMP/voice-server.log" "$RUNNER_TEMP/voice-vite.log" "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log" "$RUNNER_TEMP/assistant-creation-server.log" "$RUNNER_TEMP/assistant-vite.log"; do
             if [ -f "$log" ]; then tail -n 150 "$log"; fi
           done

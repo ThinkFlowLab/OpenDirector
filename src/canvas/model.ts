@@ -1,3 +1,4 @@
+import type { VoiceSelection } from "../backend/voices.ts";
 import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
@@ -63,6 +64,7 @@ export interface GenerationSettings {
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
   voiceName?: string;
+  voiceSelection?: VoiceSelection;
   /** Music models: words to sing; empty asks for an instrumental piece. */
   lyrics?: string;
   /** Music with a reference recording: follow its melody, or its melody and chords. */
@@ -258,7 +260,9 @@ export const DEFAULT_SETTINGS: Readonly<GenerationSettings> = {
   prompt: "",
 };
 
-export function createDocument(title = tNow("errors.model.untitled")): CanvasDocument {
+export function createDocument(
+  title = tNow("errors.model.untitled"),
+): CanvasDocument {
   return {
     version: 1,
     id: crypto.randomUUID(),
@@ -978,7 +982,9 @@ function applyCanvasCommand(
   }
   if (command.type === "add-edge") {
     if (document.edges.some((edge) => edge.id === command.edge.id))
-      throw new Error(tNow("errors.model.duplicateEdge", { id: command.edge.id }));
+      throw new Error(
+        tNow("errors.model.duplicateEdge", { id: command.edge.id }),
+      );
     const logicalNodes = [...document.nodes, ...(document.hiddenNodes ?? [])];
     const ids = new Set(logicalNodes.map((node) => node.id));
     if (!ids.has(command.edge.source) || !ids.has(command.edge.target))

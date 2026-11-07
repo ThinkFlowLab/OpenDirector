@@ -67,12 +67,16 @@ pygments==2.21.0
     #   rich
 pytest==9.1.1
     # via opendirector
+python-multipart==0.0.33
+    # via opendirector
 pyyaml==6.0.3
     # via opendirector
 rich==15.0.0
     # via import-linter
 starlette==1.8.0
-    # via fastapi
+    # via
+    #   fastapi
+    #   opendirector
 typing-extensions==4.16.0
     # via
     #   anyio

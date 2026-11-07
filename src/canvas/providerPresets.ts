@@ -117,7 +117,12 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     authMode: "bearer",
     modelsByKind: {
       image: ["moss-image-sft-1.0", "moss-image-base-1.0"],
-      audio: ["moss-tts-1.5-flash"],
+      audio: [
+        "moss-tts-1.5-flash",
+        "moss-tts-1.0-pro",
+        "moss-tts-1.5-flash-2026-06-26",
+        "moss-tts-1.0-pro-2026-02-07",
+      ],
     },
   },
 

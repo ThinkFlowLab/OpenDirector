@@ -64,7 +64,7 @@ export const generation = {
   "generation.field.voiceIdPlaceholder": "请输入音色 ID",
   "generation.field.mossVoiceHelp": "在 MOSS 音色库选择音色，打开该音色的菜单，复制音色 ID，再粘贴到音色 ID 输入框。",
   "generation.field.mossVoiceLibrary": "MOSS 音色库",
-  "generation.field.voiceLibrary": "语音库",
+  "generation.field.voiceLibrary": "音色库",
   "generation.field.signature": "生成参数",
 
   "generation.params.title": "生成参数",

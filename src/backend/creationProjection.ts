@@ -164,9 +164,7 @@ export class CreationProjection {
   /** The archive source a generation node's media carries, if any.
    * Without it the media is imported as a plain upload and the generation
    * binding would claim an output the project has no evidence for. */
-  private archiveSource(
-    node: CanvasNode,
-  ): "generated" | "edited" | undefined {
+  private archiveSource(node: CanvasNode): "generated" | "edited" | undefined {
     const evidence = node.data.generationProvenance;
     if (!evidence) return undefined;
     if (evidence.source === "generated") return "generated";
@@ -662,6 +660,7 @@ export class CreationProjection {
               ...(spec.kind === "audio"
                 ? {
                     voiceName: spec.parameters.voice ?? undefined,
+                    voiceSelection: spec.parameters.voiceSelection ?? undefined,
                     audioCreationType: spec.parameters.creationType,
                     audioMode: spec.parameters.mode,
                     ...(spec.parameters.creationType === "music"
@@ -854,6 +853,9 @@ export class CreationProjection {
           kind: "audio",
           parameters: {
             voice: node.data.settings?.voiceName ?? null,
+            ...(node.data.settings?.voiceSelection
+              ? { voiceSelection: node.data.settings.voiceSelection }
+              : {}),
             creationType: node.data.settings?.audioCreationType ?? "audio",
             mode: node.data.settings?.audioMode ?? "tts",
             ...(node.data.settings?.audioCreationType === "music"

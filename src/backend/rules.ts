@@ -1,3 +1,4 @@
+import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
 import {
@@ -40,6 +41,7 @@ export interface InputRules {
   requestBytes?: number;
   maxPromptCharacters?: number | null;
   voiceRequired?: boolean | null;
+  voiceLibrary?: VoiceCapabilities | null;
   referencesAllowed?: boolean | null;
   maxVideos: number;
   maxAudios: number;
@@ -169,8 +171,14 @@ const LABELS: Record<string, MessageKey> = {
 };
 
 /** Speaker names a speech service accepts; others fall back to its default voice. */
-export function serviceVoice(settings: Pick<GenerationSettings, "voiceName">) {
-  return isServiceVoice(settings.voiceName) ? settings.voiceName : undefined;
+export function serviceVoice(
+  settings: Pick<GenerationSettings, "voiceName" | "voiceSelection">,
+) {
+  return settings.voiceSelection?.voiceId === settings.voiceName
+    ? settings.voiceName
+    : isServiceVoice(settings.voiceName)
+      ? settings.voiceName
+      : undefined;
 }
 
 export function modelLabel(config: Pick<ModelConfig, "modelId">) {
@@ -288,10 +296,12 @@ export function backendReferences(
 
 /** Canvas slot assignment for a saved reference. The backend stores this role. */
 export function canvasReferenceRole(
-  settings: Pick<
-    GenerationSettings,
-    "videoMode" | "firstFrameNodeId" | "lastFrameNodeId"
-  > | undefined,
+  settings:
+    | Pick<
+        GenerationSettings,
+        "videoMode" | "firstFrameNodeId" | "lastFrameNodeId"
+      >
+    | undefined,
   sourceKind: string | undefined,
   ref: {
     binding: string;
@@ -420,9 +430,20 @@ export function serviceGenerationSettings(
   next = serviceAudioSettings(next, config);
   if (modelChanged) {
     next.imagePreset = "none";
-    if (!isServiceVoice(next.voiceName)) next.voiceName = undefined;
+    if (next.voiceSelection) {
+      if (voiceIssue(next.voiceSelection, config.inputRules.voiceLibrary)) {
+        next.voiceName = undefined;
+        next.voiceSelection = undefined;
+      }
+    } else if (
+      config.inputRules.voiceLibrary ||
+      !isServiceVoice(next.voiceName)
+    ) {
+      next.voiceName = undefined;
+    }
     if (
       next.mode === "audio" &&
+      !config.inputRules.voiceLibrary &&
       config.inputRules.profile === "moss-speech" &&
       !next.voiceName
     )
@@ -495,8 +516,17 @@ export function backendBlocker(
   const rules = config.inputRules;
   if (rules.referencesAllowed === false && incoming.length)
     return tNow("errors.rules.referencesUnsupported");
+  if (settings.mode === "audio" && !isMusicModel(config)) {
+    const issue = voiceIssue(settings.voiceSelection, rules.voiceLibrary);
+    if (issue) return tNow(issue);
+    if (
+      settings.voiceSelection &&
+      settings.voiceName !== settings.voiceSelection.voiceId
+    )
+      return tNow("voiceLibrary.selectRequired");
+  }
   if (rules.voiceRequired && !serviceVoice(settings))
-    return tNow("errors.rules.voiceRequired");
+    return tNow(rules.voiceLibrary ? "voiceLibrary.selectRequired" : "errors.rules.voiceRequired");
   if (rules.profile === "moss-image" && incoming.some((node) => node.data.kind === "text")) {
     let layout: unknown;
     try {
@@ -509,7 +539,9 @@ export function backendBlocker(
     rules.maxPromptCharacters != null &&
     Array.from(settings.prompt).length > rules.maxPromptCharacters
   )
-    return tNow("errors.rules.promptTooLong", { limit: rules.maxPromptCharacters });
+    return tNow("errors.rules.promptTooLong", {
+      limit: rules.maxPromptCharacters,
+    });
   if (settings.mode === "image") {
     if (settings.imagePreset && settings.imagePreset !== "none")
       return tNow("errors.rules.productViews");
@@ -553,6 +585,7 @@ export function backendBlocker(
   if (
     settings.mode === "audio" &&
     settings.voiceName &&
+    !settings.voiceSelection &&
     !isServiceVoice(settings.voiceName)
   )
     return tNow("errors.rules.voiceId");

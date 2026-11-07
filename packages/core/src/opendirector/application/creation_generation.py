@@ -14,6 +14,7 @@ from filelock import FileLock, Timeout
 
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
+from opendirector.application.voice_library import VoiceLibrary
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
@@ -86,6 +87,7 @@ class CreationGeneration(GenerationRuntime):
         self.store = ProviderMedia(self)
         self.settings = gateway().settings(projects.local.repository)
         self.provider = provider or GenerationProviders(self.store)
+        self.voices = VoiceLibrary(configs)
 
     def directory(self, project_id):
         with self.projects.local.transaction() as db:
@@ -273,6 +275,21 @@ class CreationGeneration(GenerationRuntime):
         replay = self.projects.replay(command)
         if replay is not None:
             return replay
+        # Voice registries are remote services. Probe outside the catalog/file
+        # transaction, then compare the exact spec and private configuration
+        # again under commit so a slow/offline provider cannot freeze editing.
+        initial = self.projects.snapshot(command.projectId)
+        voice_spec = next((spec for spec in initial.generationSpecs if spec.id == command.payload.specId), None)
+        voice_config, voice_failure = None, None
+        if voice_spec is not None and voice_spec.kind == 'audio' and voice_spec.parameters.creationType == 'audio':
+            try:
+                voice_config = self.configs.resolve(str(voice_spec.modelConfigId), 'audio')
+                public = ModelConfigPublic.model_validate({key: value for key, value in voice_config.items() if key != 'apiKey'} | {'inputRules': input_rules(voice_config)})
+                prepared_spec, references = current_generation_inputs(initial, voice_spec, public.inputRules)
+                validate_generation(prepared_spec, public, references)
+                self.voices.validate_selection(voice_config, prepared_spec.parameters.voice, prepared_spec.parameters.voiceSelection)
+            except (ValueError, ProjectError) as error:
+                voice_failure = error
         def accept(before):
             data = before.model_dump(mode='json')
             spec_data = CreationCanvas._get(data, 'generation_spec', command.payload.specId)
@@ -310,6 +327,11 @@ class CreationGeneration(GenerationRuntime):
             spec = execution_spec(spec, resolved, public.inputRules)
             try:
                 validate_generation(spec, public, resolved)
+                if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
+                    if old != voice_spec or config != voice_config:
+                        raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)
+                    if voice_failure is not None:
+                        raise voice_failure
             except (ValueError, ProjectError) as error:
                 raise ContractError.from_error(error, spec.id) from error
             for reference in resolved:
@@ -552,6 +574,10 @@ class CreationGeneration(GenerationRuntime):
             try:
                 config = self.configs.resolve(task['modelConfigId'], 'agent' if task['kind'] == 'text' else task['kind'])
                 valid = (config['url'], config['modelId'], config['protocol'], config.get('videoAdapter', 'auto')) == (task['baseURL'], task['model'], task['protocol'], job.inputSnapshot.model.videoAdapter)
+                if valid and job.inputSnapshot.spec.kind == 'audio' and job.inputSnapshot.spec.parameters.voiceSelection is not None:
+                    from opendirector.domain.voices import voice_library_capabilities
+                    capabilities = voice_library_capabilities(config)
+                    valid = capabilities is not None and capabilities['connectionId'] == job.inputSnapshot.spec.parameters.voiceSelection.connectionId
             except ProjectError:
                 valid = False
             if not valid:

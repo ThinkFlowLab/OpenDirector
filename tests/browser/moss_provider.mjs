@@ -11,7 +11,8 @@ const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5189";
 const api = process.env.CREATION_API_URL ?? "http://127.0.0.1:8029";
 const output = process.env.MOSS_SCREENSHOT_DIR ?? "/tmp/opendirector-moss-evidence";
 const modelIds = ["moss-image-sft-1.0", "moss-image-base-1.0"];
-const speechModelIds = ["moss-tts-1.5-flash"];
+const speechModelIds = ["moss-tts-1.5-flash", "moss-tts-1.0-pro",
+  "moss-tts-1.5-flash-2026-06-26", "moss-tts-1.0-pro-2026-02-07"];
 const canonicalURL = "https://api.mosi.cn/v1";
 const fixtureKey = "moss-browser-fixture-only-no-real-service";
 const headers = { "X-OpenDirector-Request": "1", "Content-Type": "application/json" };
@@ -104,7 +105,7 @@ async function provePreset(labels, locale, kind = "image") {
   await officialLogo(provider(labels).locator("img.cw-model-logo"));
   for (const modelId of expectedModels) {
     assert.equal(await page.getByRole("checkbox", { name: modelId, exact: true }).isChecked(), true);
-    await officialLogo(page.locator(".cw-model-option").filter({ hasText: modelId }).locator("img.cw-model-logo"));
+    await officialLogo(page.locator(".cw-model-option").filter({ has: page.getByRole("checkbox", { name: modelId, exact: true }) }).locator("img.cw-model-logo"));
   }
   await page.getByLabel("API Key", { exact: true }).fill(fixtureKey);
   await page.getByRole("button", { name: labels.reload, exact: true }).click();
@@ -135,9 +136,13 @@ async function proveAudio(labels, locale, save = false) {
   await page.getByRole("button", { name: labels.add, exact: true }).waitFor();
   const audio = (await call("/api/model-configs")).filter(config => config.url === canonicalURL && config.kind === "audio");
   assert.deepEqual(audio.map(config => config.modelId), speechModelIds);
-  assert.equal(audio[0].inputRules.voiceRequired, true);
-  assert.equal(audio[0].inputRules.referencesAllowed, false);
-  assert.equal(Object.hasOwn(audio[0].inputRules, "maxPromptCharacters"), false);
+  for (const model of audio) {
+    assert.equal(model.inputRules.voiceRequired, true);
+    assert.equal(model.inputRules.referencesAllowed, false);
+    assert.equal(model.inputRules.voiceLibrary.provider, "moss");
+    assert.equal(Object.hasOwn(model.inputRules, "maxPromptCharacters"), false);
+  }
+  assert.equal(new Set(audio.map(model => model.inputRules.voiceLibrary.connectionId)).size, 1);
   assert.ok(!JSON.stringify(audio).includes(fixtureKey));
   await proveReopen(labels, locale, "audio");
 }

@@ -1,7 +1,8 @@
+import { VoiceLibrary } from "./VoiceLibrary";
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
 import { providerLabel } from "./providerPresets";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { LOCAL_DEMO_MODEL } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
@@ -87,7 +88,6 @@ export function NodeComposer({
   referenceControls,
 }: NodeComposerProps) {
   const { t } = useI18n();
-  const voiceHelpId = useId();
   const [openPanel, setPanel] = useState<Panel>(null);
   const panel = running ? null : openPanel;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -107,7 +107,7 @@ export function NodeComposer({
   const backend = Boolean(settings.modelConfigId);
   const config = backendModel(settings, backendModels);
   const voiceRequired = Boolean(config?.inputRules.voiceRequired);
-  const mossVoice = voiceRequired && config?.inputRules.profile === "moss-speech";
+  const voiceLibrary = config?.inputRules.voiceLibrary;
   const serviceModels = backendModels.filter(
     (item) => item.kind === mode && isGenerationModel(item),
   );
@@ -631,14 +631,13 @@ export function NodeComposer({
                 )}
               </>
             )}
-            {mode === "audio" && backend && !music && (
+            {mode === "audio" && backend && !music && !voiceLibrary && (
               <input
                 aria-label={t(
                   voiceRequired
                     ? "generation.field.requiredVoiceId"
                     : "generation.field.voice",
                 )}
-                aria-describedby={mossVoice ? voiceHelpId : undefined}
                 aria-required={voiceRequired || undefined}
                 required={voiceRequired}
                 value={settings.voiceName ?? ""}
@@ -656,18 +655,7 @@ export function NodeComposer({
                 }
               />
             )}
-            {reading && mossVoice && (
-              <a
-                id={voiceHelpId}
-                href="https://create.moss.cn/voice/library"
-                target="_blank"
-                rel="noreferrer"
-                title={t("generation.field.mossVoiceHelp")}
-              >
-                {t("generation.field.mossVoiceLibrary")}
-              </a>
-            )}
-            {reading && !backend && (
+            {reading && (!backend || voiceLibrary) && (
               <button
                 type="button"
                 className="cw-voice-trigger"
@@ -677,7 +665,11 @@ export function NodeComposer({
                 onClick={(event) => togglePanel("voices", event.currentTarget)}
               >
                 <CanvasIcon name="audio" size={15} />
-                <span>{settings.voiceName || t("generation.field.voiceLibrary")}</span>
+                <span>
+                  {settings.voiceSelection?.name ||
+                    (!voiceLibrary && settings.voiceName) ||
+                    t("generation.field.voiceLibrary")}
+                </span>
                 <CanvasIcon name="chevronDown" size={12} />
               </button>
             )}
@@ -964,31 +956,49 @@ export function NodeComposer({
           className="cw-voices-popover"
           label={t("generation.field.voiceLibrary")}
         >
-          <div className="cw-popover-heading">
-            <strong>{t("generation.field.voiceLibrary")}</strong>
-            <TooltipButton
-              type="button"
-              className="cw-icon-button"
-              label={t("generation.voice.close")}
-              onClick={() => setPanel(null)}
-            >
-              <CanvasIcon name="close" size={15} />
-            </TooltipButton>
-          </div>
-          <button
-            type="button"
-            className={`cw-observed-voice${settings.voiceName === DEMO_VOICE ? " cw-is-active" : ""}`}
-            aria-pressed={settings.voiceName === DEMO_VOICE}
-            onClick={() => {
-              updateSettings({ voiceName: DEMO_VOICE });
-              setPanel(null);
-            }}
-          >
-            <CanvasIcon name="audio" size={22} />
-            <span>
-              <strong>{t("generation.voice.demo")}</strong>
-            </span>
-          </button>
+          {config && voiceLibrary ? (
+            <VoiceLibrary
+              key={`${config.id}:${voiceLibrary.connectionId}`}
+              modelConfigId={config.id}
+              capabilities={voiceLibrary}
+              selected={settings.voiceSelection}
+              onSelect={(voice) => {
+                updateSettings({
+                  voiceName: voice.voiceId,
+                  voiceSelection: voice,
+                });
+                setPanel(null);
+              }}
+            />
+          ) : (
+            <>
+              <div className="cw-popover-heading">
+                <strong>{t("generation.field.voiceLibrary")}</strong>
+                <TooltipButton
+                  type="button"
+                  className="cw-icon-button"
+                  label={t("generation.voice.close")}
+                  onClick={() => setPanel(null)}
+                >
+                  <CanvasIcon name="close" size={15} />
+                </TooltipButton>
+              </div>
+              <button
+                type="button"
+                className={`cw-observed-voice${settings.voiceName === DEMO_VOICE ? " cw-is-active" : ""}`}
+                aria-pressed={settings.voiceName === DEMO_VOICE}
+                onClick={() => {
+                  updateSettings({ voiceName: DEMO_VOICE });
+                  setPanel(null);
+                }}
+              >
+                <CanvasIcon name="audio" size={22} />
+                <span>
+                  <strong>{t("generation.voice.demo")}</strong>
+                </span>
+              </button>
+            </>
+          )}
         </ComposerPopover>
       )}
     </GenerationComposerShell>

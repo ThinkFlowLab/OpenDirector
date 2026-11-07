@@ -113,6 +113,11 @@ def _adapter_rules(config):
 
 def input_rules(config):
     rules = _adapter_rules(config)
+    if config['kind'] == 'audio':
+        from .voices import voice_library_capabilities
+        library = voice_library_capabilities(config)
+        if library is not None:
+            rules['voiceLibrary'] = library
     if config['kind'] == 'video':
         rules['generateAudioOptions'] = [True, False] if config.get('protocol') == 'volcengine' else [True]
     if config['kind'] == 'image' and rules['profile'] != 'vllm-omni-segmentation':

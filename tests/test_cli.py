@@ -5,6 +5,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import sys
+from unittest.mock import Mock
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -13,9 +14,87 @@ import pytest
 from typer.testing import CliRunner
 
 from opendirector import cli
+from opendirector.application.voice_library import VoiceLibrary
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
+
+
+@pytest.mark.parametrize('live', [False, True], ids=['http', 'agent'])
+@pytest.mark.parametrize('options,expected', [
+    ([], {}),
+    (['--page-size', '150'], {'pageSize': 150}),
+    (['--page-size', '45', '--after', 'opaque+/=', '--connection', 'scope'],
+     {'pageSize': 45, 'after': 'opaque+/=', 'connectionId': 'scope'}),
+])
+def test_voice_list_forwards_pagination(live, options, expected, monkeypatch):
+    model = str(uuid4())
+    client = Mock(live=live, opened=False)
+    page = {'voices': [], 'connectionId': 'scope', 'nextCursor': 'next'}
+    client.call.return_value = client.request.return_value = page
+    monkeypatch.setattr(cli, 'Client', lambda *args: client)
+    result = CliRunner().invoke(cli.app, ['voice', 'list', '--model', model, *options])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == page
+    arguments = {'modelConfigId': model, **expected}
+    if live:
+        client.call.assert_called_once_with('voice_list', arguments)
+    else:
+        client.request.assert_called_once_with('GET', '/api/voices', params=arguments)
+
+
+@pytest.mark.parametrize('size', ['0', '151'])
+def test_voice_list_cli_rejects_invalid_page_size(size, monkeypatch):
+    client = Mock(live=False, opened=False)
+    monkeypatch.setattr(cli, 'Client', lambda *args: client)
+    result = CliRunner().invoke(cli.app, ['voice', 'list', '--model', str(uuid4()), '--page-size', size])
+    assert result.exit_code == 2
+    assert 'Invalid value' in plain_help(result.output)
+    client.request.assert_not_called()
+
+
+def test_voice_create_sends_private_fields_in_multipart_to_api(tmp_path, monkeypatch):
+    model = ModelConfigs(tmp_path).save('audio', 'http://voice.test/v1', 'Drama3', '',
+        connection_type='self_hosted', protocol='openai', auth_mode='none')['id']
+    recording = tmp_path / 'private-take.wav'
+    recording.write_bytes(b'isolated recording bytes')
+    created = {'voiceId': 'confirmed-voice'}
+    create = Mock(return_value=created)
+    monkeypatch.setattr(VoiceLibrary, 'create', create)
+    monkeypatch.delenv('OPENDIRECTOR_AGENT_SOCKET', raising=False)
+    monkeypatch.delenv('OPENDIRECTOR_AGENT_HOST', raising=False)
+    api = TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'})
+    requests = []
+    api.event_hooks['request'].append(requests.append)
+    monkeypatch.setattr(cli.httpx, 'Client', lambda **kwargs: api)
+
+    result = CliRunner().invoke(cli.app, ['voice', 'create', str(recording), '--model', model,
+        '--connection', 'fixture-scope', '--name', 'Private name', '--consent', 'private-consent',
+        '--ref-text', '私人文本 & words', '--speaker-description', 'Private description'])
+    assert result.exit_code == 0, result.exception
+    assert json.loads(result.output) == created
+    request, = requests
+    assert request.url.path == '/api/voices'
+    assert request.url.params.multi_items() == [('modelConfigId', model)]
+    assert request.headers['content-type'].startswith('multipart/form-data; boundary=')
+    create.assert_called_once_with(model, recording.read_bytes(), filename=recording.name,
+        name='Private name', consent='private-consent', connection_id='fixture-scope',
+        ref_text='私人文本 & words', speaker_description='Private description')
+
+
+def test_agent_voice_create_forwards_recording_path(tmp_path, monkeypatch):
+    model = str(uuid4())
+    recording = tmp_path / 'take.wav'
+    recording.touch()
+    client = Mock(live=True, opened=False)
+    client.call.return_value = {'voiceId': 'confirmed-voice'}
+    monkeypatch.setattr(cli, 'Client', lambda *args: client)
+    result = CliRunner().invoke(cli.app, ['voice', 'create', str(recording), '--model', model,
+        '--connection', 'scope', '--name', 'Voice'])
+    assert result.exit_code == 0, result.exception
+    client.call.assert_called_once_with('voice_create', {'modelConfigId': model, 'connectionId': 'scope',
+                                                       'name': 'Voice', 'path': str(recording.resolve())})
+    client.request.assert_not_called()
 
 
 def test_cli_project_write_replay_and_lock(tmp_path, monkeypatch):

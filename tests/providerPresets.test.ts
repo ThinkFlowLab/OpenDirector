@@ -27,7 +27,7 @@ test("MOSS presets offer the supported image and speech models by kind", () => {
   assert.deepEqual(preset.kinds, ["image", "audio"]);
   assert.deepEqual(preset.modelsByKind, {
     image: ["moss-image-sft-1.0", "moss-image-base-1.0"],
-    audio: ["moss-tts-1.5-flash"],
+    audio: ["moss-tts-1.5-flash", "moss-tts-1.0-pro", "moss-tts-1.5-flash-2026-06-26", "moss-tts-1.0-pro-2026-02-07"],
   });
   assert.ok(providerOptions("image").some((item) => item.id === "moss"));
   assert.ok(providerOptions("audio").some((item) => item.id === "moss"));

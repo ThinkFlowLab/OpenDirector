@@ -1339,7 +1339,7 @@
           "voice": {
             "anyOf": [
               {
-                "pattern": "^[\\w.-]{1,64}$",
+                "maxLength": 200,
                 "type": "string"
               },
               {
@@ -1347,8 +1347,20 @@
               }
             ],
             "default": null,
-            "description": "Provider voice identifier or name.",
+            "description": "Provider voice identifier or name; library voices retain provider naming.",
             "title": "Voice"
+          },
+          "voiceSelection": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VoiceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Connection-scoped voice selection; validated against the live registry before generation."
           },
           "instrumental": {
             "default": false,
@@ -3446,7 +3458,23 @@
               "moss_prompt_limit",
               "moss_image_size",
               "moss_image_reference",
-              "moss_layout_reference"
+              "moss_layout_reference",
+              "voice_library_unsupported",
+              "voice_connection_changed",
+              "voice_reference_required",
+              "voice_transcript_required",
+              "voice_not_found",
+              "voice_delete_unsupported",
+              "voice_consent_required",
+              "voice_name_invalid",
+              "voice_audio_invalid",
+              "voice_format",
+              "voice_size",
+              "voice_duration",
+              "voice_provider_protocol",
+              "voice_provider_error",
+              "voice_provider_timeout",
+              "voice_model_unsupported"
             ],
             "title": "Code",
             "type": "string"
@@ -6442,6 +6470,18 @@
             "minLength": 1,
             "title": "Profile",
             "type": "string"
+          },
+          "voiceLibrary": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VoiceLibraryCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported voice registry and adapter requirements; omitted for unsupported models."
           },
           "maxPromptCharacters": {
             "anyOf": [
@@ -13673,6 +13713,193 @@
         },
         "title": "Viewport",
         "type": "object"
+      },
+      "VoiceLibraryCapabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "description": "Voice registry protocol.",
+            "enum": [
+              "vllm_omni",
+              "moss"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "connectionId": {
+            "description": "Opaque service, endpoint and account identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Connectionid",
+            "type": "string"
+          },
+          "requiresTranscript": {
+            "description": "Registered voice must have a reference transcript.",
+            "title": "Requirestranscript",
+            "type": "boolean"
+          },
+          "requiresReferenceAudio": {
+            "description": "Registered voice must have actual reference audio.",
+            "title": "Requiresreferenceaudio",
+            "type": "boolean"
+          },
+          "supportsUploadedVoices": {
+            "default": true,
+            "description": "Selected model checkpoint accepts uploaded registry voices.",
+            "title": "Supportsuploadedvoices",
+            "type": "boolean"
+          },
+          "referenceEmbeddingDimension": {
+            "anyOf": [
+              {
+                "maximum": 65536,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Accepted registered reference embedding dimension; null requires actual reference audio when required.",
+            "title": "Referenceembeddingdimension"
+          },
+          "canDelete": {
+            "description": "Provider supports uploaded voice deletion.",
+            "title": "Candelete",
+            "type": "boolean"
+          },
+          "maxBytes": {
+            "description": "Maximum audio sample bytes.",
+            "minimum": 1,
+            "title": "Maxbytes",
+            "type": "integer"
+          },
+          "formats": {
+            "description": "Supported recording file extensions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "minSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimum recording duration, if documented.",
+            "title": "Minseconds"
+          },
+          "maxSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum recording duration, if documented.",
+            "title": "Maxseconds"
+          }
+        },
+        "required": [
+          "provider",
+          "connectionId",
+          "requiresTranscript",
+          "requiresReferenceAudio",
+          "canDelete",
+          "maxBytes",
+          "formats",
+          "minSeconds",
+          "maxSeconds"
+        ],
+        "title": "VoiceLibraryCapabilities",
+        "type": "object"
+      },
+      "VoiceSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": {
+            "description": "Opaque voice service identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Connectionid",
+            "type": "string"
+          },
+          "voiceId": {
+            "description": "Provider voice identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+            "title": "Voiceid",
+            "type": "string"
+          },
+          "name": {
+            "description": "Readable provider voice name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "description": "Provider voice source; used to check checkpoint compatibility.",
+            "enum": [
+              "builtin",
+              "uploaded"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "hasReferenceAudio": {
+            "description": "Provider reports a registered reference recording.",
+            "title": "Hasreferenceaudio",
+            "type": "boolean"
+          },
+          "embeddingDim": {
+            "anyOf": [
+              {
+                "maximum": 65536,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Registered reference embedding dimension, when the provider reports one.",
+            "title": "Embeddingdim"
+          },
+          "refText": {
+            "anyOf": [
+              {
+                "maxLength": 100000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provider reference transcript, when available.",
+            "title": "Reftext"
+          }
+        },
+        "required": [
+          "connectionId",
+          "voiceId",
+          "name",
+          "source",
+          "hasReferenceAudio"
+        ],
+        "title": "VoiceSelection",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -15539,7 +15766,7 @@
           "voice": {
             "anyOf": [
               {
-                "pattern": "^[\\w.-]{1,64}$",
+                "maxLength": 200,
                 "type": "string"
               },
               {
@@ -15547,8 +15774,20 @@
               }
             ],
             "default": null,
-            "description": "Provider voice identifier or name.",
+            "description": "Provider voice identifier or name; library voices retain provider naming.",
             "title": "Voice"
+          },
+          "voiceSelection": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VoiceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Connection-scoped voice selection; validated against the live registry before generation."
           },
           "instrumental": {
             "default": false,
@@ -17704,7 +17943,23 @@
               "moss_prompt_limit",
               "moss_image_size",
               "moss_image_reference",
-              "moss_layout_reference"
+              "moss_layout_reference",
+              "voice_library_unsupported",
+              "voice_connection_changed",
+              "voice_reference_required",
+              "voice_transcript_required",
+              "voice_not_found",
+              "voice_delete_unsupported",
+              "voice_consent_required",
+              "voice_name_invalid",
+              "voice_audio_invalid",
+              "voice_format",
+              "voice_size",
+              "voice_duration",
+              "voice_provider_protocol",
+              "voice_provider_error",
+              "voice_provider_timeout",
+              "voice_model_unsupported"
             ],
             "title": "Code",
             "type": "string"
@@ -20841,6 +21096,18 @@
             "minLength": 1,
             "title": "Profile",
             "type": "string"
+          },
+          "voiceLibrary": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VoiceLibraryCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported voice registry and adapter requirements; omitted for unsupported models."
           },
           "maxPromptCharacters": {
             "anyOf": [
@@ -28371,6 +28638,197 @@
           "zoom"
         ],
         "title": "Viewport",
+        "type": "object"
+      },
+      "VoiceLibraryCapabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "description": "Voice registry protocol.",
+            "enum": [
+              "vllm_omni",
+              "moss"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "connectionId": {
+            "description": "Opaque service, endpoint and account identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Connectionid",
+            "type": "string"
+          },
+          "requiresTranscript": {
+            "description": "Registered voice must have a reference transcript.",
+            "title": "Requirestranscript",
+            "type": "boolean"
+          },
+          "requiresReferenceAudio": {
+            "description": "Registered voice must have actual reference audio.",
+            "title": "Requiresreferenceaudio",
+            "type": "boolean"
+          },
+          "supportsUploadedVoices": {
+            "default": true,
+            "description": "Selected model checkpoint accepts uploaded registry voices.",
+            "title": "Supportsuploadedvoices",
+            "type": "boolean"
+          },
+          "referenceEmbeddingDimension": {
+            "anyOf": [
+              {
+                "maximum": 65536,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Accepted registered reference embedding dimension; null requires actual reference audio when required.",
+            "title": "Referenceembeddingdimension"
+          },
+          "canDelete": {
+            "description": "Provider supports uploaded voice deletion.",
+            "title": "Candelete",
+            "type": "boolean"
+          },
+          "maxBytes": {
+            "description": "Maximum audio sample bytes.",
+            "minimum": 1,
+            "title": "Maxbytes",
+            "type": "integer"
+          },
+          "formats": {
+            "description": "Supported recording file extensions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "minSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimum recording duration, if documented.",
+            "title": "Minseconds"
+          },
+          "maxSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum recording duration, if documented.",
+            "title": "Maxseconds"
+          }
+        },
+        "required": [
+          "provider",
+          "connectionId",
+          "requiresTranscript",
+          "requiresReferenceAudio",
+          "supportsUploadedVoices",
+          "referenceEmbeddingDimension",
+          "canDelete",
+          "maxBytes",
+          "formats",
+          "minSeconds",
+          "maxSeconds"
+        ],
+        "title": "VoiceLibraryCapabilities",
+        "type": "object"
+      },
+      "VoiceSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": {
+            "description": "Opaque voice service identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Connectionid",
+            "type": "string"
+          },
+          "voiceId": {
+            "description": "Provider voice identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+            "title": "Voiceid",
+            "type": "string"
+          },
+          "name": {
+            "description": "Readable provider voice name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "description": "Provider voice source; used to check checkpoint compatibility.",
+            "enum": [
+              "builtin",
+              "uploaded"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "hasReferenceAudio": {
+            "description": "Provider reports a registered reference recording.",
+            "title": "Hasreferenceaudio",
+            "type": "boolean"
+          },
+          "embeddingDim": {
+            "anyOf": [
+              {
+                "maximum": 65536,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Registered reference embedding dimension, when the provider reports one.",
+            "title": "Embeddingdim"
+          },
+          "refText": {
+            "anyOf": [
+              {
+                "maxLength": 100000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provider reference transcript, when available.",
+            "title": "Reftext"
+          }
+        },
+        "required": [
+          "connectionId",
+          "voiceId",
+          "name",
+          "source",
+          "hasReferenceAudio",
+          "embeddingDim",
+          "refText"
+        ],
+        "title": "VoiceSelection",
         "type": "object"
       }
     },

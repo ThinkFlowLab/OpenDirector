@@ -28,8 +28,25 @@ class ImageOutput(Contract):
     size: str = Field(pattern=r'^(?:2K|[1-9]\d{2,3}x[1-9]\d{2,3})$', description='Supported image dimensions or size preset.')
 
 
+class VoiceLibraryCapabilities(Contract):
+    provider: Literal['vllm_omni', 'moss'] = Field(description='Voice registry protocol.')
+    connectionId: str = Field(min_length=1, max_length=200, description='Opaque service, endpoint and account identity.')
+    requiresTranscript: bool = Field(description='Registered voice must have a reference transcript.')
+    requiresReferenceAudio: bool = Field(description='Registered voice must have actual reference audio.')
+    supportsUploadedVoices: bool = Field(default=True, description='Selected model checkpoint accepts uploaded registry voices.')
+    referenceEmbeddingDimension: int | None = Field(default=None, ge=1, le=65536,
+        description='Accepted registered reference embedding dimension; null requires actual reference audio when required.')
+    canDelete: bool = Field(description='Provider supports uploaded voice deletion.')
+    maxBytes: int = Field(ge=1, description='Maximum audio sample bytes.')
+    formats: tuple[str, ...] = Field(description='Supported recording file extensions.')
+    minSeconds: float | None = Field(description='Minimum recording duration, if documented.')
+    maxSeconds: float | None = Field(description='Maximum recording duration, if documented.')
+
+
 class InputRules(Contract):
     profile: str = Field(min_length=1, max_length=100, description='Model capability profile.')
+    voiceLibrary: VoiceLibraryCapabilities | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Supported voice registry and adapter requirements; omitted for unsupported models.')
     maxPromptCharacters: Annotated[int, Field(strict=True, ge=1)] | None = Field(
         default=None, exclude_if=lambda value: value is None, description='Maximum characters in the final prompt including text references.')
     voiceRequired: bool | None = Field(default=None, exclude_if=lambda value: value is None,

@@ -9,6 +9,24 @@ from fastapi import Request
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
+    'voice_upload_type': 'Upload the voice recording using multipart/form-data.',
+    'voice_upload_form': 'Check the recording, form fields and text lengths, then try the upload again.',
+    'voice_model_unsupported': 'This checkpoint does not accept uploaded voices. Choose a Base model for voice cloning or a compatible built-in voice.',
+    'voice_library_unsupported': 'This model does not have a confirmed voice library. Select a supported speech model.',
+    'voice_connection_changed': 'The voice service or account changed. Reopen the library and select a voice again.',
+    'voice_reference_required': 'This model needs a registered reference recording. Upload and select a voice; default cannot replace a recording.',
+    'voice_transcript_required': 'This model needs an accurate recording transcript. Enter the transcript and create the voice again.',
+    'voice_not_found': 'The selected voice no longer exists. Refresh the library and select another voice.',
+    'voice_delete_unsupported': 'This voice cannot be deleted. Only supported uploaded voices can be deleted.',
+    'voice_consent_required': 'Enter the consent recording ID for this voice.',
+    'voice_name_invalid': 'Enter a valid voice name without path separators or control characters.',
+    'voice_audio_invalid': 'The recording could not be decoded. Check the actual audio format and file integrity.',
+    'voice_format': 'This recording format is unsupported. Choose a listed format.',
+    'voice_size': 'The recording exceeds the service file size limit.',
+    'voice_duration': 'The recording duration is outside the service limits. Trim it and try again.',
+    'voice_provider_protocol': 'The voice service returned an invalid response or pagination did not finish. Check its API version.',
+    'voice_provider_error': 'The voice service request failed. Check the connection and account permissions.',
+    'voice_provider_timeout': 'The voice service timed out. Check its status and try again.',
     "moss_speech_text": "Enter the text to read aloud.",
     "moss_speech_voice": "Enter a Voice ID available to your MOSS account.",
     "moss_speech_reference": "MOSS speech generation does not accept references. Enter speech text and a Voice ID.",
@@ -77,6 +95,10 @@ def localized_error_for_language(
     if generic and status in {413, 502, 504}:
         return ENGLISH_BY_STATUS[status]
     specific = None if code == "operation_rejected" else ENGLISH_BY_CODE.get(code)
+    if code == 'voice_provider_error':
+        from opendirector.domain.voices import VOICE_MESSAGES
+        detail = chinese.removeprefix(VOICE_MESSAGES[code]).strip()
+        return specific + (' ' + detail if detail else '')
     return (
         specific
         or ENGLISH_BY_STATUS.get(status)

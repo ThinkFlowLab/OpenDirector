@@ -5,14 +5,18 @@ from urllib.parse import urlsplit
 from .projects import ProjectError
 
 
-MOSS_SPEECH_MODEL = 'moss-tts-1.5-flash'
+MOSS_SPEECH_MODELS = frozenset({
+    'moss-tts-1.5-flash', 'moss-tts-1.0-pro',
+    'moss-tts-1.5-flash-2026-06-26', 'moss-tts-1.0-pro-2026-02-07',
+})
 
 
 def is_moss_speech(config):
     url = urlsplit(config.get('url', ''))
     return (config.get('kind') == 'audio' and config.get('protocol') == 'openai'
+            and config.get('connectionType', 'api') == 'api'
             and url.scheme == 'https' and url.hostname == 'api.mosi.cn' and url.port in {None, 443}
-            and url.path.rstrip('/') == '/v1' and config.get('modelId') == MOSS_SPEECH_MODEL)
+            and url.path.rstrip('/') == '/v1' and config.get('modelId') in MOSS_SPEECH_MODELS)
 
 
 def validate_moss_speech_input(text, voice):
