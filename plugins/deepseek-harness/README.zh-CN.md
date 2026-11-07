@@ -34,11 +34,11 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 在 DSH 网页输入栏点**创作素材**，然后描述你想做什么：
 
-> 新建一个叫“月光工作室”的 OpenDirector 工程，用我已经配置好的图片模型生成一个有电影感的月光房间。先给我看候选和生成状态，再给我链接回到 OpenDirector 接着编辑。
+> 新建一个叫“月光工作室”的工程，用已配置的图片模型生成一个有电影感的月光房间。先给我看候选，再给我画布链接。
 
 1. DSH 使用 `opendirector_projects` 和 `opendirector_project` 创建工程并找到它的图片模型。随后用 `opendirector_create_generation` 保存节点、用 `opendirector_submit` 提交，再用 `opendirector_job` 查询任务 ID。
 2. 任务成功后，直接在 DSH 网页对话里预览已保存的候选。也可以打开工程链接，在**生成历史**中查看。让 DSH 写入工程前，请关闭画布标签页。
-3. 点候选卡片上的**采用结果**，在同一 DSH 对话中检查草稿并发送。DSH 会读取当前版本并调用 `opendirector_adopt_result`。
+3. 点候选卡片上的**采用**，在同一 DSH 对话中检查草稿并发送。DSH 会读取当前版本并调用 `opendirector_adopt_result`。
 4. 通过 `/ai-canvas/<projectId>` 链接回到同一工程。双击图像节点标题重命名，然后重新打开该工程，确认新名称和所选图片仍然存在。
 
 工程链接打开后，还可以修改提示词、查看参考、切换候选，并继续编辑同一个工程。
