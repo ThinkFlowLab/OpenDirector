@@ -1,20 +1,45 @@
-import type { Point, Rect } from "./model.ts";
+import { canSourceReference } from "./connectionPolicy.ts";
+import type { CanvasNode, Point, Rect } from "./model.ts";
 
 export type PortSide = "top" | "right" | "bottom" | "left";
+/** Which ways references can travel from the node these ports surround. */
+export type ReferencePortDirection = "in" | "out" | "both";
 export const REFERENCE_PORT_SIZE = 22;
 export const REFERENCE_PORT_MAX_SIZE = 30;
 /** Drawn size of the direction icon inside the port circle. */
 export const REFERENCE_PORT_ICON_SIZE = 15;
 
-/** Asset ports point outwards; editable nodes show the edge's two directions. */
-export function referencePortIcon(side: PortSide, sourceOnly: boolean) {
-  if (sourceOnly)
-    return {
-      top: "arrowUp",
-      right: "arrowRight",
-      bottom: "arrowDown",
-      left: "arrowLeft",
-    }[side];
+/**
+ * Asset ports point outwards; editable nodes show both directions. A generation
+ * node without content can only receive references, so its ports point inwards
+ * until a result makes it a source as well.
+ */
+export function referencePortDirection(
+  node: CanvasNode | undefined,
+): ReferencePortDirection {
+  if (!node) return "both";
+  if (node.data.mediaRole === "asset") return "out";
+  return canSourceReference(node) ? "both" : "in";
+}
+
+const OUTWARD_ICONS: Record<PortSide, string> = {
+  top: "arrowUp",
+  right: "arrowRight",
+  bottom: "arrowDown",
+  left: "arrowLeft",
+};
+const INWARD_ICONS: Record<PortSide, string> = {
+  top: "arrowDown",
+  right: "arrowLeft",
+  bottom: "arrowUp",
+  left: "arrowRight",
+};
+export function referencePortIcon(
+  side: PortSide,
+  direction: ReferencePortDirection,
+) {
+  if (direction === "in") return INWARD_ICONS[side];
+  if (direction === "out") return OUTWARD_ICONS[side];
   return side === "top" || side === "bottom"
     ? "referenceArrowsVertical"
     : "referenceArrowsHorizontal";

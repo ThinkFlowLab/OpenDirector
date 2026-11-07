@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   floatingReferencePort,
+  referencePortDirection,
+  referencePortIcon,
   referencePortMetrics,
   restingReferencePort,
   REFERENCE_PORT_ICON_SIZE,
   REFERENCE_PORT_MAX_SIZE,
   REFERENCE_PORT_SIZE,
 } from "../src/canvas/connectionPorts.ts";
+import { createNode } from "../src/canvas/model.ts";
 
 const bounds = { x: 100, y: 100, width: 300, height: 300 };
 
@@ -73,4 +76,62 @@ test("enlarged ports keep their node gutter while following the nearby pointer",
       null,
     );
   }
+});
+
+test("port arrows follow what a node can actually give and take", () => {
+  const sides = ["top", "right", "bottom", "left"] as const;
+  const glyphs = (direction: "in" | "out" | "both") =>
+    sides.map((side) => referencePortIcon(side, direction));
+
+  const asset = createNode("image", undefined, {
+    src: "data:image/fixture",
+    mediaRole: "asset",
+  });
+  assert.equal(referencePortDirection(asset), "out");
+  assert.deepEqual(glyphs("out"), [
+    "arrowUp",
+    "arrowRight",
+    "arrowDown",
+    "arrowLeft",
+  ]);
+
+  // An empty generation node cannot be a source, so its ports point inwards.
+  for (const node of [
+    createNode("image"),
+    createNode("video"),
+    createNode("audio"),
+    createNode("text"),
+    createNode("subject"),
+  ]) {
+    assert.equal(referencePortDirection(node), "in", node.type);
+    assert.deepEqual(glyphs("in"), [
+      "arrowDown",
+      "arrowLeft",
+      "arrowUp",
+      "arrowRight",
+    ]);
+  }
+
+  // Content makes the same node both a source and a target.
+  for (const node of [
+    createNode("image", undefined, { src: "data:image/fixture" }),
+    createNode("text", undefined, { text: "written" }),
+  ]) {
+    assert.equal(referencePortDirection(node), "both", node.type);
+    assert.deepEqual(glyphs("both"), [
+      "referenceArrowsVertical",
+      "referenceArrowsHorizontal",
+      "referenceArrowsVertical",
+      "referenceArrowsHorizontal",
+    ]);
+  }
+
+  const missing = createNode("image", undefined, {
+    src: "data:image/fixture",
+    mediaRole: "generation",
+    assetState: "missing",
+  });
+  assert.equal(referencePortDirection(missing), "in");
+  // A port whose owner is no longer rendered keeps the two-direction glyph.
+  assert.equal(referencePortDirection(undefined), "both");
 });

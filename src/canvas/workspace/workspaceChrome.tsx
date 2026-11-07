@@ -166,6 +166,7 @@ export function IconButton({
   highlighted = active,
   disabled,
   shortcut,
+  size,
   tooltipSide = "top",
   tooltipDelay = 200,
 }: {
@@ -176,6 +177,7 @@ export function IconButton({
   highlighted?: boolean;
   disabled?: boolean;
   shortcut?: string;
+  size?: number;
   tooltipSide?: "top" | "bottom" | "left" | "right";
   tooltipDelay?: number;
 }) {
@@ -191,7 +193,7 @@ export function IconButton({
       onClick={onClick}
       disabled={disabled}
     >
-      <CanvasIcon name={name} />
+      <CanvasIcon name={name} size={size} />
     </TooltipButton>
   );
 }

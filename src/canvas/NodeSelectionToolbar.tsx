@@ -7,6 +7,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import { CanvasIcon } from "./CanvasIcon";
+import { ToolIcon } from "./ToolIcon";
+import type { ToolGlyphName } from "./toolGlyphs";
 import { TooltipButton } from "./TooltipButton";
 import { GridSplitOptions, SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
@@ -48,6 +50,8 @@ type Action = {
   id: string;
   label: string;
   icon: string;
+  /** Solid tool glyph; tool actions outweigh the line icons used for chrome. */
+  glyph?: ToolGlyphName;
   run?: () => void;
   options?: MenuOption[];
   disabled?: boolean;
@@ -71,13 +75,14 @@ type OpenMenu = {
   grid?: boolean;
 };
 
-const imageTools: readonly [CanvasToolId, MessageKey, string][] = [
-  ["smart-edit", "canvas.selection.tool.smartEdit", "sparkle"],
-  ["panorama", "canvas.selection.tool.panorama", "expand"],
-  ["outpaint", "canvas.selection.tool.outpaint", "expand"],
-  ["image-hd", "canvas.selection.tool.upscale", "image"],
-  ["cutout", "canvas.selection.tool.cutout", "subject"],
-];
+const imageTools: readonly [CanvasToolId, MessageKey, string, ToolGlyphName][] =
+  [
+    ["smart-edit", "canvas.selection.tool.smartEdit", "sparkle", "smart-edit"],
+    ["panorama", "canvas.selection.tool.panorama", "expand", "panorama"],
+    ["outpaint", "canvas.selection.tool.outpaint", "expand", "outpaint"],
+    ["image-hd", "canvas.selection.tool.upscale", "image", "image-hd"],
+    ["cutout", "canvas.selection.tool.cutout", "subject", "cutout"],
+  ];
 const videoTools: readonly [CanvasToolId, MessageKey, string][] = [
   ["video-partial-reshoot", "canvas.selection.tool.videoReshoot", "camera"],
   ["video-upscale", "canvas.selection.tool.upscale", "video"],
@@ -142,16 +147,23 @@ export function NodeSelectionToolbar({
     label: string,
     icon: string,
     options: MenuOption[],
+    glyph?: ToolGlyphName,
   ) => {
     if (options.some((option) => !option.disabled))
-      editing.push({ id, label, icon, options, disabled: locked });
+      editing.push({ id, label, icon, glyph, options, disabled: locked });
   };
-  const addTool = (tool: CanvasToolId, label: string, icon: string) => {
+  const addTool = (
+    tool: CanvasToolId,
+    label: string,
+    icon: string,
+    glyph?: ToolGlyphName,
+  ) => {
     if (onTool)
       editing.push({
         id: tool,
         label,
         icon,
+        glyph,
         run: () => onTool(tool),
         disabled: locked,
       });
@@ -172,8 +184,8 @@ export function NodeSelectionToolbar({
       });
   };
   if (node.type === "image") {
-    for (const [tool, labelKey, icon] of imageTools)
-      addTool(tool, t(labelKey), icon);
+    for (const [tool, labelKey, icon, glyph] of imageTools)
+      addTool(tool, t(labelKey), icon, glyph);
     addMenu(
       "image-presets",
       t("canvas.selection.presets"),
@@ -186,49 +198,69 @@ export function NodeSelectionToolbar({
             ? "camera"
             : value === "storyboard"
               ? "grid"
-              : value === "product-three-view"
-                ? "image"
-                : "subject",
+              : value === "face-three-view"
+                ? "face"
+                : value === "product-three-view"
+                  ? "product"
+                  : "subject",
         run: () => onPreset?.(String(value)),
         disabled: !onPreset,
       })),
+      "presets",
     );
-    addTool("view-control", t("canvas.selection.multiAngle"), "rotate");
-    addTool("lighting", t("canvas.selection.lighting"), "palette");
-    addMenu("marketing", t("canvas.selection.marketing"), "palette", [
-      toolOption("multi-size", t("canvas.selection.multiSize"), "expand"),
-      toolOption(
-        "layer-decompose",
-        t("canvas.selection.layerDecompose"),
-        "stack",
-      ),
-      toolOption(
-        "product-replacement",
-        t("canvas.selection.productReplacement"),
-        "image",
-      ),
-      toolOption(
-        "dynamic-poster",
-        t("canvas.selection.dynamicPoster"),
-        "video",
-      ),
-    ]);
-    addMenu("tools", t("canvas.selection.tools"), "tool", [
-      toolOption(
-        "inpainting-remove",
-        t("canvas.selection.inpaintRemove"),
-        "edit",
-      ),
-      toolOption("composition", t("canvas.selection.cropCompose"), "crop"),
-      {
-        id: "grid-split",
-        label: t("canvas.selection.gridSplit"),
-        icon: "grid",
-        grid: true,
-        disabled: !onGridSplit,
-      },
-      toolOption("annotation", t("canvas.selection.annotate"), "pencil"),
-    ]);
+    addTool(
+      "view-control",
+      t("canvas.selection.multiAngle"),
+      "rotate",
+      "view-control",
+    );
+    addTool("lighting", t("canvas.selection.lighting"), "palette", "lighting");
+    addMenu(
+      "marketing",
+      t("canvas.selection.marketing"),
+      "palette",
+      [
+        toolOption("multi-size", t("canvas.selection.multiSize"), "expand"),
+        toolOption(
+          "layer-decompose",
+          t("canvas.selection.layerDecompose"),
+          "stack",
+        ),
+        toolOption(
+          "product-replacement",
+          t("canvas.selection.productReplacement"),
+          "image",
+        ),
+        toolOption(
+          "dynamic-poster",
+          t("canvas.selection.dynamicPoster"),
+          "video",
+        ),
+      ],
+      "marketing",
+    );
+    addMenu(
+      "tools",
+      t("canvas.selection.tools"),
+      "tool",
+      [
+        toolOption(
+          "inpainting-remove",
+          t("canvas.selection.inpaintRemove"),
+          "edit",
+        ),
+        toolOption("composition", t("canvas.selection.cropCompose"), "crop"),
+        {
+          id: "grid-split",
+          label: t("canvas.selection.gridSplit"),
+          icon: "grid",
+          grid: true,
+          disabled: !onGridSplit,
+        },
+        toolOption("annotation", t("canvas.selection.annotate"), "pencil"),
+      ],
+      "tools",
+    );
   } else if (node.type === "video") {
     for (const [tool, labelKey, icon] of videoTools)
       addTool(tool, t(labelKey), icon);
@@ -316,6 +348,7 @@ export function NodeSelectionToolbar({
       id: "assistant",
       label: t("canvas.selection.assistant"),
       icon: "sparkle",
+      glyph: "assistant",
       run: onAssistant,
     });
 
@@ -487,7 +520,11 @@ export function NodeSelectionToolbar({
                   );
                 }}
               >
-                <CanvasIcon name={action.icon} size={16} />
+                {action.glyph ? (
+                  <ToolIcon name={action.glyph} size={18} />
+                ) : (
+                  <CanvasIcon name={action.icon} size={16} />
+                )}
                 {!action.iconOnly && <span>{action.label}</span>}
                 {action.options && <CanvasIcon name="chevronDown" size={12} />}
               </TooltipButton>
