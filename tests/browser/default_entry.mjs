@@ -108,24 +108,26 @@ try {
     await page.getByRole("menuitem", { name: old.name, exact: true }).count(),
     0,
   );
-  await page
-    .getByRole("menuitem", { name: "新建画布项目", exact: true })
-    .click();
-  const name = "Default entry " + crypto.randomUUID().slice(0, 8);
-  await page.getByRole("textbox", { name: "项目名称", exact: true }).fill(name);
+  // A new project is created at once and opens with its title selected for
+  // renaming, instead of asking for a name in a dialog first.
   const created = page.waitForResponse(
     (r) =>
       r.url().endsWith("/commands") &&
       r.request().postDataJSON()?.type === "project.create",
   );
-  await page.getByRole("button", { name: "创建项目", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "新建画布项目", exact: true })
+    .click();
   const response = await created;
   assert.equal((await response.json()).status, "applied");
   const id = response.request().postDataJSON().projectId;
-  await page
-    .getByRole("dialog", { name: "新建画布项目", exact: true })
-    .waitFor({ state: "hidden" });
+  const name = "Default entry " + crypto.randomUUID().slice(0, 8);
+  const title = page.locator(".cw-project-name-field input");
+  await title.waitFor();
+  await title.fill(name);
+  await title.press("Enter");
   await saved();
+  await page.getByRole("button", { name: name, exact: true }).waitFor();
   await page.getByRole("button", { name: name, exact: true }).click();
   await page
     .getByRole("textbox", { name: "项目名称", exact: true })
@@ -159,7 +161,10 @@ try {
     .getByRole("button", { name: name + " renamed", exact: true })
     .waitFor();
   await page.getByRole("button", { name: "与 AI 对话", exact: true }).click();
-  await page.getByText(/助手对话尚未接入。请使用画布节点/).waitFor();
+  // The assistant is available in the default entry; nothing is sent yet.
+  await page
+    .getByRole("complementary", { name: "AI 对话", exact: true })
+    .waitFor();
   assert.equal(
     await page
       .getByRole("button", { name: "发送消息", exact: true })

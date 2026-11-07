@@ -128,10 +128,24 @@ try {
       },
       { projectId, sourceId, targetId },
     );
-    await page.waitForTimeout(600);
     const target = page.locator(`.react-flow__node[data-id="${targetId}"]`);
-    const bounds = await source.boundingBox(),
+    // Drag only once both nodes show their moved positions; a fixed delay is
+    // not enough when the canvas re-renders slowly.
+    let bounds, targetBounds;
+    for (let previous = "", attempt = 0; attempt < 50; attempt++) {
+      await page.waitForTimeout(200);
+      bounds = await source.boundingBox();
       targetBounds = await target.boundingBox();
+      const current = JSON.stringify([bounds, targetBounds]);
+      if (
+        current === previous &&
+        targetBounds &&
+        bounds &&
+        targetBounds.x > bounds.x + bounds.width
+      )
+        break;
+      previous = current;
+    }
     assert.ok(bounds && targetBounds);
     await page.mouse.move(
       bounds.x + bounds.width + 22,
@@ -217,6 +231,9 @@ try {
       const { creationClient, objectVersion } =
         await import("/src/backend/creationClient.ts");
       const client = creationClient(projectId);
+      // The page may have just saved this item (title, layout); read its
+      // current revision instead of a cached one.
+      await client.refresh();
       const item = client.snapshot.canvasItems.find((item) => item.id === sourceId);
       await client.command("canvas.hide", { itemId: sourceId }, [
         objectVersion("canvas_item", item),

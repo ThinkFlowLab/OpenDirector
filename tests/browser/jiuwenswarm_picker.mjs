@@ -31,29 +31,36 @@ try {
     true,
   );
   let status = "needs_configuration";
-  await page.route(/\/assistant\/runtimes$/, (route) =>
+  const runtimes = () => [
+    {
+      id: "default",
+      label: "Default",
+      group: "default",
+      modelSource: "settings",
+      available: true,
+      status: "ready",
+      modelOverride: false,
+    },
+    {
+      id: "jiuwenswarm",
+      label: "JiuwenSwarm",
+      group: "harness",
+      modelSource: "cli",
+      available: true,
+      status,
+      modelOverride: true,
+      supportsSkills: true,
+    },
+  ];
+  // The page lists runtimes with ?probe=false and then probes each status.
+  await page.route(/\/assistant\/runtimes(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: runtimes() }),
+  );
+  await page.route(/\/assistant\/runtimes\/([a-z]+)\/status$/, (route) =>
     route.fulfill({
-      json: [
-        {
-          id: "default",
-          label: "Default",
-          group: "default",
-          modelSource: "settings",
-          available: true,
-          status: "ready",
-          modelOverride: false,
-        },
-        {
-          id: "jiuwenswarm",
-          label: "JiuwenSwarm",
-          group: "harness",
-          modelSource: "cli",
-          available: true,
-          status,
-          modelOverride: true,
-          supportsSkills: true,
-        },
-      ],
+      json: runtimes().find((row) =>
+        route.request().url().includes(`/runtimes/${row.id}/status`),
+      ),
     }),
   );
   await page.route(/\/assistant\/runtimes\/jiuwenswarm\/models$/, (route) =>
