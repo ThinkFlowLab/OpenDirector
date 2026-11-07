@@ -30,6 +30,7 @@ import {
   modelLabel,
   isGenerationModel,
   isMusicModel,
+  isPlaceholderModel,
   hasMusicReference,
   MUSIC_SECONDS,
   type ModelConfig,
@@ -61,6 +62,8 @@ export interface NodeComposerProps {
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
   referenceControls?: GenerationReferenceControls;
+  /** Opens the settings dialog on the model category. */
+  onOpenModelSettings?: () => void;
 }
 
 export type ComposerSettings = GenerationSettings;
@@ -85,6 +88,7 @@ export function NodeComposer({
   running = false,
   backendModels = [],
   referenceControls,
+  onOpenModelSettings,
 }: NodeComposerProps) {
   const { t } = useI18n();
   const voiceHelpId = useId();
@@ -739,6 +743,18 @@ export function NodeComposer({
             </TooltipButton>
           )}
         </div>
+        {backend && config && isPlaceholderModel(config) && (
+          <p className="cw-composer-placeholder-note">
+            {t("generation.placeholder.disclosure")}{" "}
+            <button
+              type="button"
+              className="cw-placeholder-configure"
+              onClick={onOpenModelSettings}
+            >
+              {t("generation.placeholder.configure")}
+            </button>
+          </p>
+        )}
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}

@@ -85,6 +85,7 @@
   color: white;
 }
 .cw-node-media {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -95,6 +96,21 @@
   /* Empty media wells stay dark in the default theme; the light theme
      overrides this so a new node does not read as a hole in the canvas. */
   background: var(--cw-media-well, #202124);
+}
+/* Marks zero-key placeholder output so it is never mistaken for model output. */
+.cw-node-placeholder-chip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  color: #e8eaed;
+  background: rgba(32, 33, 36, .78);
+  border: 1px solid rgba(232, 234, 237, .28);
+  pointer-events: none;
 }
 .cw-image-preview,
 .cw-video-preview {

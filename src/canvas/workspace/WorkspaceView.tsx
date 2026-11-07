@@ -1611,6 +1611,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                   referenceTarget.current = composerNode.id;
                   setLibraryOpen(true);
                 }}
+                onOpenModelSettings={() => setSettingsOpen(true)}
                 running={composerRunning}
                 backendModels={backendCatalog.models}
               />

@@ -121,3 +121,24 @@
   border-top: 1px solid var(--cw-lyrics-divider, #ffffff1a);
   font-family: inherit;
 }
+/* Zero-key placeholder disclosure: shown before submission, spans the footer. */
+.cw-composer-placeholder-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--cw-text-secondary, #9aa0a6);
+}
+.cw-placeholder-configure {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--cw-link, #8ab4f8);
+  cursor: pointer;
+}
+.cw-placeholder-configure:hover {
+  text-decoration: underline;
+}

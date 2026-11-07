@@ -709,6 +709,8 @@ export class CreationProjection {
                   ? (node.data.text ?? "")
                   : (node.data.src ?? ""),
               references,
+              // Survives reopen: derived from the frozen job, not client state.
+              placeholder: job.inputSnapshot.model.protocol === "placeholder",
             };
           }
         }

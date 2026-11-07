@@ -190,7 +190,11 @@ export interface CanvasNodeData extends Record<string, unknown> {
   };
   settings?: GenerationSettings;
   agentSettings?: AgentNodeSettings;
-  generationEvidence?: { output: string; references: Record<string, string> };
+  generationEvidence?: {
+    output: string;
+    references: Record<string, string>;
+    placeholder?: boolean;
+  };
   timeline?: TimelineData;
   subject?: SubjectData;
   stack?: StackData;
