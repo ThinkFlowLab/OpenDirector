@@ -27,7 +27,7 @@ export function apply(ctx, config) {
   }
   const messages = createMessages(resolved.locale)
   const client = new OpenDirectorClient(resolved)
-  for (const tool of createOpenDirectorTools({ client, t: messages })) {
+  for (const tool of createOpenDirectorTools({ client, t: messages, hasWebPreview: () => Boolean(ctx.get('webServer')) })) {
     ctx.tools.register(tool)
   }
   ctx.inject(['connection'], (scope) => {

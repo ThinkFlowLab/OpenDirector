@@ -62,7 +62,7 @@ function rawInput(args) {
   return output
 }
 
-function presentationMeta(_args, value, locale) {
+function presentationMeta(_args, value) {
   const meta = {}
   for (const key of ['projectId', 'operationId', 'specId', 'itemId', 'resultId', 'jobId', 'canvasUrl']) {
     if (typeof value?.[key] === 'string') meta[key] = value[key]
@@ -81,7 +81,6 @@ function presentationMeta(_args, value, locale) {
       : references.find(ref => ref.asset?.kind === 'image')
     meta.mediaPreview = {
       kind,
-      locale,
       projectName: value.projectName,
       ...(source && { sourceAssetId: source.asset.assetId, sourceKind: source.asset.kind }),
       candidates: candidates.map(result => ({ resultId: result.id, assetId: result.asset.assetId })),
@@ -215,7 +214,7 @@ const modelSchema = objectOf({
   inputRules: objectOf(),
 })
 
-export function createOpenDirectorTools({ client, t }) {
+export function createOpenDirectorTools({ client, t, hasWebPreview = () => false }) {
   const projectIdParam = required(string(t('param.projectId')))
   const operationIdParam = required(string(t('param.operationId')))
   const makeTool = ({ key, name, description, parameters, schema, execute }) => defineTool({
@@ -224,8 +223,11 @@ export function createOpenDirectorTools({ client, t }) {
     parameters,
     output: {
       schema,
-      render: (_args, value) => [{ type: 'text', text: renderToolResult(key, value, t) }],
-      presentationMeta: (args, value) => presentationMeta(args, value, client.locale),
+      render: (_args, value) => [{
+        type: 'text',
+        text: renderToolResult(key, value, t, { webPreview: key === 'job' && hasWebPreview() }),
+      }],
+      presentationMeta,
     },
     presentCall: (args) => ({
       card: 'generic',

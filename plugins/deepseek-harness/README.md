@@ -32,20 +32,20 @@ The bundle ships ready-to-run JavaScript and needs no build. Tarball installatio
 
 In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](../../docs/guides/user-guide.md) explains model connections. The example uses that configured service.
 
-Ask DSH:
+In DSH Web, choose **Create media** in the composer and describe what you want:
 
-> Create an OpenDirector project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
+> Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
 
 1. DSH uses `opendirector_projects` and `opendirector_project` to create the project and find its image model. It saves a node with `opendirector_create_generation`, submits it with `opendirector_submit`, then checks the job ID with `opendirector_job`.
 2. Once the job succeeds, inspect the saved candidate right in DSH Web. You can also open the project link and find the candidate under **Generation history**. Close the canvas tab before asking DSH to write to the project.
-3. Choose **Adopt result** on the candidate card. The action prepares a draft in the same DSH conversation. Review and send it. DSH reads the current revisions and calls `opendirector_adopt_result`.
+3. Choose **Adopt** on the candidate card. The action prepares a draft in the same DSH conversation. Review and send it. DSH reads the current revisions and calls `opendirector_adopt_result`.
 4. Follow the `/ai-canvas/<projectId>` link back to the same project. Double-click the image node's title, rename it, and reopen the project to check that the new name and the selected image are still there.
 
-To revise an image, choose **Edit image** on its result card, add what you want to change to the draft, and send it. Use a model that accepts reference images. DSH uses `sourceResultId` to pin the exact saved image, then creates a separate generation node in the same project. The result card shows the source and candidate together. Both remain available on the canvas. Card actions leave any existing draft and attachments intact.
+To revise an image, choose **Edit** on its result card. Describe the change on the card and choose **Send request**. Use a model that accepts reference images. DSH uses `sourceResultId` to pin the exact saved image, then creates a separate generation node in the same project. The result card shows the source and candidate together. Both remain available on the canvas. Card actions preserve your current draft and attachments.
 
 ### Continue a video
 
-With a configured MiniMax-H3 vLLM-Omni connection, choose **Use as video first frame** on an image result. Describe the shot in the prepared draft and send it. Once the clip is ready, play it in the result card. Choose **Continue video** and describe what should happen next. DSH shows the source clip and the continuation together before you decide whether to adopt the new candidate.
+With a configured MiniMax-H3 vLLM-Omni connection, choose **Animate** on an image result, describe the shot on the card, and send the request. Once the clip is ready, play it in the result card. Choose **Continue** and describe what should happen next. DSH shows the source clip and the continuation together before you decide whether to adopt the new candidate.
 
 The first job uses `videoMode: first_frame` with the saved image's `sourceResultId`. The next uses `videoMode: continuation` with the saved clip's result ID. The configured backend must still hold that clip's continuation cache. If the cache has expired, DSH shows the job's recovery guidance. Regenerate the source on that backend or choose first-frame or reference mode. Both the existing clip and the failed attempt's inputs stay in the project.
 
@@ -119,7 +119,7 @@ Cancellation is an explicit `opendirector_cancel` action. Aborting a tool reques
 
 Tools return canonical JSON for programmatic use. Submission, progress, candidate selection, and cancellation render short localized summaries with the project name, useful IDs, next step, and project link. A full project/model read is available when the agent needs it.
 
-DSH Web shows saved images and videos on result cards. The card actions prepare a draft for the current conversation. Use the canvas link to keep editing the project in OpenDirector.
+DSH Web shows saved images and videos on result cards in the current interface language. Editing and continuation can be sent from the card. **Adopt** prepares a draft for you to review before sending. Once it succeeds, the receipt has a direct link to the editable canvas.
 
 ## Development checks
 

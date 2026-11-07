@@ -3,145 +3,196 @@ window.__ModuleLoader__.load({
   id: '@opendirector/dsh-plugin',
   factory(require) {
     const { createElement: h, useState, useSyncExternalStore } = require('react')
-
-    const messages = {
-      'en-US': {
-        heading: 'OpenDirector image results',
-        source: 'Source image',
-        candidate: 'Generated image',
-        videoHeading: 'OpenDirector video results',
-        videoSource: 'Source clip',
-        videoCandidate: 'Generated clip',
-        unavailable: 'Preview unavailable. Open the canvas to inspect the result.',
-        canvas: 'Open in OpenDirector',
-        edit: 'Edit image',
-        firstFrame: 'Use as video first frame',
-        continue: 'Continue video',
-        adopt: 'Adopt result',
-        drafted: 'Added to your draft. Review it before sending.',
-        draftBusy: 'Your draft was kept. Finish or clear it before starting this action.',
-        prompt: (projectId, resultId) =>
-          `Edit OpenDirector image result ${resultId} in project ${projectId}. Show me the edit before adopting it. What to change: `,
-        firstFramePrompt: (projectId, resultId) =>
-          `Use image result ${resultId} in OpenDirector project ${projectId} as the first frame of a video. Show me the video candidate before adopting it. Describe the shot: `,
-        continuePrompt: (projectId, resultId) =>
-          `Continue from video result ${resultId} in OpenDirector project ${projectId} using a model that supports video continuation. Show me the candidate before adopting it. Continue with: `,
-        adoptPrompt: (projectId, resultId) =>
-          `Adopt OpenDirector result ${resultId} in project ${projectId}. Read the current project revisions before adopting it, then give me the canvas link.`,
-      },
-      'zh-CN': {
-        heading: 'OpenDirector 图片结果',
-        source: '原图',
-        candidate: '生成候选',
-        videoHeading: 'OpenDirector 视频结果',
-        videoSource: '源片段',
-        videoCandidate: '生成片段',
-        unavailable: '暂时无法预览，可以打开画布查看结果。',
-        canvas: '在 OpenDirector 打开',
-        edit: '修改图片',
-        firstFrame: '用作视频首帧',
-        continue: '续写视频',
-        adopt: '采用结果',
-        drafted: '已填入输入框，检查后再发送。',
-        draftBusy: '已保留当前草稿，请先发出或清空再操作。',
-        prompt: (projectId, resultId) =>
-          `请修改 OpenDirector 工程 ${projectId} 中的图片结果 ${resultId}，先展示修改候选，等我确认后再采用。修改要求：`,
-        firstFramePrompt: (projectId, resultId) =>
-          `用 OpenDirector 工程 ${projectId} 中的图片结果 ${resultId} 作为视频首帧，先展示候选，等我确认后再采用。镜头要求：`,
-        continuePrompt: (projectId, resultId) =>
-          `用支持续写的模型接着生成 OpenDirector 工程 ${projectId} 中的视频结果 ${resultId}，先展示候选，等我确认后再采用。接下来的画面：`,
-        adoptPrompt: (projectId, resultId) =>
-          `采用 OpenDirector 工程 ${projectId} 中的结果 ${resultId}。先读取工程当前的版本号，采用后给我画布链接。`,
-      },
+    const namespace = 'opendirector'
+    const en = {
+      images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
+      candidate: 'Candidate', unavailable: 'Preview unavailable. Open the canvas to view this result.',
+      canvas: 'Open canvas', edit: 'Edit', firstFrame: 'Animate', continue: 'Continue', adopt: 'Adopt', adopted: 'Result adopted',
+      create: 'Create media', send: 'Send request', cancel: 'Cancel', draftReady: 'Draft ready to send.',
+      draftBusy: 'Finish or clear your current draft first.', brief: 'Describe what to change',
+      shot: 'Describe the next shot', ready: 'Request sent.', copyId: 'Copy result ID', copied: 'Result ID copied.',
+      createPrompt: 'Create in OpenDirector: ',
+      editPrompt: 'Edit the image. Show the new candidate before adopting it.',
+      firstFramePrompt: 'Use the image as the first frame of a video. Show the candidate before adopting it.',
+      continuePrompt: 'Continue the clip with a compatible video model. Show the candidate before adopting it.',
+      adoptPrompt: 'Adopt this result. Read the current revisions first, then share the canvas link.',
+      reference: 'OpenDirector project and result',
+    }
+    const zh = {
+      images: '图片结果', videos: '视频结果', original: '原图', sourceClip: '源片段',
+      candidate: '候选', unavailable: '暂时无法预览。可在画布查看。',
+      canvas: '打开画布', edit: '改图', firstFrame: '转成视频', continue: '续写', adopt: '采用', adopted: '已采用结果',
+      create: '创作素材', send: '发送请求', cancel: '取消', draftReady: '草稿已填入，检查后发送。',
+      draftBusy: '请先发送或清空当前草稿。', brief: '描述你想改什么',
+      shot: '描述接下来的镜头', ready: '请求已发送。', copyId: '复制结果 ID', copied: '已复制结果 ID。',
+      createPrompt: '用 OpenDirector 创作：',
+      editPrompt: '修改这张图片，先展示修改候选，再由我决定是否采用。',
+      firstFramePrompt: '用这张图片作为视频首帧，先展示候选，再由我决定是否采用。',
+      continuePrompt: '用支持续写的模型接着生成这段视频，先展示候选，再由我决定是否采用。',
+      adoptPrompt: '采用此结果，先读取工程当前版本，采用后给我画布链接。',
+      reference: 'OpenDirector 工程与结果',
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, t, stageDraft }) {
+    const border = '1px solid var(--dsw-alias-border-l1)'
+    const muted = 'var(--dsw-alias-label-secondary)'
+    const surface = 'var(--dsw-alias-markdown-code-block)'
+    const row = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.4rem' }
+    const buttonStyle = {
+      font: 'inherit', fontSize: '.82em', padding: '.3rem .65rem', borderRadius: '.45rem',
+      border, background: 'transparent', color: 'inherit', cursor: 'pointer',
+    }
+
+    function button(label, onClick, options = {}) {
+      const { primary, ...attrs } = options
+      return h('button', {
+        type: 'button', onClick, ...attrs,
+        style: { ...buttonStyle, ...(primary && { background: surface, fontWeight: 600 }) },
+      }, label)
+    }
+
+    function useComposerRequest(useInput, inputActions) {
+      const emptyRevision = useInput(state => state.phase === 'plain' && !state.draft.trim()
+        && !state.attachmentIds.length && !state.occurrences.length ? state.draftRev : null)
+      return (text, send = false) => {
+        if (emptyRevision === null) return false
+        const span = inputActions.captureInsertion()
+        if (span.draftRev !== emptyRevision || !inputActions.insertText(text, span)) return false
+        if (send) inputActions.submit()
+        return true
+      }
+    }
+
+    function CreateMedia({ t, useInput, inputActions }) {
+      const request = useComposerRequest(useInput, inputActions)
+      const [busy, setBusy] = useState(false)
+      return h('div', { style: row },
+        button(t('create'), () => setBusy(!request(t('createPrompt'))), { title: 'OpenDirector' }),
+        busy && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t('draftBusy')))
+    }
+
+    function Preview({ projectId, assetId, resultId, kind, title, t, request }) {
       const [failed, setFailed] = useState(false)
-      const [draftStatus, setDraftStatus] = useState('')
+      const [action, setAction] = useState(null)
+      const [brief, setBrief] = useState('')
+      const [status, setStatus] = useState('')
       const url = '/api/opendirector/media?' + new URLSearchParams({ project: projectId, asset: assetId, kind })
       const video = kind === 'video'
-      const mediaStyle = {
-        display: 'block', width: '100%', height: 'clamp(9rem, 28vw, 17rem)',
-        objectFit: 'contain', borderRadius: '.5rem', background: 'var(--dsw-alias-markdown-code-block)',
-      }
+      const mediaStyle = { width: '100%', height: 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
+        borderRadius: '.55rem', background: surface }
       const onError = () => setFailed(true)
       const media = video
         ? h('video', { src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
         : h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
           h('img', { src: url, alt: title, loading: 'lazy', onError, style: mediaStyle }))
-      const button = (label, prompt) => h('button', {
-        type: 'button', onClick: () => setDraftStatus(stageDraft(prompt(projectId, resultId)) ? t.drafted : t.draftBusy),
-        style: {
-          font: 'inherit', fontSize: '.85em', padding: '.2rem .5rem', borderRadius: '.35rem',
-          border: '1px solid var(--dsw-alias-border-l1)', background: 'var(--dsw-alias-bg-base)',
-          color: 'inherit', cursor: 'pointer',
-        },
-      }, label)
-      return h('figure', { style: { margin: 0, minWidth: 0, display: 'grid', gap: '.4rem', alignContent: 'start' } },
-        h('figcaption', { style: { fontSize: '.85em', fontWeight: 600 } }, title),
-        failed ? h('p', null, t.unavailable) : media,
-        resultId && h('div', { style: { display: 'grid', gap: '.25rem', justifyItems: 'start' } },
-          h('code', { style: { fontSize: '.75em', overflowWrap: 'anywhere' } }, resultId),
-          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '.3rem' } },
-            video ? button(t.continue, t.continuePrompt) : button(t.edit, t.prompt),
-            !video && button(t.firstFrame, t.firstFramePrompt),
-            button(t.adopt, t.adoptPrompt)),
-          h('span', { role: 'status', style: { fontSize: '.8em' } }, draftStatus)))
-    }
-
-    function MediaResults({ meta, stageDraft }) {
-      const preview = meta.mediaPreview ?? meta.imagePreview
-      const kind = preview.kind ?? 'image'
-      const t = messages[preview.locale] ?? messages['en-US']
-      const heading = kind === 'video' ? t.videoHeading : t.heading
-      const candidate = kind === 'video' ? t.videoCandidate : t.candidate
-      const sourceKind = preview.sourceKind ?? kind
-      return h('section', { 'aria-label': heading, [`data-opendirector-${kind}-results`]: '',
-        style: { display: 'grid', gap: '.65rem', padding: '.8rem',
-          border: '1px solid var(--dsw-alias-border-l1)', borderRadius: '.65rem' } },
-        h('header', null,
-          h('strong', null, heading), preview.projectName && h('span', null, ' · ', preview.projectName)),
-        h('div', {
-          style: { display: 'grid', gap: '.8rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(13rem, 100%), 1fr))' },
-        },
-        preview.sourceAssetId && h(Preview, {
-          key: preview.sourceAssetId, projectId: meta.projectId, assetId: preview.sourceAssetId,
-          kind: sourceKind, title: sourceKind === 'video' ? t.videoSource : t.source, t,
-        }),
-        ...preview.candidates.map(({ resultId, assetId }, index) => h(Preview, {
-          key: resultId, projectId: meta.projectId, assetId, resultId, kind, t, stageDraft,
-          title: preview.candidates.length > 1 ? `${candidate} ${index + 1}` : candidate,
-        }))),
-        h('a', { href: meta.canvasUrl, target: '_blank', rel: 'noopener noreferrer' }, t.canvas))
-    }
-
-    function MediaResultsTail({ turn, useChat, useInput, inputActions }) {
-      const source = useChat(snapshot => snapshot.nodes.turnDataSource(turn.turn, 'tool-call'))
-      const calls = useSyncExternalStore(source.subscribe, source.getSnapshot)
-      const emptyRevision = useInput(state => state.phase === 'plain' && !state.draft.trim()
-        && !state.attachmentIds.length && !state.occurrences.length ? state.draftRev : null)
-      function stageDraft(text) {
-        if (emptyRevision === null) return false
-        const span = inputActions.captureInsertion()
-        return span.draftRev === emptyRevision && inputActions.insertText(text, span)
+      function message(key, detail = '') {
+        return [t(key), t('reference') + ' ' + projectId + ' / ' + resultId, detail].filter(Boolean).join('\n')
       }
-      const previews = new Map()
-      for (const { root } of calls) {
-        if (root.name === 'opendirector_job' && (root.meta?.mediaPreview || root.meta?.imagePreview)) {
-          previews.set(root.meta.jobId, root.meta)
+      function open(key) {
+        setAction(key)
+        setStatus('')
+      }
+      function submit(event) {
+        event.preventDefault()
+        const detail = brief.trim()
+        if (!detail) return
+        if (request(message(action, detail), true)) {
+          setStatus(t('ready'))
+          setAction(null)
+          setBrief('')
+        } else {
+          setStatus(t('draftBusy'))
         }
       }
-      if (!previews.size) return null
+      async function copyResult() {
+        try {
+          await navigator.clipboard.writeText(resultId)
+          setStatus(t('copied'))
+        } catch {
+          setStatus(resultId)
+        }
+      }
+      return h('figure', { style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' } },
+        h('figcaption', { style: { color: muted, fontSize: '.8em', fontWeight: 600 } }, title),
+        failed ? h('p', null, t('unavailable')) : media,
+        resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
+          h('div', { style: row },
+            video ? button(t('continue'), () => open('continuePrompt')) : button(t('edit'), () => open('editPrompt')),
+            !video && button(t('firstFrame'), () => open('firstFramePrompt')),
+            button(t('adopt'), () => setStatus(t(request(message('adoptPrompt')) ? 'draftReady' : 'draftBusy')), { primary: true }),
+            button('···', copyResult, { title: t('copyId'), 'aria-label': t('copyId') })),
+          action && h('form', { onSubmit: submit, style: row },
+            h('input', {
+              autoFocus: true, type: 'text', value: brief, onChange: event => setBrief(event.target.value),
+              'aria-label': t(action === 'editPrompt' ? 'brief' : 'shot'),
+              placeholder: t(action === 'editPrompt' ? 'brief' : 'shot'),
+              style: { ...buttonStyle, flex: '1 1 10rem', minWidth: 0, cursor: 'text' },
+            }),
+            button(t('send'), undefined, { type: 'submit', primary: true, disabled: !brief.trim() }),
+            button(t('cancel'), () => { setAction(null); setBrief(''); setStatus('') })),
+          status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)))
+    }
+
+    function canvasLink(url, t) {
+      return h('a', { href: url, target: '_blank', rel: 'noopener noreferrer',
+        style: { ...buttonStyle, textDecoration: 'none', whiteSpace: 'nowrap' } }, `${t('canvas')} ↗`)
+    }
+
+    function MediaResults({ meta, t, request }) {
+      const preview = meta.mediaPreview ?? meta.imagePreview
+      const kind = preview.kind ?? 'image'
+      const heading = t(kind === 'video' ? 'videos' : 'images')
+      const sourceKind = preview.sourceKind ?? kind
+      return h('section', { 'aria-label': heading, [`data-opendirector-${kind}-results`]: '',
+        style: { display: 'grid', gap: '.75rem', padding: '.85rem 1rem', border, borderRadius: '.9rem' } },
+        h('header', { style: { ...row, justifyContent: 'space-between' } },
+          h('div', { style: { display: 'grid', gap: '.1rem' } },
+            h('span', { style: { color: muted, fontSize: '.73em' } }, `OpenDirector · ${heading}`),
+            h('strong', { style: { fontSize: '1em', overflowWrap: 'anywhere' } }, preview.projectName)),
+          canvasLink(meta.canvasUrl, t)),
+        h('div', { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' } },
+          preview.sourceAssetId && h(Preview, {
+            key: preview.sourceAssetId, projectId: meta.projectId, assetId: preview.sourceAssetId,
+            kind: sourceKind, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
+          }),
+          ...preview.candidates.map(({ resultId, assetId }, index) => h(Preview, {
+            key: resultId, projectId: meta.projectId, assetId, resultId, kind, t, request,
+            title: preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate'),
+          }))))
+    }
+
+    function MediaResultsTail({ turn, useChat, useInput, inputActions, t }) {
+      const source = useChat(snapshot => snapshot.nodes.turnDataSource(turn.turn, 'tool-call'))
+      const calls = useSyncExternalStore(source.subscribe, source.getSnapshot)
+      const request = useComposerRequest(useInput, inputActions)
+      const previews = new Map()
+      const adoptions = new Map()
+      for (const { root } of calls) {
+        const meta = root.meta
+        if (root.name === 'opendirector_job' && (meta?.mediaPreview || meta?.imagePreview)) {
+          previews.set(meta.jobId, meta)
+        } else if (root.name === 'opendirector_adopt_result' && meta?.status === 'applied' && meta.canvasUrl) {
+          adoptions.set(meta.resultId, meta.canvasUrl)
+        }
+      }
+      if (!previews.size && !adoptions.size) return null
       return h('div', { style: { display: 'grid', gap: '.65rem' } },
-        ...Array.from(previews, ([key, meta]) => h(MediaResults, { key, meta, stageDraft })))
+        ...Array.from(previews, ([key, meta]) => h(MediaResults, { key, meta, t, request })),
+        ...Array.from(adoptions, ([key, url]) => h('div', {
+          key, 'data-opendirector-adoption': '', style: { ...row, justifyContent: 'space-between',
+            padding: '.5rem .7rem', border, borderRadius: '.55rem', fontSize: '.9em' },
+        }, h('strong', null, t('adopted')), canvasLink(url, t))))
     }
 
     return {
-      inject: ['slots'],
+      inject: ['slots', 'locale'],
       apply(ctx) {
+        ctx.effect(() => ctx.locale.register(namespace, { en, zh }))
         ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-          name: 'conversation.chat.turnTail', id: '@opendirector/dsh-plugin',
+          name: 'conversation.chat.turnTail', id: '@opendirector/dsh-plugin', locale: namespace,
         }, MediaResultsTail))
+        ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+          name: 'conversation.input.left', id: '@opendirector/dsh-plugin:create', locale: namespace,
+        }, CreateMedia))
       },
     }
   },
