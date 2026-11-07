@@ -27,6 +27,7 @@ ENGLISH_BY_CODE = {
     "role_restricted": "This item does not allow that operation.",
     "storage_unavailable": "A stored file is missing or has changed. Restore the file and try again.",
     "capability_unsupported": "This capability is not supported yet.",
+    "placeholder_image_only": "The placeholder generator currently supports images only; video and audio placeholders are on the way.",
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",
     "local_only": "Only this computer can access the project service.",

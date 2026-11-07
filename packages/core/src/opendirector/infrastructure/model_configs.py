@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from filelock import FileLock
 
@@ -13,9 +13,15 @@ from opendirector.domain.input_rules import input_rules
 from opendirector.domain.capabilities import agent_input_modalities
 from opendirector.domain.model_connection import connection_fields, model_fields
 from opendirector.domain.video_capabilities import check_video_config
+from opendirector.domain.creation.models import BUILTIN_PLACEHOLDER_URL
 from opendirector.infrastructure.local_projects import child, read_json, write_json
 
 MODEL_KINDS = ("agent", "image", "video", "audio", "vision")
+
+# Deterministic identity for the built-in placeholder generator, so every
+# installation resolves the same config ID and reseeding stays idempotent.
+BUILTIN_PLACEHOLDER_IMAGE_ID = str(uuid5(NAMESPACE_URL, 'opendirector/builtin/placeholder-image'))
+BUILTIN_PLACEHOLDER = {'kind': 'image', 'modelId': 'placeholder'}
 
 
 class ModelConfigs:
@@ -53,7 +59,11 @@ class ModelConfigs:
                 if item["id"] in seen or item["kind"] not in MODEL_KINDS:
                     raise ValueError()
                 seen.add(item["id"])
-                fields = model_fields(item["url"], item["modelId"], item["apiKey"])
+                # Built-in entries carry a marker URL that is never dialed; the
+                # HTTP(S) service validation does not apply to them.
+                fields = (model_fields(item["url"], item["modelId"], item["apiKey"])
+                          if item.get('connectionType') != 'builtin'
+                          else {'url': item['url'], 'modelId': item['modelId'], 'apiKey': ''})
                 item.update(connection_fields(item['kind'], item.get('connectionType', 'api'), item.get('protocol'), item.get('authMode'), item.get('proxyMode')))
                 # Old /videos entries used the FastH3 request shape for every name.
                 # Pin that adapter while new configurations use explicit detection.
@@ -86,6 +96,20 @@ class ModelConfigs:
             if item is None:
                 raise ProjectError("所选模型不存在或类别不符，请在设置中配置并重新选择。", 409)
             return dict(item)
+
+    def ensure_builtin(self) -> dict:
+        """Seed the built-in placeholder image generator once; idempotent per install."""
+        with self.lock:
+            models = self._read()
+            existing = next((item for item in models
+                             if item['kind'] == BUILTIN_PLACEHOLDER['kind'] and item['modelId'] == BUILTIN_PLACEHOLDER['modelId']), None)
+            if existing is not None:
+                return self._public(existing)
+            models.append({'id': BUILTIN_PLACEHOLDER_IMAGE_ID, 'url': BUILTIN_PLACEHOLDER_URL, 'apiKey': '',
+                           **BUILTIN_PLACEHOLDER, **connection_fields(BUILTIN_PLACEHOLDER['kind'], 'builtin')})
+            self._write(models)
+            # Reread so the stored entry gets the same normalization as any other.
+            return next(self._public(item) for item in self._read() if item['id'] == BUILTIN_PLACEHOLDER_IMAGE_ID)
 
     def save(self, kind: str, url: str, model_id: str, api_key: str, config_id: str | None = None, *, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None, video_adapter=None, video_capabilities=None, capabilities_supplied=False, input_modalities=None) -> dict:
         if kind not in MODEL_KINDS:

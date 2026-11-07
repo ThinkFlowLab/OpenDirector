@@ -12,9 +12,14 @@ from opendirector.domain.projects import ProjectError
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
-Protocol = Literal['openai', 'volcengine', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
+Protocol = Literal['openai', 'volcengine', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score', 'placeholder']
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 Count = Annotated[int, Field(strict=True, ge=0)]
+
+# Marker base URL for the built-in placeholder generator. It is allow-listed in
+# ModelConnection.service_url and is never dialed: dispatch happens on the
+# protocol before any network use.
+BUILTIN_PLACEHOLDER_URL = 'builtin://placeholder'
 
 
 class VideoCapabilities(ExistingVideoCapabilities):
@@ -78,7 +83,7 @@ class ModelConnection(Contract):
     kind: ModelKind = Field(description='Business object or media type.')
     url: str = Field(min_length=1, max_length=2048, description='Provider API base URL.')
     modelId: str = Field(min_length=1, max_length=200, description='Provider-native model identifier.')
-    connectionType: Literal['api', 'self_hosted'] = Field(description='Hosted or local model connection type.')
+    connectionType: Literal['api', 'self_hosted', 'builtin'] = Field(description='Hosted, local, or built-in model connection type.')
     protocol: Protocol = Field(description='Provider wire protocol.')
     authMode: Literal['none', 'bearer'] = Field(description='Authentication mode for the provider connection.')
     proxyMode: Literal['system', 'direct'] = Field(default='system', description='Use the system proxy or connect directly to the model service.')
@@ -90,6 +95,8 @@ class ModelConnection(Contract):
     @classmethod
     def service_url(cls, value):
         value = value.strip()
+        if value == BUILTIN_PLACEHOLDER_URL:
+            return value
         try:
             parsed = urlsplit(value)
             valid = (parsed.scheme in {'http', 'https'} and parsed.hostname and not parsed.username
@@ -110,7 +117,7 @@ class ModelConnection(Contract):
 
     @model_validator(mode='after')
     def connection(self):
-        allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
+        allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation', 'placeholder'},
                    'video': {'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                    'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
         if self.protocol not in allowed[self.kind]:
@@ -149,7 +156,7 @@ class ModelSnapshot(Contract):
     modelId: str = Field(min_length=1, max_length=200, description='Provider-native model identifier.')
     url: str = Field(min_length=1, max_length=2048, description='Provider API base URL.')
     protocol: Protocol = Field(description='Provider wire protocol.')
-    connectionType: Literal['api', 'self_hosted'] = Field(description='Hosted or local model connection type.')
+    connectionType: Literal['api', 'self_hosted', 'builtin'] = Field(description='Hosted, local, or built-in model connection type.')
     proxyMode: Literal['system', 'direct'] = Field(default='system', exclude_if=lambda value: value == 'system', description='Network routing selected when the job was accepted.')
     inputModalities: tuple[Literal['text', 'image'], ...] | None = Field(default=None, exclude_if=lambda value: value is None, description='Supported model input media kinds.')
     videoAdapter: VideoAdapter = Field(default='auto', description='Provider-specific video adapter.')

@@ -5,14 +5,17 @@ from opendirector.domain.projects import ProjectError
 
 
 def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None):
-    if connection_type not in {'api', 'self_hosted'}:
+    if connection_type not in {'api', 'self_hosted', 'builtin'}:
         raise ProjectError('无效的接入方式。')
+    if connection_type == 'builtin':
+        # The built-in placeholder never dials a network: no URL, no credentials.
+        protocol, auth_mode, proxy_mode = 'placeholder', 'none', 'direct'
     protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind not in {'video', 'vision'}
                             else 'vllm_omni' if connection_type == 'self_hosted' else 'volcengine')
-    allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
+    allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation', 'placeholder'},
                'video': {'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
-    auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
+    auth_mode = auth_mode or ('none' if connection_type in {'self_hosted', 'builtin'} else 'bearer')
     proxy_mode = proxy_mode if proxy_mode is not None else 'system'
     if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'} or proxy_mode not in {'system', 'direct'}:
         raise ProjectError('接口协议或鉴权方式与模型类别不兼容。')
