@@ -51,6 +51,7 @@ function rawInput(args) {
     'modelConfigId',
     'specId',
     'resultId',
+    'sourceResultId',
     'jobId',
     'expectedSpecRevision',
     'expectedItemRevision',
@@ -61,7 +62,7 @@ function rawInput(args) {
   return output
 }
 
-function presentationMeta(_args, value) {
+function presentationMeta(_args, value, locale) {
   const meta = {}
   for (const key of ['projectId', 'operationId', 'specId', 'itemId', 'resultId', 'jobId', 'canvasUrl']) {
     if (typeof value?.[key] === 'string') meta[key] = value[key]
@@ -70,6 +71,22 @@ function presentationMeta(_args, value) {
   if (typeof status === 'string') meta.status = status
   if (Array.isArray(value?.jobIds)) meta.jobIds = value.jobIds.slice(0, 8)
   if (Array.isArray(value?.projects)) meta.projectCount = value.projects.length
+  const kind = value?.job?.execution?.kind
+  if (kind === 'image' || kind === 'video') {
+    const candidates = value.results.filter(result => result.asset?.kind === kind)
+    if (!candidates.length) return meta
+    const references = value.job.inputSnapshot?.references ?? []
+    const source = kind === 'video'
+      ? references.find(ref => ref.role === 'continuation' || ref.role === 'first_frame')
+      : references.find(ref => ref.asset?.kind === 'image')
+    meta.mediaPreview = {
+      kind,
+      locale,
+      projectName: value.projectName,
+      ...(source && { sourceAssetId: source.asset.assetId, sourceKind: source.asset.kind }),
+      candidates: candidates.map(result => ({ resultId: result.id, assetId: result.asset.assetId })),
+    }
+  }
   return meta
 }
 
@@ -92,7 +109,7 @@ function localizeError(error, t, client) {
     failure.name = 'OpenDirectorToolError'
     failure.status = error.status
     failure.code = error.code
-    failure.remote = error.body
+    if (typeof error.body !== 'string') failure.remote = error.body
     return failure
   }
   if (error instanceof UnknownOperationError) {
@@ -208,7 +225,7 @@ export function createOpenDirectorTools({ client, t }) {
     output: {
       schema,
       render: (_args, value) => [{ type: 'text', text: renderToolResult(key, value, t) }],
-      presentationMeta,
+      presentationMeta: (args, value) => presentationMeta(args, value, client.locale),
     },
     presentCall: (args) => ({
       card: 'generic',
@@ -351,6 +368,7 @@ export function createOpenDirectorTools({ client, t }) {
         y: required(number(t('param.positionY'))),
       }, { additionalProperties: false, description: t('param.position') })),
       references: arrayOf(referenceItem, t('param.references')),
+      sourceResultId: string(t('param.sourceResultId')),
     },
     schema: outputSchema({
       projectId: string('Project ID.'),
@@ -371,6 +389,7 @@ export function createOpenDirectorTools({ client, t }) {
         parameters: args.parameters,
         position: args.position,
         references: args.references,
+        sourceResultId: args.sourceResultId,
         signal: exec.signal,
       })
       return {

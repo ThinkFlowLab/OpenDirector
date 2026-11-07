@@ -23,6 +23,7 @@ export function normalizeUrl(value, field) {
     throw new ConfigError('config.urlQuery', { field })
   }
   if (!url.hostname) throw new ConfigError('config.urlInvalid', { field })
+  if (/[?#]/.test(raw)) throw new ConfigError('config.urlQuery', { field })
   return raw.replace(/\/+$/, '')
 }
 

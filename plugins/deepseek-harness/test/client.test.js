@@ -171,6 +171,31 @@ test('a 409 project lease is reported without taking over another session', asyn
   assert.equal(calls[1].init.headers['X-OpenDirector-Session'], calls[0].init.headers['X-OpenDirector-Session'])
 })
 
+test('a result reference is pinned from the same open snapshot used for its write', async () => {
+  const resultId = '55555555-5555-4555-8555-555555555555'
+  const source = { assetId: '66666666-6666-4666-8666-666666666666', revision: 2, fingerprint: `sha256:${'a'.repeat(64)}`, kind: 'video' }
+  const methods = []
+  let submitted
+  const client = new OpenDirectorClient(config(), {
+    fetchImpl: async (url, init) => {
+      methods.push(init.method)
+      if (url.endsWith('/open')) return response({ ...snapshot(), results: [{ id: resultId, asset: source }] })
+      if (url.endsWith('/commands')) {
+        submitted = JSON.parse(init.body)
+        return response(receipt())
+      }
+      if (url.includes('/sessions/')) return response()
+      throw new Error(`unexpected URL ${url}`)
+    },
+  })
+  await client.createGeneration(generationArgs({
+    kind: 'video', parameters: { videoMode: 'continuation' }, sourceResultId: resultId, references: undefined,
+  }))
+  assert.deepEqual(methods, ['POST', 'POST', 'DELETE'])
+  assert.deepEqual(submitted.payload.references[0].source, source)
+  assert.equal(submitted.payload.references[0].role, 'continuation')
+})
+
 test('a transport failure during a write is an unknown operation and is not retried', async () => {
   const calls = []
   const client = new OpenDirectorClient(config(), {
@@ -198,6 +223,28 @@ test('a transport failure during a write is an unknown operation and is not retr
   assert.equal(commands.length, 1)
   assert.equal(commands[0].init.body.includes('job.cancel'), false)
   assert.equal(calls.at(-1).init.method, 'DELETE')
+})
+
+test('a write returning 503 can still have a committed receipt', async () => {
+  let committed
+  let submissions = 0
+  const client = new OpenDirectorClient(config(), {
+    fetchImpl: async (url, init) => {
+      if (url.endsWith('/open')) return response(snapshot())
+      if (url.endsWith('/commands')) {
+        submissions++
+        committed = receipt()
+        return response({ code: 'storage_unavailable' }, { status: 503 })
+      }
+      if (url.includes('/sessions/')) return response()
+      if (url.endsWith(`/receipts/${operationId}`)) return response(committed)
+      throw new Error(`unexpected URL ${url} (${init.method})`)
+    },
+  })
+  await assert.rejects(client.submit({ projectId, operationId, specId, expectedSpecRevision: 1 }),
+    error => error instanceof UnknownOperationError && error.operationId === operationId)
+  assert.deepEqual(await client.receipt(projectId, operationId), committed)
+  assert.equal(submissions, 1)
 })
 
 test('aborting a write does not send job.cancel', async () => {

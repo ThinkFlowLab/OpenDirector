@@ -7,6 +7,8 @@ test('invalid URL diagnostics retain the field and reason without storing or dis
   for (const value of [
     'https://user:private-password@example.invalid',
     'https://example.invalid/?token=private-query-token',
+    'https://example.invalid/?',
+    'https://example.invalid/#',
     'malformed private-invalid-token',
     'file:///private-scheme-token',
   ]) {

@@ -7,17 +7,21 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { createMessages } from '../src/i18n.js'
+import { renderToolResult } from '../src/presentation.js'
 
 test('real DSH Loader and Native executor preserve nullable backend facts, localization, and unload', async () => {
   const projectId = randomUUID()
   const jobId = randomUUID()
   const resultId = randomUUID()
   const specId = randomUUID()
+  const asset = { assetId: randomUUID(), revision: 1, fingerprint: `sha256:${'a'.repeat(64)}`, kind: 'image' }
   const snapshot = {
     project: { id: projectId, revision: 1, name: 'Studio' },
     generationSpecs: [{ id: specId, currentResultId: null }],
-    jobs: [{ id: jobId, revision: 3, status: 'succeeded', originItemId: null, errorDetails: null }],
-    results: [{ id: resultId, specId, jobId }],
+    jobs: [{ id: jobId, revision: 3, status: 'succeeded', originItemId: null, errorDetails: null,
+      cancelRequested: false, remoteCancellation: 'not_requested' }],
+    results: [{ id: resultId, specId, jobId, asset }],
   }
   const server = createServer((request, response) => {
     assert.equal(request.headers['x-opendirector-request'], '1')
@@ -55,6 +59,10 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     assert.equal(english.value.job.originItemId, null)
     assert.equal(english.value.job.errorDetails, null)
     assert.match(english.content[0].text, /Candidate saved in this project/)
+    assert.match(english.content[0].text, /^revision: 3$/m)
+    assert.match(english.content[0].text, /cancelRequested: false/)
+    assert.match(english.content[0].text, /remoteCancellation: not_requested/)
+    assert.ok(english.content[0].text.includes(JSON.stringify(asset)))
     assert.match(english.content[0].text, new RegExp(`/ai-canvas/${projectId}`))
     assert.doesNotMatch(english.content[0].text, /"jobs"|"generationSpecs"|"models"/)
     await entry.update({ disabled: true })
@@ -70,4 +78,15 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     await ctx.fiber.dispose()
     await new Promise(resolve => server.close(resolve))
   }
+})
+
+test('cancellation summaries distinguish an applied request from a no-op', () => {
+  const t = createMessages('en-US')
+  const jobId = randomUUID()
+  const applied = renderToolResult('cancel', { jobId, receipt: { status: 'applied' } }, t)
+  const noop = renderToolResult('cancel', { jobId, receipt: { status: 'noop' } }, t)
+  assert.ok(applied.includes(t('summary.cancelRequested')))
+  assert.ok(noop.includes(t('status.noop')))
+  assert.ok(noop.includes(jobId))
+  assert.ok(!noop.includes(t('summary.cancelRequested')))
 })

@@ -67,10 +67,11 @@ try {
   assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 8);
   evidence.checks.push('real Cordis Loader registered 8 native tools');
   const projectId = randomUUID();
-  const created = await call('opendirector_projects', { action: 'create', name: 'DSH 148 isolated project', projectId, operationId: randomUUID() });
+  const name = `DSH 148 isolated project ${projectId.slice(0, 8)}`;
+  const created = await call('opendirector_projects', { action: 'create', name, projectId, operationId: randomUUID() });
   assert.equal(created.receipt.status, 'applied');
   const project = await call('opendirector_project', { projectId });
-  assert.equal(project.snapshot.project.name, 'DSH 148 isolated project');
+  assert.equal(project.snapshot.project.name, name);
   const model = project.models.find(value => value.kind === 'image');
   assert.ok(model);
   const node = await createNode(projectId, model.id, 40);

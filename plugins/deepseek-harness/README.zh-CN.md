@@ -6,7 +6,7 @@
 
 ## 安装并连接
 
-使用 **DSH 0.2.2-rc.1** 和 **Node.js 24.9.0 或更新版本**。先按[安装指南](../../docs/guides/installation.zh-CN.md)启动 OpenDirector，再从本插件目录打包，并创建带对话界面的 Web profile：
+使用 **DSH 0.2.2-rc.1**、**Node.js 24.9.0 或更新版本**，并确保 `pnpm` 在 `PATH` 中。先按[安装指南](../../docs/guides/installation.zh-CN.md)启动 OpenDirector，再从本插件目录打包，并先创建带对话界面的 Web profile，再加入插件包：
 
 ```sh
 npm pack
@@ -15,7 +15,7 @@ dsh plugin --profile studio add ./opendirector-dsh-plugin-0.1.0.tgz
 dsh --profile studio
 ```
 
-打开启动时打印的 DSH Web 地址即可对话。先从 `web` 初始化才能得到聊天界面；直接向全新 profile 安装插件只会创建基础组合。已有 Web profile 则只需将安装命令中的名称换成它。
+打开启动时打印的完整 DSH Web 地址，选择工作区和已配置的 DSH 对话模型。先从 `web` 初始化才能得到聊天界面；直接向全新 profile 安装插件只会创建基础组合。已有 Web profile 则只需将 `plugin ... add` 命令中的名称换成它。压缩包安装、Web 对话和画布交接已使用 DSH 0.2.2-rc.1 验证。
 
 默认 OpenDirector 地址为 `http://127.0.0.1:8000`，普通本地安装无需额外配置。插件行名为 `opendirector`，DSH 在自己的对话与规划流程中调用它提供的八个原生工具。
 
@@ -36,9 +36,20 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 > 新建一个叫“月光工作室”的 OpenDirector 工程，用我已经配置好的图片模型生成一个有电影感的月光房间。先给我看候选和生成状态，再给我链接回到 OpenDirector 接着编辑。
 
-DSH 可以发现工程和已配置模型，创建可见的生成节点，提交任务并查询进度。任务完成后，候选已经保存到工程中；将它选为画布当前结果则通过 `opendirector_adopt_result` 单独完成。这样可以先查看候选，再决定是否替换当前内容。
+1. DSH 使用 `opendirector_projects` 和 `opendirector_project` 创建工程并找到它的图片模型。随后用 `opendirector_create_generation` 保存节点、用 `opendirector_submit` 提交，再用 `opendirector_job` 查询任务 ID。
+2. 任务成功后，直接在 DSH 网页对话里预览已保存的候选。也可以打开工程链接，在**生成历史**中查看。让 DSH 写入工程前，请关闭画布标签页。
+3. 点候选卡片上的**采用结果**，在同一 DSH 对话中检查草稿并发送。DSH 会读取当前版本并调用 `opendirector_adopt_result`。
+4. 通过 `/ai-canvas/<projectId>` 链接回到同一工程。双击图像节点标题重命名，然后重新打开该工程，确认新名称和所选图片仍然存在。
 
-工程相关结果带有 `/ai-canvas/<projectId>` 链接。打开后可以修改提示词、查看参考、切换候选，并继续编辑同一个工程。
+工程链接打开后，还可以修改提示词、查看参考、切换候选，并继续编辑同一个工程。
+
+要修改某张图，点结果卡片上的**修改图片**，在草稿中加上你想改的内容并发送。请选择支持参考图的图片模型。DSH 用 `sourceResultId` 锁定那张已保存的图，再在同一工程内建立独立的生成节点。结果卡片会并排显示原图和修改候选，两张图都可以在画布继续使用。卡片操作会保留已有草稿和附件。
+
+### 续写一段视频
+
+在 OpenDirector 配置 MiniMax-H3 的 vLLM-Omni 连接后，点图片结果上的**用作视频首帧**，在草稿中描述镜头并发送。生成后可直接在结果卡片播放。点**续写视频**并补充下一段要发生什么。续写完成后，DSH 并排显示源片段和续写候选，由你决定是否采用。
+
+首段使用 `videoMode: first_frame` 和原图的 `sourceResultId`，下一段使用 `videoMode: continuation` 和源片段的结果 ID。后端必须保有该片段的接续缓存。缓存失效时，任务会给出恢复建议，可以在该后端重生成源片段，或改用首帧或素材参考模式。已有片段和失败任务的输入仍保存在工程里。
 
 ## 配置
 
@@ -81,18 +92,18 @@ dsh plugin --profile <profile> remove @opendirector/dsh-plugin
 
 ## 原生工具
 
-| 工具 | 用途 |
-| --- | --- |
-| `opendirector_projects` | 列出工程，或用名称、`projectId`、`operationId` 创建工程。 |
-| `opendirector_project` | 读取工程、已配置模型、当前对象版本和工程链接。 |
-| `opendirector_create_generation` | 在指定画布位置保存可编辑的文字、图片、视频或音频生成节点及参考。 |
-| `opendirector_submit` | 以 `candidate_only` 提交生成，返回已接受的 `jobIds`。 |
-| `opendirector_job` | 查询状态、已保存的候选，以及结果是否已选为当前内容。 |
-| `opendirector_adopt_result` | 用 `expectedSpecRevision` 和对应的 `expectedCanvasVersions` 选择候选。 |
-| `opendirector_cancel` | 用当前 `expectedJobRevision` 请求取消；再查任务确认最终状态。 |
-| `opendirector_operation` | 回包丢失或结果未知时，按 `operationId` 查询已提交回执。 |
+| 工具 | 在 DSH 中可以这样说 | 预期结果 |
+| --- | --- | --- |
+| `opendirector_projects` | “列出我的工程”或“新建一个叫月光工作室的工程。” | 工程列表或创建回执。 |
+| `opendirector_project` | “显示月光工作室和它已配置的图片模型。” | 工程、模型目录、当前对象版本和工程链接。 |
+| `opendirector_create_generation` | “为月光房间建一个图像节点，先不要生成。” | 可编辑节点及其已保存参考。 |
+| `opendirector_submit` | “运行刚才的图像生成。” | 已接受的 `jobIds`，采用 `candidate_only` 选择策略。 |
+| `opendirector_job` | “检查任务并显示已保存的候选。” | 任务状态、候选和选择状态。 |
+| `opendirector_adopt_result` | “采用我刚才查看的候选作为画布结果。” | 选择回执，使用当前 `expectedSpecRevision` 和 `expectedCanvasVersions`。 |
+| `opendirector_cancel` | “取消这次生成，并确认它是否已停止。” | 使用当前 `expectedJobRevision` 发出取消请求，再通过任务查询确认。 |
+| `opendirector_operation` | “写入超时了，重试前先查一下它的操作 ID。” | 若存在，返回原写入回执。 |
 
-从 `opendirector_project` 或 `opendirector_job` 读取版本。`expectedCanvasVersions` 填入绑定到目标生成配置的画布对象 `{id, revision}`。服务端检查版本和锁定；插件不会静默换用新版本覆盖中途发生的修改。
+从 `opendirector_project` 读取生成配置和画布版本，从 `opendirector_job` 读取任务版本。`expectedCanvasVersions` 填入绑定到目标生成配置的画布对象 `{id, revision}`。版本冲突时，先重新读取工程并检查期间发生的修改，再决定是否重试。服务端检查版本和锁定；插件不会静默换用新版本覆盖中途发生的修改。
 
 每个修改调用显式传入 UUID `operationId`，创建工程还需显式传入 UUID `projectId`。相同输入重放时保留原有身份和版本；先确认旧操作结果，再为变化后的输入使用新操作。子对象身份由操作 UUID 确定性派生。
 
@@ -101,6 +112,8 @@ dsh plugin --profile <profile> remove @opendirector/dsh-plugin
 查询不占用编辑会话。写入时，插件短暂打开自己的 OpenDirector 会话，按需续期，最后只释放自己的会话。工程被其他窗口占用时，工具会报告 `storage_busy`；先保存并关闭该工程窗口，再交给 DSH 编辑。只读查询仍然可用。
 
 写请求丢失回包时，错误会给出原 `operationId` 和 `opendirector_operation` 查询指引。先核对回执与工程，再决定是否重放；暂时没有回执不能证明原请求没有被接受。
+
+DSH 无法连接 OpenDirector 时，检查 `baseUrl` 以及服务是否在运行。任务本身失败时，用 `opendirector_job` 读取失败详情，并按提示在 OpenDirector 中修正模型、凭证或输入；生成节点和之前选中的结果仍然保留。
 
 取消任务必须明确调用 `opendirector_cancel`。中止工具请求或停用插件只停止本地等待，不会发送 `job.cancel`。已接受的任务、提供方取消、文件和工程历史由 OpenDirector 管理；对话与规划由 DSH 管理。
 
@@ -113,7 +126,7 @@ dsh plugin --profile <profile> remove @opendirector/dsh-plugin
 ## 开发检查
 
 ```sh
-npm install
+npm ci
 npm test
 npm pack --dry-run
 ```

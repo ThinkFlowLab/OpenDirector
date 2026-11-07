@@ -10,20 +10,29 @@ export function renderToolResult(key, value, t) {
     lines.push(t('summary.submitted'), ...value.jobIds.map(id => `jobId: ${id}`))
   } else if (key === 'job') {
     lines.push(`jobId: ${value.jobId}`)
+    if (value.job?.revision !== undefined) lines.push(`revision: ${value.job.revision}`)
+    if (typeof value.job?.cancelRequested === 'boolean') lines.push(`cancelRequested: ${value.job.cancelRequested}`)
+    if (value.job?.remoteCancellation != null) lines.push(`remoteCancellation: ${value.job.remoteCancellation}`)
     if (value.registered) {
       lines.push(t(value.adopted ? 'summary.adopted' : 'summary.candidate'))
-      lines.push(...value.results.map(result => `resultId: ${result.id}; specId: ${result.specId}`))
+      for (const result of value.results) {
+        lines.push(`resultId: ${result.id}; specId: ${result.specId}`)
+        if (result.asset) lines.push(`${t('summary.referenceAsset')}: ${JSON.stringify(result.asset)}`)
+      }
     }
     if (value.job.errorDetails?.message) lines.push(value.job.errorDetails.message)
+    if (value.job.errorDetails?.suggestion) lines.push(value.job.errorDetails.suggestion)
   } else if (key === 'adoptResult') {
-    lines.push(t('summary.adopted'), `resultId: ${value.resultId}`)
+    if (value.receipt?.status === 'applied') lines.push(t('summary.adopted'))
+    lines.push(`resultId: ${value.resultId}`)
   } else if (key === 'cancel') {
-    lines.push(t('summary.cancelRequested'), `jobId: ${value.jobId}`)
+    if (value.receipt?.status === 'applied') lines.push(t('summary.cancelRequested'))
+    lines.push(`jobId: ${value.jobId}`)
   } else if (key === 'projects' && value.action === 'list') {
     lines.push(...value.projects.map(project => `- [${project.name}](${project.canvasUrl}) — ${project.id}`))
     lines.push(...value.warnings)
   } else {
-    lines.push(JSON.stringify(value, null, 2))
+    lines.push(JSON.stringify(value))
   }
   if (value.operationId) lines.push(`operationId: ${value.operationId}`)
   if (value.canvasUrl) lines.push(`[${t('summary.openCanvas')}](${value.canvasUrl})`)

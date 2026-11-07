@@ -6,7 +6,7 @@ Create media from a DSH conversation, follow generation progress, and open the s
 
 ## Install and connect
 
-Use DSH **0.2.2-rc.1** with Node.js **24.9.0 or newer**. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
+Use DSH **0.2.2-rc.1** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
 
 ```sh
 npm pack
@@ -15,7 +15,7 @@ dsh plugin --profile studio add ./opendirector-dsh-plugin-0.1.0.tgz
 dsh --profile studio
 ```
 
-Open the DSH Web address printed at startup. Initializing from `web` supplies the chat interface; adding a bundle to a completely new profile alone creates only a base composition. For an existing Web profile, just run the `plugin ... add` command with its name.
+Open the full DSH Web address printed at startup, then choose a workspace and a configured DSH conversation model. Initializing from `web` supplies the chat interface. For an existing Web profile, just run the `plugin ... add` command with its name. Tarball installation, Web chat, and the canvas handoff were verified with DSH 0.2.2-rc.1.
 
 The default OpenDirector connection is `http://127.0.0.1:8000`, so a normal local installation needs no extra configuration. The plugin row is named `opendirector`. DSH calls its eight native tools as part of its own agent loop.
 
@@ -34,11 +34,20 @@ In OpenDirector, configure an image model under **Settings → Model connections
 
 Ask DSH:
 
-> Create an OpenDirector project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate and its status first, then give me the link to continue editing in OpenDirector.
+> Create an OpenDirector project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
 
-DSH can discover projects and configured models, create a visible generation node, submit it, and query the accepted job. A completed candidate is already saved in the project; selecting it as the current canvas result is a separate `opendirector_adopt_result` call. This lets you inspect a candidate before replacing your current result.
+1. DSH uses `opendirector_projects` and `opendirector_project` to create the project and find its image model. It saves a node with `opendirector_create_generation`, submits it with `opendirector_submit`, then checks the job ID with `opendirector_job`.
+2. Once the job succeeds, inspect the saved candidate right in DSH Web. You can also open the project link and find the candidate under **Generation history**. Close the canvas tab before asking DSH to write to the project.
+3. Choose **Adopt result** on the candidate card. The action prepares a draft in the same DSH conversation. Review and send it. DSH reads the current revisions and calls `opendirector_adopt_result`.
+4. Follow the `/ai-canvas/<projectId>` link back to the same project. Double-click the image node's title, rename it, and reopen the project to check that the new name and the selected image are still there.
 
-Every project-specific result includes a link to `/ai-canvas/<projectId>`. Open that link to change the prompt, inspect references, select a candidate, or continue editing the same project.
+To revise an image, choose **Edit image** on its result card, add what you want to change to the draft, and send it. Use a model that accepts reference images. DSH uses `sourceResultId` to pin the exact saved image, then creates a separate generation node in the same project. The result card shows the source and candidate together. Both remain available on the canvas. Card actions leave any existing draft and attachments intact.
+
+### Continue a video
+
+With a configured MiniMax-H3 vLLM-Omni connection, choose **Use as video first frame** on an image result. Describe the shot in the prepared draft and send it. Once the clip is ready, play it in the result card. Choose **Continue video** and describe what should happen next. DSH shows the source clip and the continuation together before you decide whether to adopt the new candidate.
+
+The first job uses `videoMode: first_frame` with the saved image's `sourceResultId`. The next uses `videoMode: continuation` with the saved clip's result ID. The configured backend must still hold that clip's continuation cache. If the cache has expired, DSH shows the job's recovery guidance. Regenerate the source on that backend or choose first-frame or reference mode. Both the existing clip and the failed attempt's inputs stay in the project.
 
 ## Configuration
 
@@ -81,18 +90,18 @@ Accepted OpenDirector jobs keep running when the DSH plugin is disabled or an ag
 
 ## Native tools
 
-| Tool | What it does |
-| --- | --- |
-| `opendirector_projects` | List projects or create one with a name, `projectId`, and `operationId`. |
-| `opendirector_project` | Read the project, configured models, current object revisions, and project link. |
-| `opendirector_create_generation` | Save an editable text/image/video/audio generation node and references at an explicit canvas position. |
-| `opendirector_submit` | Submit a generation with `candidate_only`, returning its accepted `jobIds`. |
-| `opendirector_job` | Read status, registered candidates, and whether a result is currently selected. |
-| `opendirector_adopt_result` | Select an existing candidate using `expectedSpecRevision` and the corresponding `expectedCanvasVersions`. |
-| `opendirector_cancel` | Request cancellation using the current `expectedJobRevision`; check the job for confirmation. |
-| `opendirector_operation` | Look up a committed receipt by `operationId` after a lost or uncertain response. |
+| Tool | Example request in DSH | What to expect |
+| --- | --- | --- |
+| `opendirector_projects` | “List my projects” or “Create a project called Moonlit studio.” | Project list or create receipt. |
+| `opendirector_project` | “Show Moonlit studio and its configured image models.” | Project, model catalog, current object revisions, and project link. |
+| `opendirector_create_generation` | “Set up an image node for a moonlit room. Wait before generating.” | Editable node and its saved references. |
+| `opendirector_submit` | “Run that image generation.” | Accepted job ID with `candidate_only` selection policy. |
+| `opendirector_job` | “Check the job and show me the saved candidates.” | Job state, candidates, and selection state. |
+| `opendirector_adopt_result` | “Use the candidate I just reviewed as the canvas result.” | Selection receipt, using current spec and canvas revisions. |
+| `opendirector_cancel` | “Cancel this generation and check whether it stopped.” | Cancellation request using the current job revision, then confirmation from a job query. |
+| `opendirector_operation` | “The write timed out. Check its operation ID before retrying.” | Existing write receipt, if available. |
 
-Read revisions from `opendirector_project` or `opendirector_job`. `expectedCanvasVersions` contains `{id, revision}` entries for canvas items bound to the target spec. The server checks versions and locks; the plugin never refreshes a version silently to override an intervening edit.
+Read spec and canvas revisions from `opendirector_project` and the job revision from `opendirector_job`. `expectedCanvasVersions` contains `{id, revision}` entries for canvas items bound to the target spec. On a revision conflict, reread the project and review the intervening edit before retrying.
 
 Each modifying call takes an explicit UUID `operationId`. Creating a project also takes an explicit UUID `projectId`. Replaying the exact same input preserves its IDs and versions; changing the input requires a new operation after resolving the previous outcome. Child IDs are derived from the operation with UUIDv5.
 
@@ -101,6 +110,8 @@ Each modifying call takes an explicit UUID `operationId`. Creating a project als
 Queries work without an edit lease. A write briefly opens its own OpenDirector session, renews it while needed, and releases only that session. If another window owns the project, the tool reports `storage_busy`; save and close that project window before handing editing over to DSH. Read-only queries remain available.
 
 If a write loses its response, its error includes the original `operationId` and the `opendirector_operation` lookup. Check that receipt and the project before deciding whether to replay. An absent receipt alone does not prove that the original request was never accepted.
+
+If DSH cannot reach OpenDirector, check `baseUrl` and that the server is running. If the job itself fails, read its failure details with `opendirector_job` and correct the configured model, credentials, or input in OpenDirector as indicated. The generation node and previous selection remain available.
 
 Cancellation is an explicit `opendirector_cancel` action. Aborting a tool request or unloading the plugin stops local waiting and never sends `job.cancel`. OpenDirector owns accepted generation jobs, provider cancellation, files, and project history; DSH owns the conversation and planning.
 
@@ -113,7 +124,7 @@ The bundle contributes native tools. The built-in DSH Web Client uses its generi
 ## Development checks
 
 ```sh
-npm install
+npm ci
 npm test
 npm pack --dry-run
 ```
