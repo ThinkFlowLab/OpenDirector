@@ -110,7 +110,7 @@ export const canvasShell = {
   "canvas.selection.productReplacement": "商品替换",
   "canvas.selection.dynamicPoster": "动态海报",
   "canvas.selection.tools": "工具",
-  "canvas.selection.inpaintRemove": "消除",
+  "canvas.selection.inpaintRemove": "消除笔",
   "canvas.selection.cropCompose": "裁剪与构图",
   "canvas.selection.annotate": "标注",
   "canvas.selection.captureFrame": "截取帧",

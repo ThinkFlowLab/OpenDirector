@@ -1319,9 +1319,13 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           <div
             ref={composerElement}
             className="cw-composer-dock cw-node-action-dock"
+            data-tool={activeAction.tool}
             style={{
               ...selectionPresentation.placement?.composer,
-              width: selectionPresentation.composerWidth,
+              width:
+                activeAction.tool === "image-presets"
+                  ? Math.min(440, selectionPresentation.composerWidth)
+                  : selectionPresentation.composerWidth,
               maxHeight: selectionPresentation.composerMaxHeight,
               transform: selectionPresentation.composerTransform,
             }}

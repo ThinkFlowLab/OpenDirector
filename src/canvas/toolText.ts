@@ -64,7 +64,7 @@ const EN: Record<string, string> = {
   "人物三视图": "Character three-view",
   "面部三视图": "Face three-view",
   "产品三视图": "Product three-view",
-  "分镜": "Storyboard",
+  "连续分镜图": "Storyboard sequence",
   "多机位": "Multi-camera",
   "智能打光": "AI Lighting",
   "设置主光方向、软硬光、强度与颜色。":

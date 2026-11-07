@@ -118,5 +118,9 @@ export function toolTaskError(
   if (!CJK.test(text)) return text;
   if (text.startsWith("生成请求的提交结果不明。"))
     return t("errors.tools.error.submissionUnknown");
+  const concept = /^无法识别「(.+)」，请改用英文描述，或在“模型接入”中添加对话模型以自动翻译。$/.exec(text);
+  if (concept) return t("errors.tools.error.conceptTranslation", { label: concept[1]! });
+  const missing = /^视频中没有识别到「(.+)」，请换一种描述后重试。$/.exec(text);
+  if (missing) return t("errors.tools.error.noVideoMatch", { label: missing[1]! });
   return t(ERROR[text] ?? "errors.tools.error.generic");
 }

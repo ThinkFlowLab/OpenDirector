@@ -33,6 +33,29 @@ def test_media_card_size_matches_pixels_and_compacts_audio():
     assert media_card_size('audio', 1080, 1920, 300, 520) == (300, 112)
 
 
+def test_result_titles_stay_named_after_their_preset_without_collisions():
+    from types import SimpleNamespace
+
+    from opendirector.application.creation_tool_drafts import result_title
+
+    def snapshot(*titles):
+        return SimpleNamespace(canvasItems=[SimpleNamespace(id=uuid4(), title=title, visible=True)
+                                            for title in titles])
+
+    assert result_title(snapshot(), '面部三视图') == '面部三视图'
+    assert result_title(snapshot('面部三视图'), '面部三视图') == '面部三视图 2'
+    assert result_title(snapshot('面部三视图', '面部三视图 2'), '面部三视图') == '面部三视图 3'
+    # The empty placeholder that is about to receive the result is not a conflict.
+    placeholder = snapshot('面部三视图')
+    assert result_title(placeholder, '面部三视图', exclude=placeholder.canvasItems[0].id) == '面部三视图'
+    # A later run of a numbered preset continues the same series.
+    assert result_title(snapshot('连续分镜图 1', '连续分镜图 2'), '连续分镜图 1') == '连续分镜图 3'
+    # Outputs of one run are numbered in publication order.
+    assert result_title(snapshot(), '连续分镜图 1', ['连续分镜图 1']) == '连续分镜图 2'
+    # Unrelated names keep their own family.
+    assert result_title(snapshot('超清 4K'), '超清 4K') == '超清 4K 2'
+
+
 @pytest.fixture
 def prepared(project, monkeypatch):
     store, pid, session = project

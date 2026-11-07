@@ -221,6 +221,10 @@ export const errors = {
     "已接受工具任务的模型配置已变化，请新建尝试。",
   "errors.tools.error.cancelUnconfirmed": "供应商取消未确认。",
   "errors.tools.error.generic": "工具任务未完成，请重试。",
+  "errors.tools.error.conceptTranslation":
+    "无法将「{label}」转换为英文对象名称。请改用简短的英文描述，或检查用于自动翻译的对话模型。",
+  "errors.tools.error.noVideoMatch":
+    "视频中没有识别到「{label}」，请换一种描述后重试。",
   "errors.tools.error.localStopped": "已停止本地处理。",
   "errors.tools.error.serviceInterrupted":
     "服务中断，原执行记录已保留；不会自动重新生成。",
