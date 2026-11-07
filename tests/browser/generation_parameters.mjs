@@ -75,6 +75,7 @@ try {
     });
     const state = () => call(`/api/creation/projects/${id}`);
     const page = await browser.newPage({
+      locale: "zh-CN",
       viewport: { width: 1600, height: 1100 },
     });
     // Skip the first-run model setup welcome; it covers the canvas.

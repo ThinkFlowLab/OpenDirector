@@ -50,6 +50,7 @@ const path = `/creation/projects/${projectA}/assistant`;
 const browser = await launchBrowser();
 try {
   const page = await browser.newPage({
+    locale: "zh-CN",
     viewport: { width: 1440, height: 1000 },
   });
   page.setDefaultTimeout(15000);

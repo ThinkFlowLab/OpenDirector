@@ -1,0 +1,419 @@
+{
+  "scripts": [
+    {
+      "file": "assistant_activity.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ]
+    },
+    {
+      "file": "assistant_auxiliary_panels.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Controls the model-stub gate; runs on its own fixture services."
+    },
+    {
+      "file": "assistant_run_navigation.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": [
+        "extendedFixture",
+        "production"
+      ],
+      "note": "Needs --assistant-fixture services; holds the fixture gate."
+    },
+    {
+      "file": "assistant_sessions.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": [
+        "extendedFixture",
+        "production"
+      ],
+      "note": "Needs --assistant-fixture services."
+    },
+    {
+      "file": "canvas_crop.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "canvas_generation_reference.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "canvas_keyboard.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "canvas_layers.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "args": [
+        "--generated"
+      ]
+    },
+    {
+      "file": "canvas_node_titles.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "canvas_notifications.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "canvas_reference_sources.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "canvas_selection_history.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "canvas_switch.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "canvas_wheel.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "composer_duration.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "composer_expansion.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "context_menu_dismissal.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "control_theme.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "created_node_focus.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "creation_asset_list.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "creation_history.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended",
+        "production"
+      ]
+    },
+    {
+      "file": "creation_journey.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "cross_canvas_paste.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ]
+    },
+    {
+      "file": "default_entry.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended",
+        "production"
+      ]
+    },
+    {
+      "file": "double_shift_chat.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "edge_selection.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "editor_save.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "engine.mjs",
+      "helper": true
+    },
+    {
+      "file": "first_last_frame_connections.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended",
+        "production"
+      ]
+    },
+    {
+      "file": "generation_feedback.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "generation_parameters.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "hidden_references.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "jiuwenswarm_picker.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "local_output_delivery.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "layerApply.mjs",
+      "helper": true,
+      "note": "Shared layer-studio receipt helper, imported by canvas_crop and canvas_layers."
+    },
+    {
+      "file": "locale.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ]
+    },
+    {
+      "file": "minimax_h3.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "model_picker.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "moss_provider.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "moss_speech.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "mp4_export.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "mp4_render_probe.mjs",
+      "lanes": [
+        "perf"
+      ],
+      "note": "Writes the rendered MP4 to disk and verifies it with ffprobe."
+    },
+    {
+      "file": "multi_selection_references.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "new_image_node_outputs.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "node_connections.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "node_versions.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "paste_undo.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended",
+        "production"
+      ]
+    },
+    {
+      "file": "project_list_overflow.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ]
+    },
+    {
+      "file": "project_title_enter.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "provider_settings.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ]
+    },
+    {
+      "file": "reference_drag_performance.mjs",
+      "lanes": [
+        "perf"
+      ],
+      "note": "Diagnostic CPU profiles to /tmp; no pass/fail thresholds."
+    },
+    {
+      "file": "reference_parity.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "reference_picker.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "reference_reconnect.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
+      "file": "structured_editors.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "args": [
+        "--publish"
+      ]
+    },
+    {
+      "file": "subject_library.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "subject_node_editing.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "subject_node_media.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "timeline_workflow.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "args": [
+        "--full-creation"
+      ]
+    },
+    {
+      "file": "tool_drafts.mjs",
+      "lanes": [
+        "extended"
+      ]
+    }
+  ]
+}
