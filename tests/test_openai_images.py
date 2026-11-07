@@ -33,8 +33,9 @@ def png():
     return out.getvalue()
 
 
-def test_gpt_image_profile_declares_the_documented_limits():
-    rules = input_rules(GPT_IMAGE)
+@pytest.mark.parametrize('model', ['gpt-image-1', 'chatgpt-image-latest'])
+def test_gpt_image_profile_declares_the_documented_limits(model):
+    rules = input_rules({**GPT_IMAGE, 'modelId': model})
     assert rules['profile'] == 'openai-gpt-image'
     assert rules['allowedKinds'] == ['text', 'image'] and rules['maxImages'] == 16
     assert rules['imageBytes'] == 25 * 1024 * 1024 and rules['requestBytes'] == 50 * 1024 * 1024
@@ -44,8 +45,10 @@ def test_gpt_image_profile_declares_the_documented_limits():
     assert input_rules({**GPT_IMAGE, 'kind': 'video'})['profile'] != 'openai-gpt-image'
 
 
-def test_adapter_drops_response_format_only_for_gpt_image():
-    adapter = adapter_for(GPT_IMAGE)
+@pytest.mark.parametrize('model', ['gpt-image-1', 'chatgpt-image-latest'])
+def test_adapter_drops_response_format_only_for_gpt_image(model):
+    # chatgpt-image-* rejects `response_format` exactly like gpt-image (#219).
+    adapter = adapter_for({**GPT_IMAGE, 'modelId': model})
     assert isinstance(adapter, OpenAIImages) and adapter.response_format is False
     assert adapter.reference_field == 'image[]' and adapter.max_images == 16
     assert adapter.capabilities == {'image.generate', 'image.edit', 'image.cutout'}
