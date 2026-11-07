@@ -523,3 +523,38 @@ test("zip reading verifies checksums and rejects damaged entries", async () => {
   bytes[start] = bytes[start]! ^ 0xff;
   await assert.rejects(readZip(bytes), /校验失败|已损坏/);
 });
+
+test("imported media is byte-identical at every padding and chunk boundary", async () => {
+  // Sizes that end mid-group (padding), land on a group, and cross the 32 KB
+  // blocks the encoder used to concatenate. `Buffer` is a separate decoder,
+  // so it can only agree with the archive if the encoder wrote valid base64.
+  const sizes = [0, 1, 2, 3, 4, 5, 6, 7, 32767, 32768, 32769, 65537, 200003];
+  for (const size of sizes) {
+    const bytes = new Uint8Array(size);
+    for (let index = 0; index < size; index++)
+      bytes[index] = (index * 31 + 7) % 256;
+    const document = createDocument(`边界 ${size}`);
+    document.nodes = [
+      createNode("image", { x: 0, y: 0 }, {
+        src: `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`,
+        mimeType: "image/png",
+        title: "边界.png",
+      }),
+    ];
+    const archive = await buildCanvasArchive(document, {
+      read: async () => new Blob([bytes as BlobPart], { type: "image/png" }),
+    });
+    const contents = await readCanvasArchive(archive.blob);
+    const restored = (contents.document.nodes[0]!.data as { src: string }).src;
+    assert.ok(
+      restored.startsWith("data:image/png;base64,"),
+      `${size} bytes keep their media type`,
+    );
+    const payload = restored.slice(restored.indexOf(",") + 1);
+    assert.equal(
+      Buffer.from(payload, "base64").toString("hex"),
+      Buffer.from(bytes).toString("hex"),
+      `${size} bytes round trip unchanged`,
+    );
+  }
+});

@@ -39,6 +39,7 @@ export function AgentPicker({
   onChange,
   onConfigure,
   onRefresh,
+  visible,
 }: {
   projectId: string;
   value: Conversation;
@@ -48,7 +49,8 @@ export function AgentPicker({
   initializing?: boolean;
   onChange: (patch: Partial<Conversation>) => void;
   onConfigure: () => void;
-  onRefresh: (runtime?: AgentRuntime) => Promise<void>;
+  visible: boolean;
+  onRefresh: (runtime: AgentRuntime, signal?: AbortSignal, force?: boolean) => Promise<void>;
 }) {
   const t = useT();
   const harnesses = runtimes.filter(
@@ -165,29 +167,24 @@ export function AgentPicker({
       ? (rows.find((item) => item.id === selected)?.label ?? selected)
       : (rows.find((item) => item.isDefault)?.label ?? t("assistant.agent.cliDefault"));
   }
+  const nextProbe = open ? runtimes.find((item) => item.id !== runtime && item.status === "checking")?.id : undefined;
   useEffect(() => {
-    let active = true;
-    for (const item of runtimes) {
-      if (
-        item.id === "default" ||
-        item.modelSource !== "cli" ||
-        item.status !== "ready" ||
-        !!catalogs[item.id]
-      )
-        continue;
-      const id = item.id;
-      void runtimeModels(projectId, id)
-        .then((rows) => {
-          if (active) setCatalogs((previous) => ({ ...previous, [id]: rows }));
-        })
-        .catch(() => {
-          // Discovery is optional for selection; opening the editor exposes errors and retry.
-        });
-    }
-    return () => {
-      active = false;
-    };
-  }, [projectId, runtimes]);
+    if (!nextProbe) return;
+    const abort = new AbortController();
+    void onRefresh(nextProbe, abort.signal).catch(() => {});
+    return () => abort.abort();
+  }, [nextProbe, onRefresh]);
+
+  const currentCli = visible && harness?.modelSource === "cli" && harness.status === "ready" ? runtime : null;
+  useEffect(() => {
+    if (!currentCli || editing === currentCli) return;
+    const abort = new AbortController();
+    void runtimeModels(projectId, currentCli, null, abort.signal).then((items) => {
+      if (!abort.signal.aborted) setCatalogs((previous) => ({ ...previous, [currentCli]: items }));
+    }).catch(() => {});
+    return () => abort.abort();
+  }, [currentCli, editing, projectId]);
+
   function close() {
     setOpen(false);
     setEditingModel(null);
@@ -227,11 +224,12 @@ export function AgentPicker({
   }
   useEffect(() => {
     if (!editing || editingSpec?.modelSource !== "cli") return;
+    const abort = new AbortController();
     let active = true;
     setLoading(true);
     setChoices([]);
     setModelError("");
-    runtimeModels(projectId, editing, editing === "deepseek" ? selectedModel(editing) : null)
+    runtimeModels(projectId, editing, editing === "deepseek" ? selectedModel(editing) : null, abort.signal)
       .then((items) => {
         if (active) {
           setChoices(items);
@@ -246,6 +244,7 @@ export function AgentPicker({
       });
     return () => {
       active = false;
+      abort.abort();
     };
   }, [editing, editingSpec?.modelSource, projectId, checking, value.harnessModels]);
   useEffect(() => {
@@ -434,7 +433,7 @@ export function AgentPicker({
                     setChecking(true);
                     setCheckError("");
                     try {
-                      await onRefresh(setupSpec.id);
+                      await onRefresh(setupSpec.id, undefined, true);
                     } catch {
                       setCheckError(t("assistant.agent.checkFailed"));
                     } finally {

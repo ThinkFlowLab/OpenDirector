@@ -15,7 +15,6 @@ from filelock import FileLock, Timeout
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
-from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
@@ -28,9 +27,7 @@ from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.video_output import apply_video_resolution
-from opendirector.infrastructure.generation_results import GenerationResults
-from opendirector.infrastructure.creation_projects import directory
-from opendirector.infrastructure.local_projects import child
+from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
 from opendirector.integrations.model_adapters import capabilities_of
@@ -87,7 +84,7 @@ class CreationGeneration(GenerationRuntime):
         self.projects, self.configs = projects, configs
         self.assets = CreationAssets(projects)
         self.store = ProviderMedia(self)
-        self.settings = AppSettings(projects.local.repository)
+        self.settings = gateway().settings(projects.local.repository)
         self.provider = provider or GenerationProviders(self.store)
 
     def directory(self, project_id):
@@ -195,6 +192,10 @@ class CreationGeneration(GenerationRuntime):
                 params.update(fps=FPS, num_frames=h3_frames(params['duration']))
         if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
+        if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
+            params.update(prompt_enhance=False, watermark=not self.settings.get()['removeWatermark'])
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
+            params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
         return params
 
     @staticmethod
@@ -204,12 +205,14 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' else None,
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile == 'moss-image' else None,
                 outputFormat='png', watermark=parameters.get('watermark'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
                         scoreMode=parameters.get('score_mode'))
         if kind == 'audio':
+            if input_rules(config)['profile'] == 'moss-speech':
+                return dict(kind=kind, voice=parameters['voice'], format='mp3')
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
                 speaker=parameters.get('speaker') if config['protocol'] != 'openai' else None,
                 format='mp3', sampleRate=24000 if config['protocol'] != 'openai' else None)
@@ -229,9 +232,9 @@ class CreationGeneration(GenerationRuntime):
         # A durable job can be discovered by more than one API process. OS locks
         # prevent both workers from treating the same queued checkpoint as a
         # fresh paid submission; process death releases the claim automatically.
-        folder = directory(child(self.projects.state_dir, 'creation-job-locks'))
+        folder = gateway().directory(gateway().child(self.projects.state_dir, 'creation-job-locks'))
         folder.mkdir(exist_ok=True)
-        claim = FileLock(child(folder, f"{task['projectId']}-{task['id']}.lock"), timeout=0, thread_local=False)
+        claim = FileLock(gateway().child(folder, f"{task['projectId']}-{task['id']}.lock"), timeout=0, thread_local=False)
         remote = None
         try:
             claim.acquire()
@@ -241,7 +244,7 @@ class CreationGeneration(GenerationRuntime):
         try:
             if _self_hosted_video(task):
                 endpoint = hashlib.sha256(task['baseURL'].rstrip('/').encode()).hexdigest()
-                remote = FileLock(child(folder, f'service-{endpoint}.lock'), timeout=0, thread_local=False)
+                remote = FileLock(gateway().child(folder, f'service-{endpoint}.lock'), timeout=0, thread_local=False)
                 while True:
                     try:
                         remote.acquire()
@@ -308,7 +311,7 @@ class CreationGeneration(GenerationRuntime):
             try:
                 validate_generation(spec, public, resolved)
             except (ValueError, ProjectError) as error:
-                raise ContractError('invalid_input', str(error), spec.id) from error
+                raise ContractError.from_error(error, spec.id) from error
             for reference in resolved:
                 if reference.transmission != 'context_only':
                     self.assets.reference_available(command.projectId, reference.asset.assetId)
@@ -331,7 +334,7 @@ class CreationGeneration(GenerationRuntime):
                     self.provider.prepare_inputs(str(command.projectId), task, config)
                 parameters = self._parameters(spec, config, task, records)
             except ProjectError as error:
-                raise ContractError('invalid_input', str(error), spec.id) from error
+                raise ContractError.from_error(error, spec.id) from error
             job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
             data['jobs'].append(job.model_dump(mode='json'))
             return ProjectSnapshot.model_validate(data)
@@ -416,7 +419,7 @@ class CreationGeneration(GenerationRuntime):
         handle = uuid5(job.id, 'output-upload')
         name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', task['title']).strip(' .')[:180] or job.execution.kind
         self.assets.stage_output(job.projectId, handle, with_extension(name, suffix),
-            GenerationResults(pinned, task['id']).directory / 'output', expected_kind=job.execution.kind)
+            gateway().results(pinned, task['id']).directory / 'output', expected_kind=job.execution.kind)
         # Sibling results or user edits may advance the same spec between our
         # read and commit. Retry only registration of these already saved bytes;
         # eligibility is recalculated from each new snapshot, never by resending

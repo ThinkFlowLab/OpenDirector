@@ -121,6 +121,11 @@ class Client:
             command = parse_command({**arguments, "commandId": operation, "projectId": self.project})
             if kind not in {'project.create', 'project.rename', 'project.trash', 'project.restore'}:
                 self.open()
+            # An accepted project.trash removes the directory and stores no
+            # receipt, so repeating it (including with the same --operation-id)
+            # is a 404. That 404 is reported here. The workspace maps it to
+            # success only because the project it already listed is gone; a CLI
+            # caller can pass a wrong id, and there is no receipt to replay.
             value = self.request("POST", self.path("/commands"), json=command.model_dump(mode="json"))
         if value.get("status") == "rejected":
             emit(value)

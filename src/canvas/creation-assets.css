@@ -22,6 +22,11 @@
 .cw-asset-list-anchor {
   display: inline-flex;
 }
+@media (min-width: 701px) {
+  .cw-workspace[data-assistant-open="true"] .cw-creation-assets {
+    right: min(calc(var(--assistant-width) + 26px), calc(100vw - 390px));
+  }
+}
 .cw-creation-assets > :is(header, footer, p),
 .cw-creation-asset-filters,
 .cw-creation-asset-categories {

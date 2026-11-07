@@ -15,7 +15,7 @@ await call(`/api/creation/projects/${id}/commands`, { projectId: id, commandId: 
   type: "project.create", payload: { name: `Project list ${id.slice(0, 8)}` } });
 const browser = await launchBrowser();
 try {
-  const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 420, height: 760 } });
+  const page = await browser.newPage({ locale: "en-US", viewport: { width: 420, height: 760 } });
   // Skip the first-run model setup welcome; it covers the canvas.
   await page.addInitScript(() =>
     localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -34,8 +34,8 @@ try {
     } });
   });
   await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
-  await page.getByText("已保存到本机", { exact: true }).waitFor({ state: "attached" });
-  await page.getByRole("button", { name: "切换项目", exact: true }).click();
+  await page.getByText("Saved on this device", { exact: true }).waitFor({ state: "attached" });
+  await page.getByRole("button", { name: "Switch project", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Listed 01", exact: true }).waitFor();
   const outside = await page.evaluate(() => {
     const menu = document.querySelector(".cw-project-dropdown").getBoundingClientRect();
@@ -52,7 +52,7 @@ try {
     const list = element.closest(".cw-project-list").getBoundingClientRect();
     return row.top >= list.top - 1 && row.bottom <= list.bottom + 1;
   }, await last.elementHandle());
-  await page.getByRole("menuitem", { name: /清除不可读项目/ }).waitFor();
+  await page.getByRole("menuitem", { name: /Remove unreadable projects/ }).waitFor();
   console.log("PASS project list: warnings scroll inside the menu and every project stays reachable");
 } finally {
   await browser.close();

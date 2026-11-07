@@ -16,7 +16,7 @@ from opendirector.application.tool_operations import TOOLS, Source, ToolContext,
 from opendirector.domain.capabilities import LABELS
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError, identifier
-from opendirector.infrastructure.local_projects import child, read_json, write_json
+from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.model_adapters import adapter_for, capabilities_of
 from opendirector.media import processing as media
@@ -140,7 +140,7 @@ class ToolTasks(ToolTaskLifecycle):
     # Storage -------------------------------------------------------------------
 
     def _folder(self, directory, *, create=True):
-        folder = child(directory, 'tool-tasks')
+        folder = gateway().child(directory, 'tool-tasks')
         if create:
             folder.mkdir(exist_ok=True)
         return folder
@@ -156,7 +156,7 @@ class ToolTasks(ToolTaskLifecycle):
 
     def list(self, project_id):
         folder = self._folder(self._directory(project_id), create=False)
-        tasks = [self._read_task(project_id, child(folder, path.name)) for path in folder.glob('*.json')]
+        tasks = [self._read_task(project_id, gateway().child(folder, path.name)) for path in folder.glob('*.json')]
         return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
 
     def placement(self, project_id, task_id, state, session, *, policy="if_current"):
@@ -183,25 +183,25 @@ class ToolTasks(ToolTaskLifecycle):
         # the attempt failed. Only settle result placement in the ledger.
         with self.store.transaction():
             directory = self._directory(project_id, session)
-            task = read_json(child(self._folder(directory), task_id + '.json'))
+            task = gateway().read_json(gateway().child(self._folder(directory), task_id + '.json'))
             if task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
                 task = self._change(project_id, task_id, {'placement': 'unplaced'})
             return task
 
     def _write(self, directory, task):
-        write_json(child(self._folder(directory), task['id'] + '.json'), task)
+        gateway().write_json(gateway().child(self._folder(directory), task['id'] + '.json'), task)
 
     def get(self, project_id, task_id, session=None):
         identifier(project_id)
         identifier(task_id)
-        path = child(self._folder(self._directory(project_id, session), create=False), task_id + '.json')
+        path = gateway().child(self._folder(self._directory(project_id, session), create=False), task_id + '.json')
         return self._read_task(project_id, path, session)
 
     def _read_task(self, project_id, path, session=None):
         identifier(path.stem)
         if not path.is_file():
             raise ProjectError('工具任务不存在。', 404)
-        task = read_json(path)
+        task = gateway().read_json(path)
         for index, output in enumerate(task.get('outputs', [])):
             # Canvas items and assets occupy different project identities.
             output.setdefault('canvasItemId', output_item_id(task, index, output['kind']))
@@ -241,9 +241,9 @@ class ToolTasks(ToolTaskLifecycle):
         if not source_ids or len(source_ids) > MAX_SOURCES or len(set(source_ids)) != len(source_ids):
             raise ProjectError('请提供 1–20 个不重复的来源素材。', 422)
         directory = self._directory(project_id, session)
-        path = child(self._folder(directory), task_id + '.json')
+        path = gateway().child(self._folder(directory), task_id + '.json')
         if path.is_file():
-            existing = read_json(path)
+            existing = gateway().read_json(path)
             if (existing['tool'] != spec.id or existing['sourceAssetIds'] != source_ids
                     or existing['parameters'] != parameters or existing.get('maskAssetId') != mask_id
                     or existing.get('boxes', []) != (value.get('boxes') or [])

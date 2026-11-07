@@ -1,35 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {chatRuntimes, type RuntimeInfo} from "../src/backend/chat.ts";
+import { chatRuntimeInventory, chatRuntimeStatus, type RuntimeInfo } from "../src/backend/chat.ts";
 
-test("a slow Jiuwen probe does not hold back other harnesses", async (t) => {
-  let release!: (response: Response) => void;
-  let ready!: () => void;
-  const slow = new Promise<Response>((resolve) => {release = resolve;});
-  const codexReady = new Promise<void>((resolve) => {ready = resolve;});
-  const row = (id: RuntimeInfo["id"], status: RuntimeInfo["status"]): RuntimeInfo => ({
-    id, label: id, status, available: true, group: "harness", modelSource: "cli", modelOverride: true,
-  });
-  const initial = [row("opencode", "ready"), row("jiuwenswarm", "checking"), row("codex", "checking"), row("claude", "checking")];
+test("canvas changes reuse a known runtime status without probing the other harnesses", async (t) => {
+  const codex: RuntimeInfo = {
+    id: "codex", label: "Codex", status: "checking", available: true,
+    group: "harness", modelSource: "cli", modelOverride: true,
+  };
+  const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string) => {
-    if (url.endsWith("?probe=false")) return Response.json(initial);
-    if (url.endsWith("/jiuwenswarm/status")) return slow;
-    if (url.endsWith("/claude/status")) throw new Error("unavailable");
+    calls.push(url);
+    if (url.endsWith("?probe=false")) return Response.json([codex, { ...codex, id: "claude" }]);
     assert.ok(url.endsWith("/codex/status"));
-    return Response.json(row("codex", "ready"));
+    return Response.json({ ...codex, status: "ready" });
   });
-  let latest: RuntimeInfo[] = [];
-  let finished = false;
-  const pending = chatRuntimes("project", (items) => {
-    latest = items;
-    if (items.some((item) => item.id === "codex" && item.status === "ready")) ready();
-  }).then(() => {finished = true;});
-  await codexReady;
-  assert.equal(finished, false);
-  assert.equal(latest.find((item) => item.id === "opencode")?.status, "ready");
-  assert.equal(latest.find((item) => item.id === "jiuwenswarm")?.status, "checking");
-  assert.equal(latest.find((item) => item.id === "codex")?.status, "ready");
-  release(Response.json(row("jiuwenswarm", "ready")));
-  await pending;
-  assert.equal(latest.find((item) => item.id === "claude")?.status, "unknown");
+
+  assert.equal((await chatRuntimeInventory("source"))[0].status, "checking");
+  await chatRuntimeStatus("source", "codex");
+  const target = await chatRuntimeInventory("target");
+  assert.equal(target[0].status, "ready");
+  assert.equal(target[1].status, "checking");
+  await chatRuntimeStatus("target", "codex");
+  assert.equal(calls.filter((url) => url.endsWith("/status")).length, 1);
+  await chatRuntimeStatus("target", "codex", undefined, true);
+  assert.equal(calls.filter((url) => url.endsWith("/status")).length, 2);
 });

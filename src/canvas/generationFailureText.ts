@@ -58,6 +58,8 @@ export function generationFailureMessage(
   failure: GenerationFailure,
   t: Translate = defaultTranslate,
 ): string {
+  if (failure.providerCode === "voice_not_found")
+    return t("errors.generationFailure.voiceNotFound");
   const exact = BY_MESSAGE[failure.message];
   if (exact) return t(exact);
   if (failure.stage === "download")

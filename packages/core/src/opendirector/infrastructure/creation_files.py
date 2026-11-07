@@ -5,34 +5,15 @@ from pathlib import Path
 import tempfile
 from uuid import UUID
 
-from pydantic import Field
-
-from opendirector.domain.creation.base import Contract, Fingerprint
 from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.directories import directory, sync_directory
 from opendirector.infrastructure.local_projects import child
 from opendirector.infrastructure.rename import rename_path
-
-CHUNK_BYTES = 1024 * 1024
-MAX_CREATION_ASSET_BYTES = 512 * 1024 * 1024
-MAX_CREATION_TEXT_BYTES = 1024 * 1024
-
-
-class AssetFileWrite(Contract):
-    assetId: UUID = Field(description='Asset ID.')
-    uploadHandle: UUID = Field(description='Server-issued staged upload ID.')
-    fingerprint: Fingerprint = Field(description='Immutable content fingerprint.')
-    size: int = Field(strict=True, ge=0, le=MAX_CREATION_ASSET_BYTES, description='Content size in bytes.')
-
-
-class AssetFileDelete(Contract):
-    assetId: UUID = Field(description='Asset ID.')
-    fingerprint: Fingerprint = Field(description='Immutable content fingerprint.')
-    size: int = Field(strict=True, ge=0, le=MAX_CREATION_ASSET_BYTES, description='Content size in bytes.')
+from opendirector.ports.files import CHUNK_BYTES, stream_identity
 
 
 def delete_files(path, deletes):
     """Run only after manifest publication, retained in its recoverable intent."""
-    from .creation_projects import directory, sync_directory
     assets = directory(child(path, 'assets'))
     for deletion in deletes:
         target = child(assets, str(deletion.assetId))
@@ -44,18 +25,9 @@ def delete_files(path, deletes):
 
 
 def upload_directory(state_dir: Path, project_id: UUID, handle: UUID):
-    from .creation_projects import directory
     parent = directory(child(state_dir, 'creation-uploads'))
     parent = directory(child(parent, str(project_id)))
     return directory(child(parent, str(handle)))
-
-
-def stream_identity(stream):
-    digest, size = hashlib.sha256(), 0
-    while chunk := stream.read(CHUNK_BYTES):
-        digest.update(chunk)
-        size += len(chunk)
-    return 'sha256:' + digest.hexdigest(), size
 
 
 def file_identity(path):
@@ -71,7 +43,6 @@ def install_files(path, project_id, writes, state_dir, checkpoint):
     """Copy from retained staging before publishing metadata; never overwrite."""
     if not writes:
         return
-    from .creation_projects import directory, sync_directory
     assets = directory(child(path, 'assets'))
     assets.mkdir(exist_ok=True)
     sync_directory(path)
@@ -108,7 +79,6 @@ def install_files(path, project_id, writes, state_dir, checkpoint):
 
 
 def cleanup_staging(project_id, writes, state_dir):
-    from .creation_projects import sync_directory
     for write in writes:
         folder = upload_directory(state_dir, project_id, write.uploadHandle)
         content = child(folder, 'content')

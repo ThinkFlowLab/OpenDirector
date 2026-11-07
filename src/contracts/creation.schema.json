@@ -3439,7 +3439,14 @@
               "preview_expired",
               "storage_unavailable",
               "submission_unknown",
-              "provider_error"
+              "provider_error",
+              "moss_speech_text",
+              "moss_speech_voice",
+              "moss_speech_reference",
+              "moss_prompt_limit",
+              "moss_image_size",
+              "moss_image_reference",
+              "moss_layout_reference"
             ],
             "title": "Code",
             "type": "string"
@@ -6435,6 +6442,46 @@
             "minLength": 1,
             "title": "Profile",
             "type": "string"
+          },
+          "maxPromptCharacters": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum characters in the final prompt including text references.",
+            "title": "Maxpromptcharacters"
+          },
+          "voiceRequired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether speech generation requires an explicit service voice ID.",
+            "title": "Voicerequired"
+          },
+          "referencesAllowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether references may be attached, including context-only references.",
+            "title": "Referencesallowed"
           },
           "allowedKinds": {
             "description": "Accepted reference media kinds.",
@@ -17650,7 +17697,14 @@
               "preview_expired",
               "storage_unavailable",
               "submission_unknown",
-              "provider_error"
+              "provider_error",
+              "moss_speech_text",
+              "moss_speech_voice",
+              "moss_speech_reference",
+              "moss_prompt_limit",
+              "moss_image_size",
+              "moss_image_reference",
+              "moss_layout_reference"
             ],
             "title": "Code",
             "type": "string"
@@ -20787,6 +20841,46 @@
             "minLength": 1,
             "title": "Profile",
             "type": "string"
+          },
+          "maxPromptCharacters": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum characters in the final prompt including text references.",
+            "title": "Maxpromptcharacters"
+          },
+          "voiceRequired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether speech generation requires an explicit service voice ID.",
+            "title": "Voicerequired"
+          },
+          "referencesAllowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether references may be attached, including context-only references.",
+            "title": "Referencesallowed"
           },
           "allowedKinds": {
             "description": "Accepted reference media kinds.",

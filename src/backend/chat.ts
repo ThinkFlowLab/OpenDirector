@@ -138,22 +138,23 @@ export const activateConversation = (
       (create ? "/conversations" : `/conversations/${id}/activate`),
     create ? json("POST", { id }) : json("POST", {}),
   );
-export const chatRuntimeStatus = (id: string, runtime: AgentRuntime) =>
-  request<RuntimeInfo>(path(id) + `/runtimes/${runtime}/status`);
+const runtimeStatuses = new Map<AgentRuntime, { value: RuntimeInfo; expires: number }>();
+const discoveryTtlMs = 30_000;
 
-export async function chatRuntimes(id: string, onUpdate?: (items: RuntimeInfo[]) => void) {
-  const rows = await request<RuntimeInfo[]>(path(id) + "/runtimes?probe=false");
-  onUpdate?.([...rows]);
-  await Promise.all(rows.map(async (item, index) => {
-    if (item.status !== "checking") return;
-    try {
-      rows[index] = await chatRuntimeStatus(id, item.id);
-    } catch {
-      rows[index] = {...item, status: "unknown"};
-    }
-    onUpdate?.([...rows]);
-  }));
-  return rows;
+export async function chatRuntimeStatus(id: string, runtime: AgentRuntime, signal?: AbortSignal, refresh = false) {
+  const cached = runtimeStatuses.get(runtime);
+  if (!refresh && cached && cached.expires > Date.now()) return cached.value;
+  const value = await request<RuntimeInfo>(path(id) + `/runtimes/${runtime}/status`, { signal });
+  runtimeStatuses.set(runtime, { value, expires: Date.now() + discoveryTtlMs });
+  return value;
+}
+
+export async function chatRuntimeInventory(id: string, signal?: AbortSignal) {
+  const rows = await request<RuntimeInfo[]>(path(id) + "/runtimes?probe=false", { signal });
+  return rows.map((item) => {
+    const cached = runtimeStatuses.get(item.id);
+    return item.status === "checking" && cached && cached.expires > Date.now() ? cached.value : item;
+  });
 }
 /** The saved conversation, plus the turn still running for it, if any. */
 export async function conversation(
@@ -247,6 +248,13 @@ export interface RuntimeModel {
   label: string;
   efforts: string[];
 }
-export const runtimeModels = (projectId: string, runtime: AgentRuntime, selected?: string | null) =>
-  request<RuntimeModel[]>(path(projectId) + `/runtimes/${runtime}/models` +
-    (selected ? `?selected=${encodeURIComponent(selected)}` : ""));
+const runtimeModelCatalogs = new Map<AgentRuntime, { value: RuntimeModel[]; expires: number }>();
+
+export async function runtimeModels(projectId: string, runtime: AgentRuntime, selected?: string | null, signal?: AbortSignal) {
+  const cached = runtimeModelCatalogs.get(runtime);
+  if (!selected && cached && cached.expires > Date.now()) return cached.value;
+  const value = await request<RuntimeModel[]>(path(projectId) + `/runtimes/${runtime}/models` +
+    (selected ? `?selected=${encodeURIComponent(selected)}` : ""), { signal });
+  if (!selected) runtimeModelCatalogs.set(runtime, { value, expires: Date.now() + discoveryTtlMs });
+  return value;
+}

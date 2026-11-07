@@ -18,11 +18,12 @@ await call(`/api/creation/projects/${id}/commands`, {
 });
 const browser = await launchBrowser();
 try {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ locale: "en-US" });
   await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
   await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
   const trigger = page.locator(".cw-project-chevron");
   await trigger.waitFor();
+  await page.locator('.cw-workspace[aria-busy="false"]').waitFor();
   await trigger.focus();
   const tap = async () => { await page.keyboard.press("Shift"); await page.keyboard.press("Shift"); };
   await tap();

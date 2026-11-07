@@ -8,7 +8,7 @@ from filelock import FileLock, Timeout
 
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.local_projects import child, read_json
+from opendirector.ports.gateway import gateway
 from opendirector.integrations.model_adapters import adapter_for
 from opendirector.media.async_work import blocking
 
@@ -69,7 +69,7 @@ class ToolTaskLifecycle:
         """All writers merge with the durable control intent under one lock."""
         with self.store.transaction():
             directory = self._directory(project_id)
-            current = read_json(child(self._folder(directory), task_id + '.json'))
+            current = gateway().read_json(gateway().child(self._folder(directory), task_id + '.json'))
             if all(key in current and current[key] == value for key, value in changes.items()):
                 return current
             current.update(deepcopy(changes))
@@ -261,7 +261,6 @@ class ToolTaskLifecycle:
     def _registered_outputs(self, task):
         """Repair a crash after asset commit but before its ledger acknowledgement."""
         from .tool_tasks import output_item_id
-        from opendirector.infrastructure.creation_uploads import upload_asset_id
         assets = {str(asset.id): asset for asset in self.assets.assets.list(task['projectId'])
                   if str(asset.provenance.toolTaskId) == task['id']}
         outputs = list(task.get('outputs', []))
@@ -269,7 +268,7 @@ class ToolTaskLifecycle:
         # Recipe output identity is ordinal and independent of the upload ID.
         for index in range(len(assets) + len(outputs)):
             logical = uuid5(UUID(task['id']), f'output-{index}')
-            asset_id = str(upload_asset_id(UUID(task['projectId']), uuid5(logical, 'tool-output')))
+            asset_id = str(gateway().upload_asset_id(UUID(task['projectId']), uuid5(logical, 'tool-output')))
             if asset_id in assets and asset_id not in known:
                 asset = assets[asset_id]
                 record = self.assets.record(asset)
@@ -285,11 +284,11 @@ class ToolTaskLifecycle:
             pid = str(project['id'])
             try:
                 with self.store.transaction():
-                    folder = child(self._directory(pid), 'tool-tasks')
+                    folder = gateway().child(self._directory(pid), 'tool-tasks')
                     if not folder.exists():
                         continue
                     for path in folder.glob('*.json'):
-                        task = read_json(child(folder, path.name))
+                        task = gateway().read_json(gateway().child(folder, path.name))
                         task['projectId'] = pid
                         key = (pid, task['id'])
                         if task['status'] in ACTIVE:

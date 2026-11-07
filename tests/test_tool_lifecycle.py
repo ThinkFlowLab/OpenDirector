@@ -346,6 +346,7 @@ def test_disconnected_submission_still_starts_its_accepted_execution(tool_projec
 def test_disconnected_cancel_keeps_the_durable_stop_request(tool_project, monkeypatch):
     _, _, _, pid, session, _, value, factory = tool_project
     service = factory()
+    service.limit = asyncio.Semaphore(1)
     entered, release = threading.Event(), threading.Event()
     original = service._request_cancel
     def request(*args):

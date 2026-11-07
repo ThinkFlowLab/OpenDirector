@@ -15,13 +15,17 @@ certifi==2026.7.22
     #   httpcore
     #   httpx
 click==8.5.0
-    # via uvicorn
+    # via
+    #   import-linter
+    #   uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
     # via pytest
 fastapi==0.143.2
     # via opendirector
 filelock==3.32.7
     # via opendirector
+grimp==3.19
+    # via import-linter
 h11==0.16.0
     # via
     #   httpcore
@@ -35,8 +39,14 @@ idna==3.20
     # via
     #   anyio
     #   httpx
+import-linter==2.16
+    # via opendirector
 iniconfig==2.3.1
     # via pytest
+markdown-it-py==4.2.0
+    # via rich
+mdurl==0.1.2
+    # via markdown-it-py
 opentelemetry-api==1.45.1
     # via fastapi
 packaging==26.3
@@ -52,11 +62,15 @@ pydantic==2.14.1
 pydantic-core==2.50.1
     # via pydantic
 pygments==2.21.0
-    # via pytest
+    # via
+    #   pytest
+    #   rich
 pytest==9.1.1
     # via opendirector
 pyyaml==6.0.3
     # via opendirector
+rich==15.0.0
+    # via import-linter
 starlette==1.8.0
     # via fastapi
 typing-extensions==4.16.0

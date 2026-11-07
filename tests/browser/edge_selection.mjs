@@ -10,7 +10,7 @@ const browser = await chromium.launch({
     ? { executablePath: process.env.CHROMIUM_PATH }
     : {}),
 });
-const page = await browser.newPage({ viewport: { width: 1800, height: 1100 } });
+const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1800, height: 1100 } });
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));

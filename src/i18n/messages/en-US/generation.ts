@@ -64,6 +64,10 @@ export const generation = {
     "The duration range for regular generation with this model is not verified",
   "generation.field.voice": "Service voice",
   "generation.field.defaultVoice": "Default voice",
+  "generation.field.requiredVoiceId": "Voice ID (required)",
+  "generation.field.voiceIdPlaceholder": "Enter a Voice ID",
+  "generation.field.mossVoiceHelp": "Choose a voice in the MOSS voice library, open its menu, copy its Voice ID, and paste it into the Voice ID field.",
+  "generation.field.mossVoiceLibrary": "MOSS voice library",
   "generation.field.voiceLibrary": "Voice library",
   "generation.field.signature": "Generation settings",
 

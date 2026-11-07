@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { launchBrowser } from "./engine.mjs";
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1600, height: 1000 } });
 await page.addInitScript(() => {
   try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
 });
@@ -101,7 +101,7 @@ try {
     });
     await page.unroute(bootstrap);
     await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}${mode}`);
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
     const source = page.locator(
       `.react-flow__node[data-id="${fixture.source}"]`,
     );
@@ -117,7 +117,7 @@ try {
         sourceBox.y + sourceBox.height / 2,
       );
       const port = page.getByRole("button", {
-        name: "添加下游参考节点",
+        name: "Add downstream reference node",
         exact: true,
       });
       await port.waitFor();
@@ -164,10 +164,10 @@ try {
     );
     // A second attempt on an existing connection must explain the rejection.
     await connect();
-    await page.getByText("已经连接过", { exact: true }).waitFor();
+    await page.getByText("Already connected", { exact: true }).waitFor();
     assert.equal(await page.locator(".react-flow__edge").count(), 1);
     await target.locator(".cw-node-title").click();
-    await page.getByRole("button", { name: "提交生成", exact: true }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
     let state = await until(
       snapshot,
       (value) => value.jobs.some((task) => task.status === "succeeded"),
@@ -222,7 +222,7 @@ try {
     await waitEdge(0);
     await until(savedEdges, (edges) => edges.length === 0, "reference removal");
     await page.reload();
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
     await waitEdge(0);
     await connect();
     await waitEdge(1);
@@ -233,7 +233,7 @@ try {
     );
     assert.notEqual(secondRefs[0].id, rapidRefs[0].id);
     await target.locator(".cw-node-title").click();
-    await page.getByRole("button", { name: "提交生成", exact: true }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
     state = await until(
       snapshot,
       (value) =>

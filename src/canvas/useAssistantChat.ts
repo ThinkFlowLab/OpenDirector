@@ -9,7 +9,7 @@ import {
   conversations,
   activateConversation,
   type ConversationSummary,
-  chatRuntimes,
+  chatRuntimeInventory,
   chatRuntimeStatus,
   type AgentRuntime,
   type RuntimeInfo,
@@ -72,6 +72,7 @@ export function useAssistantChat(
   catalog: BackendModels,
   onTurnEnd: () => void,
   t: Translate,
+  open: boolean,
 ) {
   const [value, setValue] = useState<Conversation>(empty);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
@@ -166,7 +167,9 @@ export function useAssistantChat(
     setRuntimes([]);
     setRuntimesLoading(true);
     setError("");
-    void chatRuntimes(projectId, (available) => {
+    const discovery = new AbortController();
+    void chatRuntimeInventory(projectId, discovery.signal)
+      .then((available) => {
         if (!cancelled) setRuntimes(available);
       })
       .catch((reason) => {
@@ -195,6 +198,7 @@ export function useAssistantChat(
       });
     return () => {
       cancelled = true;
+      discovery.abort();
       alive.current = false;
       // Closing the stream detaches this view only; the server keeps the
       // turn running. Release the turn now so the next project starts idle.
@@ -281,6 +285,26 @@ export function useAssistantChat(
   const currentRuntime = runtimes.find(
     (item) => item.id === (value.runtime ?? "default"),
   );
+  const refreshRuntimes = useCallback(async (runtime: AgentRuntime, signal?: AbortSignal, force = false) => {
+    try {
+      const status = await chatRuntimeStatus(projectId, runtime, signal, force);
+      if (!signal?.aborted && alive.current)
+        setRuntimes((items) => items.map((item) => item.id === runtime ? status : item));
+    } catch (reason) {
+      if (!signal?.aborted && alive.current)
+        setRuntimes((items) => items.map((item) => item.id === runtime ? { ...item, status: "unknown" } : item));
+      throw reason;
+    }
+  }, [projectId]);
+
+  const runtimeToCheck = currentRuntime?.status === "checking" ? currentRuntime.id : null;
+  useEffect(() => {
+    if (!open || !loaded || runtimesLoading || !runtimeToCheck) return;
+    const abort = new AbortController();
+    void refreshRuntimes(runtimeToCheck, abort.signal).catch(() => {});
+    return () => abort.abort();
+  }, [open, loaded, runtimesLoading, runtimeToCheck, refreshRuntimes]);
+
   const canSend =
     currentRuntime?.status === "ready" &&
     !!currentRuntime.available &&
@@ -606,22 +630,7 @@ export function useAssistantChat(
     value,
     runtimes,
     runtimesLoading,
-    refreshRuntimes: async (runtime?: AgentRuntime) => {
-      if (runtime) {
-        setRuntimes((items) => items.map((item) => item.id === runtime ? {...item, status: "checking"} : item));
-        try {
-          const status = await chatRuntimeStatus(projectId, runtime);
-          if (alive.current) setRuntimes((items) => items.map((item) => item.id === runtime ? status : item));
-        } catch (reason) {
-          if (alive.current) setRuntimes((items) => items.map((item) => item.id === runtime ? {...item, status: "unknown"} : item));
-          throw reason;
-        }
-        return;
-      }
-      await chatRuntimes(projectId, (available) => {
-        if (alive.current) setRuntimes(available);
-      });
-    },
+    refreshRuntimes,
     setValue,
     selectAgent: (patch: Partial<Conversation>) => {
       const next = {...current.current, ...patch};

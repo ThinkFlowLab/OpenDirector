@@ -22,24 +22,26 @@ def executable():
     return shutil.which('jiuwenswarm-process')
 
 
-async def model_choices():
-    data = await query('model.list')
+async def model_choices(binary=None):
+    data = await query('model.list', binary=binary)
     return [dict(id=item['selection_key'], label=item['display_name'], efforts=[],
         isDefault=item['is_default']) for item in data['models']]
 
 
-async def readiness():
-    if executable() is None:
+async def readiness(binary=None):
+    """Probe the CLI. `binary` is the path runtime.installation() resolved."""
+    binary = binary or executable()
+    if binary is None:
         return 'not_installed'
     try:
-        await query('protocol.capabilities')
-        return 'ready' if (await query('model.list'))['models'] else 'needs_configuration'
+        await query('protocol.capabilities', binary=binary)
+        return 'ready' if (await query('model.list', binary=binary))['models'] else 'needs_configuration'
     except ProjectError:
         return 'unknown'
 
 
-async def execute(request, *, cwd, env=None, on_event=None, on_tool_call=None, cancel=None):
-    binary = executable()
+async def execute(request, *, cwd, env=None, on_event=None, on_tool_call=None, cancel=None, binary=None):
+    binary = binary or executable()
     if binary is None:
         raise ProjectError('jiuwenswarm-process 尚未安装。', 503)
     querying = request['type'] == 'query'
@@ -113,12 +115,12 @@ async def execute(request, *, cwd, env=None, on_event=None, on_tool_call=None, c
         await asyncio.gather(stderr, return_exceptions=True)
 
 
-async def query(operation: str) -> dict:
+async def query(operation: str, *, binary=None) -> dict:
     try:
         with TemporaryDirectory(prefix='od-jiuwen-query-') as temporary:
             async with asyncio.timeout(30):
                 result = await execute({'schema_version': '0.1', 'type': 'query',
-                    'request_id': str(uuid4()), 'operation': operation, 'params': {}}, cwd=temporary)
+                    'request_id': str(uuid4()), 'operation': operation, 'params': {}}, cwd=temporary, binary=binary)
     except (ValueError, KeyError, TypeError, TimeoutError, OSError) as error:
         raise ProjectError('JiuwenSwarm 查询失败，请检查 CLI 版本与本机配置。', 503) from error
     if result['status'] != 'completed':

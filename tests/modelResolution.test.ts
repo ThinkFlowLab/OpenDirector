@@ -1,8 +1,10 @@
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
-import { backendBlocker } from "../src/backend/rules.ts";
+import { createNode } from "../src/canvas/model.ts";
+import { backendBlocker, serviceAudioSettings, serviceGenerationSettings, serviceVoice } from "../src/backend/rules.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ModelConfig } from "../src/backend/rules.ts";
+import { getActiveLocale, setActiveLocale, translate } from "../src/i18n/messages.ts";
 import {
   applyModelResolution,
   newNodeGenerationSettings,
@@ -199,8 +201,8 @@ test("without a configured model a new node keeps the catalog defaults", () => {
 });
 
 test("new image nodes replace unsupported catalog sizing with adapter defaults", () => {
-  const model = config("image", "MOSS-Image-Base", {
-    inputRules: { profile: "compatible", allowedKinds: ["text"], maxImages: 0,
+  const model = config("image", "moss-image-sft-1.0", {
+    inputRules: { profile: "moss-image", allowedKinds: ["text"], maxImages: 0,
       maxVideos: 0, maxAudios: 0, videoModes: [],
       imageOutputs: [{ aspectRatio: "1:1", size: "1024x1024" }] },
   });
@@ -209,4 +211,91 @@ test("new image nodes replace unsupported catalog sizing with adapter defaults",
   assert.equal(settings.resolution, "auto");
   assert.equal(settings.aspectRatio, "1:1");
   assert.equal(backendBlocker({ ...settings, prompt: "Cloud cinema" }, [], [model]), null);
+});
+
+test("prompt length precheck follows the model's published limit and counts Unicode characters", () => {
+  const model = config("image", "moss-image-sft-1.0", {
+    inputRules: { ...image.inputRules, allowedKinds: ["text"], maxImages: 0,
+      maxPromptCharacters: 4000,
+      imageOutputs: [{ aspectRatio: "1:1", size: "1024x1024" }] },
+  });
+  const settings = newNodeGenerationSettings("image", [model]);
+  assert.equal(backendBlocker({ ...settings, prompt: "🎬".repeat(4000) }, [], [model]), null);
+  const previous = getActiveLocale();
+  try {
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      setActiveLocale(locale);
+      assert.equal(
+        backendBlocker({ ...settings, prompt: "🎬".repeat(4001) }, [], [model]),
+        translate(locale, "errors.rules.promptTooLong", { limit: 4000 }),
+      );
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
+  const stricter = { ...model, inputRules: { ...model.inputRules, maxPromptCharacters: 5 } };
+  assert.ok(backendBlocker({ ...settings, prompt: "123456" }, [], [stricter]));
+  const unlimited = { ...model, inputRules: { ...model.inputRules, maxPromptCharacters: null } };
+  assert.equal(backendBlocker({ ...settings, prompt: "🎬".repeat(4001) }, [], [unlimited]), null);
+});
+
+test("MOSS layout JSON rejects text references with a localized explanation", () => {
+  const model = config("image", "moss-image-sft-1.0", {
+    inputRules: { ...image.inputRules, profile: "moss-image", allowedKinds: ["text"], maxImages: 0,
+      imageOutputs: [{ aspectRatio: "1:1", size: "1024x1024" }] },
+  });
+  const settings = { ...newNodeGenerationSettings("image", [model]),
+    prompt: '{"summary":{"caption":"A lake"},"items":[]}' };
+  const note = createNode("text", undefined, { text: "Blue water" });
+  const previous = getActiveLocale();
+  try {
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      setActiveLocale(locale);
+      const issue = backendBlocker(settings, [note], [model]);
+      assert.ok(issue);
+      assert.match(issue, /JSON/);
+      if (locale === "en-US") assert.doesNotMatch(issue, /[\u3400-\u9fff]/);
+      assert.equal(backendBlocker(settings, [], [model]), null);
+      assert.equal(backendBlocker({ ...settings, prompt: "A lake" }, [note], [model]), null);
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
+});
+
+test("MOSS speech prefills a valid Voice ID and preserves selected or cleared voices", () => {
+  const model = config("audio", "moss-tts-1.5-flash", {
+    inputRules: { profile: "moss-speech", allowedKinds: [], maxImages: 0,
+      maxVideos: 0, maxAudios: 0, videoModes: [], voiceRequired: true, referencesAllowed: false },
+  });
+  const settings = { ...newNodeGenerationSettings("audio", [model]), prompt: "Read this text." };
+  assert.equal(settings.voiceName, "2890a3a4-0012-4997-a545-8b045fe83bbe");
+  assert.equal(backendBlocker(settings, [], [model]), null);
+  const voiceName = "7b6d1cef-9d2b-431d-b963-345678901234";
+  assert.equal(serviceGenerationSettings({ ...settings, voiceName }, model, [], true).voiceName, voiceName);
+  const cleared = { ...settings, voiceName: undefined };
+  assert.equal(serviceGenerationSettings(cleared, model).voiceName, undefined);
+  assert.equal(serviceAudioSettings(cleared, model).voiceName, undefined);
+  const otherSpeech = { ...model, inputRules: { ...model.inputRules, profile: "other-speech" } };
+  assert.equal(newNodeGenerationSettings("audio", [otherSpeech]).voiceName, undefined);
+  const previous = getActiveLocale();
+  try {
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      setActiveLocale(locale);
+      for (const invalid of [undefined, "", " ", "invalid voice"]) {
+        assert.equal(backendBlocker({ ...settings, voiceName: invalid }, [], [model]),
+          translate(locale, "errors.rules.voiceRequired"));
+      }
+      assert.equal(backendBlocker({ ...settings, voiceName }, [], [model]), null);
+      assert.equal(serviceVoice({ voiceName }), voiceName);
+      for (const source of [createNode("text", undefined, { text: "Unsent context" }), createNode("image")]) {
+        assert.equal(backendBlocker({ ...settings, voiceName }, [source], [model]),
+          translate(locale, "errors.rules.referencesUnsupported"));
+      }
+    }
+    const optional = { ...model, inputRules: { ...model.inputRules, voiceRequired: undefined, referencesAllowed: undefined } };
+    assert.equal(backendBlocker(settings, [], [optional]), null);
+  } finally {
+    setActiveLocale(previous);
+  }
 });

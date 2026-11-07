@@ -61,6 +61,31 @@ def test_http_failure_is_safe_and_never_retried(project, status, code, category)
     asyncio.run(run())
 
 
+@pytest.mark.parametrize('code', ['forbidden', 'permission_error'])
+def test_403_reports_access_checks_without_diagnosing_account_permissions(project, code):
+    store, project, _ = project
+    requests = []
+    raw_message = f'invalidKey: {SECRET} {SIGNED_URL}'
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(403, json={'error': {'code': code, 'message': raw_message}})
+    async def run():
+        provider = VolcengineGeneration(store, httpx.MockTransport(handle))
+        with pytest.raises(GenerationError) as caught:
+            await provider.generate({'url': 'https://ark.test', 'modelId': 'image', 'apiKey': SECRET},
+                {'kind': 'image', 'projectId': project['id'], 'prompt': '图像', 'referenceIds': [], 'parameters': {}}, None)
+        details = caught.value.details
+        assert details.category == 'permission' and details.httpStatus == 403
+        assert details.providerCode == code and details.stage == 'submit'
+        assert details.message == '生成服务拒绝了访问请求。'
+        assert 'API Key' in details.suggestion
+        assert '权限' in details.suggestion and '安全策略' in details.suggestion
+        serialized = details.model_dump_json() + str(caught.value)
+        assert raw_message not in serialized and SECRET not in serialized and SIGNED_URL not in serialized
+        assert '不会自动重新提交' in str(caught.value) and len(requests) == 1
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize('body', [b'<html>secret-signature private-key-never-record</html>', b'[]', b'{broken', b'x' * 100000], ids=['html', 'array', 'broken-json', 'oversized'])
 def test_non_json_and_oversized_errors_have_safe_fallback(project, body):
     store, project, _ = project

@@ -9,7 +9,7 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.library import Library
 from opendirector.domain.creation.library import LibraryOrigin, LibrarySubjectSnapshot
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.creation_uploads import inspect_file
+from opendirector.ports.gateway import gateway
 
 
 class SubjectLibrary:
@@ -21,7 +21,7 @@ class SubjectLibrary:
     @staticmethod
     def inspect(path, slot):
         expected = 'image' if slot.startswith('auxiliary:') else 'audio' if slot == 'voice' else 'video'
-        kind, facts = inspect_file(path, 'subject.bin', expected_kind=expected)
+        kind, facts = gateway().inspect_file(path, 'subject.bin', expected_kind=expected)
         if (slot == 'main' and kind not in {'image', 'video'}
                 or slot.startswith('auxiliary:') and kind != 'image'
                 or slot == 'voice' and kind != 'audio'):

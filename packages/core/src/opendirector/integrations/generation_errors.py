@@ -15,7 +15,7 @@ _REASONS = {
     'input': ('生成服务拒绝了输入内容或参数。', '请检查生成要求、参数和模型支持范围。'),
     'reference': ('生成服务拒绝了参考素材。', '请更换符合服务要求的参考素材，再决定是否重新生成。'),
     'authentication': ('生成服务鉴权失败。', '请在设置中检查 API Key。'),
-    'permission': ('当前账户没有调用该模型的权限。', '请检查模型和服务权限。'),
+    'permission': ('生成服务拒绝了访问请求。', '请检查 API Key 是否正确及有效、模型调用权限和服务安全策略。'),
     'quota': ('模型账户余额或套餐额度不足。', '请核对账户余额和套餐额度。'),
     'rate_limit': ('模型调用频率或配额受限。', '请核对调用频率及套餐额度后再操作。'),
     'temporary': ('生成服务暂时不可用。', '请先核对已有任务，再处理当前步骤。'),
@@ -70,10 +70,14 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         category = 'authentication'
     elif name.startswith(('permissiondenied', 'accessdenied', 'forbidden')):
         category = 'permission'
-    elif name.startswith(('quotaexceeded', 'insufficientquota', 'insufficient_quota', 'insufficientbalance', 'accountoverdue')):
+    elif name.startswith(('quotaexceeded', 'insufficientquota', 'insufficient_quota', 'insufficientbalance', 'accountoverdue',
+                          'billinghardlimit', 'billing_hard_limit', 'organizationquota', 'organization_quota')):
         category = 'quota'
     elif name.startswith(('ratelimit', 'rate_limit', 'throttl')):
         category = 'rate_limit'
+    elif name.startswith(('moderation_blocked', 'moderationblocked', 'content_policy', 'contentpolicy', 'safety_system', 'safetysystem')):
+        # OpenAI Images reports refused prompts or pictures as a moderation block.
+        category = 'input'
     elif code == '55000000':
         category = 'temporary'
     message, suggestion = _REASONS[category]
@@ -86,12 +90,18 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         elif re.search(r'(?:not support|unsupported|not supported)', diagnostic) and re.search(r'(?:reference_(?:image|video|audio)|image_url|video_url|audio_url|input_audio)', diagnostic):
             category, message = 'reference', '供应商拒绝了参考类型或输入组合。'
             suggestion = '请核对参考类型和生成模式，或选择其他已适配模型；当前输入和已有结果保留。'
-    if name == 'inputimagesensitivecontentdetected.privacyinformation':
+    if name == 'voice_not_found':
+        category, message = 'input', '所选音色不存在或不可用。'
+        suggestion = '请检查音色 ID 是否属于当前账户可用的音色。'
+    elif name == 'inputimagesensitivecontentdetected.privacyinformation':
         message = '供应商判定参考图片可能包含真人，已拒绝生成。'
     elif code in MINIMAX_SENSITIVE:
         # A moderation verdict is deterministic: the same input fails again, so
         # the suggestion must lead to changing it rather than retrying.
         category, (message, suggestion) = 'input', MINIMAX_SENSITIVE[code]
+    elif name.startswith(('moderation_blocked', 'moderationblocked')):
+        message, suggestion = ('供应商判定提示词或参考图片违反内容政策，已拒绝生成。',
+                               '请调整提示词或参考素材后再生成；当前输入和已有结果保留。')
     elif category == 'provider' and value.get('status') in {'cancelled', 'expired'}:
         message = '供应商任务已取消。' if value['status'] == 'cancelled' else '供应商任务已过期。'
     elif http_status == 404:

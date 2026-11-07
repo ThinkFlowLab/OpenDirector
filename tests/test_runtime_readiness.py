@@ -3,6 +3,8 @@ import sys
 
 import pytest
 
+from capabilities import requires_posix
+
 from opendirector.agent import runtime
 
 
@@ -13,6 +15,7 @@ from opendirector.agent import runtime
     ('claude', '{"loggedIn":false}', 1, 'needs_login'),
     ('claude', 'invalid output', 0, 'unknown'),
 ])
+@requires_posix()
 def test_login_readiness(tmp_path, monkeypatch, engine, output, exit_code, expected):
     cli = tmp_path / 'cli'
     cli.write_text(f'#!{sys.executable}\nprint({output!r})\nraise SystemExit({exit_code})\n')
@@ -82,9 +85,9 @@ def test_runtime_catalog_can_skip_probes_and_check_one_harness(tmp_path, monkeyp
     async def probe(engine):
         calls.append(engine)
         return 'ready'
-    monkeypatch.setattr('opendirector_api.agent.runtime_readiness', probe)
-    monkeypatch.setattr(runtime.native, 'executable', lambda _: '/installed/cli')
-    monkeypatch.setattr(runtime.jiuwenswarm, 'executable', lambda: '/installed/jiuwenswarm')
+    monkeypatch.setattr(runtime, 'runtime_readiness', probe)
+    # One seam decides installation for every engine, so a single patch covers them.
+    monkeypatch.setattr(runtime, 'installation', lambda _: '/installed/cli')
     pid = str(uuid4())
     path = f'/api/creation/projects/{pid}'
     with TestClient(create_app(LocalProjects(tmp_path)), headers={
@@ -106,6 +109,7 @@ def test_runtime_catalog_can_skip_probes_and_check_one_harness(tmp_path, monkeyp
     (f'#!{sys.executable}\nraise SystemExit(1)\n', 'unknown'),
     (f'#!{sys.executable}\nimport sys\nassert sys.argv[1:] == ["--version"]\nprint("1.19.5")\n', 'ready'),
 ])
+@requires_posix()
 def test_bundled_readiness_runs_binary(tmp_path, monkeypatch, content, expected):
     binary = tmp_path / 'opencode.exe'
     binary.write_text(content)
@@ -139,3 +143,18 @@ def test_skill_endpoint_reports_incomplete_bundled_install(tmp_path, monkeypatch
         assert 'pip install' in english.json()['detail']
         assert 'Bundled Agent' in english.json()['detail']
         assert '磁盘空间' not in response.json()['detail']
+
+def test_jiuwenswarm_readiness_uses_the_executable_installation_resolved(monkeypatch):
+    """Only runtime.installation() is mocked: the resolved path must reach the CLI call."""
+    from opendirector.agent import jiuwenswarm
+    seen = []
+    async def query(operation, *, binary=None):
+        seen.append((operation, binary))
+        return {'models': [{'selection_key': 'local/m', 'display_name': 'm', 'is_default': True}]}
+    monkeypatch.setattr(runtime, 'installation', lambda _: '/resolved/jiuwenswarm')
+    monkeypatch.setattr(jiuwenswarm, 'query', query)
+    def path_lookup():
+        raise AssertionError('readiness must not probe PATH again')
+    monkeypatch.setattr(jiuwenswarm, 'executable', path_lookup)
+    assert asyncio.run(runtime.runtime_readiness('jiuwenswarm')) == 'ready'
+    assert seen == [('protocol.capabilities', '/resolved/jiuwenswarm'), ('model.list', '/resolved/jiuwenswarm')]

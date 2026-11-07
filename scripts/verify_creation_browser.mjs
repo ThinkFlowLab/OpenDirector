@@ -233,6 +233,7 @@ try {
       "background completion",
     );
     assert.equal(snapshot.jobs[0].adopted, false);
+    assert.equal(snapshot.generationSpecs.find((spec) => spec.id === targetSpecId).currentResultId, null);
     assert.equal(
       snapshot.jobs[0].inputSnapshot.references[0].asset.assetId,
       sourceAsset.id,

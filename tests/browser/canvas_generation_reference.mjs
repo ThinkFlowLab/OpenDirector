@@ -12,7 +12,7 @@ async function call(path, body) {
 }
 assert.equal((await call("/api/creation-test-health")).isolated, true);
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1600, height: 1000 } });
 await page.addInitScript(() => {
   try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
 });
@@ -23,8 +23,8 @@ try {
     await call(`/api/creation/projects/${projectId}/commands`, { commandId: crypto.randomUUID(), projectId,
       type: "project.create", payload: { name: `Connected generation ${binding} ${projectId.slice(0, 8)}` } });
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
-    await page.getByLabel("选择本地素材文件", { exact: true }).setInputFiles({
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
+    await page.getByLabel("Choose local asset files", { exact: true }).setInputFiles({
       name: "reference.png", mimeType: "image/png",
       buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGNsYGhgIAUwkaR6VMOohiGlAQBCPQEgiSD+iQAAAABJRU5ErkJggg==", "base64"),
     });

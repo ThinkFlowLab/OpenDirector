@@ -1,4 +1,4 @@
-/** 「资产」: global media backed up from uploads and canvases. */
+/** Assets: global media backed up from uploads and canvases. */
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../../backend/api";
 import { useT } from "../../i18n/I18nProvider";

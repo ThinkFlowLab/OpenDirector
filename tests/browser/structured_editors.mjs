@@ -11,7 +11,7 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox", "--enable-unsafe-swiftshader"],
 });
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1700, height: 1100 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1700, height: 1100 } });
 // Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() =>
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -86,7 +86,7 @@ try {
         headers: { "X-OpenDirector-Request": "1" },
       })
     ).json();
-  const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
+  const saved = () => page.getByText("Saved on this device", { exact: true }).waitFor();
   async function open(id) {
     await page.locator(".cw-workspace").focus();
     await page.keyboard.press("Shift+1");
@@ -95,9 +95,9 @@ try {
       .locator(`.react-flow__node[data-id="${id}"] .cw-node-title`)
       .click({ button: "right" });
     await page
-      .getByRole("menuitem", { name: "打开编辑器", exact: true })
+      .getByRole("menuitem", { name: "Open editor", exact: true })
       .click();
-    await page.getByRole("button", { name: "应用编辑", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Apply edits", exact: true }).waitFor();
   }
   await page.goto(url);
   await saved();
@@ -107,10 +107,10 @@ try {
       await page.locator(".cw-tool-field textarea").fill("50mm\n85mm");
     if (kind === "stack")
       await page
-        .getByRole("button", { name: "下一个堆叠资源", exact: true })
+        .getByRole("button", { name: "Next stacked item", exact: true })
         .click();
     if (kind === "stage")
-      await page.getByLabel("机位名称", { exact: true }).fill("Saved camera");
+      await page.getByLabel("Camera name", { exact: true }).fill("Saved camera");
     const before = await state();
     let blocked = true;
     const route = async (r) => {
@@ -127,18 +127,18 @@ try {
       return r.continue();
     };
     await page.route("**/commands", route);
-    await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+    await page.getByRole("button", { name: "Apply edits", exact: true }).click();
     await page
       .getByRole("alert")
       .filter({ hasText: "fixture: structured save rejected" })
       .waitFor();
     assert.deepEqual((await state()).editorDocuments, before.editorDocuments);
     assert.equal(
-      await page.getByRole("button", { name: "应用编辑", exact: true }).count(),
+      await page.getByRole("button", { name: "Apply edits", exact: true }).count(),
       1,
     );
     blocked = false;
-    await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+    await page.getByRole("button", { name: "Apply edits", exact: true }).click();
     await page.locator(".cw-domain-dialog").waitFor({ state: "hidden" });
     await saved();
     await page.unroute("**/commands", route);
@@ -160,26 +160,26 @@ try {
       );
     if (kind === "stage")
       assert.equal(
-        await page.getByLabel("机位名称", { exact: true }).inputValue(),
+        await page.getByLabel("Camera name", { exact: true }).inputValue(),
         "Saved camera",
       );
     assert.deepEqual(
       (await state()).editorDocuments,
       committed.editorDocuments,
     );
-    await page.getByRole("button", { name: "关闭编辑器", exact: true }).click();
+    await page.getByRole("button", { name: "Close editor", exact: true }).click();
     console.log(
       `PASS ${kind}: rejected save retains draft; acknowledged retry survives reload with editable structure`,
     );
   }
   if (process.argv.includes("--publish")) {
     await open(f.stage);
-    await page.getByLabel("舞台总时长", { exact: true }).fill("0.5");
+    await page.getByLabel("Stage duration", { exact: true }).fill("0.5");
     await page
-      .getByRole("button", { name: "合成预演 MP4", exact: true })
+      .getByRole("button", { name: "Render preview MP4", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "将预演视频加入画布", exact: true })
+      .getByRole("button", { name: "Add preview video to canvas", exact: true })
       .waitFor({ timeout: 60000 });
     const before = await state();
     let reject = true;
@@ -196,16 +196,16 @@ try {
     };
     await page.route("**/commands", route);
     await page
-      .getByRole("button", { name: "将预演视频加入画布", exact: true })
+      .getByRole("button", { name: "Add preview video to canvas", exact: true })
       .click();
     await page.getByRole("alert").waitFor();
     assert.equal((await state()).canvasItems.length, before.canvasItems.length);
     reject = false;
     await page
-      .getByRole("button", { name: "将预演视频加入画布", exact: true })
+      .getByRole("button", { name: "Add preview video to canvas", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "已加入画布", exact: true })
+      .getByRole("button", { name: "Added to canvas", exact: true })
       .waitFor();
     await page.unroute("**/commands", route);
     const after = await state();
@@ -251,7 +251,7 @@ try {
   };
   await page.route("**/commands", dissolveRoute);
   await page
-    .getByRole("button", { name: "解散堆叠，保留全部节点", exact: true })
+    .getByRole("button", { name: "Dissolve stack and keep all nodes", exact: true })
     .click();
   await page
     .getByRole("alert")
@@ -263,7 +263,7 @@ try {
   );
   rejectDissolve = false;
   await page
-    .getByRole("button", { name: "解散堆叠，保留全部节点", exact: true })
+    .getByRole("button", { name: "Dissolve stack and keep all nodes", exact: true })
     .click();
   await page.locator(".cw-domain-dialog").waitFor({ state: "hidden" });
   await saved();

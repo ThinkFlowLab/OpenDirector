@@ -55,7 +55,7 @@ await call(`/api/creation/projects/${projectId}/commands`, {
 const snapshot = () => call(`/api/creation/projects/${projectId}`);
 
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1100 } });
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));

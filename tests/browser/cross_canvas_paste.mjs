@@ -33,14 +33,14 @@ const target = await project("Paste target");
 const browser = await launchBrowser();
 const errors = [];
 try {
-  const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
+  const page = await browser.newPage({ locale: "en-US", viewport: { width: 1500, height: 1000 } });
   // Skip the first-run model setup welcome; it covers the canvas.
   await page.addInitScript(() =>
     localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
   );
   page.setDefaultTimeout(15000);
   page.on("pageerror", (error) => errors.push(error.message));
-  const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
+  const saved = () => page.getByText("Saved on this device", { exact: true }).waitFor();
   const nodes = page.locator(".react-flow__node");
   const loadedImages = (count) => page.waitForFunction((count) => {
     const images = [...document.querySelectorAll(".react-flow__node img.cw-image-preview")];
@@ -49,12 +49,12 @@ try {
   await page.goto(`${base}/ai-tool/ai-canvas/${source.id}`);
   await saved();
   // One generated image and one upload.
-  await page.getByRole("toolbar", { name: "画布创作工具" }).getByRole("button", { name: "添加图片", exact: true }).click();
+  await page.getByRole("toolbar", { name: "Canvas creation tools" }).getByRole("button", { name: "Add Image", exact: true }).click();
   await chooseGenerationModel(page, { label: "fixture-image" });
-  await page.getByRole("textbox", { name: "生成提示词", exact: true }).fill("Copied generation");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Copied generation");
   await until(async () => (await source.state()).generationSpecs[0]?.modelConfigId);
   await saved();
-  await page.getByRole("button", { name: "提交生成", exact: true }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
   await until(async () => (await source.state()).jobs[0]?.status === "succeeded");
   await page.locator(".cw-generating").waitFor({ state: "hidden" });
   const png = await page.evaluate(() => {
@@ -63,7 +63,7 @@ try {
     canvas.getContext("2d").fillRect(0, 0, 64, 64);
     return canvas.toDataURL().split(",")[1];
   });
-  await page.getByLabel("选择本地素材文件", { exact: true }).setInputFiles({
+  await page.getByLabel("Choose local asset files", { exact: true }).setInputFiles({
     name: "upload.png", mimeType: "image/png", buffer: Buffer.from(png, "base64"),
   });
   await until(async () => (await source.state()).canvasItems.length === 2);
@@ -75,7 +75,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".react-flow__node.selected").length === 2);
   await page.keyboard.press("Control+c");
   // Switching closes the source client and revokes its preview URLs.
-  await page.getByRole("button", { name: "切换项目", exact: true }).click();
+  await page.getByRole("button", { name: "Switch project", exact: true }).click();
   await page.getByRole("menuitemradio", { name: target.name, exact: true }).click();
   await page.locator(".cw-project-name").filter({ hasText: target.name }).waitFor();
   await saved();
@@ -99,7 +99,7 @@ try {
     return snapshot.canvasItems.filter((item) => item.visible).length === 2 && snapshot;
   });
   await saved();
-  assert.equal(await page.getByText(/保存失败/).count(), 0);
+  assert.equal(await page.getByText(/Save failed/).count(), 0);
   assert.deepEqual(pasted.canvasItems.map((item) => item.binding.role).sort(), ["material", "material"]);
   assert.equal(pasted.jobs.length, 0, "a copy must not claim the source project's generation task");
   assert.deepEqual(pasted.assets.map((asset) => asset.provenance.source), ["upload", "upload"]);

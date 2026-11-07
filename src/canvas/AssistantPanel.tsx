@@ -85,23 +85,24 @@ export function AssistantPanel({
   onPrepareReferences: () => Promise<boolean>;
 }) {
   const t = useT();
-  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t);
+  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
   const { value, setValue } = chat;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
+    const abort = new AbortController();
     let active = true;
     setDeepseekLabels({});
-    if (hasDeepseekMessages) {
-      runtimeModels(documentId, "deepseek").then((models) => {
+    if (open && hasDeepseekMessages) {
+      runtimeModels(documentId, "deepseek", null, abort.signal).then((models) => {
         if (active) setDeepseekLabels(Object.fromEntries(models.map((model) => [model.id, model.label])));
       }).catch(() => {
         // Keep the harness label when its optional model catalog is unavailable.
         if (active) setDeepseekLabels({});
       });
     }
-    return () => { active = false; };
-  }, [documentId, hasDeepseekMessages]);
+    return () => { active = false; abort.abort(); };
+  }, [documentId, hasDeepseekMessages, open]);
 
   const uploads = useReferenceUploads(documentId);
   const projectReferences = useProjectMentionAssets(documentId);
@@ -698,6 +699,7 @@ export function AssistantPanel({
               models={catalog.models}
               runtimes={chat.runtimes}
               onRefresh={chat.refreshRuntimes}
+              visible={open}
               disabled={!chat.loaded || chat.sending}
               initializing={!chat.loaded || !chat.runtimes.length}
               onChange={chat.selectAgent}

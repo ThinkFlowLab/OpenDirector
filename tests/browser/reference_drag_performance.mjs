@@ -19,7 +19,7 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage({ viewport: { width: 1700, height: 1100 } });
+const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1700, height: 1100 } });
 page.setDefaultTimeout(20000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));

@@ -10,7 +10,7 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.domain.creation.assets import AssetProvenance, AssetRef
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.creation_uploads import upload_asset_id
+from opendirector.ports.gateway import gateway
 
 
 class CreationToolAssets:
@@ -48,7 +48,7 @@ class CreationToolAssets:
     def import_file(self, project_id, asset_id, name, data, session, *, source='generated', sources=(), provenance=None):
         project_id, asset_id = UUID(str(project_id)), UUID(str(asset_id))
         handle = uuid5(asset_id, 'tool-output')
-        registered_id = upload_asset_id(project_id, handle)
+        registered_id = gateway().upload_asset_id(project_id, handle)
         existing = next((asset for asset in self.assets.list(project_id) if asset.id == registered_id), None)
         if existing:
             return self.record(existing)

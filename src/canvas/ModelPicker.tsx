@@ -161,7 +161,7 @@ export function ModelPicker({
       )}
       {error && (
         <p className="cw-model-feedback" role="alert">
-          {t("generation.picker.retry")}
+          {t("generation.picker.retry", { error })}
         </p>
       )}
       {ids.length > 4 && (

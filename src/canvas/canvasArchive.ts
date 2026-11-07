@@ -249,12 +249,43 @@ interface ArchiveManifest {
   assets?: { path?: unknown; mimeType?: unknown; provenance?: unknown }[];
 }
 
+const BASE64_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+/** Character codes of the alphabet, read as bytes when encoding. */
+const BASE64_CODES = new Uint8Array(64);
+for (let code = 0; code < 64; code++)
+  BASE64_CODES[code] = BASE64_ALPHABET.charCodeAt(code);
+/** `=` pads the final group when the byte count is not a multiple of three. */
+const BASE64_PAD = 61;
+
+/** Standard base64 with padding, the same text `btoa` returns for the
+ * equivalent binary string. Writes four ASCII bytes per three input bytes into
+ * a buffer and decodes once: an import re-encodes the whole media payload, and
+ * one multi-megabyte intermediate string per asset cost more than reading and
+ * decompressing the archive itself. */
 function base64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunk)
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
-  return btoa(binary);
+  const out = new Uint8Array(Math.ceil(bytes.length / 3) * 4);
+  let to = 0;
+  let from = 0;
+  for (; from + 2 < bytes.length; from += 3) {
+    const triple =
+      (bytes[from]! << 16) | (bytes[from + 1]! << 8) | bytes[from + 2]!;
+    out[to++] = BASE64_CODES[(triple >>> 18) & 63]!;
+    out[to++] = BASE64_CODES[(triple >>> 12) & 63]!;
+    out[to++] = BASE64_CODES[(triple >>> 6) & 63]!;
+    out[to++] = BASE64_CODES[triple & 63]!;
+  }
+  const rest = bytes.length - from;
+  if (rest > 0) {
+    const triple =
+      (bytes[from]! << 16) | (rest === 2 ? bytes[from + 1]! << 8 : 0);
+    out[to++] = BASE64_CODES[(triple >>> 18) & 63]!;
+    out[to++] = BASE64_CODES[(triple >>> 12) & 63]!;
+    out[to++] = rest === 2 ? BASE64_CODES[(triple >>> 6) & 63]! : BASE64_PAD;
+    out[to++] = BASE64_PAD;
+  }
+  // Every encoded byte is ASCII, so a latin1 decode copies it as one string.
+  return new TextDecoder("latin1").decode(out.subarray(0, to));
 }
 
 /** Reads a `.canvas` archive back into a document whose media is inline again.

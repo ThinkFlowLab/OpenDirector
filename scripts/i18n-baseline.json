@@ -2,15 +2,16 @@
   "total": 168,
   "counts": {
     "src/canvas/assets.ts": 14,
-    "src/canvas/CanvasWorkspace.tsx": 1,
+    "src/canvas/workspace/useWorkspaceTransfer.ts": 1,
     "src/canvas/dataBoundary.ts": 3,
     "src/canvas/generationCatalog.ts": 16,
+    "src/canvas/generationSettings.ts": 4,
     "src/canvas/library/AssetsPanel.tsx": 1,
     "src/canvas/library/libraryClient.ts": 1,
     "src/canvas/library/SubjectsPanel.tsx": 1,
     "src/canvas/library/TrashPanel.tsx": 1,
     "src/canvas/model.ts": 1,
-    "src/canvas/NodeComposer.tsx": 5,
+    "src/canvas/NodeComposer.tsx": 1,
     "src/canvas/referenceMentions.ts": 1,
     "src/canvas/toolCatalog.ts": 123
   }

@@ -13,7 +13,11 @@ export function dataUrlToBlob(value: string): Blob {
   const payload = value.slice(comma + 1);
   try {
     if (base64) {
-      const decoded = atob(decodeURIComponent(payload));
+      // Only a percent escape needs decoding; a plain payload is used as is, so
+      // exporting media does not copy the whole string through a URI decoder.
+      const decoded = atob(
+        payload.includes("%") ? decodeURIComponent(payload) : payload,
+      );
       const bytes = new Uint8Array(decoded.length);
       for (let index = 0; index < decoded.length; index++)
         bytes[index] = decoded.charCodeAt(index);

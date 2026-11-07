@@ -37,6 +37,7 @@ const video = execFileSync("ffmpeg", [
 ]).toString("base64");
 try {
   const page = await browser.newPage({
+    locale: "zh-CN",
     viewport: { width: 1700, height: 1100 },
   });
   page.setDefaultTimeout(15000);

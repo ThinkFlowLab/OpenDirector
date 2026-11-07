@@ -11,7 +11,7 @@ async function call(path, body) {
 }
 assert.equal((await call("/api/creation-test-health")).isolated, true);
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1600, height: 1000 } });
 // Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() =>
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -22,7 +22,7 @@ try {
   await call(`/api/creation/projects/${projectId}/commands`, { commandId: crypto.randomUUID(), projectId,
     type: "project.create", payload: { name: `Viewport focus ${projectId.slice(0, 8)}` } });
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page.getByText("Saved on this device", { exact: true }).waitFor();
   await page.locator(".cw-chat-button").click();
   await page.locator(".cw-assistant-panel:not([hidden])").waitFor();
   headers["X-OpenDirector-Session"] = await page.evaluate(async () => (await import("/src/backend/api.ts")).sessionId);
@@ -129,7 +129,7 @@ try {
   // Restoring again after reload also uses the persisted hidden identity.
   await page.waitForTimeout(1200); // Flush independent viewport preferences.
   await page.reload();
-  await page.getByText('已保存到本机', { exact: true }).waitFor();
+  await page.getByText('Saved on this device', { exact: true }).waitFor();
   if (!(await editor.isVisible())) await page.locator('.cw-chat-button').click();
   await editor.fill('重开后仍保留视图');
   headers['X-OpenDirector-Session'] = await page.evaluate(async () => (await import('/src/backend/api.ts')).sessionId);

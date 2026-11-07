@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { launchBrowser } from "./engine.mjs";
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1500, height: 1000 } });
 // Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() =>
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -52,7 +52,7 @@ try {
     });
     await page.unroute(bootstrap);
     await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}${mode}`);
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
     const node = page.locator(`.react-flow__node[data-id="${fixture.node}"]`);
     const menu = page.locator(".cw-context-menu");
     const openNodeMenu = async () => {
@@ -61,7 +61,7 @@ try {
     };
     await node.click();
     await page
-      .getByRole("button", { name: "切换到抓手工具", exact: true })
+      .getByRole("button", { name: "Switch to hand tool", exact: true })
       .click();
     await openNodeMenu();
     const before = await page
@@ -96,7 +96,7 @@ try {
     await openNodeMenu();
     await page.evaluate(() => {
       const composer = document.querySelector(
-        '[aria-label="文本生成提示词"]',
+        '[aria-label="Text prompt"]',
       );
       composer?.dispatchEvent(
         new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
@@ -109,7 +109,7 @@ try {
       assert.ok(box);
       await page.mouse.move(box.x + box.width + 7, box.y + box.height / 2);
       await page
-        .getByRole("button", { name: "添加下游参考节点", exact: true })
+        .getByRole("button", { name: "Add downstream reference node", exact: true })
         .click();
       await page.locator(".cw-canvas-menu").waitFor();
     };

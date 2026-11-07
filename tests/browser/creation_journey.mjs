@@ -5,7 +5,7 @@ export async function creationJourney(
   page,
   { pid, state, call, until, saved },
 ) {
-  await page.getByLabel("选择本地素材文件", { exact: true }).setInputFiles({
+  await page.getByLabel("Choose local asset files", { exact: true }).setInputFiles({
     name: "reference.png",
     mimeType: "image/png",
     buffer: Buffer.from(
@@ -18,8 +18,8 @@ export async function creationJourney(
   );
   await saved();
   await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加图片", exact: true })
+    .getByRole("toolbar", { name: "Canvas creation tools" })
+    .getByRole("button", { name: "Add Image", exact: true })
     .click();
   const target = await until(async () =>
     (await state()).canvasItems.find(
@@ -69,12 +69,12 @@ export async function creationJourney(
   );
   await node(target.id).locator(".cw-node-title").click();
   await chooseGenerationModel(page, { label: "fixture-image" });
-  const prompt = page.getByRole("textbox", { name: "生成提示词", exact: true });
+  const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
   await prompt.click();
   await prompt.press("Control+End");
   await page.keyboard.insertText(" Generate from the uploaded reference");
   await call("/api/creation-test-gate", { open: false });
-  await page.getByRole("button", { name: "提交生成", exact: true }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
   await until(async () => (await state()).jobs.length === 1);
   // The active UI deliberately disables its prompt during generation. Model a
   // concurrent writer through the shared command, without mutating the DOM.
@@ -114,8 +114,8 @@ export async function creationJourney(
   await node(timelineItem.id)
     .locator(".cw-node-title")
     .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "打开编辑器", exact: true }).click();
-  const draftRate = page.getByLabel(/帧率/);
+  await page.getByRole("menuitem", { name: "Open editor", exact: true }).click();
+  const draftRate = page.getByLabel(/Frame rate/);
   await draftRate.selectOption("50");
   await draftRate.focus();
   await call("/api/creation-test-gate", { open: true });
@@ -146,7 +146,7 @@ export async function creationJourney(
     finished.editorDocuments.find((d) => d.id === timelineBefore.id),
     timelineBefore,
   );
-  await page.getByRole("button", { name: "关闭编辑器", exact: true }).click();
+  await page.getByRole("button", { name: "Close editor", exact: true }).click();
   console.log(
     "PASS background task updates preserve selected node, focused editor control and unsaved timeline draft",
   );
@@ -164,20 +164,20 @@ export async function creationJourney(
     finished.generationSpecs.find((s) => s.id === specId).prompt,
     "Keep the concurrent next-attempt intent",
   );
-  await page.getByRole("button", { name: "生成历史", exact: true }).click();
-  await page.getByRole("button", { name: "选用结果", exact: true }).click();
+  await page.getByRole("button", { name: "Generation history", exact: true }).click();
+  await page.getByRole("button", { name: "Use result", exact: true }).click();
   await until(
     async () =>
       (await state()).generationSpecs.find((s) => s.id === specId)
         ?.currentResultId === finished.results[0].id,
   );
-  await page.getByRole("button", { name: "关闭侧栏", exact: true }).click();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await node(target.id).locator(".cw-node-title").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "编辑图片", exact: true }).click();
-  await page.getByRole("button", { name: "图层工作台", exact: true }).click();
-  await page.getByRole("button", { name: "文字", exact: true }).click();
-  await page.getByLabel("图层文字内容", { exact: true }).fill("Journey layer");
-  await page.getByRole("button", { name: "应用到画布", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit image", exact: true }).click();
+  await page.getByRole("button", { name: "Layer studio", exact: true }).click();
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  await page.getByLabel("Layer text content", { exact: true }).fill("Journey layer");
+  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
   const snapshot = await until(async () => {
     const s = await state();
     return s.editorDocuments.some((d) => d.kind === "layers") && s;

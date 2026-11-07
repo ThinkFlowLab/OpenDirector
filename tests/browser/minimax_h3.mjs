@@ -18,7 +18,7 @@ async function call(path, body) {
 }
 assert.equal((await call("/api/creation-test-health")).isolated, true);
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1100 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1600, height: 1100 } });
 // Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() =>
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -46,7 +46,7 @@ try {
     payload: { name: `Official H3 ${projectId}` },
   });
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page.getByText("Saved on this device", { exact: true }).waitFor();
   const png = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 256;
@@ -55,7 +55,7 @@ try {
   });
   for (const name of ["first.png", "last.png"]) {
     await page
-      .getByLabel("选择本地素材文件", { exact: true })
+      .getByLabel("Choose local asset files", { exact: true })
       .setInputFiles({
         name,
         mimeType: "image/png",
@@ -118,13 +118,13 @@ try {
   const node = page.locator(`.react-flow__node[data-id="${created.itemId}"]`);
   await node.waitFor();
   await node.click();
-  const first = page.getByLabel("选择首帧", { exact: true });
-  const last = page.getByLabel("选择尾帧", { exact: true });
+  const first = page.getByLabel("Choose First frame", { exact: true });
+  const last = page.getByLabel("Choose Last frame", { exact: true });
   await last.waitFor();
-  await page.getByRole("combobox", { name: "生成模型", exact: true }).click();
-  const models = page.getByRole("listbox", { name: "生成模型", exact: true });
-  await models.getByRole("group", { name: "MiniMax 官方视频", exact: true }).waitFor();
-  assert.equal(await models.getByText("本地服务", { exact: true }).count(), 0);
+  await page.getByRole("combobox", { name: "Generation model", exact: true }).click();
+  const models = page.getByRole("listbox", { name: "Generation model", exact: true });
+  await models.getByRole("group", { name: "MiniMax official video", exact: true }).waitFor();
+  assert.equal(await models.getByText("Local service", { exact: true }).count(), 0);
   await page.screenshot({ path: "/tmp/node-model-picker.png" });
   await page.keyboard.press("Escape");
   const lite = (await call("/api/model-configs")).find((item) => item.modelId === "MiniMax-H3-Lite");
@@ -150,7 +150,7 @@ try {
   await page.reload();
   await page.locator(`.react-flow__node[data-id="${created.itemId}"]`).click();
   assert.equal(
-    await page.getByLabel("选择尾帧", { exact: true }).inputValue(),
+    await page.getByLabel("Choose Last frame", { exact: true }).inputValue(),
     "",
   );
   console.log(

@@ -1,49 +1,54 @@
-# OpenDirector 文档
+# OpenDirector documentation
 
-本目录是仓库共享文档的入口。所有下列文档随代码纳入 Git，开发者无需访问本地历史材料、聊天记录或相邻仓库即可阅读和执行。
+This directory is the entry point for the repository's shared documentation. The documents below are tracked with the code; developers do not need local historical material, chat records, or neighboring repositories to use them.
 
-## 阅读顺序与文档职责
+## Reading order and responsibilities
 
-| 文档 | 回答的问题 | 更新时机 |
+| Document | What it covers | When to update it |
 | --- | --- | --- |
-| [开发指导](../AGENTS.md) | 产品方向和必须遵守的长期原则是什么？ | 架构原则或产品边界改变时 |
-| [统一项目架构](architecture/unified-project.md) | 业务对象如何划分，不同入口如何共同修改工程，界面交互遵循什么规则？ | 对象职责、命令、持久化语义或交互规则改变时 |
-| [发展路线](development/roadmap.md) | 按哪些依赖建设能力，什么条件下可以交付？ | 范围、依赖或验收门槛改变时 |
-| [验证指南](development/validation.md) | 如何复现检查，什么证据能够支持结论？ | 工具、运行要求或验证入口改变时 |
-| [macOS 安装验证](development/macos-install-validation.md) | Apple Silicon Mac 上实际验证了哪些安装与使用场景？ | 重新执行对应安装验收时 |
-| [中英双语界面](development/i18n.md) | 语言如何选择，词条如何组织，新增文案和检查怎么做？ | 语言策略、词条结构或检查方式改变时 |
-| [Python 安装与发布](development/packaging.md) | 如何统一安装、构建平台 wheel 并隔离验证？ | 安装包、资源路径或构建流程改变时 |
-| [业务 CLI](guides/cli.md) | 如何通过终端或 Agent Shell 查询、编辑和执行生成任务？ | 命令、授权或回执语义变化时 |
-| [DeepSeek Harness 插件](../plugins/deepseek-harness/README.zh-CN.md)（[English](../plugins/deepseek-harness/README.md)） | 如何在 DSH 中安装、启停并调用 OpenDirector 的工程和生成工具？ | 插件、配置或工具契约变化时 |
-| [视频模型能力配置](guides/video-model-capabilities.md) | 如何声明服务实际支持的输出规格？ | 配置字段或模型能力接入行为改变时 |
+| [Development guidance](../AGENTS.md) | Product direction and enduring principles | Architecture principles or product boundaries change |
+| [Contributing](../CONTRIBUTING.md) | Label taxonomy, how to pick labels, and what a PR must satisfy | Process, labels, or submission requirements change |
+| [Unified project architecture](architecture/unified-project.md) | Business objects, shared entry points, and interaction rules | Object responsibilities, commands, persistence, or interaction rules change |
+| [Test contracts](architecture/test-contracts.md) | Test/production boundaries, how to avoid stale assertions and environment-dependent red runs | Test infrastructure, capability gates, or contract ownership change |
+| [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
+| [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
+| [Development lessons](development/lessons.md) | Risks identified from recent fixes | New evidence emerges or a lesson no longer applies |
+| [CI failure patterns](development/ci-failures.md) | Known timing-sensitive CI failures and how to tell flakes from regressions | A pattern is fixed, newly observed, or the watchlist changes |
+| [UI performance design](development/ui-performance.md) | Interaction design principles, latency budgets, and measurement | A UI performance principle, target, or measurement method changes |
+| [macOS installation validation](development/macos-install-validation.md) | Installation and usage scenarios verified on Apple Silicon | The corresponding acceptance checks are repeated |
+| [Bilingual interface](development/i18n.md) | Language selection, message organization, and checks | Language policy, message structure, or checks change |
+| [Python installation and packaging](development/packaging.md) | Installation, platform wheel builds, and isolated verification | Packaging, resource paths, or build process changes |
+| [Business CLI](guides/cli.md) | Querying, editing, and generating through a terminal or Agent Shell | Commands, authorization, or receipt semantics change |
+| [DeepSeek Harness plugin](../plugins/deepseek-harness/README.md) | Installing the DSH bundle and editing an OpenDirector project from DSH | Plugin setup, tools, or creation workflows change |
+| [Video model capabilities](guides/video-model-capabilities.md) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
+| [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
+| [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture | Runtime architecture changes |
 
-根目录 [README](../README.md) 提供产品介绍、示例、快速开始和文档导航。详细安装见[安装与更新](guides/installation.zh-CN.md)（[English](guides/installation.md)），配置、创作与问题处理见[使用指南](guides/user-guide.zh-CN.md)（[English](guides/user-guide.md)）。README 不展开完整操作手册、架构实现、开发测试、研究来源或迭代历史。源码及自动生成契约说明实际实现；架构与路线描述目标，不能据此推断某项能力已经可用。
+The root [README](../README.md) introduces the product and examples and links to quick-start and documentation. See [installation and updates](guides/installation.md) ([中文](guides/installation.zh-CN.md)) for installation, and the [user guide](guides/user-guide.md) ([中文](guides/user-guide.zh-CN.md)) for configuration, creation, and troubleshooting. The README does not contain the full manual, implementation architecture, development tests, research sources, or iteration history. Source code and generated contracts describe the implementation; architecture and roadmap documents describe goals and do not establish that a capability is already available.
 
-## 目录约定
+## Directory conventions
 
 ```text
-AGENTS.md                 长期开发指导
-README.md                 启动与使用入口
+AGENTS.md                 Long-term development guidance
+README.md                 Product and getting-started entry point
 docs/
-  README.md               文档索引及维护规范
-  architecture/           架构、业务语义及重要设计取舍
-  development/            发展路线、开发流程及验证方法
-  guides/                 面向使用者或接入者的操作说明
+  README.md               Documentation index and maintenance rules
+  architecture/           Architecture, business semantics, and design decisions
+  development/            Roadmap, development process, and validation
+  guides/                 Instructions for users and integrators
 ```
 
-历史材料和临时产物不自动成为正式文档。`docs/` 根目录通过忽略规则保留本地历史文件；新增共享文档放入上述受维护子目录并显式加入 Git。无需恢复旧目录的全部文件，也不要删除本地材料来整理索引。
+Historical material and temporary artifacts do not automatically become official documentation. Ignore rules reserve the root of `docs/` for local historical files; put new shared documents in the maintained subdirectories above and explicitly add them to Git. Do not restore all old directories or delete local material merely to tidy the index.
 
-## 维护规则
+## Maintenance rules
 
-1. **一个事实有一个主要说明位置。** 长期原则写入开发指导，架构语义写入架构文档，具体操作写入指南；其他文件用链接引用，避免多份文字长期不同步。
-2. **目标、计划和事实分开。** 架构文档不记进度；路线只维护依赖与门槛。任务状态、缺陷和验证结果优先记录在 Issue、PR 和提交说明中。
-3. **必要时增加专题记录。** 重要设计取舍写明背景、决定、替代方案和影响；独立验收记录写明代码版本、环境、命令、结果与限制。存在实际内容后再创建，不建立空模板或占位清单。
-4. **说明可以独立理解。** 直接解释设计和能力，不以其他产品名称代替业务规则，不依赖聊天上下文、相邻目录或未跟踪文件。
-5. **修改能力时同步修改说明。** 涉及对象、API、模型参数、保存或恢复语义时，在同一变更中更新对应文档；不把已过期结论保留为当前行为。
-6. **链接必须能随仓库交付。** 本地链接目标应纳入同一提交或已经被 Git 跟踪；需要图片或样例时一并加入必要资源，不链接开发机临时文件。
-7. **保持记录精确。** 区分测试替身与真实服务、目标设计与已验证行为；不能把一次历史回归结果当作后续所有版本的保证。
-8. **按明确文件暂存。** 审阅实际差异后加入所需文档，避免通过暂存整个目录带入本地历史资料。
+1. **Give each fact one primary home.** Put enduring principles in the development guidance, architecture semantics in architecture documentation, and operational instructions in guides. Link from other documents to avoid divergent copies.
+2. **Separate goals, plans, and facts.** Architecture documents do not track progress; the roadmap records dependencies and gates. Prefer issues, PRs, and commit descriptions for task status, defects, and validation results.
+3. **Add focused records when needed.** Document the context, decision, alternatives, and impact of important design choices. Standalone validation records should include the code version, environment, commands, results, and limitations. Create them when there is substantive content, not as empty templates or placeholder lists.
+4. **Make explanations self-contained.** Describe designs and capabilities directly, without using another product's name as a substitute for business rules or relying on chat context, neighboring directories, or untracked files.
+5. **Update documentation with capability changes.** Changes to objects, APIs, model parameters, or save and recovery semantics should update the relevant documents in the same change. Do not leave outdated conclusions presented as current behavior.
+6. **Ship link targets with the repository.** Local targets should already be tracked or included in the same commit. Include needed images and examples; do not link to temporary files on a developer's machine.
+7. **Keep records precise.** Distinguish test doubles from real services and intended designs from verified behavior. A historical regression result does not guarantee later versions.
+8. **Stage explicit files.** Review the actual diff and stage the required documents rather than adding whole directories that may contain local history.
 
-文档变更至少检查相对链接、代码与命令路径、格式和跟踪范围。纯文档调整无需重复运行与其无关的模型、媒体或浏览器测试。
-
-- [Agent runtime](architecture/agent-runtime.md)
+For documentation changes, check relative links, code and command paths, formatting, and tracking scope. Documentation-only changes do not require unrelated model, media, or browser tests.

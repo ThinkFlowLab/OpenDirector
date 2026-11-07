@@ -19,6 +19,8 @@ from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthR
                                           ScoreRequest, Segment, SegmentRequest, SpeechRequest, TrackRequest, Tracks, VideoEditRequest,
                                           VideoRequest)
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
+from opendirector.domain.moss_speech import validate_moss_speech_input
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
@@ -42,6 +44,57 @@ async def _call(stage, work):
         raise transport_failure(stage) from None
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         raise protocol_failure(stage) from None
+
+def image_parts(images, field='image'):
+    """Multipart parts for reference pictures.
+
+    The type is detected from the bytes and drives both the declared Content-Type
+    and the filename, because gpt-image validates what is declared: a JPEG sent
+    as image/png is a request error, not a decode problem. One picture keeps the
+    plain `image` part; several use the caller's field, `image[]` for OpenAI.
+    """
+    parts = []
+    for index, data in enumerate(images, 1):
+        mime = image_type(data) or 'image/png'
+        extension = {'image/jpeg': 'jpg', 'image/webp': 'webp'}.get(mime, 'png')
+        parts.append((field if len(images) > 1 else 'image', (f'image_{index}.{extension}', data, mime)))
+    return parts
+
+
+def _decoded(data):
+    """Identify a returned picture by signature, never by the service's label."""
+    if len(data) > MAX_ASSET_BYTES:
+        raise ProjectError('生成图片超过 50 MB。', 413)
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return MediaResult(data, 'png')
+    if data.startswith(b'\xff\xd8'):
+        return MediaResult(data, 'jpg')
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return MediaResult(data, 'webp')
+    raise protocol_failure('submit')
+
+
+def _moss_result_url(value, stage):
+    if not isinstance(value, str) or len(value) > 16384:
+        raise protocol_failure(stage)
+    url = urlsplit(value)
+    if url.scheme not in {'http', 'https'} or not url.hostname or url.username or url.password:
+        raise protocol_failure(stage)
+    url.port
+    return value
+
+
+async def _download_moss_result(adapter, config, url):
+    async def read():
+        _moss_result_url(url, 'download')
+        base, target = urlsplit(config['url']), urlsplit(url)
+        headers = auth_headers(config) if (base.scheme, base.netloc) == (target.scheme, target.netloc) else {}
+        async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=adapter.transport,
+                trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15),
+                follow_redirects=False) as client:
+            async with client.stream('GET', url, headers=headers) as response:
+                return await bounded(response, stage='download', secrets=(config.get('apiKey', ''),))
+    return await _call('download', read)
 
 
 class ModelAdapter:
@@ -91,21 +144,92 @@ class ModelAdapter:
         raise ProjectError('所选模型不支持深度动作捕捉。', 409)
 
 
+class MossImages(ModelAdapter):
+    capabilities = frozenset({'image.generate'})
+
+    async def image(self, config, request: ImageRequest, *, result_ready=None, watermark=True) -> MediaResult:
+        if request.image is not None or request.references:
+            raise ProjectError('MOSS 图片生成不支持参考图片或图片编辑。', 422, code='moss_image_reference')
+        validate_moss_image_prompt(request.prompt)
+        validate_moss_image_size(request.width, request.height)
+        payload = dict(model=config['modelId'], prompt=request.prompt, size=f'{request.width}x{request.height}',
+                       n=1, response_format='url', prompt_enhance=False, output_watermark={'enabled': watermark})
+
+        async def submit():
+            async with _client(self, config, timeout=900) as client:
+                async with client.stream('POST', endpoint(config['url'], '/images/generations'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=(config.get('apiKey', ''),)))
+            results = value['data']
+            if not isinstance(results, list) or len(results) != 1:
+                raise protocol_failure('submit')
+            return _moss_result_url(results[0]['url'], 'submit')
+
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('png', url)
+        return MediaResult(await self.download(config, url), 'png')
+
+    async def download(self, config, url):
+        data = await _download_moss_result(self, config, url)
+        if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            raise protocol_failure('download')
+        return data
+
+
+class MossSpeech(ModelAdapter):
+    capabilities = frozenset({'audio.speech'})
+
+    async def speech(self, config, request: SpeechRequest, *, result_ready=None) -> MediaResult:
+        validate_moss_speech_input(request.text, request.voice)
+        payload = dict(model=config['modelId'], input=request.text, voice_id=request.voice,
+                       response_format='mp3', delivery_method='url', stream=False)
+
+        async def submit():
+            secrets = (config.get('apiKey', ''),)
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/audio/speech'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets))
+            if value.get('error') or value.get('status', 'SUCCESS') != 'SUCCESS':
+                raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
+            if value.get('object', 'audio.speech') != 'audio.speech' or value.get('response_format', 'mp3') != 'mp3':
+                raise protocol_failure('submit')
+            return _moss_result_url(value['url'], 'submit')
+
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('mp3', url)
+        return MediaResult(await self.download(config, url), 'mp3')
+
+    async def download(self, config, url):
+        data = await _download_moss_result(self, config, url)
+        mpeg_frame = len(data) >= 4 and data[0] == 0xff and data[1] & 0xe0 == 0xe0 and data[1] & 0x06
+        if not data.startswith(b'ID3') and not mpeg_frame:
+            raise protocol_failure('download')
+        return data
+
+
 class OpenAIImages(ModelAdapter):
     """OpenAI Images API: /images/generations and multipart /images/edits.
 
     vLLM-Omni serves the same routes and also honours `strength` and free sizes.
+    `gpt-image` models always answer with base64 and reject `response_format`, so
+    those configurations turn the flag off and send multiple references as
+    repeated `image[]` parts.
     """
 
     capabilities = frozenset({'image.generate', 'image.edit'})
     OPENAI_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
 
     def __init__(self, transport=None, poll_interval=3, *, free_size=False, max_edge=1536, grid=16, strength=False, max_images=1,
-                 transparent=False):
+                 transparent=False, response_format=True, reference_field='image'):
         super().__init__(transport, poll_interval)
         self.free_size, self.max_edge, self.grid = free_size, max_edge, grid
         # img2img services honour strength; instruction editors ignore it.
         self.strength, self.max_images = strength, max_images
+        # gpt-image omits `response_format`: it is documented base64 output only.
+        self.response_format, self.reference_field = response_format, reference_field
         # Models with an RGBA decoder can lift a subject onto transparency.
         self.capabilities = type(self).capabilities | ({'image.cutout'} if transparent else set())
 
@@ -142,16 +266,20 @@ class OpenAIImages(ModelAdapter):
             async with _client(self, config) as client:
                 if not images:
                     payload = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                               'n': 1, 'response_format': 'b64_json', **extra}
+                               'n': 1, **extra}
+                    if self.response_format:
+                        payload['response_format'] = 'b64_json'
                     async with client.stream('POST', endpoint(config['url'], '/images/generations'),
                                              headers=auth_headers(config), json=payload) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
                 else:
                     form = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                            'response_format': 'b64_json', **{key: str(item) for key, item in extra.items()}}
+                            **{key: str(item) for key, item in extra.items()}}
+                    if self.response_format:
+                        form['response_format'] = 'b64_json'
                     if request.strength is not None and self.strength:
                         form['strength'] = f'{min(max(request.strength, 0.0), 1.0):.3f}'
-                    files = [('image', (f'image_{index}.png', data, 'image/png')) for index, data in enumerate(images, 1)]
+                    files = image_parts(images, self.reference_field)
                     async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                                              data=form, files=files, extensions={'model_parameters': {'fields': form, 'file_count': len(files)}}) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
@@ -164,16 +292,7 @@ class OpenAIImages(ModelAdapter):
                 async with client.stream('GET', result['url'], headers=auth_headers(config)) as response:
                     return await bounded(response, stage='download', secrets=secrets)
 
-        data = await _call('submit', work)
-        if len(data) > MAX_ASSET_BYTES:
-            raise ProjectError('生成图片超过 50 MB。', 413)
-        if data.startswith(b'\x89PNG\r\n\x1a\n'):
-            return MediaResult(data, 'png')
-        if data.startswith(b'\xff\xd8'):
-            return MediaResult(data, 'jpg')
-        if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
-            return MediaResult(data, 'webp')
-        raise protocol_failure('submit')
+        return _decoded(await _call('submit', work))
 
 
 class ArkImageEdits(ModelAdapter):
@@ -545,12 +664,20 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return VllmOmniScore(transport, poll_interval)
     if kind == 'agent':
         return OpenAIChat(transport, poll_interval)
+    if profile == 'moss-image':
+        return MossImages(transport, poll_interval)
+    if profile == 'moss-speech':
+        return MossSpeech(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':
         return OpenAIImages(transport, poll_interval, free_size=True, strength=True)
     if kind == 'image' and profile == 'vllm-omni-qwen-image':
         return OpenAIImages(transport, poll_interval, free_size=True, max_edge=2048, grid=32, max_images=4, transparent=True)
     if kind == 'image' and protocol == 'volcengine':
         return ArkImageEdits(transport, poll_interval)
+    if kind == 'image' and profile == 'openai-gpt-image':
+        # gpt-image: base64 answers only, 16 reference images, documented sizes.
+        return OpenAIImages(transport, poll_interval, max_images=16, transparent=True,
+                            response_format=False, reference_field='image[]')
     if kind == 'image' and protocol == 'openai':
         return OpenAIImages(transport, poll_interval)
     if kind == 'video' and profile == 'vllm-omni-h3':

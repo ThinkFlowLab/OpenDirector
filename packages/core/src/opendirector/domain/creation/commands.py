@@ -8,6 +8,7 @@ from .assets import AssetRef, MediaMetadata
 from .base import Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
 from .canvas import CanvasItem
 from .editors import EditorDocument
+from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
 from .generation import GenerationSpec, Job, PromptPart, Reference
 
 
@@ -185,7 +186,7 @@ class NodeVersionApply(Contract):
 
 class SpecPromptWrite(Contract):
     specId: UUID = Field(description='Generation configuration ID.')
-    prompt: str = Field(max_length=20000, description='Generation prompt text.')
+    prompt: str = Field(max_length=PROMPT_MAX_LENGTH, description='Generation prompt text.')
     promptContent: tuple[PromptPart, ...] | None = Field(default=None, description='Structured prompt text and reference tokens.')
 
 
@@ -393,9 +394,14 @@ def command_fingerprint(command: Command) -> str:
     return digest(command)
 
 
+IssueCode = Literal['invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+                    'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
+                    'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
+                    'moss_image_size', 'moss_image_reference', 'moss_layout_reference']
+
+
 class ContractIssue(Contract):
-    code: Literal['invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
-                  'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error'] = Field(description='Stable error or issue code.')
+    code: IssueCode = Field(description='Stable error or issue code.')
     message: str = Field(min_length=1, max_length=500, description='Human-readable issue description.')
     objectId: UUID | None = Field(default=None, description='Target business object ID.')
     field: str | None = Field(default=None, max_length=200, description='Path of the field responsible for this issue.')

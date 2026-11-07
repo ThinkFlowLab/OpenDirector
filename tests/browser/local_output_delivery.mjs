@@ -13,7 +13,7 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1700, height: 1100 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1700, height: 1100 } });
 await page.addInitScript(() => {
   try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
 });
@@ -40,7 +40,7 @@ try {
     },
   });
   await page.goto(base + `/ai-tool/ai-canvas/${pid}`);
-  const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
+  const saved = () => page.getByText("Saved on this device", { exact: true }).waitFor();
   const state = async () =>
     await (
       await page.request.get(base + `/api/creation/projects/${pid}`, {
@@ -75,7 +75,7 @@ try {
     "mp4",
     "pipe:1",
   ]);
-  await page.getByLabel("选择本地素材文件", { exact: true }).setInputFiles({
+  await page.getByLabel("Choose local asset files", { exact: true }).setInputFiles({
     name: "source.mp4",
     mimeType: "video/mp4",
     buffer: bytes,
@@ -90,18 +90,18 @@ try {
     await page
       .locator(`.react-flow__node[data-id="${source.id}"]`)
       .click({ position: { x: 40, y: 60 } });
-    await page.getByRole("button", { name: "截取帧", exact: true }).click();
+    await page.getByRole("button", { name: "Capture frame", exact: true }).click();
     await page
-      .getByRole("menuitem", { name: "自定义截帧", exact: true })
+      .getByRole("menuitem", { name: "Capture custom frame", exact: true })
       .click();
-    await page.getByRole("button", { name: "截取当前帧", exact: true }).click();
+    await page.getByRole("button", { name: "Capture current frame", exact: true }).click();
     await page
-      .getByRole("button", { name: "将 1 帧加入画布", exact: true })
+      .getByRole("button", { name: "Add 1 frame to the canvas", exact: true })
       .waitFor();
   }
   await open();
   await page
-    .getByRole("button", { name: "将 1 帧加入画布", exact: true })
+    .getByRole("button", { name: "Add 1 frame to the canvas", exact: true })
     .click();
   await saved();
   await page.waitForFunction(
@@ -160,7 +160,7 @@ try {
     return route.continue();
   });
   await page
-    .getByRole("button", { name: "将 1 帧加入画布", exact: true })
+    .getByRole("button", { name: "Add 1 frame to the canvas", exact: true })
     .click();
   for (let i = 0; i < 100 && !refused; i++) await page.waitForTimeout(100);
   assert.ok(refused, "test must reach publication refusal");
@@ -175,7 +175,7 @@ try {
   );
   await page.unroute("**/commands");
   await page
-    .getByRole("button", { name: "将 1 帧加入画布", exact: true })
+    .getByRole("button", { name: "Add 1 frame to the canvas", exact: true })
     .click();
   await page.locator(".cw-video-action-editor").waitFor({ state: "detached" });
   await saved();
@@ -193,9 +193,9 @@ try {
   await page
     .locator(`.react-flow__node[data-id="${output.id}"]`)
     .click({ position: { x: 40, y: 60 } });
-  await page.getByRole("button", { name: "工具", exact: true }).click();
-  await page.getByRole("menuitem", { name: "网格切分", exact: true }).click();
-  await page.getByRole("button", { name: "2 行 × 2 列", exact: true }).click();
+  await page.getByRole("button", { name: "Tools", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Grid split", exact: true }).click();
+  await page.getByRole("button", { name: "2 × 2", exact: true }).click();
   await page.waitForFunction(
     () => document.querySelectorAll(".react-flow__node").length === 7,
   );
@@ -222,8 +222,8 @@ try {
   await page
     .locator(`.react-flow__node[data-id="${source.id}"]`)
     .click({ position: { x: 40, y: 60 } });
-  await page.getByRole("button", { name: "声音分离", exact: true }).click();
-  await page.getByRole("menuitem", { name: "提取音频", exact: true }).click();
+  await page.getByRole("button", { name: "Separate audio", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Extract audio", exact: true }).click();
   await page.waitForFunction(
     () => document.querySelectorAll(".react-flow__node").length === 8,
   );

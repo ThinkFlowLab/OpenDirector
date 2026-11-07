@@ -1,0 +1,13 @@
+# Timing/environment-sensitive tests under flake observation; see docs/development/validation.md
+# (Nightly checks). One pytest node id per line, '#' starts a comment. The nightly
+# watchlist probe runs each entry 3 times and reports the per-run outcome so the
+# flake rate stays visible. Remove an entry once the test has been stabilized.
+tests/test_agent_gateway.py::test_batch_hide_is_atomic_and_replayable
+tests/test_cli.py::test_all_cli_business_commands_have_help
+tests/test_cli.py::test_parser_error_shows_specific_command_help
+tests/test_creation_generation_service.py::test_hidden_source_generation_frozen_history_restart_and_idempotent_command
+tests/test_creation_storage.py::test_byte_verified_cache_detects_rewrites_with_unchanged_file_signature[head]
+tests/test_creation_storage.py::test_byte_verified_cache_detects_rewrites_with_unchanged_file_signature[ancestor]
+tests/test_runtime_readiness.py::test_runtime_catalog_can_skip_probes_and_check_one_harness
+tests/test_self_hosted.py::test_video_reference_acceptance_follows_model_rules
+tests/test_tool_lifecycle.py::test_another_live_worker_is_not_marked_interrupted

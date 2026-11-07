@@ -17,7 +17,9 @@ from opendirector.integrations.generation_errors import checked, protocol_failur
 from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore
+from opendirector.integrations.model_adapters import MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore
+from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
+from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
 from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
@@ -30,6 +32,8 @@ class GenerationProviders(VolcengineGeneration):
         self.minimax_video = MinimaxVideoGeneration(store, transport, poll_interval)
         self.vllm_omni = VllmOmniGeneration(store, transport, poll_interval)
         self.vllm_omni_image = VllmOmniImageGeneration(store, transport, poll_interval)
+        self.moss_image = MossImages(transport, poll_interval)
+        self.moss_speech = MossSpeech(transport, poll_interval)
 
     def _profile_adapter(self, config):
         if config and config.get('protocol') == 'minimax_video_v2':
@@ -77,6 +81,10 @@ class GenerationProviders(VolcengineGeneration):
         adapter = self._profile_adapter(config)
         if adapter:
             return await adapter.resume_result(config, suffix, url)
+        if config and input_rules(config)['profile'] == 'moss-image':
+            return suffix, await self.moss_image.download(config, url)
+        if config and input_rules(config)['profile'] == 'moss-speech':
+            return suffix, await self.moss_speech.download(config, url)
         if not config or config.get('protocol') in {None, 'volcengine'}:
             return await super().resume_result(config, suffix, url)
         # Only send a service token back to that exact configured origin.
@@ -95,6 +103,17 @@ class GenerationProviders(VolcengineGeneration):
         adapter = self._profile_adapter(config)
         if adapter and task['kind'] != 'text':
             return await adapter.generate(config, task, submitted, result_ready=result_ready)
+        if input_rules(config)['profile'] == 'moss-image':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            width, height = map(int, task['parameters']['size'].split('x'))
+            result = await self.moss_image.image(config, ImageRequest(prepared['prompt'], width, height),
+                result_ready=result_ready, watermark=task['parameters'].get('watermark', True))
+            return result.suffix, result.data
+        if input_rules(config)['profile'] == 'moss-speech':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            result = await self.moss_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
+                result_ready=result_ready)
+            return result.suffix, result.data
         if config.get('protocol') in {None, 'volcengine'} or task['kind'] == 'text':
             return await super().generate(config, task, submitted, result_ready=result_ready)
         kind, stage = task['kind'], 'submit'
@@ -162,8 +181,14 @@ class GenerationProviders(VolcengineGeneration):
                     size = size if 'x' in size else '1024x1024'
                     fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': size}
                     if prepared['images']:
-                        files = [('image', (meta['name'], data, image_type(data)))
-                                 for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']) if source_kind == 'image']
+                        # Same construction as the capability adapter: leave both the
+                        # field name and the declared type to one helper, so a JPEG is
+                        # never labelled image/png. gpt-image reads several references
+                        # as repeated `image[]` parts; one keeps the plain field.
+                        field = 'image[]' if input_rules(config)['profile'] == 'openai-gpt-image' else 'image'
+                        images = [data for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds'])
+                                  if source_kind == 'image']
+                        files = image_parts(images, field)
                         async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                             data=fields, files=files,
                             extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:

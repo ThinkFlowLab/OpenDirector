@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from opendirector.application.creation_generation import CreationGeneration
-from generation_helpers import new_project, prepared as prepare_command, tasks
+from generation_helpers import new_project, prepared as prepare_command, settled, tasks
 from opendirector.infrastructure.generation_results import GenerationResults
 from opendirector.infrastructure.local_projects import LocalProjects, write_json
 from opendirector.infrastructure.model_configs import ModelConfigs
@@ -46,10 +46,6 @@ def video(tmp_path):
 
 def prepared(generation, project, session, config, kind='image'):
     return prepare_command(generation, (generation.projects, project['id'], session), config, kind=kind, prompt='制作测试素材')
-
-
-async def settled(generation):
-    await asyncio.gather(*(job.future for job in list(generation.jobs.values())))
 
 
 @pytest.mark.parametrize('kind', ['image', 'video', 'audio', 'text'])

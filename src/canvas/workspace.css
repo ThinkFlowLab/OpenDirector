@@ -1478,6 +1478,15 @@
   left: 76px;
   right: auto;
 }
+.cw-workspace[data-assistant-open="true"] .cw-side-panel:not(.from-left) {
+  z-index: 40;
+}
+@media (min-width: 701px) {
+  .cw-workspace[data-assistant-open="true"] .cw-side-panel:not(.from-left) {
+    /* Keep history beside chat when it fits, and reachable on narrow screens. */
+    right: min(calc(var(--assistant-width) + 26px), calc(100vw - 340px));
+  }
+}
 .cw-panel-heading {
   display: flex;
   align-items: center;

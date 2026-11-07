@@ -92,6 +92,7 @@ def test_queued_cancel_has_a_terminal_cancelled_record(tool_project):
     _, _, _, project_id, session, _, value, factory = tool_project
     async def run():
         service = factory()
+        service.limit = asyncio.Semaphore(1)
         await service.limit.acquire()
         try:
             await service.submit(project_id, value, session)

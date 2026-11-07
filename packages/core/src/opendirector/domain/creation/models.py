@@ -30,6 +30,12 @@ class ImageOutput(Contract):
 
 class InputRules(Contract):
     profile: str = Field(min_length=1, max_length=100, description='Model capability profile.')
+    maxPromptCharacters: Annotated[int, Field(strict=True, ge=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None, description='Maximum characters in the final prompt including text references.')
+    voiceRequired: bool | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Whether speech generation requires an explicit service voice ID.')
+    referencesAllowed: bool | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Whether references may be attached, including context-only references.')
     allowedKinds: tuple[Literal['text', 'image', 'video', 'audio'], ...] = Field(description='Accepted reference media kinds.')
     maxImages: Count = Field(description='Maximum reference image count.')
     maxVideos: Count = Field(description='Maximum reference video count.')

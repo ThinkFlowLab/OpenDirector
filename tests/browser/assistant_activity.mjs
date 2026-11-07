@@ -4,14 +4,11 @@ import { launchBrowser } from "./engine.mjs";
 
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 900, height: 900 } });
-await page.addInitScript(() => {
-  try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
-});
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 900, height: 900 } });
 page.setDefaultTimeout(10000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
-const prefix = "先查询资料。🌊";
+const prefix = "Check the sources first. 🌊";
 const tools = (count) => Array.from({ length: count }, (_, index) => ({
   id: `call-${index}`, name: "web_fetch", textOffset: Array.from(prefix).length,
   status: index === count - 1 ? "running" : "complete",
@@ -32,10 +29,10 @@ try {
   const calls = tools(1000);
   await render(message(calls));
   await page.locator('.cw-chat-execution-history > summary').click();
-  await group.getByText("执行记录 · 1000 次调用", { exact: true }).waitFor();
+  await group.getByText("Activity · 1000 calls", { exact: true }).waitFor();
   await page.locator(".cw-chat-tool-group-items").waitFor({ state: "detached" });
   assert.equal(await group.getAttribute("open"), null);
-  assert.equal(await page.locator('[role="status"]').innerText(), "正在执行：读取网页");
+  assert.equal(await page.locator('[role="status"]').innerText(), "Running: Read a web page");
   assert.equal(await page.locator(".cw-chat-markdown").innerText(), prefix);
 
   await group.locator(":scope > summary").click();
@@ -47,7 +44,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".cw-chat-tool-group-items > details").length === 51);
   assert.notEqual(await first.getAttribute("open"), null);
   assert.notEqual(await group.getAttribute("open"), null);
-  await group.getByRole("button", { name: "显示更早的 50 次调用", exact: true }).click();
+  await group.getByRole("button", { name: "Show 50 earlier calls", exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll(".cw-chat-tool-group-items > details").length === 101);
 
   await group.locator(":scope > summary").click();
@@ -55,26 +52,26 @@ try {
   calls.forEach((call, index) => {
     if (call.status === "running") calls[index] = { ...call, status: "complete" };
   });
-  calls[calls.length - 1] = { ...calls.at(-1), status: "failed", error: "网页无法访问" };
-  await render({ ...message(calls, prefix + "已完成。"), status: "complete" });
-  await group.getByText("1000/1001 已完成 · 1 失败", { exact: true }).waitFor();
-  assert.equal(await page.getByText("网页无法访问", { exact: true }).count(), 0);
+  calls[calls.length - 1] = { ...calls.at(-1), status: "failed", error: "Page unavailable" };
+  await render({ ...message(calls, prefix + "Done."), status: "complete" });
+  await group.getByText("1000/1001 complete · 1 failed", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Page unavailable", { exact: true }).count(), 0);
   assert.equal(await group.evaluate((element) => element.classList.contains('is-failed')), false);
   await group.locator(":scope > summary").click();
   const failure = page.locator('.cw-chat-tool-group-items > details.is-failed');
   await failure.locator(':scope > summary').click();
-  await page.getByText("网页无法访问", { exact: true }).waitFor();
+  await page.getByText("Page unavailable", { exact: true }).waitFor();
   await group.locator(":scope > summary").click();
   await page.locator(".cw-chat-tool-group-items").waitFor({ state: "detached" });
-  assert.equal(await page.locator(".cw-chat-markdown").last().innerText(), "已完成。");
+  assert.equal(await page.locator(".cw-chat-markdown").last().innerText(), "Done.");
   assert.equal(await page.locator('[role="status"]').count(), 0);
 
-  await render({ ...message([]), plan: [{ content: "核对素材", status: "in_progress" }] });
-  await page.getByText("正在执行计划：核对素材", { exact: true }).waitFor();
+  await render({ ...message([]), plan: [{ content: "Check assets", status: "in_progress" }] });
+  await page.getByText("Running plan: Check assets", { exact: true }).waitFor();
   await page.locator(".cw-chat-plan > summary").click();
-  await page.getByText("核对素材", { exact: true }).waitFor();
+  await page.getByText("Check assets", { exact: true }).waitFor();
   await render(message([]), true);
-  await page.getByText("正在思考…", { exact: true }).waitFor();
+  await page.getByText("Thinking…", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, checks: ["1000 collapsed calls", "lazy pagination", "stable disclosure state", "muted failure with expandable details", "public messages", "plan and thinking"] }));
 } finally {

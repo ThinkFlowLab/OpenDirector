@@ -1,4 +1,4 @@
-/** 「回收站」: restore or permanently purge. Never touches canvas data (L4). */
+/** Trash: restore or permanently purge. Never touches canvas data (L4). */
 import { useEffect, useState } from "react";
 import { errorMessage } from "../../backend/api";
 import { formatDateTime } from "../../i18n/format";

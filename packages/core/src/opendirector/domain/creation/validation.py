@@ -1,6 +1,11 @@
 """Side-effect-free contextual command guards shared by future entrypoints."""
+from typing import get_args
+from uuid import UUID
+
+from opendirector.domain.projects import ProjectError
+
 from .canvas import MediaCanvasItem, role_after
-from .commands import Command, ContractIssue
+from .commands import Command, ContractIssue, IssueCode
 from .project import ProjectSnapshot
 
 
@@ -8,6 +13,13 @@ class ContractError(ValueError):
     def __init__(self, code, message, object_id=None):
         super().__init__(message)
         self.issue = ContractIssue(code=code, message=message, objectId=object_id)
+
+    @classmethod
+    def from_error(cls, error: ValueError | ProjectError, object_id: UUID | None = None) -> 'ContractError':
+        if isinstance(error, cls):
+            return error
+        code = error.code if isinstance(error, ProjectError) and error.code in get_args(IssueCode) else 'invalid_input'
+        return cls(code, str(error), object_id)
 
 
 def validate_command(command: Command, project: ProjectSnapshot):

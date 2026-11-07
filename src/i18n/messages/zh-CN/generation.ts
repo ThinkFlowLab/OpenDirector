@@ -60,6 +60,10 @@ export const generation = {
   "generation.field.durationUnverified": "该模型普通生成的时长范围尚未核实",
   "generation.field.voice": "服务音色",
   "generation.field.defaultVoice": "默认音色",
+  "generation.field.requiredVoiceId": "音色 ID（必填）",
+  "generation.field.voiceIdPlaceholder": "请输入音色 ID",
+  "generation.field.mossVoiceHelp": "在 MOSS 音色库选择音色，打开该音色的菜单，复制音色 ID，再粘贴到音色 ID 输入框。",
+  "generation.field.mossVoiceLibrary": "MOSS 音色库",
   "generation.field.voiceLibrary": "语音库",
   "generation.field.signature": "生成参数",
 

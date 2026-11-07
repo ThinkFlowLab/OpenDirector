@@ -50,6 +50,7 @@ const path = `/creation/projects/${projectA}/assistant`;
 const browser = await launchBrowser();
 try {
   const page = await browser.newPage({
+    locale: "zh-CN",
     viewport: { width: 1440, height: 1000 },
   });
   page.setDefaultTimeout(15000);
@@ -79,6 +80,7 @@ try {
   await page.addInitScript((id) => {
     localStorage.setItem("opendirector.lastUnifiedFilesystemProject", id);
     localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+    localStorage.setItem("opendirector.locale.v1", "zh-CN");
   }, projectA);
   await page.goto(base);
   await page

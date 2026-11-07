@@ -17,7 +17,7 @@ async function call(path, body) {
 }
 assert.equal((await call("/api/creation-test-health")).isolated, true);
 const browser = await launchBrowser();
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1500, height: 1000 } });
 await page.addInitScript(() => {
   try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
 });
@@ -33,42 +33,41 @@ try {
     payload: { name: `Provider UI ${projectId}` },
   });
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
-  await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByRole("button", { name: "模型接入", exact: true }).click();
-  await page.locator('.cw-model-setup-row').filter({ hasText: '图片模型' })
-    .getByRole('button', { name: /管理|配置/ }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Model connections", exact: true }).click();
+  await page.locator(".cw-model-setup-row").filter({ hasText: "Image model" }).getByRole("button").click();
   for (const [category, interfaces] of [
-    ["图片", ["vLLM-Omni 图片接口", "vLLM-Omni 分割接口"]],
-    ["音频", ["vLLM-Omni 语音合成接口", "vLLM-Omni 音乐生成接口", "vLLM-Omni 扒谱接口"]],
-    ["对话", ["OpenAI 兼容"]],
+    ["Image", ["vLLM-Omni image API", "vLLM-Omni segmentation API"]],
+    ["Audio", ["vLLM-Omni speech synthesis API", "vLLM-Omni music generation API", "vLLM-Omni transcription API"]],
+    ["Chat", ["OpenAI compatible"]],
   ]) {
     await page.getByRole("button", { name: category, exact: true }).click();
-    await page.getByRole("button", { name: "添加服务", exact: true }).click();
+    await page.getByRole("button", { name: "Add service", exact: true }).click();
     for (const name of interfaces) {
-      await page.getByRole("combobox", { name: "提供商", exact: true }).click();
-      assert.equal(await page.getByRole("listbox", { name: "提供商", exact: true }).getByRole("option").first().getAttribute("aria-label"), "OpenAI 兼容");
-      assert.equal(await page.getByRole("option", { name: "自定义服务", exact: true }).count(), 0);
+      await page.getByRole("combobox", { name: "Provider", exact: true }).click();
+      assert.equal(await page.getByRole("listbox", { name: "Provider", exact: true }).getByRole("option").first().getAttribute("aria-label"), "OpenAI compatible");
+      assert.equal(await page.getByRole("option", { name: "Custom service", exact: true }).count(), 0);
       await page.getByRole("option", { name, exact: true }).click();
-      assert.equal(await page.getByText("接口协议", { exact: true }).count(), 0);
+      assert.equal(await page.getByText("API protocol", { exact: true }).count(), 0);
     }
     await page.screenshot({ path: `/tmp/provider-${category}.png` });
-    await page.getByRole("button", { name: "取消", exact: true }).click();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
   }
-  await page.getByRole("button", { name: "视频", exact: true }).click();
-  await page.getByRole("button", { name: "添加服务", exact: true }).click();
-  await page.getByRole("combobox", { name: "提供商", exact: true }).click();
-  assert.equal(await page.getByRole("option", { name: "自定义服务", exact: true }).count(), 0);
-  assert.equal(await page.getByRole("group", { name: "vLLM-Omni 兼容", exact: true }).getByRole("option").count(), 3);
-  for (const name of ["vLLM-Omni 视频接口", "vLLM-Omni 分割接口", "vLLM-Omni 深度接口"]) {
+  await page.getByRole("button", { name: "Video", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).click();
+  await page.getByRole("combobox", { name: "Provider", exact: true }).click();
+  assert.equal(await page.getByRole("option", { name: "Custom service", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("group", { name: "vLLM-Omni compatible", exact: true }).getByRole("option").count(), 3);
+  for (const name of ["vLLM-Omni video API", "vLLM-Omni segmentation API", "vLLM-Omni depth API"]) {
     await page.getByRole("option", { name, exact: true }).click();
-    assert.equal(await page.getByText("接口协议", { exact: true }).count(), 0);
-    assert.equal(await page.getByRole("combobox", { name: "提供商", exact: true }).innerText(), name);
-    await page.getByRole("combobox", { name: "提供商", exact: true }).click();
+    assert.equal(await page.getByText("API protocol", { exact: true }).count(), 0);
+    assert.equal(await page.getByRole("combobox", { name: "Provider", exact: true }).innerText(), name);
+    await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   }
-  await page.getByRole("textbox", { name: "搜索提供商" }).fill("MiniMax");
-  assert.equal(await page.getByRole("listbox", { name: "提供商", exact: true }).getByRole("option").count(), 1);
+  await page.getByRole("textbox", { name: "Search Provider" }).fill("MiniMax");
+  assert.equal(await page.getByRole("listbox", { name: "Provider", exact: true }).getByRole("option").count(), 1);
   await page.keyboard.press("Escape");
-  await page.getByRole("combobox", { name: "提供商", exact: true }).click();
+  await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.screenshot({ path: "/tmp/provider-picker-dark.png" });
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
   await page.waitForFunction(() => {
@@ -77,9 +76,9 @@ try {
   });
   await page.screenshot({ path: "/tmp/provider-picker-light.png" });
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
-  await page.getByRole("option", { name: "MiniMax 官方视频", exact: true }).click();
+  await page.getByRole("option", { name: "MiniMax official video", exact: true }).click();
   assert.equal(
-    await page.getByLabel("服务地址（Base URL）", { exact: true }).inputValue(),
+    await page.getByLabel("Service URL (Base URL)", { exact: true }).inputValue(),
     "https://api.minimax.cn/v2",
   );
   assert.equal(
@@ -91,11 +90,11 @@ try {
   }
   await page.getByLabel("API Key", { exact: true }).fill("fixture-only");
   await page
-    .getByRole("button", { name: "载入支持的模型", exact: true })
+    .getByRole("button", { name: "Load supported models", exact: true })
     .click();
   await page.getByRole("checkbox", { name: "MiniMax-H3", exact: true }).check();
   await page
-    .getByText("文生视频 / 首尾帧 / 多模态参考", { exact: true }).first()
+    .getByText("Text-to-video / first-last frame / multimodal references", { exact: true }).first()
     .waitFor();
   const logo = page.locator(".cw-model-option img.cw-model-logo").first();
   await logo.waitFor();
@@ -104,21 +103,21 @@ try {
   assert.match(await logo.getAttribute("src"), /(?:data:image\/svg\+xml|\/assets\/model-logos\/.*\.svg)/);
   assert.ok(await logo.evaluate((image) => image.classList.contains("cw-brand-mono")));
   await page.screenshot({ path: "/tmp/provider-settings-video.png" });
-  await page.getByRole("button", { name: "保存服务", exact: true }).click();
-  await page.getByRole("button", { name: "添加服务", exact: true }).waitFor();
-  await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "添加服务", exact: true }).click();
-  await page.getByRole("combobox", { name: "提供商", exact: true }).click();
+  await page.getByRole("button", { name: "Save service", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).click();
+  await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.getByRole("option", { name: "DeepSeek", exact: true }).click();
   await page.getByLabel("API Key", { exact: true }).fill("fixture-only");
   for (const model of ["text-card", "image-card"]) {
-    await page.getByRole("button", { name: "手动添加", exact: true }).click();
+    await page.getByRole("button", { name: "Add manually", exact: true }).click();
     await page
-      .getByLabel("Model ID（服务的 served-model-name）", { exact: true })
+      .getByLabel("Model ID (the service's served-model-name)", { exact: true })
       .fill(model);
     await page
       .locator(".cw-model-manual")
-      .getByRole("button", { name: "添加", exact: true })
+      .getByRole("button", { name: "Add", exact: true })
       .click();
   }
   const card = page
@@ -126,12 +125,12 @@ try {
     .filter({ hasText: "image-card" });
   const textCard = page.locator(".cw-model-option").filter({ hasText: "text-card" });
   await textCard.locator("summary").click();
-  await textCard.getByRole("checkbox", { name: "图片理解", exact: true }).uncheck();
+  await textCard.getByRole("checkbox", { name: "Image understanding", exact: true }).uncheck();
   await card.locator("summary").click();
-  await card.getByRole("checkbox", { name: "图片理解", exact: true }).check();
+  await card.getByRole("checkbox", { name: "Image understanding", exact: true }).check();
   await page.screenshot({ path: "/tmp/provider-settings-agent.png" });
-  await page.getByRole("button", { name: "保存服务", exact: true }).click();
-  await page.getByRole("button", { name: "添加服务", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Save service", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).waitFor();
   const models = await call("/api/model-configs");
   assert.deepEqual(
     models.find((model) => model.modelId === "image-card").inputModalities,
@@ -145,10 +144,10 @@ try {
     !calls.some((url) => url.includes("test-agent")),
     "save must not run inference",
   );
-  await page.getByRole("button", { name: "添加服务", exact: true }).click();
-  await page.getByRole("combobox", { name: "提供商", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).click();
+  await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.getByRole("option", { name: "DeepSeek", exact: true }).click();
-  await page.getByRole("button", { name: /复用已保存连接/ }).click();
+  await page.getByRole("button", { name: /Reuse saved connection/ }).click();
   assert.equal(
     await page.getByLabel("API Key", { exact: true }).inputValue(),
     "",
@@ -159,8 +158,8 @@ try {
       .isChecked(),
     true,
   );
-  await page.getByRole("button", { name: "保存服务", exact: true }).click();
-  await page.getByRole("button", { name: "添加服务", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Save service", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).waitFor();
   const reused = await call("/api/model-configs");
   assert.deepEqual(
     reused.map((model) => model.id).sort(),
@@ -170,23 +169,23 @@ try {
     reused.find((model) => model.modelId === "image-card").inputModalities,
     ["text", "image"],
   );
-  await page.getByRole("button", { name: "添加服务", exact: true }).click();
-  await page.getByRole("combobox", { name: "提供商", exact: true }).click();
+  await page.getByRole("button", { name: "Add service", exact: true }).click();
+  await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.getByRole("option", { name: "DeepSeek", exact: true }).click();
-  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal((await call("/api/model-configs")).length, models.length);
-  await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
   await page.locator(".cw-chat-button").click();
-  await page.getByRole("button", { name: "模型配置：媒体模型", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "模型配置", exact: true });
-  await picker.getByRole("tab", { name: /视频/ }).click();
-  const modelLogo = picker.getByRole("option", { name: /^MiniMax-H3(?: · |$)/ }).first().locator("img.cw-model-logo");
+  await page.getByRole("button", { name: "Model settings: Multimodal", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Model settings", exact: true });
+  await picker.getByRole("tab", { name: /Video/ }).click();
+  const modelLogo = picker.getByRole("option", { name: /^MiniMax-H3(?:\s|$)/ }).first().locator("img.cw-model-logo");
   await modelLogo.waitFor();
   await modelLogo.evaluate((image) => image.decode());
   assert.ok(await modelLogo.evaluate((image) => image.naturalWidth > 0));
   await page.screenshot({ path: "/tmp/assistant-model-logos.png" });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: /^Agent：/ }).click();
+  await page.getByRole("button", { name: /^Agent:/ }).click();
   for (const name of ["OpenCode", "Codex", "Claude Code"]) {
     const row = page.getByRole("menuitemradio").filter({ has: page.locator("strong", { hasText: new RegExp(`^${name}$`) }) });
     const icon = row.locator("img.cw-brand-mono");
