@@ -32,6 +32,16 @@ ENGLISH_BY_CODE = {
     "local_only": "Only this computer can access the project service.",
     "cross_origin": "File access from another site is not allowed.",
     "invalid_local_request": "This is not a valid local app request.",
+    "voice_library_unsupported": "This model does not provide a voice library.",
+    "voice_library_voice_id": "The voice identifier is invalid.",
+    "voice_library_file_type": "This voice sample format is not supported by the selected service.",
+    "voice_library_file_size": "The voice sample must be smaller than 10 MB.",
+    "voice_library_name": "Enter a voice name of 120 characters or fewer.",
+    "voice_library_consent": "Enter the consent recording ID for this voice sample.",
+    "voice_library_transcript": "Enter the transcript for this recording.",
+    "voice_library_fields": "The voice form contains text that is too long.",
+    "voice_library_cursor": "The voice-list cursor is invalid.",
+    "voice_library_delete_unsupported": "This service does not support deleting voices.",
 }
 
 ENGLISH_BY_STATUS = {

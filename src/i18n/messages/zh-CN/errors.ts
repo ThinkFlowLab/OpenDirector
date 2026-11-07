@@ -75,6 +75,8 @@ export const errors = {
   "errors.rules.speechOnly": "当前语音服务仅支持文本朗读。",
   "errors.rules.voiceId": "请输入服务支持的音色标识（字母、数字、点、下划线或连字符）。",
   "errors.rules.voiceRequired": "请先填写服务音色库中有效的音色 ID，再开始生成。",
+  "errors.rules.voiceConnection": "该音色属于其他服务连接，请从当前服务重新选择音色。",
+  "errors.rules.voiceReferenceRequired": "当前模型需要带参考文本的音色，请选择或创建已上传音色。",
   "errors.rules.referencesUnsupported": "当前模型不支持参考素材，请断开参考后再生成。",
   "errors.generationFailure.voiceNotFound": "该音色不存在或当前账户无权使用，请在 MOSS 音色库核对音色 ID。",
   "errors.rules.audioDisable": "当前视频适配器不支持关闭生成音频。",

@@ -1,6 +1,6 @@
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
 import { createNode } from "../src/canvas/model.ts";
-import { backendBlocker, serviceAudioSettings, serviceGenerationSettings, serviceVoice } from "../src/backend/rules.ts";
+import { backendBlocker, serviceAudioSettings, serviceConnectionId, serviceGenerationSettings, serviceVoice } from "../src/backend/rules.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ModelConfig } from "../src/backend/rules.ts";
@@ -263,16 +263,22 @@ test("MOSS layout JSON rejects text references with a localized explanation", ()
   }
 });
 
-test("MOSS speech prefills a valid Voice ID and preserves selected or cleared voices", () => {
+test("MOSS speech requires an explicit voice from the current connection", () => {
   const model = config("audio", "moss-tts-1.5-flash", {
     inputRules: { profile: "moss-speech", allowedKinds: [], maxImages: 0,
-      maxVideos: 0, maxAudios: 0, videoModes: [], voiceRequired: true, referencesAllowed: false },
+      maxVideos: 0, maxAudios: 0, videoModes: [], voiceRequired: true, referencesAllowed: false,
+      voiceLibrary: { provider: "moss", canCreate: true, canDelete: false, requiresConsent: false,
+        requiresRefText: false, maxBytes: 10 * 1024 * 1024, maxDurationSeconds: 30,
+        formats: ["wav", "mp3", "m4a", "flac"], pagination: "cursor", preview: false } },
   });
   const settings = { ...newNodeGenerationSettings("audio", [model]), prompt: "Read this text." };
-  assert.equal(settings.voiceName, "2890a3a4-0012-4997-a545-8b045fe83bbe");
-  assert.equal(backendBlocker(settings, [], [model]), null);
+  assert.equal(settings.voiceName, undefined);
+  assert.ok(backendBlocker(settings, [], [model]));
   const voiceName = "7b6d1cef-9d2b-431d-b963-345678901234";
-  assert.equal(serviceGenerationSettings({ ...settings, voiceName }, model, [], true).voiceName, voiceName);
+  const selected = { ...settings, voiceName, voiceConnectionId: serviceConnectionId(model),
+    voiceProvider: "moss" as const, voiceHasReference: false };
+  assert.equal(serviceGenerationSettings(selected, model, [], true).voiceName, voiceName);
+  assert.equal(backendBlocker(selected, [], [model]), null);
   const cleared = { ...settings, voiceName: undefined };
   assert.equal(serviceGenerationSettings(cleared, model).voiceName, undefined);
   assert.equal(serviceAudioSettings(cleared, model).voiceName, undefined);
@@ -286,10 +292,10 @@ test("MOSS speech prefills a valid Voice ID and preserves selected or cleared vo
         assert.equal(backendBlocker({ ...settings, voiceName: invalid }, [], [model]),
           translate(locale, "errors.rules.voiceRequired"));
       }
-      assert.equal(backendBlocker({ ...settings, voiceName }, [], [model]), null);
+      assert.equal(backendBlocker({ ...selected, voiceName }, [], [model]), null);
       assert.equal(serviceVoice({ voiceName }), voiceName);
       for (const source of [createNode("text", undefined, { text: "Unsent context" }), createNode("image")]) {
-        assert.equal(backendBlocker({ ...settings, voiceName }, [source], [model]),
+        assert.equal(backendBlocker({ ...selected, voiceName }, [source], [model]),
           translate(locale, "errors.rules.referencesUnsupported"));
       }
     }

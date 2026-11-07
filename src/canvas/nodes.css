@@ -1682,3 +1682,421 @@
 .cw-subject-replace:disabled {
   cursor: not-allowed;
 }
+
+/* Connection-scoped voice library. The composer stays visible; this panel
+   owns list/create/favorite/delete state and never receives provider keys. */
+.cw-voice-library {
+  width: min(560px, calc(100vw - 32px));
+  padding: 12px;
+}
+.cw-voice-library-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cw-voice-library-heading strong {
+  flex: 1;
+  color: #f2ecff;
+  font-size: 13px;
+}
+.cw-voice-library-heading .cw-icon-button {
+  flex: 0 0 auto;
+}
+.cw-voice-back svg {
+  transform: rotate(180deg);
+}
+.cw-voice-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #4a4658;
+  border-radius: 8px;
+  background: #282631;
+}
+.cw-voice-tabs button {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #aaa4b8;
+  font-size: 11px;
+}
+.cw-voice-tabs button.cw-is-active {
+  background: #49415c;
+  color: #f2ecff;
+}
+.cw-voice-filters {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-x: auto;
+}
+.cw-voice-filters select {
+  height: 28px;
+  min-width: 100px;
+  padding: 0 6px;
+  border: 1px solid #4a4658;
+  border-radius: 6px;
+  background: #302d3a;
+  color: #e9e4f4;
+  font-size: 11px;
+}
+.cw-voice-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  max-height: min(390px, 54vh);
+  margin-top: 10px;
+  padding: 1px;
+  overflow: auto;
+}
+.cw-voice-card,
+.cw-voice-create-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 132px;
+  border: 1px solid #4d485c;
+  border-radius: 9px;
+  background: #302d39;
+}
+.cw-voice-card.cw-is-active {
+  border-color: #b9a8ff;
+  box-shadow: 0 0 0 1px #b9a8ff66 inset;
+  background: #3d3750;
+}
+.cw-voice-select {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-height: 130px;
+  padding: 30px 9px 9px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: #e8e3f3;
+  text-align: left;
+}
+.cw-voice-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 2px;
+  border-radius: 50%;
+  background: #554b70;
+  color: #d9ccff;
+}
+.cw-voice-select strong {
+  width: 100%;
+  overflow: hidden;
+  color: #f2ecff;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-voice-select small {
+  color: #a9a2b8;
+  font-size: 9px;
+}
+.cw-voice-select code {
+  width: 100%;
+  overflow: hidden;
+  color: #8e879e;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-voice-selected {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #b9a8ff;
+  color: #241f31;
+}
+.cw-voice-card-actions {
+  position: absolute;
+  z-index: 1;
+  top: 5px;
+  right: 5px;
+  left: 5px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.cw-voice-card:hover .cw-voice-card-actions,
+.cw-voice-card:focus-within .cw-voice-card-actions,
+.cw-voice-card-actions:has(.cw-is-favorite) {
+  opacity: 1;
+}
+.cw-voice-star,
+.cw-voice-preview {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #5b546d;
+  border-radius: 6px;
+  background: #262331cc;
+  color: #aaa2bb;
+}
+.cw-voice-star.cw-is-favorite {
+  border-color: #d8bb63;
+  color: #ffd873;
+}
+.cw-voice-star.cw-is-favorite svg {
+  fill: currentColor;
+}
+.cw-voice-preview:disabled {
+  opacity: 0.45;
+}
+.cw-voice-delete {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #604c54;
+  border-radius: 6px;
+  background: #2b252b;
+  color: #d59aa7;
+}
+.cw-voice-delete-confirm {
+  position: absolute;
+  z-index: 2;
+  right: 5px;
+  bottom: 5px;
+  left: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 5px;
+  border: 1px solid #7d5963;
+  border-radius: 6px;
+  background: #241f26;
+  color: #e7dce6;
+  font-size: 9px;
+}
+.cw-voice-delete-confirm span {
+  flex: 1 0 100%;
+}
+.cw-voice-delete-confirm button {
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid #6e5360;
+  border-radius: 4px;
+  background: #382b33;
+  color: #f1dfe7;
+  font-size: 9px;
+}
+.cw-voice-create-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px;
+  border-style: dashed;
+  color: #b7acd6;
+  background: #2a2734;
+}
+.cw-voice-create-tile:hover {
+  border-color: #a99be0;
+  background: #332e42;
+}
+.cw-voice-create-tile strong {
+  font-size: 11px;
+}
+.cw-voice-create-tile small {
+  color: #8f889e;
+  font-size: 9px;
+}
+.cw-voice-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 26px 12px;
+  text-align: center;
+}
+.cw-voice-empty strong {
+  color: #ded7ed;
+  font-size: 12px;
+}
+.cw-voice-empty p {
+  max-width: 340px;
+  margin: 0;
+  color: #a49db3;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.cw-voice-empty button,
+.cw-voice-load-more {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #5d5471;
+  border-radius: 6px;
+  background: #3a3449;
+  color: #e6def7;
+  font-size: 10px;
+}
+.cw-voice-load-more {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.cw-voice-loading {
+  padding: 24px 0;
+  color: #a49db3;
+  text-align: center;
+  font-size: 11px;
+}
+.cw-voice-error {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+  padding: 7px 8px;
+  border: 1px solid #704f59;
+  border-radius: 6px;
+  background: #2e2228;
+  color: #efc4ce;
+  font-size: 10px;
+}
+.cw-voice-error button {
+  margin-left: auto;
+  padding: 3px 7px;
+  border: 1px solid #865f6b;
+  border-radius: 4px;
+  background: #3b2a31;
+  color: #f5dde4;
+  font-size: 9px;
+}
+.cw-voice-create {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(520px, 66vh);
+  padding: 2px 1px;
+  overflow: auto;
+}
+.cw-voice-help {
+  margin: 0 0 2px;
+  color: #aaa3b9;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.cw-voice-create label {
+  color: #d8d1e8;
+  font-size: 10px;
+}
+.cw-voice-create input:not([type="file"]),
+.cw-voice-create textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 1px solid #514a61;
+  border-radius: 6px;
+  background: #302c3a;
+  color: #f4eefc;
+  font: inherit;
+  font-size: 11px;
+}
+.cw-voice-create textarea {
+  min-height: 56px;
+  resize: vertical;
+}
+.cw-voice-create small {
+  color: #938ca2;
+  font-size: 9px;
+  line-height: 1.4;
+}
+.cw-voice-file {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cw-voice-file input {
+  color: #b8b0c8;
+  font-size: 10px;
+}
+.cw-voice-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #4c4659;
+  border-radius: 6px;
+  background: #2a2733;
+  color: #b1a9c0;
+  font-size: 9px;
+}
+.cw-voice-file-info strong {
+  overflow: hidden;
+  color: #eee7fb;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-voice-file-info audio {
+  width: 100%;
+  height: 30px;
+  margin-top: 2px;
+}
+.cw-voice-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cw-voice-primary,
+.cw-voice-secondary {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+.cw-voice-primary {
+  border: 1px solid #a999e4;
+  background: #7663b2;
+  color: #fff;
+}
+.cw-voice-primary:disabled {
+  opacity: 0.45;
+}
+.cw-voice-secondary {
+  border: 1px solid #5b536c;
+  background: transparent;
+  color: #c6bdd8;
+}
+@media (max-width: 520px) {
+  .cw-voice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cw-voice-library {
+    width: calc(100vw - 20px);
+  }
+}
+@media (hover: none) {
+  .cw-voice-card-actions {
+    opacity: 1;
+  }
+}

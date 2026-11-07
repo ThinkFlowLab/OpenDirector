@@ -1350,6 +1350,50 @@
             "description": "Provider voice identifier or name.",
             "title": "Voice"
           },
+          "voiceConnectionId": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Model service connection that issued the selected voice.",
+            "title": "Voiceconnectionid"
+          },
+          "voiceProvider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "moss",
+                  "vllm-omni"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Voice-library provider for the selected voice.",
+            "title": "Voiceprovider"
+          },
+          "voiceHasReference": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the selected voice carries a reference transcript.",
+            "title": "Voicehasreference"
+          },
           "instrumental": {
             "default": false,
             "description": "Legacy explicit instrumental choice retained for stored records.",
@@ -6591,6 +6635,18 @@
             ],
             "default": null,
             "description": "Supported video generation capabilities."
+          },
+          "voiceLibrary": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VoiceLibraryRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Voice-library capabilities for this connection."
           },
           "aspectRatios": {
             "anyOf": [
@@ -13673,6 +13729,101 @@
         },
         "title": "Viewport",
         "type": "object"
+      },
+      "VoiceLibraryRules": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "description": "Voice-library provider adapter.",
+            "enum": [
+              "moss",
+              "vllm-omni"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "canCreate": {
+            "description": "Whether the provider creates uploaded voices.",
+            "title": "Cancreate",
+            "type": "boolean"
+          },
+          "canDelete": {
+            "description": "Whether the provider deletes uploaded voices.",
+            "title": "Candelete",
+            "type": "boolean"
+          },
+          "requiresConsent": {
+            "description": "Whether voice creation requires a consent recording ID.",
+            "title": "Requiresconsent",
+            "type": "boolean"
+          },
+          "requiresRefText": {
+            "description": "Whether the selected model requires the recording transcript.",
+            "title": "Requiresreftext",
+            "type": "boolean"
+          },
+          "maxBytes": {
+            "description": "Maximum voice sample size in bytes.",
+            "minimum": 0,
+            "title": "Maxbytes",
+            "type": "integer"
+          },
+          "maxDurationSeconds": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provider duration limit in seconds, when documented.",
+            "title": "Maxdurationseconds"
+          },
+          "formats": {
+            "description": "Accepted voice sample file extensions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "pagination": {
+            "description": "Voice list pagination style.",
+            "enum": [
+              "cursor",
+              "none"
+            ],
+            "title": "Pagination",
+            "type": "string"
+          },
+          "preview": {
+            "description": "Whether the provider returns preview audio.",
+            "title": "Preview",
+            "type": "boolean"
+          },
+          "filterUnsupported": {
+            "default": false,
+            "description": "Whether provider-listed voices may fail the selected model and need a compatibility probe.",
+            "title": "Filterunsupported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "canCreate",
+          "canDelete",
+          "requiresConsent",
+          "requiresRefText",
+          "maxBytes",
+          "formats",
+          "pagination",
+          "preview"
+        ],
+        "title": "VoiceLibraryRules",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -15549,6 +15700,50 @@
             "default": null,
             "description": "Provider voice identifier or name.",
             "title": "Voice"
+          },
+          "voiceConnectionId": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Model service connection that issued the selected voice.",
+            "title": "Voiceconnectionid"
+          },
+          "voiceProvider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "moss",
+                  "vllm-omni"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Voice-library provider for the selected voice.",
+            "title": "Voiceprovider"
+          },
+          "voiceHasReference": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the selected voice carries a reference transcript.",
+            "title": "Voicehasreference"
           },
           "instrumental": {
             "default": false,
@@ -20991,6 +21186,18 @@
             "default": null,
             "description": "Supported video generation capabilities."
           },
+          "voiceLibrary": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VoiceLibraryRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Voice-library capabilities for this connection."
+          },
           "aspectRatios": {
             "anyOf": [
               {
@@ -21072,7 +21279,8 @@
           "imageOutputs",
           "outputResolutions",
           "referenceImageResolutions",
-          "videoCapabilities"
+          "videoCapabilities",
+          "voiceLibrary"
         ],
         "title": "InputRules",
         "type": "object"
@@ -28371,6 +28579,102 @@
           "zoom"
         ],
         "title": "Viewport",
+        "type": "object"
+      },
+      "VoiceLibraryRules": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "description": "Voice-library provider adapter.",
+            "enum": [
+              "moss",
+              "vllm-omni"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "canCreate": {
+            "description": "Whether the provider creates uploaded voices.",
+            "title": "Cancreate",
+            "type": "boolean"
+          },
+          "canDelete": {
+            "description": "Whether the provider deletes uploaded voices.",
+            "title": "Candelete",
+            "type": "boolean"
+          },
+          "requiresConsent": {
+            "description": "Whether voice creation requires a consent recording ID.",
+            "title": "Requiresconsent",
+            "type": "boolean"
+          },
+          "requiresRefText": {
+            "description": "Whether the selected model requires the recording transcript.",
+            "title": "Requiresreftext",
+            "type": "boolean"
+          },
+          "maxBytes": {
+            "description": "Maximum voice sample size in bytes.",
+            "minimum": 0,
+            "title": "Maxbytes",
+            "type": "integer"
+          },
+          "maxDurationSeconds": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provider duration limit in seconds, when documented.",
+            "title": "Maxdurationseconds"
+          },
+          "formats": {
+            "description": "Accepted voice sample file extensions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "pagination": {
+            "description": "Voice list pagination style.",
+            "enum": [
+              "cursor",
+              "none"
+            ],
+            "title": "Pagination",
+            "type": "string"
+          },
+          "preview": {
+            "description": "Whether the provider returns preview audio.",
+            "title": "Preview",
+            "type": "boolean"
+          },
+          "filterUnsupported": {
+            "default": false,
+            "description": "Whether provider-listed voices may fail the selected model and need a compatibility probe.",
+            "title": "Filterunsupported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "canCreate",
+          "canDelete",
+          "requiresConsent",
+          "requiresRefText",
+          "maxBytes",
+          "formats",
+          "pagination",
+          "preview",
+          "filterUnsupported"
+        ],
+        "title": "VoiceLibraryRules",
         "type": "object"
       }
     },

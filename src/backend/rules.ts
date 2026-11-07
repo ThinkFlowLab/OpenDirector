@@ -31,6 +31,21 @@ export interface VideoCapabilities {
   dimensionStep: 1 | 2 | 8 | 16 | 32 | 64;
 }
 
+export interface VoiceLibraryCapabilities {
+  provider: "moss" | "vllm-omni";
+  canCreate: boolean;
+  canDelete: boolean;
+  requiresConsent: boolean;
+  requiresRefText: boolean;
+  maxBytes: number;
+  maxDurationSeconds: number | null;
+  formats: string[];
+  pagination: "cursor" | "none";
+  preview: boolean;
+  /** Provider lists may include built-ins the selected model rejects. */
+  filterUnsupported?: boolean;
+}
+
 export interface InputRules {
   profile: string;
   allowedKinds: string[];
@@ -52,6 +67,7 @@ export interface InputRules {
   outputResolutions?: string[];
   referenceImageResolutions?: string[];
   videoCapabilities?: VideoCapabilities | null;
+  voiceLibrary?: VoiceLibraryCapabilities | null;
 }
 
 export interface ModelConfig {
@@ -171,6 +187,11 @@ const LABELS: Record<string, MessageKey> = {
 /** Speaker names a speech service accepts; others fall back to its default voice. */
 export function serviceVoice(settings: Pick<GenerationSettings, "voiceName">) {
   return isServiceVoice(settings.voiceName) ? settings.voiceName : undefined;
+}
+
+/** A provider groups models that share one URL and credential set. */
+export function serviceConnectionId(config: ModelConfig) {
+  return config.providerId ?? config.id;
 }
 
 export function modelLabel(config: Pick<ModelConfig, "modelId">) {
@@ -421,12 +442,21 @@ export function serviceGenerationSettings(
   if (modelChanged) {
     next.imagePreset = "none";
     if (!isServiceVoice(next.voiceName)) next.voiceName = undefined;
+    const connection = serviceConnectionId(config);
+    const library = config.inputRules.voiceLibrary;
     if (
       next.mode === "audio" &&
-      config.inputRules.profile === "moss-speech" &&
-      !next.voiceName
-    )
-      next.voiceName = "2890a3a4-0012-4997-a545-8b045fe83bbe";
+      next.voiceName &&
+      (library || next.voiceConnectionId || next.voiceProvider) &&
+      (next.voiceConnectionId !== connection ||
+        (library && next.voiceProvider && next.voiceProvider !== library.provider) ||
+        (library?.requiresRefText && next.voiceHasReference !== true))
+    ) {
+      next.voiceName = undefined;
+      next.voiceConnectionId = undefined;
+      next.voiceProvider = undefined;
+      next.voiceHasReference = undefined;
+    }
     if (
       !generateAudioOptions({
         published: config.inputRules.generateAudioOptions ?? null,
@@ -495,8 +525,25 @@ export function backendBlocker(
   const rules = config.inputRules;
   if (rules.referencesAllowed === false && incoming.length)
     return tNow("errors.rules.referencesUnsupported");
+  if (rules.voiceLibrary?.requiresRefText && !settings.voiceName)
+    return tNow("errors.rules.voiceReferenceRequired");
   if (rules.voiceRequired && !serviceVoice(settings))
     return tNow("errors.rules.voiceRequired");
+  if (
+    settings.mode === "audio" &&
+    settings.voiceName &&
+    rules.voiceLibrary &&
+    settings.voiceConnectionId &&
+    settings.voiceConnectionId !== serviceConnectionId(config)
+  )
+    return tNow("errors.rules.voiceConnection");
+  if (
+    settings.mode === "audio" &&
+    settings.voiceName &&
+    rules.voiceLibrary?.requiresRefText &&
+    settings.voiceHasReference !== true
+  )
+    return tNow("errors.rules.voiceReferenceRequired");
   if (rules.profile === "moss-image" && incoming.some((node) => node.data.kind === "text")) {
     let layout: unknown;
     try {

@@ -132,6 +132,9 @@ export interface AudioParametersInput extends ContractInput {
   readonly creationType?: "audio" | "music";
   readonly mode?: "tts" | "unified";
   readonly voice?: string | null;
+  readonly voiceConnectionId?: string | null;
+  readonly voiceProvider?: "moss" | "vllm-omni" | null;
+  readonly voiceHasReference?: boolean | null;
   readonly instrumental?: boolean;
   readonly lyrics?: string;
   readonly durationSeconds?: number | null;
@@ -674,6 +677,7 @@ export interface InputRulesInput extends ContractInput {
   readonly outputResolutions?: ReadonlyArray<string>;
   readonly referenceImageResolutions?: ReadonlyArray<string> | null;
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
+  readonly voiceLibrary?: VoiceLibraryRulesInput | null;
   readonly aspectRatios?: ReadonlyArray<string> | null;
   readonly frameRoles?: ReadonlyArray<"first_frame" | "last_frame"> | null;
   readonly audioReferenceStandalone?: boolean | null;
@@ -1432,6 +1436,20 @@ export interface ViewportInput extends PointInput {
   readonly zoom?: number;
 }
 
+export interface VoiceLibraryRulesInput extends ContractInput {
+  readonly provider: "moss" | "vllm-omni";
+  readonly canCreate: boolean;
+  readonly canDelete: boolean;
+  readonly requiresConsent: boolean;
+  readonly requiresRefText: boolean;
+  readonly maxBytes: number;
+  readonly maxDurationSeconds?: number | null;
+  readonly formats: ReadonlyArray<string>;
+  readonly pagination: "cursor" | "none";
+  readonly preview: boolean;
+  readonly filterUnsupported?: boolean;
+}
+
 export type CanvasItemInput = TextCanvasItemInput | ImageCanvasItemInput | VideoCanvasItemInput | AudioCanvasItemInput | FileCanvasItemInput | SubjectCanvasItemInput | TimelineCanvasItemInput | StackCanvasItemInput | ToolCanvasItemInput | DirectorCanvasItemInput | GroupCanvasItemInput;
 
 export type GenerationSpecInput = TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
@@ -1584,6 +1602,9 @@ export interface AudioParameters extends Contract {
   readonly creationType: "audio" | "music";
   readonly mode: "tts" | "unified";
   readonly voice: string | null;
+  readonly voiceConnectionId?: string | null;
+  readonly voiceProvider?: "moss" | "vllm-omni" | null;
+  readonly voiceHasReference?: boolean | null;
   readonly instrumental?: boolean;
   readonly lyrics?: string;
   readonly durationSeconds?: number | null;
@@ -2126,6 +2147,7 @@ export interface InputRules extends Contract {
   readonly outputResolutions: ReadonlyArray<string>;
   readonly referenceImageResolutions: ReadonlyArray<string> | null;
   readonly videoCapabilities: VideoCapabilities | null;
+  readonly voiceLibrary: VoiceLibraryRules | null;
   readonly aspectRatios?: ReadonlyArray<string> | null;
   readonly frameRoles?: ReadonlyArray<"first_frame" | "last_frame"> | null;
   readonly audioReferenceStandalone?: boolean | null;
@@ -2881,6 +2903,20 @@ export interface ViewState extends Contract {
 
 export interface Viewport extends Point {
   readonly zoom: number;
+}
+
+export interface VoiceLibraryRules extends Contract {
+  readonly provider: "moss" | "vllm-omni";
+  readonly canCreate: boolean;
+  readonly canDelete: boolean;
+  readonly requiresConsent: boolean;
+  readonly requiresRefText: boolean;
+  readonly maxBytes: number;
+  readonly maxDurationSeconds?: number | null;
+  readonly formats: ReadonlyArray<string>;
+  readonly pagination: "cursor" | "none";
+  readonly preview: boolean;
+  readonly filterUnsupported: boolean;
 }
 
 export type CanvasItem = TextCanvasItem | ImageCanvasItem | VideoCanvasItem | AudioCanvasItem | FileCanvasItem | SubjectCanvasItem | TimelineCanvasItem | StackCanvasItem | ToolCanvasItem | DirectorCanvasItem | GroupCanvasItem;

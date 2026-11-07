@@ -116,6 +116,8 @@ export const errors = {
   "errors.rules.voiceId":
     "Enter a voice id supported by the service (letters, numbers, dots, underscores, or hyphens).",
   "errors.rules.voiceRequired": "Enter a valid Voice ID from the service's voice library before generating.",
+  "errors.rules.voiceConnection": "This voice belongs to another service connection. Choose a voice from the current service.",
+  "errors.rules.voiceReferenceRequired": "This model needs a voice with a reference transcript. Choose or create an uploaded voice.",
   "errors.rules.referencesUnsupported": "This model does not support references. Disconnect the references before generating.",
   "errors.generationFailure.voiceNotFound": "The voice was not found or is unavailable to this account. Check the Voice ID in the MOSS voice library.",
   "errors.rules.audioDisable":

@@ -20,6 +20,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Python installation and packaging](development/packaging.md) | Installation, platform wheel builds, and isolated verification | Packaging, resource paths, or build process changes |
 | [Business CLI](guides/cli.md) | Querying, editing, and generating through a terminal or Agent Shell | Commands, authorization, or receipt semantics change |
 | [Video model capabilities](guides/video-model-capabilities.md) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
+| [Voice library](guides/voice-library.md) | Browsing, creating, favoriting, and deleting provider voices while keeping connections isolated | Voice APIs, provider capabilities, or selection rules change |
 | [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
 | [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture | Runtime architecture changes |
 

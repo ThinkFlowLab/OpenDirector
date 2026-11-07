@@ -63,6 +63,11 @@ export interface GenerationSettings {
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
   voiceName?: string;
+  /** The service connection that issued voiceName; prevents reuse across services. */
+  voiceConnectionId?: string;
+  voiceProvider?: "moss" | "vllm-omni";
+  /** Whether the selected voice carries a reference transcript. */
+  voiceHasReference?: boolean;
   /** Music models: words to sing; empty asks for an instrumental piece. */
   lyrics?: string;
   /** Music with a reference recording: follow its melody, or its melody and chords. */

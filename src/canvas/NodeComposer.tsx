@@ -1,12 +1,14 @@
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
 import { providerLabel } from "./providerPresets";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { LOCAL_DEMO_MODEL } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { ComposerPopover } from "./ComposerPopover";
+import { VoiceLibraryPopover } from "./VoiceLibraryPopover";
+import type { Voice } from "../backend/voices";
 import { DurationControl } from "./DurationControl";
 import { ReferenceThumbnail } from "./ReferenceThumbnail";
 import {
@@ -31,6 +33,7 @@ import {
   isGenerationModel,
   isMusicModel,
   hasMusicReference,
+  serviceConnectionId,
   MUSIC_SECONDS,
   type ModelConfig,
 } from "../backend/rules.ts";
@@ -87,7 +90,6 @@ export function NodeComposer({
   referenceControls,
 }: NodeComposerProps) {
   const { t } = useI18n();
-  const voiceHelpId = useId();
   const [openPanel, setPanel] = useState<Panel>(null);
   const panel = running ? null : openPanel;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -107,7 +109,6 @@ export function NodeComposer({
   const backend = Boolean(settings.modelConfigId);
   const config = backendModel(settings, backendModels);
   const voiceRequired = Boolean(config?.inputRules.voiceRequired);
-  const mossVoice = voiceRequired && config?.inputRules.profile === "moss-speech";
   const serviceModels = backendModels.filter(
     (item) => item.kind === mode && isGenerationModel(item),
   );
@@ -138,6 +139,7 @@ export function NodeComposer({
       : settings.audioCreationType === "music");
   const reading =
     mode === "audio" && !music && (backend || settings.audioMode === "tts");
+  const voiceLibrary = reading ? config?.inputRules.voiceLibrary : undefined;
   // YuE2-style music models can follow one connected recording.
   const musicReferences =
     music && Boolean(config?.inputRules.allowedKinds.includes("audio"));
@@ -632,40 +634,53 @@ export function NodeComposer({
               </>
             )}
             {mode === "audio" && backend && !music && (
-              <input
-                aria-label={t(
-                  voiceRequired
-                    ? "generation.field.requiredVoiceId"
-                    : "generation.field.voice",
+              <>
+                <input
+                  aria-label={t(
+                    voiceRequired
+                      ? "generation.field.requiredVoiceId"
+                      : "generation.field.voice",
+                  )}
+                  aria-required={voiceRequired || undefined}
+                  required={voiceRequired}
+                  value={settings.voiceName ?? ""}
+                  placeholder={t(
+                    voiceRequired
+                      ? "generation.field.voiceIdPlaceholder"
+                      : "generation.field.defaultVoice",
+                  )}
+                  disabled={running}
+                  spellCheck={false}
+                  onChange={(event) => {
+                    const value = event.target.value.trim();
+                    updateSettings({
+                      voiceName: value || undefined,
+                      voiceConnectionId: value && config
+                        ? serviceConnectionId(config)
+                        : undefined,
+                      voiceProvider: value
+                        ? config?.inputRules.voiceLibrary?.provider
+                        : undefined,
+                      voiceHasReference: undefined,
+                    });
+                  }}
+                />
+                {voiceLibrary && config && (
+                  <button
+                    type="button"
+                    className="cw-voice-trigger"
+                    aria-label={t("generation.field.voiceLibrary")}
+                    aria-haspopup="dialog"
+                    aria-expanded={panel === "voices"}
+                    disabled={running}
+                    onClick={(event) => togglePanel("voices", event.currentTarget)}
+                  >
+                    <CanvasIcon name="audio" size={15} />
+                    <span>{t("generation.field.voiceLibrary")}</span>
+                    <CanvasIcon name="chevronDown" size={12} />
+                  </button>
                 )}
-                aria-describedby={mossVoice ? voiceHelpId : undefined}
-                aria-required={voiceRequired || undefined}
-                required={voiceRequired}
-                value={settings.voiceName ?? ""}
-                placeholder={t(
-                  voiceRequired
-                    ? "generation.field.voiceIdPlaceholder"
-                    : "generation.field.defaultVoice",
-                )}
-                disabled={running}
-                spellCheck={false}
-                onChange={(event) =>
-                  updateSettings({
-                    voiceName: event.target.value.trim() || undefined,
-                  })
-                }
-              />
-            )}
-            {reading && mossVoice && (
-              <a
-                id={voiceHelpId}
-                href="https://create.moss.cn/voice/library"
-                target="_blank"
-                rel="noreferrer"
-                title={t("generation.field.mossVoiceHelp")}
-              >
-                {t("generation.field.mossVoiceLibrary")}
-              </a>
+              </>
             )}
             {reading && !backend && (
               <button
@@ -958,7 +973,40 @@ export function NodeComposer({
         </ComposerPopover>
       )}
 
-      {panel === "voices" && (
+      {panel === "voices" && backend && voiceLibrary && config && (
+        <VoiceLibraryPopover
+          config={config}
+          anchor={panelAnchor.current}
+          composer={rootRef.current}
+          selectedVoice={settings.voiceName}
+          selectedConnectionId={settings.voiceConnectionId}
+          onClose={() => setPanel(null)}
+          onSelect={(voice: Voice) => {
+            updateSettings({
+              voiceName: voice.id,
+              voiceConnectionId: serviceConnectionId(config),
+              voiceProvider: voice.provider,
+              voiceHasReference: voice.hasReference,
+            });
+            setPanel(null);
+          }}
+          onDeleted={(voice: Voice) => {
+            if (
+              settings.voiceName !== voice.id ||
+              settings.voiceConnectionId !== serviceConnectionId(config)
+            )
+              return;
+            updateSettings({
+              voiceName: undefined,
+              voiceConnectionId: undefined,
+              voiceProvider: undefined,
+              voiceHasReference: undefined,
+            });
+          }}
+        />
+      )}
+
+      {panel === "voices" && !backend && (
         <ComposerPopover
           {...popoverProps}
           className="cw-voices-popover"

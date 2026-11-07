@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import subprocess
+import httpx
 
 from fastapi import Request
 from PIL import Image
@@ -21,6 +22,7 @@ from opendirector_api.main import create_app
 from opendirector.application.tool_operations import TOOLS, Output
 from opendirector.domain.capabilities import Segment, MediaResult
 from opendirector.integrations.model_adapters import OpenAIImages, VllmOmniSegmentation
+from opendirector.integrations.voice_library import VoiceLibrary
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -46,6 +48,12 @@ if not any(model['kind'] == 'vision' for model in configs.list()):
 if not any(model['modelId'] == 'Qwen/Qwen-Image-2.1' for model in configs.list()):
     configs.save('image', 'http://127.0.0.1:12345/v1', 'Qwen/Qwen-Image-2.1', '',
                  connection_type='self_hosted', protocol='openai', auth_mode='none')
+if not any(model['modelId'] == 'fixture-tts' for model in configs.list()):
+    configs.save('audio', 'http://127.0.0.1:12345/v1', 'fixture-tts', '',
+                 connection_type='self_hosted', protocol='openai', auth_mode='none')
+if not any(model['modelId'] == 'moss-tts-1.5-flash' for model in configs.list()):
+    configs.save('audio', 'https://api.mosi.cn/v1', 'moss-tts-1.5-flash', 'fixture-moss-key',
+                 connection_type='api', protocol='openai', auth_mode='bearer')
 selection_gate = asyncio.Event()
 selection_gate.set()
 selection_calls, image_edit_calls = [], []
@@ -158,14 +166,55 @@ async def fixture_outpaint(context):
 
 # Only this isolated executable substitutes a recipe; no model endpoint is used.
 TOOLS['outpaint'] = replace(TOOLS['outpaint'], requires=lambda _: (), recipe=fixture_outpaint)
-app = create_app(store, generation_provider=provider)
+fixture_vllm_voices = [
+    {'name': 'narrator', 'created_at': 1738660000},
+    {'name': 'clone-one', 'created_at': 1738660001,
+     'ref_text': 'A calm sentence for the fixture.', 'speaker_description': 'warm narrator'},
+]
+fixture_moss_voices = [
+    {'id': '11111111-2222-4333-8444-555555555555', 'object': 'audio.voice', 'name': 'MOSS Alice', 'created_at': 1710000000},
+    {'id': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'object': 'audio.voice', 'name': 'MOSS Bob', 'created_at': 1710000001},
+]
+
+
+def fixture_voice_handler(request: httpx.Request):
+    if request.url.host == 'api.mosi.cn':
+        if request.method == 'GET':
+            after = request.url.params.get('after')
+            rows = fixture_moss_voices[1:] if after == 'moss-next' else fixture_moss_voices[:1]
+            return httpx.Response(200, json={'object': 'list', 'data': rows,
+                                             'has_more': not after,
+                                             'next_cursor': None if after else 'moss-next'})
+        if request.method == 'POST':
+            return httpx.Response(201, json={'id': 'created-moss-voice', 'object': 'audio.voice',
+                                             'name': 'Created MOSS voice', 'created_at': 1710000002})
+    if request.url.host == '127.0.0.1':
+        if request.method == 'GET':
+            return httpx.Response(200, json={'voices': ['narrator', 'builtin-two'],
+                                             'uploaded_voices': fixture_vllm_voices})
+        if request.method == 'POST':
+            created = {'name': 'created-clone', 'created_at': 1738660002,
+                       'ref_text': 'Created fixture transcript', 'speaker_description': 'fixture'}
+            fixture_vllm_voices[:] = [item for item in fixture_vllm_voices if item['name'] != created['name']]
+            fixture_vllm_voices.append(created)
+            return httpx.Response(201, json={'success': True, 'voice': created})
+        if request.method == 'DELETE':
+            name = request.url.path.rsplit('/', 1)[-1]
+            fixture_vllm_voices[:] = [item for item in fixture_vllm_voices if item['name'] != name]
+            return httpx.Response(204)
+    return httpx.Response(404, json={'error': {'message': 'missing'}})
+
+
+app = create_app(store, generation_provider=provider,
+                 voice_library=VoiceLibrary(configs, httpx.MockTransport(fixture_voice_handler)))
 
 
 @app.get('/api/creation-test-health')
 def health():
     return dict(isolated=True, provider='fixture', root=str(root), calls=provider.calls, toolCalls=tool_calls,
                 selectionCalls=selection_calls, selectionActive=selection_active, imageEditCalls=image_edit_calls,
-                assistantFixture=args.assistant_fixture, assistantContexts=assistant_contexts)
+                assistantFixture=args.assistant_fixture, assistantContexts=assistant_contexts,
+                voiceConfigs=[item['modelId'] for item in configs.list() if item['kind'] == 'audio'])
 
 
 @app.post('/api/creation-test-assistant-gate')

@@ -57,6 +57,16 @@ class AudioParameters(Contract):
     creationType: Literal['audio', 'music'] = Field(default='audio', description='Speech or music creation mode.')
     mode: Literal['tts', 'unified'] = Field(default='tts', description='Operation mode within this contract variant.')
     voice: str | None = Field(default=None, pattern=STORED_VOICE_PATTERN, description='Provider voice identifier or name.')
+    voiceConnectionId: str | None = Field(
+        default=None, pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        exclude_if=lambda value: value is None,
+        description='Model service connection that issued the selected voice.')
+    voiceProvider: Literal['moss', 'vllm-omni'] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+        description='Voice-library provider for the selected voice.')
+    voiceHasReference: bool | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+        description='Whether the selected voice carries a reference transcript.')
     # Legacy: a release stored an explicit instrumental choice. It stays readable
     # so those specs and job fingerprints still load; generation ignores it.
     instrumental: bool = Field(default=False, exclude_if=lambda value: value is False, description='Legacy explicit instrumental choice retained for stored records.')
@@ -330,6 +340,7 @@ def execution_spec(spec, references, rules):
 
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = ()):
     """Pure shared validation; it never submits, uploads or changes a project."""
+    from opendirector.domain.voice_library import voice_matches
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
         raise ValueError('所选模型与生成类型不匹配。')
     if model.inputRules.profile == 'vllm-omni-segmentation':
@@ -349,6 +360,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         validate_moss_speech_input(text, spec.parameters.voice)
     elif spec.kind == 'audio' and rules.voiceRequired and not spec.parameters.voice:
         raise ValueError('请填写服务音色 ID。')
+    if spec.kind == 'audio' and not voice_matches(config=model, parameters=spec.parameters):
+        raise ValueError('所选音色属于其他服务连接或不满足当前模型的参考要求，请重新选择音色。')
     if len(references) > MAX_REFERENCES:
         raise ValueError('参考素材数量超过上限。')
     unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')

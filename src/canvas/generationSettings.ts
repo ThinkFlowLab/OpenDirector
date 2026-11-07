@@ -63,6 +63,13 @@ export function getNodeGenerationSettings(
     voiceName: sameMode?.modelConfigId
       ? sameMode.voiceName
       : (sameMode?.voiceName ?? defaults.voiceName),
+    voiceConnectionId: sameMode?.modelConfigId
+      ? sameMode.voiceConnectionId
+      : undefined,
+    voiceProvider: sameMode?.modelConfigId ? sameMode.voiceProvider : undefined,
+    voiceHasReference: sameMode?.modelConfigId
+      ? sameMode.voiceHasReference
+      : undefined,
   };
   // The creator only offers configured service models, so the displayed model
   // has to be the resolved one: reading and running then agree, and reopening a

@@ -48,6 +48,9 @@ const SETTINGS_KEYS = [
   "audioCreationType",
   "audioMode",
   "voiceName",
+  "voiceConnectionId",
+  "voiceProvider",
+  "voiceHasReference",
   "lyrics",
   "scoreMode",
   "durationFromReference",
@@ -118,6 +121,12 @@ export function isGenerationSettings(
       value.audioMode === "unified" ||
       value.audioMode === "tts") &&
     optionalString(value.voiceName) &&
+    optionalString(value.voiceConnectionId) &&
+    (value.voiceProvider === undefined ||
+      value.voiceProvider === "moss" ||
+      value.voiceProvider === "vllm-omni") &&
+    (value.voiceHasReference === undefined ||
+      typeof value.voiceHasReference === "boolean") &&
     (value.lyrics === undefined || typeof value.lyrics === "string") &&
     (value.scoreMode === undefined ||
       value.scoreMode === "melody" ||

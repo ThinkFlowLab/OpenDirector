@@ -662,6 +662,11 @@ export class CreationProjection {
               ...(spec.kind === "audio"
                 ? {
                     voiceName: spec.parameters.voice ?? undefined,
+                    voiceConnectionId:
+                      spec.parameters.voiceConnectionId ?? undefined,
+                    voiceProvider: spec.parameters.voiceProvider ?? undefined,
+                    voiceHasReference:
+                      spec.parameters.voiceHasReference ?? undefined,
                     audioCreationType: spec.parameters.creationType,
                     audioMode: spec.parameters.mode,
                     ...(spec.parameters.creationType === "music"
@@ -854,6 +859,15 @@ export class CreationProjection {
           kind: "audio",
           parameters: {
             voice: node.data.settings?.voiceName ?? null,
+            ...(node.data.settings?.voiceConnectionId
+              ? { voiceConnectionId: node.data.settings.voiceConnectionId }
+              : {}),
+            ...(node.data.settings?.voiceProvider
+              ? { voiceProvider: node.data.settings.voiceProvider }
+              : {}),
+            ...(typeof node.data.settings?.voiceHasReference === "boolean"
+              ? { voiceHasReference: node.data.settings.voiceHasReference }
+              : {}),
             creationType: node.data.settings?.audioCreationType ?? "audio",
             mode: node.data.settings?.audioMode ?? "tts",
             ...(node.data.settings?.audioCreationType === "music"

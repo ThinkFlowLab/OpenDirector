@@ -22,6 +22,7 @@ const workflows = [
   },
   { name: "minimax h3", script: "tests/browser/minimax_h3.mjs" },
   { name: "provider settings", script: "tests/browser/provider_settings.mjs" },
+  { name: "voice library", script: "tests/browser/voice_library.mjs" },
   { name: "created node focus", script: "tests/browser/created_node_focus.mjs" },
   { name: "cross canvas paste", script: "tests/browser/cross_canvas_paste.mjs" },
   { name: "reference reconnect", script: "tests/browser/reference_reconnect.mjs" },

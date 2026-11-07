@@ -5,6 +5,7 @@ from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTE
 from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
+from .voice_library import voice_library_capabilities
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -23,7 +24,8 @@ def _adapter_rules(config):
         return rules
     if is_moss_speech(config):
         rules.update(profile='moss-speech', allowedKinds=[], maxImages=0,
-                     voiceRequired=True, referencesAllowed=False)
+                     voiceRequired=True, referencesAllowed=False,
+                     voiceLibrary=voice_library_capabilities(config))
         return rules
     if kind == 'vision' or config.get('protocol') == 'vllm_omni_segmentation':
         # Shared image segmentation / video tracking service, never a generator.
@@ -108,6 +110,10 @@ def _adapter_rules(config):
         if music and name.startswith('yue2'):
             # YuE2 can follow one reference recording, transcribed into a score first.
             rules.update(allowedKinds=['audio'], maxAudios=1)
+        elif not music:
+            library = voice_library_capabilities(config)
+            if library:
+                rules['voiceLibrary'] = library
     return rules
 
 

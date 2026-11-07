@@ -28,6 +28,22 @@ class ImageOutput(Contract):
     size: str = Field(pattern=r'^(?:2K|[1-9]\d{2,3}x[1-9]\d{2,3})$', description='Supported image dimensions or size preset.')
 
 
+class VoiceLibraryRules(Contract):
+    provider: Literal['moss', 'vllm-omni'] = Field(description='Voice-library provider adapter.')
+    canCreate: bool = Field(description='Whether the provider creates uploaded voices.')
+    canDelete: bool = Field(description='Whether the provider deletes uploaded voices.')
+    requiresConsent: bool = Field(description='Whether voice creation requires a consent recording ID.')
+    requiresRefText: bool = Field(description='Whether the selected model requires the recording transcript.')
+    maxBytes: Count = Field(description='Maximum voice sample size in bytes.')
+    maxDurationSeconds: Annotated[int, Field(strict=True, ge=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+        description='Provider duration limit in seconds, when documented.')
+    formats: tuple[str, ...] = Field(description='Accepted voice sample file extensions.')
+    pagination: Literal['cursor', 'none'] = Field(description='Voice list pagination style.')
+    preview: bool = Field(description='Whether the provider returns preview audio.')
+    filterUnsupported: bool = Field(default=False, description='Whether provider-listed voices may fail the selected model and need a compatibility probe.')
+
+
 class InputRules(Contract):
     profile: str = Field(min_length=1, max_length=100, description='Model capability profile.')
     maxPromptCharacters: Annotated[int, Field(strict=True, ge=1)] | None = Field(
@@ -48,6 +64,7 @@ class InputRules(Contract):
     outputResolutions: tuple[str, ...] = Field(default=(), description='Supported output resolution values.')
     referenceImageResolutions: tuple[str, ...] | None = Field(default=None, description='Supported reference image resolution values.')
     videoCapabilities: VideoCapabilities | None = Field(default=None, description='Supported video generation capabilities.')
+    voiceLibrary: VoiceLibraryRules | None = Field(default=None, description='Voice-library capabilities for this connection.')
 
     aspectRatios: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Supported explicit video output aspect ratios; unset uses existing protocol rules.')

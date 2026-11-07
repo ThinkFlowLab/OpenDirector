@@ -60,6 +60,7 @@ pydantic==2.14.1
     #   fastapi
     #   opendirector
 pydantic-core==2.50.1
+python-multipart==0.0.20
     # via pydantic
 pygments==2.21.0
     # via

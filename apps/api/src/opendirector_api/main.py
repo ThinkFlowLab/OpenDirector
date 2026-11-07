@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,8 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.integrations.voice_library import VoiceLibrary
+from opendirector.domain.voice_library import MAX_VOICE_BYTES
 from opendirector_api.creation import creation_routes
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
@@ -40,7 +42,7 @@ def model_options(value: ModelBatchInput):
     return {key: item.model_dump(exclude_unset=True) for key, item in value.modelOptions.items()}
 
 
-def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None) -> FastAPI:
+def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None, voice_library=None) -> FastAPI:
     configure_runtime()
     repository = data_root()
     if store is None:
@@ -51,6 +53,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider)
     creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects)
     catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions())
+    voices = voice_library or VoiceLibrary(model_configs)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -248,6 +251,23 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.delete("/api/model-configs/{config_id}", status_code=204)
     def delete_model_config(config_id: UUID):
         catalog.delete(str(config_id))
+
+    @app.get('/api/model-configs/{config_id}/voices')
+    async def list_voices(config_id: UUID, cursor: str | None = None, limit: int = 20):
+        return await voices.list(str(config_id), cursor=cursor, limit=limit)
+
+    @app.post('/api/model-configs/{config_id}/voices')
+    async def create_voice(config_id: UUID, audio_sample: UploadFile = File(...), name: str = Form(''),
+                           consent: str | None = Form(None), ref_text: str | None = Form(None),
+                           speaker_description: str | None = Form(None)):
+        data = await audio_sample.read(MAX_VOICE_BYTES + 1)
+        return await voices.create(str(config_id), filename=audio_sample.filename or '', data=data,
+                                   content_type=audio_sample.content_type or '', name=name, consent=consent,
+                                   ref_text=ref_text, speaker_description=speaker_description)
+
+    @app.delete('/api/model-configs/{config_id}/voices/{voice_id}', status_code=204)
+    async def delete_voice(config_id: UUID, voice_id: str):
+        await voices.delete(str(config_id), voice_id)
 
     @app.get('/api/tools')
     def tool_catalog():
