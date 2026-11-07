@@ -112,7 +112,7 @@ export const canvasShell = {
   "canvas.selection.productReplacement": "Product replacement",
   "canvas.selection.dynamicPoster": "Motion poster",
   "canvas.selection.tools": "Tools",
-  "canvas.selection.inpaintRemove": "Remove object",
+  "canvas.selection.inpaintRemove": "Eraser",
   "canvas.selection.cropCompose": "Crop and compose",
   "canvas.selection.annotate": "Annotate",
   "canvas.selection.captureFrame": "Capture frame",

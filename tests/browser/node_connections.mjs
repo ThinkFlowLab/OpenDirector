@@ -55,6 +55,10 @@ const browser = await chromium.launch({
   args: ["--no-sandbox"],
 });
 const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1600, height: 1000 } });
+// Skip the first-run model setup welcome; it covers the canvas.
+await page.addInitScript(() =>
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+);
 page.setDefaultTimeout(12000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
@@ -199,6 +203,20 @@ try {
       return port;
     };
     if (kind === "image" && targetKind === "subject") {
+      // An empty generation node only takes references, so its ports point inwards.
+      await target.hover();
+      const emptyTargetPorts = page.locator(
+        `.cw-node-reference-port[data-reference-source="${f.target}"]`,
+      );
+      await emptyTargetPorts.first().waitFor();
+      assert.deepEqual(
+        await emptyTargetPorts.evaluateAll((ports) =>
+          ports
+            .map((port) => `${port.dataset.side}:${port.dataset.direction}`)
+            .sort(),
+        ),
+        ["bottom:in", "left:in", "right:in", "top:in"],
+      );
       for (const theme of ["light", "dark"]) {
         await page.evaluate((theme) => {
           document.documentElement.dataset.theme = theme;
@@ -218,6 +236,15 @@ try {
         assert.equal(
           await nodePorts.filter({ has: page.locator("svg") }).count(),
           4,
+        );
+        // Uploaded material only gives references, so every port points outwards.
+        assert.deepEqual(
+          await nodePorts.evaluateAll((ports) =>
+            ports
+              .map((port) => `${port.dataset.side}:${port.dataset.direction}`)
+              .sort(),
+          ),
+          ["bottom:out", "left:out", "right:out", "top:out"],
         );
         assert.equal(
           await page
@@ -358,6 +385,21 @@ try {
       count,
     );
     if (kind === "image" && targetKind === "subject") {
+      // Assembling the source into the subject gives it content, so the node now
+      // both accepts and provides references.
+      await target.hover();
+      const targetPorts = page.locator(
+        `.cw-node-reference-port[data-reference-source="${f.target}"]`,
+      );
+      await targetPorts.first().waitFor();
+      assert.deepEqual(
+        await targetPorts.evaluateAll((ports) =>
+          ports
+            .map((port) => `${port.dataset.side}:${port.dataset.direction}`)
+            .sort(),
+        ),
+        ["bottom:both", "left:both", "right:both", "top:both"],
+      );
       const inbound = await showPort("left", target);
       const from = await inbound.boundingBox();
       const to = await source.boundingBox();

@@ -45,6 +45,23 @@ const icons: Record<string, ReactNode> = {
       <path d="M7 18v-1a5 5 0 0 1 10 0v1Z" />
     </>
   ),
+  /** A round smiling face: the identification-driven face preset. */
+  face: (
+    <>
+      <circle cx="12" cy="12" r="9.1" />
+      <circle cx="9" cy="10" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="10" r="1.15" fill="currentColor" stroke="none" />
+      <path d="M8.2 14.2c.9 1.7 2.2 2.5 3.8 2.5s2.9-.8 3.8-2.5" />
+    </>
+  ),
+  /** A box seen from the corner: three faces, like a product three-view. */
+  product: (
+    <>
+      <path d="M12 2.9 20.3 7.4 12 11.9 3.7 7.4Z" />
+      <path d="M3.7 7.4v9.2L12 21.1l8.3-4.5V7.4" />
+      <path d="M12 11.9v9.2" />
+    </>
+  ),
   canvas: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="3 3" />
@@ -138,6 +155,30 @@ const icons: Record<string, ReactNode> = {
   upload: (
     <>
       <path d="M12 16V3m-5 5 5-5 5 5M4 16v4h16v-4" />
+    </>
+  ),
+  /** A framed canvas on its stand; the arrow leaves the frame. */
+  canvasExport: (
+    <>
+      <path d="M4 5.2h16v11.4H4Z" />
+      <path d="M2 16.6h20" />
+      <path d="M6.4 16.6 5.8 20.4" />
+      <path d="M17.6 16.6 18.2 20.4" />
+      <path d="M8.2 5.2 8.63 2.5" />
+      <path d="M15.8 5.2 15.37 2.5" />
+      <path d="M12 15V8.6m-3 3 3-3 3 3" strokeWidth="2.05" />
+    </>
+  ),
+  /** The same canvas with the arrow coming back into the frame. */
+  canvasImport: (
+    <>
+      <path d="M4 5.2h16v11.4H4Z" />
+      <path d="M2 16.6h20" />
+      <path d="M6.4 16.6 5.8 20.4" />
+      <path d="M17.6 16.6 18.2 20.4" />
+      <path d="M8.2 5.2 8.63 2.5" />
+      <path d="M15.8 5.2 15.37 2.5" />
+      <path d="M12 7v6.4m-3-3 3 3 3-3" strokeWidth="2.05" />
     </>
   ),
   download: (

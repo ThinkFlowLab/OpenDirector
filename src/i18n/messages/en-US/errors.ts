@@ -304,6 +304,10 @@ export const errors = {
   "errors.tools.error.cancelUnconfirmed":
     "The provider cancellation is unconfirmed.",
   "errors.tools.error.generic": "The tool task did not complete. Try again.",
+  "errors.tools.error.conceptTranslation":
+    'Could not translate "{label}" into an English object name. Enter a short English description or check the chat model used for translation.',
+  "errors.tools.error.noVideoMatch":
+    'Could not find "{label}" in the video. Try a different description.',
   "errors.tools.error.localStopped": "Local processing stopped.",
   "errors.tools.error.serviceInterrupted":
     "The service was interrupted. Execution records are kept; the task will not be regenerated automatically.",

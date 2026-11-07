@@ -2,7 +2,7 @@
 export const models = {
   "models.service.proxyMode": "网络连接方式",
   "models.service.proxySystem": "跟随系统代理",
-  "models.service.proxyDirect": "直连",
+  "models.service.proxyDirect": "直连（不使用代理）",
   "models.service.proxyNote": "仅影响此模型服务的请求与结果下载。代理导致超时或连接中断时，可切换为直连。",
   "models.readFailed": "无法读取模型配置。",
   "models.reload": "重新读取",

@@ -161,6 +161,11 @@
   background: #1e2028;
   border: 1px solid #ffffff20;
 }
+/* A two-row form is much shorter than an editor panel: the shared 24px corner
+   would read as a pill, so it keeps the 15px panel radius instead. */
+.cw-node-action-dock[data-tool="image-presets"] {
+  border-radius: 15px;
+}
 .cw-node-action-dock > section {
   min-width: 0;
 }
@@ -182,36 +187,74 @@
 
 .cw-node-task-panel.cw-preset-task-panel {
   display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 16px;
-  padding: 14px 18px;
-  min-height: 64px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 0;
   box-sizing: border-box;
-  white-space: nowrap;
 }
-.cw-preset-task-panel > strong {
-  flex-shrink: 0;
-  font-size: 14px;
+.cw-preset-task-panel .cw-preset-task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  min-height: 0;
+}
+.cw-preset-task-panel .cw-preset-task-head strong {
+  font-size: 13px;
   font-weight: 650;
+  line-height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.cw-preset-task-name {
+.cw-preset-task-panel .cw-preset-task-head > button {
   flex-shrink: 0;
-  font-size: 14px;
-  font-weight: 400;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.cw-preset-task-panel .cw-preset-task-head > button:hover {
+  background: #ffffff0e;
+}
+.cw-preset-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cw-preset-task-panel .cw-preset-task-model {
+  flex-shrink: 0;
+  max-width: 168px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+  border-radius: 7px;
 }
 .cw-preset-task-note {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--cw-control-muted, #9299a9);
   font-size: 11px;
 }
-.cw-preset-task-panel > .cw-node-task-primary {
+.cw-preset-task-row > .cw-node-task-primary {
   flex-shrink: 0;
-  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   min-width: 72px;
-  min-height: 34px;
-  border-radius: 10px;
+  min-height: 32px;
+  padding: 4px 14px;
+  font-size: 12px;
+  border-radius: 7px;
 }
