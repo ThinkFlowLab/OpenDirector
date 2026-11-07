@@ -54,15 +54,9 @@ OpenDirector 把 OpenAI Images API 作为**可选**图像生成服务接入。�
 
 ## 验证范围
 
-仓库内的自动化验证使用模型替身（httpx MockTransport）检查请求形状、参考图部件、尺寸映射与错误分类，命令：
-
-```bash
-python -m pytest tests/test_openai_images.py -q
-```
-
 ### 自动化验证
 
-使用模型替身（httpx MockTransport）检查请求形状、参考图部件、尺寸映射与错误分类：
+模型替身（httpx MockTransport）覆盖请求形状、参考图部件（含重复 `image[]` 与按字节判定的 Content-Type）、尺寸映射与错误分类：
 
 ```bash
 python -m pytest tests/test_openai_images.py -q

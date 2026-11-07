@@ -43,6 +43,22 @@ async def _call(stage, work):
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         raise protocol_failure(stage) from None
 
+def image_parts(images, field='image'):
+    """Multipart parts for reference pictures.
+
+    The type is detected from the bytes and drives both the declared Content-Type
+    and the filename, because gpt-image validates what is declared: a JPEG sent
+    as image/png is a request error, not a decode problem. One picture keeps the
+    plain `image` part; several use the caller's field, `image[]` for OpenAI.
+    """
+    parts = []
+    for index, data in enumerate(images, 1):
+        mime = image_type(data) or 'image/png'
+        extension = {'image/jpeg': 'jpg', 'image/webp': 'webp'}.get(mime, 'png')
+        parts.append((field if len(images) > 1 else 'image', (f'image_{index}.{extension}', data, mime)))
+    return parts
+
+
 def _decoded(data):
     """Identify a returned picture by signature, never by the service's label."""
     if len(data) > MAX_ASSET_BYTES:
@@ -172,9 +188,7 @@ class OpenAIImages(ModelAdapter):
                         form['response_format'] = 'b64_json'
                     if request.strength is not None and self.strength:
                         form['strength'] = f'{min(max(request.strength, 0.0), 1.0):.3f}'
-                    # OpenAI reads repeated parts as `image[]`; a single image keeps the plain field.
-                    field = self.reference_field if len(images) > 1 else 'image'
-                    files = [(field, (f'image_{index}.png', data, 'image/png')) for index, data in enumerate(images, 1)]
+                    files = image_parts(images, self.reference_field)
                     async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                                              data=form, files=files, extensions={'model_parameters': {'fields': form, 'file_count': len(files)}}) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))

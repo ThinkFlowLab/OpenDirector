@@ -17,7 +17,7 @@ from opendirector.integrations.generation_errors import checked, protocol_failur
 from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore
+from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
 from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
@@ -162,11 +162,14 @@ class GenerationProviders(VolcengineGeneration):
                     size = size if 'x' in size else '1024x1024'
                     fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': size}
                     if prepared['images']:
-                        files = [('image', (meta['name'], data, image_type(data)))
-                                 for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']) if source_kind == 'image']
-                        if len(files) > 1 and input_rules(config)['profile'] == 'openai-gpt-image':
-                            # OpenAI reads several reference pictures as repeated `image[]` parts.
-                            files = [('image[]', value) for _, value in files]
+                        # Same construction as the capability adapter: leave both the
+                        # field name and the declared type to one helper, so a JPEG is
+                        # never labelled image/png. gpt-image reads several references
+                        # as repeated `image[]` parts; one keeps the plain field.
+                        field = 'image[]' if input_rules(config)['profile'] == 'openai-gpt-image' else 'image'
+                        images = [data for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds'])
+                                  if source_kind == 'image']
+                        files = image_parts(images, field)
                         async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                             data=fields, files=files,
                             extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:

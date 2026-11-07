@@ -171,3 +171,19 @@ def test_compatible_services_keep_response_format():
     asyncio.run(adapter.image(config, ImageRequest(prompt='灯塔', width=1024, height=1024)))
     [request] = seen
     assert json.loads(request.read())['response_format'] == 'b64_json'
+
+def jpeg():
+    out = io.BytesIO()
+    Image.new('RGB', (16, 12), (200, 40, 40)).save(out, 'JPEG')
+    return out.getvalue()
+
+
+def test_reference_parts_declare_the_type_detected_from_the_bytes(project):
+    """gpt-image validates the declared type, so a JPEG must not travel as image/png."""
+    store, value, session = project
+    references = [CreationToolAssets(store).import_file(value['id'], str(uuid4()), 'photo.jpg', jpeg(), session)['id']]
+    task, seen = run_image(project, generated(), references)
+    assert task['status'] == 'succeeded', (task['error'], task['errorDetails'])
+    body = seen[0].read()
+    assert b'Content-Type: image/jpeg' in body
+    assert b'filename="image_1.jpg"' in body and b'image/png' not in body
