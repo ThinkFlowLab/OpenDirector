@@ -381,17 +381,12 @@ class CreationCanvas:
         return item
 
     def _validate_timeline(self, document, snapshot):
-        sources = {clip.resource.asset.assetId: clip.resource.asset for track in document.data.tracks for clip in track.clips}
-        for ref in sources.values():
-            self._available(self.assets._reference(snapshot, ref))
-        for track in document.data.tracks:
-            for clip in track.clips:
-                asset = self.assets._reference(snapshot, clip.resource.asset)
-                duration = asset.metadata.durationSeconds
-                if asset.kind != 'image' and (duration is None or clip.outPoint > duration + 1e-6):
-                    raise ContractError('invalid_input', '时间线片段超出实际素材时长。', asset.id)
+        from .creation_timeline import validate_timeline_resources
+        validate_timeline_resources(document.data, snapshot, self.assets)
 
     def _publish_render(self, data, payload):
+        from .creation_timeline import timeline_source_refs
+        from opendirector.domain.creation.editors import timeline_duration
         item = self._editable(data, payload.itemId)
         if item['kind'] != 'timeline' or item['binding']['objectRef']['id'] != str(payload.editorId):
             raise ContractError('reference_invalid', '合成来源不是当前时间线。', payload.itemId)
@@ -403,22 +398,16 @@ class CreationCanvas:
             raise ContractError('role_restricted', '合成输出必须是尚未发布的视频素材。', output.id)
         if any(r.assetId == output.id for record in self.projects.history(snapshot.project.id) for r in asset_references(record.snapshot)):
             raise ContractError('role_restricted', '合成输出已有历史用途，不能改写来源。', output.id)
-        duration = 0
-        for track in doc.data.tracks:
-            cursor = 0
-            for clip in track.clips:
-                start = cursor if track.kind == 'visual' else (clip.start or 0)
-                cursor = start + clip.duration()
-                duration = max(duration, cursor)
+        duration = timeline_duration(doc.data)
         meta = output.metadata
         if (meta.width, meta.height) != (doc.data.width, doc.data.height) or meta.durationSeconds is None or abs(meta.durationSeconds - duration) > max(.15, 2 / doc.data.fps):
             raise ContractError('invalid_input', '合成视频的实际尺寸或时长与时间线不一致。', output.id)
-        sources = {clip.resource.asset.assetId: clip.resource.asset for track in doc.data.tracks for clip in track.clips}
-        for ref in (*sources.values(), payload.asset):
+        sources = timeline_source_refs(doc.data)
+        for ref in (*sources, payload.asset):
             self._available(self.assets._reference(snapshot, ref))
         asset = self._get(data, 'asset', output.id)
         asset['provenance'] = dict(source='rendered', editorDocumentId=str(doc.id), editorRevision=doc.revision,
-                                  sources=[ref.model_dump(mode='json') for ref in sources.values()])
+                                  sources=[ref.model_dump(mode='json') for ref in sources])
         if any(i['id'] == str(payload.outputId) for i in data['canvasItems']):
             raise ContractError('invalid_input', '输出节点标识已存在。', payload.outputId)
         result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,

@@ -71,7 +71,7 @@ class ToolGateway:
                 error = None
                 if isinstance(value, dict):
                     if value.get('status') == 'rejected':
-                        error = '; '.join(issue['message'] for issue in value['issues'])
+                        error = '; '.join(issue['message'] for issue in value.get('issues', (value.get('receipt') or {}).get('issues', []))) or 'Timeline package import was rejected.'
                     elif value.get('error'):
                         error = str(value['error'])
                 return ToolResult(value={**value, 'error': error} if error else value, error=error)

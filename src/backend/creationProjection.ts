@@ -70,6 +70,7 @@ export class CreationProjection {
   private hydrated?: { snapshot: ProjectSnapshot; document: CanvasDocument };
   private imported = new Map<string, Promise<AssetRef>>();
   private importHandles = new Map<string, string>();
+  private timelineImportSources = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
@@ -99,6 +100,7 @@ export class CreationProjection {
     title: string;
     kind: Asset["kind"];
     text?: string;
+    fileBytes?: boolean;
     identity?: string;
     fresh?: boolean;
     previous?: AssetRef;
@@ -123,7 +125,7 @@ export class CreationProjection {
     let pending = this.imported.get(key);
     if (!pending) {
       pending = (async () => {
-        if (resource.kind === "text")
+        if (resource.kind === "text" && !resource.fileBytes)
           return this.client.writeText(
             resource.title,
             resource.text ?? "",
@@ -131,7 +133,8 @@ export class CreationProjection {
           );
         if (!resource.src) throw new Error(tNow("errors.backend.mediaEmpty"));
         const response = await fetch(resource.src);
-        if (!response.ok) throw new Error(tNow("errors.backend.mediaReadFailed"));
+        if (!response.ok)
+          throw new Error(tNow("errors.backend.mediaReadFailed"));
         const blob = await response.blob();
         const suffix = extension[blob.type] ?? blob.type.split("/")[1] ?? "bin";
         const name = /\.[\w]+$/.test(resource.title)
@@ -161,9 +164,7 @@ export class CreationProjection {
   /** The archive source a generation node's media carries, if any.
    * Without it the media is imported as a plain upload and the generation
    * binding would claim an output the project has no evidence for. */
-  private archiveSource(
-    node: CanvasNode,
-  ): "generated" | "edited" | undefined {
+  private archiveSource(node: CanvasNode): "generated" | "edited" | undefined {
     const evidence = node.data.generationProvenance;
     if (!evidence) return undefined;
     if (evidence.source === "generated") return "generated";
@@ -186,6 +187,66 @@ export class CreationProjection {
       this.masks.set(key, pending);
     }
     return pending;
+  }
+
+  private async timelineResourceView(ref: AssetRef, title?: string) {
+    const asset = this.client.snapshot.assets.find(
+      (a) =>
+        a.id === ref.assetId &&
+        a.revision === ref.revision &&
+        a.fingerprint === ref.fingerprint &&
+        a.kind === ref.kind,
+    );
+    return {
+      title: title ?? asset?.name ?? ref.assetId,
+      asset: { ...ref },
+      mimeType: asset?.metadata.mimeType ?? "application/octet-stream",
+      src: asset
+        ? await this.client.mediaUrl(asset.id).catch(() => undefined)
+        : undefined,
+    };
+  }
+
+  private async timelineResourceRef(
+    view: import("../canvas/model.ts").TimelineTextSourceView,
+    kind: "file" | "text",
+    fallbackIdentity: string,
+  ): Promise<AssetRef> {
+    if (!view.src) throw new Error(tNow("errors.backend.mediaEmpty"));
+    const current = this.client.assetForSource(view.src);
+    if (current && current.kind === kind && !view.importIdentity) {
+      if (
+        view.asset &&
+        (view.asset.assetId !== current.id ||
+          view.asset.revision !== current.revision ||
+          view.asset.fingerprint !== current.fingerprint ||
+          view.asset.kind !== kind)
+      )
+        throw new Error(tNow("errors.backend.mediaReadFailed"));
+      return assetReference(current);
+    }
+    // URLs identify bytes, not logical sources: equal-byte font slots from
+    // different original assets must remain independently editable resources.
+    const original = view.asset;
+    const identity =
+      view.importIdentity ??
+      (original
+        ? `asset:${original.kind}:${original.assetId}:${original.revision}:${original.fingerprint}`
+        : fallbackIdentity);
+    const input = JSON.stringify([kind, view.mimeType, view.src]);
+    const known = this.timelineImportSources.get(identity);
+    if (known !== undefined && known !== input)
+      throw new Error(tNow("errors.archive.identityConflict"));
+    this.timelineImportSources.set(identity, input);
+    // A cross-project or newly imported View must register its actual bytes.
+    return this.importResource({
+      identity,
+      fresh: true,
+      title: view.title,
+      src: view.src,
+      kind,
+      fileBytes: true,
+    });
   }
 
   async editorData(doc: EditorDocument): Promise<Partial<CanvasNode["data"]>> {
@@ -215,6 +276,45 @@ export class CreationProjection {
             fps: doc.data.fps,
             width: doc.data.width,
             height: doc.data.height,
+            ...(doc.data.fonts?.length
+              ? {
+                  fonts: await Promise.all(
+                    doc.data.fonts.map(async (font) => ({
+                      id: font.id,
+                      ...(await this.timelineResourceView(
+                        font.asset,
+                        font.title,
+                      )),
+                    })),
+                  ),
+                }
+              : {}),
+            ...(doc.data.overlays?.length
+              ? {
+                  overlays: await Promise.all(
+                    doc.data.overlays.map(
+                      async ({ sourceAsset, ...overlay }) => ({
+                        ...overlay,
+                        style: {
+                          ...overlay.style,
+                          ...(overlay.style.background
+                            ? { background: { ...overlay.style.background } }
+                            : {}),
+                          ...(overlay.style.stroke
+                            ? { stroke: { ...overlay.style.stroke } }
+                            : {}),
+                        },
+                        ...(sourceAsset
+                          ? {
+                              source:
+                                await this.timelineResourceView(sourceAsset),
+                            }
+                          : {}),
+                      }),
+                    ),
+                  ),
+                }
+              : {}),
             importedAssets: await Promise.all(
               doc.data.importedAssets.map((r) =>
                 this.resource(r.asset, r.title),
@@ -552,7 +652,10 @@ export class CreationProjection {
                     ? { nodeId: ref.source.id }
                     : { binding: "asset" as const }),
                   referenceId: ref.id,
-                  name: source?.title ?? asset?.name ?? tNow("errors.backend.referenceFallback"),
+                  name:
+                    source?.title ??
+                    asset?.name ??
+                    tNow("errors.backend.referenceFallback"),
                   fingerprint: asset?.fingerprint ?? null,
                 });
                 mentions.push({
@@ -933,8 +1036,7 @@ export class CreationProjection {
           const source = nodes.find((item) => item.id === id);
           const asset =
             source?.data.src && this.client.assetForSource(source.data.src);
-          if (!asset)
-            throw new Error(tNow("errors.backend.toolSourceMissing"));
+          if (!asset) throw new Error(tNow("errors.backend.toolSourceMissing"));
           return assetReference(asset);
         });
         const selection = task.selection;
@@ -1001,6 +1103,43 @@ export class CreationProjection {
             fps: data.fps,
             width: data.width,
             height: data.height,
+            ...(data.fonts?.length
+              ? {
+                  fonts: await Promise.all(
+                    data.fonts.map(async (font) => ({
+                      id: font.id,
+                      title: font.title,
+                      asset: await this.timelineResourceRef(
+                        font,
+                        "file",
+                        `font:${node.id}:${font.id}`,
+                      ),
+                    })),
+                  ),
+                }
+              : {}),
+            ...(data.overlays?.length
+              ? {
+                  overlays: await Promise.all(
+                    data.overlays.map(async ({ source, ...overlay }) => ({
+                      ...overlay,
+                      text: overlay.text.replace(/\r\n?/g, "\n"),
+                      style: {
+                        ...overlay.style,
+                        background: overlay.style.background ?? null,
+                        stroke: overlay.style.stroke ?? null,
+                      },
+                      sourceAsset: source
+                        ? await this.timelineResourceRef(
+                            source,
+                            "text",
+                            `source:${node.id}:${overlay.id}`,
+                          )
+                        : null,
+                    })),
+                  ),
+                }
+              : {}),
             importedAssets: await Promise.all(
               (data.importedAssets ?? []).map(resource),
             ),
@@ -1036,7 +1175,9 @@ export class CreationProjection {
                   sourceImage: data.palette.sourceImageUri
                     ? await this.importResource({
                         kind: "image",
-                        title: data.palette.name ?? tNow("errors.backend.paletteSourceTitle"),
+                        title:
+                          data.palette.name ??
+                          tNow("errors.backend.paletteSourceTitle"),
                         src: data.palette.sourceImageUri,
                       })
                     : null,

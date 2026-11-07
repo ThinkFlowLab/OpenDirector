@@ -39,6 +39,7 @@ GROUP_HELP = {
     "generation": "Submit a configured generation task.",
     "result": "Select a generated result for adoption.",
     "editor": "Create and save editable media documents.",
+    "timeline": "Discover resources for editable timelines.",
     "history": "Undo or redo reversible project operations.",
     "creation": "Apply multiple project operations atomically.",
 }
@@ -54,6 +55,74 @@ def group(name: str) -> typer.Typer:
         groups[name] = typer.Typer(no_args_is_help=True, help=GROUP_HELP[name])
         app.add_typer(groups[name], name=name)
     return groups[name]
+
+
+@group("timeline").command("default-font", help="Find the bundled timeline font without opening a project.")
+def timeline_default_font():
+    from opendirector.installation import default_timeline_font
+    path = default_timeline_font()
+    try:
+        manifest = json.loads((path.parent / "manifest.json").read_text(encoding="utf-8"))
+        fingerprint = "sha256:" + sha256(path.read_bytes()).hexdigest()
+        if fingerprint != manifest["fingerprint"]:
+            raise ProjectError("Bundled font fingerprint mismatch.", 409, code="storage_unavailable")
+    except (OSError, ValueError, KeyError):
+        raise ProjectError("Bundled font is unavailable.", 409, code="storage_unavailable") from None
+    emit(dict(path=str(path), version=manifest["version"], fingerprint=fingerprint))
+
+
+@group("timeline").command("export", help="Export an exact saved revision as a portable editable .timeline.zip.")
+def timeline_export(ctx: typer.Context, editor_id: Annotated[UUID, typer.Option()],
+                    revision: Annotated[int, typer.Option(min=1)], output: Annotated[Path, typer.Option()]):
+    client = ctx.obj
+    client.command = ctx.command_path
+    if client.live:
+        emit(client.call("timeline_package_export", dict(editorId=str(editor_id), revision=revision, path=str(output))))
+        return
+    with client.http.stream("GET", client.path(f"/timelines/{editor_id}/package"), params={"revision": revision}) as response:
+        if not response.is_success:
+            raise ProjectError(response.read().decode(), response.status_code)
+        # Exclusive creation keeps a failed download from overwriting a user's file.
+        try:
+            with output.open("xb") as stream:
+                for chunk in response.iter_bytes(): stream.write(chunk)
+        except BaseException:
+            # An existing destination is never ours to remove.
+            if not isinstance(sys.exc_info()[1], FileExistsError): output.unlink(missing_ok=True)
+            raise
+    emit(dict(path=str(output), editorId=str(editor_id), revision=revision))
+
+
+@group("timeline").command("import", help="Import an editable bundle; default creates a new timeline.")
+def timeline_import(ctx: typer.Context, file: Path, operation_id: Annotated[UUID, typer.Option()],
+                    replace_editor: Annotated[UUID | None, typer.Option()] = None,
+                    expected_revision: Annotated[int | None, typer.Option(min=1)] = None):
+    from opendirector.domain.creation.timeline_packages import TimelinePackageImportRequest
+    from opendirector.infrastructure.creation_files import file_identity
+    client = ctx.obj
+    client.command = ctx.command_path
+    fingerprint, _ = file_identity(file)
+    arguments = dict(operationId=str(operation_id), archiveFingerprint=fingerprint,
+        replaceEditorId=str(replace_editor) if replace_editor else None, expectedRevision=expected_revision)
+    handle = uuid5(operation_id, "archive-upload")
+    request = TimelinePackageImportRequest.model_validate({**arguments, 'uploadHandle': handle})
+    if client.live:
+        value = client.call("timeline_package_import", {**arguments, 'path': str(file)}, identity=operation_id)
+    else:
+        client.open()
+        try:
+            client.request("GET", client.path(f"/timeline-package-imports/{operation_id}"))
+            existing = True
+        except ProjectError as error:
+            if error.status != 404: raise
+            existing = False
+        if not existing:
+            with file.open('rb') as stream:
+                client.request("PUT", client.path(f"/uploads/{handle}"), content=stream,
+                    headers={"X-Asset-Name": quote(file.name, safe=''), "X-Asset-Kind": "file"})
+        value = client.request("POST", client.path("/timeline-package-imports"), json=request.model_dump(mode='json'))
+    emit(value)
+    if value['status'] != 'applied': raise typer.Exit(1)
 
 
 class Client:

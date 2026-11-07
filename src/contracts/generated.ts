@@ -411,6 +411,9 @@ export interface CreationContractsInput extends ContractInput {
   readonly writeModel: ModelConfigWriteInput;
   readonly capabilities: NodeCapabilitiesInput;
   readonly viewState: ViewStateInput;
+  readonly timelinePackageManifest: TimelinePackageManifestInput;
+  readonly timelinePackageImport: TimelinePackageImportRequestInput;
+  readonly timelinePackageReceipt: TimelinePackageImportReceiptInput;
   readonly upload: UploadInfoInput;
 }
 
@@ -1271,11 +1274,67 @@ export interface TimelineDataInput extends ContractInput {
   readonly height: number;
   readonly tracks: ReadonlyArray<TimelineTrackInput>;
   readonly importedAssets?: ReadonlyArray<TimelineResourceInput>;
+  readonly fonts?: ReadonlyArray<TimelineFontResourceInput>;
+  readonly overlays?: ReadonlyArray<TimelineTextOverlayInput>;
 }
 
 export interface TimelineDocumentInput extends EditorDocumentBaseInput {
   readonly kind: "timeline";
   readonly data: TimelineDataInput;
+}
+
+export interface TimelineFontResourceInput extends ContractInput {
+  readonly id: string;
+  readonly title: string;
+  readonly asset: AssetRefInput;
+}
+
+export interface TimelinePackageExportFileInput extends ContractInput {
+  readonly editorId: string;
+  readonly revision: number;
+  readonly path: string;
+}
+
+export interface TimelinePackageImportFileInput extends ContractInput {
+  readonly operationId: string;
+  readonly archiveFingerprint: string;
+  readonly path: string;
+  readonly replaceEditorId?: string | null;
+  readonly expectedRevision?: number | null;
+}
+
+export interface TimelinePackageImportReceiptInput extends ContractInput {
+  readonly operationId: string;
+  readonly status: "registered" | "applied" | "rejected";
+  readonly editorId: string;
+  readonly registeredAssetIds?: ReadonlyArray<string>;
+  readonly receipt?: CommandReceiptInput | null;
+  readonly errorCode?: string | null;
+}
+
+export interface TimelinePackageImportRequestInput extends ContractInput {
+  readonly operationId: string;
+  readonly uploadHandle: string;
+  readonly archiveFingerprint: string;
+  readonly replaceEditorId?: string | null;
+  readonly expectedRevision?: number | null;
+}
+
+export interface TimelinePackageManifestInput extends ContractInput {
+  readonly format?: "opendirector-timeline-bundle";
+  readonly version?: 1;
+  readonly requiredCapabilities?: ReadonlyArray<"timeline.text.v1">;
+  readonly resources: ReadonlyArray<TimelinePackageResourceInput>;
+}
+
+export interface TimelinePackageResourceInput extends ContractInput {
+  readonly source: AssetRefInput;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "text" | "image" | "video" | "audio" | "file";
+  readonly mimeType: string;
+  readonly size: number;
+  readonly fingerprint: string;
 }
 
 export interface TimelinePublishRenderInput extends ContractInput {
@@ -1296,6 +1355,39 @@ export interface TimelineResourceInput extends ContractInput {
   readonly asset: AssetRefInput;
   readonly title: string;
   readonly durationSeconds?: number | null;
+}
+
+export interface TimelineTextBackgroundInput extends ContractInput {
+  readonly color: string;
+  readonly opacity: number;
+  readonly padding: number;
+}
+
+export interface TimelineTextOverlayInput extends ContractInput {
+  readonly id: string;
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly maxWidth: number;
+  readonly fontId: string;
+  readonly style: TimelineTextStyleInput;
+  readonly sourceAsset?: AssetRefInput | null;
+}
+
+export interface TimelineTextStrokeInput extends ContractInput {
+  readonly color: string;
+  readonly width: number;
+}
+
+export interface TimelineTextStyleInput extends ContractInput {
+  readonly fontSize: number;
+  readonly color: string;
+  readonly align: "left" | "center" | "right";
+  readonly lineHeight: number;
+  readonly background?: TimelineTextBackgroundInput | null;
+  readonly stroke?: TimelineTextStrokeInput | null;
 }
 
 export interface TimelineTrackInput extends ContractInput {
@@ -1860,6 +1952,9 @@ export interface CreationContracts extends Contract {
   readonly writeModel: ModelConfigWrite;
   readonly capabilities: NodeCapabilities;
   readonly viewState: ViewState;
+  readonly timelinePackageManifest: TimelinePackageManifest;
+  readonly timelinePackageImport: TimelinePackageImportRequest;
+  readonly timelinePackageReceipt: TimelinePackageImportReceipt;
   readonly upload: UploadInfo;
 }
 
@@ -2719,11 +2814,67 @@ export interface TimelineData extends Contract {
   readonly height: number;
   readonly tracks: ReadonlyArray<TimelineTrack>;
   readonly importedAssets: ReadonlyArray<TimelineResource>;
+  readonly fonts?: ReadonlyArray<TimelineFontResource>;
+  readonly overlays?: ReadonlyArray<TimelineTextOverlay>;
 }
 
 export interface TimelineDocument extends EditorDocumentBase {
   readonly kind: "timeline";
   readonly data: TimelineData;
+}
+
+export interface TimelineFontResource extends Contract {
+  readonly id: string;
+  readonly title: string;
+  readonly asset: AssetRef;
+}
+
+export interface TimelinePackageExportFile extends Contract {
+  readonly editorId: string;
+  readonly revision: number;
+  readonly path: string;
+}
+
+export interface TimelinePackageImportFile extends Contract {
+  readonly operationId: string;
+  readonly archiveFingerprint: string;
+  readonly path: string;
+  readonly replaceEditorId: string | null;
+  readonly expectedRevision: number | null;
+}
+
+export interface TimelinePackageImportReceipt extends Contract {
+  readonly operationId: string;
+  readonly status: "registered" | "applied" | "rejected";
+  readonly editorId: string;
+  readonly registeredAssetIds: ReadonlyArray<string>;
+  readonly receipt: CommandReceipt | null;
+  readonly errorCode: string | null;
+}
+
+export interface TimelinePackageImportRequest extends Contract {
+  readonly operationId: string;
+  readonly uploadHandle: string;
+  readonly archiveFingerprint: string;
+  readonly replaceEditorId: string | null;
+  readonly expectedRevision: number | null;
+}
+
+export interface TimelinePackageManifest extends Contract {
+  readonly format: "opendirector-timeline-bundle";
+  readonly version: 1;
+  readonly requiredCapabilities: ReadonlyArray<"timeline.text.v1">;
+  readonly resources: ReadonlyArray<TimelinePackageResource>;
+}
+
+export interface TimelinePackageResource extends Contract {
+  readonly source: AssetRef;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "text" | "image" | "video" | "audio" | "file";
+  readonly mimeType: string;
+  readonly size: number;
+  readonly fingerprint: string;
 }
 
 export interface TimelinePublishRender extends Contract {
@@ -2744,6 +2895,39 @@ export interface TimelineResource extends Contract {
   readonly asset: AssetRef;
   readonly title: string;
   readonly durationSeconds: number | null;
+}
+
+export interface TimelineTextBackground extends Contract {
+  readonly color: string;
+  readonly opacity: number;
+  readonly padding: number;
+}
+
+export interface TimelineTextOverlay extends Contract {
+  readonly id: string;
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly maxWidth: number;
+  readonly fontId: string;
+  readonly style: TimelineTextStyle;
+  readonly sourceAsset: AssetRef | null;
+}
+
+export interface TimelineTextStroke extends Contract {
+  readonly color: string;
+  readonly width: number;
+}
+
+export interface TimelineTextStyle extends Contract {
+  readonly fontSize: number;
+  readonly color: string;
+  readonly align: "left" | "center" | "right";
+  readonly lineHeight: number;
+  readonly background: TimelineTextBackground | null;
+  readonly stroke: TimelineTextStroke | null;
 }
 
 export interface TimelineTrack extends Contract {

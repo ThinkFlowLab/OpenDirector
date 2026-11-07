@@ -65,6 +65,10 @@ import {
   copyLibrarySubjects,
 } from "../backend/subjectLibrary.ts";
 import { timelinePublication } from "../backend/timelinePublication";
+import {
+  TimelinePackageImport,
+  exportTimelinePackage as exportNativeTimelinePackage,
+} from "../backend/timelinePackages";
 import { deliverTool, pendingToolDelivery } from "../backend/toolDeliveries";
 import {
   acknowledgeToolPlacement,
@@ -6466,8 +6470,146 @@ function Workspace() {
       {editing && editorMode === "default" && editing.type === "timeline" && (
         <TimelineEditor
           node={editing}
-          resources={resources}
+          latestNode={doc.nodes.find((node) => node.id === editing.id)}
+          onRefreshFromProject={() => {
+            const current = historyRef.current.present;
+            const node = current.nodes.find((node) => node.id === editing.id);
+            if (node) {
+              editorSession.current = new CreationEditorSession(
+                creationClient(current.id),
+                current,
+                node.id,
+              );
+              editorOrigin.current = captureEditorSource(current.id, node);
+              setEditing(node);
+            }
+          }}
+          resources={[
+            ...resources,
+            ...doc.nodes
+              .filter((node) => node.type === "text")
+              .map((node) => ({
+                id: `node:${node.id}`,
+                nodeId: node.id,
+                kind: "text" as const,
+                title: node.data.title,
+                text: node.data.text ?? "",
+                assetId: node.data.backendAssetId,
+                mimeType: "text/plain",
+              })),
+          ]}
+          onReadTextResource={async (resource) => {
+            const client = creationClient(doc.id);
+            const asset = client.snapshot.assets.find(
+              (asset) => asset.id === resource.assetId && asset.kind === "text",
+            );
+            if (!asset) throw new Error(t("timeline.text.sourceError"));
+            return {
+              title: resource.title,
+              mimeType: "text/plain",
+              src: await client.mediaUrl(asset.id),
+              asset: {
+                assetId: asset.id,
+                revision: asset.revision,
+                fingerprint: asset.fingerprint,
+                kind: "text",
+              },
+            };
+          }}
           onApply={(timeline) => commitEditorData({ timeline })}
+          onExportEditablePackage={async (timeline) => {
+            await commitEditorData({ timeline });
+            const session = editorSession.current!;
+            const basis = session.projection.basis;
+            const item = basis.canvasItems.find(
+              (item) => item.id === editing.id,
+            );
+            if (!item || item.binding.role !== "editor")
+              throw new Error(t("timeline.package.targetMissing"));
+            const editorId = item.binding.objectRef.id;
+            const document = basis.editorDocuments.find(
+              (document) => document.id === editorId,
+            );
+            if (!document) throw new Error(t("timeline.package.targetMissing"));
+            return exportNativeTimelinePackage(
+              session.projection.client,
+              document.id,
+              document.revision,
+            );
+          }}
+          onPreparePackageImport={(file, replace) => {
+            const session = editorSession.current;
+            if (!session) throw new Error(t("timeline.package.targetMissing"));
+            const client = session.projection.client;
+            const item = session.projection.basis.canvasItems.find(
+              (item) => item.id === session.itemId,
+            );
+            const editorId =
+              item?.binding.role === "editor"
+                ? item.binding.objectRef.id
+                : null;
+            const document = session.projection.basis.editorDocuments.find(
+              (document) => document.id === editorId,
+            );
+            if (replace && !document)
+              throw new Error(t("timeline.package.targetMissing"));
+            const operation = new TimelinePackageImport(
+              client,
+              file,
+              replace
+                ? { editorId: document!.id, revision: document!.revision }
+                : undefined,
+            );
+            return async () => {
+              if (
+                historyRef.current.present.id !== client.id ||
+                editorSaving.current
+              )
+                throw new Error(t("canvas.workspace.error.editorUnavailable"));
+              editorSaving.current = true;
+              try {
+                await saveQueue.current!.wait();
+                if (!(await persist(historyRef.current.present)))
+                  throw new Error(
+                    t("canvas.workspace.error.editorDraftSaveFailed"),
+                  );
+                await operation.run();
+                const projection = workspaceProjection(client.id);
+                const next = await projection.read(client.snapshot);
+                if (historyRef.current.present.id !== client.id)
+                  throw new Error(
+                    t("canvas.workspace.error.editorUnavailable"),
+                  );
+                const current = historyRef.current.present;
+                const merged = {
+                  ...next,
+                  viewport: current.viewport,
+                  settings: current.settings,
+                };
+                projection.baseline = merged;
+                projection.basis = client.snapshot;
+                setHistory((history) => ({ ...history, present: merged }));
+                if (replace) {
+                  const node = merged.nodes.find(
+                    (node) => node.id === session.itemId,
+                  );
+                  if (!node?.data.timeline)
+                    throw new Error(t("timeline.package.targetMissing"));
+                  editorSession.current = new CreationEditorSession(
+                    client,
+                    merged,
+                    node.id,
+                  );
+                  editorOrigin.current = captureEditorSource(client.id, node);
+                  setEditing(node);
+                  return node.data.timeline;
+                }
+              } finally {
+                editorSaving.current = false;
+                client.install(client.snapshot);
+              }
+            };
+          }}
           onPrepareRender={async (timeline) => {
             if ((await commitEditorData({ timeline })) === false)
               throw new Error(t("canvas.workspace.error.timelineUnsaved"));

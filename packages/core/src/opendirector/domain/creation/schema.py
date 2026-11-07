@@ -9,6 +9,7 @@ from .editors import EditorDocument
 from .generation import ExecutionParameters, GenerationSpec, InputSnapshot, Job, PromptPart, Reference, ResultVersion
 from .models import ModelConfigPublic, ModelConfigWrite, ModelKind, VideoMode
 from .project import ProjectSnapshot, ViewState
+from .timeline_packages import TimelinePackageManifest, TimelinePackageImportRequest, TimelinePackageImportReceipt
 
 
 class CreationContracts(Contract):
@@ -30,6 +31,9 @@ class CreationContracts(Contract):
     writeModel: ModelConfigWrite = Field(description='Model configuration input schema.')
     capabilities: NodeCapabilities = Field(description='Available canvas item operations.')
     viewState: ViewState = Field(description='Client-specific canvas view state.')
+    timelinePackageManifest: TimelinePackageManifest = Field(description='Native editable timeline bundle manifest.')
+    timelinePackageImport: TimelinePackageImportRequest = Field(description='Recoverable native bundle import request.')
+    timelinePackageReceipt: TimelinePackageImportReceipt = Field(description='Native bundle import progress and final receipt.')
     upload: UploadInfo = Field(description='Staged upload schema.')
 
 

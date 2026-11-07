@@ -8,6 +8,8 @@ from pydantic import JsonValue, TypeAdapter
 
 from opendirector.application.creation_artifacts import publish_artifact
 from opendirector.application.creation_assets import CreationAssets
+from opendirector.application.creation_timeline_packages import CreationTimelinePackages
+from opendirector.domain.creation.timeline_packages import TimelinePackageExportFile, TimelinePackageImportFile
 from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.base import ObjectVersion
@@ -223,6 +225,8 @@ def tools() -> list[dict]:
                               {'type': 'object', 'properties': {'type': command_type, 'payload': {'type': 'object'},
                                'expectedVersions': versions, 'expectedPreview': {'type': ['string', 'null']}}, '$defs': definitions,
                                'required': ['type', 'payload'], 'additionalProperties': False}))
+    result.append(tool_schema('timeline_package_export', 'Export an exact saved timeline revision to a new .timeline.zip file in the active execution directory. No editing session or open editor UI is required.', TimelinePackageExportFile.model_json_schema()))
+    result.append(tool_schema('timeline_package_import', 'Import a .timeline.zip file from this execution directory. Reuse operationId and archiveFingerprint on retry. Omit replacement fields to create a new editable timeline.', TimelinePackageImportFile.model_json_schema()))
     return result
 
 
@@ -235,6 +239,17 @@ class AgentTools:
 
     async def execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
                       name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None) -> JsonValue:
+        if name in {'timeline_package_export', 'timeline_package_import'}:
+            with self.projects.local.transaction() as db:
+                project_directory, _, _ = self.projects._load(db, project_id)
+            work = project_directory / 'agent-runs' / str(turn_id) / 'work'
+            packages = CreationTimelinePackages(self.projects)
+            if name == 'timeline_package_export':
+                request = TimelinePackageExportFile.model_validate(arguments)
+                return await asyncio.to_thread(packages.export_execution_file, project_id, request, execution_directory=work)
+            request = TimelinePackageImportFile.model_validate(arguments)
+            receipt = await asyncio.to_thread(packages.import_execution_file, project_id, request, execution_directory=work, session=session)
+            return receipt.model_dump(mode='json')
         if name == 'read_project':
             snapshot = await asyncio.to_thread(self.projects.snapshot, project_id)
             return {'project': snapshot.model_dump(mode='json'), 'models': self.configs.list(), 'commands': list(COMMANDS),

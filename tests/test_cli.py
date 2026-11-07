@@ -281,3 +281,21 @@ def test_spec_update_help_explains_replacement_and_json():
     assert result.exit_code == 0
     assert 'not a spec ID' in result.output
     assert 'Replace the complete generation configuration' in ' '.join(result.output.split())
+
+
+def test_timeline_default_font_is_offline_and_does_not_open_a_project(monkeypatch, tmp_path):
+    from hashlib import sha256
+    from opendirector import installation
+    monkeypatch.setenv('OPENDIRECTOR_ROOT', str(tmp_path / 'unused'))
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Read-only font discovery must not call the API')
+    monkeypatch.setattr(cli.Client, 'request', forbidden)
+    monkeypatch.setattr(cli.Client, 'call', forbidden)
+    result = CliRunner().invoke(cli.app, ['timeline', 'default-font'])
+    assert result.exit_code == 0, result.output
+    value = json.loads(result.output)
+    path = Path(value['path'])
+    assert path == installation.default_timeline_font()
+    assert value['version'] == '2.004'
+    assert value['fingerprint'] == 'sha256:' + sha256(path.read_bytes()).hexdigest()
+    assert not (tmp_path / 'unused').exists()

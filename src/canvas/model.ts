@@ -1,3 +1,4 @@
+import type { AssetRef, TimelineTextOverlay } from "../contracts/generated.ts";
 import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
@@ -111,7 +112,44 @@ export interface TimelineTrack {
   clips: TimelineClip[];
 }
 
+export interface TimelineFontView {
+  id: string;
+  title: string;
+  asset?: AssetRef;
+  src?: string;
+  mimeType: string;
+  /** Stable logical registration key for restored archive bytes; never an AssetRef. */
+  importIdentity?: string;
+}
+export interface TimelineTextSourceView {
+  /** View-only registration identity retained when foreign AssetRefs are cleared. */
+  importIdentity?: string;
+  title: string;
+  asset?: AssetRef;
+  src?: string;
+  mimeType: string;
+}
+type MutableTextFields = {
+  -readonly [K in keyof Omit<
+    TimelineTextOverlay,
+    "sourceAsset" | "style"
+  >]: TimelineTextOverlay[K];
+};
+export interface TimelineTextOverlayView extends MutableTextFields {
+  source?: TimelineTextSourceView;
+  style: {
+    fontSize: number;
+    color: string;
+    align: "left" | "center" | "right";
+    lineHeight: number;
+    background?: { color: string; opacity: number; padding: number } | null;
+    stroke?: { color: string; width: number } | null;
+  };
+}
+
 export interface TimelineData {
+  fonts?: TimelineFontView[];
+  overlays?: TimelineTextOverlayView[];
   tracks: TimelineTrack[];
   /** Retained independently of clip use; omitted only by older documents. */
   importedAssets?: CanvasResource[];
@@ -258,7 +296,9 @@ export const DEFAULT_SETTINGS: Readonly<GenerationSettings> = {
   prompt: "",
 };
 
-export function createDocument(title = tNow("errors.model.untitled")): CanvasDocument {
+export function createDocument(
+  title = tNow("errors.model.untitled"),
+): CanvasDocument {
   return {
     version: 1,
     id: crypto.randomUUID(),
@@ -978,7 +1018,9 @@ function applyCanvasCommand(
   }
   if (command.type === "add-edge") {
     if (document.edges.some((edge) => edge.id === command.edge.id))
-      throw new Error(tNow("errors.model.duplicateEdge", { id: command.edge.id }));
+      throw new Error(
+        tNow("errors.model.duplicateEdge", { id: command.edge.id }),
+      );
     const logicalNodes = [...document.nodes, ...(document.hiddenNodes ?? [])];
     const ids = new Set(logicalNodes.map((node) => node.id));
     if (!ids.has(command.edge.source) || !ids.has(command.edge.target))

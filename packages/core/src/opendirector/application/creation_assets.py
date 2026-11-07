@@ -98,10 +98,11 @@ class CreationAssets:
             raise ContractError('reference_invalid', 'Asset reference differs from its content', asset.id)
         return asset
 
-    def register(self, command, *, session=None, source='ui', provenance=None, apply=None, upload_handle=None):
+    def register(self, command, *, session=None, source='ui', provenance=None, apply=None, upload_handle=None, trusted_upload=False):
         """Trusted services may supply provenance and atomically update jobs/editors.
 
-        HTTP never accepts these extra arguments. Generated/edited outputs
+        HTTP never accepts these extra arguments. trusted_upload selects a server-owned
+        staged file while commit still validates the caller's editing session. Generated/edited outputs
         must have real job/document evidence validated by ProjectSnapshot.
         """
         replay = self.projects.replay(command)
@@ -112,7 +113,7 @@ class CreationAssets:
             raise ProjectError('文件登记需要素材导入命令。')
         handle = payload.uploadHandle if command.type == 'asset.import' else upload_handle
         with self.uploads.lock(command.projectId, handle):
-            _, owner, record = self.uploads.ready(command.projectId, handle, session)
+            _, owner, record = self.uploads.ready(command.projectId, handle, None if trusted_upload else session)
             asset = Asset(id=upload_asset_id(command.projectId, handle), projectId=command.projectId,
                 kind=record.kind, name=asset_name(payload.name), fingerprint=record.fingerprint,
                 path=f'assets/{upload_asset_id(command.projectId, handle)}', metadata=record.metadata,

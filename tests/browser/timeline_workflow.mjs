@@ -310,6 +310,12 @@ try {
   const page = await browser.newPage({
     viewport: { width: 1700, height: 1100 },
   });
+  // This workflow uses Chinese locators; do not depend on the host browser locale.
+  await page.addInitScript(() => {
+    if (location.protocol !== "http:") return; // about:blank has no localStorage.
+    localStorage.setItem("opendirector.locale.v1", "zh-CN");
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+  });
   page.setDefaultTimeout(20000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

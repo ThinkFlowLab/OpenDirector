@@ -1,6 +1,10 @@
 import type { CanvasResource, TimelineData } from "./model.ts";
 import { timelineError, timelineImportedAssets } from "./dataBoundary.ts";
-import { timelineDuration, timelineSegments } from "./timeline.ts";
+import {
+  timelineDuration,
+  timelineSegments,
+  timelineHasTextResources,
+} from "./timeline.ts";
 import { tNow } from "../i18n/messages.ts";
 
 export interface TimelineExportAsset {
@@ -106,6 +110,8 @@ export function exportTimelineFcpxml(
   timeline: TimelineData,
   title: string,
 ): string {
+  if (timelineHasTextResources(timeline))
+    throw new Error(tNow("errors.export.textUnsupported"));
   const assets = timelineExportAssets(timeline),
     duration = timelineDuration(timeline);
   if (!duration) throw new Error(tNow("errors.export.emptyTimeline"));
@@ -292,7 +298,10 @@ async function readLocalResource(
   resource: CanvasResource,
   signal: AbortSignal,
 ): Promise<Blob> {
-  if (!resource.src) throw new Error(tNow("errors.export.missingFile", { title: resource.title }));
+  if (!resource.src)
+    throw new Error(
+      tNow("errors.export.missingFile", { title: resource.title }),
+    );
   const base =
     typeof location === "undefined" ? "http://localhost/" : location.href;
   const url = new URL(resource.src, base);
@@ -325,8 +334,8 @@ export async function exportTimelinePackage(
     signal: AbortSignal,
   ) => Promise<Blob> = readLocalResource,
 ): Promise<Blob> {
-  const assets = timelineExportAssets(timeline);
   const fcpxml = exportTimelineFcpxml(timeline, title);
+  const assets = timelineExportAssets(timeline);
   const entries: ZipEntry[] = [
     {
       path: "project.fcpxml",
@@ -338,15 +347,15 @@ export async function exportTimelinePackage(
     const content = await read(asset.resource, signal);
     signal.throwIfAborted();
     if (!content.size)
-      throw new Error(tNow("errors.export.emptyFile", { title: asset.resource.title }));
+      throw new Error(
+        tNow("errors.export.emptyFile", { title: asset.resource.title }),
+      );
     entries.push({ path: asset.path, content });
     progress((index + 1) / (assets.length + 1));
   }
   entries.push({
     path: "README.txt",
-    content: new Blob([
-      tNow("errors.export.readme"),
-    ]),
+    content: new Blob([tNow("errors.export.readme")]),
   });
   const zip = await createTimelineZip(entries, signal);
   progress(1);

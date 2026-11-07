@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / 'packages/core/src'))
 from pydantic import BaseModel, TypeAdapter
 from opendirector.domain.creation.schema import ALIASES, CreationContracts
 
-MODULES = ('base', 'assets', 'models', 'generation', 'editors', 'canvas', 'project', 'commands', 'schema')
+MODULES = ('base', 'assets', 'models', 'generation', 'editors', 'canvas', 'project', 'commands', 'timeline_packages', 'schema')
 
 
 def models():
