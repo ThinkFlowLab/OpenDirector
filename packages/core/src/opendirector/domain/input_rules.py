@@ -95,8 +95,9 @@ def _adapter_rules(config):
         # Self-hosted vLLM-Omni text-to-image: it draws from the prompt alone, so
         # documents are inlined as text and reference images are not accepted.
         rules.update(profile='vllm-omni-image', allowedKinds=['text'], maxImages=0)
-    if kind == 'image' and config.get('protocol') in {None, 'openai'} and name.startswith('gpt-image'):
-        # OpenAI gpt-image: documented text-to-image plus reference editing with at
+    if kind == 'image' and config.get('protocol') in {None, 'openai'} and name.startswith(('gpt-image', 'chatgpt-image')):
+        # OpenAI gpt-image (and the chatgpt-image-* aliases on the same Images API):
+        # documented text-to-image plus reference editing with at
         # most 16 images, each under 25 MB and under 50 MB for the whole request.
         rules.update(profile='openai-gpt-image', allowedKinds=['text', 'image'], maxImages=16,
                      imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024)
