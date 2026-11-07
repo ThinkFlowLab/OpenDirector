@@ -6,6 +6,8 @@
 # Release policy: cutting a daily v0.1.x requires the gate-parity lane green
 # on the candidate SHA. The extended lanes are advisory in v1: their failures
 # are reported and tracked, but they do not block a release by themselves.
+# daily-benchmark runs after perf-outputs and is in that same advisory class.
+# It fails only on a threshold regression or a broken suite.
 # Matrix and policy are documented in docs/development/validation.md.
 #
 # Schedule: 0 18 * * * UTC = 02:00 Asia/Shanghai next day.
@@ -18,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: nightly-${{ github.ref }}
@@ -413,20 +416,138 @@ jobs:
             /tmp/opendirector-drag-nightly-*.cpuprofile
           if-no-files-found: ignore
 
+  # Lane 6: fixed comparable benchmark, after this run's perf sample exists.
+  # Advisory, same class as perf-outputs: the result does not block v0.1.x.
+  # The job fails only for a threshold regression or a broken suite, which is
+  # the room signal on nightly-summary (notify: true). The one-line comparison
+  # is published on every run, including improvements.
+  #
+  # Scenario and thresholds: scripts/nightly/benchmark.json
+  # (#180 scale: cold-open/delete 600 commits / 200 nodes, catalog 200 projects).
+  # UI numbers are this run's nightly-perf sample, not a second browser pass.
+  # Budgets in docs/development/ui-performance.md are a reading reference only.
+  daily-benchmark:
+    needs: [perf-outputs]
+    if: always() && (github.event_name != 'schedule' || github.repository == 'ThinkFlowLab/OpenDirector') && needs.perf-outputs.result != 'cancelled' && needs.perf-outputs.result != 'skipped'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    outputs:
+      summary: ${{ steps.report.outputs.summary }}
+      notify: ${{ steps.report.outputs.notify }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install Python dependencies
+        # The micro-bench imports the source tree itself. Skip the editable
+        # install so this lane does not rebuild the frontend.
+        run: |
+          grep -v '^-e \.' requirements.txt > "$RUNNER_TEMP/benchmark-requirements.txt"
+          python -m pip install -r "$RUNNER_TEMP/benchmark-requirements.txt"
+      - name: Download this run's UI sample
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-perf
+          path: nightly-perf
+      - name: Download the previous trend artifact
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          mkdir -p previous-benchmark
+          ids="$(gh run list --workflow nightly.yml --repo "$GITHUB_REPOSITORY" --limit 20 \
+            --json databaseId,status \
+            --jq "[.[] | select(.databaseId != ${{ github.run_id }} and .status == \"completed\") | .databaseId] | .[]")"
+          for id in $ids; do
+            if gh run download "$id" --repo "$GITHUB_REPOSITORY" --name daily-benchmark --dir previous-benchmark; then
+              echo "previous run $id"
+              exit 0
+            fi
+          done
+          echo "no previous daily-benchmark artifact"
+          exit 0
+      - id: report
+        name: Run the fixed suite and compare
+        run: |
+          set -eu
+          args=(python scripts/nightly/daily_benchmark.py
+            --config scripts/nightly/benchmark.json
+            --out daily-benchmark.json
+            --sha "$GITHUB_SHA"
+            --run-id "$GITHUB_RUN_ID")
+          if [ -f nightly-perf/nightly-perf.json ]; then
+            args+=(--perf nightly-perf/nightly-perf.json)
+          fi
+          if [ "${{ needs.perf-outputs.result }}" = "success" ]; then
+            args+=(--ui-required)
+          fi
+          if [ -f previous-benchmark/daily-benchmark.json ]; then
+            args+=(--previous previous-benchmark/daily-benchmark.json)
+          fi
+          set +e
+          "${args[@]}"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ] && [ ! -f daily-benchmark.json ]; then
+            exit "$status"
+          fi
+          summary="$(python -c 'import json; print(json.load(open("daily-benchmark.json"))["summary"])')"
+          notify="$(python -c 'import json; print("true" if json.load(open("daily-benchmark.json"))["notify"] else "false")')"
+          {
+            echo "notify=$notify"
+            echo "summary<<BENCH_SUMMARY_EOF"
+            echo "$summary"
+            echo "BENCH_SUMMARY_EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Daily comparable benchmark"
+            echo ""
+            echo "$summary"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload trend artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: daily-benchmark
+          path: daily-benchmark.json
+          if-no-files-found: error
+      - name: Fail on threshold regression or suite failure
+        if: steps.report.outputs.notify == 'true'
+        run: exit 1
+
   # Aggregated run summary; also the machine-readable lane record the
   # Coordinator consumes for the daily release decision.
   summary:
     if: always() && (github.event_name != 'schedule' || github.repository == 'ThinkFlowLab/OpenDirector')
-    needs: [gate-parity, pytest-flake-triage, browser-extended, browser-production, perf-outputs]
+    needs: [gate-parity, pytest-flake-triage, browser-extended, browser-production, perf-outputs, daily-benchmark]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
       - name: Aggregate lane results
+        env:
+          BENCH_RESULT: ${{ needs.daily-benchmark.result }}
+          BENCH_SUMMARY: ${{ needs.daily-benchmark.outputs.summary }}
+          BENCH_NOTIFY: ${{ needs.daily-benchmark.outputs.notify }}
         run: |
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           sha="${{ github.sha }}"
           flake="${{ needs.pytest-flake-triage.outputs.classification }}"
           [ -n "$flake" ] || flake=unknown
+          case "$BENCH_RESULT" in
+            success) if [ "$BENCH_NOTIFY" = "true" ]; then bench_notify=true; else bench_notify=false; fi ;;
+            failure) bench_notify=true ;;
+            *) bench_notify=false ;;
+          esac
+          if [ -n "$BENCH_SUMMARY" ]; then
+            bench_summary="$BENCH_SUMMARY"
+          else
+            bench_summary="daily benchmark ${BENCH_RESULT}"
+          fi
           cat > summary.md <<EOF
           ## Nightly checks — \`$sha\`
 
@@ -437,9 +558,14 @@ jobs:
           | Browser extended suite | ${{ needs.browser-extended.result }} |
           | Browser production build | ${{ needs.browser-production.result }} |
           | Perf & output verification | ${{ needs.perf-outputs.result }} |
+          | Daily comparable benchmark | ${BENCH_RESULT} |
+
+          $bench_summary
 
           Release rule: cut the daily \`v0.1.x\` only when **gate parity** is
-          \`success\` on this SHA. Extended lanes are advisory in v1.
+          \`success\` on this SHA. Extended lanes, including the daily benchmark,
+          are advisory in v1. Benchmark \`notify\` is set only for a threshold
+          regression or a broken suite.
           Run: $run_url
           EOF
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
@@ -450,9 +576,13 @@ jobs:
             --arg extended "${{ needs.browser-extended.result }}" \
             --arg production "${{ needs.browser-production.result }}" \
             --arg perf "${{ needs.perf-outputs.result }}" \
+            --arg bench "$BENCH_RESULT" \
+            --arg benchSummary "$bench_summary" \
+            --argjson benchNotify "$bench_notify" \
             '{sha: $sha, runId: ($run | tonumber), url: $url,
               lanes: {gateParity: $gate, flakeTriage: {result: $flake, classification: $flakeClass},
-                      browserExtended: $extended, browserProduction: $production, perfOutputs: $perf}}' \
+                      browserExtended: $extended, browserProduction: $production, perfOutputs: $perf,
+                      dailyBenchmark: {result: $bench, notify: $benchNotify, summary: $benchSummary}}}' \
             > nightly-summary.json
       - name: Upload nightly summary
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

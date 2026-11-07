@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "reference": "baseline-else-previous",
+  "regressionRatio": 1.5,
+  "description": "Fixed daily suite (#213), same scale as the #180 acceptance repro. Lower is better. cold-open and delete use 600 commits and 200 nodes; catalog lists 200 extra projects built with 3 nodes so the number is listing cost, not another history replay. UI metrics are the same nightly run's drag frame p95 (reference_drag_performance.mjs). Render-probe duration is kept on the artifact for the trend and is not a regression metric; docs/development/ui-performance.md budgets are a reading reference, not this failure line. Baseline metrics stay empty until an ubuntu-22.04 nightly sample is copied in. Until then the regression reference is the previous run. A metric regresses only when it is slower than that reference by both regressionRatio and its minDeltaMs.",
+  "storage": {
+    "cold-open": {"commits": 600, "nodes": 200, "projects": 0},
+    "catalog": {"commits": 0, "nodes": 3, "projects": 200},
+    "delete": {"commits": 600, "nodes": 200, "projects": 0}
+  },
+  "metrics": [
+    {"id": "storage.coldOpen.snapshot", "label": "snapshot", "source": "storage", "scenario": "cold-open", "field": "snapshot", "minDeltaMs": 100},
+    {"id": "storage.coldOpen.open", "label": "open", "source": "storage", "scenario": "cold-open", "field": "open", "minDeltaMs": 100},
+    {"id": "storage.catalog.listFirst", "label": "list", "source": "storage", "scenario": "catalog", "field": "list_projects_first", "minDeltaMs": 100},
+    {"id": "storage.delete.clientSnapshot", "label": "read", "source": "storage", "scenario": "delete", "field": "client_snapshot", "minDeltaMs": 100},
+    {"id": "storage.delete.trash", "label": "trash", "source": "storage", "scenario": "delete", "field": "trash", "minDeltaMs": 50},
+    {"id": "ui.drag.node.frameP95", "label": "node", "source": "drag", "kind": "node", "field": "frameP95", "minDeltaMs": 50},
+    {"id": "ui.drag.pan.frameP95", "label": "pan", "source": "drag", "kind": "pan", "field": "frameP95", "minDeltaMs": 50}
+  ],
+  "baseline": {
+    "runner": "ubuntu-22.04",
+    "note": "Seed metrics from a daily-benchmark.json artifact produced on the nightly runner. Do not copy a developer-machine timing.",
+    "metrics": {}
+  }
+}

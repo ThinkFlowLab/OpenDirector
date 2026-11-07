@@ -34,6 +34,7 @@ sys.path[:0] = [str(SOURCE / "packages/core/src"), str(SOURCE / "apps/api/src")]
 from opendirector.domain.creation.commands import parse_command  # noqa: E402
 from opendirector.infrastructure.creation_projects import CreationProjects  # noqa: E402
 from opendirector.infrastructure.local_projects import LocalProjects  # noqa: E402
+from opendirector.wiring import configure_runtime  # noqa: E402
 
 
 def command(kind, project_id, payload, versions=()):
@@ -208,6 +209,8 @@ def scenario_delete(root, commits, nodes, projects_count):
 
 
 def main():
+    # Command dispatch is not configured on import; this script is an entry point.
+    configure_runtime()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario", choices=["cold-open", "catalog", "delete"], default="cold-open"

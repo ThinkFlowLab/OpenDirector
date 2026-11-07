@@ -106,7 +106,7 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 | L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | 整个 job ≤30 min | Release checks 中浏览器阶段之前的各检查步骤 |
 | L2 浏览器 E2E（模型替身） | 隔离服务与模型替身下的核心旅程：画布、参考、导出、助手、时间线 | 每个 PR；push 到 main | 与 L1 同一 job | Release checks 浏览器阶段（含 Assistant auxiliary panels 独立 fixture 阶段） |
 | L3 main HEAD 复核与扩展覆盖 | 与 L1+L2 相同门槛在 main HEAD 重跑（gate parity）；Python 套件失败分类与已知时序敏感用例观测（flake triage）；PR 门禁未覆盖的全部浏览器脚本（extended） | 每晚定时；发布前可手动触发 | gate parity 与 L1+L2 相同；extended ≤60 min | nightly 的 gate-parity、pytest-flake-triage、browser-extended |
-| L4 生产构建、性能与输出 | 以生产构建（`vite preview` 服务 `dist`）运行核心旅程；MP4 落盘后 ffprobe 校验时长、流与帧数；帧延迟、长任务诊断采样与 CPU profile | 每晚定时；发布前对候选 SHA 手动触发 | production ≤45 min；perf ≤30 min | nightly 的 browser-production、perf-outputs |
+| L4 生产构建、性能与输出 | 以生产构建（`vite preview` 服务 `dist`）运行核心旅程；MP4 落盘后 ffprobe 校验时长、流与帧数；帧延迟、长任务诊断采样与 CPU profile。同一次 nightly 之后另跑固定可对比基准（存储微基准 + 复用上述采样） | 每晚定时；发布前对候选 SHA 手动触发 | production ≤45 min；perf ≤30 min；daily benchmark ≤30 min | nightly 的 browser-production、perf-outputs、daily-benchmark |
 | L5 稳定性与恢复（规划中） | 进程中断重启、工程重开恢复、长时运行稳定性；需要新的场景编写 | 每周；发布前 | 待定 | 未建设，作为后续工作跟踪 |
 
 L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭证与真实模型的验收属于需要明确授权的范围，不纳入本体系的自动执行。建议性结论与阻断性结论的边界见下节；已知失败模式的解读见 [CI 失败模式](ci-failures.md)。
@@ -114,8 +114,8 @@ L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭
 ### 发布决策与 lane 政策
 
 - Gate parity 绿色是候选 `v0.1.x` 的发布门槛；nightly 不自动打 tag，也不以任何结果自动触发发布动作。
-- Extended、production、perf lane 当前为建议性（advisory）：失败需登记跟进，但不单独阻断发布。某条 lane 连续两周稳定绿色后，由发布协调人决定是否升级为阻断项。
-- 每次运行产出 `nightly-summary`（各 lane 结果 + SHA）与 `nightly-perf`（渲染探针与拖拽采样）artifact；发布看板与失败通知按 summary artifact 对接，通知通道由发布协调人约定。
+- Extended、production、perf 与 daily benchmark lane 当前为建议性（advisory）：失败需登记跟进，但不单独阻断发布。某条 lane 连续两周稳定绿色后，由发布协调人决定是否升级为阻断项。
+- 每次运行产出 `nightly-summary`（各 lane 结果 + SHA + 基准一行摘要）与 `nightly-perf`（渲染探针与拖拽采样）artifact；发布看板与失败通知按 summary artifact 对接，通知通道由发布协调人约定。`lanes.dailyBenchmark.notify` 只在超阈回归或基准套件本身失败时为 true，改善和阈值内波动不通知。
 - `flaky-watchlist.txt` 一行一个 pytest node id，`#` 为注释；用例稳定后应删除条目，而不是长期静默重试。triage 结论写入 `flake-report` artifact 与 Actions summary。
 
 ### 脚本登记与 lane 归属
@@ -123,6 +123,20 @@ L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭
 [`tests/browser/manifest.json`](../../tests/browser/manifest.json) 是浏览器脚本 lane 归属与运行要求的唯一来源：`gate`（PR 门禁）、`extended`（nightly 普通隔离服务）、`extendedFixture`（nightly 独立 fixture 服务）、`production`（生产构建，要求 `previewSafe`）、`perf`（性能与输出验证）。`npm run check:browser-manifest`（Release checks 独立步骤）校验磁盘与清单一一对应、fixture 与 previewSafe 声明与源码一致、manifest 的 gate 集合与 release-checks.yml 实际调用一致；nightly 从清单派生各 lane 列表。新增浏览器脚本登记清单即可，不修改工作流列表。
 
 `mp4_render_probe.mjs` 与 `reference_drag_performance.mjs` 需要导入 `/src/*.ts`，只在 dev server 上运行；`vite preview` lane 只运行不导入 `/src` 的脚本。需要 `--assistant-fixture` 的浏览器脚本不属于普通隔离服务阶段。
+
+### 每日可对比基准
+
+`daily-benchmark` 在同一次 nightly 的 `perf-outputs` 之后运行，不重跑浏览器，也不进入发布门槛。固定场景与阈值在 [`scripts/nightly/benchmark.json`](../../scripts/nightly/benchmark.json)：
+
+- `cold-open` 与 `delete`：`--commits 600 --nodes 200`（#180 验收规模）。
+- `catalog`：`--projects 200`，每个额外工程 3 个节点，使 `list_projects` 测的是目录成本而不是再放一份 600 提交历史。
+- UI：复用本 run 的 `nightly-perf`（`reference_drag_performance.mjs` 的 pan/node `frameP95`，以及渲染探针采样）。[`ui-performance.md`](ui-performance.md) 的 100 ms / 500 ms 预算只作阅读对照，不是这条 lane 的失败线。
+
+比较规则：每个指标越低越好。已写入 `baseline.metrics` 时，相对基线判断回归，一行摘要仍同时给出相对上一次的百分比；基线为空时，以上一次 nightly 的 `daily-benchmark` artifact 为参照（距本次 12–36 小时记为 yesterday，否则记为 previous）。只有同时超过 `regressionRatio`（1.5）和该指标的 `minDeltaMs` 才算回归。套件跑不起来同样 `notify: true`。渲染探针的通过与否仍由 perf-outputs 负责，不在这里重复失败。
+
+不要把开发机计时抄进 `baseline.metrics`。基线应来自 nightly 的 `ubuntu-22.04` artifact。在基线写入之前，摘要写明 `baseline unseeded`。
+
+产物为 artifact `daily-benchmark`（`daily-benchmark.json`）。`nightly-summary.json` 的 `lanes.dailyBenchmark` 带上同一行 `summary` 和 `notify`，供现有 summary 通知路径使用。
 
 ## 证据记录
 

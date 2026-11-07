@@ -25,6 +25,8 @@ Start both timers at the user action. Define the visible feedback and the usable
 
 Use browser measurements for user-facing latency. Record first feedback and readiness separately, and split slow paths into client work, request queueing, server time, and rendering. Use comparable builds, fixtures, and interaction sequences. Keep initial load, warm navigation, direct manipulation, and long-running operations separate when setting budgets and reporting results.
 
+The nightly trend reuses the drag sample and render probe already collected on that run. The budgets in this document are a reference for reading those samples. They are not the nightly failure line; a regression past the threshold in the [validation guide](validation.md) is what gets reported.
+
 
 ## Measurement example: Warm canvas switching
 
