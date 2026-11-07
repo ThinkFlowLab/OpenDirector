@@ -624,6 +624,23 @@ def test_cutout_applies_exact_user_mask_without_any_model(project):
     assert result.getpixel((9, 8))[3] == 0 and result.getpixel((30, 20))[3] == 0
 
 
+def test_gpt_image_is_never_used_as_a_cutout_matte(project):
+    # gpt-image edits redraw and move the subject, so its alpha would not match the source pixels.
+    store, project_id, session = project
+    configs = ModelConfigs(store.local.repository)
+    configs.save('image', 'https://api.openai.com/v1', 'gpt-image-2', 'sk-test', protocol='openai')
+    source = upload(store, project_id, session, 'blue.png', png())
+    calls = []
+    transport = httpx.MockTransport(lambda request: calls.append(request) or httpx.Response(500))
+    with pytest.raises(ProjectError, match='主体抠图'):
+        run(store, configs, transport, project_id, session, {'tool': 'cutout', 'sourceAssetIds': [source]})
+    # A painted selection still cuts out locally, without calling the image service.
+    mask = upload(store, project_id, session, 'mask.png', base64.b64decode(box_mask((64, 48), (10, 8, 30, 32))))
+    task = run(store, configs, transport, project_id, session,
+               {'tool': 'cutout', 'sourceAssetIds': [source], 'maskAssetId': mask})
+    assert task['status'] == 'succeeded' and task['requires'] == [] and not calls
+
+
 def test_cutout_uses_sam_when_no_rgba_editor_is_configured(project):
     store, project_id, session = project
     source = upload(store, project_id, session, 'blue.png', png())
