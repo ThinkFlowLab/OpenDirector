@@ -1904,16 +1904,20 @@ export class CreationProjection {
   async save(document: CanvasDocument, options: { saveView?: boolean } = {}) {
     // Run inside the caller's save queue, after any pending acknowledgement.
     // A no-op must not advance the editing basis to unseen server changes.
-    if (
-      options.saveView === false &&
+    const unchanged =
       this.baseline &&
       document.id === this.baseline.id &&
-      same(
-        [document.nodes, document.hiddenNodes, document.edges],
-        [this.baseline.nodes, this.baseline.hiddenNodes, this.baseline.edges],
-      )
-    )
+      (document === this.baseline ||
+        same(
+          [document.nodes, document.hiddenNodes, document.edges],
+          [this.baseline.nodes, this.baseline.hiddenNodes, this.baseline.edges],
+        ));
+    if (unchanged) {
+      // The business content is already stored. Only a changed viewport or
+      // generation count needs the separate preference write.
+      if (options.saveView !== false) await this.saveView(document);
       return false;
+    }
     const { operations, versions } = await this.prepare(document);
     let expected = versions;
     for (let attempt = 0; ; attempt++) {
@@ -1950,17 +1954,25 @@ export class CreationProjection {
     this.viewError = "";
     try {
       const view = await this.client.view();
-      await this.client.view({
-        viewport: document.viewport,
-        generationCounts: {
-          ...view.generationCounts,
-          ...Object.fromEntries(
-            document.nodes
-              .filter((node) => node.data.settings)
-              .map((node) => [node.id, node.data.settings!.count ?? 1]),
-          ),
-        },
-      });
+      const generationCounts = {
+        ...view.generationCounts,
+        ...Object.fromEntries(
+          document.nodes
+            .filter((node) => node.data.settings)
+            .map((node) => [node.id, node.data.settings!.count ?? 1]),
+        ),
+      };
+      // Autosave, switch flushes and open all end here. Rewriting an unchanged
+      // viewport delays the next document without persisting any new fact.
+      const unchangedCounts =
+        Object.keys(view.generationCounts).length ===
+          Object.keys(generationCounts).length &&
+        same(
+          Object.entries(view.generationCounts).sort(),
+          Object.entries(generationCounts).sort(),
+        );
+      if (same(view.viewport, document.viewport) && unchangedCounts) return;
+      await this.client.view({ viewport: document.viewport, generationCounts });
     } catch (error) {
       this.viewError = error instanceof Error ? error.message : String(error);
     }

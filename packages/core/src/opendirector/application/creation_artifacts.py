@@ -6,8 +6,8 @@ import stat
 
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.creation_files import CHUNK_BYTES
-from opendirector.infrastructure.creation_uploads import asset_name
+from opendirector.ports.files import CHUNK_BYTES
+from opendirector.ports.gateway import gateway
 
 
 def publish_artifact(assets, command, *, execution_directory: Path, session, provenance, source='agent'):
@@ -33,7 +33,7 @@ def publish_artifact(assets, command, *, execution_directory: Path, session, pro
     candidate = Path(os.path.abspath(candidate))
     if not candidate.is_relative_to(work) or candidate == work:
         raise ProjectError('只能发布本轮执行目录中的文件。', 403)
-    name = asset_name(request.name)
+    name = gateway().asset_name(request.name)
     key = command.commandId
     with ExitStack() as stack:
         descriptor = os.open(work, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

@@ -17,7 +17,7 @@ from opendirector.domain.creation.library import (
     LibrarySubjectSnapshot,
 )
 from opendirector.domain.projects import ProjectError, identifier
-from opendirector.infrastructure.library_store import LibraryStore, media_kind, now
+from opendirector.ports.gateway import gateway
 
 ALLOWED_ASSET_KINDS = {'image', 'video', 'audio', 'file'}
 MAX_LIBRARY_BYTES = 500 * 1024 * 1024
@@ -33,7 +33,7 @@ def library_name(value: str) -> str:
 class Library:
     def __init__(self, projects):
         self.projects = projects
-        self.store = LibraryStore(projects.state_dir)
+        self.store = gateway().library(projects.state_dir)
 
     # -- reads -------------------------------------------------------------
 
@@ -105,7 +105,7 @@ class Library:
             raise ProjectError('主体素材请通过「主体」入口加入。', 422)
         mime = getattr(getattr(facts, 'metadata', None), 'mimeType', None) or 'application/octet-stream'
         fallback = getattr(facts, 'name', '') or ''
-        resolved = media_kind(mime, name or fallback)
+        resolved = gateway().media_kind(mime, name or fallback)
         if resolved not in ALLOWED_ASSET_KINDS:
             raise ProjectError('只能将图片、视频、音频、文档加入资产。', 422)
         label = library_name(name or fallback or '素材')
@@ -148,7 +148,7 @@ class Library:
 
     def trash(self, item_ids) -> List[LibraryItem]:
         keys = [UUID(str(value)) for value in item_ids]
-        stamp = now()
+        stamp = gateway().library_now()
         with self.store.transaction() as tx:
             missing = [str(key) for key in keys if key not in tx.index.items]
             if missing:

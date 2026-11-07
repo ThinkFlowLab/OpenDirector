@@ -2,16 +2,22 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { creationClient } from "../src/backend/creationClient.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
-import { releaseBackendProject } from "../src/backend/projects.ts";
+import {
+  activeBackendProjectId,
+  releaseBackendProject,
+} from "../src/backend/projects.ts";
 import { invalidateCached } from "../src/backend/requestCache.ts";
 import {
   cleanupUnreadableWorkspaceProjects,
   createWorkspaceProject,
   initializeWorkspace,
   openExampleWorkspaceProject,
+  openWorkspaceProject,
   saveWorkspaceDocument,
+  trashWorkspaceProject,
   type WorkspaceProject,
 } from "../src/backend/workspace.ts";
+import type { ProjectSnapshot } from "../src/contracts/generated.ts";
 import {
   createDocument,
   createNode,
@@ -20,6 +26,7 @@ import {
 import { EXAMPLE_PROJECT_TITLE } from "../src/canvas/assets.ts";
 
 /** Entry/session orchestration; projection round-trips are exercised separately. */
+let heartbeat: (() => void) | undefined;
 function fixture(t: TestContext) {
   // Each test stands for a fresh page, whose list cache starts empty.
   invalidateCached();
@@ -39,7 +46,14 @@ function fixture(t: TestContext) {
     lease: string | null = null;
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { location, setInterval: () => 1, addEventListener() {} },
+    value: {
+      location,
+      setInterval: (callback: () => void) => {
+        heartbeat = callback;
+        return 1;
+      },
+      addEventListener() {},
+    },
   });
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
@@ -49,6 +63,8 @@ function fixture(t: TestContext) {
     },
   });
   CreationProjection.prototype.open = async function () {
+    // CreationClient.open() acquires the project lease with the same read.
+    lease = this.client.id;
     const doc = documents.get(this.client.id)!;
     this.baseline = structuredClone(doc);
     return structuredClone(doc);
@@ -84,17 +100,38 @@ function fixture(t: TestContext) {
       return Response.json({ removed: ["Legacy"], failed: [] });
     }
     if (path.includes("/sessions/")) {
-      lease = null;
+      // A heartbeat renewal keeps the lease on its project; an explicit close
+      // releases it.
+      if (method === "PUT") lease = body?.projectId ?? null;
+      else lease = null;
       return Response.json({ ok: true });
     }
     const id = path.split("/")[4]!;
     if (method === "GET" && path === `/api/creation/projects/${id}` && documents.has(id))
-      return Response.json({canvasItems: [
+      return Response.json({project: {
+        id,
+        name: documents.get(id)!.title,
+        revision: 1,
+      }, canvasItems: [
         ...(documents.get(id)?.nodes ?? []).map(node => ({...node, visible: true})),
         ...(documents.get(id)?.hiddenNodes ?? []).map(node => ({...node, visible: false})),
       ]});
     if (path.endsWith("/commands")) {
       if (offline) throw new TypeError("offline");
+      if (body.type === "project.trash") {
+        projects.delete(id);
+        documents.delete(id);
+        return Response.json({
+          commandId: body.commandId,
+          projectId: id,
+          inputFingerprint: "trash",
+          status: "applied",
+          changed: [],
+          jobIds: [],
+          issues: [],
+          eventCursor: 2,
+        });
+      }
       if (
         (occupied && body.payload.name === "未命名画布") ||
         [...projects.values()].some((p) => p.name === body.payload.name)
@@ -147,6 +184,7 @@ function fixture(t: TestContext) {
     storage,
     location,
     calls,
+    heartbeat: () => heartbeat?.(),
     occupy: () => {
       occupied = true;
     },
@@ -410,4 +448,272 @@ test("a numbered example with only hidden nodes creates a fresh example and pres
   assert.notEqual(reopened.id, initial.id);
   assert.equal(reopened.nodes.length, 1);
   assert.deepEqual(f.documents.get(initial.id), hidden);
+});
+
+test("opening a canvas adopts the lease its read acquired instead of opening twice", async (t) => {
+  const f = fixture(t);
+  const document = await initializeWorkspace();
+  // CreationProjection.open() stands in for the POST /open-canvas read that
+  // acquires the session lease; the workspace must not release it and open the
+  // same project again through the projects entrypoint.
+  assert.equal(
+    f.calls.some(
+      (call) => call.path.endsWith("/open") && call.method === "POST",
+    ),
+    false,
+  );
+  assert.equal(
+    f.calls.some((call) => call.path.includes("/sessions/")),
+    false,
+  );
+  assert.equal(f.storage.get("opendirector.lastUnifiedFilesystemProject"), document.id);
+});
+
+test("switching canvases keeps the lease from the next project's read", async (t) => {
+  const f = fixture(t);
+  const first = await initializeWorkspace();
+  const id = crypto.randomUUID();
+  f.projects.set(id, { id, name: "Second", path: "/projects/Second" });
+  f.documents.set(id, { ...createDocument("Second"), id });
+  f.calls.length = 0;
+  const next = await openWorkspaceProject(f.projects.get(id)!);
+  assert.equal(next.id, id);
+  // No DELETE /sessions, no POST /open: the canvas read already moved the lease.
+  assert.deepEqual(f.calls, []);
+  await saveWorkspaceDocument({ ...next, title: "Second saved" });
+  assert.equal(f.documents.get(id)?.title, "Second saved");
+  assert.notEqual(first.id, next.id);
+});
+
+test("trashing the open project reuses its in-memory snapshot", async (t) => {
+  const f = fixture(t);
+  const document = await initializeWorkspace();
+  const project = f.projects.get(document.id)!;
+  // The open CanvasWorkspace passes the client's snapshot so the delete does
+  // not read the same project again only to name its revision.
+  const known = {
+    project: { id: document.id, name: document.title, revision: 7 },
+  } as ProjectSnapshot;
+  f.calls.length = 0;
+  await trashWorkspaceProject(project, known);
+  const rereads = f.calls.filter(
+    (call) =>
+      call.method === "GET" &&
+      call.path === `/api/creation/projects/${document.id}`,
+  );
+  assert.deepEqual(rereads, []);
+  const trash = f.calls.find((call) => call.path.endsWith("/commands"))!;
+  assert.equal(trash.body.type, "project.trash");
+  assert.equal(trash.body.expectedVersions[0].revision, 7);
+  assert.ok(f.calls.some((call) => call.method === "DELETE"));
+  assert.equal(f.projects.size, 0);
+});
+
+test("a heartbeat fired while a canvas loads cannot renew the old lease", async (t) => {
+  const f = fixture(t);
+  const first = await initializeWorkspace();
+  const id = crypto.randomUUID();
+  f.projects.set(id, { id, name: "Slow", path: "/projects/Slow" });
+  f.documents.set(id, { ...createDocument("Slow"), id });
+  const stub = CreationProjection.prototype.open;
+  let enter!: () => void,
+    release!: () => void;
+  const entered = new Promise<void>((resolve) => (enter = resolve));
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  CreationProjection.prototype.open = async function (this: CreationProjection) {
+    enter();
+    await gate;
+    return stub.call(this);
+  };
+  try {
+    const opening = openWorkspaceProject(f.projects.get(id)!);
+    await entered;
+    f.calls.length = 0;
+    // The read owns the session queue: a renewal here would move the lease back
+    // to the previous project in the middle of a large snapshot read.
+    f.heartbeat();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      f.calls.some(
+        (call) => call.method === "PUT" && call.path.includes("/sessions/"),
+      ),
+      false,
+    );
+    release();
+    const opened = await opening;
+    assert.equal(opened.id, id);
+    // Once the read adopted the lease, renewals target the new project.
+    assert.notEqual(first.id, id);
+    f.heartbeat();
+    for (let attempt = 0; attempt < 5; attempt++)
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    const renewals = f.calls.filter(
+      (call) => call.method === "PUT" && call.path.includes("/sessions/"),
+    );
+    assert.equal(renewals.length, 1);
+    assert.equal(renewals[0]!.body.projectId, id);
+  } finally {
+    CreationProjection.prototype.open = stub;
+  }
+});
+
+test("a stale in-memory revision is reread and the trash retried once", async (t) => {
+  const f = fixture(t);
+  const document = await initializeWorkspace();
+  const project = f.projects.get(document.id)!;
+  let trashes = 0;
+  const versions: number[] = [];
+  const plain = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const path = String(url),
+      method = options.method ?? "GET";
+    if (path.endsWith("/commands") && method === "POST") {
+      const body = JSON.parse(String(options.body));
+      if (body.type === "project.trash") {
+        trashes += 1;
+        versions.push(body.expectedVersions[0].revision);
+        if (trashes === 1)
+          return Response.json({
+            commandId: body.commandId,
+            projectId: body.projectId,
+            inputFingerprint: "stale",
+            status: "rejected",
+            changed: [],
+            jobIds: [],
+            issues: [
+              { code: "revision_conflict", message: "工程版本已变化。" },
+            ],
+            eventCursor: 1,
+          });
+      }
+    }
+    return plain(url, options);
+  };
+  try {
+    await trashWorkspaceProject(project, {
+      project: { id: document.id, name: document.title, revision: 3 },
+    } as ProjectSnapshot);
+  } finally {
+    globalThis.fetch = plain;
+  }
+  // The rejected first attempt was followed by one authoritative reread.
+  assert.equal(trashes, 2);
+  assert.deepEqual(versions, [3, 1]);
+  assert.equal(f.projects.size, 0);
+});
+
+test("a canvas read that outlives the lease renews it before adopting", async (t) => {
+  const f = fixture(t);
+  await initializeWorkspace();
+  const id = crypto.randomUUID();
+  f.projects.set(id, { id, name: "Slow", path: "/projects/Slow" });
+  f.documents.set(id, { ...createDocument("Slow"), id });
+  const stub = CreationProjection.prototype.open;
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  CreationProjection.prototype.open = async function (this: CreationProjection) {
+    // Media hydration streams longer than the server's 60 s lease.
+    now += 61_000;
+    return stub.call(this);
+  };
+  try {
+    f.calls.length = 0;
+    const opened = await openWorkspaceProject(f.projects.get(id)!);
+    assert.equal(opened.id, id);
+    const renewals = f.calls.filter(
+      (call) => call.method === "PUT" && call.path.includes("/sessions/"),
+    );
+    assert.equal(renewals.length, 1);
+    assert.equal(renewals[0]!.body.projectId, id);
+    assert.equal(
+      f.calls.some((call) => call.method === "DELETE"),
+      false,
+    );
+    // The renewed lease is the adopted one, so saving right after works.
+    await saveWorkspaceDocument({ ...opened, title: "Slow saved" });
+    assert.equal(f.documents.get(id)?.title, "Slow saved");
+  } finally {
+    Date.now = realNow;
+    CreationProjection.prototype.open = stub;
+  }
+});
+
+test("a long read that lost its lease fails instead of adopting it", async (t) => {
+  const f = fixture(t);
+  const first = await initializeWorkspace();
+  const id = crypto.randomUUID();
+  f.projects.set(id, { id, name: "Stolen", path: "/projects/Stolen" });
+  f.documents.set(id, { ...createDocument("Stolen"), id });
+  const stub = CreationProjection.prototype.open;
+  const realNow = Date.now;
+  let now = 2_000_000;
+  Date.now = () => now;
+  CreationProjection.prototype.open = async function (this: CreationProjection) {
+    now += 61_000;
+    return stub.call(this);
+  };
+  const plain = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    if (
+      String(url).includes("/sessions/") &&
+      (options.method ?? "GET") === "PUT"
+    )
+      return Response.json(
+        { detail: "工程正在其他窗口中打开", code: "storage_busy" },
+        { status: 409 },
+      );
+    return plain(url, options);
+  };
+  try {
+    await assert.rejects(openWorkspaceProject(f.projects.get(id)!));
+    // A failed adoption must not point heartbeats at the stolen project.
+    assert.equal(activeBackendProjectId(), first.id);
+    // The session moved with the read and the renewal was rejected, so this
+    // window's lease is put back on the project the canvas is still showing.
+    assert.equal(
+      f.calls.filter(
+        (call) =>
+          call.method === "POST" &&
+          call.path === `/api/creation/projects/${first.id}/open`,
+      ).length,
+      1,
+    );
+  } finally {
+    globalThis.fetch = plain;
+    Date.now = realNow;
+    CreationProjection.prototype.open = stub;
+  }
+});
+
+test("a read that fails after the lease moves restores the previous project", async (t) => {
+  const f = fixture(t);
+  const first = await initializeWorkspace();
+  const id = crypto.randomUUID();
+  f.projects.set(id, { id, name: "Broken", path: "/projects/Broken" });
+  f.documents.set(id, { ...createDocument("Broken"), id });
+  const stub = CreationProjection.prototype.open;
+  CreationProjection.prototype.open = async function () {
+    // Stands for client.open() having been accepted and the following view
+    // read failing. The server lease is already on this project.
+    throw new Error("view failed");
+  };
+  try {
+    f.calls.length = 0;
+    await assert.rejects(
+      openWorkspaceProject(f.projects.get(id)!),
+      /view failed/,
+    );
+    assert.equal(activeBackendProjectId(), first.id);
+    assert.equal(
+      f.calls.filter(
+        (call) =>
+          call.method === "POST" &&
+          call.path === `/api/creation/projects/${first.id}/open`,
+      ).length,
+      1,
+    );
+  } finally {
+    CreationProjection.prototype.open = stub;
+  }
 });

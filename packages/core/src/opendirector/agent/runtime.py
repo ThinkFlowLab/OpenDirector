@@ -43,11 +43,30 @@ def runtime_spec(name: str) -> RuntimeSpec:
         raise ProjectError('未知 Agent 引擎。') from None
 
 
-def runtime_available(name: str) -> bool:
+def installation(name: str) -> str | None:
+    """The executable serving a runtime, or None when it is not installed.
+
+    Every engine answers through this one seam. Before this, jiuwenswarm was the
+    only harness with its own probe, so a caller or a test could patch one seam
+    and still get the other one's answer.
+    """
     spec = runtime_spec(name)
     if spec.engine == 'jiuwenswarm':
-        return jiuwenswarm.executable() is not None
-    return native.executable(spec.engine) is not None
+        return jiuwenswarm.executable()
+    return native.executable(spec.engine)
+
+
+def runtime_available(name: str) -> bool:
+    return installation(name) is not None
+
+
+async def runtime_status(name: str, *, probe: bool = True) -> str:
+    """One runtime's state. `probe` false reports the cheap catalog state only."""
+    if not probe:
+        if installation(name) is None:
+            return 'not_installed'
+        return 'ready' if runtime_spec(name).engine == 'opencode' else 'checking'
+    return await runtime_readiness(name)
 
 
 def runtime_catalog() -> list[dict]:
@@ -56,19 +75,18 @@ def runtime_catalog() -> list[dict]:
 
 
 async def runtime_readiness(engine: str) -> str:
+    """Probe one engine. Installation is decided once, by `installation`."""
+    executable = installation(engine)
+    if executable is None:
+        return 'not_installed'
     if engine == 'deepseek':
-        if native.executable(engine) is None:
-            return 'not_installed'
         from opendirector.agent.deepseek import model_choices
         try:
             return 'ready' if await model_choices() else 'needs_configuration'
         except ProjectError:
             return 'unknown'
     if engine == 'jiuwenswarm':
-        return await jiuwenswarm.readiness()
-    executable = native.executable(engine)
-    if executable is None:
-        return 'not_installed'
+        return await jiuwenswarm.readiness(executable)
     if engine == 'opencode':
         return 'ready'
     args = ['--version'] if engine == 'default' else ['login', 'status'] if engine == 'codex' else ['auth', 'status', '--json']

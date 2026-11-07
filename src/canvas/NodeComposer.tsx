@@ -12,7 +12,6 @@ import { ReferenceThumbnail } from "./ReferenceThumbnail";
 import {
   changeGenerationSettings,
   generationBlocker,
-  generationDefaults,
   generationModel,
   generationReferenceIssue,
   generationReferenceRole,
@@ -33,17 +32,13 @@ import {
   isMusicModel,
   hasMusicReference,
   MUSIC_SECONDS,
-  serviceAudioSettings,
   type ModelConfig,
 } from "../backend/rules.ts";
-import {
-  applyModelResolution,
-  resolveGenerationModel,
-} from "./modelResolution.ts";
-import { copyGenerationSettings } from "./dataBoundary";
+import { resolveGenerationModel } from "./modelResolution.ts";
 import { GenerationComposerShell } from "./GenerationComposerShell";
 import { useI18n } from "../i18n/I18nProvider";
-import { generationPrompt } from "./generationReferenceContent.ts";
+import { getNodeGenerationSettings } from "./generationSettings.ts";
+export { getNodeGenerationSettings };
 import {
   GenerationReferenceEditor,
   type GenerationReferenceHandle,
@@ -77,68 +72,8 @@ function clockTime(seconds: number) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-const LEGACY_MODELS = [
-  "本地交互演示",
-  "本地音频工作流",
-  "配乐创意",
-  "环境音创意",
-];
 /** Built-in demo voice id; the visible label is localized separately. */
 const DEMO_VOICE = "动漫海绵";
-
-/** Shared defaults let the workspace run the same parameters that the controls display. */
-export function getNodeGenerationSettings(
-  node: CanvasNode,
-  models?: readonly ModelConfig[],
-): ComposerSettings {
-  const mode =
-    node.data.kind === "video"
-      ? "video"
-      : node.data.kind === "audio"
-        ? "audio"
-        : "image";
-  const previous = node.data.settings
-    ? copyGenerationSettings(node.data.settings)
-    : undefined;
-  // Older saved projects may retain settings from a previous media kind.
-  // Model, resolution and duration belong to their original media mode.
-  const sameMode = previous?.mode === mode ? previous : undefined;
-  const defaults = generationDefaults(mode);
-  const legacyModel = LEGACY_MODELS.includes(sameMode?.model ?? "");
-  const next: ComposerSettings = {
-    ...defaults,
-    ...sameMode,
-    mode,
-    model: sameMode?.model && !legacyModel ? sameMode.model : defaults.model,
-    aspectRatio:
-      previous?.aspectRatio === "auto" ||
-      ratios.some((ratio) => ratio === previous?.aspectRatio)
-        ? previous!.aspectRatio
-        : defaults.aspectRatio,
-    resolution:
-      mode === "audio"
-        ? "auto"
-        : sameMode?.resolution && sameMode.resolution !== "1024"
-          ? sameMode.resolution
-          : defaults.resolution,
-    prompt: generationPrompt(node),
-    count: previous?.count ?? 1,
-    audioEnabled: sameMode?.audioEnabled ?? true,
-    voiceName: sameMode?.modelConfigId
-      ? sameMode.voiceName
-      : (sameMode?.voiceName ?? defaults.voiceName),
-  };
-  // The creator only offers configured service models, so the displayed model
-  // has to be the resolved one: reading and running then agree, and reopening a
-  // node never drifts to whatever the catalog happens to define.
-  if (!models) return next;
-  const resolved = applyModelResolution(
-    next,
-    resolveGenerationModel(next, mode, models),
-  );
-  const config = backendModel(resolved, models);
-  return config ? serviceAudioSettings(resolved, config) : resolved;
-}
 
 export function NodeComposer({
   selectedNode,

@@ -131,7 +131,7 @@ export const models = {
 
   "models.protocolOption.openaiAgent": "OpenAI-compatible API (including vLLM)",
   "models.protocolOption.openaiImage":
-    "OpenAI-compatible API (including vLLM-Omni Z-Image-Turbo)",
+    "OpenAI-compatible API (including gpt-image and vLLM-Omni Z-Image-Turbo)",
   "models.protocolOption.volcengine": "Volcengine Ark / Agent Plan",
   "models.protocolOption.segmentation": "vLLM-Omni segmentation API (SAM 3)",
   "models.protocolOption.videos": "Async /videos API (including vLLM-Omni)",

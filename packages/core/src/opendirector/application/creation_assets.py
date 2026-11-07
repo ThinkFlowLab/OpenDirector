@@ -13,18 +13,16 @@ from opendirector.domain.creation.assets import Asset, AssetProvenance
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.creation_files import (
+from opendirector.ports.files import (
     AssetFileWrite, CHUNK_BYTES, MAX_CREATION_TEXT_BYTES, stream_identity,
 )
-from opendirector.infrastructure.creation_projects import directory
-from opendirector.infrastructure.creation_uploads import CreationUploads, asset_name, upload_asset_id
-from opendirector.infrastructure.local_projects import child
+from opendirector.ports.gateway import gateway
 
 
 class CreationAssets:
     def __init__(self, projects):
         self.projects = projects
-        self.uploads = CreationUploads(projects)
+        self.uploads = gateway().uploads(projects)
         self._verified = OrderedDict()
         self._verification_lock = Lock()
         self._thumbnails = OrderedDict()
@@ -73,7 +71,7 @@ class CreationAssets:
         if command.type == 'asset.updateMetadata':
             def update(before):
                 asset = self._asset(before, command.payload.assetId)
-                name = asset_name(command.payload.name)
+                name = gateway().asset_name(command.payload.name)
                 if name == asset.name:
                     return before
                 data = before.model_dump()
@@ -113,9 +111,9 @@ class CreationAssets:
         handle = payload.uploadHandle if command.type == 'asset.import' else upload_handle
         with self.uploads.lock(command.projectId, handle):
             _, owner, record = self.uploads.ready(command.projectId, handle, session)
-            asset = Asset(id=upload_asset_id(command.projectId, handle), projectId=command.projectId,
-                kind=record.kind, name=asset_name(payload.name), fingerprint=record.fingerprint,
-                path=f'assets/{upload_asset_id(command.projectId, handle)}', metadata=record.metadata,
+            asset = Asset(id=gateway().upload_asset_id(command.projectId, handle), projectId=command.projectId,
+                kind=record.kind, name=gateway().asset_name(payload.name), fingerprint=record.fingerprint,
+                path=f'assets/{gateway().upload_asset_id(command.projectId, handle)}', metadata=record.metadata,
                 provenance=provenance or AssetProvenance(source='upload'))
             def register(before):
                 if payload.expectedKind is not None and payload.expectedKind != record.kind:
@@ -139,7 +137,7 @@ class CreationAssets:
         if replay is not None:
             return replay
         payload = command.payload
-        name = asset_name(payload.name)
+        name = gateway().asset_name(payload.name)
         if Path(name).suffix.lower() not in {'.txt', '.md'}:
             raise ProjectError('文本素材名称需以 .txt 或 .md 结尾。')
         content = payload.text.encode('utf-8')
@@ -161,7 +159,7 @@ class CreationAssets:
             if previous and previous not in actual_provenance.sources:
                 actual_provenance = AssetProvenance.model_validate({**actual_provenance.model_dump(),
                     'sources': (*actual_provenance.sources, previous)})
-            asset_id = upload_asset_id(command.projectId, handle)
+            asset_id = gateway().upload_asset_id(command.projectId, handle)
             asset = Asset(id=asset_id, projectId=command.projectId, name=name, kind='text', metadata=record.metadata,
                           fingerprint=record.fingerprint, path=f'assets/{asset_id}', provenance=actual_provenance)
             def save(before):
@@ -220,7 +218,7 @@ class CreationAssets:
                 asset = self._asset(snapshot, asset_id)
             except ContractError:
                 raise ProjectError('素材不在当前工程中。', 404) from None
-            file = child(directory(child(path, 'assets')), str(asset.id))
+            file = gateway().child(gateway().directory(gateway().child(path, 'assets')), str(asset.id))
             try:
                 stream = os.fdopen(os.open(file, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)), 'rb')
             except FileNotFoundError:
@@ -249,15 +247,15 @@ class CreationAssets:
     def preview(self, project_id: UUID, asset_id: UUID, target: Path) -> dict:
         stream, asset = self.open_media(project_id, asset_id)
         with stream:
-            target = directory(target)
+            target = gateway().directory(target)
             target.mkdir(parents=True, exist_ok=True)
             stem = f'{asset.id}-{asset.fingerprint.removeprefix("sha256:")}'
             if asset.kind == 'image':
                 content, _ = self.thumbnail(project_id, asset_id)
-                output, mime = child(target, stem + '.webp'), 'image/webp'
+                output, mime = gateway().child(target, stem + '.webp'), 'image/webp'
                 output.write_bytes(content)
             elif asset.kind in {'video', 'audio'}:
-                output = child(target, stem + ('.jpg' if asset.kind == 'video' else '.wav'))
+                output = gateway().child(target, stem + ('.jpg' if asset.kind == 'video' else '.wav'))
                 command = ['ffmpeg', '-nostdin', '-v', 'error', '-y']
                 if asset.kind == 'video':
                     command += ['-vf', "scale='min(960,iw)':-2", '-frames:v', '1', '-q:v', '3']

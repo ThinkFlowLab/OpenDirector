@@ -54,7 +54,7 @@ const browser = await chromium.launch({
 });
 let page;
 try {
-  page = await browser.newPage({
+  page = await browser.newPage({ locale: "en-US",
     viewport: { width: 1500, height: 1000 },
   });
   // Skip the first-run model setup welcome; it covers the canvas.
@@ -71,19 +71,19 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page.getByText("Saved on this device", { exact: true }).waitFor();
   if (generated) {
     await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", { name: "添加图片", exact: true })
+      .getByRole("toolbar", { name: "Canvas creation tools" })
+      .getByRole("button", { name: "Add Image", exact: true })
       .click();
     await chooseGenerationModel(page, { label: "fixture-image" });
     await page
-      .getByRole("textbox", { name: "生成提示词", exact: true })
+      .getByRole("textbox", { name: "Prompt", exact: true })
       .fill("A purple square");
-    await page.getByRole("button", { name: "提交生成", exact: true }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
   } else
-    await page.getByLabel("选择本地素材文件", { exact: true }).setInputFiles({
+    await page.getByLabel("Choose local asset files", { exact: true }).setInputFiles({
       name: "source.png",
       mimeType: "image/png",
       buffer: Buffer.from(
@@ -94,7 +94,7 @@ try {
   let snapshot = await until(
     (value) => value.canvasItems.length === 1 && value.assets.length === 1,
   );
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page.getByText("Saved on this device", { exact: true }).waitFor();
   const originalJobs = structuredClone(snapshot.jobs);
   const originalResults = structuredClone(snapshot.results);
   const itemId = snapshot.canvasItems[0].id;
@@ -102,19 +102,22 @@ try {
   async function openLayers() {
     const node = page.locator(`.react-flow__node[data-id="${itemId}"]`);
     await node.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "编辑图片", exact: true }).click();
-    await page.getByRole("button", { name: "图层工作台", exact: true }).click();
-    await page.getByRole("button", { name: "文字", exact: true }).waitFor();
+    await page.getByRole("menuitem", { name: "Edit image", exact: true }).click();
+    await page.getByRole("button", { name: "Layer studio", exact: true }).click();
+    await page.getByRole("button", { name: "Text", exact: true }).waitFor();
   }
   await openLayers();
-  await page.getByRole("button", { name: "文字", exact: true }).click();
+  await page.getByRole("button", { name: "Text", exact: true }).click();
   await page
-    .getByLabel("图层文字内容", { exact: true })
+    .getByLabel("Layer text content", { exact: true })
     .fill("Editable after reopen");
-  await page.getByRole("button", { name: "应用到画布", exact: true }).click();
-  // A committed snapshot may be visible before the UI receives its acknowledgement.
-  // Do not reload until the editor has cleared its pending delivery and closed.
-  await page.getByRole("button", { name: "应用到画布", exact: true }).waitFor({state: "hidden"});
+  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
+  // The apply control renames itself while the save is in flight, so its
+  // absence is not acknowledgement. The studio stays mounted, and its pending
+  // delivery stays in session storage, until the save resolves and it closes.
+  await page
+    .getByRole("button", { name: "Close the layer studio", exact: true })
+    .waitFor({ state: "hidden" });
   snapshot = await until((value) =>
     value.editorDocuments.some(
       (doc) => doc.kind === "layers" && doc.data.layers.length === 2,
@@ -129,17 +132,19 @@ try {
   assert.ok(!JSON.stringify(layers).includes("data:image"));
   assert.ok(!JSON.stringify(layers).includes("blob:"));
   await page.reload();
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page.getByText("Saved on this device", { exact: true }).waitFor();
   await openLayers();
   assert.equal(
-    await page.getByLabel("图层文字内容", { exact: true }).inputValue(),
+    await page.getByLabel("Layer text content", { exact: true }).inputValue(),
     "Editable after reopen",
   );
-  await page.getByLabel("图层文字内容", { exact: true }).fill("Edited again");
-  await page.getByRole("button", { name: "应用到画布", exact: true }).click();
-  // A committed snapshot may be visible before the UI receives its acknowledgement.
-  // Do not reload until the editor has cleared its pending delivery and closed.
-  await page.getByRole("button", { name: "应用到画布", exact: true }).waitFor({state: "hidden"});
+  await page.getByLabel("Layer text content", { exact: true }).fill("Edited again");
+  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
+  // Same as the first apply: wait until the studio closes, not until the
+  // button label changes to the in-progress text.
+  await page
+    .getByRole("button", { name: "Close the layer studio", exact: true })
+    .waitFor({ state: "hidden" });
   snapshot = await until((value) =>
     value.editorDocuments.some(
       (doc) =>
@@ -192,6 +197,7 @@ try {
     await page.evaluate(async (projectId) => {
       const { creationClient } = await import("/src/backend/creationClient.ts");
       const client = creationClient(projectId);
+      await client.refresh();
       await client.selectResult(
         client.snapshot.generationSpecs[0].id,
         client.snapshot.results[0].id,
@@ -203,7 +209,7 @@ try {
     assert.equal(outputAssetId(snapshot), originalAsset);
     assert.equal(snapshot.canvasItems[0].editors.length, 0);
     await page.reload();
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
     assert.equal(outputAssetId(await state()), originalAsset);
   }
   assert.deepEqual(errors, []);

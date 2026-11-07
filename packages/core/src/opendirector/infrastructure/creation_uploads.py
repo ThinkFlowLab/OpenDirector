@@ -13,9 +13,8 @@ from pydantic import Field
 from opendirector.domain.creation.assets import MediaMetadata, UploadInfo
 from opendirector.domain.creation.base import Contract, Fingerprint, MediaKind
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.creation_files import (
-    MAX_CREATION_ASSET_BYTES, MAX_CREATION_TEXT_BYTES, file_identity, upload_directory,
-)
+from opendirector.infrastructure.creation_files import file_identity, upload_directory
+from opendirector.ports.files import MAX_CREATION_ASSET_BYTES, MAX_CREATION_TEXT_BYTES
 from opendirector.infrastructure.creation_projects import directory, durable_json, sync_directory
 from opendirector.infrastructure.local_projects import child, read_json
 from opendirector.infrastructure.rename import rename_path

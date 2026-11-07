@@ -42,7 +42,7 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1600, height: 1000 } });
 // Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() =>
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -59,12 +59,12 @@ const output = (snapshot, item) =>
         ?.currentResultId,
   )?.asset.assetId;
 async function saved() {
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page.getByText("Saved on this device", { exact: true }).waitFor();
 }
 async function menu(itemId, action) {
   await page
     .locator(".react-flow__pane")
-    .click({ position: { x: 100, y: 100 } });
+    .click({ position: { x: 1400, y: 800 } });
   await page.keyboard.press("Escape");
   await page
     .locator(`.react-flow__node[data-id="${itemId}"] .cw-node-title`)
@@ -72,28 +72,28 @@ async function menu(itemId, action) {
   await page.getByRole("menuitem", { name: new RegExp(`^${action}`) }).click();
 }
 async function crop(itemId) {
-  await menu(itemId, "编辑图片");
-  await page.getByRole("combobox", { name: "裁剪比例" }).waitFor();
+  await menu(itemId, "Edit image");
+  await page.getByRole("combobox", { name: "Crop ratio" }).waitFor();
 }
 async function apply() {
-  await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+  await page.getByRole("button", { name: "Apply edits", exact: true }).click();
   // Persisted state can precede the acknowledgement that clears this edit.
   await page
-    .getByRole("combobox", { name: "裁剪比例" })
+    .getByRole("combobox", { name: "Crop ratio" })
     .waitFor({ state: "hidden" });
 }
 try {
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await saved();
   await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加图片", exact: true })
+    .getByRole("toolbar", { name: "Canvas creation tools" })
+    .getByRole("button", { name: "Add Image", exact: true })
     .click();
   await chooseGenerationModel(page, { label: "fixture-image" });
   await page
-    .getByRole("textbox", { name: "生成提示词", exact: true })
+    .getByRole("textbox", { name: "Prompt", exact: true })
     .fill("A purple square for editable crop");
-  await page.getByRole("button", { name: "提交生成", exact: true }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
   let snapshot = await until((s) => s.jobs[0]?.status === "succeeded");
   await saved();
   const original = snapshot.canvasItems[0];
@@ -112,7 +112,7 @@ try {
   const jobs = structuredClone(snapshot.jobs),
     results = structuredClone(snapshot.results);
   // A raw generated result can be copied without fabricating another execution.
-  await menu(original.id, "复制副本");
+  await menu(original.id, "Duplicate");
   snapshot = await until((s) => s.canvasItems.length === 2);
   await saved();
   const rawCopy = snapshot.canvasItems.find((i) => i.id !== original.id);
@@ -124,9 +124,9 @@ try {
     null,
   );
   await crop(original.id);
-  await page.getByRole("button", { name: "旋转 90°" }).click();
-  await page.getByRole("combobox", { name: "裁剪比例" }).selectOption("4:3");
-  await page.getByRole("slider", { name: /亮度/ }).press("End");
+  await page.getByRole("button", { name: "Rotate 90°" }).click();
+  await page.getByRole("combobox", { name: "Crop ratio" }).selectOption("4:3");
+  await page.getByRole("slider", { name: /Brightness/ }).press("End");
   await apply();
   snapshot = await until((s) =>
     s.editorDocuments.some((d) => d.kind === "image_crop"),
@@ -147,14 +147,14 @@ try {
   await saved();
   await crop(original.id);
   assert.equal(
-    await page.getByRole("combobox", { name: "裁剪比例" }).inputValue(),
+    await page.getByRole("combobox", { name: "Crop ratio" }).inputValue(),
     "4:3",
   );
   assert.equal(
-    await page.getByRole("slider", { name: /亮度/ }).inputValue(),
+    await page.getByRole("slider", { name: /Brightness/ }).inputValue(),
     "200",
   );
-  await page.getByRole("combobox", { name: "裁剪比例" }).selectOption("9:16");
+  await page.getByRole("combobox", { name: "Crop ratio" }).selectOption("9:16");
   await apply();
   snapshot = await until((s) =>
     s.editorDocuments.some((d) => d.id === doc.id && d.revision === 2),
@@ -167,7 +167,7 @@ try {
     snapshot.canvasItems.find((i) => i.id === original.id),
   );
   const secondOutput = output(snapshot, editedOriginal);
-  await menu(original.id, "复制副本");
+  await menu(original.id, "Duplicate");
   snapshot = await until((s) => s.canvasItems.length === 3);
   await saved();
   const copy = snapshot.canvasItems.find(
@@ -180,8 +180,8 @@ try {
   assert.deepEqual(copiedDoc.data, revised.data);
   assert.equal(output(snapshot, copy), secondOutput);
   await crop(copy.id);
-  await page.getByRole("combobox", { name: "裁剪比例" }).selectOption("1:1");
-  await page.getByRole("button", { name: "旋转 90°" }).click();
+  await page.getByRole("combobox", { name: "Crop ratio" }).selectOption("1:1");
+  await page.getByRole("button", { name: "Rotate 90°" }).click();
   await apply();
   snapshot = await until((s) =>
     s.editorDocuments.some((d) => d.id === copiedDoc.id && d.revision === 2),
@@ -208,21 +208,21 @@ try {
   await saved();
   await crop(copy.id);
   assert.equal(
-    await page.getByRole("combobox", { name: "裁剪比例" }).inputValue(),
+    await page.getByRole("combobox", { name: "Crop ratio" }).inputValue(),
     "1:1",
   );
-  await page.getByRole("button", { name: "关闭图片编辑" }).click();
+  await page.getByRole("button", { name: "Close image editor" }).click();
   // Switching editors must start from the current composite, not resurrect
   // another editor's earlier pixels or discard its retained history.
   await crop(copy.id);
-  await page.getByRole("button", { name: "图层工作台", exact: true }).click();
-  await page.getByRole("button", { name: "文字", exact: true }).click();
+  await page.getByRole("button", { name: "Layer studio", exact: true }).click();
+  await page.getByRole("button", { name: "Text", exact: true }).click();
   await page
-    .getByLabel("图层文字内容", { exact: true })
+    .getByLabel("Layer text content", { exact: true })
     .fill("Crop then layers");
-  await page.getByRole("button", { name: "应用到画布", exact: true }).click();
+  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
   await page
-    .getByRole("button", { name: "应用到画布", exact: true })
+    .getByRole("button", { name: "Apply to canvas", exact: true })
     .waitFor({ state: "hidden" });
   snapshot = await until((s) =>
     s.canvasItems
@@ -236,10 +236,10 @@ try {
   assert.ok(snapshot.editorDocuments.some((d) => d.id === copiedDoc.id));
   await crop(copy.id);
   assert.equal(
-    await page.getByRole("combobox", { name: "裁剪比例" }).inputValue(),
+    await page.getByRole("combobox", { name: "Crop ratio" }).inputValue(),
     "original",
   );
-  await page.getByRole("button", { name: "旋转 90°" }).click();
+  await page.getByRole("button", { name: "Rotate 90°" }).click();
   await apply();
   snapshot = await until((s) =>
     s.canvasItems

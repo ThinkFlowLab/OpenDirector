@@ -26,7 +26,7 @@ assert.equal(
   "Use the isolated fixture server",
 );
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1500, height: 1000 } });
 // Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() =>
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
@@ -50,23 +50,24 @@ if (!reopen)
 const state = () => call(`/api/creation/projects/${projectId}`);
 const until = async (predicate, label) => {
   const deadline = Date.now() + 15000;
+  let snapshot;
   while (Date.now() < deadline) {
-    const snapshot = await state();
+    snapshot = await state();
     if (predicate(snapshot)) return snapshot;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`Timeout: ${label}`);
+  throw new Error(`Timeout: ${label}; jobs: ${JSON.stringify(snapshot?.jobs)}`);
 };
 const rail = (label) =>
   page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: `添加${label}`, exact: true });
+    .getByRole("toolbar", { name: "Canvas creation tools" })
+    .getByRole("button", { name: `Add ${label}`, exact: true });
 try {
   if (reopen) {
     const before = await state();
     const calls = (await call("/api/creation-test-health")).calls.length;
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
     assert.equal(
       await page.locator(".react-flow__node").count(),
       before.canvasItems.filter((item) => item.visible).length,
@@ -88,8 +89,8 @@ try {
     );
   } else {
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
-    await rail("文本").click();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
+    await rail("Text").click();
     let snapshot = await until(
       (value) => value.canvasItems.length === 1,
       "source created",
@@ -98,7 +99,7 @@ try {
     const source = page.locator(`.react-flow__node[data-id="${sourceId}"]`);
     await source.locator(".cw-text-display").dblclick();
     await source.getByRole("textbox").fill("Source version one");
-    await rail("文本").click();
+    await rail("Text").click();
     snapshot = await until(
       (value) => value.canvasItems.length === 2 && value.assets.length === 1,
       "material and target saved",
@@ -157,7 +158,7 @@ try {
     ).targetSpecId;
     await target.locator(".cw-node-title").click();
     const prompt = page.getByRole("textbox", {
-      name: "文本生成提示词",
+      name: "Text prompt",
       exact: true,
     });
     await prompt.fill("Based on @");
@@ -165,10 +166,10 @@ try {
     await prompt.locator("[data-reference]").waitFor();
     await source.locator(".cw-node-title").dblclick();
     await page
-      .getByRole("textbox", { name: "节点名称", exact: true })
+      .getByRole("textbox", { name: "Node name", exact: true })
       .fill("Source A");
     await page
-      .getByRole("textbox", { name: "节点名称", exact: true })
+      .getByRole("textbox", { name: "Node name", exact: true })
       .press("Enter");
     snapshot = await until((value) => {
       const spec = value.generationSpecs.find(
@@ -207,7 +208,7 @@ try {
       .waitFor();
     await call("/api/creation-test-gate", { open: false });
     await page
-      .getByRole("textbox", { name: "文本生成提示词", exact: true })
+      .getByRole("textbox", { name: "Text prompt", exact: true })
       .press("Control+Enter");
     snapshot = await until((value) => value.jobs.length === 1, "job accepted");
     const jobId = snapshot.jobs[0].id;
@@ -231,7 +232,8 @@ try {
       (value) => value.jobs[0].status === "succeeded",
       "background completion",
     );
-    assert.equal(snapshot.jobs[0].adopted, true);
+    assert.equal(snapshot.jobs[0].adopted, false);
+    assert.equal(snapshot.generationSpecs.find((spec) => spec.id === targetSpecId).currentResultId, null);
     assert.equal(
       snapshot.jobs[0].inputSnapshot.references[0].asset.assetId,
       sourceAsset.id,
@@ -246,22 +248,33 @@ try {
     );
     assert.equal(snapshot.canvasItems.length, 2);
     assert.equal(snapshot.generationSpecs.length, 2);
+    // The source was hidden after submission, so explicitly adopt the candidate.
+    await page.evaluate(async ({ projectId, targetId, specId, resultId }) => {
+      const { creationClient, objectVersion } = await import("/src/backend/creationClient.ts");
+      const client = creationClient(projectId);
+      await client.refresh();
+      const spec = client.snapshot.generationSpecs.find((item) => item.id === specId);
+      const target = client.snapshot.canvasItems.find((item) => item.id === targetId);
+      await client.command("result.select", { specId, resultId }, [
+        objectVersion("generation_spec", spec), objectVersion("canvas_item", target),
+      ]);
+    }, { projectId, targetId, specId: targetSpecId, resultId: snapshot.results[0].id });
     await page
       .getByText(/Fixture generated:/)
       .first()
       .waitFor();
-    await page.getByRole("button", { name: "资产列表", exact: true }).click();
-    const list = page.getByRole("dialog", { name: "资产列表", exact: true });
+    await page.getByRole("button", { name: "Asset list", exact: true }).click();
+    const list = page.getByRole("dialog", { name: "Asset list", exact: true });
     await list.waitFor();
     const sourceRow = list
       .locator(".cw-creation-asset-row")
       .filter({ has: page.getByText("Source A", { exact: true }) });
     await sourceRow.waitFor();
     assert.equal(
-      await page.getByRole("dialog", { name: "资产列表", exact: true }).count(),
+      await page.getByRole("dialog", { name: "Asset list", exact: true }).count(),
       1,
     );
-    assert.equal(await list.getByRole("button", { name: /预览/ }).count(), 0);
+    assert.equal(await list.getByRole("button", { name: /Preview/ }).count(), 0);
     await sourceRow.locator(".cw-creation-asset-open").click();
     await until(
       (value) => value.canvasItems.find((item) => item.id === sourceId).visible,
@@ -277,7 +290,7 @@ try {
         "Unused local bytes",
       );
     }, projectId);
-    await page.getByRole("button", { name: "资产列表", exact: true }).click();
+    await page.getByRole("button", { name: "Asset list", exact: true }).click();
     await list.waitFor();
     const disposable = list
       .locator(".cw-creation-asset-row")
@@ -285,19 +298,19 @@ try {
     await disposable.waitFor();
     await disposable.getByRole("checkbox").check();
     await list
-      .getByRole("button", { name: "删除所选（1）", exact: true })
+      .getByRole("button", { name: "Delete selected (1)", exact: true })
       .click();
     await list
-      .getByRole("button", { name: "确认永久删除", exact: true })
+      .getByRole("button", { name: "Confirm permanent deletion", exact: true })
       .click();
     await until(
       (value) => !value.assets.some((asset) => asset.name === "Disposable.md"),
       "permanent deletion",
     );
     await list
-      .getByRole("button", { name: "关闭资产列表", exact: true })
+      .getByRole("button", { name: "Close asset list", exact: true })
       .click();
-    for (const kind of ["图片", "视频", "音频", "主体", "时间线"])
+    for (const kind of ["Image", "Video", "Audio", "Subject", "Timeline"])
       await rail(kind).click();
     snapshot = await until(
       (value) => value.canvasItems.length === 7,
@@ -307,15 +320,15 @@ try {
       [...new Set(snapshot.canvasItems.map((item) => item.kind))].sort(),
       ["audio", "image", "subject", "text", "timeline", "video"],
     );
-    await page.getByRole("button", { name: "生成历史", exact: true }).click();
+    await page.getByRole("button", { name: "Generation history", exact: true }).click();
     await page
-      .getByRole("button", { name: "恢复生成配置", exact: true })
+      .getByRole("button", { name: "Restore generation settings", exact: true })
       .waitFor();
     await page
-      .getByRole("button", { name: "恢复生成配置", exact: true })
+      .getByRole("button", { name: "Restore generation settings", exact: true })
       .click();
     await page
-      .getByText("生成配置已恢复，当前结果保留；未开始新的生成任务。", {
+      .getByText("Generation configuration restored. The current result is kept and no new generation task was started.", {
         exact: true,
       })
       .waitFor();
@@ -324,9 +337,9 @@ try {
       1,
       "Restoring config does not start a job",
     );
-    await page.getByRole("button", { name: "关闭侧栏", exact: true }).click();
+    await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
     await page.reload();
-    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await page.getByText("Saved on this device", { exact: true }).waitFor();
     assert.equal(await page.locator(".react-flow__node").count(), 7);
     snapshot = await state();
     assert.equal(snapshot.jobs[0].id, jobId);

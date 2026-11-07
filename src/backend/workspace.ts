@@ -5,6 +5,7 @@ import type {
 } from "../contracts/generated.ts";
 import { ApiError, json, request } from "./api.ts";
 import {
+  CreationCommandError,
   creationClient,
   creationPath,
   objectVersion,
@@ -15,6 +16,7 @@ import { CreationProjection } from "./creationProjection.ts";
 import {
   activeBackendProjectId,
   openBackendProject,
+  openBackendProjectCanvas,
   releaseBackendProject,
 } from "./projects.ts";
 import {
@@ -90,8 +92,10 @@ export async function readWorkspaceDocument(project: WorkspaceProject) {
 
 export async function openWorkspaceProject(project: WorkspaceProject) {
   // Read first: invalid content cannot take the lease away from the old project.
-  const document = await readWorkspaceDocument(project);
-  await openBackendProject(project.id, project.name);
+  // The read itself acquires the session lease, so no second open is needed.
+  const document = await openBackendProjectCanvas(project.id, () =>
+    readWorkspaceDocument(project),
+  );
   try {
     localStorage.setItem(lastKey, project.id);
   } catch {
@@ -293,13 +297,19 @@ export async function renameWorkspaceProject(
 }
 
 /** Removes a closed project from the list; the directory goes to the operating
- * system recycle bin when the platform supports it and is deleted otherwise. */
-export async function trashWorkspaceProject(project: WorkspaceProject) {
-  const snapshot = await request<ProjectSnapshot>(creationPath(project.id));
+ * system recycle bin when the platform supports it and is deleted otherwise.
+ * The open canvas passes its authoritative snapshot so deleting it does not
+ * read the same project again only to name the current revision. */
+export async function trashWorkspaceProject(
+  project: WorkspaceProject,
+  known?: ProjectSnapshot,
+) {
+  let snapshot =
+    known ?? (await request<ProjectSnapshot>(creationPath(project.id)));
   const current = activeBackendProjectId() === project.id;
   if (current) await releaseBackendProject();
-  try {
-    await request<CommandReceipt>(
+  const trash = async () => {
+    const receipt = await request<CommandReceipt>(
       `${creationPath(project.id)}/commands`,
       json("POST", {
         commandId: crypto.randomUUID(),
@@ -309,6 +319,26 @@ export async function trashWorkspaceProject(project: WorkspaceProject) {
         expectedVersions: [objectVersion("project", snapshot.project)],
       }),
     );
+    // A definite rejection is a 200 receipt; it must not look like a deletion.
+    if (receipt.status === "rejected") throw new CreationCommandError(receipt);
+    return receipt;
+  };
+  try {
+    try {
+      await trash();
+    } catch (error) {
+      // An agent or another window may have advanced the project while the page
+      // held it; reread the authoritative revision once and retry only that
+      // definite conflict.
+      if (
+        !known ||
+        !(error instanceof CreationCommandError) ||
+        !error.receipt.issues.some((issue) => issue.code === "revision_conflict")
+      )
+        throw error;
+      snapshot = await request<ProjectSnapshot>(creationPath(project.id));
+      await trash();
+    }
   } catch (error) {
     if (current)
       await openBackendProject(project.id, project.name).catch(() => {});

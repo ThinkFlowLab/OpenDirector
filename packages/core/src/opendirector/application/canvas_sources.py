@@ -10,7 +10,7 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import current_asset, visible_item_ids
 from opendirector.application.subject_library import SubjectLibrary
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.creation_uploads import inspect_file
+from opendirector.ports.gateway import gateway
 
 
 class CanvasSources:
@@ -137,7 +137,7 @@ class CanvasSources:
                 if subject or row['kind'] == 'subject':
                     kind, metadata = SubjectLibrary.inspect(path, 'auxiliary:0' if destination == 'auxiliary' else destination)
                 else:
-                    kind, metadata = inspect_file(path, value.get('title') or 'source.bin', expected_kind=value['kind'])
+                    kind, metadata = gateway().inspect_file(path, value.get('title') or 'source.bin', expected_kind=value['kind'])
                 facts = metadata.model_dump(mode='json')
             label = value.get('title') or row['title'] or 'source'
             name = ''.join('_' if ord(char) < 32 or char in '<>:"/\\|?*' else char for char in label).strip()[:180] or 'source'

@@ -534,7 +534,12 @@ export function ProjectSelector({
           onClose={() => setDeleteTarget(null)}
           onSubmit={async () => {
             await onDeleteProject(deleteTarget);
-            await loadProjects();
+            // The project is gone on the server; drop the row in place instead
+            // of another full list read before the dialog can close. The next
+            // selector open reloads the authoritative list.
+            setProjects((items) =>
+              items.filter((item) => item.id !== deleteTarget.id),
+            );
           }}
         />
       )}

@@ -307,14 +307,17 @@ try {
       : {}),
     args: ["--no-sandbox"],
   });
-  const page = await browser.newPage({
+  const page = await browser.newPage({ locale: "en-US",
     viewport: { width: 1700, height: 1100 },
+  });
+  await page.addInitScript(() => {
+    try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
   });
   page.setDefaultTimeout(20000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   let url = base + `/ai-tool/ai-canvas/${pid}`;
-  const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
+  const saved = () => page.getByText("Saved on this device", { exact: true }).waitFor();
   const state = () => call(`/api/creation/projects/${pid}`);
   const doc = (s) => s.editorDocuments.find((d) => d.id === editorId);
   async function open() {
@@ -322,37 +325,31 @@ try {
       .locator(`.react-flow__node[data-id="${itemId}"] .cw-node-title`)
       .click({ button: "right" });
     await page
-      .getByRole("menuitem", { name: "打开编辑器", exact: true })
+      .getByRole("menuitem", { name: "Open editor", exact: true })
       .click();
-    await page.getByRole("button", { name: "合成 MP4", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Render MP4", exact: true }).waitFor();
   }
   await page.goto(full ? base + "/" : url);
   await saved();
   if (full) {
-    await page.getByRole("button", { name: "切换项目", exact: true }).click();
-    await page
-      .getByRole("menuitem", { name: "新建画布项目", exact: true })
-      .click();
-    await page
-      .getByRole("textbox", { name: "项目名称", exact: true })
-      .fill("Full creation " + crypto.randomUUID().slice(0, 8));
-    const created = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/commands") &&
-        r.request().postDataJSON()?.type === "project.create",
-    );
-    await page.getByRole("button", { name: "创建项目", exact: true }).click();
-    const response = await created;
+    await page.getByRole("button", { name: "Switch project", exact: true }).click();
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith("/commands") &&
+        r.request().postDataJSON()?.type === "project.create"),
+      page.getByRole("menuitem", { name: "New canvas project", exact: true }).click(),
+    ]);
     assert.equal((await response.json()).status, "applied");
     pid = response.request().postDataJSON().projectId;
     url = base + `/ai-tool/ai-canvas/${pid}`;
-    await page
-      .getByRole("dialog", { name: "新建画布项目", exact: true })
-      .waitFor({ state: "hidden" });
+    const projectName = page.getByRole("textbox", { name: "Project name", exact: true });
+    const name = "Full creation " + crypto.randomUUID().slice(0, 8);
+    await projectName.fill(name);
+    await projectName.press("Enter");
+    await page.getByRole("button", { name, exact: true }).waitFor();
     await saved();
     await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", { name: "添加时间线", exact: true })
+      .getByRole("toolbar", { name: "Canvas creation tools" })
+      .getByRole("button", { name: "Add Timeline", exact: true })
       .click();
     const timelineItem = await until(async () =>
       (await state()).canvasItems.find((i) => i.kind === "timeline"),
@@ -378,7 +375,7 @@ try {
   await page.keyboard.press("Shift+1");
   await page.waitForTimeout(300);
   await open();
-  await page.getByLabel("导入时间线 JSON", { exact: true }).setInputFiles({
+  await page.getByLabel("Import timeline JSON", { exact: true }).setInputFiles({
     name: "edit.timeline.json",
     mimeType: "application/json",
     buffer: Buffer.from(
@@ -406,7 +403,7 @@ try {
       });
     return route.continue();
   });
-  await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+  await page.getByRole("button", { name: "Apply edits", exact: true }).click();
   await page
     .getByRole("alert")
     .filter({ hasText: "fixture: editor save refused" })
@@ -414,7 +411,7 @@ try {
   assert.equal(await page.locator(".cw-timeline-clip").count(), full ? 4 : 3);
   assert.equal(doc(await state()).data.tracks[0].clips.length, 0);
   reject = false;
-  await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+  await page.getByRole("button", { name: "Apply edits", exact: true }).click();
   await page.locator(".cw-timeline-dialog").waitFor({ state: "hidden" });
   await saved();
   const first = doc(await state());
@@ -430,12 +427,12 @@ try {
   const reopened = doc(await state());
   assert.deepEqual(reopened, first);
   async function renderAndDownload(name) {
-    await page.getByRole("button", { name: "合成 MP4", exact: true }).click();
+    await page.getByRole("button", { name: "Render MP4", exact: true }).click();
     await page
-      .getByRole("button", { name: "下载 MP4", exact: true })
+      .getByRole("button", { name: "Download MP4", exact: true })
       .waitFor({ timeout: 60000 });
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "下载 MP4", exact: true }).click();
+    await page.getByRole("button", { name: "Download MP4", exact: true }).click();
     const path = join(evidence, name);
     await (await download).saveAs(path);
     return path;
@@ -474,9 +471,9 @@ try {
   const rms = Math.sqrt(energy / (samples.length / 4));
   assert.ok(rms > 0.015 && rms < 0.04, rms);
   await page
-    .getByRole("button", { name: "将合成视频加入画布", exact: true })
+    .getByRole("button", { name: "Add rendered video to canvas", exact: true })
     .click();
-  await page.getByRole("button", { name: "已加入画布", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Added to canvas", exact: true }).waitFor();
   const published = await state(),
     output = published.assets.find((a) => a.provenance.source === "rendered");
   assert.ok(output);
@@ -487,7 +484,7 @@ try {
     `PASS real MP4 dimensions, ${full ? 2 : 1.5}s duration, visual order, mixed audio level, and acknowledged publication`,
   );
   // Shut down the actual API process and reopen the same root, not just a page refresh.
-  await page.getByRole("button", { name: "关闭编辑器" }).click();
+  await page.getByRole("button", { name: "Close editor" }).click();
   await page.goto("about:blank");
   await stop(server);
   await startApi();
@@ -511,8 +508,8 @@ try {
   await open();
   assert.deepEqual(doc(await state()), first);
   await page.locator(".cw-timeline-clip.visual").first().click();
-  await page.getByLabel(/播放速度/).selectOption("1");
-  await page.getByRole("button", { name: "片段后移", exact: true }).click();
+  await page.getByLabel(/Playback speed/).selectOption("1");
+  await page.getByRole("button", { name: "Move clip forward", exact: true }).click();
   let releaseSave;
   const heldSave = new Promise((resolve) => (releaseSave = resolve));
   let saveStarted = false;
@@ -525,16 +522,16 @@ try {
     await route.continue();
   };
   await page.route("**/commands", hold);
-  await page.getByRole("button", { name: "合成 MP4", exact: true }).click();
+  await page.getByRole("button", { name: "Render MP4", exact: true }).click();
   await until(() => saveStarted);
-  await page.getByRole("button", { name: "取消合成", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel rendering", exact: true }).click();
   releaseSave();
   await page
-    .getByRole("button", { name: "取消合成", exact: true })
+    .getByRole("button", { name: "Cancel rendering", exact: true })
     .waitFor({ state: "hidden" });
   await page.unroute("**/commands", hold);
   assert.equal(
-    await page.getByRole("button", { name: "下载 MP4", exact: true }).count(),
+    await page.getByRole("button", { name: "Download MP4", exact: true }).count(),
     0,
   );
   const two = await renderAndDownload("second.mp4");
@@ -581,11 +578,11 @@ try {
   );
   await rename(sourcePath, sourcePath + ".held");
   try {
-    await page.getByRole("button", { name: "合成 MP4", exact: true }).click();
+    await page.getByRole("button", { name: "Render MP4", exact: true }).click();
     await page.getByRole("alert").waitFor();
     assert.equal(await page.locator(".cw-timeline-clip").count(), full ? 4 : 3);
     assert.equal(
-      await page.getByRole("button", { name: "下载 MP4", exact: true }).count(),
+      await page.getByRole("button", { name: "Download MP4", exact: true }).count(),
       0,
     );
   } finally {
@@ -610,6 +607,11 @@ try {
 } catch (error) {
   await writeFile(join(evidence, "services.log"), logs);
   console.error("Evidence:", evidence);
+  if (browser) {
+    const page = browser.contexts()[0]?.pages()[0];
+    if (page) console.error("Browser state:", page.url(), await page.locator("body").innerText().catch(() => "unavailable"));
+  }
+  console.error("Service logs:", logs.slice(-24000));
   throw error;
 } finally {
   await browser?.close();

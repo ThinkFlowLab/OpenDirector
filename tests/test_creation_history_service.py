@@ -274,7 +274,7 @@ def test_stack_document_retains_hidden_material_even_after_clearing_undo(project
 
 def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(project, monkeypatch):
     from opendirector.infrastructure.creation_projects import durable_json
-    import opendirector.application.creation_history as history_module
+    from opendirector.ports.gateway import gateway
 
     store, pid, session = project
     item, material = text_material(project)
@@ -293,7 +293,7 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
     ledger = folder / f'{task_id}.json'
     durable_json(ledger, dict(id=task_id, sourceAssetIds=[str(tool_input.id)], outputs=[]))
     loads, history_reads, ledger_reads = [], [], []
-    load, history, read = store._load, store.history, history_module.read_json
+    load, history, read = store._load, store.history, gateway().read_json
     def loading(*args, **kwargs):
         loads.append(1)
         return load(*args, **kwargs)
@@ -305,7 +305,7 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
         return read(path)
     monkeypatch.setattr(store, '_load', loading)
     monkeypatch.setattr(store, 'history', records)
-    monkeypatch.setattr(history_module, 'read_json', reading)
+    monkeypatch.setattr(gateway(), 'read_json', reading)
     service = CreationHistory(store)
     listing = service.asset_list(pid)
     assert len(history_reads) == 1 and len(loads) == 1

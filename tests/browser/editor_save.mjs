@@ -11,7 +11,10 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const page = await browser.newPage({ locale: "en-US", viewport: { width: 1600, height: 1000 } });
+await page.addInitScript(() => {
+  try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
+});
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
@@ -33,7 +36,7 @@ try {
     },
   });
   await page.goto(base + `/ai-tool/ai-canvas/${pid}`);
-  const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
+  const saved = () => page.getByText("Saved on this device", { exact: true }).waitFor();
   const state = async () =>
     (
       await page.request.get(base + `/api/creation/projects/${pid}`, {
@@ -41,7 +44,7 @@ try {
       })
     ).json();
   await saved();
-  await page.getByLabel("选择本地素材文件", { exact: true }).setInputFiles({
+  await page.getByLabel("Choose local asset files", { exact: true }).setInputFiles({
     name: "source.png",
     mimeType: "image/png",
     buffer: Buffer.from(
@@ -58,11 +61,11 @@ try {
     await page
       .locator(`.react-flow__node[data-id="${item.id}"] .cw-node-title`)
       .click({ button: "right" });
-    await page.getByRole("menuitem", { name: "编辑图片", exact: true }).click();
-    await page.getByRole("combobox", { name: "裁剪比例" }).waitFor();
+    await page.getByRole("menuitem", { name: "Edit image", exact: true }).click();
+    await page.getByRole("combobox", { name: "Crop ratio" }).waitFor();
     if (layers)
       await page
-        .getByRole("button", { name: "图层工作台", exact: true })
+        .getByRole("button", { name: "Layer studio", exact: true })
         .click();
   }
   async function lock(value) {
@@ -97,40 +100,40 @@ try {
   }
   // A real server lock arrives after the editor's version basis was captured.
   await open();
-  await page.getByRole("slider", { name: /亮度/ }).press("End");
+  await page.getByRole("slider", { name: /Brightness/ }).press("End");
   await lock(true);
-  await page.getByRole("button", { name: "应用编辑", exact: true }).click();
-  await page.getByText(/无法应用编辑/).waitFor();
+  await page.getByRole("button", { name: "Apply edits", exact: true }).click();
+  await page.getByText(/Could not apply the edit/).waitFor();
   assert.equal(
-    await page.getByRole("slider", { name: /亮度/ }).inputValue(),
+    await page.getByRole("slider", { name: /Brightness/ }).inputValue(),
     "200",
   );
   assert.equal((await state()).editorDocuments.length, 0);
   await lock(false);
-  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await saved();
   console.log(
     "PASS crop rejection keeps draft and leaves authoritative content unchanged",
   );
   await open(true);
-  await page.getByRole("button", { name: "文字", exact: true }).click();
+  await page.getByRole("button", { name: "Text", exact: true }).click();
   await page
-    .getByLabel("图层文字内容", { exact: true })
+    .getByLabel("Layer text content", { exact: true })
     .fill("Keep this layer draft");
   await lock(true);
-  await page.getByRole("button", { name: "应用到画布", exact: true }).click();
+  await page.getByRole("button", { name: "Apply to canvas", exact: true }).click();
   await page.getByRole("alert").waitFor();
   assert.equal(
-    await page.getByLabel("图层文字内容", { exact: true }).inputValue(),
+    await page.getByLabel("Layer text content", { exact: true }).inputValue(),
     "Keep this layer draft",
   );
   assert.equal((await state()).editorDocuments.length, 0);
   await lock(false);
-  await page.getByRole("button", { name: "关闭图层工作台" }).click();
+  await page.getByRole("button", { name: "Close the layer studio" }).click();
   await saved();
   console.log("PASS layer rejection keeps layer contents");
   await open();
-  await page.getByRole("slider", { name: /亮度/ }).press("End");
+  await page.getByRole("slider", { name: /Brightness/ }).press("End");
   let release;
   const gate = new Promise((resolve) => (release = resolve));
   const bodies = [];
@@ -150,28 +153,28 @@ try {
   await page.route("**/receipts/*", (route) =>
     unknown ? route.abort("failed") : route.continue(),
   );
-  await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+  await page.getByRole("button", { name: "Apply edits", exact: true }).click();
   while (!started) await page.waitForTimeout(25);
   assert.equal(
-    await page.getByRole("combobox", { name: "裁剪比例" }).count(),
+    await page.getByRole("combobox", { name: "Crop ratio" }).count(),
     1,
   );
   assert.equal(
     await page
-      .getByRole("button", { name: "正在应用…", exact: true })
+      .getByRole("button", { name: "Applying…", exact: true })
       .isDisabled(),
     true,
   );
   release();
-  await page.getByText(/无法应用编辑/).waitFor();
+  await page.getByText(/Could not apply the edit/).waitFor();
   const first = (await state()).editorDocuments.find(
     (d) => d.kind === "image_crop",
   );
   assert.ok(first);
   unknown = false;
-  await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+  await page.getByRole("button", { name: "Apply edits", exact: true }).click();
   await page
-    .getByRole("combobox", { name: "裁剪比例" })
+    .getByRole("combobox", { name: "Crop ratio" })
     .waitFor({ state: "hidden" });
   assert.deepEqual(bodies[0], bodies[1]);
   assert.equal(

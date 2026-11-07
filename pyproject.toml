@@ -16,7 +16,43 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8,<10"]
+test = ["pytest>=8,<10", "import-linter>=2.1,<3"]
 
 [project.scripts]
 opendirector = "opendirector.cli:main"
+
+[tool.importlinter]
+root_packages = ["opendirector"]
+
+[[tool.importlinter.contracts]]
+name = "Application does not depend on infrastructure"
+type = "forbidden"
+source_modules = ["opendirector.application"]
+forbidden_modules = ["opendirector.infrastructure", "opendirector.wiring"]
+
+[[tool.importlinter.contracts]]
+name = "Infrastructure does not depend on application"
+type = "forbidden"
+source_modules = ["opendirector.infrastructure"]
+forbidden_modules = ["opendirector.application", "opendirector.wiring"]
+
+[[tool.importlinter.contracts]]
+name = "Ports stay inside the boundary"
+type = "forbidden"
+source_modules = ["opendirector.ports"]
+forbidden_modules = [
+  "opendirector.application",
+  "opendirector.infrastructure",
+  "opendirector.wiring",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain stays inside the boundary"
+type = "forbidden"
+source_modules = ["opendirector.domain"]
+forbidden_modules = [
+  "opendirector.application",
+  "opendirector.infrastructure",
+  "opendirector.ports",
+  "opendirector.wiring",
+]

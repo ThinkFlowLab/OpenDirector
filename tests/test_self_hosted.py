@@ -103,9 +103,12 @@ def test_video_reference_acceptance_follows_model_rules(tmp_path):
     task, _, _ = prepared(runner, project, hosted, parameters=dict(videoMode='reference'), references=[asset['id']])
     assert task['videoMode'] == 'reference' and task['referenceIds'] == [asset['id']]
     managed = configs.save('video', 'https://ark.cn-beijing.volces.com/api/plan/v3', 'doubao-seedance-2.0', 'key')
+    task, _, _ = prepared(runner, project, managed, parameters=dict(videoMode='reference'), references=[asset['id']])
+    assert task['videoMode'] == 'reference' and task['referenceIds'] == [asset['id']]
+    unsupported = configs.save('video', 'http://localhost:18091/v1', 'standard-video', '', connection_type='self_hosted')
     with pytest.raises(ProjectError):
-        prepared(runner, project, managed, parameters=dict(videoMode='reference'), references=[asset['id']])
-    assert len(store.snapshot(owner).jobs) == 1
+        prepared(runner, project, unsupported, parameters=dict(videoMode='reference'), references=[asset['id']])
+    assert len(store.snapshot(owner).jobs) == 2
 
 
 def test_self_hosted_image_and_audio_use_compatible_routes_without_auth(tmp_path):

@@ -7,7 +7,10 @@ import { launchBrowser } from "./engine.mjs";
 const web = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 
 const browser = await launchBrowser();
-const page = await browser.newPage();
+const page = await browser.newPage({ locale: "en-US" });
+await page.addInitScript(() => {
+  try { localStorage.setItem("opendirector.modelSetup.v1", "dismissed"); } catch {}
+});
 page.setDefaultTimeout(180000);
 try {
   await page.goto(web, { waitUntil: "domcontentloaded" });
@@ -71,7 +74,7 @@ try {
         {
           id: "visual",
           kind: "visual",
-          title: "画面轨",
+          title: "Video track",
           muted: false,
           clips: [
             imageClip("c1", paint("#c0392b"), "red"),
@@ -81,7 +84,7 @@ try {
         {
           id: "audio",
           kind: "audio",
-          title: "音频轨",
+          title: "Audio track",
           muted: false,
           clips: [
             {

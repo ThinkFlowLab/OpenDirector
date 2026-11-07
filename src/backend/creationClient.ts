@@ -81,6 +81,7 @@ export class CreationClient {
   private deliveries = new Map<string, Record<string, unknown>>();
   private viewState: ViewState | undefined;
   private viewPersisted = false;
+  private viewRead: Promise<ViewState> | undefined;
   readonly id: string;
   constructor(id: string) {
     this.id = id;
@@ -119,14 +120,44 @@ export class CreationClient {
   async open() {
     this.viewState = undefined;
     this.viewPersisted = false;
+    this.viewRead = undefined;
     this.historyRead = undefined;
+    this.referenceStates = new Map();
+    // The saved viewport is independent of the snapshot; prefetch it so the
+    // first render does not wait for a separate serial round trip.
+    void this.view().catch(() => {});
+    let canvas:
+      | {
+          snapshot: ProjectSnapshot;
+          edges: {
+            referenceId: string;
+            state: "used" | "pending" | "unknown" | "unavailable";
+          }[];
+        }
+      | undefined;
     for (let attempt = 0; ; attempt++) {
       try {
-        this.install(
-          await request<ProjectSnapshot>(`${creationPath(this.id)}/open`, {
-            method: "POST",
-          }),
-        );
+        const opened = await request<
+          | ProjectSnapshot
+          | {
+              snapshot: ProjectSnapshot;
+              edges: {
+                referenceId: string;
+                state: "used" | "pending" | "unknown" | "unavailable";
+              }[];
+            }
+        >(`${creationPath(this.id)}/open-canvas`, { method: "POST" });
+        // The open-canvas response carries the one authoritative snapshot plus
+        // the reference evidence the canvas draws; a bare snapshot response is
+        // still accepted for compatibility and falls back to a canvas read.
+        // Listeners re-project during install and read referenceStates, so the
+        // map is installed first, the same order as refresh().
+        canvas = "snapshot" in opened ? opened : undefined;
+        if (canvas)
+          this.referenceStates = new Map(
+            canvas.edges.map((edge) => [edge.referenceId, edge.state]),
+          );
+        this.install(canvas ? canvas.snapshot : (opened as ProjectSnapshot));
         break;
       } catch (error) {
         // The old page's keepalive release can arrive just after a reload's
@@ -143,7 +174,7 @@ export class CreationClient {
         );
       }
     }
-    await this.refresh();
+    if (!canvas) await this.refresh();
     this.subscribe();
     return this.snapshot;
   }
@@ -632,22 +663,38 @@ export class CreationClient {
   hasPersistedView() {
     return this.viewPersisted;
   }
+  /** Read the saved viewport once; concurrent readers share the same request. */
+  private loadViewState() {
+    if (!this.viewRead) {
+      const path = `${creationPath(this.id)}/views/${viewClientId}`;
+      const pending = storageRequest<ViewState | undefined>(path).then(
+        (stored) => {
+          // A 204 means this client has never saved a viewport for this project.
+          this.viewPersisted = stored !== undefined;
+          this.viewState = stored ?? {
+            projectId: this.id,
+            clientId: viewClientId,
+            viewport: { x: 0, y: 0, zoom: 1 },
+            selectedItemIds: [],
+            activeEditorId: null,
+            playheads: [],
+            generationCounts: {},
+          };
+          return this.viewState;
+        },
+      );
+      this.viewRead = pending;
+      const settle = () => {
+        if (this.viewRead === pending) this.viewRead = undefined;
+      };
+      // Success leaves viewState in place; failures retry on the next read.
+      void pending.then(settle, settle);
+    }
+    return this.viewRead;
+  }
   async view(value?: Partial<ViewState>) {
     const path = `${creationPath(this.id)}/views/${viewClientId}`;
-    if (!this.viewState) {
-      // A 204 means this client has never saved a viewport for this project.
-      const stored = await storageRequest<ViewState | undefined>(path);
-      this.viewPersisted = stored !== undefined;
-      this.viewState = stored ?? {
-        projectId: this.id,
-        clientId: viewClientId,
-        viewport: { x: 0, y: 0, zoom: 1 },
-        selectedItemIds: [],
-        activeEditorId: null,
-        playheads: [],
-        generationCounts: {},
-      };
-    }
+    if (!this.viewState) await this.loadViewState();
     if (value) {
       this.viewState = await storageRequest<ViewState>(
         path,
@@ -660,7 +707,7 @@ export class CreationClient {
       );
       this.viewPersisted = true;
     }
-    return this.viewState;
+    return this.viewState!;
   }
   close() {
     this.subscription?.abort();

@@ -123,6 +123,71 @@ export function openBackendProject(documentId: string, _title: string) {
   });
 }
 
+/** Longest canvas read that can rely on the lease it acquired at the start.
+ *
+ * The server grants a 60 s lease, and heartbeat renewal is suppressed while a
+ * read owns the session-change queue. A media-heavy read can stream for longer
+ * than that (one asset read is bounded at 120 s per attempt), so a read that
+ * outlived this window renews the lease before adoption. */
+const LEASE_RECONFIRM_MS = 30_000;
+
+/** Read a canvas and adopt the session lease that read acquires.
+ *
+ * `CreationClient.open()` reads through POST /open-canvas, which moves this
+ * window's single session lease to the project. Releasing the session and
+ * opening it again would transfer and validate the same snapshot a second time
+ * for no lease benefit. The read runs inside the session-change queue so a
+ * pending heartbeat renewal cannot move the lease back while a large canvas is
+ * still loading. Callers that have not read a snapshot must keep using
+ * openBackendProject. */
+export function openBackendProjectCanvas<T>(
+  documentId: string,
+  read: () => Promise<T>,
+) {
+  const id = backendProjectId(documentId);
+  return serializeSessionChange(async () => {
+    const previous = active;
+    const startedAt = Date.now();
+    let value: T;
+    try {
+      value = await read();
+      if (Date.now() - startedAt >= LEASE_RECONFIRM_MS)
+        // Hydration kept the normal heartbeat from running. Renewing here keeps
+        // the lease alive when it outlived the 60 s grant; if another window has
+        // taken over the expired lease the server rejects this renewal and the
+        // open fails instead of adopting a session we no longer own.
+        await request(`/creation/sessions/${sessionId}`, json("PUT", { projectId: id }));
+    } catch (failure) {
+      // read() moves this window's session before it finishes the view. A
+      // failure after that acceptance would leave the lease on `id` while
+      // `active` is still `previous`, so the old canvas's next save is
+      // rejected until a heartbeat. Move the session back, as a failed switch
+      // does. A renewal rejected because another window took `id` restores
+      // `previous` without taking `id` back.
+      if (previous && previous !== id) {
+        try {
+          await request(`/creation/projects/${previous}/open`, {
+            method: "POST",
+          });
+        } catch (restoreFailure) {
+          throw new Error(
+            tNow("errors.backend.openFailed", {
+              error: errorMessage(failure),
+              restore: errorMessage(restoreFailure),
+            }),
+          );
+        }
+      }
+      throw failure;
+    }
+    // The successful read already holds the lease for `id`.
+    active = id;
+    if (previous && previous !== id) creationClient(previous).close();
+    keepAlive();
+    return value;
+  });
+}
+
 /** Pause lease renewal while the current project directory is renamed. */
 export function releaseBackendProject() {
   return serializeSessionChange(async () => {

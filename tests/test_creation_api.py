@@ -231,3 +231,74 @@ def test_asset_list_accepts_visibility_filter_and_rejects_usage_values_in_its_pl
     assert client.get(path + '/asset-list', params={'category': 'text'}).json()['counts']['text'] == 1
     assert client.get(path + '/asset-list', params={'category': 'image'}).json()['total'] == 0
     assert client.get(path + '/asset-list', params={'category': 'other'}).status_code == 422
+
+
+def test_open_canvas_returns_one_snapshot_with_authoritative_reference_edges(api, monkeypatch):
+    client, _ = api
+    path, created, _ = create(client)
+    project_id = created['projectId']
+    assert client.post(path + '/open').status_code == 200
+    source_spec, source_item = str(uuid4()), str(uuid4())
+    target_spec, target_item = str(uuid4()), str(uuid4())
+    write = dict(commandId=str(uuid4()), projectId=project_id, type='asset.writeText',
+                 payload=dict(name='Source.md', text='v1'))
+    assert client.post(path + '/commands', json=write).json()['status'] == 'applied'
+    batch = dict(commandId=str(uuid4()), projectId=project_id, type='creation.batch', payload=dict(operations=[
+        dict(type='generationSpec.create', payload=dict(
+            spec=dict(id=source_spec, projectId=project_id, kind='text', purpose='draft'))),
+        dict(type='canvas.show', payload=dict(item=dict(
+            id=source_item, projectId=project_id, kind='text', title='Source',
+            binding=dict(role='empty', draftSpec=dict(id=source_spec))))),
+        dict(type='generationSpec.create', payload=dict(
+            spec=dict(id=target_spec, projectId=project_id, kind='text', purpose='draft'))),
+        dict(type='canvas.show', payload=dict(item=dict(
+            id=target_item, projectId=project_id, kind='text', title='Target',
+            binding=dict(role='empty', draftSpec=dict(id=target_spec))))),
+    ]))
+    response = client.post(path + '/commands', json=batch)
+    assert response.status_code == 200 and response.json()['status'] == 'applied', response.text
+    asset = client.get(path).json()['assets'][0]
+    materialize = dict(commandId=str(uuid4()), projectId=project_id, type='canvas.materialize',
+                       payload=dict(itemId=source_item, asset=dict(
+                           assetId=asset['id'], revision=asset['revision'],
+                           fingerprint=asset['fingerprint'], kind=asset['kind'])),
+                       expectedVersions=[dict(objectType='canvas_item', id=source_item, revision=1)])
+    assert client.post(path + '/commands', json=materialize).json()['status'] == 'applied'
+    reference = dict(id=str(uuid4()), projectId=project_id, targetSpecId=target_spec,
+                     binding='follow_current', source=dict(id=source_item))
+    add = dict(commandId=str(uuid4()), projectId=project_id, type='reference.add',
+               payload=dict(reference=reference),
+               expectedVersions=[dict(objectType='generation_spec', id=target_spec, revision=1),
+                                 dict(objectType='canvas_item', id=target_item, revision=1)])
+    assert client.post(path + '/commands', json=add).json()['status'] == 'applied'
+
+    # The route must read the project exactly once: one projects.open() snapshot
+    # serves the canvas and its edges, with no extra snapshot() call.
+    opens, snapshots = [], []
+    original_open, original_snapshot = CreationProjects.open, CreationProjects.snapshot
+    def counting_open(self, project_id_value, session):
+        opens.append(str(project_id_value))
+        return original_open(self, project_id_value, session)
+    def counting_snapshot(self, project_id_value):
+        snapshots.append(str(project_id_value))
+        return original_snapshot(self, project_id_value)
+    monkeypatch.setattr(CreationProjects, 'open', counting_open)
+    monkeypatch.setattr(CreationProjects, 'snapshot', counting_snapshot)
+    opened = client.post(path + '/open-canvas')
+    assert opened.status_code == 200, opened.text
+    assert opens == [project_id] and snapshots == []
+    body = opened.json()
+    assert body['snapshot']['format'] == 'opendirector-project'
+    # The one snapshot drives both the canvas and its edges; GET /canvas is the
+    # authority the previous client round trip used to fetch separately.
+    projection = client.get(path + '/canvas').json()
+    assert body['snapshot'] == projection['snapshot']
+    assert body['edges'] == projection['edges']
+    assert body['edges'] == [dict(referenceId=reference['id'], sourceItemId=source_item,
+                                  targetSpecId=target_spec, state='pending')]
+    # The no-flag open keeps its established bare snapshot response.
+    plain = client.post(path + '/open').json()
+    assert plain == body['snapshot']
+    assert 'edges' not in plain
+    assert client.post(path + '/open-canvas',
+                       headers={'x-opendirector-session': ''}).status_code == 422

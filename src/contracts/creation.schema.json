@@ -1978,7 +1978,7 @@
       },
       "CanvasCreateGenerationCommand": {
         "additionalProperties": false,
-        "description": "Create a visible generation node and references atomically. Every canvas-derived reference must preserve its source node connection, including pinned references.",
+        "description": "Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones.",
         "properties": {
           "commandId": {
             "description": "Stable command ID for idempotent replay.",
@@ -2023,7 +2023,7 @@
           },
           "payload": {
             "$ref": "#/$defs/CanvasCreateGeneration",
-            "description": "Create a visible generation node and references atomically. Every canvas-derived reference must preserve its source node connection, including pinned references."
+            "description": "Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones."
           }
         },
         "required": [
@@ -10833,7 +10833,7 @@
       },
       "SpecUpdateCommand": {
         "additionalProperties": false,
-        "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version.",
+        "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged.",
         "properties": {
           "commandId": {
             "description": "Stable command ID for idempotent replay.",
@@ -10878,7 +10878,7 @@
           },
           "payload": {
             "$ref": "#/$defs/SpecWrite",
-            "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version."
+            "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged."
           }
         },
         "required": [
@@ -10892,7 +10892,7 @@
       },
       "SpecUpdateCommandOperation": {
         "additionalProperties": false,
-        "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version.",
+        "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged.",
         "properties": {
           "type": {
             "const": "generationSpec.update",
@@ -10902,7 +10902,7 @@
           },
           "payload": {
             "$ref": "#/$defs/SpecWrite",
-            "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version."
+            "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged."
           }
         },
         "required": [
@@ -16192,7 +16192,7 @@
       },
       "CanvasCreateGenerationCommand": {
         "additionalProperties": false,
-        "description": "Create a visible generation node and references atomically. Every canvas-derived reference must preserve its source node connection, including pinned references.",
+        "description": "Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones.",
         "properties": {
           "commandId": {
             "description": "Stable command ID for idempotent replay.",
@@ -16237,7 +16237,7 @@
           },
           "payload": {
             "$ref": "#/$defs/CanvasCreateGeneration",
-            "description": "Create a visible generation node and references atomically. Every canvas-derived reference must preserve its source node connection, including pinned references."
+            "description": "Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones."
           }
         },
         "required": [
@@ -25371,7 +25371,7 @@
       },
       "SpecUpdateCommand": {
         "additionalProperties": false,
-        "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version.",
+        "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged.",
         "properties": {
           "commandId": {
             "description": "Stable command ID for idempotent replay.",
@@ -25416,7 +25416,7 @@
           },
           "payload": {
             "$ref": "#/$defs/SpecWrite",
-            "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version."
+            "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged."
           }
         },
         "required": [
@@ -25432,7 +25432,7 @@
       },
       "SpecUpdateCommandOperation": {
         "additionalProperties": false,
-        "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version.",
+        "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged.",
         "properties": {
           "type": {
             "const": "generationSpec.update",
@@ -25442,7 +25442,7 @@
           },
           "payload": {
             "$ref": "#/$defs/SpecWrite",
-            "description": "Replace the complete generation configuration without changing accepted jobs. Read the current spec, preserve fields not being edited, and submit its current expected version."
+            "description": "Replace the complete generation configuration; preserve unedited fields and use the current version. Jobs are unchanged."
           }
         },
         "required": [

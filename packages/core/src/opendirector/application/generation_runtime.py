@@ -7,8 +7,7 @@ from dataclasses import dataclass
 import anyio
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationError, GenerationFailure
-from opendirector.infrastructure.local_projects import child
-from opendirector.infrastructure.generation_results import GenerationResults
+from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import finalize_video_edit
 from opendirector.integrations.generation_errors import transport_failure
@@ -77,9 +76,9 @@ class GenerationRuntime(ABC):
             return 'done'
         if self._result_asset(task, directory):
             return 'local'
-        cache = GenerationResults(directory, task['id'])
+        cache = gateway().results(directory, task['id'])
         metadata = cache.metadata()
-        if metadata and child(cache.directory, 'output').is_file():
+        if metadata and gateway().child(cache.directory, 'output').is_file():
             return 'local'
         details = task.get('errorDetails') or {}
         if details.get('providerStatus') in {'failed', 'cancelled', 'expired'}:
@@ -99,7 +98,7 @@ class GenerationRuntime(ABC):
 
     async def _run(self, task, pinned, config, mode='submit'):
         stage = 'save'
-        cache = GenerationResults(pinned, task['id'])
+        cache = gateway().results(pinned, task['id'])
         trace_token = MODEL_JOB_CONTEXT.set((str(task['projectId']), str(task['id'])))
         async def save():
             # Cancelling to_thread does not stop the underlying write. Drain it

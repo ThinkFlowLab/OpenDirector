@@ -1,4 +1,4 @@
-/** 「主体」: global subjects snapshotted from completed subject nodes. */
+/** Subjects: global subjects snapshotted from completed subject nodes. */
 import { useEffect, useState } from "react";
 import { errorMessage } from "../../backend/api";
 import { useT } from "../../i18n/I18nProvider";

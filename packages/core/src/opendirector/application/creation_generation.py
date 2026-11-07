@@ -15,7 +15,6 @@ from filelock import FileLock, Timeout
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
-from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
@@ -28,9 +27,7 @@ from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.video_output import apply_video_resolution
-from opendirector.infrastructure.generation_results import GenerationResults
-from opendirector.infrastructure.creation_projects import directory
-from opendirector.infrastructure.local_projects import child
+from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
 from opendirector.integrations.model_adapters import capabilities_of
@@ -87,7 +84,7 @@ class CreationGeneration(GenerationRuntime):
         self.projects, self.configs = projects, configs
         self.assets = CreationAssets(projects)
         self.store = ProviderMedia(self)
-        self.settings = AppSettings(projects.local.repository)
+        self.settings = gateway().settings(projects.local.repository)
         self.provider = provider or GenerationProviders(self.store)
 
     def directory(self, project_id):
@@ -235,9 +232,9 @@ class CreationGeneration(GenerationRuntime):
         # A durable job can be discovered by more than one API process. OS locks
         # prevent both workers from treating the same queued checkpoint as a
         # fresh paid submission; process death releases the claim automatically.
-        folder = directory(child(self.projects.state_dir, 'creation-job-locks'))
+        folder = gateway().directory(gateway().child(self.projects.state_dir, 'creation-job-locks'))
         folder.mkdir(exist_ok=True)
-        claim = FileLock(child(folder, f"{task['projectId']}-{task['id']}.lock"), timeout=0, thread_local=False)
+        claim = FileLock(gateway().child(folder, f"{task['projectId']}-{task['id']}.lock"), timeout=0, thread_local=False)
         remote = None
         try:
             claim.acquire()
@@ -247,7 +244,7 @@ class CreationGeneration(GenerationRuntime):
         try:
             if _self_hosted_video(task):
                 endpoint = hashlib.sha256(task['baseURL'].rstrip('/').encode()).hexdigest()
-                remote = FileLock(child(folder, f'service-{endpoint}.lock'), timeout=0, thread_local=False)
+                remote = FileLock(gateway().child(folder, f'service-{endpoint}.lock'), timeout=0, thread_local=False)
                 while True:
                     try:
                         remote.acquire()
@@ -422,7 +419,7 @@ class CreationGeneration(GenerationRuntime):
         handle = uuid5(job.id, 'output-upload')
         name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', task['title']).strip(' .')[:180] or job.execution.kind
         self.assets.stage_output(job.projectId, handle, with_extension(name, suffix),
-            GenerationResults(pinned, task['id']).directory / 'output', expected_kind=job.execution.kind)
+            gateway().results(pinned, task['id']).directory / 'output', expected_kind=job.execution.kind)
         # Sibling results or user edits may advance the same spec between our
         # read and commit. Retry only registration of these already saved bytes;
         # eligibility is recalculated from each new snapshot, never by resending
@@ -450,8 +447,8 @@ class CreationGeneration(GenerationRuntime):
             eligible = not current_job.cancelRequested
             same_selection = current_spec.currentResultId == current_job.adoptionResultId
             try:
-                current_spec, references = current_generation_inputs(current, current_spec, current_job.inputSnapshot.model.inputRules)
-                effective = execution_spec(current_spec, references, current_job.inputSnapshot.model.inputRules)
+                projected_spec, references = current_generation_inputs(current, current_spec, current_job.inputSnapshot.model.inputRules)
+                effective = execution_spec(projected_spec, references, current_job.inputSnapshot.model.inputRules)
                 now = InputSnapshot(spec=effective.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
                     model=current_job.inputSnapshot.model, references=references)
                 eligible = eligible and now.fingerprint() == current_job.inputFingerprint

@@ -9,7 +9,8 @@ from opendirector.domain.creation.base import Contract, digest
 from opendirector.domain.creation.project import ProjectSnapshot, asset_references
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.local_projects import child, read_json
+from opendirector.ports.files import AssetFileDelete
+from opendirector.ports.gateway import gateway
 
 EDITABLE = {'canvasItems', 'generationSpecs', 'references', 'editorDocuments'}
 ABSENT = object()
@@ -364,10 +365,10 @@ class CreationHistory:
         asset_keys = {str(key): key for key in statuses}
         with self.projects.local.transaction() as db:
             path, _, _ = self.projects._load(db, snapshot.project.id)
-            folder = child(path, 'tool-tasks')
+            folder = gateway().child(path, 'tool-tasks')
             if folder.exists():
                 for entry in folder.glob('*.json'):
-                    task = read_json(child(folder, entry.name))
+                    task = gateway().read_json(gateway().child(folder, entry.name))
                     ids = {*task.get('sourceAssetIds', []), task.get('maskAssetId'), task.get('annotationAssetId'),
                            *(output['id'] for output in task.get('outputs', []))}
                     for key in ids & asset_keys.keys():
@@ -421,7 +422,6 @@ class CreationHistory:
         replay = self.projects.replay(command)
         if replay:
             return replay
-        from opendirector.infrastructure.creation_files import AssetFileDelete
         snapshot = self.projects.snapshot(command.projectId)
         deleting = set(command.payload.assetIds)
         files = tuple(AssetFileDelete(assetId=a.id, fingerprint=a.fingerprint, size=a.metadata.size) for a in snapshot.assets if a.id in deleting)
@@ -431,13 +431,11 @@ class CreationHistory:
                 raise ContractError('preview_expired', '素材使用情况已变化，请重新检查删除影响。')
             if not preview['canDelete']:
                 raise ContractError('role_restricted', '素材仍被参考、任务、历史或编辑文档使用。')
-            from opendirector.infrastructure.creation_files import file_identity
-            from opendirector.infrastructure.local_projects import child
             with self.projects.local.transaction() as db:
                 path = self.projects._find(db, command.projectId)[0]
             for deletion in files:
-                file = child(child(path, 'assets'), str(deletion.assetId))
-                if (file.exists() or file.is_symlink()) and file_identity(file) != (deletion.fingerprint, deletion.size):
+                file = gateway().child(gateway().child(path, 'assets'), str(deletion.assetId))
+                if (file.exists() or file.is_symlink()) and gateway().file_identity(file) != (deletion.fingerprint, deletion.size):
                     raise ContractError('preview_expired', '本地素材文件已变化，请核对原文件后重新检查删除影响。', deletion.assetId)
             data = before.model_dump(mode='json')
             visible = visible_item_ids(before)

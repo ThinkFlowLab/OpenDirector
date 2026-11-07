@@ -14,6 +14,7 @@ from filelock import Timeout
 from starlette.concurrency import run_in_threadpool
 
 from opendirector.installation import data_root, web_root
+from opendirector.wiring import configure_runtime
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
@@ -37,6 +38,7 @@ from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentM
 
 
 def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None) -> FastAPI:
+    configure_runtime()
     repository = data_root()
     if store is None:
         store = LocalProjects(repository)

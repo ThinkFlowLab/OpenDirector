@@ -13,16 +13,17 @@ from opendirector.application.creation_canvas import (
 from opendirector.domain.creation.generation import FollowingReference, validate_generation
 from opendirector.domain.creation.commands import EditorWrite
 from opendirector.domain.creation.models import ModelConfigPublic
+from opendirector.domain.creation.index import object_index
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.ports.gateway import gateway
 
 
 def available_model(projects, frozen):
     """A removed or repurposed model remains evidence, never an implicit fallback."""
     try:
-        config = ModelConfigs(projects.local.repository).resolve(str(frozen.modelConfigId), frozen.kind)
+        config = gateway().models(projects.local.repository).resolve(str(frozen.modelConfigId), frozen.kind)
         public = ModelConfigPublic.model_validate({k: v for k, v in config.items() if k != 'apiKey'} | {'inputRules': input_rules(config)})
         fields = ('kind', 'url', 'modelId', 'protocol', 'connectionType', 'videoAdapter')
         if any(getattr(public, field) != getattr(frozen, field) for field in fields):
@@ -114,7 +115,6 @@ def node_versions(projects, project_id, item_id, *, assets=None):
             jobId=job.id if job else None, createdAt=job.createdAt if job else None, inputSnapshot=job.inputSnapshot if job else None,
             modelAvailable=models[key] if job else None,
             currentReferencesDiffer=current_references_differ(snapshot, job.inputSnapshot) if job else False))
-    from opendirector.infrastructure.creation_projects import object_index
     current = current_asset(snapshot, item)
     return dict(item=item, versions=rows, currentAssetId=current.id if current else None,
         eventCursor=snapshot.eventCursor,

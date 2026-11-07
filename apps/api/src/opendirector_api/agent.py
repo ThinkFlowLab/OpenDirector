@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
 from opendirector.agent.context import RunContext, RuntimeId
-from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_readiness
+from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import durable_json
@@ -244,15 +244,14 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         await asyncio.to_thread(conversations.path, project_id)
         if probe:
             return await configured_runtimes()
-        return [{**item, 'status': 'not_installed' if not item['available'] else
-                 'ready' if item['id'] == 'opencode' else 'checking'}
+        return [{**item, 'status': await runtime_status(item['id'], probe=False)}
                 for item in runtime_catalog()]
 
     @router.get('/runtimes/{runtime}/status')
-    async def runtime_status(project_id: UUID, runtime: Runtime):
+    async def runtime_detail(project_id: UUID, runtime: Runtime):
         await asyncio.to_thread(conversations.path, project_id)
         item = next(item for item in runtime_catalog() if item['id'] == runtime)
-        return {**item, 'status': await runtime_readiness(runtime)}
+        return {**item, 'status': await runtime_status(runtime)}
 
     @router.get('/runtimes/{runtime}/models')
     async def runtime_models(project_id: UUID, runtime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek'], selected: str | None = None):

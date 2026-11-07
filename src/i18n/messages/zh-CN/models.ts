@@ -108,7 +108,7 @@ export const models = {
 
   "models.protocolOption.openaiAgent": "OpenAI 兼容接口（含 vLLM）",
   "models.protocolOption.openaiImage":
-    "OpenAI 兼容接口（含 vLLM-Omni Z-Image-Turbo）",
+    "OpenAI 兼容接口（含 gpt-image、vLLM-Omni Z-Image-Turbo）",
   "models.protocolOption.volcengine": "火山方舟 / Agent Plan",
   "models.protocolOption.segmentation": "vLLM-Omni 分割接口（SAM 3）",
   "models.protocolOption.videos": "异步 /videos 接口（含 vLLM-Omni）",
