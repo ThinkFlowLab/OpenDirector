@@ -190,10 +190,11 @@ export interface CanvasNodeData extends Record<string, unknown> {
   };
   settings?: GenerationSettings;
   agentSettings?: AgentNodeSettings;
+  /** The displayed asset is a zero-key placeholder composition. */
+  mediaPlaceholder?: boolean;
   generationEvidence?: {
     output: string;
     references: Record<string, string>;
-    placeholder?: boolean;
   };
   timeline?: TimelineData;
   subject?: SubjectData;

@@ -496,6 +496,11 @@ export class CreationProjection {
           node.data.mimeType = asset.metadata.mimeType;
           node.data.byteSize = asset.metadata.size;
           node.data.backendAssetId = asset.id;
+          // The badge follows the displayed asset, not the selected job: an
+          // upload replacing a placeholder clears it, and a placeholder asset
+          // reused as material keeps it.
+          node.data.mediaPlaceholder =
+            asset.provenance.modelSnapshot?.protocol === "placeholder";
           node.data.mediaRole =
             item.binding.role === "material" ? "asset" : "generation";
           // Export records this so an imported generation node can be rebuilt
@@ -709,8 +714,6 @@ export class CreationProjection {
                   ? (node.data.text ?? "")
                   : (node.data.src ?? ""),
               references,
-              // Survives reopen: derived from the frozen job, not client state.
-              placeholder: job.inputSnapshot.model.protocol === "placeholder",
             };
           }
         }

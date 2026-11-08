@@ -109,7 +109,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         )
       ) : hasAsset ? (
         <div className="cw-node-media">
-          {data.generationEvidence?.placeholder && (
+          {data.mediaPlaceholder && (
             <span className="cw-node-placeholder-chip" role="status">
               {t("canvasNodes.placeholderBadge")}
             </span>

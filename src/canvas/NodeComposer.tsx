@@ -743,18 +743,6 @@ export function NodeComposer({
             </TooltipButton>
           )}
         </div>
-        {backend && config && isPlaceholderModel(config) && (
-          <p className="cw-composer-placeholder-note">
-            {t("generation.placeholder.disclosure")}{" "}
-            <button
-              type="button"
-              className="cw-placeholder-configure"
-              onClick={onOpenModelSettings}
-            >
-              {t("generation.placeholder.configure")}
-            </button>
-          </p>
-        )}
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
@@ -780,6 +768,18 @@ export function NodeComposer({
         >
           <CanvasIcon name={running ? "stop" : "arrowUp"} size={20} />
         </TooltipButton>
+        {backend && config && isPlaceholderModel(config) && (
+          <p className="cw-composer-placeholder-note">
+            {t("generation.placeholder.disclosure")}{" "}
+            <button
+              type="button"
+              className="cw-placeholder-configure"
+              onClick={onOpenModelSettings}
+            >
+              {t("generation.placeholder.configure")}
+            </button>
+          </p>
+        )}
       </div>
       {panel === "duration" && mode === "video" && (
         <ComposerPopover
