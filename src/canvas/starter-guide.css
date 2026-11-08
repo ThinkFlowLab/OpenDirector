@@ -1,0 +1,85 @@
+.starter-guide {
+  position: absolute;
+  right: 20px;
+  bottom: 25px;
+  z-index: 35;
+  width: min(360px, calc(100vw - 40px));
+  max-height: 75vh;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid #71849a;
+  border-radius: 16px;
+  background: var(--panel-bg, #18212d);
+  color: var(--text-primary, #f5f7fb);
+  box-shadow: 0 12px 42px #0005;
+  font-size: 14px;
+}
+.starter-guide header,
+.starter-guide footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.starter-guide h2 {
+  font-size: 18px;
+}
+.starter-guide p {
+  line-height: 1.6;
+}
+.starter-guide button,
+.starter-guide-reopen {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #73859a;
+  background: #263b51;
+  color: #fff;
+  cursor: pointer;
+  margin: 3px;
+}
+.starter-guide button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+.starter-guide button:focus-visible,
+.starter-guide textarea:focus-visible {
+  outline: 3px solid #67d5cc;
+}
+.starter-guide textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #101923;
+  color: #fff;
+  border: 1px solid #73859a;
+  border-radius: 7px;
+  padding: 10px;
+  font: inherit;
+  resize: vertical;
+}
+.starter-guide progress {
+  width: 100%;
+  accent-color: #67d5cc;
+}
+.starter-guide-honesty {
+  font-size: 12px;
+  color: #a9d7d1;
+}
+.starter-guide-candidates {
+  display: flex;
+}
+.starter-guide-candidates button {
+  width: 50%;
+}
+.starter-guide-candidates img {
+  width: 100%;
+}
+.starter-guide footer {
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.starter-guide-reopen {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 30;
+}

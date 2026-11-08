@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "created": "2026-11-08",
+  "authoring": "AI-assisted original Python vector drawing; no model inference",
+  "thirdPartyMedia": false,
+  "audio": false,
+  "assets": {
+    "character-reference.png": {
+      "sha256": "b7a856a8699c92494ee61186ca4efcbb6e93d000f6d4d85ba41844f8895f5c2b",
+      "bytes": 13419,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "court-reference.png": {
+      "sha256": "be27e0adefe351b62414d3ceff57f643b601b72002d2ac10bec06e860d2688a6",
+      "bytes": 10781,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "reference-cut.mp4": {
+      "sha256": "74b9ddd556acdbdd17f09444be20db0320c6599730ce7639134e03b0404ee379",
+      "bytes": 141099,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-1.mp4": {
+      "sha256": "667b24356e60bde44c82dcd3f1d84ccd4acfdb72d6326ee939541994fea3c6f5",
+      "bytes": 49821,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-1.png": {
+      "sha256": "bdbeb10182dff81006f5332eab18f8ec422aed45b8f841826c5d37754a0de31f",
+      "bytes": 13543,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-2-alternative.png": {
+      "sha256": "92ba6819991ee157862fd1ce011b7f6f24d39d6d8be49f200ab5dd19a10e871d",
+      "bytes": 13104,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-2.mp4": {
+      "sha256": "4289e6a7bed234e15c9d968ae2fa9f6b8bf38d28070b16594e0484d279e018f4",
+      "bytes": 34625,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-2.png": {
+      "sha256": "b7a856a8699c92494ee61186ca4efcbb6e93d000f6d4d85ba41844f8895f5c2b",
+      "bytes": 13419,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-3.mp4": {
+      "sha256": "3b0bd08542cbab5bac36c01b43c52b14b1c6bfb59fc394f7782a60cfceb16cc6",
+      "bytes": 58244,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    },
+    "shot-3.png": {
+      "sha256": "12e5c9da09ccadb319f63b6872282f7de691379057590afcc776a6ffe33c92a4",
+      "bytes": 13029,
+      "provenance": "authored-vector-illustration",
+      "license": "Apache-2.0"
+    }
+  }
+}

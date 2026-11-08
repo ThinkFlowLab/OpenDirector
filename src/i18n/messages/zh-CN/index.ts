@@ -1,3 +1,4 @@
+import { starterGuide } from "./starterGuide.ts";
 import { trace } from "./trace.ts";
 import { modelSetup } from "./modelSetup.ts";
 import { api } from "./api.ts";
@@ -18,6 +19,7 @@ import { tools } from "./tools.ts";
 
 /** Canonical copy. Every other locale must provide the same keys. */
 export const zhCN = {
+  ...starterGuide,
   ...common,
   ...settings,
   ...modelSetup,

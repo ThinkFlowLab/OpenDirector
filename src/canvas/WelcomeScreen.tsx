@@ -7,7 +7,7 @@ import animatedLogo from "../assets/open_director_logo_anim.gif";
 import staticLogo from "../assets/open_director_logo.png";
 import "./welcome-screen.css";
 
-export function WelcomeScreen({ catalog, onSkip }: { catalog: BackendModels; onSkip: () => void }) {
+export function WelcomeScreen({ catalog, onSkip, onGuide }: { catalog: BackendModels; onSkip: () => void; onGuide: () => void }) {
   const { t, locale, setLocale } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const configureButton = useRef<HTMLButtonElement>(null);
@@ -66,6 +66,7 @@ export function WelcomeScreen({ catalog, onSkip }: { catalog: BackendModels; onS
       </header>
       {!configuring && <div className="cw-welcome-intro-actions">
       <div className="cw-welcome-actions">
+        <button className="cw-welcome-primary" onClick={onGuide}>{t("guide.start")}</button>
         <button ref={configureButton} className="cw-welcome-primary" onClick={beginSetup}>{t("modelSetup.welcomeConfigure")}</button>
         <button className="cw-welcome-secondary" onClick={onSkip}>{t("modelSetup.welcomeSkip")}</button>
       </div>

@@ -1,3 +1,4 @@
+import { StarterGuide } from "../StarterGuide.tsx";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -2480,8 +2481,10 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             onClose={closeEditor}
           />
         )}
+      <StarterGuide rt={rt} />
       {welcomeOpen && <WelcomeScreen
         catalog={backendCatalog}
+        onGuide={() => { dismissModelSetup(); setWelcomeOpen(false); window.dispatchEvent(new Event("opendirector:starter-guide")); }}
         onSkip={() => { dismissModelSetup(); setWelcomeOpen(false); }}
       />}
       {settingsOpen && (
@@ -2511,6 +2514,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             <p>
               {t("canvas.workspace.help.body")}
             </p>
+            <button onClick={() => { setHelp(false); window.dispatchEvent(new Event("opendirector:starter-guide")); }}>{t("guide.start")}</button>
             <dl>
               {helpShortcuts(navigator.platform.includes("Mac"), t).map(
                 ([name, key]) => (
