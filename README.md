@@ -101,6 +101,17 @@ Join the **OpenDirector with vLLM-Omni (2)** WeChat group to discuss OpenDirecto
   </a>
 </p>
 
+If OpenDirector is useful to you, [give it a star on GitHub](https://github.com/ThinkFlowLab/OpenDirector) to support the project and help others discover it.
+
+<p align="center">
+  <a href="https://github.com/ThinkFlowLab/OpenDirector">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="docs/guides/assets/star-opendirector.png" />
+      <img src="docs/guides/assets/star-opendirector.gif" alt="Illustrated guide: open ThinkFlowLab/OpenDirector on GitHub and click Star" width="800" />
+    </picture>
+  </a>
+</p>
+
 ## Contributing
 
 We welcome bug reports and suggestions through [Issues](https://github.com/ThinkFlowLab/OpenDirector/issues), and code and documentation contributions through pull requests. See the [validation guide (Chinese)](docs/development/validation.md) for development checks.

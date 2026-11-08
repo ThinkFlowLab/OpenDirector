@@ -101,6 +101,17 @@ opendirector serve
   </a>
 </p>
 
+如果 OpenDirector 对你有帮助，欢迎[在 GitHub 上点亮 Star](https://github.com/ThinkFlowLab/OpenDirector)，支持项目，也让更多人发现它。
+
+<p align="center">
+  <a href="https://github.com/ThinkFlowLab/OpenDirector">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="docs/guides/assets/star-opendirector.png" />
+      <img src="docs/guides/assets/star-opendirector.gif" alt="操作示意：打开 GitHub 上的 ThinkFlowLab/OpenDirector，点击 Star 支持项目" width="800" />
+    </picture>
+  </a>
+</p>
+
 ## 参与贡献
 
 欢迎通过 [Issues](https://github.com/ThinkFlowLab/OpenDirector/issues) 反馈问题或提出建议，通过 Pull Request 贡献代码与文档。开发检查见[验证指南](docs/development/validation.md)。
