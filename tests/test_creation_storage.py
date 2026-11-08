@@ -399,7 +399,7 @@ def test_symlinks_and_missing_commit_records_are_not_followed_or_replaced(projec
 @pytest.mark.parametrize('change', ['in_place', 'replacement', 'missing'])
 @pytest.mark.skipif(os.name == 'nt', reason='Commit signature caching requires POSIX change time')
 def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(projects, monkeypatch, change):
-    from opendirector.infrastructure import creation_projects as module
+    from opendirector.infrastructure import creation_commit_log as module
     created = create(projects)
     projects.execute(rename(created))
     projects.changes(created.projectId)
@@ -434,7 +434,7 @@ def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(
 def test_long_history_is_validated_from_disk_only_once(projects, monkeypatch):
     # Each read validates the whole chain; a cache smaller than the history
     # would reparse every record on every read of a long project.
-    from opendirector.infrastructure import creation_projects as module
+    from opendirector.infrastructure import creation_commit_log as module
     created = create(projects)
     for revision in range(1, 200):
         assert projects.execute(rename(created, f'Renamed {revision}', revision)).status == 'applied'
@@ -472,9 +472,10 @@ def test_byte_verified_cache_detects_rewrites_with_unchanged_file_signature(proj
     projects.execute(renamed)
     key = renamed.commandId if victim == 'head' else created.commandId
     file = projects.root / 'Renamed' / 'commits' / f'{key}.json'
-    signature = creation_projects._file_signature(file)
-    original_signature = creation_projects._file_signature
-    monkeypatch.setattr(creation_projects, '_file_signature',
+    from opendirector.infrastructure import creation_commit_log
+    signature = creation_commit_log._file_signature(file)
+    original_signature = creation_commit_log._file_signature
+    monkeypatch.setattr(creation_commit_log, '_file_signature',
         lambda path: signature if path == file else original_signature(path))
     projects.history_index(created.projectId)
     original = creation_projects.CommitRecord.model_validate_json
@@ -584,20 +585,20 @@ def test_paginated_outbox_has_no_duplicate_or_skipped_events(projects):
 
 @pytest.mark.parametrize('file_kind', ['journal', 'bundle', 'manifest'])
 def test_real_file_write_failure_preserves_recoverable_intent(projects, monkeypatch, file_kind):
-    from opendirector.infrastructure import creation_projects
+    from opendirector.infrastructure import creation_records
     created = create(projects)
     command = rename(created)
-    original = creation_projects.write_json
+    original = creation_records.write_json
     def fail_write(path, value):
         matches = (path.parent == projects.intents if file_kind == 'journal' else
                    path.name == f'{command.commandId}.json' if file_kind == 'bundle' else path.name == 'project.json')
         if matches:
             raise OSError('simulated disk full')
         original(path, value)
-    monkeypatch.setattr(creation_projects, 'write_json', fail_write)
+    monkeypatch.setattr(creation_records, 'write_json', fail_write)
     with pytest.raises(OSError):
         projects.execute(command)
-    monkeypatch.setattr(creation_projects, 'write_json', original)
+    monkeypatch.setattr(creation_records, 'write_json', original)
     restored = restarted(projects)
     if file_kind == 'journal':
         assert restored.snapshot(created.projectId).project.name == 'Example'
@@ -754,8 +755,9 @@ def test_list_projects_scans_directories_and_manifests_once(projects, monkeypatc
     for index in range(8):
         create(projects, f'Project {index}')
     scans, manifests = [], []
+    from opendirector.infrastructure import creation_catalog
     original_scan = creation_projects.CreationProjects._scan
-    original_read = creation_projects.read_json
+    original_read = creation_catalog.read_json
 
     def scanning(self):
         scans.append(1)
@@ -767,7 +769,7 @@ def test_list_projects_scans_directories_and_manifests_once(projects, monkeypatc
         return original_read(path)
 
     monkeypatch.setattr(creation_projects.CreationProjects, '_scan', scanning)
-    monkeypatch.setattr(creation_projects, 'read_json', reading)
+    monkeypatch.setattr(creation_catalog, 'read_json', reading)
     first = projects.list_projects()
     assert len(first['projects']) == 8
     # One directory scan and one manifest read per project, never per project pair.
