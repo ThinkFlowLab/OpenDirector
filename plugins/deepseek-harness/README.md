@@ -69,7 +69,7 @@ A row override replaces its entire `config`. Loading the plugin validates this c
 | `baseUrl` | `http://127.0.0.1:8000` | OpenDirector API address; HTTP or HTTPS, without credentials, query, or fragment. |
 | `canvasBaseUrl` | same as `baseUrl` | OpenDirector frontend address; project links are appended here. |
 | `locale` | `en-US` | `en-US` or `zh-CN` for tool descriptions, summaries, and errors. |
-| `requestTimeoutMs` | `30000` | Timeout for one request. A timeout does not cancel an accepted generation job. |
+| `requestTimeoutMs` | `30000` | Timeout for one request. Media headers and each pending body read have a timeout capped at five seconds. A timeout does not cancel an accepted generation job. |
 
 ## Enable, disable, and remove
 

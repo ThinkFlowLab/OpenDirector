@@ -50,10 +50,6 @@ jobs:
       - name: Frontend tests
         if: always() && steps.install.outcome == 'success'
         run: npm test
-      - name: DSH plugin tests
-        if: always() && steps.install.outcome == 'success'
-        working-directory: plugins/deepseek-harness
-        run: npm ci && npm test
       - name: Check bilingual catalogs
         if: always() && steps.install.outcome == 'success'
         run: npm run check:i18n

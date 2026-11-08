@@ -30,6 +30,8 @@ const objectOf = (properties, { additionalProperties = true, description } = {})
   ...(description === undefined ? {} : { description }),
   ...(properties === undefined ? {} : { properties }),
 })
+// defineTool compiles DSH property specs to JSON Schema, moving these markers
+// to each parent object's required array (including nested objects and outputs).
 const required = (schema) => ({ ...schema, required: true })
 
 function outputSchema(properties, requiredKeys = []) {

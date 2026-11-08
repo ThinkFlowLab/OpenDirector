@@ -71,7 +71,7 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 | `baseUrl` | `http://127.0.0.1:8000` | OpenDirector API 地址；支持 HTTP/HTTPS，不带账号密码、查询参数或片段。 |
 | `canvasBaseUrl` | 与 `baseUrl` 相同 | OpenDirector 前端地址，工程链接会追加到此地址后。 |
 | `locale` | `en-US` | 工具描述、摘要和错误支持 `en-US`、`zh-CN`。 |
-| `requestTimeoutMs` | `30000` | 单次请求的超时；超时不会取消已接受的生成任务。 |
+| `requestTimeoutMs` | `30000` | 单次请求的超时。媒体响应头和等待下一块数据各最多等五秒。超时不会取消已接受的生成任务。 |
 
 ## 启用、停用和卸载
 

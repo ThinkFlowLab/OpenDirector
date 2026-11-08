@@ -54,6 +54,29 @@ function responseError(response, payload, text) {
   })
 }
 
+// Keep the header deadline separate from the body idle deadline. A video can
+// stream for longer while chunks arrive; downstream backpressure pauses reads.
+function withMediaBodyTimeout(response, controller, timeoutMs) {
+  if (!response.body) return response
+  const reader = response.body.getReader()
+  const body = new ReadableStream({
+    async pull(stream) {
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const { done, value } = await reader.read()
+        if (done) stream.close()
+        else stream.enqueue(value)
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })
+}
+
 export class OpenDirectorClient {
   constructor(config, { fetchImpl = globalThis.fetch, heartbeatIntervalMs = 15000 } = {}) {
     if (typeof fetchImpl !== 'function') throw new TypeError('fetch implementation is required')
@@ -115,7 +138,7 @@ export class OpenDirectorClient {
           await response.body?.cancel()
           throw new HttpError({ status: 502, code: 'invalid_media', detail: 'Unexpected OpenDirector media type.' })
         }
-        return response
+        return withMediaBodyTimeout(response, controller, timeoutMs)
       }
       let text = ''
       try {

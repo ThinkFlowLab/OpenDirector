@@ -36,7 +36,12 @@ export function apply(ctx, config) {
       methods: ['GET'],
       requestBody: 'buffered',
       async fetch(request) {
-        const { searchParams } = new URL(request.url)
+        let searchParams
+        try {
+          ({ searchParams } = new URL(request.url, 'http://localhost'))
+        } catch {
+          return new Response(null, { status: 400 })
+        }
         try {
           const media = await client.media(
             searchParams.get('project'), searchParams.get('asset'), {

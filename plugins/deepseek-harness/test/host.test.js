@@ -46,6 +46,15 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     assert.ok(entry)
     const names = () => ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_'))
     assert.equal(names().length, 8)
+    const generation = names().find(tool => tool.name === 'opendirector_create_generation').parameters
+    assert.deepEqual(generation.required, ['projectId', 'operationId', 'kind', 'modelConfigId', 'prompt', 'parameters', 'position'])
+    assert.deepEqual(generation.properties.position.required, ['x', 'y'])
+    assert.equal(Object.hasOwn(generation.properties.projectId, 'required'), false)
+    const cancel = names().find(tool => tool.name === 'opendirector_cancel').parameters
+    assert.deepEqual(cancel.required, ['projectId', 'operationId', 'jobId', 'expectedJobRevision'])
+    const definition = ctx.tools.definitions().find(tool => tool.name === 'opendirector_create_generation')
+    assert.deepEqual(definition.output.schema.required,
+      ['projectId', 'canvasUrl', 'operationId', 'receipt', 'specId', 'itemId', 'referenceIds'])
     async function readJob() {
       const batch = await ctx.tools.execute({
         calls: [{ type: 'tool-call', id: randomUUID(), name: 'opendirector_job', arguments: JSON.stringify({ projectId, jobId }) }],
