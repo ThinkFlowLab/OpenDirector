@@ -167,7 +167,7 @@ def test_discovery_uses_saved_key_only_for_its_original_address_and_never_saves(
     async def read(config):
         assert config['apiKey'] == 'test-secret'
         return CAPS
-    monkeypatch.setattr('opendirector_api.main.read_video_capabilities', read)
+    monkeypatch.setattr('opendirector.application.model_catalog.read_video_capabilities', read)
     payload = {**model_payload(apiKey=''), 'configId': saved['id'], 'source': 'service'}
     response = client.post('/api/model-configs/capabilities', json=payload)
     assert response.status_code == 200 and response.json()['videoCapabilities'] == CAPS

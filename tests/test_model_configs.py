@@ -297,7 +297,7 @@ def test_discover_models_without_model_id_and_preserve_key(api, monkeypatch):
         calls.append(config)
         return [{'id': 'model-a'}, {'id': 'model-b'}, {'id': 'model-a'}]
 
-    monkeypatch.setattr('opendirector_api.main.read_service_models', models)
+    monkeypatch.setattr('opendirector.application.model_catalog.read_service_models', models)
     response = client.post('/api/model-configs/discover', json=payload(
         modelId='', apiKey='', configId=saved['id']))
     assert response.status_code == 200

@@ -1,8 +1,5 @@
 import asyncio
-import os
-import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -11,7 +8,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from filelock import Timeout
-from starlette.concurrency import run_in_threadpool
 
 from opendirector.installation import data_root, web_root
 from opendirector.wiring import configure_runtime
@@ -19,15 +15,14 @@ from opendirector.domain.projects import ProjectError, identifier
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
 from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.model_catalog import ModelCatalog
+from opendirector.application.preferences import Preferences
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.application.creation_tool_assets import CreationToolAssets
-from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
-from opendirector.infrastructure.model_configs import ModelConfigs, connection_fields, model_fields
-from opendirector.domain.input_rules import input_rules
-from opendirector.integrations.model_capabilities import read_service_models, read_video_capabilities
-from opendirector.integrations.chat_completions import ChatCompletions, chat_payload
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
 from opendirector_api.creation import creation_routes
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
@@ -37,17 +32,25 @@ from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentM
     ToolTaskCreate, ToolPlacement, ImageSelectionCreate)
 
 
+def video_capabilities(value):
+    return value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None
+
+
+def model_options(value: ModelBatchInput):
+    return {key: item.model_dump(exclude_unset=True) for key, item in value.modelOptions.items()}
+
+
 def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None) -> FastAPI:
     configure_runtime()
     repository = data_root()
     if store is None:
         store = LocalProjects(repository)
     model_configs = ModelConfigs(store.repository)
-    settings = AppSettings(store.repository)
+    preferences = Preferences(store.repository)
     creation_projects = CreationProjects(store)
     creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider)
     creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects)
-    model_tester = chat_provider or ChatCompletions()
+    catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions())
 
     @asynccontextmanager
     async def lifespan(app):
@@ -61,7 +64,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             finally:
                 await creation_generation.close()
 
-    app = FastAPI(title="OpenDirector Local API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="OpenDirector Local API", version="0.1.1", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider))
     app.include_router(library_routes(creation_projects))
@@ -185,96 +188,66 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.get("/api/model-configs", response_model=list[ModelConfigPublic])
     def list_model_configs():
-        return model_configs.list()
+        return catalog.list()
 
     @app.get('/api/settings', response_model=GeneralSettings)
     def get_settings():
-        return settings.get()
+        return preferences.get()
 
     @app.patch('/api/settings', response_model=GeneralSettings)
     def update_settings(value: GeneralSettingsPatch):
-        return settings.update(value.model_dump())
+        return preferences.update(value.model_dump())
 
     @app.delete('/api/model-services/{config_id}', status_code=204)
     def delete_model_service(config_id: UUID):
-        model_configs.delete_service(str(config_id))
+        catalog.delete_service(str(config_id))
 
     @app.post('/api/model-configs/batch', response_model=list[ModelConfigPublic])
     def save_model_batch(value: ModelBatchInput):
-        return model_configs.save_many(value.kind, value.url, value.modelIds, value.apiKey.get_secret_value(),
-                                       str(value.configId) if value.configId else None, connection_type=value.connectionType,
-                                       protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
-                                       video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
-                                       input_modalities=value.inputModalities,
-                                       model_options={key: item.model_dump(exclude_unset=True) for key, item in value.modelOptions.items()},
-                                       capabilities_supplied='videoCapabilities' in value.model_fields_set)
+        return catalog.save_many(value.kind, value.url, value.modelIds, value.apiKey.get_secret_value(),
+                                 str(value.configId) if value.configId else None, connection_type=value.connectionType,
+                                 protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
+                                 video_capabilities=video_capabilities(value), input_modalities=value.inputModalities,
+                                 model_options=model_options(value),
+                                 capabilities_supplied='videoCapabilities' in value.model_fields_set)
 
     @app.post('/api/model-configs/discover')
     async def discover_models(value: ModelDiscoveryRequest):
-        config = {**model_fields(value.url, value.modelId or 'discovery', value.apiKey.get_secret_value()),
-                  'kind': value.kind, **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode, value.proxyMode)}
-        if config['authMode'] == 'bearer' and not config['apiKey']:
-            existing = await run_in_threadpool(model_configs.resolve, str(value.configId), value.kind) if value.configId else None
-            if not existing or existing['url'] != config['url'] or not existing['apiKey']:
-                raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
-            config['apiKey'] = existing['apiKey']
-        models = await read_service_models(config)
-        return {'models': list(dict.fromkeys(item['id'] for item in models))}
+        models = await catalog.discover(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(),
+                                        str(value.configId) if value.configId else None, connection_type=value.connectionType,
+                                        protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode)
+        return {'models': models}
 
     @app.post('/api/model-configs/test-agent')
     async def test_agent_model(value: AgentModelTest):
-        config = {**model_fields(value.url, value.modelId, value.apiKey.get_secret_value()), 'kind': 'agent',
-                  **connection_fields('agent', value.connectionType, value.protocol, value.authMode, value.proxyMode)}
-        if config['authMode'] == 'bearer' and not config['apiKey']:
-            existing = await run_in_threadpool(model_configs.agent, str(value.configId)) if value.configId else None
-            if not existing or existing['url'] != config['url'] or not existing['apiKey']:
-                raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
-            config['apiKey'] = existing['apiKey']
-        payload = chat_payload(config, [{'role': 'user', 'content': 'Reply with OK only.'}], 'auto')
-        payload['max_tokens'] = 1024
-        started = time.monotonic()
-        received = False
-        try:
-            async with asyncio.timeout(30):
-                async for event in model_tester.stream(config, payload):
-                    if event['type'] == 'delta' and event['text'].strip():
-                        received = True
-        except TimeoutError:
-            raise ProjectError('测试超时（30 秒），请检查服务地址及模型状态。', 504) from None
-        if not received:
-            raise ProjectError('模型未返回正文，请检查 Chat Completions 兼容性。', 502)
-        return {'elapsedMs': round((time.monotonic() - started) * 1000)}
+        elapsed = await catalog.test_agent(value.url, value.modelId, value.apiKey.get_secret_value(),
+                                           str(value.configId) if value.configId else None, connection_type=value.connectionType,
+                                           protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode)
+        return {'elapsedMs': elapsed}
 
     @app.post("/api/model-configs", response_model=ModelConfigPublic)
     def create_model_config(value: ModelConfigInput):
-        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
-                                  video_adapter=value.videoAdapter, video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
-                                  capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
+        return catalog.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
+                            video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
+                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
 
     @app.post('/api/model-configs/capabilities')
     async def model_capabilities(value: ModelCapabilityRequest):
-        if value.kind != 'video':
-            raise ProjectError('能力配置仅适用于视频模型。')
-        config = {**model_fields(value.url, value.modelId, value.apiKey.get_secret_value()), 'kind': value.kind,
-                  **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode, value.proxyMode), 'videoAdapter': value.videoAdapter or 'auto'}
-        if value.source == 'preset':
-            return {'videoCapabilities': input_rules(config).get('videoCapabilities')}
-        if config['authMode'] == 'bearer' and not config['apiKey']:
-            existing = model_configs.resolve(str(value.configId), 'video') if value.configId else None
-            if not existing or existing['url'] != config['url']:
-                raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
-            config['apiKey'] = existing['apiKey']
-        return {'videoCapabilities': await read_video_capabilities(config)}
+        capabilities = await catalog.capabilities(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(),
+                                                  source=value.source, config_id=str(value.configId) if value.configId else None,
+                                                  connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode,
+                                                  proxy_mode=value.proxyMode, video_adapter=value.videoAdapter)
+        return {'videoCapabilities': capabilities}
 
     @app.patch("/api/model-configs/{config_id}", response_model=ModelConfigPublic)
     def update_model_config(config_id: UUID, value: ModelConfigInput):
-        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
-                                  video_adapter=value.videoAdapter, video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
-                                  capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
+        return catalog.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
+                            video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
+                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
 
     @app.delete("/api/model-configs/{config_id}", status_code=204)
     def delete_model_config(config_id: UUID):
-        model_configs.delete(str(config_id))
+        catalog.delete(str(config_id))
 
     @app.get('/api/tools')
     def tool_catalog():
