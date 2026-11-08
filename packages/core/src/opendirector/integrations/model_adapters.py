@@ -223,8 +223,12 @@ class OpenAIImages(ModelAdapter):
     OPENAI_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
 
     def __init__(self, transport=None, poll_interval=3, *, free_size=False, max_edge=1536, grid=16, strength=False, max_images=1,
-                 transparent=False, response_format=True, reference_field='image'):
+                 transparent=False, response_format=True, reference_field='image', sampling=None):
         super().__init__(transport, poll_interval)
+        # Sampling fields for text-to-image only. Edits keep the service defaults: strength picks the
+        # starting step, so fewer steps would change how much of the source survives, and edits
+        # without CFG have not been checked for how well they follow the instruction.
+        self.sampling = dict(sampling or {})
         self.free_size, self.max_edge, self.grid = free_size, max_edge, grid
         # img2img services honour strength; instruction editors ignore it.
         self.strength, self.max_images = strength, max_images
@@ -266,7 +270,7 @@ class OpenAIImages(ModelAdapter):
             async with _client(self, config) as client:
                 if not images:
                     payload = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                               'n': 1, **extra}
+                               'n': 1, **self.sampling, **extra}
                     if self.response_format:
                         payload['response_format'] = 'b64_json'
                     async with client.stream('POST', endpoint(config['url'], '/images/generations'),
@@ -675,7 +679,10 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
     if profile == 'moss-speech':
         return MossSpeech(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':
-        return OpenAIImages(transport, poll_interval, free_size=True, strength=True)
+        # Z-Image-Turbo is a few-step distilled model meant to run without CFG; vLLM-Omni's recipe uses
+        # 9 steps and guidance 0. Left out, vLLM-Omni runs 50 steps with CFG at 1.0, about ten times the work.
+        return OpenAIImages(transport, poll_interval, free_size=True, strength=True,
+                            sampling={'num_inference_steps': 9, 'guidance_scale': 0.0})
     if kind == 'image' and profile == 'vllm-omni-qwen-image':
         return OpenAIImages(transport, poll_interval, free_size=True, max_edge=2048, grid=32, max_images=4, transparent=True)
     if kind == 'image' and protocol == 'volcengine':

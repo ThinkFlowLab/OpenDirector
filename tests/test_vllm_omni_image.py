@@ -81,8 +81,9 @@ def test_generates_a_16_9_png_with_text_references_inlined(project):
     task, posts = run_image(project, reply, [note['id']])
     assert task['status'] == 'succeeded', (task['error'], task['errorDetails'])
     [payload] = posts
-    assert {key: payload[key] for key in ('model', 'size', 'response_format', 'output_format')} == {
-        'model': 'Tongyi-MAI/Z-Image-Turbo', 'size': '1344x768', 'response_format': 'b64_json', 'output_format': 'png'}
+    assert {key: payload[key] for key in ('model', 'size', 'response_format', 'output_format', 'num_inference_steps', 'guidance_scale')} == {
+        'model': 'Tongyi-MAI/Z-Image-Turbo', 'size': '1344x768', 'response_format': 'b64_json', 'output_format': 'png',
+        'num_inference_steps': 9, 'guidance_scale': 0.0}
     assert '樱花校门前的少女' in payload['prompt'] and '黑色长发，红色领结' in payload['prompt']
     assert 'image' not in payload and 'watermark' not in payload
     asset = project[3].record(project[3].assets.get(value['id'], task['assetId']))
