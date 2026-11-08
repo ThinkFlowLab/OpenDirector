@@ -1,3 +1,5 @@
+import { flushSync } from "react-dom";
+import { saveStarterGuideChange } from "./starterGuideSave.ts";
 import { useEffect, useRef, useState } from "react";
 import type { WorkspaceRuntime } from "./workspace/runtimeTypes.ts";
 import {
@@ -81,13 +83,19 @@ export function StarterGuide({ rt }: { rt: WorkspaceRuntime }) {
       setBusy(false);
     }
   };
-  const save = async (next: CanvasDocument) => {
-    if (rt.historyRef.current.present.id !== next.id)
-      throw new Error(t("guide.changed"));
-    if (!(await rt.persist(next)))
-      throw new Error(rt.saveError.current || t("guide.saveFailed"));
-    rt.installDocument(next);
-  };
+  const save = (next: CanvasDocument) =>
+    saveStarterGuideChange(next, {
+      read: () => rt.historyRef.current.present,
+      apply: (before, updated) =>
+        flushSync(() =>
+          rt.change((current: CanvasDocument) =>
+            current === before ? updated : current,
+          ),
+        ),
+      persist: rt.persist,
+      changed: () => new Error(t("guide.changed")),
+      failed: () => new Error(rt.saveError.current || t("guide.saveFailed")),
+    });
   const start = (fresh = false) =>
     run(async () => {
       const previous = fresh ? null : read(`${preference}:project`);
