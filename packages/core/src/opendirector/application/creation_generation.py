@@ -149,6 +149,9 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
+            if input_rules(config)['profile'] == 'vllm-omni-image':
+                from opendirector.integrations.vllm_omni_image import SAMPLING
+                params.update(SAMPLING)
         if spec.kind == 'audio' and intent['creationType'] == 'music':
             # The adapter snapshot fixes what is sent: style (prompt), lyrics and length cap.
             params = {'creation_type': 'music', 'lyrics': intent.get('lyrics', ''),
@@ -222,7 +225,8 @@ class CreationGeneration(GenerationRuntime):
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
                 responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile == 'moss-image' else None,
-                outputFormat='png', watermark=parameters.get('watermark'))
+                outputFormat='png', watermark=parameters.get('watermark'),
+                numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
                         scoreMode=parameters.get('score_mode'))

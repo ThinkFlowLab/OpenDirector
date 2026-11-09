@@ -190,18 +190,6 @@ def test_compatible_services_keep_response_format():
     [request] = seen
     assert json.loads(request.read())['response_format'] == 'b64_json'
 
-
-@pytest.mark.parametrize('model', ['Qwen/Qwen-Image-2.1', 'Qwen/Qwen-Image-2.1-Turbo'])
-def test_other_self_hosted_models_keep_the_service_sampling(model):
-    # Z-Image-Turbo's 9-step, guidance-free settings stay on its own profile.
-    config = {**CONFIG, 'url': 'http://gpu-box:8200/v1', 'modelId': model}
-    assert input_rules(config)['profile'] == 'vllm-omni-qwen-image'
-    adapter, seen = adapter_calls(adapter_for(config))
-    asyncio.run(adapter.image(config, ImageRequest(prompt='灯塔', width=1024, height=1024)))
-    payload = json.loads(seen[0].read())
-    assert 'num_inference_steps' not in payload and 'guidance_scale' not in payload
-
-
 def jpeg():
     out = io.BytesIO()
     Image.new('RGB', (16, 12), (200, 40, 40)).save(out, 'JPEG')

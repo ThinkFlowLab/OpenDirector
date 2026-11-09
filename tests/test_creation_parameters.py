@@ -114,6 +114,10 @@ async def test_image_parameters_reach_wire_and_real_output_with_fixed_sources(pr
         assert job.execution.size == job.adapterParameters['size'] == calls[0][0]['size'] == expected
         assert [str(ref.asset.assetId) for ref in job.inputSnapshot.references] == source_ids
         fields, files = calls[0]
+        # Only Z-Image-Turbo fixes sampling at acceptance; the job records it and sends it from that record.
+        sampling = {'num_inference_steps': 9, 'guidance_scale': 0.0} if model == 'Tongyi-MAI/Z-Image-Turbo' else {}
+        assert {key: fields[key] for key in ('num_inference_steps', 'guidance_scale') if key in fields} == sampling
+        assert (job.execution.numInferenceSteps, job.execution.guidanceScale) == (sampling.get('num_inference_steps'), sampling.get('guidance_scale'))
         if protocol == 'volcengine': assert len(fields.get('image', [])) == reference_count
         else: assert len(files) == reference_count
         if files: assert [data for _, data in files] == [png(color=color) for color in ['red', 'green']]
