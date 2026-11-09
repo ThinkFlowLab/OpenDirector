@@ -42,7 +42,9 @@ export interface ModelConfigInput {
   url: string;
   modelId: string;
   apiKey: string;
-  connectionType: "api" | "self_hosted";
+  /** Forms echo existing entries back, so builtin is accepted here; the
+      backend still rejects builtin saves through its URL validation. */
+  connectionType: "api" | "self_hosted" | "builtin";
   protocol: NonNullable<ModelConfig["protocol"]>;
   authMode: "none" | "bearer";
   proxyMode?: "system" | "direct";

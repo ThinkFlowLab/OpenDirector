@@ -1,6 +1,7 @@
 /** Node frames, cards, versions, stacks and media controls. */
 export const canvasNodes = {
   "canvasNodes.kind.image": "图片",
+  "canvasNodes.placeholderBadge": "占位",
   "canvasNodes.kind.video": "视频",
   "canvasNodes.kind.audio": "音频",
   "canvasNodes.kind.text": "文本",

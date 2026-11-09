@@ -192,7 +192,12 @@ export interface CanvasNodeData extends Record<string, unknown> {
   };
   settings?: GenerationSettings;
   agentSettings?: AgentNodeSettings;
-  generationEvidence?: { output: string; references: Record<string, string> };
+  /** The displayed asset is a zero-key placeholder composition. */
+  mediaPlaceholder?: boolean;
+  generationEvidence?: {
+    output: string;
+    references: Record<string, string>;
+  };
   timeline?: TimelineData;
   subject?: SubjectData;
   stack?: StackData;

@@ -62,7 +62,7 @@ export interface ModelConfig {
   kind: ModelKind;
   url: string;
   modelId: string;
-  connectionType: "api" | "self_hosted";
+  connectionType: "api" | "self_hosted" | "builtin";
   protocol:
     | "openai"
     | "volcengine"
@@ -72,6 +72,7 @@ export interface ModelConfig {
     | "vllm_omni_music"
     | "vllm_omni_depth"
     | "vllm_omni_score"
+    | "placeholder"
     | null;
   authMode: "none" | "bearer" | null;
   proxyMode?: "system" | "direct";
@@ -167,6 +168,13 @@ export function isGenerationModel(
   return (
     !isSegmentationModel(model) && !isDepthModel(model) && !isScoreModel(model)
   );
+}
+
+/** The built-in zero-key generator: local abstract placeholders, not model output. */
+export function isPlaceholderModel(
+  model: Pick<ModelConfig, "connectionType" | "protocol">,
+) {
+  return model.connectionType === "builtin" || model.protocol === "placeholder";
 }
 
 const LABELS: Record<string, MessageKey> = {

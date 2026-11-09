@@ -1,6 +1,7 @@
 /** Node frames, cards, versions, stacks and media controls. */
 export const canvasNodes = {
   "canvasNodes.kind.image": "Image",
+  "canvasNodes.placeholderBadge": "Demo",
   "canvasNodes.kind.video": "Video",
   "canvasNodes.kind.audio": "Audio",
   "canvasNodes.kind.text": "Text",

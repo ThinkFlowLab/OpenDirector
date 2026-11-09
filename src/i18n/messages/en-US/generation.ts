@@ -8,6 +8,9 @@ export const generation = {
   "generation.model.unconfiguredOption": "No generation model configured",
   "generation.model.localGroup": "Local service",
   "generation.model.localDemo": "Local interactive demo",
+  "generation.placeholder.disclosure":
+    "Local demo: an abstract placeholder generated from your prompt — it does not understand the prompt.",
+  "generation.placeholder.configure": "Set up a real model",
   "generation.model.agent": "Agent model",
   "generation.model.agentPlaceholder": "Choose an Agent model",
   "generation.model.agentUnavailable": "The previous Agent model is unavailable",

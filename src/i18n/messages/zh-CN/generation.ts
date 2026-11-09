@@ -8,6 +8,9 @@ export const generation = {
   "generation.model.unconfiguredOption": "未配置生成模型",
   "generation.model.localGroup": "本地服务",
   "generation.model.localDemo": "本地交互演示",
+  "generation.placeholder.disclosure":
+    "本地演示：这是按提示词生成的抽象占位图，不会理解你的提示词。",
+  "generation.placeholder.configure": "配置真实模型",
   "generation.model.agent": "Agent 模型",
   "generation.model.agentPlaceholder": "选择 Agent 模型",
   "generation.model.agentUnavailable": "原 Agent 模型不可用",

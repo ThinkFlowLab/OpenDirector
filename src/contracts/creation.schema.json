@@ -7991,10 +7991,11 @@
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -8009,7 +8010,8 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
@@ -8146,10 +8148,11 @@
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -8164,7 +8167,8 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
@@ -8290,10 +8294,11 @@
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -8308,7 +8313,8 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
@@ -8433,16 +8439,18 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -22685,10 +22693,11 @@
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -22703,7 +22712,8 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
@@ -22830,10 +22840,11 @@
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -22848,7 +22859,8 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
@@ -22979,10 +22991,11 @@
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"
@@ -22997,7 +23010,8 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
@@ -23126,16 +23140,18 @@
               "vllm_omni_segmentation",
               "vllm_omni_music",
               "vllm_omni_depth",
-              "vllm_omni_score"
+              "vllm_omni_score",
+              "placeholder"
             ],
             "title": "Protocol",
             "type": "string"
           },
           "connectionType": {
-            "description": "Hosted or local model connection type.",
+            "description": "Hosted, local, or built-in model connection type.",
             "enum": [
               "api",
-              "self_hosted"
+              "self_hosted",
+              "builtin"
             ],
             "title": "Connectiontype",
             "type": "string"

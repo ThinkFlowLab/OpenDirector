@@ -819,8 +819,8 @@ export interface ModelConnectionInput extends ContractInput {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly url: string;
   readonly modelId: string;
-  readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly connectionType: "api" | "self_hosted" | "builtin";
+  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score" | "placeholder";
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
@@ -833,8 +833,8 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
-  readonly connectionType: "api" | "self_hosted";
+  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score" | "placeholder";
+  readonly connectionType: "api" | "self_hosted" | "builtin";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
   readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
@@ -2296,8 +2296,8 @@ export interface ModelConnection extends Contract {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly url: string;
   readonly modelId: string;
-  readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly connectionType: "api" | "self_hosted" | "builtin";
+  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score" | "placeholder";
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
@@ -2310,8 +2310,8 @@ export interface ModelSnapshot extends Contract {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
-  readonly connectionType: "api" | "self_hosted";
+  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score" | "placeholder";
+  readonly connectionType: "api" | "self_hosted" | "builtin";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
   readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
