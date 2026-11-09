@@ -16,7 +16,7 @@ from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.reference_inputs import image_type, references, reference_text, request_size
-from opendirector.integrations.volcengine import bounded
+from opendirector.integrations.volcengine import _public_result_url, bounded
 from opendirector.media.probe import require_ffprobe
 
 
@@ -212,9 +212,11 @@ class KlingVideoGeneration:
     async def resume_result(self, config, suffix, url):
         try:
             self._result_url(url)
+            pinned, headers, extensions = await _public_result_url(url)
+            extensions['model_secrets'] = (config.get('apiKey', ''),)
             async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport,
                     trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
-                async with client.stream('GET', url, extensions={'model_secrets': (config.get('apiKey', ''),)}) as response:
+                async with client.stream('GET', pinned, headers=headers, extensions=extensions) as response:
                     return suffix, await bounded(response, stage='download', secrets=(config.get('apiKey', ''),))
         except httpx.TimeoutException:
             raise transport_failure('download', timeout=True) from None

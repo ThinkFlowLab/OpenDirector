@@ -3,6 +3,7 @@ import asyncio
 import base64
 from io import BytesIO
 import json
+import socket
 import subprocess
 from uuid import uuid4
 
@@ -28,6 +29,18 @@ from test_creation_canvas_service import send, ver
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
+
+
+@pytest.fixture(autouse=True)
+def resolve_kling_cdn(monkeypatch):
+    lookup = socket.getaddrinfo
+
+    def resolve(host, port, *args, **kwargs):
+        if host == 'cdn.example.test':
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', port))]
+        return lookup(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, 'getaddrinfo', resolve)
 
 
 def config(model_id='kling-4.0'):
@@ -280,7 +293,7 @@ async def test_remote_identity_poll_retry_and_download_never_repeat_submission(r
         requests.append(request)
         if request.method == 'POST':
             return httpx.Response(200, json={'code': 0, 'data': {'id': 'remote-1', 'status': 'submitted'}})
-        if request.url.host == 'cdn.example.test':
+        if request.headers['host'] == 'cdn.example.test':
             assert 'authorization' not in request.headers
             return httpx.Response(200, content=b'mp4-result')
         assert request.url.path == '/tasks' and request.url.params['task_ids'] == 'remote-1'
@@ -384,7 +397,7 @@ async def test_shared_job_acceptance_snapshots_all_modes_and_adopts_real_media(i
             assert request.url.path == job.adapterParameters['route']
             assert 'Animate' in request.content.decode() and 'User edited' not in request.content.decode()
             return httpx.Response(200, json={'code': 0, 'data': {'id': 'remote-1', 'status': 'submitted'}})
-        if request.url.host == 'cdn.example.test':
+        if request.headers['host'] == 'cdn.example.test':
             assert 'authorization' not in request.headers
             return httpx.Response(200, content=video_bytes)
         return httpx.Response(200, json={'code': 0, 'data': [{'id': 'remote-1', 'status': 'succeeded',
@@ -419,7 +432,7 @@ async def test_restart_recovers_original_task_or_requires_review_without_reposti
             if failure_stage == 'submit' and not healthy:
                 raise httpx.ReadTimeout('unknown submission', request=request)
             return httpx.Response(200, json={'code': 0, 'data': {'id': 'original-task', 'status': 'submitted'}})
-        if request.url.host == 'cdn.example.test':
+        if request.headers['host'] == 'cdn.example.test':
             assert 'authorization' not in request.headers
             if failure_stage == 'download' and not healthy:
                 raise httpx.ReadTimeout('download interrupted', request=request)
@@ -475,7 +488,7 @@ async def test_queued_execution_uses_frozen_parameters_after_capability_edits(tm
         if request.method == 'POST':
             assert json.loads(request.content)['settings'] == dict(resolution='1080p', duration=3, aspect_ratio='16:9')
             return httpx.Response(200, json={'code': 0, 'data': {'id': 'frozen', 'status': 'submitted'}})
-        if request.url.host == 'cdn.example.test':
+        if request.headers['host'] == 'cdn.example.test':
             return httpx.Response(200, content=video_bytes)
         return httpx.Response(200, json={'code': 0, 'data': [{'id': 'frozen', 'status': 'succeeded',
             'outputs': [{'type': 'video', 'url': 'https://cdn.example.test/result.mp4'}]}]})
