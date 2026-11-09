@@ -58,7 +58,7 @@ class Client:
 
     async def initialize(self, work, servers, session_id=None):
         result = await self.request('initialize', {'protocolVersion': 1,
-            'clientInfo': {'name': 'opendirector', 'version': '0.1.1'}, 'clientCapabilities': {}})
+            'clientInfo': {'name': 'opendirector', 'version': '0.1.2'}, 'clientCapabilities': {}})
         if result['protocolVersion'] != 1:
             raise ProjectError('DeepSeek Harness 不支持 ACP v1，请更新 CLI。', 503)
         params = {'cwd': str(work), 'mcpServers': servers}

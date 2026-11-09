@@ -119,7 +119,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     else:
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
-        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.1'}))
+        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.2'}))
         if not (plugin / 'skills').is_symlink():
             (plugin / 'skills').symlink_to(work / '.agents/skills', target_is_directory=True)
         args = [binary, '-p', '--verbose', '--system-prompt', SYSTEM,
