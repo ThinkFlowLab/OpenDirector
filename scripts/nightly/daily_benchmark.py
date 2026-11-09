@@ -2,9 +2,10 @@
 
 Reads ``scripts/nightly/benchmark.json`` and writes one trend document.
 Exit 0 when nothing should notify the room. Exit 1 when a tracked metric
-regresses past the configured threshold, or when the suite itself fails.
-The one-line summary is always printed and stored; a within-threshold run
-is not a failure.
+regresses past the configured threshold, when the suite itself fails, or when a
+required measurement is missing from a sample that otherwise parsed. The
+one-line summary is always printed and stored; a within-threshold run with every
+required measurement present is not a failure.
 
 UI latency budgets in ``docs/development/ui-performance.md`` are not read
 here. Render-probe success stays on the perf-outputs lane.
@@ -180,6 +181,17 @@ def regressed(current, reference, ratio_limit, min_delta):
     return current > reference * ratio_limit
 
 
+def required_metric_ids(config, ui_required):
+    """Measurements this lane must produce: storage always, drag when it gates.
+
+    A drag metric stays optional while the UI lane is advisory, so an absent UI
+    sample is only a note; once ``--ui-required`` is passed, a sample without
+    that frame measurement is incomplete rather than quiet.
+    """
+    return [metric["id"] for metric in config["metrics"]
+            if metric["source"] != "drag" or ui_required]
+
+
 def metric_value(metric, storage, ui):
     if metric["source"] == "storage":
         scenario = storage.get(metric["scenario"]) or {}
@@ -234,7 +246,8 @@ def clause(title, views, previous_label_text, show_baseline, has_previous):
 
 
 def format_summary(config, views, *, has_previous, previous_label_text,
-                    show_baseline, suite, regressions, ui_unavailable, ui_required):
+                    show_baseline, suite, regressions, ui_unavailable, ui_required,
+                    incomplete):
     cold = config["storage"]["cold-open"]
     catalog = config["storage"]["catalog"]
     prefix = (
@@ -266,9 +279,11 @@ def format_summary(config, views, *, has_previous, previous_label_text,
         parts.append("SUITE " + ",".join(suite))
     if ui_required and ui_unavailable:
         parts.append("SUITE ui sample missing")
+    if incomplete:
+        parts.append("INCOMPLETE " + ",".join(incomplete))
     if regressions:
         parts.append("REGRESSION " + ",".join(regressions))
-    elif not suite and not (ui_required and ui_unavailable):
+    elif not suite and not incomplete and not (ui_required and ui_unavailable):
         parts.append("within threshold")
     return one_line(prefix + ": " + "; ".join(parts))
 
@@ -345,6 +360,10 @@ def build_report(config, storage, ui, previous, *, sha, run_id, now, ui_required
     show_baseline = any(view["baseline"] is not None for view in views)
     suite = [scenario for scenario in SCENARIOS if not (storage.get(scenario) or {}).get("ok")]
     ui_unavailable = ui is None
+    required = set(required_metric_ids(config, ui_required))
+    # A sample that parsed but lost a measurement it was supposed to carry never
+    # reached the threshold check, so the run cannot be reported as quiet.
+    incomplete = [metric_id for metric_id in missing if metric_id in required]
     summary = format_summary(
         config,
         views,
@@ -355,8 +374,9 @@ def build_report(config, storage, ui, previous, *, sha, run_id, now, ui_required
         regressions=regressions,
         ui_unavailable=ui_unavailable,
         ui_required=ui_required,
+        incomplete=incomplete,
     )
-    notify = bool(regressions or suite or (ui_required and ui_unavailable))
+    notify = bool(regressions or suite or incomplete)
     samples = {}
     for scenario in SCENARIOS:
         result = storage.get(scenario) or {"ok": False, "error": "not run"}
@@ -382,6 +402,7 @@ def build_report(config, storage, ui, previous, *, sha, run_id, now, ui_required
         "regressionRatio": config["regressionRatio"],
         "metrics": metrics,
         "missing": missing,
+        "incomplete": incomplete,
         "regressions": regressions,
         "notify": notify,
         "summary": summary,
@@ -408,6 +429,7 @@ def failure_report(message, sha, run_id, now):
         "recordedAt": now.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "metrics": {},
         "missing": [],
+        "incomplete": [],
         "regressions": [],
         "notify": True,
         "summary": summary,

@@ -7,7 +7,8 @@
 # on the candidate SHA. The extended lanes are advisory in v1: their failures
 # are reported and tracked, but they do not block a release by themselves.
 # daily-benchmark runs after perf-outputs and is in that same advisory class.
-# It fails only on a threshold regression or a broken suite.
+# It fails only on a threshold regression, a broken suite, or a required
+# measurement missing from a sample that otherwise parsed.
 # Matrix and policy are documented in docs/development/validation.md.
 #
 # Schedule: 0 18 * * * UTC = 02:00 Asia/Shanghai next day.
@@ -418,9 +419,10 @@ jobs:
 
   # Lane 6: fixed comparable benchmark, after this run's perf sample exists.
   # Advisory, same class as perf-outputs: the result does not block v0.1.x.
-  # The job fails only for a threshold regression or a broken suite, which is
-  # the room signal on nightly-summary (notify: true). The one-line comparison
-  # is published on every run, including improvements.
+  # The job fails for a threshold regression, a broken suite, or a required
+  # measurement missing from a parsed sample; that is the room signal on
+  # nightly-summary (notify: true). The one-line comparison is published on
+  # every run, including improvements.
   #
   # Scenario and thresholds: scripts/nightly/benchmark.json
   # (#180 scale: cold-open/delete 600 commits / 200 nodes, catalog 200 projects).
@@ -516,7 +518,7 @@ jobs:
           name: daily-benchmark
           path: daily-benchmark.json
           if-no-files-found: error
-      - name: Fail on threshold regression or suite failure
+      - name: Fail on threshold regression, suite failure or an incomplete sample
         if: steps.report.outputs.notify == 'true'
         run: exit 1
 
@@ -565,7 +567,7 @@ jobs:
           Release rule: cut the daily \`v0.1.x\` only when **gate parity** is
           \`success\` on this SHA. Extended lanes, including the daily benchmark,
           are advisory in v1. Benchmark \`notify\` is set only for a threshold
-          regression or a broken suite.
+          regression, a broken suite, or a missing required measurement.
           Run: $run_url
           EOF
           cat summary.md >> "$GITHUB_STEP_SUMMARY"

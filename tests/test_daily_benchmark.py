@@ -138,6 +138,39 @@ def test_missing_ui_sample_is_advisory_until_the_lane_requires_it():
     assert 'SUITE ui sample missing' in required['summary']
 
 
+def test_empty_ui_sample_is_incomplete_when_the_lane_requires_it():
+    # The artifact parsed, so ui is not None, but it carries no frame sample.
+    empty = {'drag': {}, 'render': {}}
+    optional = report(storage(), sample=empty)
+    required = report(storage(), sample=empty, ui_required=True)
+    assert optional['notify'] is False
+    assert required['notify'] is True
+    assert required['incomplete'] == ['ui.drag.node.frameP95', 'ui.drag.pan.frameP95']
+    assert 'INCOMPLETE ui.drag.node.frameP95,ui.drag.pan.frameP95' in required['summary']
+    assert 'within threshold' not in required['summary']
+
+
+def test_storage_sample_missing_a_required_field_is_incomplete():
+    partial = storage()
+    del partial['cold-open']['data']['open']
+    result = report(partial, sample=ui())
+    assert result['notify'] is True
+    assert result['incomplete'] == ['storage.coldOpen.open']
+    assert 'INCOMPLETE storage.coldOpen.open' in result['summary']
+    # The clause still shows the gap, but the run is no longer reported quiet.
+    assert 'FAILED' in result['summary']
+    assert 'within threshold' not in result['summary']
+
+
+def test_partial_ui_sample_stays_advisory_while_the_lane_is_optional():
+    partial = {'drag': {'node': {'frameP95': 14}}, 'render': {}}
+    result = report(storage(), sample=partial)
+    assert result['notify'] is False
+    assert result['incomplete'] == []
+    assert result['missing'] == ['ui.drag.pan.frameP95']
+    assert 'within threshold' in result['summary']
+
+
 def test_render_probe_failure_is_not_a_benchmark_regression():
     result = report(storage(), sample=ui(passed=False))
     assert result['notify'] is False
