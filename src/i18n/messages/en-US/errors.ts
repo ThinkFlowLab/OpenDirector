@@ -1,4 +1,5 @@
 export const errors = {
+  "errors.rules.imageQualityUnsupported": "The selected model does not support this image quality. Choose Auto or another model.",
   "errors.tools.error.submissionUnknown": "The generation request's acceptance is unknown. Check whether the provider received it before submitting again; it will not be resubmitted automatically.",
   "errors.data.timelineShape": "The timeline size, frame rate, or tracks are invalid.",
   "errors.data.timelineAssets":

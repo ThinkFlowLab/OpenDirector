@@ -637,6 +637,7 @@ export class CreationProjection {
                         ? "auto"
                         : spec.parameters.size,
                     imagePreset: spec.parameters.preset,
+                    imageQuality: spec.parameters.quality ?? "auto",
                   }
                 : {}),
               ...(spec.kind === "video"
@@ -843,6 +844,10 @@ export class CreationProjection {
                 ? null
                 : node.data.settings.aspectRatio,
             preset: node.data.settings?.imagePreset ?? "none",
+            ...(node.data.settings?.imageQuality &&
+            node.data.settings.imageQuality !== "auto"
+              ? { quality: node.data.settings.imageQuality }
+              : {}),
             responseFormat: "url",
             outputFormat: "png",
           },

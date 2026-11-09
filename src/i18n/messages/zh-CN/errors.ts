@@ -1,5 +1,6 @@
 /** Shared validation and storage errors. */
 export const errors = {
+  "errors.rules.imageQualityUnsupported": "当前模型不支持所选图片质量，请选择自动或切换模型。",
   "errors.tools.error.submissionUnknown": "生成请求的提交结果不明。请先核对供应商是否已接收请求；不会自动重新提交。",
   "errors.data.timelineShape": "时间线尺寸、帧率或轨道无效。",
   "errors.data.timelineAssets": "时间线素材库仅支持有效图片、视频或音频。",

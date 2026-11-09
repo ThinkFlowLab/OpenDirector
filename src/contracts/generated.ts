@@ -387,7 +387,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -612,6 +612,7 @@ export interface ImageCropOptionsInput extends ContractInput {
 
 export interface ImageExecutionInput extends ContractInput {
   readonly kind: "image";
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly responseFormat?: "url" | "b64_json" | null;
   readonly outputFormat?: "png";
@@ -651,6 +652,7 @@ export interface ImageOutputInput extends ContractInput {
 }
 
 export interface ImageParametersInput extends ContractInput {
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size?: string;
   readonly aspectRatio?: string | null;
   readonly preset?: "none" | "product-views";
@@ -673,6 +675,7 @@ export interface InputRulesInput extends ContractInput {
   readonly requestBytes: number;
   readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
   readonly imageOutputs?: ReadonlyArray<ImageOutputInput>;
+  readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions?: ReadonlyArray<string>;
   readonly referenceImageResolutions?: ReadonlyArray<string> | null;
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
@@ -1865,7 +1868,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2090,6 +2093,7 @@ export interface ImageCropOptions extends Contract {
 
 export interface ImageExecution extends Contract {
   readonly kind: "image";
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly responseFormat: "url" | "b64_json" | null;
   readonly outputFormat: "png";
@@ -2129,6 +2133,7 @@ export interface ImageOutput extends Contract {
 }
 
 export interface ImageParameters extends Contract {
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly aspectRatio: string | null;
   readonly preset: "none" | "product-views";
@@ -2151,6 +2156,7 @@ export interface InputRules extends Contract {
   readonly requestBytes: number;
   readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
   readonly imageOutputs: ReadonlyArray<ImageOutput>;
+  readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions: ReadonlyArray<string>;
   readonly referenceImageResolutions: ReadonlyArray<string> | null;
   readonly videoCapabilities: VideoCapabilities | null;

@@ -1,6 +1,7 @@
 import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
+import type { InputRules as CreationInputRules } from "../contracts/generated.ts";
 import {
   RULE_FACTS,
   aspectRatioChoices,
@@ -51,6 +52,7 @@ export interface InputRules {
   audioReferenceStandalone?: boolean | null;
   generateAudioOptions?: boolean[] | null;
   imageOutputs?: { aspectRatio: string; size: string }[];
+  imageQualities?: CreationInputRules["imageQualities"];
   outputResolutions?: string[];
   referenceImageResolutions?: string[];
   videoCapabilities?: VideoCapabilities | null;
@@ -427,7 +429,7 @@ export function serviceGenerationSettings(
     )
       next.resolution = "auto";
   }
-  next = serviceAudioSettings(next, config);
+  next = serviceImageSettings(serviceAudioSettings(next, config), config);
   if (modelChanged) {
     next.imagePreset = "none";
     if (next.voiceSelection) {
@@ -457,6 +459,20 @@ export function serviceGenerationSettings(
       next.audioEnabled = true;
   }
   return next;
+}
+
+/** Drop a quality selection when the resolved service no longer supports it. */
+export function serviceImageSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+): GenerationSettings {
+  if (
+    settings.mode !== "image" ||
+    settings.imageQuality === undefined ||
+    config.inputRules.imageQualities?.includes(settings.imageQuality)
+  )
+    return settings;
+  return { ...settings, imageQuality: undefined };
 }
 
 /** Normalize a deliberate model/time change before persisting it to the canvas. */

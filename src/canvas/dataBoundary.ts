@@ -53,6 +53,7 @@ const SETTINGS_KEYS = [
   "scoreMode",
   "durationFromReference",
   "imagePreset",
+  "imageQuality",
   "modelConfigId",
 ] as const;
 
@@ -140,6 +141,11 @@ export function isGenerationSettings(
     (value.imagePreset === undefined ||
       value.imagePreset === "none" ||
       value.imagePreset === "product-views") &&
+    (value.imageQuality === undefined ||
+      value.imageQuality === "auto" ||
+      value.imageQuality === "low" ||
+      value.imageQuality === "medium" ||
+      value.imageQuality === "high") &&
     (value.modelConfigId === undefined || nonempty(value.modelConfigId))
   );
 }

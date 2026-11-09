@@ -184,6 +184,9 @@ class GenerationProviders(VolcengineGeneration):
                     # already freeze the dimensions resolved by this adapter.
                     size = size if 'x' in size else '1024x1024'
                     fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': size}
+                    quality = task['parameters'].get('quality', 'auto')
+                    if input_rules(config)['profile'] == 'openai-gpt-image' and quality != 'auto':
+                        fields['quality'] = quality
                     if prepared['images']:
                         # Same construction as the capability adapter: leave both the
                         # field name and the declared type to one helper, so a JPEG is

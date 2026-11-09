@@ -1,6 +1,11 @@
 {
   "scripts": [
     {
+      "file": "image_quality_test.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"]
+    },
+    {
       "file": "assistant_activity.mjs",
       "previewSafe": true,
       "lanes": [

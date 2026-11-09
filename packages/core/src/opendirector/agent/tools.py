@@ -368,6 +368,9 @@ class AgentTools:
                         for child in value:
                             narrow(child)
                 narrow(schema)
+                image_parameters = schema.get('$defs', {}).get('ImageParameters')
+                if image_parameters and media_kind == 'image':
+                    image_parameters['properties']['quality']['enum'] = config['inputRules'].get('imageQualities') or ['auto']
                 parameters = schema.get('$defs', {}).get('VideoParameters')
                 if parameters and media_kind == 'video':
                     for field, choices in [('videoMode', config['inputRules']['videoModes']),

@@ -9,6 +9,7 @@ from fastapi import Request
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
+    'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
     'tool_concept_translation': 'Use a short English subject description, or add a chat model in Models to translate it automatically.',
     'tool_no_video_match': 'The requested subject was not found in the video. Try a different description.',
     'voice_upload_type': 'Upload the voice recording using multipart/form-data.',

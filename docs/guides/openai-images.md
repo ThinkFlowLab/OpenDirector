@@ -24,6 +24,7 @@ OpenDirector 把 OpenAI Images API 作为**可选**图像生成服务接入。�
 
 - **不发送 `response_format`**：`gpt-image` 固定返回 base64，请求该字段会被服务拒绝。这一条按 profile 区分，OpenAI 兼容的自建服务（如 vLLM-Omni Z-Image-Turbo）仍然发送 `response_format: b64_json`。
 - **不发送 `strength`**：`gpt-image` 是指令式编辑，没有强度参数。
+- 图片生成节点支持 `quality: low / medium / high`，同时适用于文生图与带参考图生成。默认 `auto` 不发送该字段，保持原请求行为。质量保存在生成规格和任务执行快照中，重开项目与恢复任务时仍使用已记录的值。Agent 通过相同生成参数设置质量；独立图片工具保持服务默认值。
 - **多张参考图**按 OpenAI 的约定以重复 `image[]` 部件提交，最多 16 张。
 
 ## 支持的能力与限制
