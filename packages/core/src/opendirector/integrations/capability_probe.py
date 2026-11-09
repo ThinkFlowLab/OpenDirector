@@ -71,10 +71,23 @@ class CapabilityProbe:
             return observation if observation and observation.valid_until > self.clock() else None
 
     def query(self, config, *, manual=False):
+        return self.query_many([config], manual=manual)[0]
+
+    def query_many(self, configs, *, manual=False):
+        """Start independent services together and share one caller deadline.
+
+        The same bounded worker pool and pending map serve both one-model
+        admission and directory refreshes; queued requests inherit the deadline.
+        """
+        deadline = time.monotonic() + self.timeout
+        pending = [(config, self._start(config, manual, deadline)) for config in configs]
+        return [self._wait(config, value, deadline) if isinstance(value, Future) else value
+                for config, value in pending]
+
+    def _start(self, config, manual, deadline):
         if not manual and not automatic(config):
             return self.peek(config)
         key = identity(config, service=True)
-        deadline = time.monotonic() + self.timeout
         with self._lock:
             observation = self._cache.get(key)
             # Paused observations need another read after their shorter lifetime.
@@ -85,8 +98,12 @@ class CapabilityProbe:
                 return observation
             future = self._pending.get(key)
             if future is None:
-                if len(self._pending) >= self.capacity:
-                    return self._observation(None, 'query_busy')
+                if len(self._pending) >= self.capacity or time.monotonic() >= deadline:
+                    value = self._observation(None, 'query_busy' if len(self._pending) >= self.capacity else 'query_timeout')
+                    self._cache[key] = value
+                    while len(self._cache) > self.capacity:
+                        self._cache.popitem(last=False)
+                    return value
                 future = self._workers.submit(self._read, dict(config), deadline)
                 self._pending[key] = future
                 # Register outside the lock: already-completed futures invoke callbacks inline.
@@ -95,6 +112,10 @@ class CapabilityProbe:
                 register = False
         if register:
             future.add_done_callback(lambda done: self._finish(key, done))
+        return future
+
+    def _wait(self, config, future, deadline):
+        key = identity(config, service=True)
         try:
             value = future.result(timeout=max(0, deadline - time.monotonic()))
             # Future.result may wake before its completion callback publishes.

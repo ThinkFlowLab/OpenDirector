@@ -1,6 +1,7 @@
 """Optional discovery uses real request contracts and never changes saved intent."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import asyncio
 import json
 import threading
@@ -9,7 +10,7 @@ import time
 import httpx
 import pytest
 
-from opendirector.application.model_availability import ModelAvailability, requests_for
+from opendirector.application.model_availability import ModelAvailability, generation_request, requests_for, tool_request
 from opendirector.application.model_catalog import ModelCatalog
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.model_configs import ModelConfigs
@@ -345,4 +346,107 @@ def test_cache_is_bounded_and_does_not_persist(tmp_path):
         assert len(probe._cache) == 3
         assert list(tmp_path.iterdir()) == []
     finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('references,expected', [
+    ([('image', 'attachment')], 'unavailable'),
+    ([('image', 'attachment'), ('audio', 'attachment')], 'available'),
+    ([('image', 'attachment'), ('audio', 'context_only')], 'unavailable'),
+])
+def test_video_required_audio_is_checked_on_actual_request_not_catalog(service, references, expected):
+    configs, _, state, availability = service
+    config = {**configs.resolve(configs.list()[0]['id'], 'agent'), 'kind': 'video', 'protocol': 'vllm_omni'}
+    state['document'] = document('video_generation', 'image_to_video', '/v1/videos', 'video')
+    profile = state['document']['models'][0]['operations']['video_generation']['profiles'][0]
+    profile.update(required_inputs=['text', 'image', 'audio'], outputs=['video', 'audio'])
+    availability.prepare(config)
+    catalog_request = next(item for item in requests_for(config) if item.profile == 'image_to_video')
+    assert availability.decision(config, catalog_request)['status'] == 'available'
+    refs = [SimpleNamespace(asset=SimpleNamespace(kind=kind), transmission=transmission) for kind, transmission in references]
+    actual = generation_request(config, SimpleNamespace(kind='video'), refs)
+    assert actual.profile == 'image_to_video'
+    value = availability.decision(config, actual)
+    assert value['status'] == expected
+    if expected == 'unavailable':
+        assert value['reasonCode'] == 'required_inputs_missing'
+        with pytest.raises(ProjectError):
+            availability.require(config, actual)
+    else:
+        availability.require(config, actual)
+
+
+def test_unrecognized_required_input_stays_unknown(service):
+    configs, saved, state, availability = service
+    state['document']['models'][0]['operations']['chat']['profiles'][0]['required_inputs'] = ['text', 'future_input']
+    config = private(configs, saved)
+    availability.prepare(config)
+    request = requests_for(config, inputs={'text'})[0]
+    value = availability.decision(config, request)
+    assert value['status'] == 'unknown' and value['reasonCode'] == 'input_contract_unknown'
+    availability.require(config, request)
+
+
+def test_generation_profiles_and_tool_inputs_follow_the_actual_adapter(service):
+    configs, saved, _, _ = service
+    base = private(configs, saved)
+    def ref(kind):
+        return SimpleNamespace(asset=SimpleNamespace(kind=kind), transmission='attachment')
+    for kind, protocol, refs, profile, inputs in [
+        ('image', 'openai', [], 'text_to_image', {'text'}),
+        ('image', 'openai', [ref('image')], 'image_to_image', {'text', 'image'}),
+        ('video', 'vllm_omni', [ref('video')], 'video_to_video', {'text', 'video'}),
+        ('audio', 'vllm_omni_music', [], 'lyrics_to_music', {'text', 'instructions'}),
+        ('audio', 'vllm_omni_music', [ref('audio')], 'lyrics_to_music', {'text', 'instructions'}),
+    ]:
+        spec = SimpleNamespace(kind=kind, parameters=SimpleNamespace(creationType='music'))
+        request = generation_request({**base, 'kind': kind, 'protocol': protocol}, spec, refs)
+        assert request.profile == profile and request.inputs == inputs
+    video = {**base, 'kind': 'video', 'protocol': 'vllm_omni'}
+    assert tool_request(video, 'video.first_frame').inputs is None
+    assert tool_request(video, 'video.first_frame', actual=True).inputs == {'text', 'image'}
+
+
+def test_refresh_two_slow_services_uses_one_total_wait_budget(tmp_path):
+    configs = ModelConfigs(tmp_path)
+    for name in ['one', 'two']:
+        configs.save('agent', f'http://{name}.test/v1', 'demo', '', connection_type='self_hosted')
+    finish, both_started = threading.Event(), threading.Event()
+    calls, lock = [], threading.Lock()
+    def respond(request):
+        with lock:
+            calls.append(request)
+            if len(calls) == 2:
+                both_started.set()
+        finish.wait(2)
+        return httpx.Response(200, json=document())
+    probe = CapabilityProbe(transport=httpx.MockTransport(respond), timeout=.4)
+    try:
+        started = time.monotonic()
+        result = ModelAvailability(configs, probe).refresh()
+        assert time.monotonic() - started < .65
+        assert both_started.is_set() and len(calls) == 2
+        assert all(value['reasonCode'] == 'query_timeout' for value in result['models'])
+    finally:
+        finish.set()
+        probe.close()
+
+
+def test_batch_refresh_keeps_worker_and_queue_limits(tmp_path):
+    finish = threading.Event()
+    calls, lock = [], threading.Lock()
+    def respond(request):
+        with lock:
+            calls.append(request)
+        finish.wait(2)
+        return httpx.Response(404)
+    probe = CapabilityProbe(transport=httpx.MockTransport(respond), timeout=.2, capacity=5)
+    configs = [{'id': str(i), 'url': f'http://service-{i}.test/v1', 'connectionType': 'self_hosted'} for i in range(9)]
+    try:
+        result = probe.query_many(configs)
+        assert len(calls) == 4 and len(probe._pending) == 5
+        assert [value.reason for value in result] == ['query_timeout'] * 5 + ['query_busy'] * 4
+        assert len(probe._cache) <= 5
+    finally:
+        finish.set()
         probe.close()

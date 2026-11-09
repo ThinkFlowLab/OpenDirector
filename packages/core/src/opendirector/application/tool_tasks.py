@@ -131,7 +131,7 @@ class ToolTasks(ToolTaskLifecycle):
                 chat_config, chat_adapter = self._model('text.chat', None)
                 prepared = await asyncio.to_thread(self.availability.prepare, chat_config)
                 current, _ = self._model('text.chat', chat_config['id'])
-                self.availability.require(current, tool_request(current, 'text.chat'), prepared)
+                self.availability.require(current, tool_request(current, 'text.chat', actual=True), prepared)
                 return await chat_adapter.chat(chat_config, request)
 
         context = ToolContext(sources=[], mask=None, boxes=[], parameters={}, image_model=None, video_model=None,
@@ -297,7 +297,7 @@ class ToolTasks(ToolTaskLifecycle):
         if inspect:
             return models
         for capability, config in list(models.items()):
-            request = tool_request(config, capability)
+            request = tool_request(config, capability, actual=True)
             if request is None:
                 continue
             if capability not in (prepared or {}):

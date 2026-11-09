@@ -4,7 +4,7 @@ Configured adapters still own request construction and manual input rules.
 Remote observations can reject a precisely matched request, but cannot add
 adapters, rewrite configuration, or change an already accepted execution.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 from urllib.parse import urlsplit
@@ -28,13 +28,16 @@ class RequestOperation:
     path: str
     output: str
     method: str = 'POST'
+    # None is a directory projection; an actual request fixes transmitted inputs.
+    inputs: frozenset[str] | None = None
 
 
-def requests_for(config):
+def requests_for(config, *, inputs=None):
     """Only the protocols this application actually sends, including music."""
     kind, protocol = config['kind'], config.get('protocol', 'openai')
     def request(operation, profile, suffix, output):
-        return RequestOperation(operation, profile, urlsplit(endpoint(config['url'], suffix)).path, output)
+        return RequestOperation(operation, profile, urlsplit(endpoint(config['url'], suffix)).path, output,
+                                inputs=frozenset(inputs) if inputs is not None else None)
     if kind == 'agent':
         return [request('chat', 'text_response', '/chat/completions', 'text')]
     if kind == 'image' and protocol == 'openai':
@@ -64,15 +67,38 @@ def generation_request(config, spec, references):
         profile = 'lyrics_to_music' if spec.parameters.creationType == 'music' else 'text_to_speech'
     else:
         profile = 'text_response'
-    return next((item for item in candidates if item.profile == profile), None)
+    request = next((item for item in candidates if item.profile == profile), None)
+    # The resolved reference transmission is the same one frozen for execution.
+    # Music sends the prompt as instructions and lyrics (or arrangement tags
+    # for instrumental music) as the text field on /audio/speech.
+    inputs = {'text'}
+    if spec.kind in {'text', 'video'}:
+        inputs.update(kinds)
+    elif spec.kind == 'image':
+        inputs.update(kinds & {'image'})
+    if profile == 'lyrics_to_music':
+        inputs.add('instructions')
+    return replace(request, inputs=frozenset(inputs)) if request else None
 
 
-def tool_request(config, capability):
+def tool_request(config, capability, *, actual=False):
     profile = {'text.chat': 'text_response', 'image.generate': 'text_to_image', 'image.edit': 'image_to_image', 'image.cutout': 'image_to_image',
                'video.generate': 'text_to_video', 'video.first_frame': 'image_to_video',
                'video.edit': 'video_to_video',
                'audio.speech': 'text_to_speech', 'audio.music': 'lyrics_to_music'}.get(capability)
-    return next((item for item in requests_for(config) if item.profile == profile), None)
+    request = next((item for item in requests_for(config) if item.profile == profile), None)
+    if request is None or not actual:
+        return request
+    # These are the arguments of the existing tool adapters, not all source
+    # assets: e.g. a video-to-video tool does not transmit an audio attachment.
+    inputs = {'text'}
+    if profile in {'image_to_image', 'image_to_video'}:
+        inputs.add('image')
+    elif profile == 'video_to_video':
+        inputs.add('video')
+    elif profile == 'lyrics_to_music':
+        inputs.add('instructions')
+    return replace(request, inputs=frozenset(inputs))
 
 
 def _revision(value):
@@ -129,7 +155,13 @@ class ModelAvailability:
             elif operation.support == profile.support == 'supported' and profile.outputs and request.output not in profile.outputs:
                 result.update(status='unavailable', reasonCode='output_unsupported')
             elif operation.support == profile.support == 'supported' and request.output in profile.outputs:
-                result.update(status='available', reasonCode='supported')
+                required = set(profile.required_inputs)
+                if required - {'text', 'image', 'video', 'audio', 'instructions'}:
+                    result['reasonCode'] = 'input_contract_unknown'
+                elif request.inputs is not None and required - request.inputs:
+                    result.update(status='unavailable', reasonCode='required_inputs_missing')
+                else:
+                    result.update(status='available', reasonCode='supported')
             else:
                 result['reasonCode'] = 'declaration_incomplete'
             # Only a route which serves this exact request can establish pause.
@@ -151,8 +183,10 @@ class ModelAvailability:
         decision = self.decision(config, request)
         if decision['status'] == 'unavailable':
             code = 'capability_paused' if decision['reasonCode'] == 'execution_paused' else 'capability_unavailable'
-            raise AvailabilityError(code, '模型执行入口已暂停，请稍后重试。' if code == 'capability_paused'
-                                    else '服务明确不支持当前请求，请查看模型能力并修改选择。')
+            message = ('模型执行入口已暂停，请稍后重试。' if code == 'capability_paused'
+                       else '当前请求缺少服务明确要求的输入，请补充素材后重新提交。' if decision['reasonCode'] == 'required_inputs_missing'
+                       else '服务明确不支持当前请求，请查看模型能力并修改选择。')
+            raise AvailabilityError(code, message)
 
     def model(self, config):
         operations = [self.decision(config, request) for request in requests_for(config)]
@@ -181,7 +215,7 @@ class ModelAvailability:
         values = self.configs.list()
         if selected is not None and selected - {item['id'] for item in values}:
             raise ProjectError('模型配置已被删除，请重新加载。', 404)
-        seen = set()
+        seen, configs = set(), []
         for item in values:
             if selected is not None and item['id'] not in selected:
                 continue
@@ -190,6 +224,7 @@ class ModelAvailability:
                 continue
             key = identity(config, service=True)
             if key not in seen:
-                self.prepare(config, manual=manual)
+                configs.append(config)
                 seen.add(key)
+        self.probe.query_many(configs, manual=manual)
         return self.list()

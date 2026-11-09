@@ -63,6 +63,22 @@ def test_generation_rejection_creates_no_job_or_provider_call(project):
         probe.close()
 
 
+def test_missing_required_input_is_rejected_before_job_acceptance(project):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    declaration = document(model='test-agent')
+    declaration['models'][0]['operations']['chat']['profiles'][0]['required_inputs'] = ['text', 'audio']
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    runner.availability = ModelAvailability(runner.configs, probe)
+    try:
+        receipt = runner.prepare(command_for(project, config), session=session)
+        assert receipt.status == 'rejected' and receipt.issues[0].code == 'capability_unavailable'
+        assert not store.snapshot(pid).jobs and provider.calls == []
+    finally:
+        probe.close()
+
+
 def test_generation_identity_change_during_query_is_rejected_under_commit(project):
     store, pid, session = project
     runner, config = runtime(project, Provider())
@@ -192,14 +208,17 @@ def test_saved_http_api_and_draft_checks_share_parser_but_not_observations(tmp_p
         assert len(calls) == 2
 
 
-@pytest.mark.parametrize('scenario', ['unsupported', 'changed_before_acceptance', 'native'])
+@pytest.mark.parametrize('scenario', ['unsupported', 'missing_input', 'changed_before_acceptance', 'native'])
 def test_assistant_admission_and_native_runtime_boundary(tmp_path, monkeypatch, scenario):
     configs = ModelConfigs(tmp_path)
     saved = configs.save('agent', 'http://assistant.test/v1', 'demo', '', connection_type='self_hosted')
     calls, turns = [], []
     def respond(request):
         calls.append(request)
-        return httpx.Response(200, json=document(support='unsupported' if scenario == 'unsupported' else 'supported'))
+        value = document(support='unsupported' if scenario == 'unsupported' else 'supported')
+        if scenario == 'missing_input':
+            value['models'][0]['operations']['chat']['profiles'][0]['required_inputs'] = ['text', 'image']
+        return httpx.Response(200, json=value)
     probe = CapabilityProbe(transport=httpx.MockTransport(respond))
     async def stream(self, context):
         turns.append(context)
@@ -220,7 +239,7 @@ def test_assistant_admission_and_native_runtime_boundary(tmp_path, monkeypatch, 
         client.post(base + '/open').raise_for_status()
         response = client.post(base + '/assistant/turns', json={'id': str(uuid4()), 'text': 'Hello',
             'modelId': saved['id'], 'runtime': 'codex' if scenario == 'native' else 'default'})
-        if scenario == 'unsupported':
+        if scenario in {'unsupported', 'missing_input'}:
             assert response.status_code == 409 and turns == []
             assert client.get(base + '/assistant').json()['messages'] == []
         elif scenario == 'changed_before_acceptance':

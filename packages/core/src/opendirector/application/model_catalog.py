@@ -92,7 +92,7 @@ class ModelCatalog:
             config['capabilityAutoCheck'] = capability_auto_check
         config = await self._with_saved_key(config, config_id, 'agent', require_key=True, threaded=True)
         await asyncio.to_thread(self.availability.prepare, config)
-        self.availability.require(config, requests_for(config)[0])
+        self.availability.require(config, requests_for(config, inputs={'text'})[0])
         payload = chat_payload(config, [{'role': 'user', 'content': 'Reply with OK only.'}], 'auto')
         payload['max_tokens'] = 1024
         started = time.monotonic()

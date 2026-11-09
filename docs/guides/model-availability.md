@@ -10,7 +10,9 @@
 
 声明按精确 Model ID、输入模式、输出类型和实际 HTTP 路由匹配。一个模型支持聊天协议，不能证明它会返回助手需要的文字。音乐适配器通过 `/audio/speech` 发送歌词 `input`、风格 `instructions` 和音频帧数 `max_new_tokens`；其 `lyrics_to_music` 模式独立于普通 TTS 的 `text_to_speech`。`/audio/generate` 的通用音频生成声明不会启用现有音乐适配器。
 
-声明在内存中保留 30 秒；可信部署暂停状态最多保留 5 秒。内部使用本地单调时钟计算有效期，系统时钟调整和服务时钟偏差不改变到期规则；对外时间用于界面展示。查询和等待共享请求的总预算为 2 秒，失败可以短时间后重试。缓存有容量限制，进程重启后重新获得观察。目录读取不会访问模型服务，到期会改变目录版本。
+提交时还会核对该模式声明的必要输入。例如图生视频声明同时需要图片和音频，只提供图片会在接受任务前被拒绝；补充实际传输的音频后可以提交。仅作为上下文的素材不计入传输输入。目录没有具体任务输入，不会因此禁用整个模型；无法理解的必要输入名称保留 `unknown`。
+
+声明在内存中保留 30 秒；可信部署暂停状态最多保留 5 秒。内部使用本地单调时钟计算有效期，系统时钟调整和服务时钟偏差不改变到期规则；对外时间用于界面展示。单次查询或一次多服务刷新共用 2 秒总等待预算，包含等待已有共享请求的时间。独立服务通过同一个最多 4 个线程的查询池并发读取，排队数量和缓存均有容量限制。失败可以短时间后重试，进程重启后重新获得观察。目录读取不会访问模型服务，到期会改变目录版本。
 
 生成、工具和使用设置模型的助手共享接受规则。服务查询位于项目存储事务之外，接受新任务时再次核对连接身份。明确拒绝不会创建生成任务，也不会调用生成接口。工具的本地操作和可选翻译保留原有行为。已接受任务的快照、恢复、下载、取消和同一命令重放继续使用原有规则；最新能力状态不会重新拒绝它们。能力状态不会清除音色或替换用户选择。
 
@@ -24,7 +26,9 @@ The unsaved form check uses an isolated draft identity. It saves neither configu
 
 Text responses and image responses on Chat Completions are distinct. Music uses the `lyrics_to_music` profile on `/audio/speech`, with lyrics, style and an audio-frame budget; ordinary TTS uses `text_to_speech`. Generic `/audio/generate` declarations do not create a consumer for that API in OpenDirector.
 
-Declarations expire after 30 seconds. A proven deployment-wide pause expires after at most 5 seconds. Internal expiration uses a local monotonic clock; service timestamps identify observations, and wall-clock timestamps are presentation data. Each query, including waiting for an existing query, has a two-second budget. The bounded process-local cache coalesces concurrent reads and permits short failure retries. Catalog reads never contact providers; expiration changes their revision.
+Admission also checks a matched profile's required inputs against the actual adapter request. An image-to-video profile requiring audio rejects a submission without transmitted audio, while the catalog remains selectable. Context-only references are not transmitted inputs. Unrecognized required-input names remain unknown.
+
+Declarations expire after 30 seconds. A proven deployment-wide pause expires after at most 5 seconds. Internal expiration uses a local monotonic clock; service timestamps identify observations, and wall-clock timestamps are presentation data. Each query or multi-service refresh shares one two-second wait budget, including existing shared requests. Independent services use the same four-worker pool with bounded pending requests and cache. Concurrent reads are coalesced and failures permit short retries. Catalog reads never contact providers; expiration changes their revision.
 
 Generation, tools and settings-backed assistant turns share acceptance rules. Network reads occur outside project transactions; connection identity is checked again when accepting work. Explicit rejection creates no job and submits no inference. Local tools and optional translation retain their behavior. Accepted snapshots, recovery, downloads, cancellation and idempotent replay do not undergo new capability admission. Observations never clear voice selections or silently choose another model.
 

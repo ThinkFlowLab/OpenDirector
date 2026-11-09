@@ -311,7 +311,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             if config is not None:
                 prepared = await asyncio.to_thread(generation.availability.prepare, config)
                 current = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent')
-                generation.availability.require(current, requests_for(current)[0], prepared)
+                generation.availability.require(current, requests_for(current, inputs={'text'})[0], prepared)
                 config = current
             available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
             if set(value.skills) - {item['name'] for item in available}:
@@ -330,7 +330,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             def validate_connection():
                 if config is not None:
                     current = configs.resolve(str(value.modelId), 'agent')
-                    generation.availability.require(current, requests_for(current)[0], prepared)
+                    generation.availability.require(current, requests_for(current, inputs={'text'})[0], prepared)
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
