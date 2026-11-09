@@ -189,6 +189,16 @@ node tests/browser/first_last_frame_connections.mjs
 
 ### 提供商与模型设置
 
+Kling 4.0 protocol and bilingual workflow checks:
+
+```sh
+.venv/bin/python -m pytest tests/test_kling_video.py tests/test_generation_errors.py tests/test_model_http_logging.py -q
+node --test tests/providerPresets.test.ts tests/modelResolution.test.ts tests/generationFailureText.test.ts
+node tests/browser/kling_video.mjs
+```
+
+The browser check uses the isolated creation API and Vite described above. It verifies both locales, optional provider setup, preserved model selections, frame slots, image references, persisted project objects, and fixture-generated video adoption. It uses the generic fixture provider and does not exercise Kling's HTTP adapter. Python protocol tests exercise the actual adapter with mocked HTTP and real image/video bytes. Neither check calls Kling or proves account access, billing, or creative quality. Real-service acceptance requires a valid account and a recorded submit/query/download/adopt workflow, including the model ID, API family and exact endpoint, remote task ID, output video, and screenshots or a recording. Do not record API keys.
+
 ```sh
 python -m pytest tests/test_model_configs.py -q
 node --test tests/providerPresets.test.ts

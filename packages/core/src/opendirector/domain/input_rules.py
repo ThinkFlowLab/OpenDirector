@@ -5,6 +5,7 @@ from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTE
 from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
+from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -37,6 +38,13 @@ def _adapter_rules(config):
         # SheetSage2 transcription service: it turns a reference recording into
         # a score for music generation and never generates audio itself.
         rules.update(profile='vllm-omni-score', allowedKinds=[], maxImages=0)
+        return rules
+    if kind == 'video' and config.get('protocol') == 'kling_video':
+        kling_capabilities(model)
+        rules.update(profile='kling-official', allowedKinds=['text', 'image'], maxImages=10,
+                     imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024,
+                     videoModes=['first_frame', 'reference'], frameRoles=list(KLING_MODELS[model]['frameRoles']),
+                     aspectRatios=list(KLING_RATIOS))
         return rules
     if kind == 'video' and config.get('protocol') == 'minimax_video_v2':
         rules.update(profile='minimax-h3-official', allowedKinds=['text', 'image', 'video', 'audio'],

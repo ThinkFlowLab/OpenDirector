@@ -15,6 +15,14 @@ const EN_MINIMAX_DESCRIPTIONS: Record<string, string> = {
 };
 
 export function modelDescription(model: { protocol?: string | null; modelId: string }) {
+  if (model.protocol === "kling_video" && model.modelId === "kling-4.0-flash")
+    return getActiveLocale() === "en-US"
+      ? "720P text, first-frame and image-reference video, 3–20 seconds, native audio"
+      : "720P 文生、首帧与图片参考，3–20 秒，包含原生音频";
+  if (model.protocol === "kling_video" && model.modelId === "kling-4.0")
+    return getActiveLocale() === "en-US"
+      ? "Text, first/last frames and image references with native audio"
+      : "文生、首尾帧与图片参考，包含原生音频";
   if (model.protocol !== "minimax_video_v2") return undefined;
   const source =
     getActiveLocale() === "en-US"

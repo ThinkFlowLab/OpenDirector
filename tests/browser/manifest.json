@@ -1,6 +1,11 @@
 {
   "scripts": [
     {
+      "file": "kling_video.mjs",
+      "lanes": ["extendedFixture"],
+      "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
+    },
+    {
       "file": "assistant_activity.mjs",
       "previewSafe": true,
       "lanes": [

@@ -1,5 +1,6 @@
 /** Shared validation and storage errors. */
 export const errors = {
+  "errors.generationFailure.policy": "供应商因内容政策拒绝了提示词或参考图片，请调整输入后再生成。",
   "errors.tools.error.submissionUnknown": "生成请求的提交结果不明。请先核对供应商是否已接收请求；不会自动重新提交。",
   "errors.data.timelineShape": "时间线尺寸、帧率或轨道无效。",
   "errors.data.timelineAssets": "时间线素材库仅支持有效图片、视频或音频。",

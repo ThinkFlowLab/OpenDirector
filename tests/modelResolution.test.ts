@@ -1,6 +1,6 @@
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
 import { createNode } from "../src/canvas/model.ts";
-import { backendBlocker, serviceAudioSettings, serviceGenerationSettings, serviceVoice } from "../src/backend/rules.ts";
+import { backendBlocker, backendDurations, backendResolutions, serviceAudioSettings, serviceGenerationSettings, serviceVoice } from "../src/backend/rules.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ModelConfig } from "../src/backend/rules.ts";
@@ -10,6 +10,7 @@ import {
   newNodeGenerationSettings,
   resolveGenerationModel,
 } from "../src/canvas/modelResolution.ts";
+import { backendAspectRatios } from "../src/backend/rules.ts";
 
 const config = (
   kind: ModelConfig["kind"],
@@ -76,6 +77,36 @@ test("a node without a model follows the assistant picker", () => {
     model: "zeta-video",
     modelConfigId: zeta.id,
   });
+});
+
+test("adding Kling preserves the selected provider for existing and newly created video nodes", () => {
+  const kling = config("video", "kling-4.0", { protocol: "kling_video", connectionType: "api", authMode: "bearer" });
+  const available = [zeta, kling];
+  const preferred = { video: zeta.id };
+  const existing = resolveGenerationModel({ modelConfigId: zeta.id }, "video", available, preferred);
+  assert.ok(existing.status !== "unconfigured");
+  assert.equal(existing.modelConfigId, zeta.id);
+  assert.equal(newNodeGenerationSettings("video", available, preferred).modelConfigId, zeta.id);
+  assert.equal(newNodeGenerationSettings("video", [kling, zeta], preferred).modelConfigId, zeta.id);
+});
+
+test("Kling published capabilities drive duration, resolution, audio and frame ratio controls", () => {
+  const kling = config("video", "kling-4.0", {
+    protocol: "kling_video", connectionType: "api", authMode: "bearer",
+    inputRules: { profile: "kling-official", allowedKinds: ["text", "image"], maxImages: 10,
+      maxVideos: 0, maxAudios: 0, videoModes: ["first_frame", "reference"], frameRoles: ["first_frame", "last_frame"],
+      generateAudioOptions: [true], aspectRatios: ["21:9", "16:9", "9:16", "1:1"], outputResolutions: ["720P", "1080P"],
+      videoCapabilities: { outputs: ["720P", "1080P"].map(resolution => ({ resolution, durations: Array.from({ length: 28 }, (_, index) => index + 3) })),
+        defaultResolution: "1080P", defaultDuration: 5, dimensionStep: 2 } },
+  });
+  const next = serviceGenerationSettings({ ...generationDefaults("video"), durationSeconds: 60, resolution: "4K", audioEnabled: false }, kling, [], true);
+  assert.equal(next.durationSeconds, 5);
+  assert.equal(next.resolution, "1080P");
+  assert.equal(next.audioEnabled, true);
+  const frames = serviceGenerationSettings({ ...next, videoMode: "first-last", aspectRatio: "16:9" }, kling);
+  assert.equal(frames.aspectRatio, "auto");
+  assert.deepEqual(backendAspectRatios({ mode: "video", videoMode: "first-last" }, kling), ["auto"]);
+  assert.ok(backendAspectRatios({ mode: "video", videoMode: "reference" }, kling).includes("21:9"));
 });
 
 test("the picker preference never overrides an explicit node model", () => {
@@ -298,4 +329,23 @@ test("MOSS speech prefills a valid Voice ID and preserves selected or cleared vo
   } finally {
     setActiveLocale(previous);
   }
+});
+
+
+test("Flash publishes only 720P, 3–20 seconds and rejects a last frame", () => {
+  const flash = config("video", "kling-4.0-flash", {
+    protocol: "kling_video", connectionType: "api", authMode: "bearer",
+    inputRules: { profile: "kling-official", allowedKinds: ["text", "image"], maxImages: 10,
+      maxVideos: 0, maxAudios: 0, videoModes: ["first_frame", "reference"], frameRoles: ["first_frame"],
+      generateAudioOptions: [true], aspectRatios: ["21:9", "16:9", "9:16", "1:1"], outputResolutions: ["720P"],
+      videoCapabilities: { outputs: [{ resolution: "720P", durations: Array.from({ length: 18 }, (_, index) => index + 3) }],
+        defaultResolution: "720P", defaultDuration: 5, dimensionStep: 2 } },
+  });
+  const settings = serviceGenerationSettings({ ...generationDefaults("video"), modelConfigId: flash.id,
+    prompt: "Flash test", resolution: "1080P", durationSeconds: 30 }, flash);
+  assert.equal(settings.resolution, "720P");
+  assert.equal(settings.durationSeconds, 5);
+  assert.deepEqual(backendDurations(flash), Array.from({ length: 18 }, (_, index) => index + 3));
+  assert.deepEqual(backendResolutions(settings, flash), ["auto", "720P"]);
+  assert.ok(backendBlocker({ ...settings, videoMode: "first-last", lastFrameNodeId: "tail" }, [], [flash]));
 });

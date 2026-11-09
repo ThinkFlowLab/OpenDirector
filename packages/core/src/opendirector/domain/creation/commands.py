@@ -395,6 +395,7 @@ def command_fingerprint(command: Command) -> str:
 
 
 IssueCode = Literal['invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+                    'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',

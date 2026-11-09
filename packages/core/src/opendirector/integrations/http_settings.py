@@ -43,13 +43,14 @@ MAX_LOG_VALUE_LENGTH = 16384
 MODEL_JOB_CONTEXT: ContextVar[tuple[str, str] | None] = ContextVar('model_job_context', default=None)
 
 
-def log_parameters(value: JsonValue) -> JsonValue:
+def log_parameters(value: JsonValue, *, secrets=()) -> JsonValue:
     if isinstance(value, dict):
         return {key: '[omitted]' if key.lower().replace('-', '_') in
                 {'authorization', 'api_key', 'apikey', 'token', 'access_token', 'secret', 'password', 'cookie', 'b64_json'}
-                else log_parameters(item) for key, item in value.items()}
+                or key == 'url' and isinstance(item, str) and not item.startswith(('http://', 'https://'))
+                else log_parameters(item, secrets=secrets) for key, item in value.items()}
     if isinstance(value, list):
-        return [log_parameters(item) for item in value]
+        return [log_parameters(item, secrets=secrets) for item in value]
     if isinstance(value, str):
         if value.startswith('data:'):
             return '[media omitted]'
@@ -58,10 +59,18 @@ def log_parameters(value: JsonValue) -> JsonValue:
                 url = urlsplit(value)
             except ValueError:
                 return '[invalid URL omitted]'
-            return f'{url.scheme}://{url.netloc.rsplit("@", 1)[-1]}{url.path}'
+            value = f'{url.scheme}://{url.netloc.rsplit("@", 1)[-1]}{url.path}'
+        for secret in secrets:
+            if secret:
+                value = value.replace(secret, '[omitted]')
         if len(value) > MAX_LOG_VALUE_LENGTH:
             return value[:MAX_LOG_VALUE_LENGTH] + '[truncated]'
     return value
+
+
+def _request_secrets(request):
+    credential = request.headers.get('authorization', '').removeprefix('Bearer ')
+    return tuple(request.extensions.get('model_secrets', ())) + ((credential,) if credential else ())
 
 
 async def model_request(request: httpx.Request) -> None:
@@ -78,12 +87,16 @@ async def model_request(request: httpx.Request) -> None:
             parameters = json.loads(request.content)
         except (httpx.RequestNotRead, ValueError):
             parameters = '[unavailable JSON omitted]'
-    logger.debug(f'model.request {json.dumps({**identity, "method": request.method, "url": log_parameters(str(request.url)), "parameters": log_parameters(parameters)}, ensure_ascii=False)}')
+    secrets = _request_secrets(request)
+    logger.debug(f'model.request {json.dumps({**identity, "method": request.method, "url": log_parameters(str(request.url), secrets=secrets), "parameters": log_parameters(parameters, secrets=secrets)}, ensure_ascii=False)}')
 
 
 async def model_response(response: httpx.Response) -> None:
     identity = response.request.extensions['model_call']
-    facts = {**identity, 'status': response.status_code, 'request_id': response.headers.get('x-request-id')}
+    request_id = response.headers.get('x-request-id')
+    if request_id and (len(request_id) > 200 or any(secret and secret in request_id for secret in _request_secrets(response.request))):
+        request_id = None
+    facts = {**identity, 'status': response.status_code, 'request_id': request_id}
     logger.info(f'model.response {json.dumps({**facts, "headers_ms": round((time.monotonic() - response.request.extensions["model_started"]) * 1000)})}')
 
 

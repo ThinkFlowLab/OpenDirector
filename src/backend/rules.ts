@@ -67,6 +67,7 @@ export interface ModelConfig {
     | "openai"
     | "volcengine"
     | "minimax_video_v2"
+    | "kling_video"
     | "vllm_omni"
     | "vllm_omni_segmentation"
     | "vllm_omni_music"

@@ -10,7 +10,7 @@ def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None
     protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind not in {'video', 'vision'}
                             else 'vllm_omni' if connection_type == 'self_hosted' else 'volcengine')
     allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
-               'video': {'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
+               'video': {'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
     auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
     proxy_mode = proxy_mode if proxy_mode is not None else 'system'

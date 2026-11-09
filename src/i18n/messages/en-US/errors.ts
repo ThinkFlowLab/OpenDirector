@@ -1,4 +1,5 @@
 export const errors = {
+  "errors.generationFailure.policy": "The provider rejected the prompt or reference images under its content policy. Adjust the input before generating again.",
   "errors.tools.error.submissionUnknown": "The generation request's acceptance is unknown. Check whether the provider received it before submitting again; it will not be resubmitted automatically.",
   "errors.data.timelineShape": "The timeline size, frame rate, or tracks are invalid.",
   "errors.data.timelineAssets":

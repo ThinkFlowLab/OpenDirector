@@ -102,16 +102,27 @@ class CreationGeneration(GenerationRuntime):
         assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
         reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only'))
         content = None
+        kling_content = None
         if spec.promptContent is not None:
             content = []
+            if model.protocol == 'kling_video':
+                kling_content = []
             for part in spec.promptContent:
                 if part.type == 'text':
                     content.append(dict(type='text', text=part.text))
+                    if kling_content is not None:
+                        kling_content.append(dict(type='text', text=part.text))
                 else:
                     for ref in job.inputSnapshot.references:
                         if ref.referenceId == part.referenceId and ref.transmission != 'context_only':
                             asset = assets[ref.asset.assetId]
-                            content.append(dict(type='reference', assetId=str(asset.id), name=ref.sourceTitle or ref.name or asset.name))
+                            rendered = dict(type='reference', assetId=str(asset.id), name=ref.sourceTitle or ref.name or asset.name)
+                            content.append(rendered)
+                            if kling_content is not None:
+                                kling_content.append({**rendered, 'referenceId': str(ref.referenceId), 'subjectRole': ref.subjectRole})
+        adapter_content = {} if model.protocol != 'kling_video' else dict(klingPromptContent=kling_content,
+            klingReferences=[dict(assetId=str(r.asset.assetId), role=r.role, referenceId=str(r.referenceId), subjectRole=r.subjectRole)
+                             for r in job.inputSnapshot.references if r.transmission != 'context_only'])
         return dict(schemaVersion=1, id=str(job.id), projectId=str(job.projectId), nodeId=str(job.originItemId or spec.id),
             kind=spec.kind, status=job.status, phase=job.phase, recovery=job.recovery, resumeAllowed=job.resumeAllowed,
             modelConfigId=str(model.modelConfigId), model=model.modelId, baseURL=model.url, protocol=model.protocol,
@@ -122,7 +133,7 @@ class CreationGeneration(GenerationRuntime):
             externalTaskId=job.externalTaskId, assetId=str(job.asset.assetId) if job.asset else None,
             adopted=job.adopted, error=None, errorDetails=job.errorDetails.model_dump(mode='json') if job.errorDetails else None,
             inputSnapshot={'references': {str(r.asset.assetId): r.asset.fingerprint for r in job.inputSnapshot.references}},
-            technicalCheck=job.technicalCheck.model_dump(mode='json') if job.technicalCheck else None)
+            technicalCheck=job.technicalCheck.model_dump(mode='json') if job.technicalCheck else None, **adapter_content)
 
     def _parameters(self, spec, config, node, records):
         params = {'text': {'thinking': 'auto', 'max_tokens': 8192},
@@ -130,6 +141,9 @@ class CreationGeneration(GenerationRuntime):
             'video': {'duration': 5, 'ratio': 'adaptive', 'generate_audio': True},
             'audio': {'speaker': 'zh_female_vv_uranus_bigtts', 'audio_params': {'format': 'mp3', 'sample_rate': 24000}}}[spec.kind]
         intent = spec.parameters.model_dump(exclude_none=True)
+        if spec.kind == 'video' and config['protocol'] == 'kling_video':
+            from opendirector.domain.kling_models import kling_parameters
+            return kling_parameters(config, intent, any(records[key]['kind'] == 'image' for key in node['referenceIds']))
         if spec.kind == 'text':
             params.update(thinking=intent['thinking'], max_tokens=intent['maxTokens'])
         if spec.kind == 'image':

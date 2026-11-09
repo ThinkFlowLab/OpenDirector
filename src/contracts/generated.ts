@@ -387,7 +387,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -820,7 +820,7 @@ export interface ModelConnectionInput extends ContractInput {
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
@@ -833,7 +833,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
@@ -1865,7 +1865,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2297,7 +2297,7 @@ export interface ModelConnection extends Contract {
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
@@ -2310,7 +2310,7 @@ export interface ModelSnapshot extends Contract {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;

@@ -1,4 +1,5 @@
 import logo0 from "@lobehub/icons-static-svg/icons/alibaba.svg?url";
+import klingLogo from "@lobehub/icons-static-svg/icons/kling.svg?url";
 import logo1 from "@lobehub/icons-static-svg/icons/antgroup.svg?url";
 import logo2 from "@lobehub/icons-static-svg/icons/anthropic.svg?url";
 import logo3 from "@lobehub/icons-static-svg/icons/arcee.svg?url";
@@ -37,6 +38,7 @@ export const modelLogoUrls: Record<string, string> = {
   "alibaba.svg": logo0,
   "antgroup.svg": logo1,
   "anthropic.svg": logo2,
+  "kling.svg": klingLogo,
   "arcee.svg": logo3,
   "baidu.svg": logo4,
   "bfl.svg": logo5,

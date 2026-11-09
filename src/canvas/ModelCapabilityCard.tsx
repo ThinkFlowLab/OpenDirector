@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { errorMessage } from "../backend/api.ts";
 import {
   readModelCapabilities,
   type ModelConfigInput,
   type ModelOptions,
 } from "../backend/models.ts";
-import type { ModelConfig } from "../backend/rules.ts";
+import type { ModelConfig, VideoCapabilities } from "../backend/rules.ts";
 import { createVideoCapabilities } from "../backend/videoCapabilities.ts";
 import {
   VideoCapabilitiesEditor,
@@ -47,7 +47,35 @@ export function ModelCapabilityCard({
     saved?.videoAdapter ??
     connection.videoAdapter ??
     "auto";
-  const official = connection.protocol === "minimax_video_v2";
+  const official = ["minimax_video_v2", "kling_video"].includes(
+    connection.protocol,
+  );
+  const nativeKey = `${connection.protocol}:${modelId}`;
+  const [native, setNative] = useState<{
+    key: string;
+    capabilities: VideoCapabilities;
+  } | null>(null);
+  useEffect(() => {
+    if (!official) return;
+    let active = true;
+    setNative(null);
+    setError("");
+    void readModelCapabilities({ ...connection, modelId }, configId, "preset")
+      .then((result) => {
+        if (active && result.videoCapabilities)
+          setNative({ key: nativeKey, capabilities: result.videoCapabilities });
+      })
+      .catch((failure) => {
+        if (active) setError(errorMessage(failure));
+      });
+    return () => {
+      active = false;
+    };
+  }, [official, nativeKey, configId]);
+  const nativeCapabilities =
+    native?.key === nativeKey ? native.capabilities : undefined;
+  const nativeDurations =
+    nativeCapabilities?.outputs.flatMap((output) => output.durations) ?? [];
   const video =
     connection.kind === "video" &&
     !["vllm_omni_segmentation", "vllm_omni_depth"].includes(
@@ -137,20 +165,45 @@ export function ModelCapabilityCard({
           </>
         ) : official ? (
           <div className="cw-model-capability-facts">
-            <span>{t("models.service.officialSummary")}</span>
-            <span>{modelId === "MiniMax-H3" ? "768P / 2K" : "480P / 768P"}</span>
             <span>
-              {modelId === "MiniMax-H3-Max"
-                ? t("models.service.secondsRange", { min: 5, max: 15 })
-                : t("models.service.secondsRange", { min: 4, max: 15 })}
+              {t(
+                connection.protocol === "kling_video"
+                  ? modelId === "kling-4.0-flash"
+                    ? "models.service.klingFlashSummary"
+                    : "models.service.klingSummary"
+                  : "models.service.officialSummary",
+              )}
             </span>
-            <small>{t("models.service.officialReferences")}</small>
+            {nativeCapabilities ? (
+              <>
+                <span>
+                  {nativeCapabilities.outputs
+                    .map((output) => output.resolution)
+                    .join(" / ")}
+                </span>
+                <span>
+                  {t("models.service.secondsRange", {
+                    min: Math.min(...nativeDurations),
+                    max: Math.max(...nativeDurations),
+                  })}
+                </span>
+              </>
+            ) : (
+              !error && <span>{t("models.service.loadingNative")}</span>
+            )}
+            <small>
+              {t(
+                connection.protocol === "kling_video"
+                  ? "models.service.klingReferences"
+                  : "models.service.officialReferences",
+              )}
+            </small>
           </div>
         ) : (
           <>
             {connection.protocol === "vllm_omni" && (
               <label className="cw-domain-field">
-                 {t("models.service.videoAdapter")}
+                {t("models.service.videoAdapter")}
                 <select
                   value={adapter}
                   onChange={(event) =>
@@ -162,7 +215,9 @@ export function ModelCapabilityCard({
                     )
                   }
                 >
-                  <option value="auto">{t("models.service.adapterAuto")}</option>
+                  <option value="auto">
+                    {t("models.service.adapterAuto")}
+                  </option>
                   <option value="minimax_h3">
                     {t("models.service.adapterMiniMaxH3")}
                   </option>

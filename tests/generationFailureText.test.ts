@@ -67,6 +67,14 @@ test("new provider messages fall back to category, stage and status", () => {
   setActiveLocale("zh-CN");
 });
 
+test("Kling content-policy rejection remains explicit in both languages", () => {
+  const value = failure({ providerCode: "1301", message: "供应商判定提示词或参考图片违反内容政策，已拒绝生成。" });
+  setActiveLocale("en-US");
+  assert.match(generationFailureMessage(value), /content policy/);
+  setActiveLocale("zh-CN");
+  assert.match(generationFailureMessage(value), /内容政策/);
+});
+
 test("submission unknown failures remain explicit", () => {
   setActiveLocale("en-US");
   assert.equal(

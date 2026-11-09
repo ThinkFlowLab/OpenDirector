@@ -6,6 +6,8 @@
 
 Click the gear at the bottom left to open **Settings**, then open **Model connections**. Add models for chat, image, video, or audio generation as needed.
 
+For optional Kling 4.0 and Flash video generation, follow [Generate videos with Kling](kling-video.md). Both support text, first-frame, and image-reference generation. Standard Kling 4.0 also supports first-and-last frames. Adding the service preserves your existing model selection.
+
 1. Choose the connection type and API protocol.
 2. Enter the service URL, Model ID, and the credentials or authentication method required by the service.
 3. For video models, check the adapter, supported modes, resolutions, and durations.

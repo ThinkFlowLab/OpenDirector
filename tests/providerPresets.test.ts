@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PROVIDER_PRESETS, matchingConnections, providerOptions, providerPresetFor } from "../src/canvas/providerPresets.ts";
 import type { ModelConfig } from "../src/backend/rules.ts";
+import { modelDescription } from "../src/canvas/modelDescriptions.ts";
 import { getActiveLocale, setActiveLocale } from "../src/i18n/messages.ts";
 
 test("provider presets separate official protocol from self-hosted model names", () => {
@@ -33,6 +34,27 @@ test("MOSS presets offer the supported image and speech models by kind", () => {
   assert.ok(providerOptions("audio").some((item) => item.id === "moss"));
   for (const kind of ["agent", "video", "vision"] as const)
     assert.ok(!providerOptions(kind).some((item) => item.id === "moss"));
+});
+
+test("Kling is an optional official video service with a stable connection region", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "kling-video");
+  assert.ok(preset);
+  assert.deepEqual(preset.kinds, ["video"]);
+  assert.deepEqual(preset.modelsByKind, { video: ["kling-4.0", "kling-4.0-flash"] });
+  assert.equal(preset.protocol, "kling_video");
+  assert.equal(preset.url, "https://api-beijing.klingai.com");
+  assert.equal(preset.authMode, "bearer");
+  const previous = getActiveLocale();
+  try {
+    for (const [locale, label] of [["zh-CN", "可灵官方视频"], ["en-US", "Kling official video"]] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("video").find((item) => item.id === preset.id)?.name, label);
+      assert.equal(preset.url, "https://api-beijing.klingai.com");
+    }
+    const model: ModelConfig = { ...preset, id: "kling", kind: "video", modelId: "kling-4.0",
+      inputRules: { profile: "kling-official", allowedKinds: ["text", "image"], maxImages: 10, maxVideos: 0, maxAudios: 0, videoModes: ["first_frame", "reference"] } };
+    assert.equal(providerPresetFor({ ...model, url: "https://api-singapore.klingai.com" }), preset.id);
+  } finally { setActiveLocale(previous); }
 });
 
 test("MOSS provider labels follow the display language", () => {
@@ -79,4 +101,18 @@ test("saved MOSS image and audio connections share one provider brand", () => {
       assert.equal(providerOptions(kind).find((item) => item.id === "moss")?.logoOrganization, "OpenMOSS-Team");
     }
   }
+});
+
+
+test("Kling Flash descriptions distinguish first-frame capabilities in both languages", () => {
+  const previous = getActiveLocale();
+  try {
+    const model = { protocol: "kling_video", modelId: "kling-4.0-flash" };
+    setActiveLocale("en-US");
+    assert.match(modelDescription(model)!, /720P.*first-frame.*3–20/);
+    assert.doesNotMatch(modelDescription(model)!, /last/);
+    setActiveLocale("zh-CN");
+    assert.match(modelDescription(model)!, /720P.*首帧.*3–20/);
+    assert.doesNotMatch(modelDescription(model)!, /尾帧/);
+  } finally { setActiveLocale(previous); }
 });

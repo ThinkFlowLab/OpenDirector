@@ -1,6 +1,11 @@
 {
   "logos": [
     {
+      "org": "KlingAI",
+      "name": "Kling",
+      "file": "kling.svg"
+    },
+    {
       "org": "MiniMaxAI",
       "name": "MiniMax",
       "file": "minimax.svg"

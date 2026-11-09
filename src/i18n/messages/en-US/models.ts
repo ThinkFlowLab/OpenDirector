@@ -80,6 +80,10 @@ export const models = {
     "Enable only when the model natively accepts image input.",
   "models.service.officialSummary":
     "Text-to-video / first-last frame / multimodal references",
+  "models.service.klingSummary": "Text-to-video / first-last frame / image references",
+  "models.service.klingFlashSummary": "Text-to-video / first frame / image references",
+  "models.service.klingReferences": "References: PNG or JPEG images. Native audio is included. Frame inputs determine the output aspect ratio.",
+  "models.service.loadingNative": "Loading supported output specifications…",
   "models.service.officialReferences":
     "References: image, video, audio. Output includes audio.",
   "models.service.noCapabilityOutput":
@@ -136,6 +140,7 @@ export const models = {
   "models.protocolOption.segmentation": "vLLM-Omni segmentation API (SAM 3)",
   "models.protocolOption.videos": "Async /videos API (including vLLM-Omni)",
   "models.protocolOption.minimaxVideo": "MiniMax official video V2",
+  "models.protocolOption.klingVideo": "Kling official video API",
   "models.protocolOption.depth": "vLLM-Omni depth API (Video Depth Anything)",
   "models.protocolOption.tts":
     "OpenAI-compatible speech synthesis (including vLLM-Omni TTS)",
