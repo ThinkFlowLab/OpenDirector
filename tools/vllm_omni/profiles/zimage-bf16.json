@@ -1,0 +1,139 @@
+{
+  "id": "zimage-bf16",
+  "modelId": "Tongyi-MAI/Z-Image-Turbo",
+  "revision": "f332072aa78be7aecdf3ee76d5c247082da564a6",
+  "allowPatterns": [
+    "model_index.json",
+    "scheduler/*",
+    "text_encoder/*",
+    "tokenizer/*",
+    "transformer/*",
+    "vae/*"
+  ],
+  "gpuBudgetMiB": 45056,
+  "hostMemoryBudgetGiB": 48,
+  "serveArgs": [],
+  "verification": {
+    "kind": "image",
+    "path": "/images/generations",
+    "request": {
+      "prompt": "A small red fishing boat leaving a quiet harbor at sunrise, lighthouse in the background, cinematic",
+      "size": "1024x1024",
+      "num_inference_steps": 9,
+      "guidance_scale": 0,
+      "seed": 7,
+      "response_format": "b64_json",
+      "output_format": "png"
+    }
+  },
+  "schemaVersion": 1,
+  "minComputeCapability": "8.0",
+  "minDriver": "580.65.06",
+  "packages": [
+    "vllm==0.32.0",
+    "vllm-omni==0.32.0"
+  ],
+  "environmentBudgetGiB": 30,
+  "qualification": {
+    "status": "unvalidated",
+    "note": "Budgets are conservative preflight reservations, not measured minimum requirements."
+  },
+  "files": [
+    {
+      "path": "model_index.json",
+      "size": 467,
+      "sha256": null
+    },
+    {
+      "path": "scheduler/scheduler_config.json",
+      "size": 173,
+      "sha256": null
+    },
+    {
+      "path": "text_encoder/config.json",
+      "size": 726,
+      "sha256": null
+    },
+    {
+      "path": "text_encoder/generation_config.json",
+      "size": 239,
+      "sha256": null
+    },
+    {
+      "path": "text_encoder/model-00001-of-00003.safetensors",
+      "size": 3957900840,
+      "sha256": "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    },
+    {
+      "path": "text_encoder/model-00002-of-00003.safetensors",
+      "size": 3987450520,
+      "sha256": "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    },
+    {
+      "path": "text_encoder/model-00003-of-00003.safetensors",
+      "size": 99630640,
+      "sha256": "7ca841ee75b9c61267c0c6148fd8d096d3d21b6d3e161256a9b878154f91fc52"
+    },
+    {
+      "path": "text_encoder/model.safetensors.index.json",
+      "size": 32819,
+      "sha256": null
+    },
+    {
+      "path": "tokenizer/merges.txt",
+      "size": 1671853,
+      "sha256": null
+    },
+    {
+      "path": "tokenizer/tokenizer.json",
+      "size": 11422654,
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+      "path": "tokenizer/tokenizer_config.json",
+      "size": 9732,
+      "sha256": null
+    },
+    {
+      "path": "tokenizer/vocab.json",
+      "size": 2776833,
+      "sha256": null
+    },
+    {
+      "path": "transformer/config.json",
+      "size": 473,
+      "sha256": null
+    },
+    {
+      "path": "transformer/diffusion_pytorch_model-00001-of-00003.safetensors",
+      "size": 9973693184,
+      "sha256": "95facd593e2549e8252acb571c653d57f7ddb7f1060d4e81712f152555a88804"
+    },
+    {
+      "path": "transformer/diffusion_pytorch_model-00002-of-00003.safetensors",
+      "size": 9973714824,
+      "sha256": "a4bbe43ee184a1fb5af4b412d27555f532893bdc3165b1149e304ed82b5d7015"
+    },
+    {
+      "path": "transformer/diffusion_pytorch_model-00003-of-00003.safetensors",
+      "size": 4672282880,
+      "sha256": "aba4e37a590e63210878160a718d916d80398f4e1f78ab6c9b2b2a00d92769fa"
+    },
+    {
+      "path": "transformer/diffusion_pytorch_model.safetensors.index.json",
+      "size": 48969,
+      "sha256": null
+    },
+    {
+      "path": "vae/config.json",
+      "size": 805,
+      "sha256": null
+    },
+    {
+      "path": "vae/diffusion_pytorch_model.safetensors",
+      "size": 167666902,
+      "sha256": "f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3"
+    }
+  ],
+  "downloadBytes": 32848305533
+}
