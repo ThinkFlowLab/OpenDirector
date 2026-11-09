@@ -1,3 +1,4 @@
+import { DraftAvailabilityCheck } from "./DraftAvailabilityCheck";
 import { ProviderPicker } from "./ProviderPicker";
 import { useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../backend/api.ts";
@@ -107,6 +108,7 @@ export function ModelServiceForm({
     modelId: existing?.modelId ?? "",
     apiKey: "",
     connectionType: existing?.connectionType ?? "self_hosted",
+    capabilityAutoCheck: existing?.capabilityAutoCheck,
     protocol:
       existing && isSegmentationModel(existing)
         ? "vllm_omni_segmentation"
@@ -311,6 +313,7 @@ export function ModelServiceForm({
       url: model.url,
       modelId: model.modelId,
       connectionType: model.connectionType,
+      capabilityAutoCheck: model.capabilityAutoCheck,
       inputModalities: model.inputModalities,
       videoAdapter: model.videoAdapter,
       videoCapabilities: model.videoCapabilities,
@@ -464,6 +467,11 @@ export function ModelServiceForm({
                 {t("models.service.proxyNote")}
               </p>
             </div>
+            <div className="cw-model-connection-field">
+              <label><input type="checkbox" checked={value.capabilityAutoCheck ?? value.connectionType === "self_hosted"}
+                onChange={(event) => update({ capabilityAutoCheck: event.target.checked })} />{t("availability.autoCheck")}</label>
+              <p className="cw-model-note">{t("availability.autoHint")}</p>
+            </div>
           </fieldset>
         </details>
         <fieldset
@@ -541,6 +549,8 @@ export function ModelServiceForm({
               : undefined
           }
           renderDetails={(id) => (
+            <>
+            <DraftAvailabilityCheck connection={{ ...value, ...optionsFor(id) }} configId={connection?.id} modelId={id} />
             <ModelCapabilityCard
               key={`${connection?.id ?? "new"}:${value.protocol}:${id}`}
               modelId={id}
@@ -559,6 +569,7 @@ export function ModelServiceForm({
                 setModelErrors((current) => ({ ...current, [id]: message }))
               }
             />
+            </>
           )}
         />
         {segmentation && (

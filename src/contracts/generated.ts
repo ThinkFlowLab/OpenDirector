@@ -140,6 +140,11 @@ export interface AudioParametersInput extends ContractInput {
   readonly durationFromReference?: boolean | null;
 }
 
+export interface AvailabilityCatalogInput extends ContractInput {
+  readonly revision: string;
+  readonly models: ReadonlyArray<ModelAvailabilityInput>;
+}
+
 export interface BatchCommandInput extends CommandBaseInput {
   readonly type: "creation.batch";
   readonly payload: BatchPayloadInput;
@@ -387,7 +392,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -808,14 +813,30 @@ export interface MediaPublicationOutputInput extends ContractInput {
   readonly height?: number;
 }
 
+export interface ModelAvailabilityInput extends ContractInput {
+  readonly configId: string | null;
+  readonly modelId: string;
+  readonly identity: string;
+  readonly autoCheck: boolean;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly revision: string;
+  readonly operations: ReadonlyArray<OperationAvailabilityInput>;
+}
+
 export interface ModelConfigPublicInput extends ModelConnectionInput {
   readonly id: string;
   readonly providerId?: string | null;
   readonly inputRules: InputRulesInput;
+  readonly capabilityAutoCheck?: boolean | null;
+  readonly availability?: ModelAvailabilityInput | null;
 }
 
 export interface ModelConfigWriteInput extends ModelConnectionInput {
   readonly apiKey?: string | null;
+  readonly capabilityAutoCheck?: boolean | null;
 }
 
 export interface ModelConnectionInput extends ContractInput {
@@ -883,6 +904,18 @@ export interface ObjectVersionInput extends ContractInput {
   readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result";
   readonly id: string;
   readonly revision: number;
+}
+
+export interface OperationAvailabilityInput extends ContractInput {
+  readonly operation: string;
+  readonly profile: string;
+  readonly method: string;
+  readonly path: string;
+  readonly output: string;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
 }
 
 export interface PaletteDataInput extends ContractInput {
@@ -1710,6 +1743,11 @@ export interface AudioParameters extends Contract {
   readonly durationFromReference?: boolean | null;
 }
 
+export interface AvailabilityCatalog extends Contract {
+  readonly revision: string;
+  readonly models: ReadonlyArray<ModelAvailability>;
+}
+
 export interface BatchCommand extends CommandBase {
   readonly type: "creation.batch";
   readonly payload: BatchPayload;
@@ -1957,7 +1995,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2378,13 +2416,29 @@ export interface MediaPublicationOutput extends Contract {
   readonly height: number;
 }
 
+export interface ModelAvailability extends Contract {
+  readonly configId: string | null;
+  readonly modelId: string;
+  readonly identity: string;
+  readonly autoCheck: boolean;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly revision: string;
+  readonly operations: ReadonlyArray<OperationAvailability>;
+}
+
 export interface ModelConfigPublic extends ModelConnection {
   readonly id: string;
   readonly inputRules: InputRules;
+  readonly capabilityAutoCheck?: boolean | null;
+  readonly availability?: ModelAvailability | null;
 }
 
 export interface ModelConfigWrite extends ModelConnection {
   readonly apiKey: string | null;
+  readonly capabilityAutoCheck?: boolean | null;
 }
 
 export interface ModelConnection extends Contract {
@@ -2452,6 +2506,18 @@ export interface ObjectVersion extends Contract {
   readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result";
   readonly id: string;
   readonly revision: number;
+}
+
+export interface OperationAvailability extends Contract {
+  readonly operation: string;
+  readonly profile: string;
+  readonly method: string;
+  readonly path: string;
+  readonly output: string;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
 }
 
 export interface PaletteData extends Contract {

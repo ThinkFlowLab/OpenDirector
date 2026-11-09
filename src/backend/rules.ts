@@ -1,3 +1,4 @@
+import { availabilityBlocker } from "./availability.ts";
 import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
@@ -15,6 +16,7 @@ import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
 import { nodeDownstreamKinds } from "../canvas/connectionPolicy.ts";
 import { tNow } from "../i18n/messages.ts";
 import type { MessageKey } from "../i18n/types.ts";
+import type { ModelAvailability } from "../contracts/generated.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
@@ -57,6 +59,8 @@ export interface InputRules {
 }
 
 export interface ModelConfig {
+  capabilityAutoCheck?: boolean | null;
+  availability?: ModelAvailability | null;
   providerId?: string | null;
   id: string;
   kind: ModelKind;
@@ -515,6 +519,13 @@ export function backendBlocker(
     return tNow("errors.rules.transcriptionModel");
   if (!isGenerationModel(config))
     return tNow("errors.rules.segmentationModel");
+  const transmitted = backendReferences(settings, incoming, config);
+  const profile = settings.mode === "audio" ? (isMusicModel(config) ? "lyrics_to_music" : "text_to_speech")
+    : settings.mode === "image" ? (transmitted.some((ref) => ref.node.data.kind === "image") ? "image_to_image" : "text_to_image")
+    : transmitted.some((ref) => ref.node.data.kind === "video") ? "video_to_video"
+    : transmitted.some((ref) => ref.node.data.kind === "image") ? "image_to_video" : "text_to_video";
+  const capabilityIssue = availabilityBlocker(config, profile);
+  if (capabilityIssue) return capabilityIssue;
   if (!settings.prompt.trim())
     return settings.mode !== "audio"
       ? tNow("errors.rules.promptRequired")

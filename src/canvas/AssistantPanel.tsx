@@ -751,7 +751,7 @@ export function AssistantPanel({
           </div>
         </form>
         <div className="cw-assistant-footnote">
-          {!chat.loaded ? (
+          {chat.availabilityIssue ? chat.availabilityIssue : !chat.loaded ? (
             chat.changing
               ? t("assistant.panel.switching")
               : chat.error

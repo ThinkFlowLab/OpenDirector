@@ -1417,6 +1417,30 @@
         "title": "AudioParameters",
         "type": "object"
       },
+      "AvailabilityCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "Version of the complete observation projection.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "models": {
+            "description": "Current saved model observations; reading does not query providers.",
+            "items": {
+              "$ref": "#/$defs/ModelAvailability"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "models"
+        ],
+        "title": "AvailabilityCatalog",
+        "type": "object"
+      },
       "BatchCommand": {
         "additionalProperties": false,
         "description": "Apply multiple operations atomically; all succeed or none are committed.",
@@ -3472,6 +3496,9 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "capability_unavailable",
+              "capability_paused",
+              "capability_connection_changed",
               "capability_unsupported",
               "preview_expired",
               "storage_unavailable",
@@ -8000,6 +8027,105 @@
         "title": "MediaPublicationOutput",
         "type": "object"
       },
+      "ModelAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "configId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved model identity; null for an unsaved draft.",
+            "title": "Configid"
+          },
+          "modelId": {
+            "description": "Exact remote model identifier requested.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Opaque identity of the checked connection and model.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "autoCheck": {
+            "description": "Effective service automatic-check preference.",
+            "title": "Autocheck",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Summary across the configured adapter operations.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable summary reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest operation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          },
+          "revision": {
+            "description": "Projection version; changes on observations, identity changes and expiration.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operations consumed by the configured adapter.",
+            "items": {
+              "$ref": "#/$defs/OperationAvailability"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configId",
+          "modelId",
+          "identity",
+          "autoCheck",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "revision",
+          "operations"
+        ],
+        "title": "ModelAvailability",
+        "type": "object"
+      },
       "ModelConfigPublic": {
         "additionalProperties": false,
         "description": "Application-level, never embedded in an editable project's credential data.",
@@ -8141,6 +8267,31 @@
           "inputRules": {
             "$ref": "#/$defs/InputRules",
             "description": "Verified model input limits and output choices."
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service preference; omitted defaults to automatic for self-hosted connections.",
+            "title": "Capabilityautocheck"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ephemeral observation, never persisted in project snapshots."
           }
         },
         "required": [
@@ -8289,6 +8440,19 @@
             "default": null,
             "description": "Provider credential; omitted from public model records.",
             "title": "Apikey"
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service automatic-check override; omission preserves the existing preference.",
+            "title": "Capabilityautocheck"
           }
         },
         "required": [
@@ -8832,6 +8996,88 @@
           "revision"
         ],
         "title": "ObjectVersion",
+        "type": "object"
+      },
+      "OperationAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Canonical remote operation identifier.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Input and output mode used by the configured adapter.",
+            "title": "Profile",
+            "type": "string"
+          },
+          "method": {
+            "description": "Actual HTTP method used for submission.",
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "Actual HTTP submission path.",
+            "title": "Path",
+            "type": "string"
+          },
+          "output": {
+            "description": "Output modality consumed by the adapter.",
+            "title": "Output",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current evidence for this exact request.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable decision reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "operation",
+          "profile",
+          "method",
+          "path",
+          "output",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "OperationAvailability",
         "type": "object"
       },
       "PaletteData": {
@@ -16499,6 +16745,30 @@
         "title": "AudioParameters",
         "type": "object"
       },
+      "AvailabilityCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "Version of the complete observation projection.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "models": {
+            "description": "Current saved model observations; reading does not query providers.",
+            "items": {
+              "$ref": "#/$defs/ModelAvailability"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "models"
+        ],
+        "title": "AvailabilityCatalog",
+        "type": "object"
+      },
       "BatchCommand": {
         "additionalProperties": false,
         "description": "Apply multiple operations atomically; all succeed or none are committed.",
@@ -18607,6 +18877,9 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "capability_unavailable",
+              "capability_paused",
+              "capability_connection_changed",
               "capability_unsupported",
               "preview_expired",
               "storage_unavailable",
@@ -23342,6 +23615,105 @@
         "title": "MediaPublicationOutput",
         "type": "object"
       },
+      "ModelAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "configId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved model identity; null for an unsaved draft.",
+            "title": "Configid"
+          },
+          "modelId": {
+            "description": "Exact remote model identifier requested.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Opaque identity of the checked connection and model.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "autoCheck": {
+            "description": "Effective service automatic-check preference.",
+            "title": "Autocheck",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Summary across the configured adapter operations.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable summary reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest operation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          },
+          "revision": {
+            "description": "Projection version; changes on observations, identity changes and expiration.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operations consumed by the configured adapter.",
+            "items": {
+              "$ref": "#/$defs/OperationAvailability"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configId",
+          "modelId",
+          "identity",
+          "autoCheck",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "revision",
+          "operations"
+        ],
+        "title": "ModelAvailability",
+        "type": "object"
+      },
       "ModelConfigPublic": {
         "additionalProperties": false,
         "description": "Application-level, never embedded in an editable project's credential data.",
@@ -23469,6 +23841,31 @@
           "inputRules": {
             "$ref": "#/$defs/InputRules",
             "description": "Verified model input limits and output choices."
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service preference; omitted defaults to automatic for self-hosted connections.",
+            "title": "Capabilityautocheck"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ephemeral observation, never persisted in project snapshots."
           }
         },
         "required": [
@@ -23621,6 +24018,19 @@
             "default": null,
             "description": "Provider credential; omitted from public model records.",
             "title": "Apikey"
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service automatic-check override; omission preserves the existing preference.",
+            "title": "Capabilityautocheck"
           }
         },
         "required": [
@@ -24179,6 +24589,88 @@
           "revision"
         ],
         "title": "ObjectVersion",
+        "type": "object"
+      },
+      "OperationAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Canonical remote operation identifier.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Input and output mode used by the configured adapter.",
+            "title": "Profile",
+            "type": "string"
+          },
+          "method": {
+            "description": "Actual HTTP method used for submission.",
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "Actual HTTP submission path.",
+            "title": "Path",
+            "type": "string"
+          },
+          "output": {
+            "description": "Output modality consumed by the adapter.",
+            "title": "Output",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current evidence for this exact request.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable decision reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "operation",
+          "profile",
+          "method",
+          "path",
+          "output",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "OperationAvailability",
         "type": "object"
       },
       "PaletteData": {

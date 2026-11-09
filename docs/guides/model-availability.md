@@ -6,6 +6,8 @@
 
 “检查服务能力”可以检查未保存的表单。草稿检查不会保存配置，也不会更新已保存模型的状态。显式刷新已保存模型可以检查关闭自动检查的服务。
 
+在“设置 → 模型接入”选择模型类别，展开服务卡片的“服务能力”，即可查看每种操作的状态和检查时间。编辑服务时，可在高级连接设置中调整“自动检查服务能力”。输入过程中不会查询；保存后在后台检查。生成按钮和助手会说明明确不可用的原因，并保留当前输入和选择。暂停观察到期后会解除该观察产生的禁用，提交时仍执行后端检查。
+
 状态有三种：`available` 表示该请求具有匹配声明；`unavailable` 表示服务明确不支持或暂停当前执行入口；`unknown` 表示没有足够信息。旧服务没有接口、超时、断网、鉴权失败和无法理解的版本都保留手动配置与现有请求路径。错误原因分别显示，响应正文与凭据不进入状态数据。
 
 声明按精确 Model ID、输入模式、输出类型和实际 HTTP 路由匹配。一个模型支持聊天协议，不能证明它会返回助手需要的文字。音乐适配器通过 `/audio/speech` 发送歌词 `input`、风格 `instructions` 和音频帧数 `max_new_tokens`；其 `lyrics_to_music` 模式独立于普通 TTS 的 `text_to_speech`。`/audio/generate` 的通用音频生成声明不会启用现有音乐适配器。
@@ -21,6 +23,8 @@
 Model connections can read an optional service capability declaration. Self-hosted connections check automatically by default; other connections require explicit enablement or a manual check. The optional service-level `capabilityAutoCheck` preference and query cache are shared by models with the same `providerId`. Independent providers and legacy standalone configuration IDs stay isolated even at the same URL with the same credential. Checks query declarations without inference or wake-up requests.
 
 The unsaved form check uses an isolated draft identity. It saves neither configuration nor observations for saved connections. Explicit refresh can check selected saved connections even when automatic checks are disabled.
+
+In Settings → Model connections, select a category and expand Service capabilities on a connection card to see operation states and check times. Advanced connection settings contain Automatically check service capabilities. Typing does not query the service; saving starts a background check. Generation and assistant controls explain explicit unavailability while retaining inputs and selections. Pause observations expire locally; submission still runs the backend check.
 
 `available`, `unavailable`, and `unknown` describe evidence for a specific request. Matching requires the exact model, operation profile, consumed output and actual HTTP route. Unknown or failed discovery preserves manual configuration and the existing request path. Authentication, connection, timeout, unsupported-version and invalid-response reasons are distinct; credentials and response bodies are never included in observations.
 
@@ -59,6 +63,11 @@ The remote protocol is `GET <API_BASE>/omni/capabilities`, with `object="omni.ca
 ```sh
 .venv/bin/python -m pytest tests/test_model_availability.py tests/test_capability_acceptance.py -q
 .venv/bin/python -m pytest tests/test_model_configs.py tests/test_model_catalog.py tests/test_creation_generation_service.py tests/test_tool_tasks.py tests/test_assistant_conversations.py tests/test_cli.py -q
+node --test tests/modelAvailability.test.ts
+# With the isolated API and Vite running as described in development validation:
+node tests/browser/capability_discovery.mjs
 ```
 
 These tests use isolated configuration/project directories, model doubles and a local HTTP server. They cover identity changes, draft isolation, operation matching, TTL expiration, coalescing, errors, zero-job rejection, local tools and replay. They do not validate real model outputs. See [development validation](../development/validation.md) for browser, contracts and import-layer checks.
+
+The bilingual browser workflow checks editing without queries, stale draft responses, saving an unsupported configuration, zero-job rejection, UI submission, decoding the saved fixture image, pause expiration, project reopening and unchanged historical input. The frontend clock tests include system-clock changes and repeated observations. 浏览器用例实际保存并解码测试图片，模型输出来自测试替身；前端时钟测试包含系统时间变化和重复响应，不能作为真实模型验证结果。

@@ -1590,6 +1590,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 incoming={composerIncoming}
                 referenceControls={generationReferenceControls(composerNode)}
                 models={backendCatalog.models}
+                onCheckModels={backendCatalog.refreshAvailability}
                 onUpdate={(patch) =>
                   command({
                     type: "update-node",
@@ -1630,6 +1631,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 }}
                 running={composerRunning}
                 backendModels={backendCatalog.models}
+                onCheckModels={backendCatalog.refreshAvailability}
               />
             )}
           </div>

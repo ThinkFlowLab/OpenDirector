@@ -112,6 +112,15 @@
       ]
     },
     {
+      "file": "capability_discovery.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ],
+      "note": "Real application with controllable local capability HTTP service; no model inference."
+    },
+    {
       "file": "composer_duration.mjs",
       "previewSafe": true,
       "lanes": [

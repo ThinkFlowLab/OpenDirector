@@ -1,3 +1,4 @@
+import { availabilityBlocker } from "../backend/availability.ts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { rememberAgentSelection, restoreAgentSelection, builtinThinking } from "./agentPreferences";
 import { errorMessage } from "../backend/api";
@@ -312,7 +313,13 @@ export function useAssistantChat(
     return () => abort.abort();
   }, [open, loaded, runtimesLoading, runtimeToCheck, refreshRuntimes]);
 
+  const checkCapabilities = catalog.refreshAvailability;
+  useEffect(() => {
+    if (open && currentRuntime?.modelSource === "settings" && agent) void checkCapabilities([agent.id]);
+  }, [open, currentRuntime?.modelSource, agent?.id, checkCapabilities]);
+  const availabilityIssue = currentRuntime?.modelSource === "settings" ? availabilityBlocker(agent, "text_response") : null;
   const canSend =
+    !availabilityIssue &&
     currentRuntime?.status === "ready" &&
     !!currentRuntime.available &&
     (currentRuntime.modelSource === "cli" || !!agent);
@@ -664,6 +671,7 @@ export function useAssistantChat(
     setError,
     agent,
     canSend,
+    availabilityIssue,
     adding,
     upload,
     addNodes,
