@@ -30,6 +30,8 @@ from PIL import Image
 with Image.open(sys.argv[1]) as image:
     facts={'format':image.format,'width':image.width,'height':image.height}
     image.verify()
+with Image.open(sys.argv[1]) as image:
+    image.load()
 print(json.dumps(facts))
 '''
         value = capture([python, '-c', script, str(path)])

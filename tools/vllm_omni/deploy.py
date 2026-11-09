@@ -27,6 +27,8 @@ from uuid import uuid4
 
 HERE = Path(__file__).resolve().parent
 GIB = 1024 ** 3
+# Keep the compiler/CRT/NVVM aligned with the cu130 runtime selected below.
+CUDA_COMPILER_PACKAGES = ['nvidia-cuda-nvcc==13.0.88', 'nvidia-cuda-crt==13.0.88', 'nvidia-nvvm==13.0.88']
 
 
 class DeploymentError(Exception):
@@ -201,10 +203,20 @@ def environment(root, gpu=None, hf_endpoint=None):
     result = dict(os.environ)
     result.pop('PYTHONPATH', None)
     result.update(HF_HOME=str(root / 'cache/huggingface'),
+                  PIP_CACHE_DIR=str(root / 'cache/pip'),
                   UV_CACHE_DIR=str(root / 'cache/uv'), TMPDIR=str(root / 'cache/tmp'),
+                  VLLM_CACHE_ROOT=str(root / 'cache/vllm'),
+                  TRITON_CACHE_DIR=str(root / 'cache/triton'),
+                  TORCHINDUCTOR_CACHE_DIR=str(root / 'cache/torchinductor'),
+                  FLASHINFER_WORKSPACE_BASE=str(root / 'cache/flashinfer'),
                   PYTHONNOUSERSITE='1', VLLM_WORKER_MULTIPROC_METHOD='spawn',
                   VIRTUAL_ENV=str(root / 'omni-env'),
                   PATH=str(root / 'omni-env/bin') + os.pathsep + result.get('PATH', ''))
+    toolkit = root / 'omni-env/lib/python3.12/site-packages/nvidia/cu13'
+    if not result.get('CUDA_HOME') and not result.get('CUDA_PATH') and (toolkit / 'bin/nvcc').is_file():
+        result['CUDA_HOME'] = str(toolkit)
+        result['PATH'] = str(toolkit / 'bin') + os.pathsep + result['PATH']
+        result['LIBRARY_PATH'] = str(root / 'cache/cuda-linker') + os.pathsep + result.get('LIBRARY_PATH', '')
     if hf_endpoint:
         result['HF_ENDPOINT'] = hf_endpoint
     if gpu:
@@ -232,6 +244,17 @@ def exclusive(path):
 
 def prepare(root):
     (root / 'cache/tmp').mkdir(parents=True, exist_ok=True)
+    # The runtime wheel provides the versioned library, while JIT linkers ask
+    # for libcudart.so. Keep this development alias outside installed packages.
+    runtime = root / 'omni-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13'
+    if runtime.is_file():
+        alias = root / 'cache/cuda-linker/libcudart.so'
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        if alias.exists() or alias.is_symlink():
+            if alias.resolve() != runtime.resolve():
+                raise DeploymentError('cuda_linker_conflict', path=str(alias))
+        else:
+            alias.symlink_to(runtime)
 
 
 def require_plan(args, profile):
@@ -256,12 +279,15 @@ def install(args, profile):
         checked([python, '-m', 'pip', 'install', 'uv==0.13.7'], env=env)
         uv = str(args.root / 'omni-env/bin/uv')
         checked([uv, 'pip', 'install', '--python', python, '--torch-backend', 'cu130',
-                 *profile['packages']], env=env)
+                 *profile['packages'], *CUDA_COMPILER_PACKAGES], env=env)
+        prepare(args.root)
         checked([uv, 'pip', 'check', '--python', python], env=env)
         cuda_env = environment(args.root, require_plan(args, profile)['gpu'], args.hf_endpoint)
         checked([python, '-c', 'import torch; assert torch.cuda.is_available(); '
                  'assert torch.cuda.device_count() == 1; '
-                 'assert (torch.ones(1, device="cuda") + 1).item() == 2'], env=cuda_env)
+                 'assert (torch.ones(1, device="cuda") + 1).item() == 2; '
+                 'import flashinfer; x=torch.arange(1024,device="cuda",dtype=torch.float32).repeat(2,1); '
+                 'assert torch.isfinite(flashinfer.top_k_mask_logits(x,50)).sum().item()==100'], env=cuda_env)
         frozen = capture([uv, 'pip', 'freeze', '--python', python], env=env)
         if frozen is None:
             raise DeploymentError('environment_inspection_failed')

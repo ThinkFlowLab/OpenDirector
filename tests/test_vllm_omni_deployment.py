@@ -36,6 +36,20 @@ def test_download_transport_uses_sdk_defaults_and_operator_settings(tmp_path, mo
     assert deploy.environment(tmp_path)['HF_HUB_DISABLE_XET'] == '1'
 
 
+def test_private_cuda_linker_alias_preserves_conflicting_files(tmp_path):
+    runtime = tmp_path / 'omni-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13'
+    runtime.parent.mkdir(parents=True)
+    runtime.touch()
+    deploy.prepare(tmp_path)
+    alias = tmp_path / 'cache/cuda-linker/libcudart.so'
+    assert alias.resolve() == runtime.resolve()
+    alias.unlink()
+    alias.write_bytes(b'operator-owned file')
+    with pytest.raises(deploy.DeploymentError, match='cuda_linker_conflict'):
+        deploy.prepare(tmp_path)
+    assert alias.read_bytes() == b'operator-owned file'
+
+
 def test_selection_respects_assigned_devices(profile):
     facts = host(profile)
     facts['visibleGpuUuids'] = []
@@ -181,5 +195,28 @@ def test_real_png_decoding_rejects_corruption(tmp_path):
     Image.new('RGB', (32, 24), 'red').save(path)
     assert verify.media_facts(path, 'image', sys.executable)['width'] == 32
     path.write_bytes(path.read_bytes()[:35])
+    with pytest.raises(deploy.DeploymentError, match='invalid_image_output'):
+        verify.media_facts(path, 'image', sys.executable)
+
+
+def test_png_with_valid_checksums_still_requires_decodable_pixels(tmp_path):
+    import struct
+    import sys
+    import zlib
+    path = tmp_path / 'image.png'
+    Image.new('RGB', (32, 24), 'red').save(path)
+    source = path.read_bytes()
+    chunks, offset = [source[:8]], 8
+    while offset < len(source):
+        size = struct.unpack('>I', source[offset:offset + 4])[0]
+        tag = source[offset + 4:offset + 8]
+        body = source[offset + 8:offset + 8 + size]
+        if tag == b'IDAT':
+            body = b'not a zlib stream'
+        chunks.append(struct.pack('>I', len(body)) + tag + body + struct.pack('>I', zlib.crc32(tag + body)))
+        offset += size + 12
+    path.write_bytes(b''.join(chunks))
+    with Image.open(path) as image:
+        image.verify()  # Header/chunk validation alone accepts this invalid PNG.
     with pytest.raises(deploy.DeploymentError, match='invalid_image_output'):
         verify.media_facts(path, 'image', sys.executable)

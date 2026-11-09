@@ -10,7 +10,7 @@
   ],
   "gpuBudgetMiB": 32768,
   "hostMemoryBudgetGiB": 16,
-  "serveArgs": [],
+  "serveArgs": ["--stage-init-timeout", "1200"],
   "verification": {
     "kind": "audio",
     "path": "/audio/speech",
