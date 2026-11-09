@@ -13,6 +13,7 @@ from uuid import UUID, uuid5
 from PIL import Image
 
 from opendirector.application.tool_operations import TOOLS, Source, ToolContext, select_image_objects
+from opendirector.application.model_availability import ModelAvailability, tool_request
 from opendirector.domain.capabilities import LABELS
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError, identifier
@@ -47,12 +48,13 @@ def output_item_id(task, index, kind):
 
 
 class ToolTasks(ToolTaskLifecycle):
-    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects):
+    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects, availability=None):
         self.store, self.configs, self.assets = store, configs, assets
         self.transport, self.poll_interval = transport, poll_interval
         self.jobs: dict[tuple[str, str], asyncio.Task] = {}
         self.limit = asyncio.Semaphore(concurrency)
         self.projects = projects
+        self.availability = availability or ModelAvailability(configs)
         self.accepting = set()
         self._init_lifecycle()
 
@@ -76,6 +78,15 @@ class ToolTasks(ToolTaskLifecycle):
                      'available': spec.recipe is not None and not missing, 'parametersConfirmed': spec.recipe is not None,
                      'fields': list(spec.fields), 'note': spec.note,
                      'models': {item: [{'id': config['id'], 'label': _model_label(config)} for config in served.get(item, [])] for item in needs}}
+            for capability, choices in entry['models'].items():
+                for choice in choices:
+                    config = next(item for item in served[capability] if item['id'] == choice['id'])
+                    private = self.configs.resolve(config['id'], config['kind'])
+                    request = tool_request(private, capability)
+                    if request:
+                        choice['availability'] = self.availability.decision(private, request)
+                if choices and all(item.get('availability', {}).get('status') == 'unavailable' for item in choices):
+                    entry.update(available=False, reason='服务明确不支持当前请求，请查看模型能力并修改选择。', reasonCode='capability_unavailable')
             if spec.recipe is None or missing:
                 entry['reason'] = f"需要接入具备「{'、'.join(LABELS[item] for item in missing or needs)}」能力的模型。"
             tools.append(entry)
@@ -83,7 +94,8 @@ class ToolTasks(ToolTaskLifecycle):
         if not selection['available']:
             selection['reason'] = '接入图像分割模型后可自动识别选区；仍可手动画选区。'
         return {'capabilities': {item: [{'id': config['id'], 'label': _model_label(config)} for config in configs]
-                                 for item, configs in served.items()}, 'tools': tools, 'selectionPreview': selection}
+                                 for item, configs in served.items()}, 'tools': tools, 'selectionPreview': selection,
+                'availabilityRevision': self.availability.list()['revision']}
 
     def _model(self, capability, chosen):
         candidates = self.providers().get(capability, [])
@@ -117,6 +129,9 @@ class ToolTasks(ToolTaskLifecycle):
         if self.providers().get('text.chat'):
             async def chat(request):
                 chat_config, chat_adapter = self._model('text.chat', None)
+                prepared = await asyncio.to_thread(self.availability.prepare, chat_config)
+                current, _ = self._model('text.chat', chat_config['id'])
+                self.availability.require(current, tool_request(current, 'text.chat'), prepared)
                 return await chat_adapter.chat(chat_config, request)
 
         context = ToolContext(sources=[], mask=None, boxes=[], parameters={}, image_model=None, video_model=None,
@@ -217,9 +232,17 @@ class ToolTasks(ToolTaskLifecycle):
         # Snapshot validation and accepted ledger publication share the project
         # lock. A source cannot be replaced between checking and acceptance.
         with self.store.transaction():
-            return self._prepare_locked(project_id, value, session)
+            initial = self._prepare_locked(project_id, value, session, inspect=True)
+        if isinstance(initial, tuple):
+            return initial  # A replay does not query or reaccept its frozen job.
+        prepared = {}
+        for capability, config in initial.items():
+            if tool_request(config, capability) is not None:
+                prepared[capability] = self.availability.prepare(config)
+        with self.store.transaction():
+            return self._prepare_locked(project_id, value, session, prepared=prepared)
 
-    def _prepare_locked(self, project_id, value, session):
+    def _prepare_locked(self, project_id, value, session, *, inspect=False, prepared=None):
         if self.closing:
             raise ProjectError('工具服务正在关闭，请稍后查询原任务。', 503)
         self._ensure_owner()
@@ -268,16 +291,30 @@ class ToolTasks(ToolTaskLifecycle):
         canvas = value.get('canvas')
         if canvas and (len(canvas['sourceNodeIds']) != len(source_ids) or canvas['sourceNodeIds'][0] != canvas['nodeId']):
             raise ProjectError('工具任务的画布来源不匹配。', 422)
+        models = {capability: self._model(capability, chosen.get(capability))[0] for capability in needs}
+        if needs and self.providers().get('text.chat'):
+            models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
+        if inspect:
+            return models
+        for capability, config in list(models.items()):
+            request = tool_request(config, capability)
+            if request is None:
+                continue
+            if capability not in (prepared or {}):
+                raise ProjectError('能力检查期间模型服务已变化，请重新提交。', 409, code='capability_connection_changed')
+            self.availability.assert_identity(config, prepared[capability])
+            if capability == 'text.chat' and capability not in needs:
+                if self.availability.decision(config, request)['status'] == 'unavailable':
+                    del models[capability]
+            else:
+                self.availability.require(config, request)
         from .creation_tool_drafts import freeze_inputs
         frozen = freeze_inputs(self, project_id, value)
-        models = {capability: self._model(capability, chosen.get(capability))[0] for capability in needs}
-        if self.providers().get('text.chat'):
-            models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',
                 'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'annotationAssetId': annotation_id,
                 'boxes': value.get('boxes') or [], 'parameters': parameters,
                 'modelConfigIds': {item: config['id'] for item, config in models.items()},
-                'modelSnapshots': {item: {key: val for key, val in config.items() if key != 'apiKey'} for item, config in models.items()}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
+                'modelSnapshots': {item: {key: val for key, val in config.items() if key not in {'apiKey', 'capabilityAutoCheck', 'availability'}} for item, config in models.items()}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
                 'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None,
                 'revision': 1, 'workerId': self.worker_id, 'localState': 'active',
                 'cancelRequested': False, 'modelCalls': [],

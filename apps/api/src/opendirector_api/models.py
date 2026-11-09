@@ -5,6 +5,7 @@ from pydantic import model_validator, BaseModel, ConfigDict, Field, SecretStr
 from opendirector.domain.creation.editors import ToolDraftBinding
 from opendirector.domain.capabilities import AgentInputModality
 from opendirector.domain.video_capabilities import VideoAdapter, VideoCapabilities
+from opendirector.domain.creation.models import ModelAvailability, AvailabilityCatalog
 
 
 class Model(BaseModel):
@@ -27,6 +28,12 @@ class ModelConnection(Model):
     protocol: Literal['openai', 'volcengine', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
     authMode: Literal['none', 'bearer'] | None = None
     proxyMode: Literal['system', 'direct'] | None = None
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None)
+
+
+class AvailabilityRefresh(Model):
+    configIds: list[UUID] | None = Field(default=None, min_length=1, max_length=200)
+    manual: bool = False
 
 
 class ModelConfigInput(ModelConnection):
@@ -68,6 +75,7 @@ class ModelCapabilityRequest(ModelConfigInput):
 
 
 class ModelConfigPublic(ModelConnection):
+    availability: ModelAvailability | None = Field(default=None, exclude_if=lambda value: value is None)
     providerId: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     videoAdapter: VideoAdapter = 'auto'
     videoCapabilities: VideoCapabilities | None = None

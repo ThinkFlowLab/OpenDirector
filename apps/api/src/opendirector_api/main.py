@@ -16,6 +16,7 @@ from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.model_catalog import ModelCatalog
+from opendirector.application.model_availability import ModelAvailability
 from opendirector.application.preferences import Preferences
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.application.creation_tool_assets import CreationToolAssets
@@ -30,7 +31,8 @@ from opendirector_api.voices import voice_routes
 from opendirector_api.localization import localized_error
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
-    ToolTaskCreate, ToolPlacement, ImageSelectionCreate)
+    ToolTaskCreate, ToolPlacement, ImageSelectionCreate, AvailabilityRefresh, AvailabilityCatalog,
+    ModelAvailability as ModelAvailabilityResponse)
 
 
 def video_capabilities(value):
@@ -41,7 +43,7 @@ def model_options(value: ModelBatchInput):
     return {key: item.model_dump(exclude_unset=True) for key, item in value.modelOptions.items()}
 
 
-def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None) -> FastAPI:
+def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None, capability_probe=None) -> FastAPI:
     configure_runtime()
     repository = data_root()
     if store is None:
@@ -49,9 +51,10 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     model_configs = ModelConfigs(store.repository)
     preferences = Preferences(store.repository)
     creation_projects = CreationProjects(store)
-    creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider)
-    creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects)
-    catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions())
+    availability = ModelAvailability(model_configs, capability_probe)
+    creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider, availability=availability)
+    creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects, availability=availability)
+    catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions(), availability)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -64,6 +67,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                 await creation_tools.close()
             finally:
                 await creation_generation.close()
+                availability.probe.close()
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.2", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
@@ -192,6 +196,21 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def list_model_configs():
         return catalog.list()
 
+    @app.get('/api/model-configs/availability', response_model=AvailabilityCatalog)
+    def model_availability():
+        return availability.list()
+
+    @app.post('/api/model-configs/availability', response_model=AvailabilityCatalog)
+    def refresh_model_availability(value: AvailabilityRefresh):
+        return availability.refresh([str(item) for item in value.configIds] if value.configIds is not None else None, manual=value.manual)
+
+    @app.post('/api/model-configs/availability/check', response_model=ModelAvailabilityResponse)
+    async def check_model_availability(value: ModelDiscoveryRequest):
+        return await catalog.check_availability(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(),
+            str(value.configId) if value.configId else None, connection_type=value.connectionType, protocol=value.protocol,
+            auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
+            capability_auto_check=value.capabilityAutoCheck)
+
     @app.get('/api/settings', response_model=GeneralSettings)
     def get_settings():
         return preferences.get()
@@ -211,7 +230,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                                  protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
                                  video_capabilities=video_capabilities(value), input_modalities=value.inputModalities,
                                  model_options=model_options(value),
-                                 capabilities_supplied='videoCapabilities' in value.model_fields_set)
+                                 capabilities_supplied='videoCapabilities' in value.model_fields_set, capability_auto_check=value.capabilityAutoCheck)
 
     @app.post('/api/model-configs/discover')
     async def discover_models(value: ModelDiscoveryRequest):
@@ -224,14 +243,16 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     async def test_agent_model(value: AgentModelTest):
         elapsed = await catalog.test_agent(value.url, value.modelId, value.apiKey.get_secret_value(),
                                            str(value.configId) if value.configId else None, connection_type=value.connectionType,
-                                           protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode)
+                                           protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
+                                           capability_auto_check=value.capabilityAutoCheck)
         return {'elapsedMs': elapsed}
 
     @app.post("/api/model-configs", response_model=ModelConfigPublic)
     def create_model_config(value: ModelConfigInput):
         return catalog.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
                             video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
-                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
+                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities,
+                            capability_auto_check=value.capabilityAutoCheck)
 
     @app.post('/api/model-configs/capabilities')
     async def model_capabilities(value: ModelCapabilityRequest):
@@ -245,7 +266,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def update_model_config(config_id: UUID, value: ModelConfigInput):
         return catalog.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
                             video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
-                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
+                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities,
+                            capability_auto_check=value.capabilityAutoCheck)
 
     @app.delete("/api/model-configs/{config_id}", status_code=204)
     def delete_model_config(config_id: UUID):

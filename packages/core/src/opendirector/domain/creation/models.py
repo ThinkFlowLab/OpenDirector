@@ -141,16 +141,52 @@ class ModelConnection(Contract):
         return self
 
 
+class OperationAvailability(Contract):
+    operation: str = Field(description='Canonical remote operation identifier.')
+    profile: str = Field(description='Input and output mode used by the configured adapter.')
+    method: str = Field(description='Actual HTTP method used for submission.')
+    path: str = Field(description='Actual HTTP submission path.')
+    output: str = Field(description='Output modality consumed by the adapter.')
+    status: Literal['available', 'unavailable', 'unknown'] = Field(description='Current evidence for this exact request.')
+    reasonCode: str = Field(description='Stable, localizable decision reason.')
+    checkedAt: int | None = Field(description='Observation completion time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Decision expiry in Unix milliseconds; recompute after expiry.')
+
+
+class ModelAvailability(Contract):
+    configId: UUID | None = Field(description='Saved model identity; null for an unsaved draft.')
+    modelId: str = Field(description='Exact remote model identifier requested.')
+    identity: str = Field(description='Opaque identity of the checked connection and model.')
+    autoCheck: bool = Field(description='Effective service automatic-check preference.')
+    status: Literal['available', 'unavailable', 'unknown'] = Field(description='Summary across the configured adapter operations.')
+    reasonCode: str = Field(description='Stable, localizable summary reason.')
+    checkedAt: int | None = Field(description='Observation completion time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Earliest operation expiry in Unix milliseconds.')
+    revision: str = Field(description='Projection version; changes on observations, identity changes and expiration.')
+    operations: tuple[OperationAvailability, ...] = Field(description='Exact operations consumed by the configured adapter.')
+
+
+class AvailabilityCatalog(Contract):
+    revision: str = Field(description='Version of the complete observation projection.')
+    models: tuple[ModelAvailability, ...] = Field(description='Current saved model observations; reading does not query providers.')
+
+
 class ModelConfigPublic(ModelConnection):
     """Application-level, never embedded in an editable project's credential data."""
     id: UUID = Field(description='Stable object ID.')
     providerId: UUID | None = Field(default=None, exclude=True, description='Shared provider connection ID.')
     inputRules: InputRules = Field(description='Verified model input limits and output choices.')
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None,
+        description='Service preference; omitted defaults to automatic for self-hosted connections.')
+    availability: ModelAvailability | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Ephemeral observation, never persisted in project snapshots.')
 
 
 class ModelConfigWrite(ModelConnection):
     """Only the model-settings write boundary accepts a credential."""
     apiKey: SecretStr | None = Field(default=None, max_length=8192, description='Provider credential; omitted from public model records.')
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None,
+        description='Service automatic-check override; omission preserves the existing preference.')
 
     @field_validator('apiKey')
     @classmethod
