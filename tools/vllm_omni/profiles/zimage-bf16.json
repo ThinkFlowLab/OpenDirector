@@ -18,7 +18,7 @@
     "path": "/images/generations",
     "request": {
       "prompt": "A small red fishing boat leaving a quiet harbor at sunrise, lighthouse in the background, cinematic",
-      "size": "1024x1024",
+      "size": "1344x768",
       "num_inference_steps": 9,
       "guidance_scale": 0,
       "seed": 7,

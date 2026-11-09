@@ -2,8 +2,8 @@
 """Hardware-aware, local vLLM-Omni deployment. JSON codes are localized by the calling Agent.
 
 Run with Python 3.12. doctor/plan/status do not create directories or call a model.
-Installation and downloads use uv and huggingface_hub, rather than another package manager
-or download implementation. Project changes belong to OpenDirector's existing API/CLI.
+Installation uses uv; downloads reuse huggingface_hub or the existing pinned range
+downloader. Project changes belong to OpenDirector's existing API/CLI.
 """
 import argparse
 from contextlib import contextmanager
@@ -147,6 +147,11 @@ def remaining_disk(profile, root=None):
     if root is not None:
         root = Path(root)
         snapshot = root / 'cache/huggingface/hub' / ('models--' + profile['modelId'].replace('/', '--')) / 'snapshots' / profile['revision']
+        model = root / 'models' / (profile['id'] + '.json')
+        if model.is_file():
+            record = read_json(model)
+            if record.get('profileSha256') == profile_digest(profile):
+                snapshot = Path(record['path'])
         for item in profile['files']:
             path = snapshot / item['path']
             if path.is_file() and path.stat().st_size == item['size']:
@@ -270,6 +275,23 @@ def download(args, profile):
     require_plan(args, profile)
     prepare(args.root)
     env = environment(args.root, hf_endpoint=args.hf_endpoint)
+    if args.download_backend == 'ranges':
+        downloader = HERE.parent / 'fasth3/download_models.py'
+        if not downloader.is_file():
+            raise DeploymentError('ranged_downloader_unavailable')
+        directory = args.root / 'range-models' / profile['id']
+        manifest = [dict(repo=profile['modelId'], sha=profile['revision'], files=[
+            dict(path=item['path'], size=item['size'],
+                 **({'lfs': {'oid': item['sha256']}} if item.get('sha256') else {}))
+            for item in profile['files']])]
+        manifest_path = args.root / 'manifests' / (profile['id'] + '.json')
+        write_json(manifest_path, manifest)
+        env.update(DOWNLOAD_ENDPOINT=args.hf_endpoint or env.get('HF_ENDPOINT', 'https://huggingface.co'),
+                   DOWNLOAD_USE_PROXY='1')
+        checked([str(args.root / 'omni-env/bin/python'), str(downloader), '--all-files',
+                 '--manifest', str(manifest_path), '--root', str(directory)], env=env)
+        snapshot = directory / profile['modelId'].split('/')[-1]
+        return register_snapshot(args.root, profile, snapshot)
     # The SDK owns caching, locking, partial downloads and revision resolution.
     script = '''import json,sys
 from huggingface_hub import snapshot_download
@@ -291,6 +313,10 @@ except Exception as error:
             facts = {}
         raise DeploymentError('model_download_failed', **facts)
     snapshot = Path(json.loads(output.stdout)['path'])
+    return register_snapshot(args.root, profile, snapshot)
+
+
+def register_snapshot(root, profile, snapshot):
     for item in profile['files']:
         path = snapshot / item['path']
         if not path.is_file() or path.stat().st_size != item['size']:
@@ -301,7 +327,7 @@ except Exception as error:
             if digest != item['sha256']:
                 raise DeploymentError('model_file_invalid', file=item['path'])
     record = dict(profileSha256=profile_digest(profile), revision=profile['revision'], path=str(snapshot))
-    write_json(args.root / 'models' / (profile['id'] + '.json'), record)
+    write_json(root / 'models' / (profile['id'] + '.json'), record)
     return dict(status='download_verified', **record)
 
 
@@ -461,6 +487,8 @@ def main():
     parser.add_argument('--gpu', default='', help='Explicit physical index or full GPU UUID within the assigned CUDA visibility.')
     parser.add_argument('--python', default=sys.executable, help='Python 3.12 interpreter for the isolated model environment.')
     parser.add_argument('--hf-endpoint', help='Optional user-selected Hugging Face mirror, scoped to this deployment.')
+    parser.add_argument('--download-backend', choices=['sdk', 'ranges'], default='sdk',
+                        help='Use the Hugging Face SDK or the existing resumable pinned range downloader.')
     parser.add_argument('--port', type=int, default=8091)
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('command', choices=['doctor', 'plan', 'install', 'download', 'start', 'status', 'stop'])

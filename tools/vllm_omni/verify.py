@@ -6,6 +6,7 @@ success from creative review, and never retry a possibly accepted generation.
 """
 import argparse
 import base64
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -89,7 +90,7 @@ def verify(root, profile, *, infer=False, url=None, timeout=240):
     readiness(url, profile['modelId'])
     report = dict(schemaVersion=1, runId=str(uuid4()), status='service_ready', modelId=profile['modelId'],
                   revision=profile['revision'], profileSha256=profile_digest(profile), url=url,
-                  creativeReview='pending')
+                  startedAt=datetime.now(timezone.utc).isoformat(), creativeReview='pending')
     if not infer:
         return report
     directory = root / 'outputs' / report['runId']

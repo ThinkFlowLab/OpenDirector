@@ -84,6 +84,15 @@ def test_eligible_is_distinct_from_qualification(profile):
     assert planned['qualification'] == profile['qualification']
 
 
+def test_image_smoke_request_is_an_output_declared_by_the_application(profile):
+    from opendirector.domain.input_rules import input_rules
+    from opendirector.domain.image_output import resolve_image_output
+    config = dict(kind='image', modelId=profile['modelId'], protocol='openai', connectionType='self_hosted', url='http://localhost:8091/v1')
+    rules = input_rules(config)
+    size = profile['verification']['request']['size']
+    assert resolve_image_output(config, rules, {'size': size}) == size
+
+
 def test_storage_budget_reuses_cached_weights_and_installed_environment(tmp_path, profile):
     profile = dict(profile, downloadBytes=123, files=[dict(path='config.json', size=123)])
     snapshot = tmp_path / 'cache/huggingface/hub' / ('models--' + profile['modelId'].replace('/', '--')) / 'snapshots' / profile['revision']
@@ -94,6 +103,17 @@ def test_storage_budget_reuses_cached_weights_and_installed_environment(tmp_path
     python.touch()
     deploy.write_json(tmp_path / 'environment.json', dict(packages=profile['packages']))
     assert deploy.remaining_disk(profile, tmp_path) == 5 * deploy.GIB
+
+
+def test_range_manifest_opt_in_preserves_fasth3_selection():
+    from tools.fasth3.download_models import selected_files
+    manifest = [dict(repo='FastVideo/FastH3-NVFP4-VAE-Decoder', sha='pinned', files=[
+        dict(path='fast-8L/config.json', size=1), dict(path='model.safetensors', size=2)])]
+    assert [item['path'] for _, item in selected_files(manifest)] == ['fast-8L/config.json']
+    assert [item['path'] for _, item in selected_files(manifest, all_files=True)] == ['fast-8L/config.json', 'model.safetensors']
+    manifest[0]['files'] = [dict(path='../outside', size=1)]
+    with pytest.raises(ValueError, match='Unsafe manifest path'):
+        list(selected_files(manifest, all_files=True))
 
 
 def test_wrong_model_is_not_readiness(monkeypatch):
