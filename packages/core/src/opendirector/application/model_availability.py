@@ -114,6 +114,12 @@ class ModelAvailability:
         self.probe.query(config, manual=manual)
         return identity(config)
 
+    def prepare_many(self, configs):
+        """Check one acceptance's dependencies within a shared query budget."""
+        configs = list(configs)
+        self.probe.query_many(configs)
+        return [identity(config) for config in configs]
+
     def assert_identity(self, config, prepared):
         if identity(config) != prepared:
             raise AvailabilityError('capability_connection_changed', '能力检查期间模型服务已变化，请重新提交。')

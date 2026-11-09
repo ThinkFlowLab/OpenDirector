@@ -1,8 +1,11 @@
 """Shared acceptance, HTTP, CLI and Agent tests with isolated model doubles."""
 import asyncio
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import socket
 import threading
+import time
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -10,23 +13,29 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 from typer.testing import CliRunner
+import uvicorn
 
 from opendirector import cli
 from opendirector.agent.tools import AgentTools
 from opendirector.application.creation_tool_assets import CreationToolAssets
-from opendirector.application.model_availability import ModelAvailability
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.model_availability import ModelAvailability, requests_for
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.capability_probe import CapabilityProbe
+from opendirector.integrations.providers import GenerationProviders
 from opendirector_api.main import create_app
 from opendirector_api import agent
 from test_creation_canvas_service import project, ver
 from test_creation_generation_service import Provider, runtime, configure
 from test_model_availability import document, NOW
-from test_tool_tasks import png, upload, images_server
+from test_tool_tasks import png, upload, images_server, video_server, H3, configure as configure_tools
+from test_generation_recovery import video
+from generation_helpers import command as generation_command, settled
 
 
 def command_for(project, config):
@@ -188,6 +197,189 @@ def test_tool_edit_uses_its_real_route_and_skips_unsupported_optional_chat(proje
         probe.close()
 
 
+def deny_new_work(availability, config, declaration, mode):
+    """Publish real negative evidence before forbidding re-admission calls."""
+    operation = next(iter(declaration['models'][0]['operations'].values()))
+    if mode == 'unsupported':
+        operation['support'] = 'unsupported'
+        for profile in operation['profiles']:
+            profile['support'] = 'unsupported'
+    else:
+        operation['execution']['state'] = 'paused'
+    availability.refresh([config['id']], manual=True)
+    private = availability.configs.resolve(config['id'], config['kind'])
+    request = next(item for item in requests_for(private) if item.profile == operation['profiles'][0]['id'])
+    assert availability.decision(private, request)['status'] == 'unavailable'
+    for method in ('prepare', 'prepare_many', 'require'):
+        setattr(availability, method, Mock(side_effect=AssertionError('accepted work must not be readmitted')))
+
+
+@pytest.mark.parametrize('denial', ['unsupported', 'paused'])
+@pytest.mark.parametrize('action', ['remote', 'download', 'cancel'])
+def test_accepted_generation_keeps_original_remote_work_after_capability_change(project, video, action, denial):
+    store, pid, session = project
+    kind = 'image' if action == 'download' else 'video'
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save(kind, 'http://127.0.0.1:12345/v1', 'demo' if kind == 'image' else H3[2], '',
+        connection_type='self_hosted', protocol='openai' if kind == 'image' else 'vllm_omni')
+    declaration = document('image_generation' if kind == 'image' else 'video_generation',
+        'text_to_image' if kind == 'image' else 'text_to_video',
+        '/v1/images/generations' if kind == 'image' else '/v1/videos', kind, model=config['modelId'])
+    queries, calls, state = [], [], {'healthy': False}
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda request: (
+        queries.append(request) or httpx.Response(200, json=declaration))))
+    availability = ModelAvailability(configs, probe)
+    def handle(request):
+        calls.append((request.method, request.url.path))
+        if request.method == 'POST':
+            return httpx.Response(200, json={'data': [{'url': config['url'] + '/result.png'}]} if kind == 'image'
+                                  else {'id': 'accepted-remote-id', 'status': 'queued'})
+        if request.method == 'DELETE':
+            assert request.url.path == '/v1/videos/accepted-remote-id'
+            return httpx.Response(200, json={'id': 'accepted-remote-id', 'status': 'cancelled'})
+        if not state['healthy']:
+            raise httpx.ReadTimeout('interrupted read', request=request)
+        if request.url.path.endswith('/content') or kind == 'image':
+            return httpx.Response(200, content=png() if kind == 'image' else video)
+        assert request.url.path == '/v1/videos/accepted-remote-id'
+        return httpx.Response(200, json={'id': 'accepted-remote-id', 'status': 'completed'})
+    async def run():
+        first = CreationGeneration(store, configs, availability=availability)
+        first.provider = GenerationProviders(first.store, httpx.MockTransport(handle), poll_interval=0)
+        second = None
+        try:
+            command = generation_command(project, config, prompt='Keep this accepted request')
+            accepted = await first.execute(command, session=session)
+            assert accepted.status == 'accepted'
+            await settled(first)
+            initial = store.snapshot(pid).jobs[0]
+            assert initial.recovery == ('download' if action == 'download' else 'remote')
+            frozen = initial.inputSnapshot.model_dump()
+            await first.close()
+            deny_new_work(availability, config, declaration, denial)
+            state['healthy'] = True
+            reopened = CreationProjects(LocalProjects(store.local.repository))
+            second = CreationGeneration(reopened, configs, availability=availability)
+            second.provider = GenerationProviders(second.store, httpx.MockTransport(handle), poll_interval=0)
+            before = len(calls)
+            if action == 'cancel':
+                cancel = parse_command(dict(commandId=uuid4(), projectId=pid, type='job.cancel',
+                    expectedVersions=[ver('job', initial)], payload=dict(jobId=initial.id)))
+                receipt = await second.execute(cancel, session=session)
+                assert receipt.status == 'applied'
+                assert await second.execute(cancel, session=session) == receipt
+                assert calls[before:] == [('DELETE', '/v1/videos/accepted-remote-id')]
+            else:
+                await second.start()
+                await settled(second)
+                assert calls[before:] == ([('GET', '/v1/result.png')] if kind == 'image' else
+                    [('GET', '/v1/videos/accepted-remote-id'), ('GET', '/v1/videos/accepted-remote-id/content')])
+            final = reopened.snapshot(pid)
+            assert len(final.jobs) == 1 and final.jobs[0].id == accepted.jobIds[0]
+            assert final.jobs[0].status == ('cancelled' if action == 'cancel' else 'succeeded')
+            assert final.jobs[0].externalTaskId == initial.externalTaskId
+            assert final.jobs[0].inputSnapshot.model_dump() == frozen
+            assert len(final.results) == (0 if action == 'cancel' else 1)
+            assert sum(method == 'POST' for method, _ in calls) == 1 and len(queries) == 2
+            count = len(calls)
+            assert second.prepare(command, session=session) == accepted and len(calls) == count
+            for method in ('prepare', 'prepare_many', 'require'):
+                getattr(availability, method).assert_not_called()
+        finally:
+            await first.close()
+            if second:
+                await second.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('denial', ['unsupported', 'paused'])
+def test_remote_tool_frozen_execution_recovery_and_replay_ignore_new_capabilities(project, denial):
+    store, project_id, session = project
+    pid = str(project_id)
+    configs = configure_tools(store, H3)
+    config = configs.list()[0]
+    source = upload(store, pid, session, 'poster.png', png((64, 36)))
+    declaration = document('video_generation', 'image_to_video', '/v1/videos', 'video', model=config['modelId'])
+    queries, calls = [], []
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda request: (
+        queries.append(request) or httpx.Response(200, json=declaration))))
+    availability = ModelAvailability(configs, probe)
+    transport = httpx.MockTransport(video_server(calls, hold=True))
+    async def run():
+        first = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store,
+            transport=transport, poll_interval=.01, concurrency=1, availability=availability)
+        second = None
+        await first.limit.acquire()
+        try:
+            value = {'id': str(uuid4()), 'tool': 'dynamic-poster', 'sourceAssetIds': [source], 'parameters': {}}
+            accepted = await first.submit(pid, value, session)
+            frozen = json.dumps(accepted['modelSnapshots'], sort_keys=True)
+            deny_new_work(availability, config, declaration, denial)
+            first.limit.release()
+            async with asyncio.timeout(5):
+                while ('GET', '/v1/videos/video_1') not in calls:
+                    await asyncio.sleep(.01)
+            await first.close()
+            second = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store,
+                transport=transport, poll_interval=0, availability=availability)
+            before = len(calls)
+            await second.recover()
+            assert calls[before:] == [('GET', '/v1/videos/video_1')]
+            recovered = second.get(pid, accepted['id'])
+            assert recovered['status'] == 'interrupted'
+            assert recovered['modelCalls'][0]['externalTaskId'] == 'video_1'
+            assert json.dumps(recovered['modelSnapshots'], sort_keys=True) == frozen
+            before = len(calls)
+            replay = await second.submit(pid, value, session)
+            assert replay['id'] == accepted['id'] and replay['modelCalls'] == recovered['modelCalls']
+            assert len(calls) == before and calls.count(('POST', '/v1/videos')) == 1 and len(queries) == 2
+            for method in ('prepare', 'prepare_many', 'require'):
+                getattr(availability, method).assert_not_called()
+        finally:
+            await first.close()
+            if second:
+                await second.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+def test_tool_admission_shares_one_budget_for_image_and_optional_chat(project):
+    store, project_id, session = project
+    pid = str(project_id)
+    configs = ModelConfigs(store.local.repository)
+    configs.save('image', 'http://image.test/v1', 'Tongyi-MAI/Z-Image-Turbo', '', connection_type='self_hosted')
+    configs.save('agent', 'http://chat.test/v1', 'demo', '', connection_type='self_hosted')
+    source = upload(store, pid, session, 'source.png', png())
+    finish, queried = threading.Event(), []
+    def respond(request):
+        queried.append(request.url.host)
+        finish.wait(2)
+        return httpx.Response(404)
+    probe = CapabilityProbe(transport=httpx.MockTransport(respond), timeout=.4)
+    async def run():
+        tools = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store,
+            concurrency=1, availability=ModelAvailability(configs, probe))
+        await tools.limit.acquire()
+        try:
+            started = time.monotonic()
+            task = await tools.submit(pid, {'id': str(uuid4()), 'tool': 'outpaint', 'sourceAssetIds': [source], 'parameters': {}}, session)
+            assert time.monotonic() - started < .65
+            assert sorted(queried) == ['chat.test', 'image.test']
+            assert set(task['modelSnapshots']) == {'image.edit', 'text.chat'}
+        finally:
+            finish.set()
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
 def test_saved_http_api_and_draft_checks_share_parser_but_not_observations(tmp_path):
     calls = []
     probe = CapabilityProbe(transport=httpx.MockTransport(lambda request: (calls.append(request) or httpx.Response(200, json=document()))))
@@ -307,5 +499,90 @@ def test_agent_reads_and_refreshes_the_same_availability(project):
         assert result['models'][0]['status'] == 'available'
     try:
         asyncio.run(run())
+    finally:
+        probe.close()
+
+
+@contextmanager
+def local_api(app):
+    """Run the real API on an ephemeral loopback port for the real CLI client."""
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        url = f'http://127.0.0.1:{listener.getsockname()[1]}'
+        server = uvicorn.Server(uvicorn.Config(app, log_level='warning', access_log=False))
+        thread = threading.Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
+        thread.start()
+        try:
+            deadline = time.monotonic() + 10
+            while not server.started and thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(.01)
+            assert server.started, 'Local API did not start'
+            yield url
+        finally:
+            server.should_exit = True
+            thread.join(10)
+            assert not thread.is_alive(), 'Local API did not shut down'
+
+
+@pytest.mark.parametrize('entry', ['cli', 'agent'])
+@pytest.mark.parametrize('state', ['supported', 'unsupported', 'paused'])
+def test_cli_and_agent_generation_apply_real_admission(project, monkeypatch, entry, state):
+    store, pid, session = project
+    provider = Provider()
+    provider.finish.set()
+    runner, config = runtime(project, provider)
+    declaration = document(model='test-agent', support='unsupported' if state == 'unsupported' else 'supported')
+    if state == 'paused':
+        declaration['models'][0]['operations']['chat']['execution']['state'] = 'paused'
+    queries = []
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda request:
+        queries.append(request) or httpx.Response(200, json=declaration)))
+    runner.availability = ModelAvailability(runner.configs, probe)
+    command = command_for(project, config)
+    arguments = command.model_dump(mode='json', exclude={'commandId', 'projectId'})
+    before = store.snapshot(pid)
+
+    async def through_agent():
+        tools = AgentTools(store, runner, runner.configs)
+        try:
+            value = await tools.execute(pid, uuid4(), session, 'submit', 'execute_command', arguments, [], None)
+            await settled(runner)
+            return value
+        finally:
+            await runner.close()
+
+    try:
+        if entry == 'agent':
+            receipt = asyncio.run(through_agent())
+        else:
+            monkeypatch.delenv('OPENDIRECTOR_AGENT_SOCKET', raising=False)
+            monkeypatch.delenv('OPENDIRECTOR_AGENT_HOST', raising=False)
+            app = create_app(store.local, generation_provider=provider, capability_probe=probe)
+            with local_api(app) as url:
+                result = CliRunner().invoke(cli.app, ['--url', url, '--project', str(pid), '--session', session,
+                    '--operation-id', str(command.commandId), 'generation', 'submit', '--file', '-'],
+                    input=json.dumps(arguments))
+                assert result.exit_code == (0 if state == 'supported' else 1), result.output
+                receipt = json.loads(result.output)
+                if state == 'supported':
+                    deadline = time.monotonic() + 5
+                    while store.snapshot(pid).jobs[0].status not in {'succeeded', 'failed'} and time.monotonic() < deadline:
+                        time.sleep(.01)
+        after = store.snapshot(pid)
+        assert len(queries) == 1 and queries[0].method == 'GET'
+        if state == 'supported':
+            assert receipt['status'] == 'accepted'
+            assert len(after.jobs) == len(provider.calls) == 1
+            job = after.jobs[0]
+            assert receipt['jobIds'] == [str(job.id)] and job.status == 'succeeded'
+            assert job.inputSnapshot.spec.modelConfigId == before.generationSpecs[0].modelConfigId
+            assert job.inputSnapshot.spec.prompt == before.generationSpecs[0].prompt
+        else:
+            assert receipt['status'] == 'rejected'
+            assert receipt['issues'][0]['code'] == ('capability_paused' if state == 'paused' else 'capability_unavailable')
+            assert not after.jobs and provider.calls == []
+            assert after.generationSpecs == before.generationSpecs
+            assert after.canvasItems == before.canvasItems
+            assert after.assets == before.assets and after.results == before.results
     finally:
         probe.close()

@@ -235,10 +235,9 @@ class ToolTasks(ToolTaskLifecycle):
             initial = self._prepare_locked(project_id, value, session, inspect=True)
         if isinstance(initial, tuple):
             return initial  # A replay does not query or reaccept its frozen job.
-        prepared = {}
-        for capability, config in initial.items():
-            if tool_request(config, capability) is not None:
-                prepared[capability] = self.availability.prepare(config)
+        selected = {capability: config for capability, config in initial.items()
+                    if tool_request(config, capability) is not None}
+        prepared = dict(zip(selected, self.availability.prepare_many(selected.values()), strict=True))
         with self.store.transaction():
             return self._prepare_locked(project_id, value, session, prepared=prepared)
 
