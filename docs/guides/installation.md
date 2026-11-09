@@ -14,6 +14,8 @@
 
 Installing dependencies and calling remote models require a network connection. Prepare self-hosted model services separately; starting this application does not install or deploy models.
 
+For a Linux NVIDIA model host, see [local vLLM-Omni deployment](vllm-omni.md).
+
 You can install and open the application, upload local media, and edit projects before connecting a model. AI chat and generation require a configured service; running the application does not require a local GPU when using a remote service.
 
 #### macOS prerequisites
