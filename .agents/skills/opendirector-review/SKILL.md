@@ -148,6 +148,14 @@ diffs do not need unrelated model, media, or browser tests.
 not this SHA does not count. Never invent a green run. Distinguish a
 model double from a real provider call; do not upgrade either.
 
+- For a user-visible tip (UI, canvas, provider settings, generation
+  flows, and similar), require screenshots, a short screen recording, or
+  a demo GIF in the pull request, or an explicit N/A with a reason
+  (docs-only, pure refactor with no UI, CI-only). If that is missing,
+  WITHHOLD while the author can still add it, and REQUEST CHANGES when
+  the tip is offered as ready. Do not PASS on CI alone. The author prompt
+  is `.github/pull_request_template.md`.
+
 ## External and fork tips
 
 Apply this in addition to the full review when the author is external or
@@ -170,14 +178,18 @@ copy still needs both `zh-CN` and `en-US` in the same change.
 
 - **PASS** — the tip matches the linked issue; no actionable defect for
   the scoped risk; Release checks and other required statuses are green
-  on this tip SHA; the tip merges cleanly onto current main.
+  on this tip SHA; the tip merges cleanly onto current main. A
+  user-visible change includes a screenshot, short recording, demo GIF,
+  or a justified N/A.
 - **WITHHOLD** — evidence is incomplete: CI is running or unsettled, the
-  tip moved, the review is unfinished, or the branch is conflicted or
-  behind main. WITHHOLD is not PASS.
+  tip moved, the review is unfinished, the branch is conflicted or
+  behind main, or a user-visible change still has no demo and no
+  justified N/A. WITHHOLD is not PASS.
 - **REQUEST CHANGES** — an actionable defect: correctness, a break of an
   AGENTS.md contract, security, missing tests for a claimed fix, a
-  dishonest claim, or a language-policy break on user-facing copy or on
-  PR text that must be English.
+  dishonest claim, a language-policy break on user-facing copy or on
+  PR text that must be English, or a ready user-visible tip with neither
+  media nor a justified N/A.
 
 One verdict only. Do not soften REQUEST CHANGES into PASS because the
 rest looks fine. Do not soften WITHHOLD into PASS because the diff looks
