@@ -50,6 +50,17 @@ def test_private_cuda_linker_alias_preserves_conflicting_files(tmp_path):
     assert alias.read_bytes() == b'operator-owned file'
 
 
+def test_environment_receipt_digest_matches_the_written_requirements(tmp_path, profile, monkeypatch):
+    import hashlib
+    monkeypatch.setattr(deploy, 'require_plan', lambda *a: {'gpu': {'uuid': 'GPU-assigned'}})
+    monkeypatch.setattr(deploy, 'checked', lambda *a, **k: None)
+    monkeypatch.setattr(deploy, 'capture', lambda *a, **k: 'example==1.0')
+    deploy.install(SimpleNamespace(root=tmp_path, python='python', hf_endpoint=None), profile)
+    receipt = deploy.read_json(tmp_path / 'environment.json')
+    requirements = (tmp_path / 'installed-requirements.txt').read_bytes()
+    assert receipt['requirementsSha256'] == hashlib.sha256(requirements).hexdigest()
+
+
 def test_selection_respects_assigned_devices(profile):
     facts = host(profile)
     facts['visibleGpuUuids'] = []

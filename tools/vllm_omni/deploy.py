@@ -291,7 +291,8 @@ def install(args, profile):
         frozen = capture([uv, 'pip', 'freeze', '--python', python], env=env)
         if frozen is None:
             raise DeploymentError('environment_inspection_failed')
-        (args.root / 'installed-requirements.txt').write_text(frozen + '\n')
+        frozen += '\n'
+        (args.root / 'installed-requirements.txt').write_text(frozen, encoding='utf-8')
         write_json(args.root / 'environment.json', dict(packages=profile['packages'],
                    requirementsSha256=hashlib.sha256(frozen.encode()).hexdigest()))
     return dict(status='installed', environment=str(args.root / 'omni-env'))
