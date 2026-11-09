@@ -8,6 +8,29 @@ import {
   type ToolTask,
 } from "../src/backend/tools.ts";
 import type { ProjectSnapshot } from "../src/contracts/generated.ts";
+import { setActiveLocale } from "../src/i18n/messages.ts";
+
+test("structured matting failures survive changed backend wording in both locales", () => {
+  const task: ToolTask = {
+    id: "task", tool: "video-matting", status: "failed", outputs: [],
+    phase: null, error: "Backend wording has changed entirely.",
+  };
+  try {
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      setActiveLocale(locale);
+      for (const [code, expected] of [
+        ["tool_concept_translation", locale === "zh-CN" ? "改用简短的英文描述" : "short English description"],
+        ["tool_no_video_match", locale === "zh-CN" ? "视频中没有识别到" : "Could not find"],
+      ]) {
+        const message = toolTaskMessage({ ...task, errorDetails: { code, params: { label: "三花猫" } } })!;
+        assert.ok(message.includes(expected));
+        assert.ok(message.includes("三花猫"));
+      }
+    }
+  } finally {
+    setActiveLocale("zh-CN");
+  }
+});
 
 test("tool cancellation messages distinguish stopping, remote acknowledgement and historical uncertainty", () => {
   const task: ToolTask = {

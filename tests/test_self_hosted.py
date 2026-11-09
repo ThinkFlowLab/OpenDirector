@@ -148,7 +148,7 @@ def test_fasth3_480p_follows_reference_orientation(tmp_path, dimensions, expecte
 
 
 @pytest.mark.parametrize('origin,expected_auth', [('http://localhost:9999','Bearer private-token'),('https://cdn.example',None)])
-def test_self_hosted_image_result_auth_stays_on_configured_origin(tmp_path, origin, expected_auth):
+def test_self_hosted_image_result_auth_stays_on_configured_origin(tmp_path, origin, expected_auth, public_cdn):
     store=LocalProjects(tmp_path)
     def handle(request):
         if request.method=='POST':

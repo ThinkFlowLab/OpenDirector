@@ -120,7 +120,7 @@ def test_catalog_reports_availability_by_capability(project):
     assert {'image.edit', 'video.first_frame', 'audio.speech', 'text.chat'} <= set(configured['capabilities'])
     assert any(field['key'] == 'preset' and field['options'] for field in tools['image-presets']['fields'])
     preset_field = next(field for field in tools['image-presets']['fields'] if field['key'] == 'preset')
-    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '面部三视图', '产品三视图', '分镜', '多机位']
+    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '面部三视图', '产品三视图', '连续分镜图', '多机位']
 
 
 def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
@@ -204,6 +204,47 @@ def test_inpainting_only_changes_the_masked_region(project):
     assert image.getpixel((5, 5)) == (0, 0, 255) and image.getpixel((60, 60))[0] > 200
 
 
+@pytest.mark.parametrize('cdn_result', ['image', 'timeout', 'invalid_url', 'malformed_url'])
+def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(project, cdn_result, public_cdn):
+    store, project_id, session = project
+    configs = ModelConfigs(store.local.repository)
+    configs.save('image', 'https://images.test/v1', 'seedream-5.0-pro', 'service-secret', protocol='openai')
+    source = upload(store, project_id, session, 'blue.png', png())
+    mask = upload(store, project_id, session, 'mask.png', base64.b64decode(box_mask((64, 48), (10, 8, 30, 32))))
+    calls = []
+
+    def handle(request):
+        calls.append(request.method)
+        if request.method == 'POST':
+            assert request.headers['authorization'] == 'Bearer service-secret'
+            assert b'b64_json' in request.read()
+            url = 'file:///private.png' if cdn_result == 'invalid_url' else 'https://cdn.test/result.png'
+            if cdn_result == 'malformed_url':
+                url = 'https://[broken/result.png'
+            return httpx.Response(200, json={'data': [{'url': url}]})
+        assert request.url.host == '93.184.216.34' and request.headers['host'] == 'cdn.test'
+        assert 'authorization' not in request.headers
+        if cdn_result == 'timeout':
+            raise httpx.ReadTimeout('download interrupted', request=request)
+        return httpx.Response(200, content=png(color='red'))
+
+    task = run(store, configs, httpx.MockTransport(handle), project_id, session,
+               {'tool': 'smart-edit', 'sourceAssetIds': [source], 'maskAssetId': mask,
+                'parameters': {'editMode': 'selection', 'prompt': '改成红色'}})
+    assert calls.count('POST') == 1
+    if cdn_result == 'image':
+        assert task['status'] == 'succeeded', task['error']
+        result = output_image(store, project_id, task)
+        assert result.getpixel((20, 20)) == (255, 0, 0)
+        assert result.getpixel((5, 5)) == (0, 0, 255)
+    else:
+        assert task['status'] == 'failed'
+        assert '提交结果不明' not in task['error']
+        assert ('连接超时' if cdn_result == 'timeout' else '接口协议') in task['error']
+        if cdn_result in {'invalid_url', 'malformed_url'}:
+            assert calls == ['POST']
+
+
 def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project):
     store, project_id, session = project
     configs = configure(store, ZIMAGE)
@@ -219,7 +260,7 @@ def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project)
 
 @pytest.mark.parametrize('preset,count,size', [
     ('three-view', 1, (2048, 1152)),
-    ('face-three-view', 1, (2688, 1152)),
+    ('face-three-view', 1, (3456, 1152)),
     ('product-three-view', 1, (2048, 1152)),
     ('storyboard', 4, (2048, 1152)),
     ('multi-camera', 4, (2048, 1152)),
@@ -242,6 +283,11 @@ def test_image_presets_reframe_portrait_reference_and_register_each_result(proje
         assert width / height == pytest.approx(size[0] / size[1], abs=.04)
     if preset == 'face-three-view':
         assert '左侧90度'.encode() in calls[0] and '右侧90度'.encode() in calls[0]
+        # The three heads must stay apart; touching profiles are the reported defect.
+        assert '不接触、不重叠、不粘连'.encode() in calls[0]
+        # The last two heads must face opposite ways; two matching profiles were the second defect.
+        assert '鼻尖朝向画面右方'.encode() in calls[0] and '鼻尖朝向画面左方'.encode() in calls[0]
+        assert '朝向相反、左右镜像对称'.encode() in calls[0]
     elif preset == 'product-three-view':
         assert '近正交投影'.encode() in calls[0]
 
@@ -547,6 +593,7 @@ def test_layer_decompose_by_boxes_and_description_without_an_editor(project):
     task = run(store, configs, transport, project_id, session,
                {'tool': 'layer-decompose', 'sourceAssetIds': [source], 'parameters': {'mode': 'description', 'prompt': '吉他'}})
     assert task['status'] == 'failed' and '吉他' in task['error']
+    assert task['errorDetails'] == {'code': 'tool_concept_translation', 'params': {'label': '吉他'}}
 
 
 def test_selection_preview_returns_alpha_masks_without_output_assets(project):
@@ -669,6 +716,7 @@ def test_smart_edit_uses_the_active_mode_and_retains_legacy_combined_edits(proje
     assert task['status'] == 'succeeded', task['error']
     assert calls[0].count(b'name="image"') == (1 if mode == 'selection' else 2)
     assert ('画笔说明'.encode() in calls[0]) == (mode != 'selection')
+    assert ('逐像素对齐'.encode() in calls[0]) == (mode != 'annotation')
     result = output_rgba(store, project_id, task)
     assert result.getpixel((20, 20)) == (255, 0, 0, 255)
     outside = (255, 0, 0, 255) if mode == 'annotation' else (0, 0, 255, 255)
@@ -754,15 +802,16 @@ def test_video_matting_keeps_the_tracked_subject_over_the_chosen_background(proj
     red, green, blue = frame.getpixel((58, 18))
     assert green > 200 and red < 60 and blue < 60  # The untracked right half is green screen.
     task = run(store, configs, httpx.MockTransport(tracking_server(log)), project_id, session,
-               {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'transparent', 'prompt': '狗'}})
+               {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'transparent', 'prompt': '猫咪'}})
     assert task['status'] == 'succeeded', task['error']
-    assert log[-1] == 'dog' and task['outputs'][0]['type'] == 'video/webm'
+    assert log[-1] == 'cat' and task['outputs'][0]['type'] == 'video/webm'
     path = tmp_path / ('output.' + task['outputs'][0]['type'].split('/')[-1])
     path.write_bytes(CreationToolAssets(store).read_bytes(project_id, task['outputs'][0]['id']))
     assert probe(path, 'stream_tags=alpha_mode').get('tags', {}).get('alpha_mode') == '1'
     task = run(store, configs, httpx.MockTransport(tracking_server(log, empty=True)), project_id, session,
                {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'black'}})
     assert task['status'] == 'failed' and '没有识别到「人物」' in task['error']
+    assert task['errorDetails'] == {'code': 'tool_no_video_match', 'params': {'label': '人物'}}
 
 
 def configure_depth(store):

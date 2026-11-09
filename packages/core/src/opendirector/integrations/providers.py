@@ -92,16 +92,20 @@ class GenerationProviders(VolcengineGeneration):
         if not config or config.get('protocol') in {None, 'volcengine'}:
             return await super().resume_result(config, suffix, url)
         # Only send a service token back to that exact configured origin.
-        base, target = urlsplit(config['url']), urlsplit(url)
-        headers = auth_headers(config) if (base.scheme, base.netloc) == (target.scheme, target.netloc) else {}
         try:
+            base, target = urlsplit(config['url']), urlsplit(url)
+            same_origin = (base.scheme, base.netloc) == (target.scheme, target.netloc)
             async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15)) as client:
-                async with client.stream('GET', url, headers=headers, follow_redirects=False) as response:
+                if not same_origin:
+                    return suffix, await self._download(client, url, secrets=(config.get('apiKey', ''),), public_only=True)
+                async with client.stream('GET', url, headers=auth_headers(config), follow_redirects=False) as response:
                     return suffix, await bounded(response, stage='download', secrets=(config.get('apiKey', ''),))
         except httpx.TimeoutException:
             raise transport_failure('download', timeout=True) from None
         except httpx.HTTPError:
             raise transport_failure('download') from None
+        except (httpx.InvalidURL, ValueError, TypeError, KeyError, AttributeError):
+            raise protocol_failure('download') from None
 
     async def generate(self, config, task, submitted, *, result_ready=None):
         adapter = self._profile_adapter(config)

@@ -32,10 +32,10 @@ from pathlib import Path
 prompt = sys.stdin.read()
 assert 'Segment plan' not in prompt
 if 'Continue plan' in prompt:
- assert 'Save a plan' not in prompt
+ assert ('Save a plan' in prompt) == (os.environ.get('TEST_MISSING_ROLLOUT') == '1')
  runtime = os.environ['TEST_RUNTIME']
  resume_args = {'codex': ['resume', 'test-native', '-'], 'claude': ['--resume', 'test-native']}
- assert sys.argv[2:] == resume_args.get(runtime, ['--session', 'test-native'])
+ assert sys.argv[2:] == ([] if os.environ.get('TEST_MISSING_ROLLOUT') == '1' else resume_args.get(runtime, ['--session', 'test-native']))
 workspace_marker = Path('.continuation-test')
 if 'Continue plan' in prompt:
  assert workspace_marker.read_text() == str(Path.cwd())
@@ -111,7 +111,11 @@ def test_cli_bridge_preserves_utf8_with_legacy_stdio_encoding():
 
 
 @pytest.mark.parametrize('runtime', ['default', 'opencode', 'codex', 'claude'])
-def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime):
+@pytest.mark.parametrize("missing_rollout", [False, True])
+def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime, missing_rollout):
+    missing_rollout = missing_rollout and runtime == "codex"
+    monkeypatch.setattr(native, "codex_session_available", lambda _: not missing_rollout)
+    monkeypatch.setenv("TEST_MISSING_ROLLOUT", "1" if missing_rollout else "0")
     local = LocalProjects(tmp_path)
     config = ModelConfigs(tmp_path).save('agent','http://localhost:9999/v1','test','',auth_mode='none')
     script = tmp_path / 'fake_cli.py'
@@ -166,7 +170,7 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime)
 
 def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
     monkeypatch.setattr(native, "executable", lambda _: sys.executable)
-    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules', '--ephemeral'))
+    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules'))
     for runtime in ('default', 'opencode', 'codex', 'claude'):
         work = tmp_path / runtime
         work.mkdir()
@@ -194,11 +198,11 @@ def test_codex_only_passes_supported_isolation_flags(tmp_path, monkeypatch):
     monkeypatch.setattr(native, 'executable', lambda _: binary)
     monkeypatch.setattr(native, '_CODEX_ISOLATION', {})
     monkeypatch.setattr(native.subprocess, 'run', lambda *args, **kwargs:
-        SimpleNamespace(stdout=b'Options:\n      --ephemeral\n', stderr=b''))
+        SimpleNamespace(stdout=b'Options:\n      --ephemeral\n      --ignore-user-config\n      --ignore-rules\n', stderr=b''))
     args, _ = native.command('codex', tmp_path, '', 'token', None, '', [])
-    assert '--ephemeral' in args
-    assert '--ignore-user-config' not in args
-    assert '--ignore-rules' not in args
+    assert '--ephemeral' not in args
+    assert '--ignore-user-config' in args
+    assert '--ignore-rules' in args
 
 
 def test_codex_inherits_windows_system_proxy_without_overriding_explicit_proxy(monkeypatch):
@@ -434,3 +438,13 @@ def test_bundled_launch_reports_incomplete_install(tmp_path, monkeypatch):
         assert caught.value.code == 'agent_dependency_unavailable'
         assert caught.value.status == 503
     asyncio.run(check())
+
+
+def test_codex_resume_requires_a_persisted_rollout(tmp_path, monkeypatch):
+    monkeypatch.setenv('CODEX_HOME', str(tmp_path))
+    session = '01a1b721-ec28-7f33-85a6-0cf1355f6627'
+    assert not native.codex_session_available(session)
+    rollout = tmp_path / 'sessions' / '2026' / f'rollout-{session}.jsonl'
+    rollout.parent.mkdir(parents=True)
+    rollout.write_text('{}\n')
+    assert native.codex_session_available(session)

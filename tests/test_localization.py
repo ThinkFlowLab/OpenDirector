@@ -19,6 +19,15 @@ def test_accept_language_uses_the_primary_language() -> None:
     assert wants_english(request("")) is False
 
 
+def test_matting_error_codes_remain_localized_when_backend_copy_changes() -> None:
+    for code, expected in [
+        ('tool_concept_translation', 'short English subject description'),
+        ('tool_no_video_match', 'not found in the video'),
+    ]:
+        assert expected in localized_error(request('en-US'), chinese='更新后的中文', status=422, code=code)
+        assert localized_error(request('zh-CN'), chinese='更新后的中文', status=422, code=code) == '更新后的中文'
+
+
 def test_chinese_and_english_messages_do_not_mix() -> None:
     assert (
         localized_error(

@@ -74,6 +74,8 @@ async def smart_edit(ctx: ToolContext):
             input_image = marked
             instruction += '。图上的笔画、箭头与文字是编辑指示'
         instruction += '，完成修改后移除这些辅助标记'
+    if mode != 'annotation' and ctx.mask:
+        instruction += '。这是原图上的局部修改，请严格保持原图构图、镜头、主体位置、大小和姿势，使编辑结果与原图逐像素对齐'
     edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78, references=references)
     if mode != 'annotation' and ctx.mask:
         # A selection is an exact editing boundary: pixels outside it stay original.
@@ -116,7 +118,7 @@ async def inpainting_remove(ctx: ToolContext):
     mask = media.mask_from(ctx.mask, image.size)
     await ctx.progress('正在消除并填补')
     drawn = await ctx.edit(media.soften_region(image, mask), '移除涂抹区域中的物体与文字，用周围环境自然填补，画面干净完整', 0.8)
-    return [image_output(media.blend(image, drawn, media.feather(mask, max(3, min(image.size) / 120))), '消除')]
+    return [image_output(media.blend(image, drawn, media.feather(mask, max(3, min(image.size) / 120))), '消除笔')]
 
 def _yaw_text(yaw):
     names = ['正面', '右前方', '右侧面', '右后方', '背面', '左后方', '左侧面', '左前方']
@@ -176,11 +178,14 @@ PRESETS = {
         '保持参考图画风，纯净浅灰背景、均匀柔光、弱透视，无剧情场景、文字、标签、水印、分割线或额外视图。',)),
     'face-three-view': ImagePreset('面部三视图', (
         '以参考图人物的面部为唯一身份依据，生成同一人物的面部三视图参考板。'
-        '超宽横版画面分为三个等宽区域，从左至右严格排列：正面、左侧90度、右侧90度。'
+        '3:1超宽横版画面均分为三个等宽区域，从左至右严格排列：正面、左侧90度、右侧90度。'
+        '第二格（左侧90度）鼻尖朝向画面右方，第三格（右侧90度）鼻尖朝向画面左方；'
+        '两张侧脸朝向相反、左右镜像对称，不要输出两张朝向相同的侧脸。'
+        '每个区域只放一个居中的头肩像，三个头像之间留有自然间隔，不接触、不重叠、不粘连。'
         '每个视图只呈现完整头部至肩颈，头顶、下巴、耳朵均完整，不出现背面或全身视图。'
         '保持同一身份、年龄、脸型、骨相、五官比例、肤色、发际线、发型及识别性细节，左右侧面符合真实结构。'
         '三个头部大小一致、眼睛基线对齐、中性表情、视线随朝向自然变化，面部不被头发遮挡。'
-        '保持参考图画风，纯净浅灰背景、均匀柔光，无美颜改脸、夸张透视、文字、标签、水印或额外人物。',), (2688, 1152)),
+        '保持参考图画风、纯净浅灰背景、均匀柔光，无美颜改脸、夸张透视、文字、标签、水印或额外人物。',), (3456, 1152)),
     'product-three-view': ImagePreset('产品三视图', (
         '以参考图中的产品为唯一设计依据，生成同一产品的工业设计三视图参考板。'
         '横版画面分为三个等宽区域，从左至右严格排列：正视图、右侧90度侧视图、后视图。'
@@ -188,7 +193,7 @@ PRESETS = {
         '三个视图保持结构、尺寸关系、材质、颜色、表面纹理、接口、按钮、接缝及标识一致，细节在视角之间符合物理对应关系。'
         '不可见部位依据已知结构作合理且一致的补全，不增加功能件或改变产品设计。'
         '产品独立展示，纯白背景、均匀棚拍光，无人物、手、包装道具、剧情场景、说明文字、尺寸标注、水印或额外视图；保留原有品牌标识。',)),
-    'storyboard': ImagePreset('分镜', ('把镜头拉远成远景建立镜头，完整交代周围环境，主体在画面中较小',
+    'storyboard': ImagePreset('连续分镜图', ('把镜头拉远成远景建立镜头，完整交代周围环境，主体在画面中较小',
                            '改为中景镜头，主体占画面一半高度，动作清晰',
                            '改为近景镜头，镜头推近到主体胸口以上，突出表情',
                             '改为特写镜头，只拍主体面部或关键细节，背景虚化')),

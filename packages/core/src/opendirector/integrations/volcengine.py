@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import json
+import socket
+from ipaddress import ip_address
 from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
@@ -33,6 +35,38 @@ async def bounded(response, *, stage, secrets=(), limit=MAX_ASSET_BYTES):
     return bytes(data)
 
 
+async def _public_result_url(url):
+    """Pin an unconfigured download to checked public DNS answers, retaining TLS identity."""
+    try:
+        target = httpx.URL(url)
+    except httpx.InvalidURL:
+        raise protocol_failure('download') from None
+    host = target.host.rstrip('.').lower()
+    if (target.scheme not in {'http', 'https'} or not host or target.userinfo
+            or '%' in host or host == 'localhost' or host.endswith('.localhost')):
+        raise protocol_failure('download')
+    try:
+        addresses = [ip_address(host)]
+    except ValueError:
+        try:
+            answers = await asyncio.wait_for(asyncio.to_thread(
+                socket.getaddrinfo, host, target.port or (443 if target.scheme == 'https' else 80),
+                type=socket.SOCK_STREAM), timeout=15)
+        except (OSError, asyncio.TimeoutError):
+            raise transport_failure('download') from None
+        addresses = [ip_address(answer[4][0]) for answer in answers]
+    for address in addresses:
+        checked_address = getattr(address, 'ipv4_mapped', None) or address
+        if (not checked_address.is_global or checked_address.is_multicast
+                or checked_address.is_reserved):
+            raise protocol_failure('download')
+    if not addresses:
+        raise protocol_failure('download')
+    # A pooled connection to one IP must not reuse another hostname's TLS identity.
+    headers = {'Host': target.netloc.decode('ascii'), 'Connection': 'close'}
+    return target.copy_with(host=str(addresses[0])), headers, {'sni_hostname': target.host}
+
+
 class VolcengineGeneration:
     def __init__(self, store, transport=None, poll_interval=3, retry_delays=(0.5, 1.0)):
         self.store, self.transport, self.poll_interval = store, transport, poll_interval
@@ -52,15 +86,17 @@ class VolcengineGeneration:
                     raise
             await asyncio.sleep(self.retry_delays[attempt])
 
-    async def resume_result(self, config, suffix, url):
+    async def resume_result(self, config, suffix, url, *, public_only=False):
         secrets = (config['apiKey'],) if config else ()
         try:
             async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=self.transport, trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15)) as client:
-                return suffix, await self._download(client, url, secrets=secrets)
+                return suffix, await self._download(client, url, secrets=secrets, public_only=public_only)
         except httpx.TimeoutException:
             raise transport_failure('download', timeout=True) from None
         except httpx.HTTPError:
             raise transport_failure('download') from None
+        except (httpx.InvalidURL, ValueError, TypeError):
+            raise protocol_failure('download') from None
 
     def validate(self, kind, config):
         if kind in {"video", "audio"}:
@@ -207,12 +243,29 @@ class VolcengineGeneration:
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             raise protocol_failure(stage) from None
 
-    async def _download(self, client, url, *, secrets=()):
+    async def _download(self, client, url, *, secrets=(), public_only=False):
         parts = urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
             raise protocol_failure('download')
         # CDN downloads never receive provider credentials.
         async def download():
+            if public_only:
+                current = httpx.URL(url)
+                for _ in range(6):
+                    pinned, headers, extensions = await _public_result_url(current)
+                    async with client.stream('GET', pinned, headers=headers, extensions=extensions,
+                                             follow_redirects=False) as response:
+                        if response.is_redirect:
+                            location = response.headers.get('location')
+                            if not location:
+                                raise protocol_failure('download')
+                            try:
+                                current = current.join(location)
+                            except httpx.InvalidURL:
+                                raise protocol_failure('download') from None
+                            continue
+                        return await bounded(response, stage='download', secrets=secrets)
+                raise protocol_failure('download')
             async with client.stream("GET", url, follow_redirects=True) as response:
                 return await bounded(response, stage='download', secrets=secrets)
         return await self._retry_read(download)

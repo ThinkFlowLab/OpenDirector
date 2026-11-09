@@ -95,18 +95,20 @@ export function NodeTaskPanel({
     const preset = capability?.fields
       ?.find((field) => field.key === "preset")
       ?.options?.find((option) => option.value === parameters.preset);
+    const presetName = translateToolText(
+      locale,
+      preset?.label ?? String(parameters.preset ?? ""),
+    );
     const note =
       errors[0] ??
       (runnable
         ? t("tools.nodeTask.presetNote")
         : (capability?.reason ?? t("tools.nodeTask.notConnected")));
-    const model = capability?.models?.["image.edit"]?.find(
-      (item) => item.id === parameters.imageModelConfigId,
-    );
+    const models = capability?.models?.["image.edit"] ?? [];
     return (
       <section
         className="cw-node-task-panel cw-preset-task-panel"
-        aria-label={t("tools.nodeTask.presetTitle")}
+        aria-label={presetName}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -115,32 +117,54 @@ export function NodeTaskPanel({
           }
         }}
       >
-        <strong>{t("tools.nodeTask.presetTitle")}</strong>
-        <span className="cw-preset-task-name">
-          {translateToolText(
-            locale,
-            preset?.label ?? String(parameters.preset ?? ""),
+        <header className="cw-preset-task-head">
+          <strong>{presetName}</strong>
+          <TooltipButton
+            label={t("tools.nodeTask.close", { title: presetName })}
+            onClick={onClose}
+          >
+            <CanvasIcon name="close" size={14} />
+          </TooltipButton>
+        </header>
+        <div className="cw-preset-task-row">
+          {models.length > 0 && (
+            <select
+              className="cw-preset-task-model"
+              aria-label={t("tools.imageEditor.model.aria")}
+              value={String(parameters.imageModelConfigId ?? "")}
+              onChange={(event) =>
+                change("imageModelConfigId", event.target.value)
+              }
+            >
+              {!parameters.imageModelConfigId && (
+                <option value="">
+                  {t("tools.imageEditor.model.auto", { model: models[0]!.label })}
+                </option>
+              )}
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
           )}
-        </span>
-        <span
-          className="cw-preset-task-note"
-          role="status"
-          title={model ? `${note} (${model.label})` : note}
-        >
-          {note}
-        </span>
-        <button
-          type="button"
-          className="cw-node-task-primary"
-          disabled={!runnable || errors.length > 0}
-          title={!runnable || errors.length ? note : undefined}
-          onClick={() => {
-            onDraftChange(task);
-            onGenerate?.(task);
-          }}
-        >
-          {t("tools.nodeTask.generate")}
-        </button>
+          <span className="cw-preset-task-note" role="status">
+            {note}
+          </span>
+          <button
+            type="button"
+            className="cw-node-task-primary"
+            disabled={!runnable || errors.length > 0}
+            title={!runnable || errors.length ? note : undefined}
+            onClick={() => {
+              onDraftChange(task);
+              onGenerate?.(task);
+            }}
+          >
+            <CanvasIcon name="sparkle" size={15} />
+            {t("tools.nodeTask.generate")}
+          </button>
+        </div>
       </section>
     );
   }

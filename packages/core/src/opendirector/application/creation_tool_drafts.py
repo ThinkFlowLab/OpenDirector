@@ -85,6 +85,28 @@ def freeze_inputs(service, project_id, value):
                 targetIntent=target_intent(snapshot, target) if target else None)
 
 
+def _numbered(title):
+    head, separator, tail = title.rpartition(' ')
+    return (head, int(tail)) if separator and head and tail.isascii() and tail.isdigit() else (title, None)
+
+
+def result_title(snapshot, base, used=(), exclude=None):
+    """Keep result names tied to their tool; a repeated run takes the next number."""
+    family, index = _numbered(base)
+    occupied = [item.title for item in snapshot.canvasItems
+                if item.visible and item.title and (exclude is None or item.id != exclude)]
+    taken = (*occupied, *used)
+    if base not in taken:
+        return base
+    numbers = [0]
+    for title in taken:
+        head, number = _numbered(title)
+        if head != family:
+            continue
+        numbers.append(1 if number is None else number)
+    return f'{family} {max(numbers) + 1}'
+
+
 def release_placeholder(service, task, session=None):
     """Release only the accepted task's unchanged target; never infer UI defaults."""
     snapshot = service.projects.snapshot(task['projectId'])
@@ -156,6 +178,7 @@ def publish_outputs(service, task, session, policy):
             expect('canvas_item', item)
     if policy == 'if_current' and not matching:
         return unplaced()
+    titles = []
     for index, output in enumerate(task['outputs']):
         item_id = UUID(output_item_id(task, index, output['kind']))
         item = next((item for item in snapshot.canvasItems if item.id == item_id), None)
@@ -181,17 +204,23 @@ def publish_outputs(service, task, session, policy):
                 expect('canvas_item', item)
                 operations.append(dict(type='canvas.show', payload=dict(item=item.model_dump(mode='json'))))
             continue
+        # The placeholder already carries the tool/preset name in the UI language.
+        title = result_title(snapshot, item.title if item else output['title'],
+                             titles, item.id if item else None)
+        titles.append(title)
         if item:
             editable(snapshot, item.id)
             expect('canvas_item', item)
             if not item.visible:
                 operations.append(dict(type='canvas.show', payload=dict(item=item.model_dump(mode='json'))))
+            if item.title != title:
+                operations.append(dict(type='canvas.update', payload=dict(itemId=item.id, title=title)))
             operations.append(dict(type='canvas.materialize', payload=dict(itemId=item.id, asset=asset_ref(asset).model_dump(mode='json'), discardGenerationDraft=True)))
         else:
             width, height = media_card_size(asset.kind, asset.metadata.width, asset.metadata.height,
                                             source.width if source else 320, source.height if source else 240)
             operations.append(dict(type='canvas.show', payload=dict(item=dict(id=item_id, projectId=snapshot.project.id,
-                kind=asset.kind, title=output['title'], position=dict(x=(source.position.x + source.width + 120 if source else 80) + index * 360, y=source.position.y if source else 80),
+                kind=asset.kind, title=title, position=dict(x=(source.position.x + source.width + 120 if source else 80) + index * 360, y=source.position.y if source else 80),
                 width=width, height=height, binding=dict(role='material', objectRef=asset_ref(asset).model_dump(mode='json'))))))
         if asset.kind == 'image':
             editor_id = uuid5(UUID(task['id']), f'output-editor-{item_id}')

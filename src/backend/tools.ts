@@ -10,7 +10,11 @@ import type {
 import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
 import { ApiError, errorMessage, json, request } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
-import { toolTaskError, toolTaskPhase } from "../canvas/toolTaskText.ts";
+import {
+  toolTaskError,
+  toolTaskPhase,
+  type ToolTaskFailure,
+} from "../canvas/toolTaskText.ts";
 import { toolReasonText } from "../canvas/toolReasonText.ts";
 import { tNow } from "../i18n/messages.ts";
 import {
@@ -66,6 +70,7 @@ export interface ToolTask {
     | "interrupted";
   phase: string | null;
   error: string | null;
+  errorDetails?: ToolTaskFailure;
   outputs: ToolTaskOutput[];
   createdAt?: string;
   finishedAt?: string | null;
@@ -130,7 +135,7 @@ export function toolTaskMessage(task: ToolTask): string | undefined {
           : tNow("errors.tools.taskMessage.interruptedEnded");
     return tNow("errors.tools.taskMessage.interrupted", { detail });
   }
-  return toolTaskError(task.error);
+  return toolTaskError(task.error, undefined, task.errorDetails);
 }
 
 export interface ToolCanvasOrigin {

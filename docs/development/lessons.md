@@ -23,3 +23,9 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** A relevant test fails and comparison shows that it also fails on the baseline.
 - **Lesson:** Commits `28d61dce` and `0a5630ac` each recorded the same generation test failing on the baseline. That historical record does not establish whether the test still fails today.
 - **Check:** Record the versions and results used in the comparison. Link an existing issue or create one when appropriate. Report the check as failed; a baseline failure is not a pass.
+
+## Provider result URLs are an independent trust boundary
+
+- **Trigger:** Accepting a cross-origin result URL from a configured model service.
+- **Lesson:** [PR #210](https://github.com/ThinkFlowLab/OpenDirector/pull/210) added compatible image CDN downloads without provider credentials, but initially left arbitrary local and private hosts reachable. Credential isolation and bounded responses do not constrain the network destination.
+- **Check:** Preserve explicitly configured local service origins; validate all DNS answers for unconfigured hosts, connect to a checked public IP while retaining the original Host and TLS identity, and revalidate every redirect. Cover local metadata addresses, IPv6, mixed DNS answers, redirect loops, and recovery without another model submission.

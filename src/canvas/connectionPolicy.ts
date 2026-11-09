@@ -63,9 +63,12 @@ export function referenceMaterial(node: CanvasNode): string | null {
   return null;
 }
 
-/** Ports and creation menus are discoverable before the source has content. */
+/** Empty generation nodes keep their ports; assets need readable material. */
 export function canStartReference(node: CanvasNode): boolean {
-  return Boolean(nodeDownstreamKinds(node).length);
+  return (
+    Boolean(nodeDownstreamKinds(node).length) &&
+    (node.data.mediaRole !== "asset" || Boolean(referenceMaterial(node)))
+  );
 }
 
 export function canSourceReference(node: CanvasNode): boolean {

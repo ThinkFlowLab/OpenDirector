@@ -443,7 +443,9 @@ class ToolTasks(ToolTaskLifecycle):
             if current.get('cancelRequested'):
                 await self._stopped(task['projectId'], task['id'])
             else:
-                await self._update(directory, task, status='failed', localState='stopped', phase=None, error=str(failure), finishedAt=_now())
+                await self._update(directory, task, status='failed', localState='stopped', phase=None,
+                                   error=str(failure), errorDetails={'code': failure.code, 'params': getattr(failure, 'params', {})},
+                                   finishedAt=_now())
         except Exception:  # noqa: BLE001 — a recipe bug must still end the task visibly.
             current = self.get(task['projectId'], task['id'])
             if current.get('cancelRequested') or self.closing:

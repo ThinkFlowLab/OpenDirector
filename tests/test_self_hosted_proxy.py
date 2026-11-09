@@ -116,7 +116,7 @@ def test_all_model_kinds_submit_resume_and_cancel_use_direct_connection(monkeypa
     assert flags and all(flag is False for flag in flags)
 
 
-def test_external_result_cdn_keeps_proxy_and_never_receives_service_token(monkeypatch):
+def test_external_result_cdn_keeps_proxy_and_never_receives_service_token(monkeypatch, public_cdn):
     async_client = httpx.AsyncClient
     flags = []
     def client(**kwargs):

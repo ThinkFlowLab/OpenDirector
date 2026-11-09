@@ -3,7 +3,7 @@ import math
 
 from PIL import Image, ImageChops, ImageFilter
 
-from opendirector.application.tool_context import Output, Source, ToolContext
+from opendirector.application.tool_context import Output, Source, ToolContext, ToolInputError
 from opendirector.domain.capabilities import EditMask, Tracks
 from opendirector.domain.projects import ProjectError
 from opendirector.media import processing as media
@@ -111,7 +111,9 @@ async def video_matting(ctx: ToolContext):
         await ctx.progress(f"正在识别并跟踪「{'、'.join(label for _, label in pairs)}」")
         tracks = await ctx.track(clip.read_bytes(), tuple(concept for concept, _ in pairs))
         if not any(tracks.frames):
-            raise ProjectError(f"视频中没有识别到「{'、'.join(label for _, label in pairs)}」，请换一种描述后重试。", 422)
+            label = '、'.join(label for _, label in pairs)
+            raise ToolInputError(f'视频中没有识别到「{label}」，请换一种描述后重试。',
+                                 code='tool_no_video_match', label=label)
         await ctx.progress('正在合成抠像视频')
         await blocking(_write_mattes, tracks, work.path / 'mattes')
         data, suffix = await blocking(media.matte, clip, str(work.path / 'mattes' / '%05d.png'), info['fps'],

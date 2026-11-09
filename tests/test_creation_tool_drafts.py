@@ -33,6 +33,43 @@ def test_media_card_size_matches_pixels_and_compacts_audio():
     assert media_card_size('audio', 1080, 1920, 300, 520) == (300, 112)
 
 
+def test_result_titles_stay_named_after_their_preset_without_collisions():
+    from types import SimpleNamespace
+
+    from opendirector.application.creation_tool_drafts import result_title
+
+    def snapshot(*titles):
+        return SimpleNamespace(canvasItems=[SimpleNamespace(id=uuid4(), title=title, visible=True)
+                                            for title in titles])
+
+    assert result_title(snapshot(), '面部三视图') == '面部三视图'
+    assert result_title(snapshot('面部三视图'), '面部三视图') == '面部三视图 2'
+    assert result_title(snapshot('面部三视图', '面部三视图 2'), '面部三视图') == '面部三视图 3'
+    # The empty placeholder that is about to receive the result is not a conflict.
+    placeholder = snapshot('面部三视图')
+    assert result_title(placeholder, '面部三视图', exclude=placeholder.canvasItems[0].id) == '面部三视图'
+    # A later run of a numbered preset continues the same series.
+    assert result_title(snapshot('连续分镜图 1', '连续分镜图 2'), '连续分镜图 1') == '连续分镜图 3'
+    # Outputs of one run are numbered in publication order.
+    assert result_title(snapshot(), '连续分镜图 1', ['连续分镜图 1']) == '连续分镜图 2'
+    # Unrelated names keep their own family.
+    assert result_title(snapshot('超清 4K'), '超清 4K') == '超清 4K 2'
+
+
+@pytest.mark.parametrize('suffix', ['²', '①', '٢', '２'])
+def test_result_titles_treat_unicode_digit_suffixes_as_ordinary_text(suffix):
+    from types import SimpleNamespace
+    from opendirector.application.creation_tool_drafts import result_title
+
+    title = f'Area m {suffix}'
+    snapshot = SimpleNamespace(canvasItems=[
+        SimpleNamespace(id=uuid4(), title=name, visible=True)
+        for name in ['Preset', f'Preset {suffix}', title]
+    ])
+    assert result_title(snapshot, 'Preset') == 'Preset 2'
+    assert result_title(snapshot, title) == f'{title} 2'
+
+
 @pytest.fixture
 def prepared(project, monkeypatch):
     store, pid, session = project
@@ -128,7 +165,8 @@ def test_stale_or_forged_draft_cannot_accept_task(prepared, change):
     assert service.list(str(pid)) == [] and seen == []
 
 
-def test_source_change_keeps_candidate_then_explicit_adoption_is_independent(prepared):
+@pytest.mark.parametrize('title_collision', [False, True])
+def test_source_change_keeps_candidate_then_explicit_adoption_is_independent(prepared, title_collision):
     store, pid, session, service, value, source, _, _ = prepared
     async def run():
         try:
@@ -142,11 +180,19 @@ def test_source_change_keeps_candidate_then_explicit_adoption_is_independent(pre
             current = store.snapshot(pid)
             target = current.canvasItems[1]
             assert not target.visible
-            assert service.placement(str(pid), value['id'], 'placed', session, policy='explicit')['placement'] == 'placed'
+            if title_collision:
+                owner = current.canvasItems[0]
+                assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', owner)],
+                            itemId=owner.id, title=target.title).status == 'applied'
+            adopted = service.placement(str(pid), value['id'], 'placed', session, policy='explicit')
+            assert adopted['placement'] == 'placed'
             current = store.snapshot(pid)
             assert current.canvasItems[0].binding.objectRef.assetId == asset.id
             assert current.canvasItems[1].visible
             assert current.canvasItems[1].binding.objectRef.assetId != source.id
+            assert current.canvasItems[1].title == ('Pending 2' if title_collision else 'Pending')
+            assert service.placement(str(pid), value['id'], 'placed', session, policy='explicit') == adopted
+            assert store.snapshot(pid) == current
         finally: await service.close()
     asyncio.run(run())
 

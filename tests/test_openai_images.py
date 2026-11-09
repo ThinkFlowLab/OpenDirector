@@ -20,6 +20,7 @@ from generation_helpers import new_project, prepared, tasks
 from opendirector.domain.input_rules import input_rules
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.domain.capabilities import ImageRequest
+from opendirector.domain.generation import GenerationError
 from opendirector.integrations.model_adapters import OpenAIImages, adapter_for
 from opendirector.integrations.providers import GenerationProviders
 
@@ -149,6 +150,20 @@ def adapter_calls(adapter):
 
 
 CONFIG = {'kind': 'image', 'url': GPT_IMAGE['url'], 'modelId': 'gpt-image-1', 'apiKey': KEY, 'protocol': 'openai'}
+
+
+def test_malformed_cdn_url_is_a_download_protocol_error_after_accepted_submit():
+    seen = []
+
+    def handle(request):
+        seen.append(request.method)
+        return httpx.Response(200, json={'data': [{'url': 'https://[broken/result.png'}]})
+
+    adapter = OpenAIImages(httpx.MockTransport(handle))
+    with pytest.raises(GenerationError) as error:
+        asyncio.run(adapter.image(CONFIG, ImageRequest(prompt='edit', width=64, height=48, image=png())))
+    assert (error.value.details.stage, error.value.details.category) == ('download', 'protocol')
+    assert seen == ['POST']
 
 
 def test_capability_adapter_keeps_the_gpt_image_request_shape():

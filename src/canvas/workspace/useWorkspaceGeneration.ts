@@ -229,9 +229,20 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       return;
     }
     const id = crypto.randomUUID();
+    // Keep preset result names tied to the selected recipe.
+    const presetLabel =
+      task.tool === "image-presets"
+        ? toolCatalog.capabilities["image-presets"]?.fields
+            ?.find((field) => field.key === "preset")
+            ?.options?.find(
+              (option) => option.value === task.parameters.preset,
+            )?.label
+        : undefined;
     const title = translateToolText(
       locale,
-      CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title ?? task.tool,
+      presetLabel ??
+        CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title ??
+        task.tool,
     );
     const outputKind = toolOutputKind(task.tool, origin.kind);
     const targetNodeId = outputKind ? crypto.randomUUID() : undefined;

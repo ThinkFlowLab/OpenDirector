@@ -48,3 +48,18 @@ test("tool task errors never leak persisted Chinese", () => {
   assert.equal(toolTaskError(null), undefined);
   setActiveLocale("zh-CN");
 });
+
+test("matting errors distinguish prompt translation from an empty tracking result in both locales", () => {
+  const translation = "无法识别「三花猫」，请改用英文描述，或在“模型接入”中添加对话模型以自动翻译。";
+  const missing = "视频中没有识别到「cat」，请换一种描述后重试。";
+  try {
+    setActiveLocale("zh-CN");
+    assert.match(toolTaskError(translation)!, /「三花猫」.*改用简短的英文描述/);
+    assert.equal(toolTaskError(missing), missing);
+    setActiveLocale("en-US");
+    assert.match(toolTaskError(translation)!, /translate "三花猫".*short English description/);
+    assert.match(toolTaskError(missing)!, /Could not find "cat" in the video/);
+  } finally {
+    setActiveLocale("zh-CN");
+  }
+});

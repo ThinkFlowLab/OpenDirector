@@ -34,7 +34,7 @@ Use it to explore visual ideas, refine assets, and make short films. Projects st
 - **Timeline editing**: Arrange assets, adjust start and end points, speed, and volume, then preview and render an MP4. You can also export JSON, FCPXML, and asset bundles.
 - **Local projects, your choice of models**: The canvas saves automatically to your machine. Configure multiple models for a service and switch between them as needed.
 
-If image generation repeatedly times out or disconnects through a system proxy, open **Settings → Model connections → Edit service → Advanced connection** and set **Network connection mode** to **Direct connection**. This affects that service's model requests and result downloads without changing the system proxy. Check the provider's records before starting another attempt when request acceptance is unknown.
+If image generation repeatedly times out or disconnects through a system proxy, open **Settings → Model connections → Edit service → Advanced connection** and set **Network connection mode** to **Direct (no proxy)**. This affects that service's model requests and result downloads without changing the system proxy. Check the provider's records before starting another attempt when request acceptance is unknown.
 
 ## Example film: We Can Still Win
 
