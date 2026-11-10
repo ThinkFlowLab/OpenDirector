@@ -18,14 +18,25 @@ test('uses all fallback owners only when no label matches', () => {
     ['hsliuustc0106', 'princepride']);
   assert.deepEqual(selectReviewers({labels: ['area:performance'], author: 'kunkunblueberry'}), []);
 });
-function fixture(pr) {
-  const calls = [];
+type FixturePr = {
+  state?: string;
+  draft?: boolean;
+  user?: { login: string };
+  requested_reviewers?: { login: string }[];
+  labels?: { name: string }[];
+};
+function fixture(pr: FixturePr) {
+  const calls: string[] = [];
   const summary = {addHeading(){return this;}, addRaw(){return this;}, addTable(){return this;}, async write(){}};
   return {calls, args: {context: {eventName: 'pull_request_target', repo: {owner:'o',repo:'r'},
     payload: {pull_request:{number: 1}}}, core: {info(){}, warning(){}, summary}, github: {
-      paginate: async () => [], rest: {pulls: {
+      paginate: async () => [], rest: {
+      issues: {
+        getLabel: async (_request: {name: string}): Promise<void> => {},
+        createLabel: async (_request: {name: string}): Promise<void> => {},
+      }, pulls: {
         get: async () => ({data: pr}), listReviews: {},
-        requestReviewers: async request => { calls.push(request.reviewers[0]);
+        requestReviewers: async (request: {reviewers: string[]}) => { calls.push(request.reviewers[0]);
           if (request.reviewers[0] === 'yenuo26') throw Object.assign(new Error('unavailable'), {status:422}); },
       }},
     }}};
@@ -43,12 +54,12 @@ test('draft PRs do not send invitations', async () => {
 test('label sync creates only missing labels and preserves existing ones', async () => {
   const f = fixture({});
   f.args.context.eventName = 'push';
-  const created = [];
+  const created: string[] = [];
   f.args.github.rest.issues = {
     getLabel: async ({name}) => {
       if (name !== 'area:docs') throw Object.assign(new Error('missing'), {status:404});
     },
-    createLabel: async ({name}) => created.push(name),
+    createLabel: async ({name}) => { created.push(name); },
   };
   await run(f.args);
   assert.deepEqual(created, ['area:performance', 'area:desktop']);
