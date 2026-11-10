@@ -24,6 +24,8 @@ window.__ModuleLoader__.load({
       audios: 'Audio results', speech: 'Voiceover', picture: 'Image', mediaType: 'Media type',
       newProject: 'New project', projectName: 'Project name', model: 'Model', local: 'Self-hosted', hosted: 'Hosted',
       output: 'Image size', voice: 'Voice ID', prompt: 'Describe the image', speechText: 'Text to read aloud',
+      chooseOutput: 'Choose an image size', useModelDefault: 'Use model default',
+      outputUnavailable: '{size} is unavailable on this model. Choose a different size or model.',
       generate: 'Generate one candidate', submitting: 'Submitting…', checkGeneration: 'Check submission',
       noModels: 'Configure a compatible model in OpenDirector first.',
       failedToSubmit: 'Could not submit generation. Check your project and model settings.',
@@ -65,6 +67,8 @@ window.__ModuleLoader__.load({
       audios: '音频结果', speech: '配音', picture: '图片', mediaType: '素材类型',
       newProject: '新建工程', projectName: '工程名称', model: '模型', local: '自部署', hosted: '在线服务',
       output: '图片尺寸', voice: '音色 ID', prompt: '描述要生成的图片', speechText: '要朗读的文字',
+      chooseOutput: '选择图片尺寸', useModelDefault: '使用模型默认尺寸',
+      outputUnavailable: '当前模型不支持 {size}。请选择其他尺寸或切换模型。',
       generate: '生成一个候选', submitting: '正在提交…', checkGeneration: '查询提交状态',
       noModels: '请先在 OpenDirector 配置支持此操作的模型。',
       failedToSubmit: '暂时无法提交生成，请检查工程和模型设置。',
@@ -297,7 +301,7 @@ window.__ModuleLoader__.load({
       const busy = useRef(false)
       const attempt = useRef(null)
       const [catalog, setCatalog] = useState(null)
-      const [form, setForm] = useState({ kind: 'image', projectId: '', projectName: '', modelId: '', prompt: '', output: 0, voice: '' })
+      const [form, setForm] = useState({ kind: 'image', projectId: '', projectName: '', modelId: '', prompt: '', output: null, voice: '' })
       const [result, setResult] = useState(null)
       const [progress, setProgress] = useState(null)
       const [submitting, setSubmitting] = useState(false)
@@ -308,6 +312,11 @@ window.__ModuleLoader__.load({
       const title = t(isEdit ? 'edit' : 'create')
       const choices = catalog?.models.filter(model => model.kind === form.kind && (!source || model.maxImages > 0))
       const model = choices?.find(item => item.id === form.modelId)
+      const outputs = model?.imageOutputs ?? []
+      const outputIndex = form.output
+        ? outputs.findIndex(item => item.size === form.output.size && item.aspectRatio === form.output.aspectRatio) : 0
+      const output = outputs[outputIndex]
+      const outputUnavailable = Boolean(model && form.output && !output)
       const referenceLimit = model?.maxImages ?? 1
       const tooManyReferences = Boolean(model) && references.length > referenceLimit
       const jobId = result?.jobId
@@ -315,8 +324,8 @@ window.__ModuleLoader__.load({
       const unknown = result?.status === 'unknown'
       const locked = submitting || unknown || Boolean(jobId) || result?.draftSaved === true
       const update = (key, value) => setForm(previous => ({ ...previous, [key]: value,
-        ...(key === 'kind' && { modelId: '' }),
-        ...((key === 'kind' || key === 'modelId') && { output: 0, voice: '' }),
+        ...(key === 'kind' && { modelId: '', output: null }),
+        ...((key === 'kind' || key === 'modelId') && { voice: '' }),
       }))
       useEffect(() => {
         dialog.current.showModal()
@@ -358,7 +367,7 @@ window.__ModuleLoader__.load({
       }, [jobId, projectId, pollRun])
       async function submit(event) {
         event.preventDefault()
-        if (busy.current || (locked && !unknown)) return
+        if (busy.current || (!unknown && (locked || outputUnavailable))) return
         busy.current = true
         setSubmitting(true)
         const check = attempt.current !== null
@@ -370,7 +379,7 @@ window.__ModuleLoader__.load({
             ...(source && { sourceResultIds: references.map(item => item.resultId) }),
             ...(newProject && { projectName: form.projectName.trim() }),
             kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
-            output: model?.imageOutputs[form.output], voice: form.voice,
+            output, voice: form.voice,
           }
           const response = await fetch('/api/opendirector/creation', {
             method: 'POST',
@@ -426,10 +435,14 @@ window.__ModuleLoader__.load({
           ...choices.map(item => h('option', { key: item.id, value: item.id },
             `${item.modelId} · ${t(item.connectionType === 'self_hosted' ? 'local' : 'hosted')}`)))),
           choices.length === 0 && h('p', null, t('noModels')),
-          model?.imageOutputs.length > 0 && field('output', h('select', {
-            disabled: locked, value: form.output, onChange: event => update('output', Number(event.target.value)),
-          }, ...model.imageOutputs.map(({ size, aspectRatio }, index) =>
+          outputs.length > 0 && field('output', h('select', {
+            disabled: locked, value: outputUnavailable ? '' : outputIndex,
+            onChange: event => update('output', outputs[Number(event.target.value)]),
+          }, outputUnavailable && h('option', { value: '', disabled: true }, t('chooseOutput')),
+          ...outputs.map(({ size, aspectRatio }, index) =>
             h('option', { key: index, value: index }, [size, aspectRatio].filter(Boolean).join(' · '))))),
+          outputUnavailable && h('p', { role: 'alert' }, t('outputUnavailable').replace('{size}', form.output.size)),
+          outputUnavailable && outputs.length === 0 && button(t('useModelDefault'), () => update('output', null), { disabled: locked }),
           form.kind === 'audio' && field('voice', h('input', {
             required: model?.voiceRequired, disabled: locked, maxLength: 200, value: form.voice,
             onChange: event => update('voice', event.target.value),
@@ -442,7 +455,8 @@ window.__ModuleLoader__.load({
             value: form.prompt, onChange: event => update('prompt', event.target.value),
           })),
           (!locked || submitting || unknown) && button(t(submitting ? 'submitting' : unknown ? 'checkGeneration' : 'generate'),
-            undefined, { type: 'submit', primary: true, disabled: submitting || !model || tooManyReferences || !form.prompt.trim() })),
+            undefined, { type: 'submit', primary: true,
+              disabled: submitting || !model || tooManyReferences || outputUnavailable || !form.prompt.trim() })),
         result?.status === 'rejected' && h('p', { role: 'alert' }, t(result.code === 'storage_busy' ? 'adoptBusy'
           : ['creation.references', 'creation.reference_limit', 'result.candidate_missing'].includes(result.code) ? 'referencesChanged'
             : 'failedToSubmit')),
