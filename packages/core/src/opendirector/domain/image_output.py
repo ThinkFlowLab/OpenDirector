@@ -5,9 +5,12 @@ Unknown compatible services retain the adapter's fixed-size choices.
 """
 from .projects import ProjectError
 from .video_output import RATIOS
+from .bigmodel_image import BIGMODEL_IMAGE_OUTPUTS
 
 
 def image_outputs(config, profile):
+    if profile == 'bigmodel-glm-image':
+        return [dict(aspectRatio=ratio, size=size) for ratio, size in BIGMODEL_IMAGE_OUTPUTS]
     if config.get('protocol') == 'volcengine':
         # This adapter only declares the existing automatic 2K request. Do not
         # promise a ratio without an explicit output contract for that service.

@@ -6,6 +6,7 @@ from opendirector.domain.video_capabilities import capability_fields, seedance_2
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
+from .bigmodel_image import is_bigmodel_image
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -18,6 +19,9 @@ def _adapter_rules(config):
              'maxAudios': 0, 'imageBytes': 8 * 1024 * 1024, 'requestBytes': 48 * 1024 * 1024,
              'videoModes': ['first_frame'] if kind == 'video' else []}
     rules.update(maxVideos=0, videoBytes=DEFAULT_VIDEO_BYTES)
+    if is_bigmodel_image(config):
+        rules.update(profile='bigmodel-glm-image', allowedKinds=['text'], maxImages=0)
+        return rules
     if is_moss_image(config):
         rules.update(profile='moss-image', allowedKinds=['text'], maxImages=0,
                      maxPromptCharacters=MOSS_IMAGE_PROMPT_CHARACTERS)

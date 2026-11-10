@@ -399,6 +399,7 @@ IssueCode = Literal['invalid_input', 'revision_conflict', 'role_restricted', 'mi
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',
+                    'bigmodel_image_size', 'bigmodel_image_reference', 'bigmodel_image_prompt',
                     'voice_library_unsupported', 'voice_connection_changed', 'voice_reference_required',
                     'voice_transcript_required', 'voice_transcript_too_long', 'voice_description_too_long',
                     'voice_not_found', 'voice_delete_unsupported',
