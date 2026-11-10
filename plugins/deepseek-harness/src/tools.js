@@ -74,13 +74,13 @@ function presentationMeta(_args, value) {
   if (Array.isArray(value?.jobIds)) meta.jobIds = value.jobIds.slice(0, 8)
   if (Array.isArray(value?.projects)) meta.projectCount = value.projects.length
   const kind = value?.job?.execution?.kind
-  if (kind === 'image' || kind === 'video') {
+  if (kind === 'image' || kind === 'video' || kind === 'audio') {
     const candidates = value.results.filter(result => result.asset?.kind === kind)
     if (!candidates.length) return meta
     const references = value.job.inputSnapshot?.references ?? []
     const source = kind === 'video'
       ? references.find(ref => ref.role === 'continuation' || ref.role === 'first_frame')
-      : references.find(ref => ref.asset?.kind === 'image')
+      : kind === 'image' ? references.find(ref => ref.asset?.kind === 'image') : undefined
     meta.mediaPreview = {
       kind,
       projectName: value.projectName,

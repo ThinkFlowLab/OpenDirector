@@ -15,6 +15,22 @@ export const Config = Schema.object({
   requestTimeoutMs: Schema.number().default(30000),
 })
 
+function isBrowserAction(request) {
+  const site = request.headers.get('sec-fetch-site')
+  return request.headers.get('x-opendirector-action') === '1' && (!site || site === 'same-origin')
+}
+
+async function actionInput(request) {
+  const input = await request.json()
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Invalid action')
+  return input
+}
+
+function errorCode(error) {
+  if (error instanceof HttpError) return error.code
+  return error instanceof InputError ? error.key : 'unavailable'
+}
+
 export function apply(ctx, config) {
   const requestedLocale = config?.locale === 'zh-CN' ? 'zh-CN' : 'en-US'
   const requestedMessages = createMessages(requestedLocale)
@@ -94,14 +110,12 @@ export function apply(ctx, config) {
       async fetch(request) {
         // The DSH connection authenticates the request. Require a same-origin
         // browser action as well, so a cross-origin form cannot adopt a result.
-        const site = request.headers.get('sec-fetch-site')
-        if (request.headers.get('x-opendirector-action') !== '1' || (site && site !== 'same-origin')) {
+        if (!isBrowserAction(request)) {
           return new Response(null, { status: 403, headers })
         }
         let input
         try {
-          input = await request.json()
-          if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Invalid action')
+          input = await actionInput(request)
         } catch {
           return new Response(null, { status: 400, headers })
         }
@@ -120,11 +134,44 @@ export function apply(ctx, config) {
           if (error instanceof UnknownOperationError || (check && !(error instanceof InputError))) {
             return Response.json({ status: 'unknown' }, { headers })
           }
-          const code = error instanceof HttpError ? error.code
-            : error instanceof InputError ? error.key : 'unavailable'
-          return Response.json({ status: 'rejected', code }, { headers })
+          return Response.json({ status: 'rejected', code: errorCode(error) }, { headers })
         }
       },
     }), 'OpenDirector result adoption')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/creation',
+      methods: ['GET', 'POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        if (request.method === 'GET') {
+          try {
+            const params = new URL(request.url, 'http://localhost').searchParams
+            const { signal } = request
+            const value = params.has('job')
+              ? await client.creationStatus(params.get('project'), params.get('job'), { signal })
+              : { models: await client.creationModels({ signal }) }
+            return Response.json(value, { headers })
+          } catch (error) {
+            return new Response(null, { status: error instanceof InputError ? 400 : 502, headers })
+          }
+        }
+        if (!isBrowserAction(request)) return new Response(null, { status: 403, headers })
+        let input
+        try {
+          input = await actionInput(request)
+        } catch {
+          return new Response(null, { status: 400, headers })
+        }
+        try {
+          const value = await client.startCreation(input, { signal: request.signal })
+          return Response.json({ ...value, canvasUrl: client.canvasUrl(input.projectId) }, { headers })
+        } catch (error) {
+          const unknown = error instanceof UnknownOperationError || (input.check === true && !(error instanceof InputError))
+          return Response.json(unknown ? { status: 'unknown' }
+            : { status: 'rejected', code: errorCode(error) }, { headers })
+        }
+      },
+    }), 'OpenDirector creation controls')
   })
 }

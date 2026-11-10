@@ -71,6 +71,7 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
   const recent = await library({ url: '/api/opendirector/library?project=' + project })
   const { results } = await recent.json()
   assert.deepEqual(results.map(result => [result.resultId, result.selected, result.prompt]), [
+    [audio, false, ''],
     [candidate, false, 'Add a lamp'],
     [original, true, ''],
   ])

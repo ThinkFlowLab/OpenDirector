@@ -2,7 +2,7 @@
 window.__ModuleLoader__.load({
   id: '@opendirector/dsh-plugin',
   factory(require) {
-    const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = require('react')
+    const { cloneElement, createElement: h, useEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
       images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
@@ -11,8 +11,6 @@ window.__ModuleLoader__.load({
       create: 'Create media', send: 'Send request', cancel: 'Cancel',
       draftBusy: 'Finish or clear your current draft first.', brief: 'Describe what to change',
       shot: 'Describe the next shot', ready: 'Request sent.', copyId: 'Copy result ID', copied: 'Result ID copied.',
-      createPrompt: 'Create in OpenDirector: ',
-      editPrompt: 'Edit the image. Show the new candidate before adopting it.',
       firstFramePrompt: 'Use the image as the first frame of a video. Show the candidate before adopting it.',
       continuePrompt: 'Continue the clip with a compatible video model. Show the candidate before adopting it.',
       resume: 'Resume project', close: 'Close', chooseProject: 'Choose a project',
@@ -23,6 +21,18 @@ window.__ModuleLoader__.load({
       adoptBusy: 'Save and close the open OpenDirector canvas, then try again.',
       adoptConflict: 'This result or canvas has changed. Refresh the project before trying again.',
       adoptFailed: 'Could not adopt this result. Check the project and try again.',
+      audios: 'Audio results', speech: 'Voiceover', picture: 'Image', mediaType: 'Media type',
+      newProject: 'New project', projectName: 'Project name', model: 'Model', local: 'Self-hosted', hosted: 'Hosted',
+      output: 'Image size', voice: 'Voice ID', prompt: 'Describe the image', speechText: 'Text to read aloud',
+      generate: 'Generate one candidate', submitting: 'Submitting…', checkGeneration: 'Check submission',
+      noModels: 'Configure a compatible model in OpenDirector first.',
+      failedToSubmit: 'Could not submit generation. Check your project and model settings.',
+      generationUnknown: 'Submission has not been confirmed. Check the original operation.',
+      draftSaved: 'The generation settings are saved on the canvas.',
+      waiting: 'Waiting for OpenDirector…', queued: 'Queued', running: 'Generating…',
+      succeeded: 'Candidate ready', stopped: 'Generation stopped', failed: 'Generation failed',
+      quota: 'The model service reported a quota error. Check the provider before trying again.',
+      checkProgress: 'Check progress', download: 'Download',
       reference: 'OpenDirector project and result',
     }
     const zh = {
@@ -32,8 +42,6 @@ window.__ModuleLoader__.load({
       create: '创作素材', send: '发送请求', cancel: '取消',
       draftBusy: '请先发送或清空当前草稿。', brief: '描述你想改什么',
       shot: '描述接下来的镜头', ready: '请求已发送。', copyId: '复制结果 ID', copied: '已复制结果 ID。',
-      createPrompt: '用 OpenDirector 创作：',
-      editPrompt: '修改这张图片，先展示修改候选，再由我决定是否采用。',
       firstFramePrompt: '用这张图片作为视频首帧，先展示候选，再由我决定是否采用。',
       continuePrompt: '用支持续写的模型接着生成这段视频，先展示候选，再由我决定是否采用。',
       resume: '继续工程', close: '关闭', chooseProject: '选择工程',
@@ -44,6 +52,18 @@ window.__ModuleLoader__.load({
       adoptBusy: '请保存并关闭已打开的 OpenDirector 画布，然后重试。',
       adoptConflict: '结果或画布状态已变，请刷新工程后再试。',
       adoptFailed: '暂时无法采用此结果，请检查工程后重试。',
+      audios: '音频结果', speech: '配音', picture: '图片', mediaType: '素材类型',
+      newProject: '新建工程', projectName: '工程名称', model: '模型', local: '自部署', hosted: '在线服务',
+      output: '图片尺寸', voice: '音色 ID', prompt: '描述要生成的图片', speechText: '要朗读的文字',
+      generate: '生成一个候选', submitting: '正在提交…', checkGeneration: '查询提交状态',
+      noModels: '请先在 OpenDirector 配置支持此操作的模型。',
+      failedToSubmit: '暂时无法提交生成，请检查工程和模型设置。',
+      generationUnknown: '尚未确认任务是否提交，请查询原操作。',
+      draftSaved: '本次生成配置已保存到画布。',
+      waiting: '等待 OpenDirector…', queued: '排队中', running: '生成中…',
+      succeeded: '候选已生成', stopped: '生成已停止', failed: '生成失败',
+      quota: '模型服务返回额度错误，请检查服务商后再试。',
+      checkProgress: '查询进度', download: '下载',
       reference: 'OpenDirector 工程与结果',
     }
 
@@ -55,6 +75,8 @@ window.__ModuleLoader__.load({
       font: 'inherit', fontSize: '.82em', padding: '.3rem .65rem', borderRadius: '.45rem',
       border, background: 'transparent', color: 'inherit', cursor: 'pointer',
     }
+    const dialogStyle = { width: 'min(46rem, calc(100vw - 2rem))', maxHeight: '80vh', boxSizing: 'border-box',
+      color: 'inherit', background: surface, border, borderRadius: '.85rem', padding: '1rem' }
 
     function button(label, onClick, options = {}) {
       const { primary, ...attrs } = options
@@ -78,13 +100,12 @@ window.__ModuleLoader__.load({
 
     function CreateMedia({ t, useInput, inputActions }) {
       const request = useComposerRequest(useInput, inputActions)
-      const [busy, setBusy] = useState(false)
-      const [open, setOpen] = useState(false)
+      const [open, setOpen] = useState(null)
       return h('div', { style: row },
-        button(t('create'), () => setBusy(!request(t('createPrompt'))), { title: 'OpenDirector' }),
-        button(t('resume'), () => setOpen(true), { 'aria-haspopup': 'dialog' }),
-        busy && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t('draftBusy')),
-        open && h(ProjectLibrary, { t, request, onClose: () => setOpen(false) }))
+        button(t('create'), () => setOpen('creation'), { title: 'OpenDirector', 'aria-haspopup': 'dialog' }),
+        button(t('resume'), () => setOpen('library'), { 'aria-haspopup': 'dialog' }),
+        open === 'library' && h(ProjectLibrary, { t, request, onClose: () => setOpen(null) }),
+        open === 'creation' && h(GenerationDialog, { t, request, onClose: () => setOpen(null) }))
     }
 
     async function readLibrary(projectId, signal) {
@@ -123,9 +144,9 @@ window.__ModuleLoader__.load({
       }, [projectId, refresh])
       const current = library?.projectId === projectId ? library : null
       return h('dialog', {
-        ref: dialog, onClose, 'aria-label': t('resume'),
-        style: { width: 'min(46rem, calc(100vw - 2rem))', maxHeight: '80vh',
-          boxSizing: 'border-box', color: 'inherit', background: surface, border, borderRadius: '.85rem', padding: '1rem' },
+        ref: dialog, onClose: event => { if (event.target === event.currentTarget) onClose() },
+        'aria-label': t('resume'),
+        style: dialogStyle,
       },
       h('header', { style: { ...row, justifyContent: 'space-between' } },
         h('strong', null, t('resume')),
@@ -150,6 +171,163 @@ window.__ModuleLoader__.load({
               title: `${t('candidate')} ${index + 1}`,
               onAdopted: () => setRefresh(value => value + 1),
             })))))
+    }
+
+    function GenerationDialog({ source, t, request, onClose }) {
+      const dialog = useRef(null)
+      const busy = useRef(false)
+      const attempt = useRef(null)
+      const [catalog, setCatalog] = useState(null)
+      const [form, setForm] = useState({ kind: 'image', projectId: '', projectName: '', modelId: '', prompt: '', output: 0, voice: '' })
+      const [result, setResult] = useState(null)
+      const [progress, setProgress] = useState(null)
+      const [submitting, setSubmitting] = useState(false)
+      const [pollError, setPollError] = useState(false)
+      const [pollRun, setPollRun] = useState(0)
+      const isEdit = Boolean(source)
+      const title = t(isEdit ? 'edit' : 'create')
+      const choices = catalog?.models.filter(model => model.kind === form.kind && (!source || model.canEdit))
+      const model = choices?.find(item => item.id === form.modelId)
+      const jobId = result?.jobId
+      const projectId = result?.projectId
+      const unknown = result?.status === 'unknown'
+      const locked = submitting || unknown || Boolean(jobId) || result?.draftSaved === true
+      const update = (key, value) => setForm(previous => ({ ...previous, [key]: value,
+        ...(key === 'kind' && { modelId: '' }),
+        ...((key === 'kind' || key === 'modelId') && { output: 0, voice: '' }),
+      }))
+      useEffect(() => {
+        dialog.current.showModal()
+      }, [])
+      useEffect(() => {
+        const controller = new AbortController()
+        Promise.all([
+          isEdit ? Promise.resolve({ projects: [] }) : readLibrary(null, controller.signal),
+          fetch('/api/opendirector/creation', { signal: controller.signal }).then(response => {
+            if (!response.ok) throw new Error('Model catalog unavailable')
+            return response.json()
+          }),
+        ]).then(([projects, models]) => {
+          if (!controller.signal.aborted) setCatalog({ ...projects, ...models })
+        }).catch(() => {
+          if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
+        })
+        return () => controller.abort()
+      }, [isEdit])
+      useEffect(() => {
+        if (!jobId) return
+        const controller = new AbortController()
+        let timer
+        async function poll() {
+          try {
+            const params = new URLSearchParams({ project: projectId, job: jobId })
+            const response = await fetch('/api/opendirector/creation?' + params, { signal: controller.signal })
+            if (!response.ok) throw new Error('Job status unavailable')
+            const value = await response.json()
+            if (controller.signal.aborted) return
+            setProgress(value)
+            if (['accepted', 'queued', 'running'].includes(value.status)) timer = setTimeout(poll, 2500)
+          } catch {
+            if (!controller.signal.aborted) setPollError(true)
+          }
+        }
+        poll()
+        return () => { controller.abort(); clearTimeout(timer) }
+      }, [jobId, projectId, pollRun])
+      async function submit(event) {
+        event.preventDefault()
+        if (busy.current || (locked && !unknown)) return
+        busy.current = true
+        setSubmitting(true)
+        const check = attempt.current !== null
+        try {
+          const newProject = !source && form.projectId === 'new'
+          attempt.current ??= {
+            projectId: source?.projectId ?? (newProject ? crypto.randomUUID() : form.projectId),
+            operationId: crypto.randomUUID(),
+            ...(source && { sourceResultId: source.resultId }),
+            ...(newProject && { projectName: form.projectName.trim() }),
+            kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
+            output: model?.imageOutputs[form.output], voice: form.voice,
+          }
+          const response = await fetch('/api/opendirector/creation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
+            body: JSON.stringify({ ...attempt.current, check }),
+          })
+          if (response.status === 400 || response.status === 403) {
+            attempt.current = null
+            setResult({ status: 'rejected' })
+            return
+          }
+          if (!response.ok) throw new Error('Submission unavailable')
+          const value = await response.json()
+          setResult({ ...value, projectId: attempt.current.projectId })
+          if (value.status !== 'unknown') attempt.current = null
+        } catch {
+          setResult({ status: attempt.current ? 'unknown' : 'rejected' })
+        } finally {
+          busy.current = false
+          setSubmitting(false)
+        }
+      }
+      function field(label, control) {
+        return h('label', { style: { display: 'grid', gap: '.3rem' } }, t(label), cloneElement(control, { 'aria-label': t(label) }))
+      }
+      const status = progress?.status
+      const outcome = status === 'failed' && progress.category === 'quota' ? 'quota'
+        : ['cancelled', 'interrupted'].includes(status) ? 'stopped'
+          : status === 'accepted' ? 'queued' : status
+      return h('dialog', {
+        ref: dialog, onClose: event => { if (event.target === event.currentTarget) onClose() },
+        'aria-label': title, style: dialogStyle,
+      },
+        h('header', { style: { ...row, justifyContent: 'space-between' } },
+          h('strong', null, title), button(t('close'), () => dialog.current.close())),
+        !catalog && h('p', { role: 'status' }, t('loading')),
+        catalog?.error && h('p', { role: 'alert' }, t('libraryError')),
+        catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
+          !source && field('chooseProject', h('select', {
+            required: true, disabled: locked, value: form.projectId, onChange: event => update('projectId', event.target.value),
+          }, h('option', { value: '' }, t('chooseProject')),
+          ...catalog.projects.map(({ id, name }) => h('option', { key: id, value: id }, name)),
+          h('option', { value: 'new' }, t('newProject')))),
+          !source && form.projectId === 'new' && field('projectName', h('input', {
+            required: true, disabled: locked, value: form.projectName, onChange: event => update('projectName', event.target.value),
+          })),
+          !source && field('mediaType', h('select', {
+            disabled: locked, value: form.kind, onChange: event => update('kind', event.target.value),
+          }, h('option', { value: 'image' }, t('picture')), h('option', { value: 'audio' }, t('speech')))),
+          field('model', h('select', {
+            required: true, disabled: locked, value: form.modelId, onChange: event => update('modelId', event.target.value),
+          }, h('option', { value: '' }, t('model')),
+          ...choices.map(item => h('option', { key: item.id, value: item.id },
+            `${item.modelId} · ${t(item.connectionType === 'self_hosted' ? 'local' : 'hosted')}`)))),
+          choices.length === 0 && h('p', null, t('noModels')),
+          model?.imageOutputs.length > 0 && field('output', h('select', {
+            disabled: locked, value: form.output, onChange: event => update('output', Number(event.target.value)),
+          }, ...model.imageOutputs.map(({ size, aspectRatio }, index) =>
+            h('option', { key: index, value: index }, [size, aspectRatio].filter(Boolean).join(' · '))))),
+          form.kind === 'audio' && field('voice', h('input', {
+            required: model?.voiceRequired, disabled: locked, maxLength: 200, value: form.voice,
+            onChange: event => update('voice', event.target.value),
+          })),
+          source && h(Preview, { projectId: source.projectId, assetId: source.assetId, kind: source.kind, title: t('original'), t }),
+          field(form.kind === 'audio' ? 'speechText' : source ? 'brief' : 'prompt', h('textarea', {
+            required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
+            value: form.prompt, onChange: event => update('prompt', event.target.value),
+          })),
+          (!locked || submitting || unknown) && button(t(submitting ? 'submitting' : unknown ? 'checkGeneration' : 'generate'),
+            undefined, { type: 'submit', primary: true, disabled: submitting || !model || !form.prompt.trim() })),
+        result?.status === 'rejected' && h('p', { role: 'alert' }, t(result.code === 'storage_busy' ? 'adoptBusy' : 'failedToSubmit')),
+        unknown && h('p', { role: 'status' }, t('generationUnknown')),
+        result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
+        jobId && h('p', { role: 'status' }, t(outcome ?? 'waiting')),
+        pollError && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
+        result?.canvasUrl && (jobId || result.draftSaved) && canvasLink(result.canvasUrl, t),
+        ...((progress?.results ?? []).map(candidate => h(Preview, {
+          ...candidate, projectId, title: t('candidate'), key: candidate.resultId, t, request,
+        }))))
     }
 
     function AdoptResult({ projectId, resultId, selected, t, onAdopted }) {
@@ -211,14 +389,17 @@ window.__ModuleLoader__.load({
       const [action, setAction] = useState(null)
       const [brief, setBrief] = useState('')
       const [status, setStatus] = useState('')
+      const [editing, setEditing] = useState(false)
       const url = '/api/opendirector/media?' + new URLSearchParams({ project: projectId, asset: assetId, kind })
       const video = kind === 'video'
+      const audio = kind === 'audio'
       const mediaStyle = { width: '100%', height: 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
         borderRadius: '.55rem', background: surface }
       const onError = () => setFailed(true)
       const media = video
         ? h('video', { src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
-        : h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
+        : audio ? h('audio', { src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
+          : h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
           h('img', { src: url, alt: title, loading: 'lazy', onError, style: mediaStyle }))
       function message(key, detail = '') {
         return [t(key), t('reference') + ' ' + projectId + ' / ' + resultId, detail].filter(Boolean).join('\n')
@@ -253,20 +434,25 @@ window.__ModuleLoader__.load({
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
-            video ? button(t('continue'), () => open('continuePrompt')) : button(t('edit'), () => open('editPrompt')),
-            !video && button(t('firstFrame'), () => open('firstFramePrompt')),
+            video && button(t('continue'), () => open('continuePrompt')),
+            kind === 'image' && button(t('edit'), () => setEditing(true), { 'aria-haspopup': 'dialog' }),
+            kind === 'image' && button(t('firstFrame'), () => open('firstFramePrompt')),
+            (video || audio) && h('a', { href: url, download: '', style: buttonStyle }, t('download')),
             button('ID', copyResult, { title: t('copyId'), 'aria-label': t('copyId') })),
           h(AdoptResult, { projectId, resultId, selected, t, onAdopted }),
           action && h('form', { onSubmit: submit, style: row },
             h('input', {
               autoFocus: true, type: 'text', value: brief, onChange: event => setBrief(event.target.value),
-              'aria-label': t(action === 'editPrompt' ? 'brief' : 'shot'),
-              placeholder: t(action === 'editPrompt' ? 'brief' : 'shot'),
+              'aria-label': t('shot'),
+              placeholder: t('shot'),
               style: { ...buttonStyle, flex: '1 1 10rem', minWidth: 0, cursor: 'text' },
             }),
             button(t('send'), undefined, { type: 'submit', primary: true, disabled: !brief.trim() }),
             button(t('cancel'), () => { setAction(null); setBrief(''); setStatus('') })),
-          status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)))
+          status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)),
+        editing && h(GenerationDialog, {
+          source: { projectId, assetId, resultId, kind }, t, request, onClose: () => setEditing(false),
+        }))
     }
 
     function canvasLink(url, t) {
@@ -277,7 +463,7 @@ window.__ModuleLoader__.load({
     function MediaResults({ meta, t, request }) {
       const preview = meta.mediaPreview ?? meta.imagePreview
       const kind = preview.kind ?? 'image'
-      const heading = t(kind === 'video' ? 'videos' : 'images')
+      const heading = t(kind === 'video' ? 'videos' : kind === 'audio' ? 'audios' : 'images')
       const sourceKind = preview.sourceKind ?? kind
       return h('section', { 'aria-label': heading, [`data-opendirector-${kind}-results`]: '',
         style: { display: 'grid', gap: '.75rem', padding: '.85rem 1rem', border, borderRadius: '.9rem' } },

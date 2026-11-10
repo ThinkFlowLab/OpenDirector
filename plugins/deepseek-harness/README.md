@@ -32,7 +32,9 @@ The bundle ships ready-to-run JavaScript and needs no build. Tarball installatio
 
 In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](../../docs/guides/user-guide.md) explains model connections. The example uses that configured service.
 
-In DSH Web, choose **Create media** in the composer and describe what you want:
+In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
+
+For an open-ended request, use the chat as usual:
 
 > Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
 
@@ -41,11 +43,13 @@ In DSH Web, choose **Create media** in the composer and describe what you want:
 3. Choose **Adopt** on the candidate card. The plugin reads the current revisions, selects the result, and shows a link to the canvas.
 4. Follow the `/ai-canvas/<projectId>` link back to the same project. Double-click the image node's title, rename it, and reopen the project to check that the new name and the selected image are still there.
 
-To revise an image, choose **Edit** on its result card. Describe the change on the card and choose **Send request**. Use a model that accepts reference images. DSH uses `sourceResultId` to pin the exact saved image, then creates a separate generation node in the same project. The result card shows the source and candidate together. Both remain available on the canvas. Card actions preserve your current draft and attachments.
+To revise an image, choose **Edit** on its result card. Pick a model that accepts reference images, describe the change, and click **Generate one candidate**. The plugin pins the saved image and creates a separate generation node in the same project. You can compare the source and the new result before adopting it. These forms preserve your chat draft and submit directly to OpenDirector.
+
+If the submission reply is lost, choose **Check submission** to look up the original operation. For a job that failed after submission, open the canvas to inspect the saved generation settings and the failure details.
 
 ### Pick up an earlier project
 
-Choose **Resume project** next to the composer, then select an OpenDirector project. You can preview its six most recently saved images and videos, see which results are current, and adopt a candidate in the same project. Browsing and adopting work without a conversation model. If a canvas is open for editing, save and close it before trying to adopt again. If the connection drops during adoption, choose **Check adoption** to look up the original write.
+Choose **Resume project** next to the composer, then select an OpenDirector project. You can preview its six most recently saved images, videos and audio clips, see which results are current, and adopt a candidate in the same project. If a canvas is open for editing, save and close it before trying to adopt again. If the connection drops during adoption, choose **Check adoption** to look up the original write.
 
 ### Continue a video
 
