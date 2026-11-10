@@ -69,8 +69,14 @@ Finish in an isolated real OpenDirector project using existing business
 commands: create generation intent, submit, wait by returned job identity, inspect
 the registered asset and adoption state, reopen and continue. Use CLI discovery
 and returned next commands; never edit project files or credential storage to
-bypass business rules. Do not treat music-to-score as ASR or invent capabilities
-from the provider name. Record unavailable integrations explicitly.
+bypass business rules. The `qwen3-asr-06b` companion uses native vLLM in the same
+environment; use `verify.py --infer --audio-file` for transcription. Reference
+text is only a local comparison, never a model hint. OpenDirector has no automatic
+ASR tool: register transcripts through existing text-asset commands and describe
+this handoff explicitly. Do not treat music-to-score as ASR or invent capabilities
+from the provider name. Record unavailable integrations explicitly. Follow the
+guide's first-use protocol for a real participant; keep unobserved human feedback
+pending and distinguish cached setup from clean installation.
 
 Hand off copyable restart/status/stop commands for the actual host, source and
 data directory, the model connection, measured results and remaining limitations.

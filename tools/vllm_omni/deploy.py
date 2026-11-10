@@ -375,9 +375,13 @@ def owned(record):
 
 
 def request_json(url, payload=None, timeout=10):
+    return request_bytes(url, json.dumps(payload).encode() if payload is not None else None,
+                         'application/json', timeout)
+
+
+def request_bytes(url, data=None, content_type='application/json', timeout=10):
     # These are explicit local service probes. Never inherit a proxy for loopback.
-    request = Request(url, data=json.dumps(payload).encode() if payload is not None else None,
-                      headers={'Content-Type': 'application/json'})
+    request = Request(url, data=data, headers={'Content-Type': content_type})
     try:
         with build_opener(ProxyHandler({})).open(request, timeout=timeout) as response:
             data = response.read(128 * 1024 ** 2 + 1)
@@ -444,13 +448,16 @@ def start(args, profile):
         # Binding is also attempted by the child; a race cannot turn somebody else's
         # listener into successful startup because the owned child must remain alive.
         with socket.socket() as probe:
+            # Match the HTTP server: TIME_WAIT after an owned shutdown is not a listener.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind(('127.0.0.1', args.port))
             except OSError:
                 raise DeploymentError('port_in_use', port=args.port) from None
         env = environment(args.root, preflight['gpu'], args.hf_endpoint)
         env.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
-        command = [str(args.root / 'omni-env/bin/vllm'), 'serve', model['path'], '--omni',
+        engine_args = [] if profile.get('engine') == 'vllm' else ['--omni']
+        command = [str(args.root / 'omni-env/bin/vllm'), 'serve', model['path'], *engine_args,
                    '--served-model-name', profile['modelId'], '--host', '127.0.0.1', '--port', str(args.port),
                    *deployment_config(args.root, profile), *profile.get('serveArgs', [])]
         prepare(args.root)

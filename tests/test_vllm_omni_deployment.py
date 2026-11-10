@@ -231,3 +231,132 @@ def test_png_with_valid_checksums_still_requires_decodable_pixels(tmp_path):
         image.verify()  # Header/chunk validation alone accepts this invalid PNG.
     with pytest.raises(deploy.DeploymentError, match='invalid_image_output'):
         verify.media_facts(path, 'image', sys.executable)
+
+
+@pytest.mark.parametrize('name,omni', [('qwen3-asr-06b', False), ('zimage-bf16', True)])
+def test_start_uses_the_models_upstream_engine(tmp_path, name, omni, monkeypatch):
+    profile = deploy.load_profile(name)
+    deploy.write_json(tmp_path / 'models' / (name + '.json'),
+                      dict(profileSha256=deploy.profile_digest(profile), path='/verified-snapshot'))
+    monkeypatch.setattr(deploy, 'require_plan', lambda *a: {'gpu': {'uuid': 'GPU-assigned'}})
+    monkeypatch.setattr(deploy, 'process_identity', lambda *a: 'owned')
+    commands = []
+    def spawn(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(pid=123)
+    monkeypatch.setattr(deploy.subprocess, 'Popen', spawn)
+    with pytest.raises(deploy.DeploymentError, match='startup_pending'):
+        deploy.start(SimpleNamespace(root=tmp_path, port=0, hf_endpoint=None, timeout=0), profile)
+    assert ('--omni' in commands[0]) is omni
+    assert commands[0][1:3] == ['serve', '/verified-snapshot']
+
+
+def test_asr_health_does_not_require_audio_or_write(tmp_path, monkeypatch):
+    monkeypatch.setattr(verify, 'readiness', lambda *a: None)
+    profile = deploy.load_profile('qwen3-asr-06b')
+    assert verify.verify(tmp_path, profile, url='http://localhost/v1')['status'] == 'service_ready'
+    with pytest.raises(deploy.DeploymentError, match='audio_input_required'):
+        verify.verify(tmp_path, profile, url='http://localhost/v1', infer=True)
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize('output', [b'{}', b'{"text":" "}', b'{"text":[]}', b'not json'])
+def test_asr_rejects_invalid_transcripts(tmp_path, output, monkeypatch):
+    monkeypatch.setattr(verify, 'readiness', lambda *a: None)
+    monkeypatch.setattr(verify, 'media_facts', lambda *a: {'durationSeconds': 1})
+    monkeypatch.setattr(verify, 'request_transcription', lambda *a: output)
+    source = tmp_path / 'source.mp3'
+    source.write_bytes(b'audio')
+    with pytest.raises(deploy.DeploymentError, match='invalid_provider_output') as error:
+        verify.verify(tmp_path, deploy.load_profile('qwen3-asr-06b'), url='http://localhost/v1',
+                      infer=True, audio_file=source)
+    assert deploy.read_json(error.value.facts['receipt'])['status'] == 'failed'
+
+
+def test_asr_uploads_exact_snapshot_and_keeps_reference_out_of_request(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    from email.parser import BytesParser
+    from email.policy import default
+    monkeypatch.setattr(verify, 'readiness', lambda *a: None)
+    monkeypatch.setattr(verify, 'media_facts', lambda *a: {'durationSeconds': 1})
+    source = tmp_path / 'source.MP3'
+    source.write_bytes(b'exact audio\x00\xff')
+    calls = []
+    def request(url, body, content_type, timeout):
+        message = BytesParser(policy=default).parsebytes(('Content-Type: ' + content_type + '\r\n\r\n').encode() + body)
+        fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True)
+                  for part in message.iter_parts()}
+        calls.append(fields)
+        return json.dumps({'text': '你好，Hello!'}).encode()
+    monkeypatch.setattr(verify, 'request_bytes', request)
+    result = verify.verify(tmp_path, deploy.load_profile('qwen3-asr-06b'), url='http://localhost/v1',
+                           infer=True, audio_file=source, expected_text='你好 hello')
+    assert len(calls) == 1
+    assert calls[0]['file'] == source.read_bytes()
+    assert calls[0]['model'] == b'Qwen/Qwen3-ASR-0.6B'
+    assert set(calls[0]) == {'file', 'model', 'response_format', 'temperature'}
+    assert result['input']['artifactSha256'] == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert result['textComparison']['characterErrorRate'] == 0
+    assert result['creativeReview'] == 'pending'
+
+
+def test_asr_unknown_submission_is_not_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr(verify, 'readiness', lambda *a: None)
+    monkeypatch.setattr(verify, 'media_facts', lambda *a: {'durationSeconds': 1})
+    source = tmp_path / 'source.wav'
+    source.write_bytes(b'audio')
+    calls = []
+    def timeout(*args):
+        calls.append(args)
+        raise deploy.DeploymentError('service_unreachable')
+    monkeypatch.setattr(verify, 'request_transcription', timeout)
+    with pytest.raises(deploy.DeploymentError, match='inference_result_unknown') as error:
+        verify.verify(tmp_path, deploy.load_profile('qwen3-asr-06b'), url='http://localhost/v1',
+                      infer=True, audio_file=source)
+    assert len(calls) == 1
+    assert deploy.read_json(error.value.facts['receipt'])['status'] == 'submission_unknown'
+
+
+def test_invalid_asr_audio_fails_before_sampling_or_submission(tmp_path, monkeypatch):
+    profile = deploy.load_profile('qwen3-asr-06b')
+    deploy.write_json(tmp_path / 'services' / profile['id'] / 'state.json', dict(url='http://localhost/v1', gpuUuid='GPU-assigned'))
+    source = tmp_path / 'source.wav'
+    source.write_bytes(b'corrupt')
+    monkeypatch.setattr(verify, 'readiness', lambda *a: None)
+    def reject(*args):
+        raise deploy.DeploymentError('invalid_audio_output')
+    monkeypatch.setattr(verify, 'media_facts', reject)
+    monkeypatch.setattr(verify, 'request_transcription', lambda *a: pytest.fail('submitted invalid input'))
+    with pytest.raises(deploy.DeploymentError, match='invalid_audio_output') as error:
+        verify.verify(tmp_path, profile, infer=True, audio_file=source)
+    assert deploy.read_json(error.value.facts['receipt'])['status'] == 'failed'
+
+
+@pytest.mark.parametrize('actual,expected,distance', [('abc', 'ab', 1), ('ab', 'abc', 1), ('axc', 'abc', 1), ('你好 HELLO!', '你好，ｈｅｌｌｏ', 0)])
+def test_transcript_comparison_reports_insertions_deletions_and_substitutions(actual, expected, distance):
+    assert verify.compare_text(actual, expected)['editDistance'] == distance
+
+
+@pytest.mark.parametrize('live_listener', [False, True])
+def test_port_preflight_allows_time_wait_but_preserves_live_listener(tmp_path, profile, monkeypatch, live_listener):
+    import socket
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        listener.listen()
+        if not live_listener:
+            with socket.create_connection(('127.0.0.1', port)) as client:
+                accepted, _ = listener.accept()
+                accepted.close()  # Active close puts the server address in TIME_WAIT.
+                assert client.recv(1) == b''
+            listener.close()
+        deploy.write_json(tmp_path / 'models' / (profile['id'] + '.json'),
+                          dict(profileSha256=deploy.profile_digest(profile), path='/verified-snapshot'))
+        monkeypatch.setattr(deploy, 'require_plan', lambda *a: {'gpu': {'uuid': 'GPU-assigned'}})
+        monkeypatch.setattr(deploy, 'process_identity', lambda *a: 'owned')
+        monkeypatch.setattr(deploy.subprocess, 'Popen', lambda *a, **k: SimpleNamespace(pid=123))
+        expected = 'port_in_use' if live_listener else 'startup_pending'
+        with pytest.raises(deploy.DeploymentError, match=expected):
+            deploy.start(SimpleNamespace(root=tmp_path, port=port, hf_endpoint=None, timeout=0), profile)

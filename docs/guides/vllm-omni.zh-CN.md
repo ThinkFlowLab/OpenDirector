@@ -103,6 +103,51 @@ CLI 参数以 `--help` 和业务回执里的下一步命令为准，不自行猜
 Z-Image 采样参数对齐见 [#230](https://github.com/ThinkFlowLab/OpenDirector/issues/230)、[#231](https://github.com/ThinkFlowLab/OpenDirector/pull/231)，
 性能比较必须使用一致的实际请求参数。
 
+## ASR 配套服务
+
+`qwen3-asr-06b` 固定 Qwen3-ASR-0.6B 快照，约 1.88 GB，复用同一独立环境。
+该模型由 **vLLM 0.32.0 原生**提供 OpenAI 转录接口，没有新增 Omni 流水线。
+在常规 `plan`、`download`、`start`、`status`、`stop` 命令中加
+`--profile qwen3-asr-06b`，启动时使用 `--port 8093`。16 GiB 显存预算是预检
+保留量，不是实测最低要求。配方将引擎显存利用率设为 0.10，序列长度限制为 4096，
+并发序列数为 4。图像和 TTS 配方仍使用 `--omni`。
+
+```sh
+python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b
+python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b \
+  --infer --audio-file /path/to/authorized-recording.mp3 \
+  --expected-text '录音的已知逐字稿'
+```
+
+只读探测不需要音频。真实转录接受不超过 25 MiB 的 WAV、MP3、FLAC、M4A、OGG、
+WebM 或 MP4，保存实际上传字节、SHA256、媒体信息、原始 JSON 和识别文本。
+`--expected-text` 可选，**不会发给模型**；仅在本地按 NFKC、大小写折叠、移除标点
+和空白后的字符序列计算编辑距离与字符错误率，规范化后的两段文本均不超过 4096 字符。
+这是内容核对，不是发音、听感或通用 ASR 基准。请使用有授权的录音；回执含原文，
+录音、转录与回执应按实际隐私要求保存。
+
+OpenDirector 当前没有语音转文字模型预设或自动 ASR 工具。不要将 ASR 配成扒谱或
+语音合成模型。外部 Agent 可以调用验证器，再通过已有 `asset write-text` 和
+`canvas add-material` 命令把转录登记到工程，用户随后在现有 UI 中审看、继续编辑。
+这一手动交接不代表应用内 ASR 接入。已选 Qwen3-TTS CustomVoice 权重不支持上传
+录音克隆音色，转录文本不会改变该模型的能力。
+
+## 真人首次试用
+
+由不熟悉本部署的真实参与者操作。开始前记录其经验、系统、主机、分配的 GPU、源码版本、
+网络路径，以及环境、权重和编译缓存是否已存在。复用缓存的试用应写为“有辅助的缓存部署”，
+不能当成全新安装耗时。
+
+向参与者提供部署技能和本指南，任务为检查主机、选择可用配方、启动服务、连接应用、
+生成一份素材并重开工程。记录每次手动操作和帮助介入。若检验故障恢复，仅停止自己
+的 SSH 转发，观察可读错误与既有素材保留，再恢复转发；新尝试之前先查询原操作。
+不得中断共享作业。
+
+记录开始、服务就绪、直接推理、工程内首次可用素材的时间，统计手动操作、求助、重试次数
+和恢复耗时。请参与者实际审图或听完整段音频，反馈漏字、错读、杂音、自然度和用途适合程度。
+技术结果、参与者观察、创意认可分别记录。未回答的字段保持待验，不能用 Agent 操作、
+播放成功或 ASR 匹配代替真人观察。
+
 ## 失败代码
 
 工具输出 JSON，预检阻断或执行失败退出 1，参数错误退出 2。
@@ -119,4 +164,6 @@ Z-Image 采样参数对齐见 [#230](https://github.com/ThinkFlowLab/OpenDirecto
 | `cuda_linker_conflict` | 检查回执中的私有运行库链接，保留冲突文件，再纠正链接目标。 |
 | `served_model_mismatch` | 核对地址与模型身份；健康检查不能证明模型匹配。 |
 | `service_not_started` | 先运行 `status`/`start`，或为现有服务指定 `verify.py --url`。 |
+| `audio_input_required`、`audio_input_unreadable`、`unsupported_audio_format`、`invalid_audio_input_size` | 提供可读、格式受支持、非空且不超过 25 MiB 的 ASR 输入。 |
+| `invalid_comparison_text`、`comparison_requires_transcription` | 对照文本仅用于转录，应非空，规范化后不超过 4096 字符。 |
 | `inference_result_unknown` | 查阅保存的回执和服务端情况，再决定是否发起新尝试。 |

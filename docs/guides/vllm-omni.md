@@ -147,6 +147,64 @@ not speech transcription. Z-Image sampling alignment is tracked in [#230](https:
 and [#231](https://github.com/ThinkFlowLab/OpenDirector/pull/231); compare performance
 only with matching actual request parameters.
 
+## ASR companion service
+
+The `qwen3-asr-06b` profile pins Qwen3-ASR-0.6B (about 1.88 GB) in the same
+isolated environment. It uses **native vLLM 0.32.0**, which implements this model's
+OpenAI transcription endpoint. It does not add an Omni pipeline. Run the normal
+`plan`, `download`, `start`, `status` and `stop` commands with
+`--profile qwen3-asr-06b`; use `--port 8093` at startup. The 16 GiB GPU budget is a
+preflight reservation, not a measured hardware minimum. The profile limits engine
+memory utilization to 0.10, sequence length to 4096 and concurrent sequences to 4.
+The pinned image and TTS recipes continue using `--omni`.
+
+```sh
+python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b
+python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b \
+  --infer --audio-file /path/to/authorized-recording.mp3 \
+  --expected-text 'The known recording transcript'
+```
+
+Read-only verification needs no audio. Inference accepts WAV, MP3, FLAC, M4A,
+OGG, WebM or MP4 up to 25 MiB and saves the exact uploaded bytes, their SHA256,
+media facts, raw JSON output and recognized text. `--expected-text` is optional
+and **never sent to the model**. Comparison reports character edit distance and
+error rate after NFKC normalization, case folding and removal of punctuation and
+spaces; both normalized strings are limited to 4096 characters. This is a
+content check, not a pronunciation, listening or general ASR benchmark score.
+Keep authorized recordings and transcripts private; receipts contain their text.
+
+OpenDirector currently has no speech-to-text model preset or automatic ASR tool.
+Do not configure ASR as the music-to-score model or a speech synthesizer. An
+external Agent can call this verifier and use the existing `asset write-text`
+and `canvas add-material` commands to register its transcript in the project.
+Users can inspect that text and continue editing through the existing UI. This
+manual handoff does not claim an in-application ASR integration. The selected
+Qwen3-TTS CustomVoice checkpoint also rejects uploaded voice cloning; a transcript
+does not change its supported capabilities.
+
+## First-use participant trial
+
+Use a real participant unfamiliar with this deployment. Before starting, record
+their experience, OS, host, assigned GPU, checkout revision, network route, and
+whether weights, environment or compilation caches already exist. A trial using
+cached weights measures an assisted cached setup, not a clean installation.
+
+Give the participant the deployment skill and this guide. Ask them to inspect the
+host, select an eligible recipe, start the service, connect OpenDirector, produce
+one asset and reopen the project. Let them make ordinary decisions; record every
+manual action and help intervention. If exercising recovery, stop only their own
+SSH forward, observe the readable failure and preserved asset, restore it, and
+query the original operation before any new attempt. Never interrupt shared jobs.
+
+Record timestamps for start, ready service, direct inference and first usable
+project asset; count manual actions, help requests, retries and recovery time.
+Ask the participant to inspect the image or actually listen to the audio and
+report omissions, pronunciation, noise, naturalness and suitability. Record
+technical result, participant observations and creative approval separately.
+Leave unanswered fields pending; an Agent run, successful playback or ASR match
+cannot supply human observations.
+
 ## Failure codes
 
 Commands emit JSON and exit 1 on a blocked plan or failure; argument errors exit 2.
@@ -163,4 +221,6 @@ Commands emit JSON and exit 1 on a blocked plan or failure; argument errors exit
 | `cuda_linker_conflict` | Inspect the reported private runtime-library alias; preserve the conflicting file before correcting its target. |
 | `served_model_mismatch` | Correct the endpoint or served model identity; health alone does not establish compatibility. |
 | `service_not_started` | Run `status`/`start`, or supply `verify.py --url` for an existing service. |
+| `audio_input_required`, `audio_input_unreadable`, `unsupported_audio_format`, `invalid_audio_input_size` | Supply a readable ASR input in a supported format, nonempty and at most 25 MiB. |
+| `invalid_comparison_text`, `comparison_requires_transcription` | Use a nonempty ASR reference with at most 4096 normalized characters; the option is only for transcription. |
 | `inference_result_unknown` | Inspect the saved receipt and server before deciding whether to start a new attempt. |

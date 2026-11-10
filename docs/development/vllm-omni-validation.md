@@ -66,6 +66,16 @@ Ubuntu 22.04 主机，使用独立虚拟环境、Python 3.12.13、Node 24.22.2 �
   file's trailing newline. It now hashes the exact UTF-8 bytes; a regression and
   a real installation rerun verified the receipt against the file.
   环境清单哈希与实际文件逐字节一致，不能仅比较规范化后的文本。
+- Immediate ASR restart exposed `port_in_use` after a successful stop. A real
+  socket regression reproduced a TIME_WAIT address being mistaken for a live
+  listener. The preflight now matches the HTTP server's `SO_REUSEADDR` setting;
+  a live listener remains protected. 同端口停止后立即重启已在实机通过。
+- CLI `canvas add-material` omitted the asset name. Editing the resulting text
+  item sent the invalid filename `.md`, and the backend correctly rejected it.
+  The CLI now supplies the registered asset name as the item title; its existing
+  command/lock test includes a failing-before assertion. The already-created
+  validation item was explicitly renamed through `canvas update`, then normal
+  UI editing and reopening passed. 没有绕过校验或自动修改既有工程。
 
 ## Checks completed / 已完成检查
 
@@ -83,6 +93,9 @@ Ubuntu 22.04 主机，使用独立虚拟环境、Python 3.12.13、Node 24.22.2 �
 | CUDA and dependency integrity | CUDA 13.0, SM120, real tensor and FlashInfer sampling kernel passed; `uv pip check` passed |
 | Read-only doctor and explicit UUID plans | Passed; missing target directory remains uncreated / 探测不创建目标目录 |
 | Independent skill trial | Doctor/plan/status exercised on the real host, CLI discovery checked, no mutations / 实机只读试用 |
+| ASR followup Python suite | 1303 passed, 6 skipped; 294.29 s; one Starlette TestClient deprecation warning |
+| Latest CLI/deployment/FastH3 targeted checks | 94 passed; includes the final CLI title fix / 包含最后的素材名称修复 |
+| Followup bilingual catalog | 2935 keys, zero problems |
 
 The local shell injected a ROS Python plugin during initial test discovery. Tests
 were rerun with `PYTHONPATH` removed, plugin autoload disabled and
@@ -137,10 +150,13 @@ forward allowed a new, explicitly observed UI submission to succeed. No unknown
 submission was blindly repeated. 这也验证了实际连接故障、保留产物和恢复路径。
 
 The MP3 was fully decoded by FFmpeg and Chrome; the older FFmpeg decoder emitted
-nonfatal MP3 overread warnings. Speech intelligibility, pronunciation and aesthetic
-quality still require listening review. This session cannot consume audio input;
-it does not count waveform display, non-silence or successful playback as hearing
-the result. 听感未审，不能将技术通过写成创作品质认可。
+nonfatal MP3 overread warnings. The Agent session cannot consume audio input and
+does not count playback or ASR agreement as listening. In the followup, the user
+reported actually listening to the UI-generated sample (SHA256
+`0951082d9df96c5d168749870ad092470162cf5f5de3717c0e96b2e4f3ab1cd5`):
+**“非常好，完整，无漏字等情况”**. This is positive participant feedback for this
+one sample, with no omissions or other defects reported; it is not a general
+pronunciation or voice-quality benchmark. 本条听感反馈来自用户，不能扩展到其他音频。
 
 ### Image / 图像
 
@@ -204,7 +220,58 @@ items. All five registered files matched their saved SHA256 fingerprints. The
 rendered video played to the end (10.026667 s, 640×360, no media error).
 应用进程重启后，工程对象、历史结果、采用状态与全部文件均保持，视频完整播放通过。
 
-Consumer laptops, RTX A6000/SM86 real inference, multi-GPU serving, ASR, native
-Windows and Apple Silicon are outside these hardware measurements. Budget values
-are preflight reservations rather than measured minimums. 面向未熟悉部署的人类用户的首次成功时间、
-手动操作与恢复体验，仍需要单独实测，不能用 Agent 试用代替。
+## ASR followup / 语音转录增量
+
+On 2026-11-10 UTC, the same assigned Blackwell GPU served
+`Qwen/Qwen3-ASR-0.6B`, snapshot `5eb144179a02acc5e5ba31e748d22b0cf3e303b0`.
+The complete 1,880,560,703-byte manifest was downloaded and verified. This is
+**native vLLM 0.32.0** in the existing isolated environment, using its mature
+`/v1/audio/transcriptions` implementation, not an added vLLM-Omni pipeline.
+配方使用 0.10 引擎显存利用率、4096 序列长度、4 个并发序列；没有修改上游包。
+
+The original synthetic bilingual utterance was transcribed without a prompt,
+language hint or reference text. Each of the following MP3 files was copied into
+an immutable verifier input and checked against its original SHA256. Each result
+matched all 54 normalized reference characters: zero edits and CER 0. Punctuation
+differs in the direct sample. Normalization uses NFKC, case folding and removal
+of punctuation/space; this small round trip is not a general accuracy benchmark.
+
+| Audio source / 音频来源 | ASR run | Duration / 时长 | Verifier elapsed / 验证器耗时 |
+| --- | --- | --- | --- |
+| Direct TTS | `684ef8fc-103e-4ef4-a5e3-75c35756622d` | 8.304 s | 1.389 s |
+| CLI TTS | `223a3192-459e-4c2c-bee5-eec3443b1983` | 9.168 s | 0.329 s |
+| UI TTS after ASR restart | `70c13c32-a22f-4764-bd29-a0f7b175c579` | 8.616 s | 0.395 s |
+
+These elapsed values include input probing and the request, ending when the
+response arrives; comparison and output registration follow. 包含输入探测，不能当成纯模型推理延迟。
+
+Model loading reported 1.53 GiB; this excludes other engine allocations. The
+highest whole-device inference sample was 13,193 MiB and includes other jobs.
+The profile's 16 GiB budget is a reservation, not a measured minimum. Repeated
+`start` retained the original PID. After the port-preflight correction, immediate
+stop/start on the same port returned ready in 56.246 seconds with a different PID.
+随后真实转录成功，测试服务已正常停止。
+
+The CLI-audio transcript was registered through existing `asset write-text` and
+`canvas add-material` commands. Original text asset:
+`1df748d8-1104-5a0e-bca8-722c7319c51f`; canvas item:
+`dd06256d-2e77-4f32-a76e-cfa0ef4dbab4`. The real UI opened the editor, appended an
+editing note and saved a new immutable asset
+`b9af7485-366c-579b-ae51-7866faf35e9d`, preserving the original. English and Chinese
+browser sessions reopened the item. A full app restart preserved all business
+object arrays and all seven file fingerprints; a fresh browser displayed the edit.
+这是外部 ASR 到工程文本素材的手动交接，没有伪造应用内转录任务，也没有新增应用内 ASR 工具。
+
+## Participant trial and coverage / 真人试用与覆盖范围
+
+The user volunteered for the first-use trial and received concrete host-specific
+steps using a fresh application data directory and the existing model environment
+and weights. This is an assisted cached setup, not clean-install timing. Start,
+service-ready and first-usable-asset timestamps, manual actions, interventions and
+recovery observations remain **pending actual participant execution**. Listening
+feedback above is complete and separate. 同意参与不等于完成试用，不填写推测数据。
+
+The user explicitly chose only the allocated Blackwell GPU for this followup.
+Consumer laptops, RTX A6000/SM86 inference, multi-GPU serving, native Windows and
+Apple Silicon remain outside these measurements. Ampere coverage is an excluded
+hardware scope, not a claim of compatibility or a currently allocated test.

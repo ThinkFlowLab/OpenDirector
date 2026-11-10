@@ -13,14 +13,68 @@ from pathlib import Path
 import subprocess
 import threading
 import time
+import unicodedata
 from uuid import uuid4
 
 if __package__:
     from .deploy import (DeploymentError, capture, load_profile, profile_digest, read_json,
-                         readiness, request_json, write_json)
+                         readiness, request_bytes, request_json, write_json)
 else:
     from deploy import (DeploymentError, capture, load_profile, profile_digest, read_json,
-                        readiness, request_json, write_json)
+                        readiness, request_bytes, request_json, write_json)
+
+
+MAX_AUDIO_BYTES = 25 * 1024 ** 2
+AUDIO_TYPES = {'.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.flac': 'audio/flac',
+               '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.webm': 'audio/webm', '.mp4': 'audio/mp4'}
+
+
+def read_audio(path):
+    if path is None:
+        raise DeploymentError('audio_input_required')
+    path = Path(path)
+    if path.suffix.lower() not in AUDIO_TYPES:
+        raise DeploymentError('unsupported_audio_format')
+    try:
+        with path.open('rb') as stream:
+            raw = stream.read(MAX_AUDIO_BYTES + 1)
+    except OSError:
+        raise DeploymentError('audio_input_unreadable') from None
+    if not raw or len(raw) > MAX_AUDIO_BYTES:
+        raise DeploymentError('invalid_audio_input_size', limitBytes=MAX_AUDIO_BYTES)
+    return raw, path.suffix.lower()
+
+
+def request_transcription(url, payload, audio, suffix, timeout):
+    """One standard multipart request to the upstream ASR endpoint; no retry."""
+    boundary = 'opendirector-' + uuid4().hex
+    parts = []
+    for key, value in payload.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
+    parts.extend([f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="input{suffix}"\r\n'
+                  f'Content-Type: {AUDIO_TYPES[suffix]}\r\n\r\n'.encode(), audio,
+                  f'\r\n--{boundary}--\r\n'.encode()])
+    return request_bytes(url, b''.join(parts), 'multipart/form-data; boundary=' + boundary, timeout)
+
+
+def compare_text(actual, expected):
+    """Character error rate after NFKC, case folding and punctuation/space removal.
+
+    This reproducible content check is not a listening or pronunciation score.
+    """
+    def normalize(value):
+        return ''.join(c for c in unicodedata.normalize('NFKC', value).casefold() if c.isalnum())
+    reference, hypothesis = normalize(expected), normalize(actual)
+    if not reference or max(len(reference), len(hypothesis)) > 4096:
+        raise DeploymentError('invalid_comparison_text', limitCharacters=4096)
+    row = list(range(len(reference) + 1))
+    for i, char in enumerate(hypothesis, 1):
+        current = [i]
+        for j, other in enumerate(reference, 1):
+            current.append(min(current[-1] + 1, row[j] + 1, row[j - 1] + (char != other)))
+        row = current
+    return dict(normalization='NFKC_casefold_alphanumeric', referenceCharacters=len(reference),
+                editDistance=row[-1], characterErrorRate=row[-1] / len(reference), exactMatch=reference == hypothesis)
 
 
 def media_facts(path, kind, python):
@@ -83,7 +137,7 @@ class GpuSampler:
                     sampleCount=len(self.samples), sampledPeakMiB=max(self.samples) if self.samples else None)
 
 
-def verify(root, profile, *, infer=False, url=None, timeout=240):
+def verify(root, profile, *, infer=False, url=None, timeout=240, audio_file=None, expected_text=None):
     state_path = root / 'services' / profile['id'] / 'state.json'
     if url is None and not state_path.is_file():
         raise DeploymentError('service_not_started', profile=profile['id'])
@@ -95,26 +149,50 @@ def verify(root, profile, *, infer=False, url=None, timeout=240):
                   startedAt=datetime.now(timezone.utc).isoformat(), creativeReview='pending')
     if not infer:
         return report
+    kind = profile['verification']['kind']
+    audio, suffix = read_audio(audio_file) if kind == 'transcription' else (None, None)
+    if expected_text is not None:
+        if kind != 'transcription':
+            raise DeploymentError('comparison_requires_transcription')
+        compare_text('', expected_text)
     directory = root / 'outputs' / report['runId']
     directory.mkdir(parents=True)
     receipt = directory / 'verification.json'
     payload = dict(profile['verification']['request'], model=profile['modelId'])
-    report.update(status='submission_started', request=payload)
+    report.update(status='preparing_input', request=payload)
     write_json(receipt, report)
     sampler = GpuSampler(state['gpuUuid']) if state else None
+    sampled = False
     started = time.monotonic()
     try:
+        if kind == 'transcription':
+            source = directory / ('input' + suffix)
+            source.write_bytes(audio)
+            report['input'] = dict(artifact=str(source), artifactSha256=hashlib.sha256(audio).hexdigest(),
+                                   bytes=len(audio), media=media_facts(source, 'audio', None))
+        report['status'] = 'submission_started'
+        write_json(receipt, report)
         if sampler:
             sampler.__enter__()
-        raw = request_json(url + profile['verification']['path'], payload, timeout)
+            sampled = True
+        raw = (request_transcription(url + profile['verification']['path'], payload, audio, suffix, timeout)
+               if kind == 'transcription' else request_json(url + profile['verification']['path'], payload, timeout))
         elapsed = time.monotonic() - started
-        kind = profile['verification']['kind']
         if kind == 'image':
             raw = base64.b64decode(json.loads(raw)['data'][0]['b64_json'], validate=True)
-        path = directory / ('result.png' if kind == 'image' else 'result.mp3')
+        path = directory / {'image': 'result.png', 'audio': 'result.mp3', 'transcription': 'result.json'}[kind]
         with path.open('xb') as out:
             out.write(raw)
-        facts = media_facts(path, kind, str(root / 'omni-env/bin/python'))
+        if kind == 'transcription':
+            text = json.loads(raw)['text']
+            if not isinstance(text, str) or not text.strip():
+                raise DeploymentError('invalid_provider_output')
+            report['transcript'] = text
+            facts = dict(characters=len(text))
+            if expected_text is not None:
+                report['textComparison'] = dict(referenceText=expected_text, **compare_text(text, expected_text))
+        else:
+            facts = media_facts(path, kind, str(root / 'omni-env/bin/python'))
         if kind == 'image':
             expected = profile['verification']['request']['size']
             if f"{facts['width']}x{facts['height']}" != expected:
@@ -132,7 +210,7 @@ def verify(root, profile, *, infer=False, url=None, timeout=240):
         write_json(receipt, report)
         raise DeploymentError('invalid_provider_output', receipt=str(receipt)) from None
     finally:
-        if sampler:
+        if sampled:
             sampler.__exit__()
             report['gpuMemory'] = sampler.facts()
         write_json(receipt, report)
@@ -146,9 +224,12 @@ def main():
     parser.add_argument('--url', help='Explicit API base for an already deployed service, ending in /v1.')
     parser.add_argument('--infer', action='store_true', help='Submit one real request, save and probe its result. No automatic retry.')
     parser.add_argument('--timeout', type=int, default=240)
+    parser.add_argument('--audio-file', type=Path, help='ASR input, at most 25 MiB. Required only for transcription --infer.')
+    parser.add_argument('--expected-text', help='Optional reference for a character error measurement; never sent to the model.')
     args = parser.parse_args()
     try:
-        result = verify(args.root.resolve(), load_profile(args.profile), infer=args.infer, url=args.url, timeout=args.timeout)
+        result = verify(args.root.resolve(), load_profile(args.profile), infer=args.infer, url=args.url, timeout=args.timeout,
+                        audio_file=args.audio_file, expected_text=args.expected_text)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except DeploymentError as error:

@@ -1,0 +1,84 @@
+{
+  "id": "qwen3-asr-06b",
+  "modelId": "Qwen/Qwen3-ASR-0.6B",
+  "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+  "allowPatterns": [
+    "*.json",
+    "*.txt",
+    "*.safetensors"
+  ],
+  "gpuBudgetMiB": 16384,
+  "hostMemoryBudgetGiB": 16,
+  "serveArgs": [
+    "--gpu-memory-utilization",
+    "0.10",
+    "--max-model-len",
+    "4096",
+    "--max-num-seqs",
+    "4"
+  ],
+  "verification": {
+    "kind": "transcription",
+    "path": "/audio/transcriptions",
+    "request": {
+      "response_format": "json",
+      "temperature": 0
+    }
+  },
+  "schemaVersion": 1,
+  "minComputeCapability": "8.0",
+  "minDriver": "580.65.06",
+  "packages": [
+    "vllm==0.32.0",
+    "vllm-omni==0.32.0"
+  ],
+  "environmentBudgetGiB": 30,
+  "qualification": {
+    "status": "unvalidated",
+    "note": "Budgets are conservative preflight reservations, not measured minimum requirements."
+  },
+  "files": [
+    {
+      "path": "chat_template.json",
+      "size": 1161,
+      "sha256": null
+    },
+    {
+      "path": "config.json",
+      "size": 6193,
+      "sha256": null
+    },
+    {
+      "path": "generation_config.json",
+      "size": 142,
+      "sha256": null
+    },
+    {
+      "path": "merges.txt",
+      "size": 1671853,
+      "sha256": null
+    },
+    {
+      "path": "model.safetensors",
+      "size": 1876091704,
+      "sha256": "79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea"
+    },
+    {
+      "path": "preprocessor_config.json",
+      "size": 330,
+      "sha256": null
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 12487,
+      "sha256": null
+    },
+    {
+      "path": "vocab.json",
+      "size": 2776833,
+      "sha256": null
+    }
+  ],
+  "downloadBytes": 1880560703,
+  "engine": "vllm"
+}
