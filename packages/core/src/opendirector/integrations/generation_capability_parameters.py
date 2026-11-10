@@ -12,7 +12,10 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
     profile = input_rules(config)['profile']
     if kind == 'image':
         size = parameters.get('size', '')
-        if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'}:
+        if profile == 'minimax-h3-image':
+            from opendirector.integrations.model_adapters import MinimaxH3Images
+            result = MinimaxH3Images.generation_parameters(size)
+        elif profile in {'vllm-omni-image', 'vllm-omni-qwen-image'}:
             from opendirector.integrations.model_adapters import adapter_for
             from opendirector.integrations.vllm_omni_image import WIDTH, HEIGHT
             width, height = map(int, size.split('x')) if 'x' in size else (WIDTH, HEIGHT)

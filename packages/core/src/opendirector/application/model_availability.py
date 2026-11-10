@@ -181,6 +181,11 @@ class ModelAvailability:
                 policy['maxImages'] = 0
             elif images.max_count is not None:
                 policy['maxImages'] = min(policy['maxImages'], images.max_count)
+        # A remote declaration cannot add a transport operation to an adapter.
+        from opendirector.integrations.model_adapters import adapter_for
+        adapter = adapter_for(config)
+        if adapter is None or not adapter.supports_native_mask:
+            return policy
         mask, role = contract.mask, contract.inputs.get('mask_image')
         if (mask is None or mask.support != 'supported' or role is None or role.support != 'supported'
                 or mask.source_role != 'image' or mask.white != 'edit' or mask.black != 'preserve'

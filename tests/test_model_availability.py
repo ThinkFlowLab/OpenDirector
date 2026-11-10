@@ -118,9 +118,13 @@ def test_explicit_parameter_constraints_do_not_treat_defaults_as_enum(service):
         availability.require(config, replace(request, parameters=(('width', 81),)))
 
 
-def test_native_mask_policy_uses_actual_geometry_and_operator_limits(service):
+@pytest.mark.parametrize('adapter', ['openai', 'minimax'])
+def test_native_mask_policy_uses_actual_geometry_and_operator_limits(service, adapter):
     _, _, _, availability = service
     config, profile = image_contract(service)
+    if adapter == 'minimax':
+        config.update(url='https://api.minimax.cn/v1', modelId='MiniMax-H3-Image')
+        service[2]['document']['models'][0]['id'] = config['modelId']
     contract = profile['routes'][0]['request']
     contract['inputs'].update(mask_image={'support': 'supported', 'max_count': 1},
                              reference_image={'support': 'supported', 'max_count': 1})
@@ -133,6 +137,10 @@ def test_native_mask_policy_uses_actual_geometry_and_operator_limits(service):
     contract['max_output_pixels'] = 262144
     availability.prepare(config, manual=True)
     policy = availability.image_execution_policy(config)
+    if adapter == 'minimax':
+        assert policy['maxImages'] == 4
+        assert policy['nativeMask'] is None
+        return
     assert policy['maxImages'] == 4 and policy['nativeMask']['maxImages'] == 1
     assert policy['nativeMask']['widthMultiple'] == 32
     assert policy['nativeMask']['maxPixels'] == 262144

@@ -88,9 +88,10 @@ def declared_runtime(store, configs, calls, constraints):
     {'max_output_pixels': 512 * 512},
     {'parameters': {'width': {'support': 'supported', 'type': 'integer', 'enum': [64]}}},
 ])
-def test_ordinary_edit_rejects_actual_render_size_before_task_or_post(project, constraints):
+@pytest.mark.parametrize('model', [MODEL, ('image', 'https://api.minimax.cn/v1', 'MiniMax-H3-Image')])
+def test_ordinary_edit_rejects_actual_render_size_before_task_or_post(project, constraints, model):
     store, pid, session = project
-    configs = configure(store, MODEL)
+    configs = configure(store, model)
     source = upload(store, pid, session, 'source.png', png((64, 64)))
     calls = []
     tools, probe, _ = declared_runtime(store, configs, calls, constraints)

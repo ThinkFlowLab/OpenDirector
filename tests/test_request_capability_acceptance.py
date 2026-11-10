@@ -95,6 +95,39 @@ def test_fixed_image_sampling_is_checked_before_acceptance(project, entry):
         probe.close()
 
 
+@pytest.mark.parametrize('entry', ['service', 'http', 'agent'])
+@pytest.mark.parametrize('editing', [False, True])
+def test_minimax_fixed_response_format_is_checked_before_acceptance(project, entry, editing):
+    store, pid, session = project
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('image', 'https://api.minimax.cn/v1', 'MiniMax-H3-Image', 'test-key',
+                          protocol='openai', capability_auto_check=True)
+    operation, profile, path = (('image_edit', 'image_to_image', '/v1/images/edits') if editing
+                                else ('image_generation', 'text_to_image', '/v1/images/generations'))
+    declaration = document(operation, profile, path, 'image', model=config['modelId'])
+    declaration['models'][0]['operations'][operation]['profiles'][0]['routes'][0]['request'] = {
+        'parameters': {'response_format': {'support': 'supported', 'enum': ['b64_json']}}}
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    posts = []
+    def generate(request):
+        posts.append(request)
+        return httpx.Response(500)
+    runner = CreationGeneration(store, configs, availability=ModelAvailability(configs, probe))
+    runner.provider = GenerationProviders(runner.store, httpx.MockTransport(generate))
+    sources = [upload(store, str(pid), session, 'source.png', png((128, 128)))] if editing else []
+    command = generation_command(project, config, references=sources)
+    before = store.snapshot(pid)
+    try:
+        receipt = submit(entry, project, runner, probe, command)
+        assert receipt['status'] == 'rejected', receipt
+        assert receipt['issues'][0]['code'] == 'capability_unavailable'
+        after = store.snapshot(pid)
+        assert not after.jobs and posts == []
+        assert after.generationSpecs == before.generationSpecs and after.assets == before.assets
+    finally:
+        probe.close()
+
+
 def submit(entry, project, runner, probe, command):
     store, pid, session = project
     async def asynchronous():

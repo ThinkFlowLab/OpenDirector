@@ -106,6 +106,7 @@ async def _download_moss_result(adapter, config, url):
 
 class ModelAdapter:
     capabilities: frozenset[str] = frozenset()
+    supports_native_mask = False
 
     def __init__(self, transport=None, poll_interval=3):
         self.transport, self.poll_interval = transport, poll_interval
@@ -225,7 +226,22 @@ class MinimaxH3Images(ModelAdapter):
     capabilities = frozenset({'image.generate', 'image.edit'})
     max_images = 16
 
+    @staticmethod
+    def generation_parameters(size):
+        return dict(size=size, n=1, output_format='png', response_format='url')
+
+    def image_parameters(self, width, height, *, has_images=True, native_mask=False, strength=None, seed=None, extra=None):
+        if native_mask:
+            raise ProjectError('当前图片服务不支持选区输入。', 422, code='image_input_mask')
+        ratio = min(3, max(1 / 3, width / height))
+        scale = 2048 / math.sqrt(ratio)
+        width, height = round(scale * ratio), round(scale)
+        width, height = min(width, 3 * height), min(height, 3 * width)
+        return {**self.generation_parameters(f'{width}x{height}'), 'width': width, 'height': height}
+
     async def image(self, config, request: ImageRequest) -> MediaResult:
+        if request.mask is not None or request.reference is not None:
+            raise ProjectError('当前图片服务不支持选区输入。', 422, code='image_input_mask')
         images = [*([request.image] if request.image is not None else []), *request.references]
         if len(images) > self.max_images:
             raise ProjectError('MiniMax H3 图片编辑最多接受 16 张参考图。', 422, code='minimax_image_count')
@@ -241,16 +257,11 @@ class MinimaxH3Images(ModelAdapter):
             if len(data) > 64 * 1024 * 1024:
                 raise ProjectError('MiniMax H3 图片参考请求超过 64 MiB。', 413, code='minimax_image_bytes')
             encoded.append(data_uri(data, mime))
-        width, height = request.width, request.height
-        ratio = min(3, max(1 / 3, width / height))
-        scale = 2048 / math.sqrt(ratio)
-        width, height = round(scale * ratio), round(scale)
-        size = f'{min(width, 3 * height)}x{min(height, 3 * width)}'
-        return await self.generate(config, request.prompt, size, encoded)
+        parameters = self.image_parameters(request.width, request.height, has_images=bool(images))
+        return await self.generate(config, request.prompt, parameters['size'], encoded)
 
     async def generate(self, config, prompt, size, images, *, result_ready=None):
-        payload = {'model': config['modelId'], 'prompt': prompt, 'size': size, 'n': 1,
-                   'output_format': 'png', 'response_format': 'url'}
+        payload = {'model': config['modelId'], 'prompt': prompt, **self.generation_parameters(size)}
         route = '/images/generations'
         if images:
             route = '/images/edits'
@@ -291,6 +302,7 @@ class OpenAIImages(ModelAdapter):
     """
 
     capabilities = frozenset({'image.generate', 'image.edit'})
+    supports_native_mask = True
     OPENAI_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
 
     def __init__(self, transport=None, poll_interval=3, *, free_size=False, max_edge=1536, grid=16, strength=False, max_images=1,

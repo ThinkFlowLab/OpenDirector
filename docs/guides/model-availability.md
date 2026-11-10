@@ -84,7 +84,7 @@ The remote protocol is `GET <API_BASE>/omni/capabilities`, with `object="omni.ca
 
 普通生成与工具都按最终发送的图片校验数量；主图和普通参考图合计，蒙版及独立标注参考分别统计。商品替换会先合成场景与商品，因此两个来源对应一张模型输入。超量输入会被拒绝，不会截取图片列表。Z-Image-Turbo 支持一张图片的编辑请求。
 
-选区、消除、扩图和商品替换会在服务明确支持、输入与尺寸符合要求时使用原生蒙版。蒙版为灰度 PNG，白色表示修改，黑色表示保留；图片、蒙版与请求尺寸一致。当前请求不适用时使用原有编辑方式，保留用户指定输出尺寸。原生请求失败不会自动再发送普通编辑请求。结果仍经过原有选区合成，消除和商品替换保留已有的边缘柔化。
+选区、消除、扩图和商品替换会在服务明确支持、本地适配器能够传输蒙版、输入与尺寸符合要求时使用原生蒙版。蒙版为灰度 PNG，白色表示修改，黑色表示保留；图片、蒙版与请求尺寸一致。当前请求不适用时使用原有编辑方式，保留用户指定输出尺寸。原生请求失败不会自动再发送普通编辑请求。结果仍经过原有选区合成，消除和商品替换保留已有的边缘柔化。
 
 新工具任务保存 `imageExecutionPolicy` 和 `imageExecution`，固定请求方式、输入角色及必要限制。运行状态和期限不写入这些记录。旧任务没有这些字段时沿用已接受的请求行为；恢复或重放不会重新选择编辑方式。
 
@@ -100,7 +100,7 @@ Only `content` references count as transmitted media. Audio/video metadata in te
 
 Generation and tools count the images actually sent. A mask and an independent annotation reference have separate roles. Product replacement combines its two source assets into one model image. Excess images are rejected rather than truncated. Z-Image-Turbo accepts a single-image editing request.
 
-Existing region-editing tools automatically use native masks when the declared route and unchanged requested dimensions allow it. Masks use grayscale PNG: white edits and black preserves. Otherwise the existing editing method remains available. A failed native request never triggers another generation automatically. Existing final compositing and edge feathering are retained. Accepted tools freeze the chosen request policy and input roles; historical tasks and replay retain their original behavior.
+Existing region-editing tools automatically use native masks when the declared route, local adapter transport and unchanged requested dimensions allow it. Masks use grayscale PNG: white edits and black preserves. Otherwise the existing editing method remains available. A failed native request never triggers another generation automatically. Existing final compositing and edge feathering are retained. Accepted tools freeze the chosen request policy and input roles; historical tasks and replay retain their original behavior.
 
 Ordinary edits and native selections both check the adapter's actual render dimensions and transmitted parameters before acceptance. Batch enhancement checks each image; presets use their own request geometry. Render dimensions may differ from the tool's final saved dimensions, and validation never changes the requested output size. The optional `imageExecutionPolicy.requestConstraints` stores validated `RequestConstraints` JSON for the exact route. Execution checks this accepted snapshot without querying current declarations. Existing records without the field acquire no additional limits.
 
