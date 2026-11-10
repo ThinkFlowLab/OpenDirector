@@ -5,13 +5,20 @@ Remote observations can reject a precisely matched request, but cannot add
 adapters, rewrite configuration, or change an already accepted execution.
 """
 from dataclasses import dataclass, replace
+from collections import Counter
+from math import ceil, lcm
 import hashlib
 import json
 from urllib.parse import urlsplit
 
 from opendirector.domain.omni_capabilities import timestamp
+from opendirector.domain.image_inputs import image_input_policy
+from opendirector.domain.input_rules import input_rules
+from opendirector.domain.request_constraints import INPUT_ROLES, constraint_failure, input_details
+from opendirector.domain.voices import effective_speech_voice
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.capability_probe import CapabilityProbe, PAUSE_SECONDS, automatic, identity
+from opendirector.integrations.generation_capability_parameters import generation_capability_parameters
 from opendirector.integrations.volcengine import endpoint
 
 
@@ -30,6 +37,8 @@ class RequestOperation:
     method: str = 'POST'
     # None is a directory projection; an actual request fixes transmitted inputs.
     inputs: frozenset[str] | None = None
+    input_counts: tuple[tuple[str, int], ...] | None = None
+    parameters: tuple[tuple[str, str | int | float | bool], ...] = ()
 
 
 def requests_for(config, *, inputs=None):
@@ -53,7 +62,7 @@ def requests_for(config, *, inputs=None):
     return []
 
 
-def generation_request(config, spec, references):
+def generation_request(config, spec, references, *, parameters=None):
     candidates = requests_for(config)
     if not candidates:
         return None
@@ -78,7 +87,18 @@ def generation_request(config, spec, references):
         inputs.update(kinds & {'image'})
     if profile == 'lyrics_to_music':
         inputs.add('instructions')
-    return replace(request, inputs=frozenset(inputs)) if request else None
+    counts = Counter(item.asset.kind for item in transmitted if item.asset.kind in inputs)
+    counts['text'] = 1
+    if profile == 'lyrics_to_music':
+        counts['instructions'] = 1
+    actual = generation_capability_parameters(config, spec.kind, parameters, has_images='image' in kinds) if parameters is not None else {}
+    if profile == 'text_to_speech':
+        voice = effective_speech_voice(config, getattr(getattr(spec, 'parameters', None), 'voice', None))
+        counts['voice'] = 1
+        inputs.add('voice')
+        actual['voice'] = voice
+    return replace(request, inputs=frozenset(inputs), input_counts=tuple(counts.items()),
+                   parameters=tuple(actual.items())) if request else None
 
 
 def tool_request(config, capability, *, actual=False):
@@ -124,22 +144,94 @@ class ModelAvailability:
         if identity(config) != prepared:
             raise AvailabilityError('capability_connection_changed', '能力检查期间模型服务已变化，请重新提交。')
 
+    def request_constraints(self, config, request):
+        """Return only the complete constraint set for the actual HTTP route."""
+        observation = self.probe.peek(config)
+        if not observation or not observation.document or request is None:
+            return None
+        document = observation.document
+        model = next((value for value in document.models if value.id == config['modelId']), None)
+        operation = model.operations.get(request.operation) if model else None
+        profile = next((value for value in operation.profiles if value.id == request.profile), None) if operation else None
+        if not profile or operation.support == 'unsupported' or profile.support == 'unsupported':
+            return None
+        route = next((value for value in profile.routes if value.transport == 'http'
+                      and value.path == request.path and value.method == request.method), None)
+        exposed = next((value for value in document.routes if value.transport == 'http'
+                        and value.path == request.path and value.method == request.method), None)
+        if (route is None or route.exposure == 'disabled' or operation.exposure == 'disabled'
+                or (exposed and exposed.exposure == 'disabled')):
+            return None
+        return route.request
+
+    def image_execution_policy(self, config):
+        policy = image_input_policy(config)
+        request = next((value for value in requests_for(config) if value.profile == 'image_to_image'), None)
+        contract = self.request_constraints(config, request)
+        if contract is None:
+            return policy
+        images = contract.inputs.get('image')
+        if images is not None:
+            if images.support == 'unsupported':
+                policy['maxImages'] = 0
+            elif images.max_count is not None:
+                policy['maxImages'] = min(policy['maxImages'], images.max_count)
+        mask, role = contract.mask, contract.inputs.get('mask_image')
+        if (mask is None or mask.support != 'supported' or role is None or role.support != 'supported'
+                or mask.source_role != 'image' or mask.white != 'edit' or mask.black != 'preserve'
+                or mask.binarize_threshold != 0.5 or mask.requires_same_size is not True
+                or mask.geometry.state != 'known' or mask.geometry.multiple_of is None
+                or mask.max_source_count is None or mask.source_resize is None or mask.source_resize.max_pixels is None
+                or mask.source_resize.policy != 'downscale_preserve_aspect_ratio'
+                or (role.max_count is not None and role.max_count < 1) or (role.min_count or 0) > 1
+                or (images is not None and (images.min_count or 0) > 1)):
+            return policy
+        reference = contract.inputs.get('reference_image')
+        max_reference = (reference.max_count if reference and reference.support == 'supported'
+                         and reference.max_count is not None else 0)
+        width, height = contract.parameters.get('width'), contract.parameters.get('height')
+        policy['nativeMask'] = dict(field='mask_image', referenceField='reference_image' if max_reference else None,
+            encoding='grayscale_white_edit', minImages=1, maxImages=min(policy['maxImages'], mask.max_source_count),
+            maxReferenceImages=max_reference,
+            minReferenceImages=reference.min_count or 0 if reference else 0,
+            widthMultiple=lcm(mask.geometry.multiple_of, int(width.step)) if width and width.step and float(width.step).is_integer() else mask.geometry.multiple_of,
+            heightMultiple=lcm(mask.geometry.multiple_of, int(height.step)) if height and height.step and float(height.step).is_integer() else mask.geometry.multiple_of,
+            minWidth=max(1, ceil(width.minimum)) if width and width.minimum is not None else 1,
+            minHeight=max(1, ceil(height.minimum)) if height and height.minimum is not None else 1,
+            maxWidth=width.maximum if width else None, maxHeight=height.maximum if height else None,
+            widthValues=width.enum if width else None, heightValues=height.enum if height else None,
+            widthStep=width.step if width else None, heightStep=height.step if height else None,
+            maxPixels=min(mask.source_resize.max_pixels, contract.max_output_pixels or mask.source_resize.max_pixels), sameSize=True)
+        return policy
+
+    def effective_input_rules(self, config):
+        """Compose acceptance limits without writing them into saved settings."""
+        rules = input_rules(config)
+        if config['kind'] == 'image':
+            rules['maxImages'] = self.image_execution_policy(config)['maxImages']
+        return rules
+
+    @staticmethod
+    def _declaration(result):
+        result['declaration'] = {key: result[key] for key in ('status', 'reasonCode', 'checkedAt', 'expiresAt')}
+        return result
+
     def decision(self, config, request):
         observation = self.probe.peek(config)
         result = dict(operation=request.operation, profile=request.profile, method=request.method,
                       path=request.path, output=request.output, status='unknown', reasonCode='not_checked',
-                      checkedAt=None, expiresAt=None)
+                      checkedAt=None, expiresAt=None, inputDetails=[])
         if not observation:
-            return result
+            return self._declaration(result)
         result.update(checkedAt=round(observation.checked * 1000), expiresAt=round(observation.expires * 1000), reasonCode=observation.reason)
         document = observation.document
         if document is None:
-            return result
+            return self._declaration(result)
         model = next((item for item in document.models if item.id == config['modelId']), None)
         operation = model.operations.get(request.operation) if model else None
         if operation is None:
             result['reasonCode'] = 'model_not_declared' if model is None else 'operation_not_declared'
-            return result
+            return self._declaration(result)
         profile = next((item for item in operation.profiles if item.id == request.profile), None)
         if operation.support == 'unsupported':
             result.update(status='unavailable', reasonCode='operation_unsupported')
@@ -162,7 +254,7 @@ class ModelAvailability:
                 result.update(status='unavailable', reasonCode='output_unsupported')
             elif operation.support == profile.support == 'supported' and request.output in profile.outputs:
                 required = set(profile.required_inputs)
-                if required - {'text', 'image', 'video', 'audio', 'instructions'}:
+                if required - INPUT_ROLES:
                     result['reasonCode'] = 'input_contract_unknown'
                 elif request.inputs is not None and required - request.inputs:
                     result.update(status='unavailable', reasonCode='required_inputs_missing')
@@ -170,8 +262,32 @@ class ModelAvailability:
                     result.update(status='available', reasonCode='supported')
             else:
                 result['reasonCode'] = 'declaration_incomplete'
+            contract = route.request if route is not None else None
+            if contract is not None:
+                result['inputDetails'] = input_details(contract)
+                if config['kind'] == 'image' and 'image' in contract.inputs:
+                    maximum = contract.inputs['image'].max_count
+                    local_maximum = input_rules(config)['maxImages']
+                    if maximum is not None and maximum > local_maximum:
+                        result['inputDetails'].append(dict(name='image', source='application',
+                            support='supported' if local_maximum else 'unsupported', maxCount=local_maximum))
+                counts = dict(request.input_counts) if request.input_counts is not None else (
+                    {role: 1 for role in request.inputs} if request.inputs is not None else None)
+                failure = constraint_failure(contract, counts, dict(request.parameters))
+                if failure and result['status'] != 'unavailable':
+                    result.update(status='unavailable', reasonCode=failure[0])
+            self._declaration(result)
             # Only a route which serves this exact request can establish pause.
             execution = operation.execution
+            if route:
+                try:
+                    timestamp(execution.observed_at)
+                    active = self.probe.clock() < observation.received + PAUSE_SECONDS
+                    result['execution'] = dict(state=execution.state if active else 'unknown', scope=execution.scope,
+                        checkedAt=round(observation.checked * 1000),
+                        expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000) if active else None)
+                except (ValueError, TypeError, AttributeError):
+                    pass
             if route and execution.state == 'paused' and execution.scope == 'deployment':
                 try:
                     timestamp(execution.observed_at)  # Validate provenance, without comparing unrelated machine clocks.
@@ -179,7 +295,7 @@ class ModelAvailability:
                         result.update(status='unavailable', reasonCode='execution_paused', expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000))
                 except (ValueError, TypeError, AttributeError):
                     pass
-        return result
+        return result if 'declaration' in result else self._declaration(result)
 
     def require(self, config, request, prepared=None):
         if prepared is not None:
@@ -189,13 +305,68 @@ class ModelAvailability:
         decision = self.decision(config, request)
         if decision['status'] == 'unavailable':
             code = 'capability_paused' if decision['reasonCode'] == 'execution_paused' else 'capability_unavailable'
-            message = ('模型执行入口已暂停，请稍后重试。' if code == 'capability_paused'
-                       else '当前请求缺少服务明确要求的输入，请补充素材后重新提交。' if decision['reasonCode'] == 'required_inputs_missing'
-                       else '服务明确不支持当前请求，请查看模型能力并修改选择。')
+            labels = {'text_response': '文字回复', 'image_response': '图片回复', 'text_to_image': '图片生成',
+                      'image_to_image': '图片编辑', 'text_to_video': '文字生成视频', 'image_to_video': '图片生成视频',
+                      'video_to_video': '视频编辑', 'text_to_speech': '语音合成', 'lyrics_to_music': '音乐生成'}
+            label = labels.get(request.profile, '此操作')
+            message = ('服务已暂停，请恢复后重试。' if code == 'capability_paused'
+                       else f'服务未开放{label}。' if decision['reasonCode'] in {'route_disabled', 'operation_disabled'}
+                       else '请补充所需素材。' if decision['reasonCode'] == 'required_inputs_missing'
+                       else f'该模型不支持{label}。')
+            contract = self.request_constraints(config, request)
+            counts = dict(request.input_counts) if request.input_counts is not None else (
+                {role: 1 for role in request.inputs} if request.inputs is not None else None)
+            failure = constraint_failure(contract, counts, dict(request.parameters)) if contract else None
+            if failure and decision['reasonCode'] == failure[0]:
+                reason, details = failure
+                roles = {'image': '图片', 'audio': '音频', 'video': '视频', 'text': '文字',
+                         'voice': '音色', 'reference_audio': '参考音频', 'instructions': '风格说明',
+                         'reference_text': '参考文本', 'mask_image': '选区', 'reference_image': '标注参考图片'}
+                name = roles.get(details.get('input'), '素材')
+                if reason == 'input_count_exceeded':
+                    if details['input'] == 'image':
+                        code = 'image_input_count'
+                    message = f"最多支持 {details['maximum']} 个{name}输入，当前为 {details['actual']} 个。"
+                    if details['input'] == 'image':
+                        message = f"最多支持 {details['maximum']} 张图片，当前为 {details['actual']} 张。"
+                elif reason == 'input_unsupported':
+                    message = f'该模型不支持{name}输入。'
+                elif reason == 'required_inputs_missing':
+                    if 'inputs' in details:
+                        choices = '或'.join(roles.get(role, '所需素材') for role in details['inputs'])
+                        message = f'请提供{choices}。'
+                    else:
+                        message = f'请添加{name}。'
+                else:
+                    parameter = {'width': '图片宽度', 'height': '图片高度', 'duration': '时长', 'seconds': '时长',
+                                 'voice': '音色', 'speed': '语速', 'language': '语言', 'fps': '帧率',
+                                 'num_frames': '帧数', 'generate_audio': '音频生成选项'}.get(details.get('parameter'), '所选参数')
+                    message = f'{parameter}不符合服务要求。'
             raise AvailabilityError(code, message)
 
     def model(self, config):
         operations = [self.decision(config, request) for request in requests_for(config)]
+        for index, value in enumerate(operations):
+            if value['profile'] != 'image_to_image':
+                continue
+            request = next(item for item in requests_for(config) if item.profile == 'image_to_image')
+            contract = self.request_constraints(config, request)
+            constraint = contract.inputs.get('image') if contract else None
+            single = self.decision(config, replace(request, inputs=frozenset({'text', 'image'}),
+                                                   input_counts=(('text', 1), ('image', 1))))
+            operations[index] = single
+            multi = {**value, 'profile': 'images_to_image'}
+            declaration = dict(value['declaration'])
+            if declaration['status'] != 'unavailable':
+                if constraint and (constraint.support == 'unsupported' or constraint.max_count is not None and constraint.max_count < 2):
+                    declaration.update(status='unavailable', reasonCode='input_count_unsupported')
+                elif not constraint or (constraint.max_count is None and (constraint.min_count or 0) < 2):
+                    declaration.update(status='unknown', reasonCode='input_count_unknown')
+            multi['declaration'] = declaration
+            if multi['reasonCode'] != 'execution_paused':
+                multi.update(declaration)
+            operations.insert(index + 1, multi)
+            break
         states = {item['status'] for item in operations}
         state = ('unavailable' if states == {'unavailable'} else 'available' if states == {'available'} else 'unknown')
         observation = self.probe.peek(config)

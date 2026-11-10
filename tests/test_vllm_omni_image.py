@@ -2,6 +2,8 @@ import asyncio
 import base64
 import io
 import json
+from email.parser import BytesParser
+from email.policy import default
 from uuid import uuid4
 
 import httpx
@@ -26,9 +28,9 @@ def png():
     return out.getvalue()
 
 
-def test_z_image_profile_is_text_only_and_routes_to_its_adapter():
+def test_z_image_profile_accepts_one_image_and_routes_to_its_adapter():
     rules = input_rules(ZIMAGE)
-    assert rules['profile'] == 'vllm-omni-image' and rules['allowedKinds'] == ['text'] and rules['maxImages'] == 0
+    assert rules['profile'] == 'vllm-omni-image' and rules['allowedKinds'] == ['text', 'image'] and rules['maxImages'] == 1
     assert input_rules({**ZIMAGE, 'url': 'https://example.test/omni/v1', 'modelId': 'z-image-turbo'})['profile'] == 'vllm-omni-image'
     assert input_rules({**ZIMAGE, 'kind': 'video'})['profile'] == 'compatible'
     assert input_rules({**ZIMAGE, 'modelId': 'Tongyi-MAI/Z-Image'})['profile'] == 'compatible'
@@ -49,8 +51,18 @@ def project(tmp_path):
 def server(posts, reply, authorization='Bearer token'):
     def handle(request):
         assert request.headers.get('authorization') == authorization
-        assert request.method == 'POST' and request.url.path == '/v1/images/generations'
-        posts.append(json.loads(request.read()))
+        assert request.method == 'POST'
+        if request.url.path == '/v1/images/edits':
+            message = BytesParser(policy=default).parsebytes(
+                ('Content-Type: ' + request.headers['content-type'] + '\r\n\r\n').encode() + request.read())
+            parts = list(message.iter_parts())
+            fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True).decode()
+                      for part in parts if part.get_filename() is None}
+            fields['images'] = [part.get_payload(decode=True) for part in parts if part.get_filename() is not None]
+            posts.append(fields)
+        else:
+            assert request.url.path == '/v1/images/generations'
+            posts.append(json.loads(request.read()))
         return reply
     return handle
 
@@ -89,11 +101,21 @@ def test_generates_a_16_9_png_with_text_references_inlined(project):
     assert asset['kind'] == 'image' and (asset['width'], asset['height']) == (16, 12)
 
 
-def test_reference_images_are_rejected_before_any_request(project):
+def test_one_reference_is_sent_to_the_edit_route_without_losing_its_bytes(project):
     store, value, session, _ = project
     picture = CreationToolAssets(store).import_file(value['id'], str(uuid4()), '角色.png', png(), session)
-    with pytest.raises(ProjectError, match='参考素材类型'):
-        run_image(project, httpx.Response(500), [picture['id']])
+    reply = httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(png()).decode()}]})
+    task, posts = run_image(project, reply, [picture['id']])
+    assert task['status'] == 'succeeded'
+    assert len(posts) == 1 and posts[0]['images'] == [png()]
+
+
+def test_extra_reference_is_rejected_before_any_request(project):
+    store, value, session, _ = project
+    pictures = [CreationToolAssets(store).import_file(value['id'], str(uuid4()), f'{index}.png', png(), session)
+                for index in range(2)]
+    with pytest.raises(ProjectError, match='最多支持 1 张图片，当前为 2 张'):
+        run_image(project, httpx.Response(500), [item['id'] for item in pictures])
 
 
 @pytest.mark.parametrize('reply', [

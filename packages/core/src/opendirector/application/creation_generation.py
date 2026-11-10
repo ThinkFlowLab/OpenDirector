@@ -346,7 +346,7 @@ class CreationGeneration(GenerationRuntime):
             intermediate = ProjectSnapshot.model_validate(data)
             spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
             config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
-            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': input_rules(config)})
+            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
             spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
             spec = execution_spec(spec, resolved, public.inputRules)
             try:
@@ -383,6 +383,8 @@ class CreationGeneration(GenerationRuntime):
                 if hasattr(self.provider, 'prepare_inputs'):
                     self.provider.prepare_inputs(str(command.projectId), task, config)
                 parameters = self._parameters(spec, config, task, records)
+                if capability_identity is not None:
+                    self.availability.require(config, generation_request(config, spec, resolved, parameters=parameters), capability_identity)
             except ProjectError as error:
                 raise ContractError.from_error(error, spec.id) from error
             job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})

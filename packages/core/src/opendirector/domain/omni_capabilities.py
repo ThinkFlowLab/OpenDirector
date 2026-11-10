@@ -1,6 +1,6 @@
 """The optional Omni discovery document. Missing declarations remain unknown."""
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -12,11 +12,78 @@ class Declaration(BaseModel):
     model_config = ConfigDict(extra='ignore', strict=True)
 
 
+Number = Annotated[int | float, Field(allow_inf_nan=False)]
+
+
+class InputConstraint(Declaration):
+    support: Support = 'unknown'
+    min_count: int | None = Field(default=None, ge=0)
+    max_count: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode='after')
+    def bounds(self):
+        if self.min_count is not None and self.max_count is not None and self.min_count > self.max_count:
+            raise ValueError('inverted input bounds')
+        return self
+
+
+class ParameterConstraint(Declaration):
+    support: Support = 'unknown'
+    type: Literal['string', 'integer', 'number', 'boolean'] | None = None
+    enum: list[str | int | float | bool] | None = Field(default=None, max_length=1024)
+    minimum: Number | None = None
+    maximum: Number | None = None
+    step: Number | None = Field(default=None, gt=0)
+
+    @model_validator(mode='after')
+    def bounds(self):
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ValueError('inverted parameter bounds')
+        return self
+
+
+class MaskGeometry(Declaration):
+    state: Literal['known', 'unknown'] = 'unknown'
+    multiple_of: int | None = Field(default=None, ge=1)
+
+
+class SourceResize(Declaration):
+    max_pixels: int | None = Field(default=None, ge=1)
+    policy: str | None = None
+
+
+class MaskConstraint(Declaration):
+    support: Support = 'unknown'
+    source_role: str | None = None
+    max_source_count: int | None = Field(default=None, ge=1)
+    white: str | None = None
+    black: str | None = None
+    binarize_threshold: Number | None = Field(default=None, ge=0, le=1)
+    requires_same_size: bool | None = None
+    geometry: MaskGeometry = Field(default_factory=MaskGeometry)
+    source_resize: SourceResize | None = None
+
+
+class RequestConstraints(Declaration):
+    inputs: dict[str, InputConstraint] = Field(default_factory=dict, max_length=64)
+    required_any_of: list[list[str]] = Field(default_factory=list, max_length=32)
+    parameters: dict[str, ParameterConstraint] = Field(default_factory=dict, max_length=128)
+    mask: MaskConstraint | None = None
+    max_output_pixels: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode='after')
+    def groups(self):
+        if any(not group or len(group) > 32 or len(set(group)) != len(group) for group in self.required_any_of):
+            raise ValueError('invalid alternative input group')
+        return self
+
+
 class Route(Declaration):
     method: str = Field(max_length=16)
     path: str = Field(max_length=2048)
     transport: str = 'http'
     exposure: Exposure = 'unknown'
+    request: RequestConstraints | None = None
 
 
 class Profile(Declaration):
@@ -26,6 +93,7 @@ class Profile(Declaration):
     outputs: list[str] = Field(default_factory=list, max_length=32)
     routes: list[Route] = Field(default_factory=list, max_length=32)
     reason_code: str = Field(default='declaration_incomplete', max_length=200)
+    request: RequestConstraints | None = None
 
     @model_validator(mode='after')
     def unique_routes(self):

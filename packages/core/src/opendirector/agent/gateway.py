@@ -19,9 +19,15 @@ class ToolResult:
     error: str | None = None
 
     def event(self, name: str) -> AgentEvent:
+        code = self.value.get('code') if isinstance(self.value, dict) else None
+        if code is None and isinstance(self.value, dict):
+            issues = self.value.get('issues')
+            if isinstance(issues, list) and len(issues) == 1 and isinstance(issues[0], dict):
+                code = issues[0].get('code')
         return {'type': 'tool', 'name': name,
                 'status': 'failed' if self.error else 'complete',
-                **({'error': self.error} if self.error else {})}
+                **({'error': self.error} if self.error else {}),
+                **({'code': code} if self.error and isinstance(code, str) else {})}
 
 
 class ToolGateway:
@@ -88,10 +94,10 @@ class ToolGateway:
                 error = '; '.join(messages)
                 return ToolResult(value={'error': error}, error=error)
             except (ProjectError, ValueError, KeyError, OSError, UnicodeError) as failure:
-                value = {'error': str(failure)}
+                details = {'error': str(failure)}
                 if isinstance(failure, ProjectError):
-                    value['code'] = failure.code
-                return ToolResult(value=value, error=str(failure))
+                    details['code'] = failure.code
+                return ToolResult(value=details, error=str(failure))
 
     async def close(self) -> None:
         self.closed = True

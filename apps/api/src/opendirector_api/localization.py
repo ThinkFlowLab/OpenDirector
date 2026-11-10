@@ -10,6 +10,7 @@ from fastapi import Request
 from opendirector.domain.timeline_errors import timeline_error_message
 
 from opendirector.domain.creation.commands import CommandReceipt
+from opendirector.domain.capability_messages import english_capability_message
 
 ENGLISH_BY_CODE = {
     'execution_file_link': 'Execution files must not have hard links.',
@@ -21,8 +22,13 @@ ENGLISH_BY_CODE = {
     'kling_aspect': 'Kling keyframe generation follows the image framing. Choose Auto for frames, or a supported ratio for text and image references.',
     'kling_output': 'Choose an output resolution and integer duration supported by the selected Kling model.',
     'kling_cancel': 'Remote Kling cancellation is not connected. The task may continue running and incur charges.',
-    'capability_unavailable': 'The service cannot accept this request. Check its supported capabilities, required inputs and your selection.',
-    'capability_paused': 'The execution endpoint is paused. Try again shortly.',
+    'capability_unavailable': 'This request is not supported.',
+    'capability_paused': 'Service paused. Resume it and try again.',
+    'image_input_count': 'Too many input images.',
+    'image_input_bytes': 'The input images exceed the size limit.',
+    'image_input_mask': 'Check the image selection.',
+    'tool_source_count': 'Check the number of source images.',
+    'tool_source_type': 'Source assets must be images.',
     'capability_connection_changed': 'The model connection changed during the capability check. Submit again.',
     'tool_concept_translation': 'Use a short English subject description, or add a chat model in Models to translate it automatically.',
     'tool_no_video_match': 'The requested subject was not found in the video. Try a different description.',
@@ -112,6 +118,10 @@ def localized_error_for_language(
         return specific
     if not wants_english_language(language):
         return chinese
+    if code.startswith(('capability_', 'image_input_', 'tool_source_')):
+        translated = english_capability_message(chinese)
+        if translated:
+            return translated
     # A generic operation code must not hide a more specific HTTP status.
     generic = code in {"operation_rejected", "invalid_input"}
     if generic and status in {413, 502, 504}:

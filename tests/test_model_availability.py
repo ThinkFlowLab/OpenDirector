@@ -1,5 +1,6 @@
 """Optional discovery uses real request contracts and never changes saved intent."""
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import asyncio
@@ -50,6 +51,140 @@ def service(tmp_path):
 
 def private(configs, saved):
     return configs.resolve(saved['id'], saved['kind'])
+
+
+def image_contract(service, *, maximum=4):
+    configs, _, state, availability = service
+    saved = configs.save('image', 'http://images.test/v1', 'image-alias', '', connection_type='self_hosted', auth_mode='none')
+    state['document'] = document('image_edit', 'image_to_image', '/v1/images/edits', 'image', model='image-alias')
+    profile = state['document']['models'][0]['operations']['image_edit']['profiles'][0]
+    profile['required_inputs'] = ['text', 'image']
+    profile['request'] = {'inputs': {'image': {'support': 'supported', 'max_count': 99}}}
+    profile['routes'][0]['request'] = {'inputs': {'image': {'support': 'supported', 'min_count': 1, 'max_count': maximum}}}
+    availability.refresh([saved['id']])
+    return private(configs, saved), profile
+
+
+@pytest.mark.parametrize('count,expected', [(0, 'unavailable'), (1, 'available'), (4, 'available'), (5, 'unavailable')])
+def test_actual_image_count_uses_exact_route_constraints(service, count, expected):
+    _, _, _, availability = service
+    config, _ = image_contract(service)
+    request = replace(requests_for(config)[1], inputs=frozenset({'text', 'image'}), input_counts=(('text', 1), ('image', count)))
+    assert availability.decision(config, request)['status'] == expected
+    if count == 5:
+        with pytest.raises(ProjectError, match='最多支持 4 张图片，当前为 5 张'):
+            availability.require(config, request)
+
+
+def test_missing_route_contract_does_not_apply_model_wide_limit(service):
+    _, _, _, availability = service
+    config, profile = image_contract(service, maximum=1)
+    del profile['routes'][0]['request']
+    profile['request']['inputs']['image']['max_count'] = 0
+    availability.prepare(config, manual=True)
+    request = replace(requests_for(config)[1], inputs=frozenset({'text', 'image'}), input_counts=(('image', 2), ('text', 1)))
+    assert availability.decision(config, request)['status'] == 'available'
+    assert availability.image_execution_policy(config)['maxImages'] == 8
+
+
+def test_single_and_multi_image_directory_have_distinct_results(service):
+    _, _, _, availability = service
+    config, _ = image_contract(service, maximum=1)
+    values = {item['profile']: item for item in availability.model(config)['operations']}
+    assert values['image_to_image']['status'] == 'available'
+    assert values['images_to_image']['status'] == 'unavailable'
+    assert values['images_to_image']['reasonCode'] == 'input_count_unsupported'
+
+
+def test_pause_keeps_independently_expiring_declaration(service):
+    configs, saved, state, availability = service
+    state['document']['models'][0]['operations']['chat']['execution']['state'] = 'paused'
+    availability.refresh()
+    item = availability.model(private(configs, saved))['operations'][0]
+    assert item['status'] == 'unavailable'
+    assert item['declaration']['status'] == 'available'
+    assert item['execution']['expiresAt'] - item['execution']['checkedAt'] == 5000
+    assert item['declaration']['expiresAt'] - item['declaration']['checkedAt'] == 30000
+
+
+def test_explicit_parameter_constraints_do_not_treat_defaults_as_enum(service):
+    _, _, _, availability = service
+    config, profile = image_contract(service)
+    profile['routes'][0]['request']['parameters'] = {'width': {'support': 'supported', 'type': 'integer', 'minimum': 64, 'step': 16}}
+    availability.prepare(config, manual=True)
+    request = replace(requests_for(config)[1], inputs=frozenset({'text', 'image'}), parameters=(('width', 80),))
+    assert availability.decision(config, request)['status'] == 'available'
+    with pytest.raises(ProjectError, match='图片宽度不符合服务要求'):
+        availability.require(config, replace(request, parameters=(('width', 81),)))
+
+
+def test_native_mask_policy_uses_actual_geometry_and_operator_limits(service):
+    _, _, _, availability = service
+    config, profile = image_contract(service)
+    contract = profile['routes'][0]['request']
+    contract['inputs'].update(mask_image={'support': 'supported', 'max_count': 1},
+                             reference_image={'support': 'supported', 'max_count': 1})
+    contract['parameters'] = {'width': {'support': 'supported', 'minimum': 1, 'step': 32},
+                              'height': {'support': 'supported', 'minimum': 1, 'maximum': 512}}
+    contract['mask'] = {'support': 'supported', 'source_role': 'image', 'max_source_count': 1,
+        'white': 'edit', 'black': 'preserve', 'binarize_threshold': 0.5, 'requires_same_size': True,
+        'geometry': {'state': 'known', 'multiple_of': 16},
+        'source_resize': {'max_pixels': 1048576, 'policy': 'downscale_preserve_aspect_ratio'}}
+    contract['max_output_pixels'] = 262144
+    availability.prepare(config, manual=True)
+    policy = availability.image_execution_policy(config)
+    assert policy['maxImages'] == 4 and policy['nativeMask']['maxImages'] == 1
+    assert policy['nativeMask']['widthMultiple'] == 32
+    assert policy['nativeMask']['maxPixels'] == 262144
+    assert policy['nativeMask']['maxHeight'] == 512
+    contract['mask']['geometry'] = {'state': 'unknown'}
+    availability.prepare(config, manual=True)
+    assert availability.image_execution_policy(config)['nativeMask'] is None
+    assert availability.decision(config, requests_for(config)[1])['status'] == 'available'
+
+
+@pytest.mark.parametrize('operation,profile,path,output,role', [
+    ('chat', 'text_response', '/v1/chat/completions', 'text', 'image'),
+    ('video_generation', 'text_to_video', '/v1/videos', 'video', 'audio'),
+    ('speech', 'text_to_speech', '/v1/audio/speech', 'audio', 'reference_audio'),
+    ('speech', 'lyrics_to_music', '/v1/audio/speech', 'audio', 'voice'),
+])
+def test_explicit_role_constraints_are_shared_across_operations(service, operation, profile, path, output, role):
+    configs, saved, state, availability = service
+    state['document'] = document(operation, profile, path, output)
+    item = state['document']['models'][0]['operations'][operation]['profiles'][0]
+    item['routes'][0]['request'] = {'inputs': {role: {'support': 'unsupported'}}}
+    availability.refresh()
+    from opendirector.application.model_availability import RequestOperation
+    request = RequestOperation(operation, profile, path, output, input_counts=(('text', 1), (role, 1)))
+    assert availability.decision(private(configs, saved), request)['reasonCode'] == 'input_unsupported'
+
+
+def test_invalid_boolean_count_is_unknown_and_does_not_block(service):
+    _, _, _, availability = service
+    config, profile = image_contract(service)
+    profile['routes'][0]['request']['inputs']['image']['max_count'] = False
+    availability.prepare(config, manual=True)
+    assert availability.decision(config, requests_for(config)[1])['reasonCode'] == 'invalid_response'
+    availability.require(config, requests_for(config)[1])
+
+
+@pytest.mark.parametrize('voice,expected', [(None, 'default'), ('speaker1', 'speaker1')])
+def test_speech_checks_the_same_explicit_or_default_voice_as_the_adapter(service, voice, expected):
+    configs, _, state, availability = service
+    saved = configs.save('audio', 'http://speech.test/v1', 'speech-alias', '', connection_type='self_hosted', auth_mode='none')
+    config = private(configs, saved)
+    state['document'] = document('speech', 'text_to_speech', '/v1/audio/speech', 'audio', model='speech-alias')
+    profile = state['document']['models'][0]['operations']['speech']['profiles'][0]
+    profile['required_inputs'] = ['text', 'voice']
+    profile['routes'][0]['request'] = {'inputs': {'voice': {'support': 'supported', 'min_count': 1}},
+                                      'parameters': {'voice': {'support': 'supported', 'enum': ['default', 'speaker1']}}}
+    availability.prepare(config)
+    spec = SimpleNamespace(kind='audio', parameters=SimpleNamespace(voice=voice, creationType='audio'))
+    request = generation_request(config, spec, [])
+    availability.require(config, request)
+    assert 'voice' in request.inputs and dict(request.input_counts)['voice'] == 1
+    assert dict(request.parameters)['voice'] == expected
 
 
 def test_catalog_is_network_free_and_manual_refresh_runs_no_inference(service):

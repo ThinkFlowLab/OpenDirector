@@ -104,9 +104,8 @@ def _adapter_rules(config):
         rules.update(profile='vllm-omni-qwen-image', allowedKinds=['text', 'image'], maxImages=4,
                      imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
     if kind == 'image' and model.rsplit('/', 1)[-1].lower() == 'z-image-turbo':
-        # Self-hosted vLLM-Omni text-to-image: it draws from the prompt alone, so
-        # documents are inlined as text and reference images are not accepted.
-        rules.update(profile='vllm-omni-image', allowedKinds=['text'], maxImages=0)
+        # The Omni edits endpoint accepts one source image and strength.
+        rules.update(profile='vllm-omni-image', allowedKinds=['text', 'image'], maxImages=1)
     if kind == 'image' and config.get('protocol') in {None, 'openai'} and name.startswith(('gpt-image', 'chatgpt-image')):
         # OpenAI gpt-image (and the chatgpt-image-* aliases on the same Images API):
         # documented text-to-image plus reference editing with at

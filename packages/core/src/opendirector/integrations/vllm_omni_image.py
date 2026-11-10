@@ -1,7 +1,7 @@
 """Self-hosted vLLM-Omni image models (Z-Image-Turbo, Qwen-Image-2.1) for canvas nodes.
 
-Reference documents are inlined as text. Z-Image-Turbo draws from the prompt
-alone; Qwen-Image-2.1 also takes connected images as condition images. Automatic
+Reference documents are inlined as text. Z-Image-Turbo accepts one input image;
+Qwen-Image-2.1 accepts up to four condition images. Automatic
 output uses H3's 16:9 canvas; explicit output uses the frozen request dimensions.
 The model API itself is reached through the capability adapter.
 """

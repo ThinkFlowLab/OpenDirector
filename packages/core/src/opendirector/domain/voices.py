@@ -35,6 +35,11 @@ VOICE_MESSAGES = {
 }
 
 
+def effective_speech_voice(config, voice):
+    """The voice value sent by the OpenAI-compatible speech adapter."""
+    return voice or ('default' if config.get('connectionType') == 'self_hosted' else 'alloy')
+
+
 def voice_error(code, status=422):
     return ProjectError(VOICE_MESSAGES[code], status, code=code)
 
