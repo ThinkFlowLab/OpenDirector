@@ -276,9 +276,11 @@ The participant also supplied terminal evidence: `doctor` detected Linux x86_64,
 Python 3.12.7, driver 580.126.09 and Blackwell SM120; `plan` selected the assigned
 GPU 1 and returned `eligible` with no blockers; `start` returned `ready` for the
 exact Qwen3-TTS model on loopback port 8092. The transcript includes the foreground
-SSH forwarding command for local port 18092. These outputs corroborate detection,
-resource selection and service readiness; the supplied transcript has no timing
-measurements. 已补充用户实际命令回执，转发命令本身不另作端点连通性测试结果。
+SSH forwarding command for local port 18092. These four documented shell commands
+are part of the trial; the total number of manual actions, including UI actions,
+was not recorded. The outputs corroborate detection, resource selection and service
+readiness; the supplied transcript has no timing measurements. 用户提供了四条命令，
+其余界面操作未计数；转发命令本身不另作端点连通性测试结果。
 
 The participant later provided application logs identifying project
 `3440abf9-3590-4fe5-bd8e-365344b0ff23` and job
@@ -296,15 +298,17 @@ time from first deployment action to first success. The project query establishe
 the current persisted state; it does not independently prove a process restart or
 the fault-recovery steps. The participant subsequently reported disconnecting
 and restoring the SSH forward, and confirmed that the asset remained after
-reopening the project. The participant also reported no requests for help during
-the trial. 用户确认已断开并恢复 SSH 转发、重开工程后素材仍在，且试用中没有求助。
+reopening the project. The participant reported no requests for help and no
+retries during the trial. 用户确认已断开并恢复 SSH 转发、重开工程后素材仍在，且没有求助或重试。
 
-This was an assisted cached setup. Exact start, service-ready and first-usable-asset
-timestamps and elapsed time were **not measured**. The participant reported no
-help requests. Manual-action and retry counts and step-specific recovery timings
-were not supplied and remain unrecorded. The feedback does not establish an
+This was an assisted cached setup. The participant subsequently estimated the
+first-success elapsed time at **approximately 5–10 minutes**, based on recollection.
+Exact start, service-ready and first-usable-asset timestamps were not measured.
+The participant reported zero help requests and zero retries. The total manual
+action count and step-specific recovery timings were not recorded. The feedback
+does not establish an
 independently timed recovery result or a clean-install performance benchmark.
-“生成的很快”保留为参与者主观评价，不换算成秒数，不用此前 Agent 推理耗时替代真人首次成功耗时。
+首次成功耗时约 5–10 分钟为参与者事后估计；不以收到响应头的耗时代替首次成功耗时。
 
 The user explicitly chose only the allocated Blackwell GPU for this followup.
 Consumer laptops, RTX A6000/SM86 inference, multi-GPU serving, native Windows and
