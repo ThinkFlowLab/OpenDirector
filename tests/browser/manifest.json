@@ -477,6 +477,13 @@
         "gate"
       ],
       "note": "Runs with voice_library_server.py in the Release checks voice library phase."
+    },
+    {
+      "file": "zhipu_provider.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
     }
   ]
 }

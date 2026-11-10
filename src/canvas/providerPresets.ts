@@ -6,6 +6,7 @@ import { getActiveLocale } from "../i18n/messages.ts";
 const EN_NAMES: Record<string, string> = {
   "OpenAI 兼容": "OpenAI compatible",
   "MiniMax 官方视频": "MiniMax official video",
+  "智谱 BigModel": "Zhipu BigModel",
   "可灵官方视频": "Kling official video",
   "MiniMax 官方图片": "MiniMax Official Images",
   "MOSS 开放平台": "MOSS Open Platform",
@@ -129,6 +130,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     protocol: "openai",
     connectionType: "api",
     authMode: "bearer",
+  },
+  {
+    id: "zhipu",
+    logoOrganization: "zai-org",
+    name: "智谱 BigModel",
+    kinds: ["agent"],
+    url: "https://open.bigmodel.cn/api/paas/v4",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: {
+      agent: ["glm-5.3", "glm-5.3-flash", "glm-5.2"],
+    },
   },
   {
     id: "moss",
