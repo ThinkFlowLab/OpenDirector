@@ -2,6 +2,10 @@
 
 ## 中文
 
+能力卡示例，展示操作状态和服务声明的输入限制：
+
+![中文服务能力卡](images/model-availability-zh-CN.png)
+
 模型接入可以读取服务的可选能力声明。自托管连接默认自动检查，其他连接默认关闭；服务级 `capabilityAutoCheck` 可以覆盖默认值。省略该字段会保留已有设置，旧配置无需转换。共享同一 `providerId` 的模型使用相同设置和查询缓存。独立服务及旧的独立配置保留自己的归属，相同 URL 和密钥不会合并它们。自动检查只查询能力接口，不生成内容、不唤醒模型。
 
 “检查服务能力”可以检查未保存的表单。草稿检查不会保存配置，也不会更新已保存模型的状态。显式刷新已保存模型可以检查关闭自动检查的服务。
@@ -19,6 +23,10 @@
 生成、工具和使用设置模型的助手共享接受规则。服务查询位于项目存储事务之外，接受新任务时再次核对连接身份。明确拒绝不会创建生成任务，也不会调用生成接口。工具的本地操作和可选翻译保留原有行为。已接受任务的快照、恢复、下载、取消和同一命令重放继续使用原有规则；最新能力状态不会重新拒绝它们。能力状态不会清除音色或替换用户选择。
 
 ## English
+
+Example capability card showing operation states and declared input limits:
+
+![English service capability card](images/model-availability-en-US.png)
 
 Model connections can read an optional service capability declaration. Self-hosted connections check automatically by default; other connections require explicit enablement or a manual check. The optional service-level `capabilityAutoCheck` preference and query cache are shared by models with the same `providerId`. Independent providers and legacy standalone configuration IDs stay isolated even at the same URL with the same credential. Checks query declarations without inference or wake-up requests.
 
