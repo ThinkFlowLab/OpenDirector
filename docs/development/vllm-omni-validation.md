@@ -294,12 +294,15 @@ The supplied log reports a model HTTP 200 and `headers_ms: 1777`, the time to
 response headers for that model request. It is not the complete job duration or
 time from first deployment action to first success. The project query establishes
 the current persisted state; it does not independently prove a process restart or
-the fault-recovery steps. 收到响应头的耗时不能用作首次成功耗时，当前工程状态也不等于重启验证。
+the fault-recovery steps. The participant subsequently reported disconnecting
+and restoring the SSH forward, and confirmed that the asset remained after
+reopening the project. The participant also reported no requests for help during
+the trial. 用户确认已断开并恢复 SSH 转发、重开工程后素材仍在，且试用中没有求助。
 
 This was an assisted cached setup. Exact start, service-ready and first-usable-asset
-timestamps and elapsed time were **not measured**. Manual-action, help and retry
-counts and step-specific recovery timings were not supplied; they remain
-unrecorded rather than zero. The overall feedback does not establish an
+timestamps and elapsed time were **not measured**. The participant reported no
+help requests. Manual-action and retry counts and step-specific recovery timings
+were not supplied and remain unrecorded. The feedback does not establish an
 independently timed recovery result or a clean-install performance benchmark.
 “生成的很快”保留为参与者主观评价，不换算成秒数，不用此前 Agent 推理耗时替代真人首次成功耗时。
 
