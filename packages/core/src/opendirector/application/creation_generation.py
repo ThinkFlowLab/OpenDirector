@@ -227,7 +227,7 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile == 'moss-image' else None,
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image'} else None,
                 outputFormat='png', watermark=parameters.get('watermark'),
                 numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':

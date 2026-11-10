@@ -7,12 +7,14 @@ Adding a model means adding or extending an adapter; operations stay unchanged.
 
 import asyncio
 import base64
+import io
 import json
 import math
 import re
 from urllib.parse import quote, urlsplit
 
 import httpx
+from PIL import Image
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.capability_messages import constraint_rejection
@@ -21,6 +23,7 @@ from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthR
                                           VideoRequest)
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.image_inputs import image_input_policy, validate_image_request
+from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
 from opendirector.domain.omni_capabilities import RequestConstraints
@@ -28,7 +31,7 @@ from opendirector.domain.projects import ProjectError
 from opendirector.domain.request_constraints import constraint_failure
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
-from opendirector.integrations.reference_inputs import data_uri, image_type
+from opendirector.integrations.reference_inputs import data_uri, image_type, request_size
 from opendirector.integrations.volcengine import VolcengineGeneration, bounded, endpoint
 from opendirector.media import processing as media
 from opendirector.media.async_work import blocking
@@ -78,7 +81,7 @@ def _decoded(data):
     raise protocol_failure('submit')
 
 
-def _moss_result_url(value, stage):
+def _result_url(value, stage):
     if not isinstance(value, str) or len(value) > 16384:
         raise protocol_failure(stage)
     url = urlsplit(value)
@@ -90,7 +93,7 @@ def _moss_result_url(value, stage):
 
 async def _download_moss_result(adapter, config, url):
     async def read():
-        _moss_result_url(url, 'download')
+        _result_url(url, 'download')
         base, target = urlsplit(config['url']), urlsplit(url)
         headers = auth_headers(config) if (base.scheme, base.netloc) == (target.scheme, target.netloc) else {}
         async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=adapter.transport,
@@ -171,7 +174,7 @@ class MossImages(ModelAdapter):
             results = value['data']
             if not isinstance(results, list) or len(results) != 1:
                 raise protocol_failure('submit')
-            return _moss_result_url(results[0]['url'], 'submit')
+            return _result_url(results[0]['url'], 'submit')
 
         url = await _call('submit', submit)
         if result_ready:
@@ -203,7 +206,7 @@ class MossSpeech(ModelAdapter):
                 raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
             if value.get('object', 'audio.speech') != 'audio.speech' or value.get('response_format', 'mp3') != 'mp3':
                 raise protocol_failure('submit')
-            return _moss_result_url(value['url'], 'submit')
+            return _result_url(value['url'], 'submit')
 
         url = await _call('submit', submit)
         if result_ready:
@@ -216,6 +219,66 @@ class MossSpeech(ModelAdapter):
         if not data.startswith(b'ID3') and not mpeg_frame:
             raise protocol_failure('download')
         return data
+
+
+class MinimaxH3Images(ModelAdapter):
+    capabilities = frozenset({'image.generate', 'image.edit'})
+    max_images = 16
+
+    async def image(self, config, request: ImageRequest) -> MediaResult:
+        images = [*([request.image] if request.image is not None else []), *request.references]
+        if len(images) > self.max_images:
+            raise ProjectError('MiniMax H3 图片编辑最多接受 16 张参考图。', 422, code='minimax_image_count')
+        encoded = []
+        for data in images:
+            mime = image_type(data)
+            try:
+                with Image.open(io.BytesIO(data)) as image:
+                    dimensions = image.size
+            except (OSError, ValueError, Image.DecompressionBombError):
+                dimensions = (None, None)
+            validate_minimax_image_reference(mime, *dimensions)
+            if len(data) > 64 * 1024 * 1024:
+                raise ProjectError('MiniMax H3 图片参考请求超过 64 MiB。', 413, code='minimax_image_bytes')
+            encoded.append(data_uri(data, mime))
+        width, height = request.width, request.height
+        ratio = min(3, max(1 / 3, width / height))
+        scale = 2048 / math.sqrt(ratio)
+        width, height = round(scale * ratio), round(scale)
+        size = f'{min(width, 3 * height)}x{min(height, 3 * width)}'
+        return await self.generate(config, request.prompt, size, encoded)
+
+    async def generate(self, config, prompt, size, images, *, result_ready=None):
+        payload = {'model': config['modelId'], 'prompt': prompt, 'size': size, 'n': 1,
+                   'output_format': 'png', 'response_format': 'url'}
+        route = '/images/generations'
+        if images:
+            route = '/images/edits'
+            payload['images'] = [{'image_url': image} for image in images]
+        request_size(payload, 64 * 1024 * 1024)
+
+        async def submit():
+            async with _client(self, config, timeout=600) as client:
+                secrets = (config.get('apiKey', ''),)
+                async with client.stream('POST', endpoint(config['url'], route),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets, limit=1024 * 1024))
+                result = value['data'][0]
+                if result.get('error'):
+                    raise provider_failure(result, stage='submit', http_status=200, secrets=secrets)
+                return _result_url(result['url'], 'submit')
+
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('png', url)
+        return await self.download(config, url)
+
+    async def download(self, config, url):
+        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(
+            config, 'png', url, public_only=True)
+        if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            raise protocol_failure('download')
+        return MediaResult(data, 'png')
 
 
 class OpenAIImages(ModelAdapter):
@@ -726,6 +789,8 @@ def adapter_for(config, transport=None, poll_interval=3, *, image_policy=None, l
         return VllmOmniScore(transport, poll_interval)
     if kind == 'agent':
         return OpenAIChat(transport, poll_interval)
+    if profile == 'minimax-h3-image':
+        return MinimaxH3Images(transport, poll_interval)
     if profile == 'moss-image':
         return MossImages(transport, poll_interval)
     if profile == 'moss-speech':

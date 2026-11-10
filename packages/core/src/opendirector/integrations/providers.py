@@ -18,7 +18,8 @@ from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
+from opendirector.integrations.model_adapters import (MinimaxH3Images, MossImages, MossSpeech, OpenAISpeech,
+                                                    VllmOmniMusic, VllmOmniScore, image_parts)
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
@@ -32,6 +33,7 @@ class GenerationProviders(VolcengineGeneration):
         self.kling_video = KlingVideoGeneration(store, transport, poll_interval, retry_delays)
         self.vllm_omni = VllmOmniGeneration(store, transport, poll_interval)
         self.vllm_omni_image = VllmOmniImageGeneration(store, transport, poll_interval)
+        self.minimax_image = MinimaxH3Images(transport, poll_interval)
         self.moss_image = MossImages(transport, poll_interval)
         self.moss_speech = MossSpeech(transport, poll_interval)
 
@@ -83,6 +85,9 @@ class GenerationProviders(VolcengineGeneration):
         adapter = self._profile_adapter(config)
         if adapter:
             return await adapter.resume_result(config, suffix, url)
+        if config and input_rules(config)['profile'] == 'minimax-h3-image':
+            result = await self.minimax_image.download(config, url)
+            return result.suffix, result.data
         if config and input_rules(config)['profile'] == 'moss-image':
             return suffix, await self.moss_image.download(config, url)
         if config and input_rules(config)['profile'] == 'moss-speech':
@@ -109,6 +114,11 @@ class GenerationProviders(VolcengineGeneration):
         adapter = self._profile_adapter(config)
         if adapter and task['kind'] != 'text':
             return await adapter.generate(config, task, submitted, result_ready=result_ready)
+        if input_rules(config)['profile'] == 'minimax-h3-image':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            result = await self.minimax_image.generate(config, prepared['prompt'], task['parameters']['size'],
+                prepared['images'], result_ready=result_ready)
+            return result.suffix, result.data
         if input_rules(config)['profile'] == 'moss-image':
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
             width, height = map(int, task['parameters']['size'].split('x'))

@@ -116,3 +116,20 @@ test("Kling Flash descriptions distinguish first-frame capabilities in both lang
     assert.doesNotMatch(modelDescription(model)!, /尾帧/);
   } finally { setActiveLocale(previous); }
 });
+
+test("MiniMax H3 image preset exposes both models in both display languages", () => {
+  const previous = getActiveLocale();
+  try {
+    const preset = PROVIDER_PRESETS.find((item) => item.id === "minimax-image")!;
+    assert.equal(preset.url, "https://api.minimax.cn/v1");
+    assert.deepEqual(preset.modelsByKind?.image, ["MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"]);
+    for (const [locale, name] of [
+      ["zh-CN", "MiniMax 官方图片"], ["en-US", "MiniMax Official Images"],
+    ] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("image").find((item) => item.id === preset.id)?.name, name);
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
+});
