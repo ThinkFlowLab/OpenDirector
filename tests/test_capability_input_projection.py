@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from opendirector.application.model_availability import generation_request
+from opendirector.application.model_availability import generation_request, requests_for
 from opendirector.domain.omni_capabilities import ParameterConstraint, RequestConstraints
 from opendirector.domain.request_constraints import constraint_failure, input_details
 from test_model_availability import document, private, service
@@ -126,3 +126,37 @@ def test_continuation_does_not_claim_video_upload_but_honors_route_pause(service
     assert result['status'] == ('unavailable' if paused else 'unknown')
     state['clock'] += 6
     assert availability.decision(config, request)['status'] == 'unknown'
+
+
+@pytest.mark.parametrize('route,unavailable', [
+    ({'method': 'POST', 'path': '/v1/videos', 'transport': 'http', 'exposure': 'disabled'}, True),
+    ({'method': 'GET', 'path': '/v1/videos', 'transport': 'http', 'exposure': 'disabled'}, False),
+    ({'method': 'POST', 'path': '/other/videos', 'transport': 'http', 'exposure': 'disabled'}, False),
+    ({'method': 'POST', 'path': '/v1/videos', 'transport': 'websocket', 'exposure': 'disabled'}, False),
+    (None, False),
+])
+def test_unknown_continuation_profile_still_honors_a_disabled_http_endpoint(service, route, unavailable):
+    configs, saved, state, availability = service
+    config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document']['routes'] = [route] if route else []
+    availability.prepare(config)
+    request = generation_request(config, SimpleNamespace(kind='video'), [reference('video', 'latent')])
+    result = availability.decision(config, request)
+    assert result['status'] == ('unavailable' if unavailable else 'unknown')
+    assert result['reasonCode'] == ('route_disabled' if unavailable else 'profile_not_declared')
+
+
+@pytest.mark.parametrize('continuation', [False, True])
+def test_disabled_endpoint_reason_survives_a_fresh_pause_observation(service, continuation):
+    configs, saved, state, availability = service
+    config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document']['routes'][0]['exposure'] = 'disabled'
+    state['document']['models'][0]['operations']['video_generation']['execution']['state'] = 'paused'
+    availability.prepare(config)
+    request = (generation_request(config, SimpleNamespace(kind='video'), [reference('video', 'latent')])
+               if continuation else requests_for(config)[0])
+    result = availability.decision(config, request)
+    assert result['reasonCode'] == result['declaration']['reasonCode'] == 'route_disabled'
+    assert result['execution']['state'] == 'paused'

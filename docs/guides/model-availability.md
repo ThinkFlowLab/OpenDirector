@@ -68,7 +68,7 @@ The remote protocol is `GET <API_BASE>/omni/capabilities`, with `object="omni.ca
 
 字符串枚举可以声明 `enum_normalization`：`lower` 忽略大小写，`title` 按服务使用的标题大小写比较，`strip_lower` 同时忽略首尾空白与大小写；缺失或 `null` 保持精确比较。规则只用于比较，不改写用户输入或已接受任务。未知规则或非字符串枚举会使该次发现结果保持未知。应用原有的音色身份等输入规则仍然有效；空音色占位值不会显示为可选音色。
 
-只有 `content` 参考计入实际媒体输入。文字生成中的音视频素材信息使用 `metadata`，H3 接续来源使用 `latent`；二者不会满足上传音视频的要求。接续请求保留上一任务的远端标识；没有匹配的接续能力声明时保持未知，同时仍检查实际 `/videos` 路径的部署暂停。
+只有 `content` 参考计入实际媒体输入。文字生成中的音视频素材信息使用 `metadata`，H3 接续来源使用 `latent`；二者不会满足上传音视频的要求。接续请求保留上一任务的远端标识；没有匹配的接续能力声明时保持未知，同时仍检查实际 `/videos` 路径的部署暂停与明确关闭状态。已关闭路径不会只提示恢复服务。
 
 普通生成与工具都按最终发送的图片校验数量；主图和普通参考图合计，蒙版及独立标注参考分别统计。商品替换会先合成场景与商品，因此两个来源对应一张模型输入。超量输入会被拒绝，不会截取图片列表。Z-Image-Turbo 支持一张图片的编辑请求。
 
@@ -84,7 +84,7 @@ Only the matched `profile.routes[].request` supplies effective request constrain
 
 String enums may declare `enum_normalization`: `lower`, `title`, or `strip_lower`. Missing or null rules retain exact comparison. Both the supplied value and enum candidates are compared using the declared rule, without rewriting input or accepted tasks. Unknown rules or normalization on a non-string enum make discovery unknown. Existing application input rules, including voice identity validation, still apply. An empty voice placeholder is not presented as a selectable voice.
 
-Only `content` references count as transmitted media. Audio/video metadata in text generation uses `metadata`, and an H3 continuation source uses `latent`; neither satisfies an uploaded-media requirement. Continuation keeps the previous remote job ID. An undeclared continuation profile remains unknown while a deployment pause on the actual `/videos` route still prevents new work.
+Only `content` references count as transmitted media. Audio/video metadata in text generation uses `metadata`, and an H3 continuation source uses `latent`; neither satisfies an uploaded-media requirement. Continuation keeps the previous remote job ID. An undeclared continuation profile remains unknown while a deployment pause or an explicitly disabled actual `/videos` endpoint still prevents new work. A disabled endpoint retains its specific rejection reason even during a pause.
 
 Generation and tools count the images actually sent. A mask and an independent annotation reference have separate roles. Product replacement combines its two source assets into one model image. Excess images are rejected rather than truncated. Z-Image-Turbo accepts a single-image editing request.
 

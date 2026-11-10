@@ -239,12 +239,17 @@ class ModelAvailability:
             return self._declaration(result)
         profile = next((item for item in operation.profiles if item.id == request.profile), None)
         route = None
+        exposed = next((item for item in document.routes if item.transport == 'http'
+                        and item.method == request.method and item.path == request.path), None)
         if operation.support == 'unsupported':
             result.update(status='unavailable', reasonCode='operation_unsupported')
         elif operation.exposure == 'disabled':
             result.update(status='unavailable', reasonCode='operation_disabled')
         elif profile is None:
-            result['reasonCode'] = 'profile_not_declared'
+            if exposed and exposed.exposure == 'disabled':
+                result.update(status='unavailable', reasonCode='route_disabled')
+            else:
+                result['reasonCode'] = 'profile_not_declared'
             route = next((route for item in operation.profiles for route in item.routes
                           if route.transport == 'http' and route.method == request.method and route.path == request.path), None)
         elif profile.support == 'unsupported':
@@ -252,8 +257,6 @@ class ModelAvailability:
         else:
             route = next((item for item in profile.routes if item.transport == 'http'
                           and item.method == request.method and item.path == request.path), None)
-            exposed = next((item for item in document.routes if item.transport == 'http'
-                            and item.method == request.method and item.path == request.path), None)
             if route is None:
                 result['reasonCode'] = 'route_not_declared'
             elif route.exposure == 'disabled' or (exposed and exposed.exposure == 'disabled'):
@@ -295,7 +298,7 @@ class ModelAvailability:
                 result['execution'] = dict(state=execution.state if active else 'unknown', scope=execution.scope,
                     checkedAt=round(observation.checked * 1000),
                     expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000) if active else None)
-                if active and execution.state == 'paused' and execution.scope == 'deployment':
+                if active and execution.state == 'paused' and execution.scope == 'deployment' and result['reasonCode'] != 'route_disabled':
                     result.update(status='unavailable', reasonCode='execution_paused', expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000))
             except (ValueError, TypeError, AttributeError):
                 pass
