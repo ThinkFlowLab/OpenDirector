@@ -15,6 +15,7 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
+from opendirector.domain.capability_messages import constraint_rejection
 from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthRequest, EditMask, ImageRequest, MediaResult, MusicRequest,
                                           ScoreRequest, Segment, SegmentRequest, SpeechRequest, TrackRequest, Tracks, VideoEditRequest,
                                           VideoRequest)
@@ -22,7 +23,9 @@ from opendirector.domain.input_rules import input_rules
 from opendirector.domain.image_inputs import image_input_policy, validate_image_request
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
+from opendirector.domain.omni_capabilities import RequestConstraints
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.request_constraints import constraint_failure
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.reference_inputs import data_uri, image_type
@@ -103,6 +106,10 @@ class ModelAdapter:
 
     def __init__(self, transport=None, poll_interval=3):
         self.transport, self.poll_interval = transport, poll_interval
+
+    def image_parameters(self, width, height, **options):
+        """Only adapters with an exact image-route projection supply fields."""
+        return {}
 
     async def image(self, config, request: ImageRequest) -> MediaResult:
         raise ProjectError('所选模型不支持图片生成。', 409)
@@ -245,6 +252,22 @@ class OpenAIImages(ModelAdapter):
         # Diffusion latents need both axes on the service's pixel grid.
         return tuple(max(256, int(round(value * scale / self.grid)) * self.grid) for value in (width, height))
 
+    def image_parameters(self, width, height, *, has_images=True, native_mask=False, strength=None, seed=None, extra=None):
+        """The same scalar values drive capability checks and HTTP serialization."""
+        width, height = (width, height) if native_mask else self.size(width, height)
+        parameters = {'width': width, 'height': height, 'size': f'{width}x{height}', **(extra or {})}
+        if not has_images:
+            parameters['n'] = 1
+        if self.response_format:
+            parameters['response_format'] = 'b64_json'
+        if self.free_size:
+            parameters['output_format'] = 'png'
+            if seed is not None:
+                parameters['seed'] = seed
+        if has_images and strength is not None and (self.strength or native_mask):
+            parameters['strength'] = round(min(max(strength, 0.0), 1.0), 3)
+        return parameters
+
     async def cutout(self, config, request: CutoutRequest) -> MediaResult:
         if 'image.cutout' not in self.capabilities:
             return await super().cutout(config, request)
@@ -259,38 +282,35 @@ class OpenAIImages(ModelAdapter):
         policy = self.image_policy or {**image_input_policy(config), 'maxImages': self.max_images}
         if not self.legacy_image_policy:
             validate_image_request(request, policy)
-        # A selected native-mask request must keep its approved geometry exactly.
-        width, height = ((request.width, request.height) if request.mask is not None
-                         else self.size(request.width, request.height))
         secrets = (config.get('apiKey', ''),)
         images = [*([request.image] if request.image is not None else []), *request.references]
         if self.legacy_image_policy:
             # Only persisted tasks accepted before image policies existed use
             # the original request shape, including its original image count.
             images = images[:self.max_images]
-        extra = dict(extra or {})
-        if self.free_size:
-            extra['output_format'] = 'png'
-            if request.seed is not None:
-                extra['seed'] = request.seed
+        parameters = self.image_parameters(request.width, request.height, has_images=bool(images),
+            native_mask=request.mask is not None, strength=request.strength, seed=request.seed, extra=extra)
+        frozen = policy.get('requestConstraints')
+        if frozen is not None and not self.legacy_image_policy:
+            counts = {'text': 1, 'image': len(images), 'mask_image': int(request.mask is not None),
+                      'reference_image': int(request.reference is not None)}
+            failure = constraint_failure(RequestConstraints.model_validate(frozen), counts, parameters)
+            if failure:
+                code, message = constraint_rejection(*failure)
+                raise ProjectError(message, 422, code=code)
+        # Width/height describe the parsed size; the image API accepts one size field.
+        fields = {key: value for key, value in parameters.items() if key not in {'width', 'height'}}
 
         async def work():
             async with _client(self, config) as client:
                 if not images:
-                    payload = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                               'n': 1, **extra}
-                    if self.response_format:
-                        payload['response_format'] = 'b64_json'
+                    payload = {'model': config['modelId'], 'prompt': request.prompt, **fields}
                     async with client.stream('POST', endpoint(config['url'], '/images/generations'),
                                              headers=auth_headers(config), json=payload) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
                 else:
-                    form = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                            **{key: str(item) for key, item in extra.items()}}
-                    if self.response_format:
-                        form['response_format'] = 'b64_json'
-                    if request.strength is not None and (self.strength or request.mask is not None):
-                        form['strength'] = f'{min(max(request.strength, 0.0), 1.0):.3f}'
+                    form = {'model': config['modelId'], 'prompt': request.prompt,
+                            **{key: f'{item:.3f}' if key == 'strength' else str(item) for key, item in fields.items()}}
                     files = image_parts(images, self.reference_field)
                     if request.mask is not None:
                         native = policy['nativeMask']

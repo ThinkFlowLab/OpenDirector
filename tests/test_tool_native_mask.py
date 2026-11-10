@@ -16,13 +16,14 @@ from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.application.model_availability import ModelAvailability
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.domain.capabilities import ImageRequest
+from opendirector.domain.capability_messages import constraint_rejection, english_capability_message
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.capability_probe import CapabilityProbe
 from opendirector.integrations.model_adapters import adapter_for
 from opendirector.integrations import model_adapters
 from opendirector.media import processing as media
-from test_tool_tasks import project, configure, upload, png, output_image
+from test_tool_tasks import project, configure, upload, png, output_image, output_rgba, SAM3, ZIMAGE, segmentation_server
 from test_model_availability import document
 
 
@@ -69,6 +70,298 @@ def runtime(store, config, configs, calls, selected_policy):
     availability.image_execution_policy = lambda _: deepcopy(selected_policy)
     return ToolTasks(store.local, configs, CreationToolAssets(store), projects=store, concurrency=1,
                      availability=availability, transport=httpx.MockTransport(image_server(calls))), probe
+
+
+def declared_runtime(store, configs, calls, constraints):
+    config = configs.list()[0]
+    declaration = document('image_edit', 'image_to_image', '/v1/images/edits', 'image', model=config['modelId'])
+    profile = declaration['models'][0]['operations']['image_edit']['profiles'][0]
+    profile['required_inputs'] = ['text', 'image']
+    profile['routes'][0]['request'] = constraints
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    tools = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store, concurrency=1,
+        availability=ModelAvailability(configs, probe), transport=httpx.MockTransport(image_server(calls)))
+    return tools, probe, declaration
+
+
+@pytest.mark.parametrize('constraints', [
+    {'max_output_pixels': 512 * 512},
+    {'parameters': {'width': {'support': 'supported', 'type': 'integer', 'enum': [64]}}},
+])
+def test_ordinary_edit_rejects_actual_render_size_before_task_or_post(project, constraints):
+    store, pid, session = project
+    configs = configure(store, MODEL)
+    source = upload(store, pid, session, 'source.png', png((64, 64)))
+    calls = []
+    tools, probe, _ = declared_runtime(store, configs, calls, constraints)
+    async def run():
+        try:
+            with pytest.raises(ProjectError) as failure:
+                await tools.submit(pid, {'id': str(uuid4()), 'tool': 'view-control',
+                    'sourceAssetIds': [source], 'parameters': {}}, session)
+            assert failure.value.code == 'capability_unavailable'
+            assert tools.list(pid) == [] and calls == []
+        finally:
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+def test_ordinary_edit_freezes_actual_render_contract_and_keeps_output_size(project):
+    store, pid, session = project
+    configs = configure(store, MODEL)
+    source = upload(store, pid, session, 'source.png', png((64, 64)))
+    constraints = {'max_output_pixels': 1024 * 1024,
+                   'parameters': {'width': {'support': 'supported', 'enum': [1024]}}}
+    calls = []
+    tools, probe, declaration = declared_runtime(store, configs, calls, constraints)
+    value = {'id': str(uuid4()), 'tool': 'view-control', 'sourceAssetIds': [source], 'parameters': {}}
+    async def run():
+        try:
+            await tools.limit.acquire()
+            accepted = await tools.submit(pid, value, session)
+            frozen = deepcopy(accepted['imageExecutionPolicy'])
+            assert frozen['requestConstraints']['max_output_pixels'] == 1024 * 1024
+            declaration['models'][0]['operations']['image_edit']['profiles'][0]['routes'][0]['request'] = {'max_output_pixels': 1}
+            tools.availability.refresh([configs.list()[0]['id']])
+            tools.availability.prepare = Mock(side_effect=AssertionError('accepted task queried new declaration'))
+            tools.availability.require = Mock(side_effect=AssertionError('accepted task checked current availability'))
+            tools.limit.release()
+            await asyncio.gather(*tools.jobs.values())
+            result = tools.get(pid, accepted['id'])
+            assert result['status'] == 'succeeded', result['error']
+            assert result['imageExecutionPolicy'] == frozen
+            assert (await tools.submit(pid, value, session))['id'] == accepted['id']
+            assert len(calls) == 1 and calls[0][0]['size'] == '1024x1024'
+            assert output_image(store, pid, result).size == (64, 64)
+        finally:
+            if tools.limit.locked():
+                tools.limit.release()
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+def test_batch_enhancement_checks_each_render_before_accepting_any_source(project):
+    store, pid, session = project
+    configs = configure(store, MODEL)
+    sources = [upload(store, pid, session, f'{index}.png', png(size))
+               for index, size in enumerate(((64, 64), (128, 64)))]
+    calls = []
+    tools, probe, _ = declared_runtime(store, configs, calls, {'max_output_pixels': 1024 * 1024})
+    async def run():
+        try:
+            with pytest.raises(ProjectError) as failure:
+                await tools.submit(pid, {'id': str(uuid4()), 'tool': 'image-hd', 'sourceAssetIds': sources,
+                    'parameters': {'kind': 'pro', 'resolution': '2K'}}, session)
+            assert failure.value.code == 'capability_unavailable'
+            assert tools.list(pid) == [] and calls == []
+        finally:
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('tool,parameters,output_size', [
+    ('image-presets', {'preset': 'three-view'}, (2048, 1152)),
+    ('outpaint', {'right': 1, 'outputWidth': 512, 'outputHeight': 256}, (512, 256)),
+])
+def test_reframing_checks_adapter_render_size_and_preserves_requested_output(project, tool, parameters, output_size):
+    store, pid, session = project
+    configs = configure(store, MODEL)
+    source = upload(store, pid, session, 'source.png', png((64, 64)))
+    calls = []
+    constraints = {'parameters': {'width': {'support': 'supported', 'enum': [1536]},
+                                   'height': {'support': 'supported', 'enum': [1024]}}}
+    tools, probe, _ = declared_runtime(store, configs, calls, constraints)
+    async def run():
+        try:
+            task = await tools.submit(pid, {'id': str(uuid4()), 'tool': tool, 'sourceAssetIds': [source],
+                                           'parameters': parameters}, session)
+            await asyncio.gather(*tools.jobs.values())
+            result = tools.get(pid, task['id'])
+            assert result['status'] == 'succeeded', result['error']
+            assert len(calls) == 1 and calls[0][0]['size'] == '1536x1024'
+            assert output_image(store, pid, result).size == output_size
+        finally:
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_adapter_checks_frozen_render_limit_without_changing_old_requests(legacy):
+    config = {'kind': 'image', 'url': MODEL[1], 'modelId': MODEL[2], 'protocol': 'openai'}
+    policy = {**image_input_policy(config), 'requestConstraints': {'max_output_pixels': 512 * 512}}
+    calls = []
+    adapter = adapter_for(config, httpx.MockTransport(image_server(calls)), image_policy=policy, legacy_image_policy=legacy)
+    request = ImageRequest('edit', 64, 64, image=png())
+    if legacy:
+        asyncio.run(adapter.image(config, request))
+        assert len(calls) == 1 and calls[0][0]['size'] == '1024x1024'
+    else:
+        with pytest.raises(ProjectError) as failure:
+            asyncio.run(adapter.image(config, request))
+        assert failure.value.code == 'capability_unavailable'
+        assert str(failure.value) == '图片尺寸不符合服务要求。'
+        assert calls == []
+
+
+@pytest.mark.parametrize('tool,parameters', [
+    ('smart-edit', {'editMode': 'selection', 'prompt': 'red'}),
+    ('inpainting-remove', {}), ('view-control', {}), ('lighting', {}),
+    ('product-replacement', {}), ('panorama', {}),
+    ('multi-size', {'outputWidth': 128.7, 'outputHeight': 64.5}),
+    ('image-presets', {'preset': 'storyboard'}),
+    ('image-hd', {'kind': 'pro', 'resolution': '2K', 'detailStrength': .12345}),
+])
+def test_checked_recipe_parameters_equal_serialized_provider_fields(project, tool, parameters):
+    store, pid, session = project
+    configs = configure(store, ZIMAGE)
+    source = upload(store, pid, session, 'source.png', png((64, 64)))
+    value = {'id': str(uuid4()), 'tool': tool, 'sourceAssetIds': [source], 'parameters': parameters}
+    if tool in {'smart-edit', 'inpainting-remove'}:
+        value['maskAssetId'] = upload(store, pid, session, 'mask.png', png((64, 64), 'white', 'L'))
+    if tool == 'product-replacement':
+        value['sourceAssetIds'].append(upload(store, pid, session, 'product.png', png((32, 32), 'green')))
+        value['boxes'] = [{'x': 16, 'y': 16, 'width': 32, 'height': 32}]
+    if tool == 'image-hd':
+        value['sourceAssetIds'].append(upload(store, pid, session, 'second.png', png((1920, 960))))
+    calls, checked = [], []
+    tools, probe, _ = declared_runtime(store, configs, calls, {})
+    require = tools.availability.require
+    def observe(config, request, *args, **kwargs):
+        if request.profile == 'image_to_image':
+            checked.append(dict(request.parameters))
+        return require(config, request, *args, **kwargs)
+    tools.availability.require = observe
+    async def run():
+        try:
+            task = await tools.submit(pid, value, session)
+            await asyncio.gather(*tools.jobs.values())
+            result = tools.get(pid, task['id'])
+            assert result['status'] == 'succeeded', result['error']
+            assert len(calls) == (4 if tool == 'image-presets' else 2 if tool == 'image-hd' else 1)
+            for index, (fields, _) in enumerate(calls):
+                actual = {key: val for key, val in fields.items() if key not in {'model', 'prompt'}}
+                actual['width'], actual['height'] = map(int, actual['size'].split('x'))
+                if 'strength' in actual:
+                    actual['strength'] = float(actual['strength'])
+                assert actual == checked[index if tool == 'image-hd' else 0]
+        finally:
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('state', ['no_model', 'paused', 'unsupported'])
+def test_same_aspect_resize_needs_no_remote_model_or_admission(project, state):
+    store, pid, session = project
+    configs = configure(store, *([] if state == 'no_model' else [MODEL]))
+    source = upload(store, pid, session, 'source.png', png((64, 64)))
+    calls = []
+    if state == 'no_model':
+        probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(404)))
+        tools = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store,
+            availability=ModelAvailability(configs, probe), transport=httpx.MockTransport(image_server(calls)))
+    else:
+        tools, probe, declaration = declared_runtime(store, configs, calls, {'max_output_pixels': 1})
+        operation = declaration['models'][0]['operations']['image_edit']
+        if state == 'paused':
+            operation['execution']['state'] = 'paused'
+        else:
+            operation.update(support='unsupported', profiles=[])
+        tools.availability.refresh([configs.list()[0]['id']])
+    entry = next(item for item in tools.catalog()['tools'] if item['id'] == 'multi-size')
+    assert entry['available'] and 'reason' not in entry
+    assert len(entry['models']['image.edit']) == int(state != 'no_model')
+    if state != 'no_model':
+        assert entry['models']['image.edit'][0]['availability']['status'] == 'unavailable'
+    require, prepare = tools.availability.require, tools.availability.prepare_many
+    tools.availability.require = Mock(side_effect=AssertionError('local resize requested model admission'))
+    def prepare_empty(items):
+        assert list(items) == []
+        return []
+    tools.availability.prepare_many = prepare_empty
+    value = {'id': str(uuid4()), 'tool': 'multi-size', 'sourceAssetIds': [source],
+             'parameters': {'outputWidth': 128, 'outputHeight': 128}}
+    async def run():
+        try:
+            task = await tools.submit(pid, value, session)
+            await asyncio.gather(*tools.jobs.values())
+            result = tools.get(pid, task['id'])
+            assert result['status'] == 'succeeded', result['error']
+            assert result['requires'] == [] and result['modelConfigIds'] == {}
+            assert output_image(store, pid, result).size == (128, 128)
+            assert calls == []
+            assert (await tools.submit(pid, value, session))['id'] == task['id']
+            # Opening the panel does not authorize a remote aspect-ratio change.
+            tools.availability.require, tools.availability.prepare_many = require, prepare
+            with pytest.raises(ProjectError):
+                await tools.submit(pid, {**value, 'id': str(uuid4()),
+                    'parameters': {'outputWidth': 256, 'outputHeight': 128}}, session)
+            assert len(tools.list(pid)) == 1 and calls == []
+        finally:
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('reason,details,chinese,english', [
+    ('parameter_value_unsupported', {'parameter': 'size'}, '图片尺寸不符合服务要求。', 'Image dimensions do not meet the service requirements.'),
+    ('parameter_value_unsupported', {'parameter': 'width'}, '图片宽度不符合服务要求。', 'Image width does not meet the service requirements.'),
+    ('required_inputs_missing', {'input': 'image'}, '请添加图片。', 'Add images.'),
+])
+def test_frozen_constraint_rejection_keeps_specific_bilingual_reason(reason, details, chinese, english):
+    code, message = constraint_rejection(reason, details)
+    assert code == 'capability_unavailable' and message == chinese
+    assert english_capability_message(message) == english
+
+
+@pytest.mark.parametrize('allowed', [False, True])
+def test_optional_layer_completion_checks_its_actual_render_parameters(project, allowed):
+    store, pid, session = project
+    configs = configure(store, ZIMAGE, SAM3)
+    source = upload(store, pid, session, 'source.png', png())
+    calls, segments = [], []
+    constraints = {'parameters': {'width': {'support': 'supported', 'enum': [256 if allowed else 64]},
+                                   'strength': {'support': 'supported', 'enum': [.85]}}}
+    tools, probe, _ = declared_runtime(store, configs, calls, constraints)
+    segment = segmentation_server(segments, {'person': [(0.9, (10, 8, 30, 32))]})
+    respond = image_server(calls)
+    tools.transport = httpx.MockTransport(lambda request: respond(request) if request.url.path == '/v1/images/edits' else segment(request))
+    async def run():
+        try:
+            task = await tools.submit(pid, {'id': str(uuid4()), 'tool': 'layer-decompose', 'sourceAssetIds': [source],
+                'parameters': {'mode': 'description', 'prompt': 'person'}}, session)
+            await asyncio.gather(*tools.jobs.values())
+            result = tools.get(pid, task['id'])
+            assert result['status'] == 'succeeded', result['error']
+            assert segments == ['person']
+            assert result['backgroundCompletion'] == ('model' if allowed else 'transparent')
+            assert len(calls) == int(allowed)
+            if allowed:
+                assert calls[0][0]['size'] == '256x256' and calls[0][0]['strength'] == '0.850'
+            else:
+                assert output_rgba(store, pid, result).getpixel((20, 20))[3] == 0
+        finally:
+            await tools.close()
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
 
 
 @pytest.mark.parametrize('tool', ['smart-edit', 'combined', 'inpainting-remove', 'outpaint', 'product-replacement', 'multi-size'])

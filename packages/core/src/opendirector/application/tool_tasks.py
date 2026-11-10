@@ -15,7 +15,7 @@ from PIL import Image
 
 from opendirector.application.tool_operations import TOOLS, Source, ToolContext, select_image_objects
 from opendirector.application.model_availability import ModelAvailability, tool_request
-from opendirector.application.tool_image_inputs import image_execution, validate_image_sources
+from opendirector.application.tool_image_inputs import image_execution, image_request_parameters, local_image_resize, validate_image_sources
 from opendirector.domain.capabilities import LABELS
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.generation import GenerationError
@@ -77,8 +77,11 @@ class ToolTasks(ToolTaskLifecycle):
         for spec in TOOLS.values():
             needs = spec.requires({})
             missing = [item for item in needs if item not in served]
+            # The panel must open before its chosen dimensions determine
+            # whether multi-size needs an image editor or only local resizing.
+            local_path = spec.id == 'multi-size'
             entry = {'id': spec.id, 'requires': [{'capability': item, 'label': LABELS[item]} for item in needs],
-                     'available': spec.recipe is not None and not missing, 'parametersConfirmed': spec.recipe is not None,
+                     'available': spec.recipe is not None and (local_path or not missing), 'parametersConfirmed': spec.recipe is not None,
                      'fields': list(spec.fields), 'note': spec.note,
                      'models': {item: [{'id': config['id'], 'label': _model_label(config)} for config in served.get(item, [])] for item in needs}}
             for capability, choices in entry['models'].items():
@@ -88,14 +91,14 @@ class ToolTasks(ToolTaskLifecycle):
                     request = tool_request(private, capability)
                     if request:
                         choice['availability'] = self.availability.decision(private, request)
-                if choices and all(item.get('availability', {}).get('status') == 'unavailable' for item in choices):
+                if not local_path and choices and all(item.get('availability', {}).get('status') == 'unavailable' for item in choices):
                     selected = next(item for item in served[capability] if item['id'] == choices[0]['id'])
                     private = self.configs.resolve(selected['id'], selected['kind'])
                     try:
                         self.availability.require(private, tool_request(private, capability))
                     except ProjectError as error:
                         entry.update(available=False, reason=str(error), reasonCode=choices[0]['availability']['reasonCode'])
-            if spec.recipe is None or missing:
+            if spec.recipe is None or (missing and not local_path):
                 entry['reason'] = f"需要接入具备「{'、'.join(LABELS[item] for item in missing or needs)}」能力的模型。"
                 entry.pop('reasonCode', None)
             tools.append(entry)
@@ -292,8 +295,6 @@ class ToolTasks(ToolTaskLifecycle):
                     or existing.get('requestedModelConfigIds', existing.get('modelConfigIds', {})) != chosen):
                 raise ProjectError('工具任务标识已使用。', 409)
             return existing, directory, None
-        for capability in needs:
-            self._model(capability, chosen.get(capability))
         records = self.assets._records(directory, project_id)
         for asset_id in [*source_ids, *([mask_id] if mask_id else []), *([annotation_id] if annotation_id else [])]:
             if asset_id not in records:
@@ -306,6 +307,8 @@ class ToolTasks(ToolTaskLifecycle):
             raise ProjectError('选区必须是图片。', 422)
         if annotation_id and records[annotation_id]['kind'] != 'image':
             raise ProjectError('标注必须是图片。', 422)
+        if local_image_resize(spec.id, parameters, records[source_ids[0]]):
+            needs = ()
         canvas = value.get('canvas')
         if canvas and (len(canvas['sourceNodeIds']) != len(source_ids) or canvas['sourceNodeIds'][0] != canvas['nodeId']):
             raise ProjectError('工具任务的画布来源不匹配。', 422)
@@ -331,23 +334,31 @@ class ToolTasks(ToolTaskLifecycle):
             request = tool_request(config, capability, actual=True)
             if request is None:
                 continue
+            parameters_to_check = [{}]
             if capability == image_capability:
                 counts = {'text': 1, 'image': sum(role in {'image', 'annotation'} for role in image_plan['roles'])}
                 if image_plan['mode'] == 'native_mask':
                     counts['mask_image'] = 1
                     if 'reference' in image_plan['roles']:
                         counts['reference_image'] = 1
-                request = replace(request, inputs=frozenset(counts), input_counts=tuple(counts.items()),
-                                  parameters=tuple((key, image_plan[key]) for key in ('width', 'height'))
-                                  if image_plan['mode'] == 'native_mask' else ())
+                request = replace(request, inputs=frozenset(counts), input_counts=tuple(counts.items()))
+                painter = adapter_for(config, image_policy=image_policy)
+                parameters_to_check = image_request_parameters(spec.id, parameters, [records[item] for item in source_ids],
+                    image_plan, adapter=painter, capability=capability, policy=image_policy) or [{}]
+                contract = self.availability.request_constraints(config, request)
+                if contract is not None:
+                    image_policy['requestConstraints'] = contract.model_dump(mode='json', exclude_none=True)
             if capability not in (prepared or {}):
                 raise ProjectError('能力检查期间模型服务已变化，请重新提交。', 409, code='capability_connection_changed')
             self.availability.assert_identity(config, prepared[capability])
-            if capability in {'text.chat', 'image.edit'} and capability not in needs:
-                if self.availability.decision(config, request)['status'] == 'unavailable':
-                    del models[capability]
-            else:
-                self.availability.require(config, request)
+            for actual in parameters_to_check:
+                actual_request = replace(request, parameters=tuple(actual.items())) if actual else request
+                if capability in {'text.chat', 'image.edit'} and capability not in needs:
+                    if self.availability.decision(config, actual_request)['status'] == 'unavailable':
+                        del models[capability]
+                        break
+                else:
+                    self.availability.require(config, actual_request)
         from .creation_tool_drafts import freeze_inputs
         frozen = freeze_inputs(self, project_id, value)
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',

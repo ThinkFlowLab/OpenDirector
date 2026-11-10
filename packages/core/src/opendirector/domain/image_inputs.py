@@ -1,11 +1,26 @@
 """Shared image request limits; execution consumes the policy frozen at acceptance."""
 from io import BytesIO
 from math import isclose
+from typing import Any, Literal, NotRequired, TypedDict
 
 from PIL import Image, UnidentifiedImageError
 
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
+
+
+class ImageExecutionPolicy(TypedDict):
+    """JSON persisted with accepted image work; missing limits stay unknown.
+
+    requestConstraints is the serialized, validated RequestConstraints for the
+    exact route. It contains no discovery timestamps or connection state.
+    """
+    version: Literal[1]
+    maxImages: int
+    imageBytes: int
+    requestBytes: int
+    nativeMask: dict[str, Any] | None
+    requestConstraints: NotRequired[dict[str, Any]]
 
 
 class ImageInputError(ProjectError):
@@ -14,7 +29,7 @@ class ImageInputError(ProjectError):
         self.code = code
 
 
-def image_input_policy(config):
+def image_input_policy(config) -> ImageExecutionPolicy:
     rules = input_rules(config)
     return {'version': 1, 'maxImages': rules['maxImages'], 'imageBytes': rules['imageBytes'],
             'requestBytes': rules['requestBytes'], 'nativeMask': None}
