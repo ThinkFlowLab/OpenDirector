@@ -112,7 +112,7 @@ test("a shared failed check covers secondary unknown projections", () => {
         "Cannot connect. Check the service URL.",
         "Authentication failed. Check the API key.",
         "Not supported",
-        "Not confirmed",
+        "Unknown",
       ],
     ],
   ] as const) {

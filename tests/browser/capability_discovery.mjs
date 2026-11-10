@@ -413,8 +413,10 @@ try {
     await draft.getByText("Region input", { exact: true }).count(),
     1,
   );
-  assert.ok(
-    (await draft.getByText("Service declaration", { exact: true }).count()) > 0,
+  assert.equal(
+    await draft.getByText("Service declaration", { exact: true }).count(),
+    1,
+    "the common input-constraint source appears once",
   );
   await page.evaluate(() => {
     localStorage.setItem("opendirector.locale.v1", "zh-CN");
@@ -427,7 +429,8 @@ try {
   });
   await draft.getByText("多图编辑", { exact: true }).waitFor();
   assert.equal(await draft.getByText("选区输入", { exact: true }).count(), 1);
-  assert.equal(await draft.getByText("数量 1–3", { exact: true }).count(), 1);
+  assert.equal(await draft.getByText("1–3 张", { exact: true }).count(), 1);
+  assert.equal(await draft.getByText("服务声明", { exact: true }).count(), 1);
   assert.equal(
     await page.getByLabel("服务地址（Base URL）", { exact: true }).inputValue(),
     serviceUrl,

@@ -90,20 +90,34 @@ export function availabilityInputDetails(item: OperationAvailability) {
     else if (detail.support === "unknown")
       values.push(tNow("availability.status.unknown"));
     else {
+      const countKind =
+        detail.name === "image" || detail.name === "reference_image"
+          ? "image"
+          : "count";
       if (detail.minCount != null && detail.maxCount != null)
         values.push(
-          tNow("availability.detail.countRange", {
+          tNow(`availability.detail.${countKind}Range`, {
             min: detail.minCount,
             max: detail.maxCount,
           }),
         );
       else if (detail.maxCount != null)
         values.push(
-          tNow("availability.detail.maxCount", { count: detail.maxCount }),
+          tNow(
+            countKind === "image"
+              ? "availability.detail.maxImages"
+              : "availability.detail.maxCount",
+            { count: detail.maxCount },
+          ),
         );
       else if (detail.minCount != null)
         values.push(
-          tNow("availability.detail.minCount", { count: detail.minCount }),
+          tNow(
+            countKind === "image"
+              ? "availability.detail.minImages"
+              : "availability.detail.minCount",
+            { count: detail.minCount },
+          ),
         );
       if (detail.min != null && detail.max != null)
         values.push(`${detail.min}–${detail.max}`);

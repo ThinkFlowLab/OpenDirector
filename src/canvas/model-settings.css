@@ -678,3 +678,4 @@
 .cw-model-input-details dl > div { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr); gap: 8px; }
 .cw-model-input-details dd { margin: 0; }
 .cw-model-input-details small { display: block; }
+.cw-model-input-details summary small { display: inline; margin-inline-start: 8px; }

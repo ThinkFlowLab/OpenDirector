@@ -44,6 +44,11 @@ export function ModelAvailabilityCard({
     ? null
     : error || (notice ? availabilityReason(notice) : null);
   const details = availabilityCardDetails(current?.operations ?? []);
+  const commonSource =
+    details.length > 0 &&
+    details.every((detail) => detail.source === details[0].source)
+      ? details[0].source
+      : null;
   return (
     <section
       className="cw-model-availability"
@@ -98,7 +103,10 @@ export function ModelAvailabilityCard({
             undefined
           }
         >
-          <summary>{t("availability.details")}</summary>
+          <summary>
+            <span>{t("availability.details")}</span>
+            {commonSource && <small>{commonSource}</small>}
+          </summary>
           <dl>
             {details.map((detail, index) => (
               <div key={`${detail.name}:${index}`}>
@@ -106,7 +114,7 @@ export function ModelAvailabilityCard({
                 <dd>
                   <span>{detail.text}</span>
                   {detail.scope && <small>{detail.scope}</small>}
-                  <small>{detail.source}</small>
+                  {!commonSource && <small>{detail.source}</small>}
                 </dd>
               </div>
             ))}
