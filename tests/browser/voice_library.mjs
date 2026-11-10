@@ -11,6 +11,17 @@ const headers = {
   "X-OpenDirector-Request": "1",
   "Content-Type": "application/json",
 };
+// Reopening includes cold module loading, project recovery and asset fetching.
+// Keep ordinary interaction waits short, but budget this whole path explicitly.
+const reopenTimeout = 45000;
+// Optional deterministic slow-CI probe for the reopened asset request.
+const reopenDelay = Number(process.env.VOICE_REOPEN_DELAY_MS ?? 0);
+assert.ok(
+  Number.isFinite(reopenDelay) && reopenDelay >= 0 && reopenDelay < reopenTimeout,
+);
+async function waitForSaved(page, label) {
+  await page.getByText(label, { exact: true }).waitFor({ timeout: reopenTimeout });
+}
 async function call(path, body, origin = api) {
   const response = await fetch(origin + path, {
     headers,
@@ -210,8 +221,11 @@ try {
       );
     };
     try {
-      await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`);
-      await page.getByText(L.saved, { exact: true }).waitFor();
+      await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`, {
+        waitUntil: "domcontentloaded",
+        timeout: reopenTimeout,
+      });
+      await waitForSaved(page, L.saved);
       await page
         .getByRole("toolbar", { name: L.tools })
         .getByRole("button", { name: L.add, exact: true })
@@ -442,8 +456,8 @@ try {
           .voiceId,
         "sample",
       );
-      await page.reload();
-      await page.getByText(L.saved, { exact: true }).waitFor();
+      await page.reload({ waitUntil: "domcontentloaded", timeout: reopenTimeout });
+      await waitForSaved(page, L.saved);
       await page.locator(".react-flow__node").first().click();
       assert.match(
         await page
@@ -772,15 +786,27 @@ try {
       });
 
       const assetPath = `/api/creation/projects/${id}/assets/${asset.id}/content`;
+      if (reopenDelay) {
+        await page.route((url) => url.pathname === assetPath, async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, reopenDelay));
+          await route.continue();
+        });
+      }
       const [reopenedAudio] = await Promise.all([
         page.waitForResponse(
           (response) =>
-            new URL(response.url()).pathname === assetPath && response.ok(),
+            new URL(response.url()).pathname === assetPath &&
+            response.request().method() === "GET",
+          { timeout: reopenTimeout },
         ),
-        page.reload(),
+        page.reload({ waitUntil: "domcontentloaded", timeout: reopenTimeout }),
       ]);
+      assert.ok(
+        reopenedAudio.ok(),
+        `Reopened audio GET ${assetPath}: HTTP ${reopenedAudio.status()}`,
+      );
       assert.match(reopenedAudio.headers()["content-type"], /^audio\//);
-      await page.getByText(L.saved, { exact: true }).waitFor();
+      await waitForSaved(page, L.saved);
       await page.locator(".react-flow__node").first().click();
       assert.ok(
         (
