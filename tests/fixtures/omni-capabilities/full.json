@@ -5,7 +5,7 @@
   "cases": [
     {
       "id": "every-operation-and-profile",
-      "note": "All six operations supported and enabled, all twelve profiles declared. Only `text_response` grants `text.chat`, and only `lyrics_to_music` grants `audio.music`: the image/audio chat profiles and `text_to_audio` are reported as `no_local_capability`.",
+      "note": "All six operations supported and enabled, all twelve profiles declared. Only `text_response` grants `text.chat`, and only `lyrics_to_music` grants `audio.music`: the image/audio chat profiles, `caption_to_audio` and `text_to_audio` are reported as `no_local_capability`.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -228,6 +228,12 @@
                         "method": "POST",
                         "path": "/v1/videos/sync",
                         "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "disabled"
                       }
                     ],
                     "reason_code": "model_declared",
@@ -254,6 +260,12 @@
                         "method": "POST",
                         "path": "/v1/videos/sync",
                         "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "disabled"
                       }
                     ],
                     "reason_code": "model_declared",
@@ -314,7 +326,7 @@
                   },
                   {
                     "id": "caption_to_audio",
-                    "support": "unsupported",
+                    "support": "supported",
                     "required_inputs": [
                       "text"
                     ],
@@ -492,6 +504,12 @@
           {
             "operation": "chat",
             "profile": "image_response",
+            "route": null,
+            "reason": "no_local_capability"
+          },
+          {
+            "operation": "speech",
+            "profile": "caption_to_audio",
             "route": null,
             "reason": "no_local_capability"
           }

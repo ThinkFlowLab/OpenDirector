@@ -12,11 +12,11 @@ mapping table, so changing a mapping has to argue with them.
 
 A fourth file, `malformed.json`, holds bodies only a rewrite can produce — a
 profile pointing at another operation's route, a disabled route beside a path
-this table does not know. It is read by the defensive and structural checks
-alone, never by the sample oracle: it is input to defend against, not evidence
-of what upstream publishes. The shapes upstream can never emit — an `asr`
-operation key, a profile filed under the wrong operation, a missing required
-`support` — stay inline in the tests that defend against them.
+this table does not know. It is read by the defensive, structural and
+profile-row checks, never by the sample oracle: it is input to defend against,
+not evidence of what upstream publishes. The shapes upstream can never emit —
+an `asr` operation key, a profile filed under the wrong operation, a missing
+required `support` — stay inline in the tests that defend against them.
 
 The last group guards the failure this table exists to prevent: a route (or a
 stage) that is read as if it named a capability. `/v1/audio/speech` carries
@@ -549,6 +549,36 @@ def test_a_disabled_profile_with_an_unknown_enabled_route_is_unknown():
     assert still_missing['reasons'] == {'image.generate': 'route_disabled'}
 
 
+@pytest.mark.parametrize('exposure', ['enabled', 'unknown', None, 'disabled'])
+def test_unrecognised_route_outcome_depends_on_its_exposure(exposure):
+    """A path this table cannot place still states whether it is switched on.
+
+    Upstream sets a route's `exposure` to `unknown` when the route is registered
+    but its reachability is not settled (`serving_capabilities.py:267,304`), so
+    "every known route of the profile is `disabled`, plus an unrecognised route
+    whose `exposure` is `unknown`" is a body upstream really publishes, and so
+    is the same body with the field absent (upstream's default). Reading either
+    as a refusal would be the false `missing` this table exists to prevent.
+    Only an unrecognised route that itself says `disabled` adds no channel, and
+    then the known-but-off routes remain a positive no.
+    """
+    declared = route('/v1/images/generations/stream')
+    if exposure is None:
+        del declared['exposure']
+    else:
+        declared['exposure'] = exposure
+    result = resolve(body({'image_generation': operation(profiles=[
+        profile('text_to_image', routes=[route('/v1/images/generations', exposure='disabled'), declared])])}))
+    if exposure == 'disabled':
+        assert result['capabilities']['image.generate'] == 'missing'
+        assert result['reasons'] == {'image.generate': 'route_disabled'}
+    else:
+        assert result['capabilities']['image.generate'] == 'unknown'
+        assert result['reasons'] == {}
+    assert result['unresolved'] == [{'operation': 'image_generation', 'profile': 'text_to_image',
+                                     'route': '/v1/images/generations/stream', 'reason': 'unknown_route'}]
+
+
 def test_a_profile_whose_routes_are_all_unknown_cannot_be_confirmed():
     result = resolve(body({'image_generation': operation(profiles=[
         profile('text_to_image', routes=[route('/v1/images/generations', exposure='unknown')])])}))
@@ -636,8 +666,7 @@ def test_an_image_only_chat_deployment_does_not_read_as_text_chat():
     """`image_response` output is an image; `text.chat` is served by a text-only adapter."""
     result = resolve(body({'chat': operation(profiles=[
         profile('image_response', outputs=('image',), paths=table_paths('chat'))])}))
-    assert result['capabilities']['text.chat'] != AVAILABLE
-    assert result['capabilities']['text.chat'] == UNKNOWN
+    assert result['capabilities']['text.chat'] == 'unknown'
     assert result['unresolved'] == [{'operation': 'chat', 'profile': 'image_response', 'route': None,
                                      'reason': NO_LOCAL_CAPABILITY}]
 
@@ -669,11 +698,10 @@ def test_text_to_audio_alone_does_not_make_audio_music_available():
     assert capabilities_for('audio_generation', 'text_to_audio') == ()
     result = resolve(body({'audio_generation': operation(profiles=[
         profile('text_to_audio', paths=table_paths('audio_generation'), outputs=('audio',))])}))
-    assert result['capabilities']['audio.music'] != AVAILABLE
-    assert result['capabilities']['audio.music'] == UNKNOWN
+    assert result['capabilities']['audio.music'] == 'unknown'
     assert {'operation': 'audio_generation', 'profile': 'text_to_audio', 'route': None,
-            'reason': NO_LOCAL_CAPABILITY} in result['unresolved']
-    assert result['capabilities']['audio.speech'] == UNKNOWN
+            'reason': 'no_local_capability'} in result['unresolved']
+    assert result['capabilities']['audio.speech'] == 'unknown'
     # The music path is still the speech profile, on the speech route.
     music = resolve(body({'speech': operation(profiles=[
         profile('lyrics_to_music', paths=table_paths('speech'), inputs=('text', 'instructions'),
@@ -929,6 +957,59 @@ def test_fixtures_are_schema_valid():
     assert seen_body >= 5
 
 
+def test_fixtures_obey_upstream_construction_invariants():
+    """The three sample tiers only carry shapes upstream's projection can emit.
+
+    Upstream derives an operation's `exposure` from that operation's own routes
+    (`entrypoints/openai/serving_capabilities.py:384-387`: any `enabled` →
+    `enabled`, else any `unknown` → `unknown`, else `disabled`) and hands every
+    profile of the operation the *full* route list of its operation (`:320-329`,
+    with `/v1/realtime/video` forced `disabled` for the profiles that take video
+    or audio input). "Operation says off, route says on" and "profile references
+    half of the video routes" are therefore bodies upstream cannot publish, and
+    a fixture claiming to be a real response shape cannot contain them.
+
+    `malformed.json` is excluded on purpose: it is the one file that exists to
+    hold shapes a proxy, cache or older revision can hand us — exactly the
+    bodies this test forbids in a sample. The defensive cases pin their own
+    expectations instead.
+    """
+    checked = 0
+    for document, cases in raw_cases():
+        for case in cases:
+            payload = case['payload']
+            if not isinstance(payload, dict):
+                continue
+            for model_entry in payload['models']:
+                for operation_id, declared in model_entry['operations'].items():
+                    if operation_id not in OPERATION_ROUTES:
+                        continue
+                    legal = set(OPERATION_ROUTES[operation_id])
+                    exposures = []
+                    for entry in declared['profiles']:
+                        keys = {(reference['transport'], reference['method'], reference['path'])
+                                for reference in entry['routes']}
+                        assert keys, (case['id'], operation_id, entry['id'], 'no route declared')
+                        assert keys <= legal, (case['id'], operation_id, entry['id'], sorted(keys - legal))
+                        exposures.extend(reference['exposure'] for reference in entry['routes'])
+                    if not exposures:
+                        # No profile, hence no route: nothing to aggregate.
+                        continue
+                    aggregate = ('enabled' if 'enabled' in exposures else
+                                 'unknown' if 'unknown' in exposures else 'disabled')
+                    assert declared['exposure'] == aggregate, (case['id'], operation_id,
+                                                               declared['exposure'], aggregate)
+                    if operation_id == 'video_generation' and declared['exposure'] != 'disabled':
+                        # Three routes are owned here; a profile that references
+                        # a subset would hide a channel upstream does publish.
+                        for entry in declared['profiles']:
+                            keys = {(reference['transport'], reference['method'], reference['path'])
+                                    for reference in entry['routes']}
+                            assert keys == legal, (case['id'], entry['id'], sorted(legal - keys))
+            checked += 1
+    assert checked >= 5
+
+
 def rendered_cell(inputs, outputs):
     """The doc's spelling of one profile row: `("text","image")` → `("image",)`."""
 
@@ -955,14 +1036,16 @@ def documented_profiles():
 
 
 def test_documented_required_inputs_match_fixtures():
-    """The literal upstream table, both doc tables and every sample fixture agree.
+    """The literal upstream table, both doc tables and every fixture agree.
 
     `required_inputs` order is part of the declaration (`image_to_image` is
     text-then-image), `video_to_video` needs no text, `lyrics_to_music` needs
     `instructions`, and `image_response`/`audio_response` publish a non-text
     output. `resolve()` reads none of it, so nothing else can catch rot here.
-    `malformed.json` is left out on purpose: it is defensive input, guarded by
-    the schema test, not part of the published sample this row set describes.
+    `malformed.json` is included: its bodies are structurally legal pydantic, so
+    the profiles they carry are still upstream's `STANDARD_PROFILES` rows, and
+    leaving them out only let that file rot silently. What is defensive about it
+    is the routes and the exposures, not the profile rows.
     """
     assert len(UPSTREAM_PROFILES) == 12
     assert {profile_id for profile_id, _, _ in UPSTREAM_PROFILES} == set(PROFILE_OPERATIONS)
@@ -976,7 +1059,7 @@ def test_documented_required_inputs_match_fixtures():
         assert cell == rendered_cell(inputs, outputs), profile_id
 
     seen = set()
-    for _, cases in raw_cases():
+    for _, cases in raw_documents(TIERS + (DEFENSIVE_TIER,)):
         for case in cases:
             payload = case['payload']
             if not isinstance(payload, dict):

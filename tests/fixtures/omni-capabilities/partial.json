@@ -5,7 +5,7 @@
   "cases": [
     {
       "id": "mixed-operations",
-      "note": "`image_generation` is supported but disabled (`endpoint_disabled`), `image_edit` is supported but its only route is `disabled` (`route_disabled`), `lyrics_to_music` is unsupported while `text_to_audio` is supported (no local id, `no_local_capability`), and `caption_to_audio` has no local id either.",
+      "note": "`image_generation` is supported but disabled (`endpoint_disabled`), `image_edit` is served, `lyrics_to_music` is unsupported while `text_to_audio` is supported (no local id, `no_local_capability`), and `caption_to_audio` has no local id either.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -122,7 +122,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/images/generations",
-                        "exposure": "enabled"
+                        "exposure": "disabled"
                       }
                     ],
                     "reason_code": "model_declared",
@@ -155,7 +155,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/images/edits",
-                        "exposure": "disabled"
+                        "exposure": "enabled"
                       }
                     ],
                     "reason_code": "model_declared",
@@ -221,6 +221,18 @@
                         "method": "POST",
                         "path": "/v1/videos",
                         "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "disabled"
                       }
                     ],
                     "reason_code": "model_declared",
@@ -241,6 +253,18 @@
                         "method": "POST",
                         "path": "/v1/videos",
                         "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "disabled"
                       }
                     ],
                     "reason_code": "checkpoint_requires_expand_timesteps",
@@ -449,7 +473,7 @@
         "capabilities": {
           "text.chat": "available",
           "image.generate": "missing",
-          "image.edit": "missing",
+          "image.edit": "available",
           "video.generate": "available",
           "audio.speech": "available",
           "audio.music": "missing",
@@ -464,7 +488,6 @@
         },
         "reasons": {
           "image.generate": "endpoint_disabled",
-          "image.edit": "route_disabled",
           "audio.music": "unsupported"
         },
         "unresolved": [
@@ -530,7 +553,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/chat/completions",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -550,7 +573,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/chat/completions",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -570,7 +593,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/chat/completions",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -602,7 +625,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/images/generations",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -635,7 +658,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/images/edits",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -667,19 +690,19 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/videos",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       },
                       {
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/videos/sync",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       },
                       {
                         "transport": "websocket",
                         "method": "WEBSOCKET",
                         "path": "/v1/realtime/video",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -700,13 +723,19 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/videos",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       },
                       {
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/videos/sync",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -726,13 +755,19 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/videos",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       },
                       {
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/videos/sync",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -764,7 +799,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/audio/speech",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -785,7 +820,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/audio/speech",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -805,7 +840,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/audio/speech",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
@@ -837,7 +872,7 @@
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/audio/generate",
-                        "exposure": "enabled"
+                        "exposure": "unknown"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
