@@ -503,7 +503,7 @@ def test_qwen_image_edits_with_condition_images_on_its_grid_without_strength():
     calls = []
     adapter.transport = httpx.MockTransport(images_server(calls))
     result = asyncio.run(adapter.image(config, ImageRequest(prompt='换成黄色雨衣', width=1000, height=600, image=png(), strength=0.7,
-                                                            references=(png(color='red'),) * 5)))
+                                                            references=(png(color='red'),) * 3)))
     body = calls[0]
     assert result.suffix == 'png' and body.count(b'name="image"') == 4 and b'name="strength"' not in body
     assert b'name="size"\r\n\r\n992x608' in body
