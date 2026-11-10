@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import routing from '../scripts/github/reviewer-routing.cjs';
+const { selectReviewers, run } = routing;
+
+test('requests every matched label owner, with case-insensitive deduplication', () => {
+  assert.deepEqual(selectReviewers({labels: ['area:canvas', 'area:timeline'], author: 'someone'}),
+    ['allendyu', 'Probiotics5333']);
+  assert.deepEqual(selectReviewers({labels: ['area:ci', 'area:desktop'], author: 'WANGTIANCE'}),
+    ['yenuo26', 'david6666666']);
+});
+test('preserves existing requests and completed reviews', () => {
+  assert.deepEqual(selectReviewers({labels: ['area:agent'], author: 'someone',
+    requested: ['fayespica'], reviewed: ['WUZHF9']}), []);
+});
+test('uses all fallback owners only when no label matches', () => {
+  assert.deepEqual(selectReviewers({labels: ['type:docs'], author: 'someone'}),
+    ['hsliuustc0106', 'princepride']);
+  assert.deepEqual(selectReviewers({labels: ['area:performance'], author: 'kunkunblueberry'}), []);
+});
+function fixture(pr) {
+  const calls = [];
+  const summary = {addHeading(){return this;}, addRaw(){return this;}, addTable(){return this;}, async write(){}};
+  return {calls, args: {context: {eventName: 'pull_request_target', repo: {owner:'o',repo:'r'},
+    payload: {pull_request:{number: 1}}}, core: {info(){}, warning(){}, summary}, github: {
+      paginate: async () => [], rest: {pulls: {
+        get: async () => ({data: pr}), listReviews: {},
+        requestReviewers: async request => { calls.push(request.reviewers[0]);
+          if (request.reviewers[0] === 'yenuo26') throw Object.assign(new Error('unavailable'), {status:422}); },
+      }},
+    }}};
+}
+test('uses fresh labels and continues after an unavailable reviewer', async () => {
+  const f = fixture({state:'open', draft:false, user:{login:'someone'}, requested_reviewers:[], labels:[{name:'area:ci'}]});
+  await run(f.args);
+  assert.deepEqual(f.calls, ['yenuo26', 'wangtiance']);
+});
+test('draft PRs do not send invitations', async () => {
+  const f = fixture({state:'open', draft:true});
+  await run(f.args);
+  assert.deepEqual(f.calls, []);
+});
+test('label sync creates only missing labels and preserves existing ones', async () => {
+  const f = fixture({});
+  f.args.context.eventName = 'push';
+  const created = [];
+  f.args.github.rest.issues = {
+    getLabel: async ({name}) => {
+      if (name !== 'area:docs') throw Object.assign(new Error('missing'), {status:404});
+    },
+    createLabel: async ({name}) => created.push(name),
+  };
+  await run(f.args);
+  assert.deepEqual(created, ['area:performance', 'area:desktop']);
+  assert.deepEqual(f.calls, []);
+});
+test('permission errors remain failures instead of silently dropping reviewers', async () => {
+  const f = fixture({state:'open', draft:false, user:{login:'someone'}, requested_reviewers:[], labels:[{name:'area:performance'}]});
+  f.args.github.rest.pulls.requestReviewers = async () => { throw Object.assign(new Error('forbidden'), {status:403}); };
+  await assert.rejects(run(f.args), /forbidden/);
+});
