@@ -2,7 +2,7 @@
 window.__ModuleLoader__.load({
   id: '@opendirector/dsh-plugin',
   factory(require) {
-    const { cloneElement, createElement: h, useEffect, useRef, useState, useSyncExternalStore } = require('react')
+    const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
       images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
@@ -14,9 +14,9 @@ window.__ModuleLoader__.load({
       firstFramePrompt: 'Use the image as the first frame of a video. Show the candidate before adopting it.',
       continuePrompt: 'Continue the clip with a compatible video model. Show the candidate before adopting it.',
       resume: 'Resume project', close: 'Close', chooseProject: 'Choose a project',
-      projectsEmpty: 'No OpenDirector projects yet.', resultsEmpty: 'This project has no saved images or videos.',
+      projectsEmpty: 'No OpenDirector projects yet.', resultsEmpty: 'This project has no saved media results.',
       loading: 'Loading…', refresh: 'Refresh results', libraryError: 'Could not load OpenDirector. Try refreshing.',
-      recent: 'Recent results', selected: 'Current result', adopting: 'Adopting…', checkAdoption: 'Check adoption',
+      recent: 'Saved results', selected: 'Current result', adopting: 'Adopting…', checkAdoption: 'Check adoption',
       adoptUnknown: 'Adoption has not been confirmed yet. Check its status.',
       adoptBusy: 'Save and close the open OpenDirector canvas, then try again.',
       adoptConflict: 'This result or canvas has changed. Refresh the project before trying again.',
@@ -32,7 +32,11 @@ window.__ModuleLoader__.load({
       waiting: 'Waiting for OpenDirector…', queued: 'Queued', running: 'Generating…',
       succeeded: 'Candidate ready', stopped: 'Generation stopped', failed: 'Generation failed',
       quota: 'The model service reported a quota error. Check the provider before trying again.',
-      checkProgress: 'Check progress', download: 'Download',
+      checkProgress: 'Check progress', download: 'Download original',
+      libraryType: 'Filter by media', librarySelection: 'Filter by selection', libraryOrder: 'Sort results',
+      allMedia: 'All media', video: 'Video', audio: 'Audio', allSelections: 'All results', other: 'Other results',
+      newest: 'Newest first', oldest: 'Oldest first', loadMore: 'Load more', noMatches: 'No results match these filters.',
+      actions: 'More actions', play: 'Play', pause: 'Pause', playbackFailed: 'Could not start playback.',
       reference: 'OpenDirector project and result',
     }
     const zh = {
@@ -45,9 +49,9 @@ window.__ModuleLoader__.load({
       firstFramePrompt: '用这张图片作为视频首帧，先展示候选，再由我决定是否采用。',
       continuePrompt: '用支持续写的模型接着生成这段视频，先展示候选，再由我决定是否采用。',
       resume: '继续工程', close: '关闭', chooseProject: '选择工程',
-      projectsEmpty: '还没有 OpenDirector 工程。', resultsEmpty: '这个工程还没有保存图片或视频。',
+      projectsEmpty: '还没有 OpenDirector 工程。', resultsEmpty: '这个工程还没有保存素材结果。',
       loading: '加载中…', refresh: '刷新结果', libraryError: '暂时无法读取 OpenDirector，请刷新重试。',
-      recent: '最近的结果', selected: '当前结果', adopting: '正在采用…', checkAdoption: '查询采用状态',
+      recent: '已保存的结果', selected: '当前结果', adopting: '正在采用…', checkAdoption: '查询采用状态',
       adoptUnknown: '尚未确认是否采用，请查询状态。',
       adoptBusy: '请保存并关闭已打开的 OpenDirector 画布，然后重试。',
       adoptConflict: '结果或画布状态已变，请刷新工程后再试。',
@@ -63,7 +67,11 @@ window.__ModuleLoader__.load({
       waiting: '等待 OpenDirector…', queued: '排队中', running: '生成中…',
       succeeded: '候选已生成', stopped: '生成已停止', failed: '生成失败',
       quota: '模型服务返回额度错误，请检查服务商后再试。',
-      checkProgress: '查询进度', download: '下载',
+      checkProgress: '查询进度', download: '下载原文件',
+      libraryType: '按素材类型筛选', librarySelection: '按采用状态筛选', libraryOrder: '排序',
+      allMedia: '全部素材', video: '视频', audio: '音频', allSelections: '全部结果', other: '其他结果',
+      newest: '最新优先', oldest: '最早优先', loadMore: '加载更多', noMatches: '没有符合筛选条件的结果。',
+      actions: '更多操作', play: '播放', pause: '暂停', playbackFailed: '暂时无法播放。',
       reference: 'OpenDirector 工程与结果',
     }
 
@@ -77,6 +85,7 @@ window.__ModuleLoader__.load({
     }
     const dialogStyle = { width: 'min(46rem, calc(100vw - 2rem))', maxHeight: '80vh', boxSizing: 'border-box',
       color: 'inherit', background: surface, border, borderRadius: '.85rem', padding: '1rem' }
+    const libraryDefaults = { kind: 'all', selection: 'all', order: 'newest' }
 
     function button(label, onClick, options = {}) {
       const { primary, ...attrs } = options
@@ -108,8 +117,10 @@ window.__ModuleLoader__.load({
         open === 'creation' && h(GenerationDialog, { t, request, onClose: () => setOpen(null) }))
     }
 
-    async function readLibrary(projectId, signal) {
-      const query = projectId ? '?' + new URLSearchParams({ project: projectId }) : ''
+    async function readLibrary(projectId, signal, filters = {}, after = null) {
+      const query = projectId ? '?' + new URLSearchParams({
+        project: projectId, ...filters, ...(after && { after }),
+      }) : ''
       const response = await fetch('/api/opendirector/library' + query, { signal })
       if (!response.ok) throw new Error('Project read failed')
       return response.json()
@@ -122,7 +133,8 @@ window.__ModuleLoader__.load({
       const [library, setLibrary] = useState(null)
       const [error, setError] = useState(false)
       const [pending, setPending] = useState(true)
-      const [refresh, setRefresh] = useState(0)
+      const [filters, setFilters] = useState(libraryDefaults)
+      const [page, setPage] = useState({})
       useEffect(() => {
         dialog.current.showModal()
       }, [])
@@ -130,9 +142,13 @@ window.__ModuleLoader__.load({
         const controller = new AbortController()
         setPending(true)
         setError(false)
-        readLibrary(projectId, controller.signal).then(value => {
+        readLibrary(projectId, controller.signal, filters, page.after).then(value => {
           if (controller.signal.aborted) return
-          if (projectId) setLibrary(value)
+          if (projectId) setLibrary(previous => {
+            if (!page.after || previous?.projectId !== projectId) return value
+            const known = new Set(previous.results.map(result => result.resultId))
+            return { ...value, results: [...previous.results, ...value.results.filter(result => !known.has(result.resultId))] }
+          })
           else setProjects(value.projects)
           setPending(false)
         }).catch(() => {
@@ -141,8 +157,25 @@ window.__ModuleLoader__.load({
           setPending(false)
         })
         return () => controller.abort()
-      }, [projectId, refresh])
+      }, [projectId, filters, page])
       const current = library?.projectId === projectId ? library : null
+      const refresh = () => setPage({})
+      function changeProject(id) {
+        setProjectId(id)
+        setLibrary(null)
+        refresh()
+      }
+      function filterControl(key, label, options) {
+        return h('select', {
+          value: filters[key], 'aria-label': t(label), title: t(label),
+          onChange: event => {
+            const value = event.target.value
+            setFilters(previous => ({ ...previous, [key]: value }))
+            setLibrary(null)
+            refresh()
+          },
+        }, ...options.map(([value, text]) => h('option', { key: value, value }, t(text))))
+      }
       return h('dialog', {
         ref: dialog, onClose: event => { if (event.target === event.currentTarget) onClose() },
         'aria-label': t('resume'),
@@ -153,24 +186,30 @@ window.__ModuleLoader__.load({
         button(t('close'), () => dialog.current.close())),
       h('div', { style: { ...row, marginBlock: '.7rem' } },
         projects?.length > 0 && h('select', {
-          value: projectId, onChange: event => setProjectId(event.target.value), 'aria-label': t('chooseProject'),
+          value: projectId, onChange: event => changeProject(event.target.value), 'aria-label': t('chooseProject'),
         },
         h('option', { value: '' }, t('chooseProject')),
         ...projects.map(({ id, name }) => h('option', { key: id, value: id }, name))),
-        button(t('refresh'), () => setRefresh(value => value + 1), { disabled: pending }),
+        button(t('refresh'), refresh, { disabled: pending }),
         current && canvasLink(current.canvasUrl, t)),
+      projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
+        filterControl('kind', 'libraryType', [['all', 'allMedia'], ['image', 'picture'], ['video', 'video'], ['audio', 'audio']]),
+        filterControl('selection', 'librarySelection', [['all', 'allSelections'], ['current', 'selected'], ['other', 'other']]),
+        filterControl('order', 'libraryOrder', [['newest', 'newest'], ['oldest', 'oldest']])),
       pending && h('p', { role: 'status' }, t('loading')),
       error && h('p', { role: 'alert' }, t('libraryError')),
       projects?.length === 0 && h('p', null, t('projectsEmpty')),
       current && h('section', { 'aria-label': t('recent') },
         h('h3', null, t('recent')),
-        current.results.length === 0 ? h('p', null, t('resultsEmpty'))
+        current.results.length === 0 ? h('p', null, t(filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
           : h('div', { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
             ...current.results.map(({ resultId, assetId, kind, selected, prompt }, index) => h(Preview, {
-              key: resultId, projectId, resultId, assetId, kind, selected, prompt, t, request,
+              key: resultId, projectId, resultId, assetId, kind, selected, prompt, t, request, canvasUrl: current.canvasUrl,
               title: `${t('candidate')} ${index + 1}`,
-              onAdopted: () => setRefresh(value => value + 1),
-            })))))
+              onAdopted: refresh,
+            }))),
+        current.nextCursor && h('div', { style: { marginTop: '.7rem' } },
+          button(t('loadMore'), () => setPage({ after: current.nextCursor }), { disabled: pending }))))
     }
 
     function GenerationDialog({ source, t, request, onClose }) {
@@ -326,11 +365,11 @@ window.__ModuleLoader__.load({
         pollError && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
         result?.canvasUrl && (jobId || result.draftSaved) && canvasLink(result.canvasUrl, t),
         ...((progress?.results ?? []).map(candidate => h(Preview, {
-          ...candidate, projectId, title: t('candidate'), key: candidate.resultId, t, request,
+          ...candidate, projectId, title: t('candidate'), key: candidate.resultId, t, request, canvasUrl: result.canvasUrl,
         }))))
     }
 
-    function AdoptResult({ projectId, resultId, selected, t, onAdopted }) {
+    function useAdoption({ projectId, resultId, onAdopted }) {
       const operation = useRef(null)
       const running = useRef(false)
       const [status, setStatus] = useState(null)
@@ -374,31 +413,72 @@ window.__ModuleLoader__.load({
           running.current = false
         }
       }
-      const pending = status === 'adopting'
-      const label = pending ? 'adopting' : selected ? 'selected'
-        : status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
-      return h('div', { style: row },
-        button(t(label), adopt, { primary: true, disabled: pending || selected }),
-        status && !pending && !selected && !(status === 'adopted' && onAdopted)
-          && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t(status)),
-        canvasUrl && !onAdopted && canvasLink(canvasUrl, t))
+      return { adopt, status, canvasUrl }
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, t, request, onAdopted }) {
+    function ResultMenu({ actions, position, trigger, close, t }) {
+      const menu = useRef(null)
+      useLayoutEffect(() => {
+        const element = menu.current
+        element.style.left = `${Math.max(8, Math.min(position.x, window.innerWidth - element.offsetWidth - 8))}px`
+        element.style.top = `${Math.max(8, Math.min(position.y, window.innerHeight - element.offsetHeight - 8))}px`
+        element.querySelector('[role="menuitem"]')?.focus()
+      }, [position])
+      useEffect(() => {
+        function outside(event) {
+          if (!menu.current?.contains(event.target) && !trigger.current?.contains(event.target)) close(false)
+        }
+        document.addEventListener('pointerdown', outside)
+        return () => document.removeEventListener('pointerdown', outside)
+      }, [close, trigger])
+      function keyboard(event) {
+        if (event.key === 'Escape' || event.key === 'Tab') {
+          event.stopPropagation()
+          if (event.key === 'Escape') event.preventDefault()
+          close()
+          return
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const items = [...menu.current.querySelectorAll('[role="menuitem"]')]
+        const current = items.indexOf(document.activeElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+          : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+        items[next]?.focus()
+      }
+      const style = { ...buttonStyle, display: 'block', width: '100%', textAlign: 'start', whiteSpace: 'nowrap',
+        border: 0, textDecoration: 'none', boxSizing: 'border-box' }
+      return h('div', {
+        ref: menu, role: 'menu', 'aria-label': t('actions'), onKeyDown: keyboard,
+        style: { position: 'fixed', zIndex: 100, padding: '.25rem', border, borderRadius: '.45rem',
+          background: surface, boxShadow: '0 4px 16px #0004', maxHeight: 'calc(100vh - 16px)', overflow: 'auto' },
+      }, ...actions.map(({ label, run, href, ...attributes }) => h(href ? 'a' : 'button', {
+        key: label, role: 'menuitem', tabIndex: -1, style,
+        ...(href ? { href } : { type: 'button' }), ...attributes,
+        onClick: () => { close(); run?.() },
+      }, t(label))))
+    }
+
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, t, request, onAdopted, canvasUrl }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [brief, setBrief] = useState('')
       const [status, setStatus] = useState('')
       const [editing, setEditing] = useState(false)
+      const [menu, setMenu] = useState(null)
+      const trigger = useRef(null)
+      const player = useRef(null)
+      const adoption = useAdoption({ projectId, resultId, onAdopted })
       const url = '/api/opendirector/media?' + new URLSearchParams({ project: projectId, asset: assetId, kind })
+      const downloadUrl = url + '&original=1'
       const video = kind === 'video'
       const audio = kind === 'audio'
       const mediaStyle = { width: '100%', height: 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
         borderRadius: '.55rem', background: surface }
       const onError = () => setFailed(true)
       const media = video
-        ? h('video', { src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
-        : audio ? h('audio', { src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
+        ? h('video', { ref: player, src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
+        : audio ? h('audio', { ref: player, src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
           : h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
           h('img', { src: url, alt: title, loading: 'lazy', onError, style: mediaStyle }))
       function message(key, detail = '') {
@@ -428,7 +508,38 @@ window.__ModuleLoader__.load({
           setStatus(resultId)
         }
       }
-      return h('figure', { style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' } },
+      function closeMenu(restore = true) {
+        setMenu(null)
+        if (restore) trigger.current?.focus()
+      }
+      function contextMenu(event) {
+        if (event.target.closest('audio, video, form, [role="menu"]')) return
+        event.preventDefault()
+        setMenu({ x: event.clientX, y: event.clientY })
+      }
+      function togglePlayback() {
+        const element = player.current
+        if (!element) return
+        if (element.paused) element.play().catch(() => setStatus(t('playbackFailed')))
+        else element.pause()
+      }
+      const pending = adoption.status === 'adopting'
+      const adoptLabel = pending ? 'adopting' : selected ? 'selected'
+        : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
+      const actions = [
+        kind === 'image' && { label: 'edit', run: () => setEditing(true) },
+        kind === 'image' && { label: 'firstFrame', run: () => open('firstFramePrompt') },
+        video && { label: 'continue', run: () => open('continuePrompt') },
+        (video || audio) && !failed && { label: player.current?.paused === false ? 'pause' : 'play', run: togglePlayback },
+        !selected && !pending && { label: adoptLabel, run: adoption.adopt },
+        { label: 'download', href: downloadUrl, download: '' },
+        canvasUrl && { label: 'canvas', href: canvasUrl, target: '_blank', rel: 'noopener noreferrer' },
+        { label: 'copyId', run: copyResult },
+      ].filter(Boolean)
+      return h('figure', {
+        onContextMenu: resultId ? contextMenu : undefined,
+        style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' },
+      },
         h('figcaption', { style: { color: muted, fontSize: '.8em', fontWeight: 600 } }, title),
         failed ? h('p', null, t('unavailable')) : media,
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
@@ -437,9 +548,18 @@ window.__ModuleLoader__.load({
             video && button(t('continue'), () => open('continuePrompt')),
             kind === 'image' && button(t('edit'), () => setEditing(true), { 'aria-haspopup': 'dialog' }),
             kind === 'image' && button(t('firstFrame'), () => open('firstFramePrompt')),
-            (video || audio) && h('a', { href: url, download: '', style: buttonStyle }, t('download')),
-            button('ID', copyResult, { title: t('copyId'), 'aria-label': t('copyId') })),
-          h(AdoptResult, { projectId, resultId, selected, t, onAdopted }),
+            button(t(adoptLabel), adoption.adopt, { primary: true, disabled: pending || selected }),
+            button('···', event => {
+              if (menu) closeMenu()
+              else {
+                const { left, bottom } = event.currentTarget.getBoundingClientRect()
+                setMenu({ x: left, y: bottom })
+              }
+            }, { ref: trigger, 'aria-haspopup': 'menu', 'aria-expanded': Boolean(menu), title: t('actions'), 'aria-label': t('actions') })),
+          menu && h(ResultMenu, { actions, position: menu, trigger, close: closeMenu, t }),
+          adoption.status && !pending && !selected && !(adoption.status === 'adopted' && onAdopted)
+            && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t(adoption.status)),
+          adoption.canvasUrl && !onAdopted && canvasLink(adoption.canvasUrl, t),
           action && h('form', { onSubmit: submit, style: row },
             h('input', {
               autoFocus: true, type: 'text', value: brief, onChange: event => setBrief(event.target.value),
@@ -478,7 +598,7 @@ window.__ModuleLoader__.load({
             kind: sourceKind, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
           }),
           ...preview.candidates.map(({ resultId, assetId }, index) => h(Preview, {
-            key: resultId, projectId: meta.projectId, assetId, resultId, kind, t, request,
+            key: resultId, projectId: meta.projectId, assetId, resultId, kind, t, request, canvasUrl: meta.canvasUrl,
             title: preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate'),
           }))))
     }

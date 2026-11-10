@@ -7,6 +7,7 @@ import {
   buildSubmitCommand,
   requireUuid,
   requireString,
+  requireEnum,
   uuid5,
 } from './operations.js'
 import {
@@ -20,8 +21,9 @@ import {
 
 const PROJECTS = '/api/creation/projects'
 const PROMPT_LIMIT = 20000
+const LIBRARY_PAGE_SIZE = 12
 const MEDIA_TYPES = {
-  image: ['image/webp'],
+  image: ['image/webp', 'image/png', 'image/jpeg', 'image/gif', 'image/avif'],
   video: ['video/mp4', 'video/webm', 'video/quicktime'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/webm'],
 }
@@ -101,7 +103,7 @@ export class OpenDirectorClient {
   }
 
   async #request(method, path, {
-    body, session = randomUUID(), signal, timeoutMs = this.requestTimeoutMs, mediaType, range,
+    body, session = randomUUID(), signal, timeoutMs = this.requestTimeoutMs, mediaType, allowedMediaTypes = [mediaType], range,
   } = {}) {
     const url = joinUrl(this.baseUrl, path)
     const headers = {
@@ -140,8 +142,7 @@ export class OpenDirectorClient {
       }
       if (mediaType && (response.ok || response.status === 416)) {
         const type = response.headers.get('content-type')?.split(';', 1)[0]
-        const kind = mediaType.split('/')[0]
-        if (response.ok && !MEDIA_TYPES[kind].includes(type)) {
+        if (response.ok && !allowedMediaTypes.includes(type)) {
           await response.body?.cancel()
           throw new HttpError({ status: 502, code: 'invalid_media', detail: 'Unexpected OpenDirector media type.' })
         }
@@ -238,25 +239,38 @@ export class OpenDirectorClient {
     return this.#request('GET', creationPath(id), { signal })
   }
 
-  async recentResults(projectId, { signal } = {}) {
+  async libraryResults(projectId, { kind = 'all', selection = 'all', order = 'newest', after, signal } = {}) {
+    requireEnum(kind, 'kind', ['all', ...Object.keys(MEDIA_TYPES)])
+    requireEnum(selection, 'selection', ['all', 'current', 'other'])
+    requireEnum(order, 'order', ['newest', 'oldest'])
+    const cursor = after == null ? null : requireUuid(after, 'after')
     const snapshot = await this.project(projectId, { signal })
     const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
     const results = []
-    // Results are appended when registered, even when jobs finish out of order.
-    for (let index = snapshot.results.length - 1; index >= 0 && results.length < 6; index--) {
+    const step = order === 'oldest' ? 1 : -1
+    const cursorIndex = cursor === null ? null : snapshot.results.findIndex(result => result.id === cursor)
+    if (cursorIndex === -1) throw new InputError('library.cursor_expired')
+    const start = cursorIndex === null ? (step === 1 ? 0 : snapshot.results.length - 1) : cursorIndex + step
+    // Registration order is stable even when jobs finish out of order.
+    for (let index = start; index >= 0 && index < snapshot.results.length && results.length <= LIBRARY_PAGE_SIZE; index += step) {
       const { id, specId, jobId, asset } = snapshot.results[index]
-      if (!Object.hasOwn(MEDIA_TYPES, asset.kind)) continue
+      if (!Object.hasOwn(MEDIA_TYPES, asset.kind) || (kind !== 'all' && asset.kind !== kind)) continue
+      const selected = specs.get(specId)?.currentResultId === id
+      if ((selection === 'current' && !selected) || (selection === 'other' && selected)) continue
       results.push({
         resultId: id,
         specId,
         assetId: asset.assetId,
         kind: asset.kind,
-        selected: specs.get(specId)?.currentResultId === id,
+        selected,
         prompt: jobs.get(jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 160) ?? '',
       })
     }
-    return { projectId, projectName: snapshot.project.name, canvasUrl: this.canvasUrl(projectId), results }
+    const hasMore = results.length > LIBRARY_PAGE_SIZE
+    if (hasMore) results.pop()
+    return { projectId, projectName: snapshot.project.name, canvasUrl: this.canvasUrl(projectId), results,
+      nextCursor: hasMore ? results.at(-1).resultId : null }
   }
 
   async models({ signal } = {}) {
@@ -276,13 +290,14 @@ export class OpenDirectorClient {
       }))
   }
 
-  async media(projectId, assetId, { kind, range, signal } = {}) {
+  async media(projectId, assetId, { kind, original, range, signal } = {}) {
     const project = requireUuid(projectId, 'projectId')
     const asset = requireUuid(assetId, 'assetId')
     if (!Object.hasOwn(MEDIA_TYPES, kind)) throw new InputError('input.enum', { field: 'kind', values: 'image|video|audio' })
-    const image = kind === 'image'
-    return this.#request('GET', `${creationPath(project)}/assets/${asset}/${image ? 'thumbnail' : 'content'}`, {
-      signal, mediaType: image ? 'image/webp' : `${kind}/*`, range: image ? undefined : range,
+    const thumbnail = kind === 'image' && !original
+    return this.#request('GET', `${creationPath(project)}/assets/${asset}/${thumbnail ? 'thumbnail' : 'content'}`, {
+      signal, mediaType: thumbnail ? 'image/webp' : `${kind}/*`,
+      allowedMediaTypes: thumbnail ? ['image/webp'] : MEDIA_TYPES[kind], range: thumbnail ? undefined : range,
       timeoutMs: Math.min(this.requestTimeoutMs, 5000),
     })
   }

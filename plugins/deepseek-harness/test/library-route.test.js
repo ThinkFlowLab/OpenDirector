@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { apply } from '../index.js'
+import { OpenDirectorClient } from '../src/client.js'
 
 test('browse saved results without a lease and adopt with a recoverable receipt', async t => {
   const [project, spec, item, original, candidate, audio, originalAsset, candidateAsset, job, operationId] =
@@ -76,6 +77,13 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
     [original, true, ''],
   ])
   assert.deepEqual(calls, [['GET', '/api/creation/projects'], ['GET', path]])
+  const current = await library({ url: '/api/opendirector/library?' + new URLSearchParams({
+    project, kind: 'image', selection: 'current', order: 'oldest',
+  }) })
+  assert.deepEqual((await current.json()).results.map(item => item.resultId), [original])
+  assert.equal((await library({ url: '/api/opendirector/library?' + new URLSearchParams({
+    project, after: randomUUID(),
+  }) })).status, 409)
 
   const adopt = routes.get('/api/opendirector/adopt')
   const request = (input, headers = { 'X-OpenDirector-Action': '1', 'Sec-Fetch-Site': 'same-origin' }) => new Request(
@@ -84,7 +92,7 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
   )
   assert.equal((await adopt(request({}, {}))).status, 403)
   assert.equal((await adopt(request({}, { 'X-OpenDirector-Action': '1', 'Sec-Fetch-Site': 'cross-site' }))).status, 403)
-  assert.equal(calls.length, 2)
+  assert.equal(calls.length, 4)
   const busy = await adopt(request({}))
   assert.equal((await busy.json()).code, 'storage_busy')
   assert.equal(command, undefined)
@@ -103,4 +111,33 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
   assert.equal((await checked.json()).status, 'applied')
   assert.deepEqual(calls.at(-1), ['GET', path + '/receipts/' + command.commandId])
   assert.equal(calls.filter(([, url]) => url === path + '/commands').length, 1)
+})
+
+test('library filters the full history before pagination and keeps a stable page boundary', async () => {
+  const project = randomUUID()
+  const spec = randomUUID()
+  const makeResult = kind => ({ id: randomUUID(), specId: spec, asset: { kind, assetId: randomUUID() } })
+  const images = Array.from({ length: 15 }, () => makeResult('image'))
+  const videos = Array.from({ length: 15 }, () => makeResult('video'))
+  const snapshot = {
+    project: { id: project, name: 'Studio' }, jobs: [],
+    generationSpecs: [{ id: spec, currentResultId: images[0].id }],
+    results: [...images, ...videos],
+  }
+  const client = new OpenDirectorClient({ baseUrl: 'http://localhost', canvasBaseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
+    fetchImpl: async (_url, request) => {
+      assert.equal(request.method, 'GET')
+      return Response.json(snapshot)
+    },
+  })
+  const first = await client.libraryResults(project, { kind: 'image' })
+  const order = [...images].reverse().map(item => item.id)
+  assert.deepEqual(first.results.map(item => item.resultId), order.slice(0, 12))
+  assert.equal(first.nextCursor, order[11])
+  snapshot.results.push(makeResult('image'))
+  const second = await client.libraryResults(project, { kind: 'image', after: first.nextCursor })
+  assert.deepEqual(second.results.map(item => item.resultId), order.slice(12))
+  assert.equal(second.nextCursor, null)
+  const oldest = await client.libraryResults(project, { kind: 'image', selection: 'other', order: 'oldest' })
+  assert.deepEqual(oldest.results.map(item => item.resultId), images.slice(1, 13).map(item => item.id))
 })

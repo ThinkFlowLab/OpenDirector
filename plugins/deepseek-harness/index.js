@@ -61,7 +61,8 @@ export function apply(ctx, config) {
         try {
           const media = await client.media(
             searchParams.get('project'), searchParams.get('asset'), {
-              kind: searchParams.get('kind'), range: request.headers.get('range'), signal: request.signal,
+              kind: searchParams.get('kind'), original: searchParams.get('original') === '1',
+              range: request.headers.get('range'), signal: request.signal,
             },
           )
           const headers = new Headers({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' })
@@ -86,16 +87,20 @@ export function apply(ctx, config) {
       requestBody: 'buffered',
       async fetch(request) {
         try {
-          const projectId = new URL(request.url, 'http://localhost').searchParams.get('project')
+          const params = new URL(request.url, 'http://localhost').searchParams
+          const projectId = params.get('project')
           if (projectId !== null) {
-            const library = await client.recentResults(projectId, { signal: request.signal })
+            const library = await client.libraryResults(projectId, {
+              kind: params.get('kind') ?? undefined, selection: params.get('selection') ?? undefined,
+              order: params.get('order') ?? undefined, after: params.get('after'), signal: request.signal,
+            })
             return Response.json(library, { headers })
           }
           const value = await client.listProjects({ signal: request.signal })
           const projects = value.projects.map(({ id, name }) => ({ id, name }))
           return Response.json({ projects }, { headers })
         } catch (error) {
-          const status = error instanceof InputError ? 400
+          const status = error instanceof InputError ? (error.key === 'library.cursor_expired' ? 409 : 400)
             : error instanceof HttpError && error.status === 404 ? 404
               : 502
           return new Response(null, { status, headers })

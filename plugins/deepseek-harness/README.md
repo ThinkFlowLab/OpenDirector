@@ -49,7 +49,9 @@ If the submission reply is lost, choose **Check submission** to look up the orig
 
 ### Pick up an earlier project
 
-Choose **Resume project** next to the composer, then select an OpenDirector project. You can preview its six most recently saved images, videos and audio clips, see which results are current, and adopt a candidate in the same project. If a canvas is open for editing, save and close it before trying to adopt again. If the connection drops during adoption, choose **Check adoption** to look up the original write.
+Choose **Resume project** next to the composer, then select an OpenDirector project. Filter the saved results by media type or current selection, sort by when they were saved, and choose **Load more** for the next page. If a canvas is open for editing, save and close it before trying to adopt a result. If the connection drops during adoption, choose **Check adoption** to look up the original write.
+
+Right-click a result card or choose **More actions** on it. The menu shows the actions for that media type, including downloading the original file. Use the arrow keys to move between actions, and press Escape to return to the card.
 
 ### Continue a video
 
