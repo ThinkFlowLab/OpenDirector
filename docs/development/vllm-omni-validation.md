@@ -226,6 +226,8 @@ items. All five registered files matched their saved SHA256 fingerprints. The
 rendered video played to the end (10.026667 s, 640×360, no media error).
 应用进程重启后，工程对象、历史结果、采用状态与全部文件均保持，视频完整播放通过。
 
+![Generated image, narration, timeline, export and edited ASR transcript in the reopened project](assets/vllm-omni-validation.png)
+
 ## ASR followup / 语音转录增量
 
 On 2026-11-10 UTC, the same assigned Blackwell GPU served
