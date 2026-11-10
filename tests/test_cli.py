@@ -135,6 +135,7 @@ def test_cli_project_write_replay_and_lock(tmp_path, monkeypatch):
     assert shown["canvasItems"][0]["width"] == 352
     item = invoke(["project", "show"])["canvasItems"][0]
     assert item["binding"]["objectRef"]["assetId"] == asset["id"]
+    assert item["title"] == asset["name"]  # UI text revisions need a valid file name.
 
     file = tmp_path / "upload.txt"
     file.write_text("Imported text")

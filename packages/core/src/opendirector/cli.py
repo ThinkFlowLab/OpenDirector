@@ -342,7 +342,7 @@ def add_material(ctx: typer.Context, asset: Annotated[UUID, typer.Option(help="R
     reference["assetId"] = source["id"]
     emit(client.execute("canvas.show", {"item": {
         "id": str(item_id or client.operation_id or uuid4()), "projectId": snapshot["project"]["id"],
-        "kind": source["kind"], "position": {"x": x, "y": y},
+        "kind": source["kind"], "title": source["name"], "position": {"x": x, "y": y},
         "binding": {"role": "material", "objectRef": reference},
     }}))
 
