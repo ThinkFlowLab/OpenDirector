@@ -34,6 +34,11 @@ async function run({ github, context, core }) {
     core.info('Skip closed or draft PR / 跳过已关闭或草稿 PR');
     return;
   }
+  if (context.payload.action === 'unlabeled' &&
+      !pr.labels.some(label => Object.hasOwn(config.reviewers, label.name))) {
+    core.info('Label removed with no mapped labels remaining; skip fallback / 移除后无匹配标签，跳过默认名单');
+    return;
+  }
   const reviews = await github.paginate(github.rest.pulls.listReviews, {
     ...repo, pull_number, per_page: 100,
   });
@@ -58,7 +63,7 @@ async function run({ github, context, core }) {
   await core.summary.addHeading('Reviewer routing / 审查人分配')
     .addRaw(`PR #${pull_number}\n`)
     .addTable([['Reviewer / 审查人', 'Result / 结果'], ...rows])
-    .addRaw('Existing requests and submitted reviews are preserved. No matching label uses the fallback list. / 保留已有邀请和已提交审查；无匹配标签时使用默认名单。')
+    .addRaw('Existing requests and submitted reviews are preserved. No matching label uses fallback except on label removal. / 保留已有邀请和已提交审查；无匹配标签时使用默认名单，移除标签事件除外。')
     .write();
 }
 module.exports = { selectReviewers, run };

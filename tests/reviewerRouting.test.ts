@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import routing from '../scripts/github/reviewer-routing.cjs';
 const { selectReviewers, run } = routing;
+
+test('reviewer workflow action references use full 40-character commit pins', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/reviewer-routing.yml', import.meta.url), 'utf8');
+  const pins = [...workflow.matchAll(/uses:\s+actions\/[\w-]+@(\S+)/g)];
+  assert.equal(pins.length, 2);
+  for (const [, pin] of pins) assert.match(pin, /^[0-9a-f]{40}$/);
+});
 
 test('requests every matched label owner, with case-insensitive deduplication', () => {
   assert.deepEqual(selectReviewers({labels: ['area:canvas', 'area:timeline'], author: 'someone'}),
@@ -29,7 +37,7 @@ function fixture(pr: FixturePr) {
   const calls: string[] = [];
   const summary = {addHeading(){return this;}, addRaw(){return this;}, addTable(){return this;}, async write(){}};
   return {calls, args: {context: {eventName: 'pull_request_target', repo: {owner:'o',repo:'r'},
-    payload: {pull_request:{number: 1}}}, core: {info(){}, warning(){}, summary}, github: {
+    payload: {action: 'opened', pull_request:{number: 1}}}, core: {info(){}, warning(){}, summary}, github: {
       paginate: async () => [], rest: {
       issues: {
         getLabel: async (_request: {name: string}): Promise<void> => {},
@@ -69,4 +77,21 @@ test('permission errors remain failures instead of silently dropping reviewers',
   const f = fixture({state:'open', draft:false, user:{login:'someone'}, requested_reviewers:[], labels:[{name:'area:performance'}]});
   f.args.github.rest.pulls.requestReviewers = async () => { throw Object.assign(new Error('forbidden'), {status:403}); };
   await assert.rejects(run(f.args), /forbidden/);
+});
+test('removing the last mapped label does not invite fallback reviewers', async () => {
+  const f = fixture({state:'open', draft:false, user:{login:'someone'}, requested_reviewers:[{login:'wangtiance'}], labels:[{name:'type:ci'}]});
+  f.args.context.payload.action = 'unlabeled';
+  await run(f.args);
+  assert.deepEqual(f.calls, []);
+});
+test('label removal still routes remaining mapped labels', async () => {
+  const f = fixture({state:'open', draft:false, user:{login:'someone'}, requested_reviewers:[], labels:[{name:'area:performance'}]});
+  f.args.context.payload.action = 'unlabeled';
+  await run(f.args);
+  assert.deepEqual(f.calls, ['kunkunblueberry']);
+});
+test('opening an unmapped PR still invites all fallback reviewers', async () => {
+  const f = fixture({state:'open', draft:false, user:{login:'someone'}, requested_reviewers:[], labels:[]});
+  await run(f.args);
+  assert.deepEqual(f.calls, ['hsliuustc0106', 'princepride']);
 });
