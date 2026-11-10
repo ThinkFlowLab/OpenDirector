@@ -71,3 +71,54 @@ test('a direct edit pins saved assets in order and recovers the original submiss
   assert.deepEqual(await client.startCreation(input), { status: 'accepted', jobId, code: undefined })
   assert.equal(commands.length, 2)
 })
+
+test('another candidate reuses the node and reconciles a lost response without another submit', async () => {
+  const [projectId, operationId, jobId, repeatId, specId, itemId, firstId, secondId, firstAsset, secondAsset] =
+    Array.from({ length: 10 }, () => randomUUID())
+  const commands = []
+  const prior = { id: jobId, inputSnapshot: { spec: { id: specId } }, originItemId: itemId, status: 'succeeded' }
+  const jobs = [prior]
+  const snapshot = {
+    jobs,
+    generationSpecs: [{ id: specId, revision: 3, kind: 'image', currentResultId: firstId }],
+    canvasItems: [{ id: itemId, revision: 2, binding: { objectRef: { id: specId } } }],
+    results: [{ id: firstId, specId, jobId, asset: { assetId: firstAsset, kind: 'image' } }],
+  }
+  let receipt
+  const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
+    async fetchImpl(url, request) {
+      const path = new URL(url).pathname
+      if (path.endsWith('/open')) return Response.json(snapshot)
+      if (path.endsWith('/queries')) return Response.json(jobs.at(-1))
+      if (request.method === 'DELETE') return Response.json({})
+      if (path.endsWith('/receipts/' + uuid5(operationId, 'creation.submit'))) {
+        return Response.json(receipt ?? {}, { status: receipt ? 200 : 404 })
+      }
+      if (request.method === 'GET' && path.endsWith('/' + projectId)) return Response.json(snapshot)
+      assert.ok(path.endsWith('/commands'))
+      commands.push(JSON.parse(request.body))
+      jobs.push({ ...prior, id: repeatId })
+      snapshot.results.push({ id: secondId, specId, jobId: repeatId, asset: { assetId: secondAsset, kind: 'image' } })
+      receipt = { status: 'accepted', jobIds: [repeatId] }
+      throw new Error('submission response lost')
+    },
+  })
+  const input = { projectId, operationId, repeatJobId: jobId }
+  assert.deepEqual(await client.startCreation({ ...input, check: true }), { status: 'unknown' })
+  await assert.rejects(client.startCreation(input), { name: 'UnknownOperationError' })
+  assert.deepEqual(await client.startCreation({ ...input, check: true }), { status: 'accepted', jobId: repeatId, code: undefined })
+  assert.deepEqual(await client.startCreation(input), { status: 'accepted', jobId: repeatId, code: undefined })
+  const [submit] = commands
+  assert.equal(commands.length, 1)
+  assert.equal(submit.type, 'generation.submit')
+  assert.equal(submit.payload.adoptionPolicy, 'candidate_only')
+  assert.equal(submit.payload.specId, specId)
+  assert.deepEqual(submit.expectedVersions.map(item => [item.id, item.revision]), [[specId, 3], [itemId, 2]])
+  assert.deepEqual(await client.creationStatus(projectId, repeatId), {
+    status: 'succeeded',
+    results: [
+      { resultId: firstId, assetId: firstAsset, kind: 'image', selected: true },
+      { resultId: secondId, assetId: secondAsset, kind: 'image', selected: false },
+    ],
+  })
+})

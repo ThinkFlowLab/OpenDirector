@@ -27,6 +27,9 @@ window.__ModuleLoader__.load({
       chooseOutput: 'Choose an image size', useModelDefault: 'Use model default',
       outputUnavailable: '{size} is unavailable on this model. Choose a different size or model.',
       generate: 'Generate one candidate', submitting: 'Submitting…', checkGeneration: 'Check submission',
+      repeatGeneration: 'Generate another candidate',
+      repeatHint: 'Uses the settings saved on this canvas node. Existing candidates stay available.',
+      repeatUnavailable: 'The generation node is unavailable. Open the canvas to check it.',
       noModels: 'Configure a compatible model in OpenDirector first.',
       failedToSubmit: 'Could not submit generation. Check your project and model settings.',
       generationUnknown: 'Submission has not been confirmed. Check the original operation.',
@@ -71,6 +74,9 @@ window.__ModuleLoader__.load({
       chooseOutput: '选择图片尺寸', useModelDefault: '使用模型默认尺寸',
       outputUnavailable: '当前模型不支持 {size}。请选择其他尺寸或切换模型。',
       generate: '生成一个候选', submitting: '正在提交…', checkGeneration: '查询提交状态',
+      repeatGeneration: '再生成一个候选',
+      repeatHint: '使用此画布节点上保存的设置，已有候选仍可选择。',
+      repeatUnavailable: '暂时无法使用该生成节点，请打开画布查看。',
       noModels: '请先在 OpenDirector 配置支持此操作的模型。',
       failedToSubmit: '暂时无法提交生成，请检查工程和模型设置。',
       generationUnknown: '尚未确认任务是否提交，请查询原操作。',
@@ -324,6 +330,7 @@ window.__ModuleLoader__.load({
       const [form, setForm] = useState({ kind: 'image', projectId: '', projectName: '', modelId: '', prompt: '', output: null, voice: '' })
       const [result, setResult] = useState(null)
       const [progress, setProgress] = useState(null)
+      const [repeatStatus, setRepeatStatus] = useState(null)
       const [submitting, setSubmitting] = useState(false)
       const [pollError, setPollError] = useState(false)
       const [pollRun, setPollRun] = useState(0)
@@ -376,7 +383,7 @@ window.__ModuleLoader__.load({
             if (!response.ok) throw new Error('Job status unavailable')
             const value = await response.json()
             if (controller.signal.aborted) return
-            setProgress(value)
+            setProgress(previous => ({ ...value, jobId, results: value.results ?? previous?.results ?? [] }))
             if (['accepted', 'queued', 'running'].includes(value.status)) timer = setTimeout(poll, 2500)
           } catch {
             if (!controller.signal.aborted) setPollError(true)
@@ -385,15 +392,47 @@ window.__ModuleLoader__.load({
         poll()
         return () => { controller.abort(); clearTimeout(timer) }
       }, [jobId, projectId, pollRun])
-      async function submit(event) {
-        event.preventDefault()
-        if (busy.current || (!unknown && (locked || outputUnavailable))) return
+      async function send(makeAttempt) {
+        if (busy.current) return
         busy.current = true
         setSubmitting(true)
-        const check = attempt.current !== null
+        function receive(value) {
+          if (attempt.current?.repeatJobId && !value.jobId) {
+            setRepeatStatus(value.status === 'unknown' ? 'generationUnknown' : value.code === 'storage_busy' ? 'adoptBusy'
+              : value.code === 'creation.repeat_unavailable' ? 'repeatUnavailable' : 'failedToSubmit')
+          } else {
+            setResult({ ...value, projectId: attempt.current?.projectId })
+            setRepeatStatus(null)
+          }
+          if (value.status !== 'unknown') attempt.current = null
+        }
         try {
+          const check = attempt.current !== null
+          attempt.current ??= makeAttempt()
+          const response = await fetch('/api/opendirector/creation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
+            body: JSON.stringify({ ...attempt.current, check }),
+          })
+          if (response.status === 400 || response.status === 403) {
+            receive({ status: 'rejected' })
+            return
+          }
+          if (!response.ok) throw new Error('Submission unavailable')
+          receive(await response.json())
+        } catch {
+          receive({ status: attempt.current ? 'unknown' : 'rejected' })
+        } finally {
+          busy.current = false
+          setSubmitting(false)
+        }
+      }
+      function submit(event) {
+        event.preventDefault()
+        if (!unknown && (locked || outputUnavailable)) return
+        send(() => {
           const newProject = !source && form.projectId === 'new'
-          attempt.current ??= {
+          return {
             projectId: source?.projectId ?? (newProject ? crypto.randomUUID() : form.projectId),
             operationId: crypto.randomUUID(),
             ...(source && { sourceResultIds: references.map(item => item.resultId) }),
@@ -401,31 +440,13 @@ window.__ModuleLoader__.load({
             kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
             output, voice: form.voice,
           }
-          const response = await fetch('/api/opendirector/creation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
-            body: JSON.stringify({ ...attempt.current, check }),
-          })
-          if (response.status === 400 || response.status === 403) {
-            attempt.current = null
-            setResult({ status: 'rejected' })
-            return
-          }
-          if (!response.ok) throw new Error('Submission unavailable')
-          const value = await response.json()
-          setResult({ ...value, projectId: attempt.current.projectId })
-          if (value.status !== 'unknown') attempt.current = null
-        } catch {
-          setResult({ status: attempt.current ? 'unknown' : 'rejected' })
-        } finally {
-          busy.current = false
-          setSubmitting(false)
-        }
+        })
       }
       function field(label, control) {
         return h('label', { style: { display: 'grid', gap: '.3rem' } }, t(label), cloneElement(control, { 'aria-label': t(label) }))
       }
-      const status = progress?.status
+      const status = progress?.jobId === jobId ? progress?.status : null
+      const candidates = progress?.results ?? []
       const outcome = status === 'failed' && progress.category === 'quota' ? 'quota'
         : ['cancelled', 'interrupted'].includes(status) ? 'stopped'
           : status === 'accepted' ? 'queued' : status
@@ -485,9 +506,21 @@ window.__ModuleLoader__.load({
         jobId && h('p', { role: 'status' }, t(outcome ?? 'waiting')),
         pollError && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
         result?.canvasUrl && (jobId || result.draftSaved) && canvasLink(result.canvasUrl, t),
-        ...((progress?.results ?? []).map(candidate => h(Preview, {
-          ...candidate, projectId, title: t('candidate'), key: candidate.resultId, t, request, canvasUrl: result.canvasUrl,
-        }))))
+        candidates.length > 0 && h('div', {
+          style: { display: 'grid', gap: '.7rem', marginBlock: '.7rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' },
+        }, ...candidates.map((candidate, index) => h(Preview, {
+          ...candidate, projectId, key: candidate.resultId, t, request, canvasUrl: result.canvasUrl,
+          title: candidates.length === 1 ? t('candidate') : `${t('candidate')} ${index + 1}`,
+          onAdopted: () => setProgress(previous => ({ ...previous,
+            results: previous.results.map(item => ({ ...item, selected: item.resultId === candidate.resultId })),
+          })),
+        }))),
+        status === 'succeeded' && candidates.length > 0 && h('div', { style: row },
+          button(t(submitting ? 'submitting' : repeatStatus === 'generationUnknown' ? 'checkGeneration' : 'repeatGeneration'),
+            () => send(() => ({ projectId, operationId: crypto.randomUUID(), repeatJobId: jobId })), { disabled: submitting }),
+          h('small', { style: { color: muted } }, t('repeatHint'))),
+        repeatStatus && h('p', { role: repeatStatus === 'generationUnknown' ? 'status' : 'alert' }, t(repeatStatus)))
     }
 
     function useAdoption({ projectId, resultId, onAdopted }) {

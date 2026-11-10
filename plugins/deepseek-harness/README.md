@@ -36,6 +36,8 @@ In DSH Web, choose **Create media** next to the composer. Select an existing pro
 
 If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
 
+Choose **Generate another candidate** to run the same canvas node again with its saved settings. Compare the results in the dialog and choose **Adopt** on the one you want to use.
+
 For an open-ended request, use the chat as usual:
 
 > Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
