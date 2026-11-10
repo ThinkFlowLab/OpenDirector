@@ -59,7 +59,9 @@ async def _public_result_url(url):
         checked_address = getattr(address, 'ipv4_mapped', None) or address
         if (not checked_address.is_global or checked_address.is_multicast
                 or checked_address.is_reserved):
-            raise protocol_failure('download')
+            raise protocol_failure('download',
+                message='生成结果地址解析为非公网地址，下载已停止。',
+                suggestion='请检查服务返回的地址或本机域名解析设置，再恢复原任务的下载。')
     if not addresses:
         raise protocol_failure('download')
     # A pooled connection to one IP must not reuse another hostname's TLS identity.

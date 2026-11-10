@@ -676,7 +676,7 @@ export const errors = {
   "errors.generationFailure.quota":
     "The model account balance or plan quota is insufficient.",
   "errors.generationFailure.rateLimit":
-    "The model call rate or quota is limited. Try again later.",
+    "The model service is busy or limiting requests. Try again later. If this persists, check service status, request limits, and account quota.",
   "errors.generationFailure.temporary":
     "The generation service is temporarily unavailable.",
   "errors.generationFailure.provider":
@@ -688,6 +688,8 @@ export const errors = {
     "The generation service returned an unrecognized or incomplete result.",
   "errors.generationFailure.download":
     "The generated result could not be downloaded.",
+  "errors.generationFailure.downloadAddress":
+    "The result URL resolves to a non-public address, so the download stopped. Check the service's result URL or your DNS settings, then resume the original download.",
   "errors.generationFailure.notFoundTask":
     "The provider could not find this task.",
   "errors.generationFailure.notFoundEndpoint":
