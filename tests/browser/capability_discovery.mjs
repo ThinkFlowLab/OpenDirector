@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { dirname, extname, basename, join } from "node:path";
 import { launchBrowser } from "./engine.mjs";
 
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
@@ -77,13 +78,44 @@ function document() {
       observed_at: new Date().toISOString(),
     },
   };
+  const editRoute = {
+    ...route,
+    path: "/v1/images/edits",
+    request: {
+      inputs: {
+        image: {
+          support: "supported",
+          min_count: 1,
+          ...(mode === "partial" ? {} : { max_count: 3 }),
+        },
+        mask_image: { support: "supported", max_count: 1 },
+      },
+      parameters: {
+        width: { support: "supported", minimum: 64, maximum: 2048, step: 16 },
+      },
+    },
+  };
+  operations.image_edit = {
+    support: mode === "unsupported" ? "unsupported" : "supported",
+    exposure: "enabled",
+    profiles: [
+      {
+        id: "image_to_image",
+        support: mode === "unsupported" ? "unsupported" : "supported",
+        required_inputs: ["text", "image"],
+        outputs: ["image"],
+        routes: [editRoute],
+      },
+    ],
+    execution: operations.image_generation.execution,
+  };
   return {
     object: "omni.capabilities",
     schema_version: 1,
     observed_at: new Date().toISOString(),
     models: [{ id: served, stage_ids: ["7"], operations }],
     stages: [{ id: "7", type: "diffusion", depends_on: [] }],
-    routes: [route],
+    routes: [route, editRoute],
   };
 }
 const service = createServer((request, response) => {
@@ -92,8 +124,19 @@ const service = createServer((request, response) => {
     return;
   }
   queries += 1;
+  if (mode === "connection") {
+    request.socket.destroy();
+    return;
+  }
   const body = document(),
-    status = mode === "legacy" ? 404 : 200;
+    status =
+      mode === "legacy"
+        ? 404
+        : mode === "authentication"
+          ? 401
+          : mode === "failure"
+            ? 503
+            : 200;
   setTimeout(() => {
     response.writeHead(status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(body));
@@ -113,6 +156,7 @@ await page.addInitScript(() => {
 });
 page.setDefaultTimeout(15000);
 const errors = [];
+const screenshots = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("request", (request) => {
   const session = request.headers()["x-opendirector-session"];
@@ -144,10 +188,26 @@ try {
     .getByRole("button")
     .click();
   await page.getByRole("button", { name: "Add service", exact: true }).click();
+  assert.equal(
+    await page
+      .getByLabel("Service URL (Base URL)", { exact: true })
+      .getAttribute("placeholder"),
+    "Enter your service's API base URL",
+  );
+  assert.doesNotMatch(
+    await page.locator(".cw-model-editor").innerText(),
+    /SSH|127\.0\.0\.1:8200/,
+  );
   await page
     .getByLabel("Service URL (Base URL)", { exact: true })
     .fill(serviceUrl);
   await page.getByRole("button", { name: "Add manually", exact: true }).click();
+  assert.equal(
+    await page
+      .getByLabel("Model ID (the service's served-model-name)", { exact: true })
+      .getAttribute("placeholder"),
+    "Enter the model ID from your service",
+  );
   await page
     .getByLabel("Model ID (the service's served-model-name)", { exact: true })
     .fill(served);
@@ -156,7 +216,112 @@ try {
     .getByRole("button", { name: "Add", exact: true })
     .click();
   const draft = page.locator(".cw-model-editor .cw-model-availability");
+  async function presentInBothLanguages(state, expected) {
+    for (const locale of ["en-US", "zh-CN"]) {
+      await page.evaluate((next) => {
+        localStorage.setItem("opendirector.locale.v1", next);
+        window.dispatchEvent(
+          new StorageEvent("storage", {
+            key: "opendirector.locale.v1",
+            newValue: next,
+          }),
+        );
+      }, locale);
+      await until(
+        async () =>
+          (await page.locator("html").getAttribute("lang")) === locale,
+      );
+      if (expected) {
+        await draft.getByText(expected[locale], { exact: true }).waitFor();
+        assert.equal(
+          await draft.getByText(expected[locale], { exact: true }).count(),
+          1,
+          `${state}: shared reason appears once in ${locale}`,
+        );
+      }
+      if (locale === "en-US")
+        assert.doesNotMatch(await draft.innerText(), /[\u3400-\u9fff]/);
+      else assert.doesNotMatch(await draft.innerText(), /\b(?:AM|PM)\b/);
+      assert.equal(
+        await page
+          .getByLabel(
+            locale === "en-US"
+              ? "Service URL (Base URL)"
+              : "服务地址（Base URL）",
+            { exact: true },
+          )
+          .inputValue(),
+        serviceUrl,
+      );
+      if (process.env.CREATION_SCREENSHOT) {
+        const target = process.env.CREATION_SCREENSHOT;
+        const path = join(
+          dirname(target),
+          `${basename(target, extname(target))}-${state}-${locale}.png`,
+        );
+        const option = page.locator(".cw-model-option").filter({ has: page.locator(".cw-model-availability") });
+        await option.scrollIntoViewIfNeeded();
+        const bounds = await option.evaluate((element) => {
+          const card = element
+            .querySelector(".cw-model-availability")
+            .getBoundingClientRect();
+          const label = element.querySelector("label").getBoundingClientRect();
+          const scroller = element
+            .closest(".cw-model-editor-scroll")
+            .getBoundingClientRect();
+          const footer = element
+            .closest("form")
+            .querySelector("footer")
+            .getBoundingClientRect();
+          return {
+            cardTop: card.top,
+            cardBottom: card.bottom,
+            labelBottom: label.bottom,
+            labelWidth: label.width,
+            cardWidth: card.width,
+            visibleTop: scroller.top,
+            visibleBottom: Math.min(scroller.bottom, footer.top),
+          };
+        });
+        assert.ok(
+          bounds.cardTop >= bounds.labelBottom,
+          `${state}: capability card occupies the row below the model`,
+        );
+        assert.ok(
+          bounds.labelWidth >= bounds.cardWidth * 0.9,
+          `${state}: model identity retains the available width`,
+        );
+        assert.ok(
+          bounds.cardTop >= bounds.visibleTop - 1 &&
+            bounds.cardBottom <= bounds.visibleBottom + 1,
+          `${state}: the capability card is fully visible above the footer: ${JSON.stringify(bounds)}`,
+        );
+        await option.screenshot({ path });
+        screenshots.push(path);
+      }
+    }
+    await page.evaluate(() => {
+      localStorage.setItem("opendirector.locale.v1", "en-US");
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "opendirector.locale.v1",
+          newValue: "en-US",
+        }),
+      );
+    });
+    await until(
+      async () => (await page.locator("html").getAttribute("lang")) === "en-US",
+    );
+  }
+  assert.equal(
+    await draft.getByText("Not checked", { exact: true }).count(),
+    1,
+  );
   const previousQueries = queries;
+  await presentInBothLanguages("unchecked", {
+    "en-US": "Not checked",
+    "zh-CN": "尚未检查",
+  });
   await page
     .getByLabel("Service URL (Base URL)", { exact: true })
     .fill(serviceUrl + "/");
@@ -174,7 +339,7 @@ try {
     response.url().endsWith("/model-configs/availability/check"),
   );
   await draft
-    .getByRole("button", { name: "Check service capabilities", exact: true })
+    .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
     .click();
   await page
     .getByLabel("Service URL (Base URL)", { exact: true })
@@ -182,11 +347,7 @@ try {
   await lateDraft;
   await page.waitForTimeout(50);
   assert.equal(
-    await draft
-      .getByText(
-        "This model does not support this operation. Choose a suitable model.",
-      )
-      .count(),
+    await draft.getByText("Not supported").count(),
     0,
     "an old draft response must not describe the edited connection",
   );
@@ -195,19 +356,224 @@ try {
     .fill(serviceUrl);
   delay = 0;
   await draft
-    .getByRole("button", { name: "Check service capabilities", exact: true })
+    .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
     .click();
-  await draft
-    .getByText(
-      "This model does not support this operation. Choose a suitable model.",
-    )
-    .first()
-    .waitFor();
+  await draft.getByText("Not supported").first().waitFor();
   assert.equal(
     (await call("/api/model-configs")).some((item) => item.modelId === served),
     false,
     "a draft check must not save a model",
   );
+  assert.equal(
+    await draft.getByText("Not supported", { exact: true }).count(),
+    1,
+  );
+
+  // The real form keeps draft values while presenting each state and switching language.
+  await presentInBothLanguages("unsupported", {
+    "en-US": "Not supported",
+    "zh-CN": "不支持",
+  });
+  const draftUrl = page.getByLabel("Service URL (Base URL)", { exact: true });
+  async function checkDraft(nextMode) {
+    mode = nextMode;
+    await draft
+      .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
+      .click();
+    await until(async () => !(await draft.getByRole("button").isDisabled()));
+    assert.equal(await draftUrl.inputValue(), serviceUrl);
+    assert.equal(
+      (await call("/api/model-configs")).some(
+        (item) => item.modelId === served,
+      ),
+      false,
+    );
+  }
+  await checkDraft("supported");
+  assert.equal(
+    await draft.getByRole("status").count(),
+    0,
+    "normal state has no aggregate summary",
+  );
+  for (const label of [
+    "Text to image",
+    "Single-image editing",
+    "Multi-image editing",
+  ])
+    assert.equal(await draft.getByText(label, { exact: true }).count(), 1);
+  assert.equal(await draft.locator("[data-availability=available]").count(), 3);
+  await draft.getByText("Input requirements", { exact: true }).click();
+  await presentInBothLanguages("normal", null);
+  assert.equal(
+    await draft.getByText("Count 1–3", { exact: true }).count(),
+    1,
+    "the same service image limit appears once",
+  );
+  assert.equal(
+    await draft.getByText("Region input", { exact: true }).count(),
+    1,
+  );
+  assert.ok(
+    (await draft.getByText("Service declaration", { exact: true }).count()) > 0,
+  );
+  await page.evaluate(() => {
+    localStorage.setItem("opendirector.locale.v1", "zh-CN");
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "opendirector.locale.v1",
+        newValue: "zh-CN",
+      }),
+    );
+  });
+  await draft.getByText("多图编辑", { exact: true }).waitFor();
+  assert.equal(await draft.getByText("选区输入", { exact: true }).count(), 1);
+  assert.equal(await draft.getByText("数量 1–3", { exact: true }).count(), 1);
+  assert.equal(
+    await page.getByLabel("服务地址（Base URL）", { exact: true }).inputValue(),
+    serviceUrl,
+  );
+  await page.evaluate(() => {
+    localStorage.setItem("opendirector.locale.v1", "en-US");
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "opendirector.locale.v1",
+        newValue: "en-US",
+      }),
+    );
+  });
+  await draft.getByText("Multi-image editing", { exact: true }).waitFor();
+  await checkDraft("partial");
+  assert.equal(await draft.getByRole("status").count(), 0);
+  assert.equal(
+    await draft.getByText("Image count not confirmed", { exact: true }).count(),
+    1,
+  );
+
+  const draftCheckUrl = "**/api/model-configs/availability/check";
+  await presentInBothLanguages("partial", {
+    "en-US": "Image count not confirmed",
+    "zh-CN": "多图数量待确认",
+  });
+  // Error observations last two seconds. Hold browser time so both screenshots
+  // inspect the same response, without issuing another check on a locale change.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  for (const [state, expected] of [
+    [
+      "legacy",
+      {
+        "en-US": "No capability declaration from this service",
+        "zh-CN": "服务未提供能力声明",
+      },
+    ],
+    [
+      "connection",
+      {
+        "en-US": "Cannot connect. Check the service URL.",
+        "zh-CN": "无法连接服务，请检查地址",
+      },
+    ],
+    [
+      "authentication",
+      {
+        "en-US": "Authentication failed. Check the API key.",
+        "zh-CN": "认证失败，请检查密钥",
+      },
+    ],
+    ["failure", { "en-US": "Check failed", "zh-CN": "检查失败" }],
+  ]) {
+    await checkDraft(state);
+    await presentInBothLanguages(state, expected);
+    assert.equal(
+      await draft
+        .getByText("Image count not confirmed", { exact: true })
+        .count(),
+      0,
+      `${state}: no secondary multi-image reason`,
+    );
+    assert.equal(
+      await draft.getByText("Not checked", { exact: true }).count(),
+      0,
+    );
+    assert.equal(
+      await draft.locator("li [data-availability=unknown]").count(),
+      3,
+    );
+  }
+  await page.route(
+    draftCheckUrl,
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Fixture check failed" }),
+      }),
+    { times: 1 },
+  );
+  await checkDraft("supported");
+  assert.equal(await draft.getByRole("alert").count(), 1);
+  assert.equal(
+    await draft.getByText("Not checked", { exact: true }).count(),
+    0,
+    "a failed check does not also say unchecked",
+  );
+  await page.unroute(draftCheckUrl);
+  await page.clock.resume();
+  await page.clock.setSystemTime(new Date());
+  delay = 400;
+  mode = "paused";
+  await draft.getByRole("button", { name: "Retry", exact: true }).click();
+  assert.equal(
+    await draft.getByText("Checking…", { exact: true }).count(),
+    1,
+    "checking appears only on the button",
+  );
+  assert.equal(await draft.getByRole("status").count(), 0);
+  await draft.getByText("Service paused", { exact: true }).waitFor();
+  delay = 0;
+  assert.equal(
+    await draft.getByText("Service paused", { exact: true }).count(),
+    1,
+  );
+  // Clock control lets each language capture the same unexpired observation.
+  await page.clock.pauseAt(new Date());
+  await presentInBothLanguages("paused", {
+    "en-US": "Service paused",
+    "zh-CN": "服务已暂停",
+  });
+  await page.clock.fastForward(5100);
+  await until(
+    async () =>
+      (await draft.getByText("Service paused", { exact: true }).count()) === 0,
+  );
+  assert.equal(
+    await draft.getByText("Service paused", { exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await draft.locator("[data-availability=available]").count(),
+    3,
+    "pause expiry restores the retained declaration",
+  );
+  await page.clock.fastForward(25100);
+  await draft
+    .getByText("Results expired. Refresh to check again.", { exact: true })
+    .waitFor();
+  assert.equal(
+    await draft
+      .getByText("Results expired. Refresh to check again.", { exact: true })
+      .count(),
+    1,
+  );
+  assert.equal(await draft.locator("li[data-stale]").count(), 3);
+  await presentInBothLanguages("expired", {
+    "en-US": "Results expired. Refresh to check again.",
+    "zh-CN": "检查结果已过期，请刷新",
+  });
+  assert.equal(await draftUrl.inputValue(), serviceUrl);
+  await page.clock.resume();
+  await page.clock.setSystemTime(new Date());
+  await checkDraft("unsupported");
   assert.equal(
     await page
       .getByLabel("Automatically check service capabilities", { exact: true })
@@ -225,13 +591,8 @@ try {
   const serviceCard = page
     .locator(".cw-model-service")
     .filter({ hasText: served });
-  await serviceCard.locator("summary").click();
-  await serviceCard
-    .getByText(
-      "This model does not support this operation. Choose a suitable model.",
-    )
-    .first()
-    .waitFor();
+  await serviceCard.locator("summary").first().click();
+  await serviceCard.getByText("Not supported").first().waitFor();
 
   // Create a real generation object and prove API rejection has no job/provider side effect.
   const specId = crypto.randomUUID(),
@@ -293,18 +654,15 @@ try {
     { times: 1 },
   );
   await serviceCard
-    .getByRole("button", { name: "Check service capabilities", exact: true })
+    .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
     .click();
   await serviceCard.getByRole("alert").waitFor();
   await page.unroute(refreshUrl);
   mode = "supported";
   await serviceCard
-    .getByRole("button", { name: "Check service capabilities", exact: true })
+    .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
     .click();
-  await serviceCard
-    .getByText("The service declares support for this request.")
-    .first()
-    .waitFor();
+  await serviceCard.getByText("Supported").first().waitFor();
   await page
     .getByRole("button", { name: "Close settings", exact: true })
     .click();
@@ -366,10 +724,7 @@ try {
         .isDisabled(),
   );
   await page.locator(".cw-generation-composer button.cw-run-button").hover();
-  await page
-    .getByText("Execution is paused. Resume the service and try again.")
-    .first()
-    .waitFor();
+  await page.getByText("Service paused").first().waitFor();
   await until(
     async () =>
       await page
@@ -411,18 +766,15 @@ try {
   const chineseService = chinese
     .locator(".cw-model-service")
     .filter({ hasText: served });
-  await chineseService.locator("summary").click();
+  await chineseService.locator("summary").first().click();
   await chineseService
-    .getByRole("button", { name: "检查服务能力", exact: true })
+    .getByRole("button", { name: /^(检查|刷新|重试)$/, exact: true })
     .click();
-  await chineseService
-    .getByText("服务未提供可识别的能力接口，继续使用手动配置。")
-    .first()
-    .waitFor();
+  await chineseService.getByText("服务未提供能力声明").first().waitFor();
   await until(
     async () =>
       await chineseService
-        .getByRole("button", { name: "检查服务能力", exact: true })
+        .getByRole("button", { name: /^(检查|刷新|重试)$/, exact: true })
         .isEnabled(),
   );
   await chineseService
@@ -447,6 +799,7 @@ try {
     JSON.stringify({
       passed: true,
       queries,
+      screenshots,
       checks: [
         "draft isolation",
         "stale draft response",

@@ -3,6 +3,7 @@ import type { GenerationFailure } from "../contracts/generated.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { capabilityErrorText } from "./capabilityErrorText.ts";
 
 /**
  * The backend stores Chinese diagnostics in the job record. Known messages map
@@ -59,6 +60,8 @@ export function generationFailureMessage(
   failure: GenerationFailure,
   t: Translate = defaultTranslate,
 ): string {
+  const capability = capabilityErrorText(failure.message, t);
+  if (capability) return capability;
   if (failure.providerCode === "voice_not_found")
     return t("errors.generationFailure.voiceNotFound");
   const exact = BY_MESSAGE[failure.message];

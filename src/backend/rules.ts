@@ -1,4 +1,4 @@
-import { availabilityBlocker } from "./availability.ts";
+import { availabilityBlocker, availabilityInputLimit } from "./availability.ts";
 import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
@@ -657,6 +657,14 @@ export function backendBlocker(
     references.filter(
       (item) => item.role !== "continuation" && item.node.data.kind === kind,
     ).length;
+  for (const kind of ["image", "video", "audio"] as const) {
+    const limit = availabilityInputLimit(config, profile, kind);
+    const current = references.filter((item) => item.node.data.kind === kind).length;
+    if (limit !== null && current > limit)
+      return tNow(kind === "image" ? "errors.capability.imageCount" : "errors.rules.serviceInputLimit", {
+        kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"), limit, current,
+      });
+  }
   for (const [kind, limit] of [
     ["image", rules.maxImages],
     ["video", rules.maxVideos],

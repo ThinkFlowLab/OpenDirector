@@ -195,8 +195,8 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
                       <summary>{t("availability.title")}</summary>
                       {members.map((member) => <ModelAvailabilityCard key={member.id} title={member.modelId}
                         value={member.availability} checking={catalog.checkingIds.has(member.id)}
+                        error={member.availability?.reasonCode === "query_failed" ? catalog.availabilityError || undefined : undefined}
                         onRefresh={() => void catalog.refreshAvailability([member.id], true)} />)}
-                      {catalog.availabilityError && <p role="alert">{catalog.availabilityError}</p>}
                     </details>
                     <div className="cw-model-service-bottom">
                       <span>

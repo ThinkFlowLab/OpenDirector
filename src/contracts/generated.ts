@@ -360,6 +360,32 @@ export interface CanvasUpdateCommandOperationInput {
   readonly payload: CanvasPresentationUpdateInput;
 }
 
+export interface CapabilityDeclarationInput extends ContractInput {
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityExecutionInput extends ContractInput {
+  readonly state: "unpaused" | "paused" | "unknown";
+  readonly scope: "deployment" | "worker" | null;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityInputDetailInput extends ContractInput {
+  readonly name: string;
+  readonly support: "supported" | "unsupported" | "unknown";
+  readonly source?: "service" | "application";
+  readonly minCount?: number | null;
+  readonly maxCount?: number | null;
+  readonly values?: ReadonlyArray<string | number | boolean> | null;
+  readonly min?: number | null;
+  readonly max?: number | null;
+  readonly multipleOf?: number | null;
+}
+
 export interface ChangedObjectInput extends ContractInput {
   readonly version: ObjectVersionInput;
   readonly change: "created" | "updated" | "hidden" | "deleted";
@@ -916,6 +942,9 @@ export interface OperationAvailabilityInput extends ContractInput {
   readonly reasonCode: string;
   readonly checkedAt: number | null;
   readonly expiresAt: number | null;
+  readonly declaration?: CapabilityDeclarationInput | null;
+  readonly execution?: CapabilityExecutionInput | null;
+  readonly inputDetails?: ReadonlyArray<CapabilityInputDetailInput>;
 }
 
 export interface PaletteDataInput extends ContractInput {
@@ -1963,6 +1992,32 @@ export interface CanvasUpdateCommandOperation {
   readonly payload: CanvasPresentationUpdate;
 }
 
+export interface CapabilityDeclaration extends Contract {
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityExecution extends Contract {
+  readonly state: "unpaused" | "paused" | "unknown";
+  readonly scope: "deployment" | "worker" | null;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityInputDetail extends Contract {
+  readonly name: string;
+  readonly support: "supported" | "unsupported" | "unknown";
+  readonly source: "service" | "application";
+  readonly minCount: number | null;
+  readonly maxCount: number | null;
+  readonly values: ReadonlyArray<string | number | boolean> | null;
+  readonly min: number | null;
+  readonly max: number | null;
+  readonly multipleOf: number | null;
+}
+
 export interface ChangedObject extends Contract {
   readonly version: ObjectVersion;
   readonly change: "created" | "updated" | "hidden" | "deleted";
@@ -2518,6 +2573,9 @@ export interface OperationAvailability extends Contract {
   readonly reasonCode: string;
   readonly checkedAt: number | null;
   readonly expiresAt: number | null;
+  readonly declaration?: CapabilityDeclaration | null;
+  readonly execution?: CapabilityExecution | null;
+  readonly inputDetails: ReadonlyArray<CapabilityInputDetail>;
 }
 
 export interface PaletteData extends Contract {

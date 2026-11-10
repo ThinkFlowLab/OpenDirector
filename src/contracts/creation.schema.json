@@ -3276,6 +3276,251 @@
         "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
+      "CapabilityDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Support decision excluding execution state.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Localizable declaration decision.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Declaration expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityDeclaration",
+        "type": "object"
+      },
+      "CapabilityExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "description": "Observed execution pause state.",
+            "enum": [
+              "unpaused",
+              "paused",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment",
+                  "worker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope proved by the service observation.",
+            "title": "Scope"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation receipt time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution observation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "state",
+          "scope",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityExecution",
+        "type": "object"
+      },
+      "CapabilityInputDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Canonical input role or parameter name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "support": {
+            "description": "Explicit fact, with omission kept unknown.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Support",
+            "type": "string"
+          },
+          "source": {
+            "default": "service",
+            "description": "Owner of this restriction.",
+            "enum": [
+              "service",
+              "application"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "minCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum transmitted inputs of this role.",
+            "title": "Mincount"
+          },
+          "maxCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum transmitted inputs of this role.",
+            "title": "Maxcount"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit allowed parameter values.",
+            "title": "Values"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter lower bound.",
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter upper bound.",
+            "title": "Max"
+          },
+          "multipleOf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parameter step from zero.",
+            "title": "Multipleof"
+          }
+        },
+        "required": [
+          "name",
+          "support"
+        ],
+        "title": "CapabilityInputDetail",
+        "type": "object"
+      },
       "ChangedObject": {
         "additionalProperties": false,
         "properties": {
@@ -9064,6 +9309,39 @@
             ],
             "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
             "title": "Expiresat"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request support independently expires from the short execution observation."
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short-lived execution observation, separate from declared support."
+          },
+          "inputDetails": {
+            "default": [],
+            "description": "Known role and parameter facts for the actual request route; no saved configuration changes.",
+            "items": {
+              "$ref": "#/$defs/CapabilityInputDetail"
+            },
+            "title": "Inputdetails",
+            "type": "array"
           }
         },
         "required": [
@@ -18651,6 +18929,258 @@
         "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
+      "CapabilityDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Support decision excluding execution state.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Localizable declaration decision.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Declaration expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityDeclaration",
+        "type": "object"
+      },
+      "CapabilityExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "description": "Observed execution pause state.",
+            "enum": [
+              "unpaused",
+              "paused",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment",
+                  "worker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope proved by the service observation.",
+            "title": "Scope"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation receipt time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution observation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "state",
+          "scope",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityExecution",
+        "type": "object"
+      },
+      "CapabilityInputDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Canonical input role or parameter name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "support": {
+            "description": "Explicit fact, with omission kept unknown.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Support",
+            "type": "string"
+          },
+          "source": {
+            "default": "service",
+            "description": "Owner of this restriction.",
+            "enum": [
+              "service",
+              "application"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "minCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum transmitted inputs of this role.",
+            "title": "Mincount"
+          },
+          "maxCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum transmitted inputs of this role.",
+            "title": "Maxcount"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit allowed parameter values.",
+            "title": "Values"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter lower bound.",
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter upper bound.",
+            "title": "Max"
+          },
+          "multipleOf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parameter step from zero.",
+            "title": "Multipleof"
+          }
+        },
+        "required": [
+          "name",
+          "support",
+          "source",
+          "minCount",
+          "maxCount",
+          "values",
+          "min",
+          "max",
+          "multipleOf"
+        ],
+        "title": "CapabilityInputDetail",
+        "type": "object"
+      },
       "ChangedObject": {
         "additionalProperties": false,
         "properties": {
@@ -24657,6 +25187,39 @@
             ],
             "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
             "title": "Expiresat"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request support independently expires from the short execution observation."
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short-lived execution observation, separate from declared support."
+          },
+          "inputDetails": {
+            "default": [],
+            "description": "Known role and parameter facts for the actual request route; no saved configuration changes.",
+            "items": {
+              "$ref": "#/$defs/CapabilityInputDetail"
+            },
+            "title": "Inputdetails",
+            "type": "array"
           }
         },
         "required": [
@@ -24668,7 +25231,8 @@
           "status",
           "reasonCode",
           "checkedAt",
-          "expiresAt"
+          "expiresAt",
+          "inputDetails"
         ],
         "title": "OperationAvailability",
         "type": "object"

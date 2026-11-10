@@ -1,4 +1,4 @@
-import { availabilityReason, currentAvailability } from "../backend/availability.ts";
+import { availabilitySummary } from "./availabilityPresentation.ts";
 import { VoiceLibrary } from "./VoiceLibrary";
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
@@ -494,7 +494,7 @@ export function NodeComposer({
                 id: `config:${item.id}`,
                 name: modelLabel(item),
                 modelId: item.modelId,
-                description: item.availability ? `${modelDescription(item)} · ${availabilityReason(currentAvailability(item.availability).reasonCode)}` : modelDescription(item),
+                description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
                 group: providerLabel(item),
               })),
             ]}

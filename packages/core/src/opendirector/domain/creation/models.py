@@ -141,6 +141,32 @@ class ModelConnection(Contract):
         return self
 
 
+class CapabilityDeclaration(Contract):
+    status: Literal['available', 'unavailable', 'unknown'] = Field(description='Support decision excluding execution state.')
+    reasonCode: str = Field(description='Localizable declaration decision.')
+    checkedAt: int | None = Field(description='Completion time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Declaration expiry in Unix milliseconds.')
+
+
+class CapabilityExecution(Contract):
+    state: Literal['unpaused', 'paused', 'unknown'] = Field(description='Observed execution pause state.')
+    scope: Literal['deployment', 'worker'] | None = Field(description='Scope proved by the service observation.')
+    checkedAt: int | None = Field(description='Observation receipt time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Execution observation expiry in Unix milliseconds.')
+
+
+class CapabilityInputDetail(Contract):
+    name: str = Field(description='Canonical input role or parameter name.')
+    support: Literal['supported', 'unsupported', 'unknown'] = Field(description='Explicit fact, with omission kept unknown.')
+    source: Literal['service', 'application'] = Field(default='service', description='Owner of this restriction.')
+    minCount: int | None = Field(default=None, description='Minimum transmitted inputs of this role.')
+    maxCount: int | None = Field(default=None, description='Maximum transmitted inputs of this role.')
+    values: tuple[str | int | float | bool, ...] | None = Field(default=None, description='Explicit allowed parameter values.')
+    min: float | None = Field(default=None, description='Inclusive parameter lower bound.')
+    max: float | None = Field(default=None, description='Inclusive parameter upper bound.')
+    multipleOf: float | None = Field(default=None, description='Parameter step from zero.')
+
+
 class OperationAvailability(Contract):
     operation: str = Field(description='Canonical remote operation identifier.')
     profile: str = Field(description='Input and output mode used by the configured adapter.')
@@ -151,6 +177,12 @@ class OperationAvailability(Contract):
     reasonCode: str = Field(description='Stable, localizable decision reason.')
     checkedAt: int | None = Field(description='Observation completion time in Unix milliseconds.')
     expiresAt: int | None = Field(description='Decision expiry in Unix milliseconds; recompute after expiry.')
+    declaration: CapabilityDeclaration | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Request support independently expires from the short execution observation.')
+    execution: CapabilityExecution | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Short-lived execution observation, separate from declared support.')
+    inputDetails: tuple[CapabilityInputDetail, ...] = Field(default=(),
+        description='Known role and parameter facts for the actual request route; no saved configuration changes.')
 
 
 class ModelAvailability(Contract):

@@ -75,8 +75,8 @@ const EN: Record<string, string> = {
   "光质": "Light quality",
   "光源颜色": "Light color",
   "图层分解": "Layer Decompose",
-  "原站实测提供智能拆分、框选拆分和按描述拆分。框选需原图矩形选区；实际拆分及报价由真实服务提供。":
-    "The source site provides smart, box, and description-based splitting. Box splitting needs a rectangle on the original image; actual splitting and pricing come from the live service.",
+  "按对象、选区或描述拆分图层；可用方式由连接的服务提供。":
+    "Split layers by object, selection, or description using the connected service.",
   "拆分模式": "Split mode",
   "智能拆分": "Smart split",
   "框选拆分": "Box split",
@@ -89,18 +89,18 @@ const EN: Record<string, string> = {
   "从单张图片生成 2:1 全景；模型和清晰度由服务提供。":
     "Generate a 2:1 panorama from one image; the service provides models and resolution.",
   "商品替换": "Product Replacement",
-  "使用场景图和商品图替换主体，支持选区与提示词；原站已实测自动主体识别和 2K 结果。":
-    "Replace the subject using a scene and product image, with selection and prompt support; the source site verified automatic subject detection and 2K results.",
+  "使用场景图和商品图替换主体，支持选区与提示词。":
+    "Replace a subject using scene and product images, with a selection and prompt.",
   "智能多尺寸": "Smart Multi-size",
-  "按原站实测画幅和像素尺寸创建草稿；自定义范围与实际服务协议尚未接入。":
-    "Create drafts from the aspect ratios and pixel sizes verified on the source site; custom ranges and the live service protocol are not connected yet.",
+  "设置目标画幅与输出尺寸。":
+    "Set the target aspect ratio and output dimensions.",
   "输出尺寸": "Output size",
   "自定义": "Custom",
   "自定义宽度": "Custom width",
   "自定义高度": "Custom height",
   "动态海报": "Dynamic Poster",
-  "基于原图比例创建动态海报请求；本轮原站入口仅提供 Seedance 2.5，实际生成需连接服务。":
-    "Create a dynamic poster request at the source aspect ratio; the source entry only offers Seedance 2.5, and generation requires a connected service.",
+  "按原图比例生成动态海报，需要连接视频生成服务。":
+    "Animate a poster at its original aspect ratio using a video generation service.",
   "电商主图": "E-commerce Hero",
   "整理电商主图请求；支持最多 6 张参考图，实际生成需连接服务。":
     "Prepare an e-commerce hero request; up to 6 references are supported, and generation requires a connected service.",
@@ -110,8 +110,8 @@ const EN: Record<string, string> = {
   "侧视": "Side",
   "俯视": "Top",
   "画幅": "Aspect ratio",
-  "本轮只核对 1:1；其他画幅待服务确认。":
-    "Only 1:1 is verified; other ratios await service confirmation.",
+  "当前预设为 1:1。":
+    "The current preset uses a 1:1 aspect ratio.",
   "图像预设": "Image Presets",
   "三视图、连续分镜、多机位等预设由模型能力加载。":
     "Presets such as three-view, storyboard, and multi-camera come from model capabilities.",
@@ -129,9 +129,9 @@ const EN: Record<string, string> = {
   "此功能有独立任务与能力约束，参数需由已连接服务提供。":
     "This feature has its own task and capability constraints; parameters come from a connected service.",
   "视频编辑": "Video Edit",
-  "原站实测支持 4–30 秒素材、提示词及矩形/画笔/箭头/文字/橡皮擦/标记；本轮未见模型选择。这里只记录意图，视频标注数据尚未接入。":
-    "The source site supports 4–30 second media, prompts, and rectangle/brush/arrow/text/eraser/mark tools; no model selection was seen. This only records intent; video annotation data is not connected yet.",
-  "原站标注工具": "Source annotation tools",
+  "设置需要重拍的片段及修改要求；可用编辑方式由服务提供。":
+    "Choose the segment and describe the changes; editing options depend on the service.",
+  "标注工具": "Annotation tools",
   "矩形": "Rectangle",
   "画笔": "Brush",
   "箭头": "Arrow",
@@ -144,18 +144,18 @@ const EN: Record<string, string> = {
   "输出 480P / 720P 灰度深度视频（近处亮、远处暗），素材最长 30 秒；需要接入 vLLM-Omni 深度接口。":
     "Outputs 480P/720P grayscale depth video (near is bright, far is dark) for media up to 30 seconds; requires the vLLM-Omni depth endpoint.",
   "字幕擦除": "Subtitle Erasure",
-  "本轮原站实测没有额外设置；实际视频处理依赖真实服务。":
-    "No extra settings were found on the source site; actual video processing depends on the live service.",
+  "擦除视频中的字幕，需要连接视频处理服务。":
+    "Remove subtitles from video using a video processing service.",
   "视频抠像": "Video Matting",
-  "原站实测可选黑色、绿色或透明背景；输出格式与处理协议由真实服务确定。":
-    "The source site offers black, green, or transparent backgrounds; the live service defines output formats and protocol.",
+  "选择黑色、绿色或透明背景；输出格式由服务提供。":
+    "Choose a black, green, or transparent background; output formats depend on the service.",
   "输出背景": "Output background",
   "黑色": "Black",
   "绿色": "Green",
   "透明": "Transparent",
   "视频翻译": "Video Translation",
-  "静态代码存在候选入口，本轮原站未见；当前可用性和参数未知。":
-    "A candidate entry exists in static code but was not seen on the source site; availability and parameters are unknown.",
+  "需要连接提供此功能的服务。":
+    "Connect a service that provides this feature.",
   "视频超清": "Video Upscale",
   "视频增强有 2K 与 4K 输出路径，支持条件由服务判断。":
     "Video enhancement offers 2K and 4K outputs; the service decides whether they are supported.",
@@ -170,11 +170,11 @@ const EN: Record<string, string> = {
     "Crop to source pixels, keep a capturable audio track, and re-encode WebM locally.",
   "打开对应的本地媒体编辑器。": "Open the matching local media editor.",
   "提取音频": "Extract Audio",
-  "将视频音轨另存为音频素材；对应本轮原站「声音分离 → 分离音频」。":
-    "Save the video audio track as an audio asset; corresponds to the source site's \"Audio Separation → Extract Audio\".",
+  "将视频音轨另存为音频素材。":
+    "Save a video's soundtrack as an audio asset.",
   "音频分离": "Audio Separation",
-  "仅保留静态候选入口。本轮未见人声/伴奏分离；视频「声音分离」实测仅为提取音频，不能据此确认此能力。":
-    "Static candidate entry only. Vocal/accompaniment separation was not seen; the video \"audio separation\" flow only extracts audio, which does not confirm this capability.",
+  "分离人声与伴奏，需要连接音轨分离服务。":
+    "Separate vocals and accompaniment using an audio separation service.",
   "音频裁剪": "Audio Trim",
   "裁剪音频时长并导出新素材。": "Trim audio duration and export a new asset.",
   "导演台": "Director Stage",

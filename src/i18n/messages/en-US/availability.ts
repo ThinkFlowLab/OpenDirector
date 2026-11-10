@@ -1,71 +1,76 @@
 export const availability = {
-  "availability.reason.query_timeout":
-    "The query timed out. Existing validation remains in use.",
-  "availability.reason.query_busy":
-    "Capability checks are busy. Refresh shortly.",
-  "availability.reason.query_failed":
-    "The capability query failed. Existing validation remains in use.",
+  "availability.reason.query_timeout": "Check timed out",
+  "availability.reason.query_busy": "Service busy. Try again shortly",
+  "availability.reason.query_failed": "Check failed",
 
   "availability.title": "Service capabilities",
-  "availability.check": "Check service capabilities",
-  "availability.checking": "Checking service capabilities…",
+  "availability.check": "Check",
+  "availability.checking": "Checking…",
+  "availability.refresh": "Refresh",
+  "availability.retry": "Retry",
+  "availability.details": "Input requirements",
+  "availability.detail.service": "Service declaration",
+  "availability.detail.application": "Application limit",
+  "availability.detail.unsupported": "Not supported",
+  "availability.detail.countRange": "Count {min}–{max}",
+  "availability.detail.maxCount": "Up to {count}",
+  "availability.detail.minCount": "At least {count}",
+  "availability.detail.minimum": "Minimum {value}",
+  "availability.detail.maximum": "Maximum {value}",
+  "availability.detail.multiple": "Multiple of {value}",
+  "availability.detail.yes": "Yes",
+  "availability.detail.no": "No",
+  "availability.input.image": "Images",
+  "availability.input.reference_image": "Reference images",
+  "availability.input.video": "Video",
+  "availability.input.audio": "Audio",
+  "availability.input.mask": "Region input",
+  "availability.input.mask_image": "Region input",
+  "availability.input.output_pixels": "Output pixel count",
+  "availability.input.width": "Width",
+  "availability.input.height": "Height",
+  "availability.input.duration": "Duration",
+  "availability.input.speed": "Speech speed",
+  "availability.input.voice": "Voice",
   "availability.autoCheck": "Automatically check service capabilities",
-  "availability.autoHint":
-    "Check when opening a relevant view or submitting a new task. Failed checks preserve manual configuration.",
   "availability.checkedAt": "Last checked: {time}",
-  "availability.status.available": "Declared supported",
-  "availability.status.unavailable": "Currently unavailable",
+  "availability.status.available": "Supported",
   "availability.status.unknown": "Not confirmed",
-  "availability.reason.not_checked":
-    "Not checked. Saved configuration remains usable.",
-  "availability.reason.supported":
-    "The service declares support for this request.",
-  "availability.reason.operation_unsupported":
-    "This model does not support this operation. Choose a suitable model.",
-  "availability.reason.profile_unsupported":
-    "This model does not support this input or output mode.",
-  "availability.reason.operation_disabled":
-    "This operation is disabled in the deployment.",
-  "availability.reason.route_disabled":
-    "The endpoint used by this adapter is disabled.",
-  "availability.reason.output_unsupported":
-    "The model does not declare the required output type.",
-  "availability.reason.execution_paused":
-    "Execution is paused. Resume the service and try again.",
+  "availability.reason.not_checked": "Not checked",
+  "availability.reason.supported": "Supported",
+  "availability.reason.operation_unsupported": "Not supported",
+  "availability.reason.profile_unsupported": "Not supported",
+  "availability.reason.operation_disabled": "Not enabled on the service",
+  "availability.reason.route_disabled": "Endpoint not enabled",
+  "availability.reason.output_unsupported": "Output type not supported",
+  "availability.reason.execution_paused": "Service paused",
   "availability.reason.observation_expired":
-    "The observation has expired. Refresh it; submission will check again.",
+    "Results expired. Refresh to check again.",
   "availability.reason.connection_failed":
-    "Could not connect. Existing configuration and validation remain in use.",
+    "Cannot connect. Check the service URL.",
   "availability.reason.authentication_failed":
-    "Service authentication failed. Check the connection credentials.",
+    "Authentication failed. Check the API key.",
   "availability.reason.protocol_unavailable":
-    "The service has no recognized capabilities endpoint. Manual configuration remains available.",
+    "No capability declaration from this service",
   "availability.reason.invalid_response":
-    "The capability response is invalid. Existing validation remains in use.",
+    "Could not read the capability declaration",
   "availability.reason.unsupported_version":
-    "The capability protocol version is not recognized. Existing validation remains in use.",
-  "availability.reason.declaration_incomplete":
-    "The declaration is incomplete. Existing validation remains in use.",
-  "availability.reason.required_inputs_missing":
-    "This request is missing inputs required by the model.",
+    "Declaration version not recognized",
+  "availability.reason.declaration_incomplete": "Incomplete declaration",
+  "availability.reason.required_inputs_missing": "Add the required inputs",
   "availability.reason.input_contract_unknown":
-    "The service requires an input this adapter cannot identify. Existing validation remains in use.",
-  "availability.reason.model_not_declared":
-    "The service has no declaration for this exact model name.",
-  "availability.reason.operation_not_declared":
-    "The service has no declaration for this operation.",
-  "availability.reason.profile_not_declared":
-    "The service has no declaration for this input mode.",
+    "Input requirements not confirmed",
+  "availability.reason.model_not_declared": "No declaration for this model",
+  "availability.reason.operation_not_declared": "Not declared",
+  "availability.reason.profile_not_declared": "Not declared",
   "availability.reason.route_not_declared":
-    "The service has no declaration for the endpoint used by this adapter.",
-  "availability.reason.adapter_not_mapped":
-    "This adapter continues to use its existing parameter rules.",
-  "availability.reason.mixed_operations":
-    "Individual operation states are shown below.",
+    "Endpoint requirements not confirmed",
+  "availability.reason.adapter_not_mapped": "Using saved configuration",
   "availability.profile.text_response": "Text response",
   "availability.profile.image_response": "Image response through chat",
-  "availability.profile.text_to_image": "Image generation",
-  "availability.profile.image_to_image": "Image editing",
+  "availability.profile.text_to_image": "Text to image",
+  "availability.profile.image_to_image": "Single-image editing",
+  "availability.profile.images_to_image": "Multi-image editing",
   "availability.profile.text_to_video": "Text to video",
   "availability.profile.image_to_video": "Image to video",
   "availability.profile.video_to_video": "Video transformation",
@@ -73,4 +78,12 @@ export const availability = {
   "availability.profile.lyrics_to_music": "Music from lyrics and style",
   "availability.profile.text_to_audio": "General audio generation",
   "availability.profile.other": "Other request mode",
+  "availability.reason.input_count_unsupported":
+    "Multiple images not supported",
+  "availability.reason.input_count_unknown": "Image count not confirmed",
+  "availability.reason.input_unsupported": "Input not supported",
+  "availability.reason.input_count_exceeded": "Too many inputs",
+  "availability.reason.parameter_unsupported": "Parameter not supported",
+  "availability.reason.parameter_value_unsupported":
+    "Parameter outside service limits",
 } as const;

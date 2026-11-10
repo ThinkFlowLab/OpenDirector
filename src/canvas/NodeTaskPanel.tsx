@@ -17,6 +17,7 @@ import {
 import { translateTool, translateToolText } from "./toolText.ts";
 import { displayNodeTitle } from "./nodeTitle.ts";
 import { useI18n } from "../i18n/I18nProvider";
+import { toolReasonText } from "./toolReasonText.ts";
 import "./node-task-panel.css";
 
 /** A single source-bound operation using the service's capability catalog. */
@@ -103,7 +104,7 @@ export function NodeTaskPanel({
       errors[0] ??
       (runnable
         ? t("tools.nodeTask.presetNote")
-        : (capability?.reason ?? t("tools.nodeTask.notConnected")));
+        : (toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.notConnected")));
     const models = capability?.models?.["image.edit"] ?? [];
     return (
       <section
@@ -304,7 +305,7 @@ export function NodeTaskPanel({
       <p className="cw-node-task-note">
         {runnable
           ? (errors[0] ?? t("tools.nodeTask.remoteNote"))
-          : `${capability?.reason ?? t("tools.nodeTask.unavailable")}${t("tools.nodeTask.saveHint")}`}
+          : `${toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.unavailable")}${t("tools.nodeTask.saveHint")}`}
       </p>
       <footer>
         <TooltipButton
@@ -352,7 +353,7 @@ export function NodeTaskPanel({
           title={
             runnable
               ? errors[0]
-              : (capability?.reason ?? t("tools.nodeTask.notConnected"))
+              : (toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.notConnected"))
           }
           onClick={() => {
             onDraftChange(task);

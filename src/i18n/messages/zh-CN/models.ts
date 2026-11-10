@@ -52,6 +52,8 @@ export const models = {
   "models.service.providerApi": "服务商 API",
   "models.service.provider": "提供商",
   "models.service.url": "服务地址（Base URL）",
+  "models.service.urlPlaceholder": "输入服务的 API 根地址",
+  "models.service.modelPlaceholder": "输入服务中的模型 ID",
   "models.service.noKey": "无需密钥",
   "models.service.keyConfigured": "密钥已配置",
   "models.service.noAuthPlaceholder": "此服务无需鉴权",
@@ -62,7 +64,7 @@ export const models = {
   "models.service.hide": "隐藏",
   "models.service.show": "显示",
   "models.service.urlNote":
-    "自部署服务通常填写 /v1 地址；通过 SSH 隧道连接时填写本地转发地址。",
+    "填写服务提供的 API 根地址。",
   "models.service.inputCapabilities": "输入能力",
   "models.service.referenceOutput": "参考与输出能力",
   "models.service.textInput": "文本",

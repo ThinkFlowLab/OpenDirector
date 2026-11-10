@@ -1,5 +1,7 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.service.urlPlaceholder": "Enter your service's API base URL",
+  "models.service.modelPlaceholder": "Enter the model ID from your service",
   "models.service.proxyMode": "Network connection mode",
   "models.service.proxySystem": "Use system proxy",
   "models.service.proxyDirect": "Direct (no proxy)",
@@ -71,7 +73,7 @@ export const models = {
   "models.service.hide": "Hide",
   "models.service.show": "Show",
   "models.service.urlNote":
-    "Self-hosted services usually use a /v1 URL; when connecting through an SSH tunnel, enter the local forwarded address.",
+    "Enter the API base URL provided by your service.",
   "models.service.inputCapabilities": "Input capabilities",
   "models.service.referenceOutput": "References and output",
   "models.service.textInput": "Text",

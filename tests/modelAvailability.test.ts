@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   availabilityBlocker,
+  availabilityInputLimit,
   availabilityDelay,
   availabilityMatchesModel,
   availabilityModelKey,
@@ -49,6 +50,7 @@ const operation = (
   reasonCode: "execution_paused",
   checkedAt: 1000,
   expiresAt: 6000,
+  inputDetails: [],
   ...changes,
 });
 const observation = (
@@ -147,7 +149,7 @@ test("explicit text denial blocks text without blocking a music profile", () => 
   );
   assert.match(
     availabilityBlocker(configured, "text_response", clockAt(2000))!,
-    /input or output mode/,
+    /Not supported/,
   );
   assert.equal(
     availabilityBlocker(configured, "lyrics_to_music", clockAt(2000)),
@@ -296,5 +298,122 @@ test("a matching model ID cannot authorize observations for a changed opaque ide
   assert.equal(
     availabilityMatchesModel(model(), expected, expected.identity),
     true,
+  );
+});
+
+test("pause expires before its retained declaration, without renewing either observation", () => {
+  let now = 1000;
+  const timing = { wallNow: () => now, monotonicNow: () => now };
+  const value = observation([
+    operation("image_to_image", {
+      declaration: {
+        status: "available",
+        reasonCode: "supported",
+        checkedAt: 1000,
+        expiresAt: 31000,
+      },
+      execution: {
+        state: "paused",
+        scope: "deployment",
+        checkedAt: 1000,
+        expiresAt: 6000,
+      },
+      inputDetails: [
+        {
+          name: "image",
+          source: "service",
+          support: "supported",
+          minCount: 1,
+          maxCount: 2,
+          min: null,
+          max: null,
+          multipleOf: null,
+          values: null,
+        },
+      ],
+    }),
+  ]);
+  receiveAvailability(value, timing);
+  assert.equal(
+    availabilityBlocker(model(value), "image_to_image", timing),
+    "Service paused",
+  );
+  assert.equal(
+    availabilityInputLimit(model(value), "image_to_image", "image", timing),
+    2,
+  );
+  now = 6000;
+  const replay = receiveAvailability(structuredClone(value), timing);
+  assert.equal(
+    currentAvailability(replay, timing).operations[0].status,
+    "available",
+  );
+  assert.equal(
+    currentAvailability(replay, timing).operations[0].execution?.state,
+    "unknown",
+  );
+  assert.equal(
+    availabilityBlocker(model(replay), "image_to_image", timing),
+    null,
+  );
+  assert.equal(availabilityDelay(replay, timing), 25000);
+  now = 31000;
+  assert.equal(
+    currentAvailability(replay, timing).operations[0].reasonCode,
+    "observation_expired",
+  );
+  assert.equal(
+    availabilityInputLimit(model(replay), "image_to_image", "image", timing),
+    null,
+  );
+  assert.equal(value.operations[0].status, "unavailable");
+});
+
+test("service limits disappear on failure and do not include application constraints", () => {
+  const detail = {
+    name: "image",
+    source: "service" as const,
+    support: "supported" as const,
+    minCount: 1,
+    maxCount: 3,
+    min: null,
+    max: null,
+    multipleOf: null,
+    values: null,
+  };
+  const value = observation([
+    operation("image_to_image", {
+      status: "available",
+      reasonCode: "supported",
+      declaration: {
+        status: "available",
+        reasonCode: "supported",
+        checkedAt: 1000,
+        expiresAt: 31000,
+      },
+      inputDetails: [detail, { ...detail, source: "application", maxCount: 1 }],
+    }),
+  ]);
+  const timing = clockAt(2000);
+  assert.equal(
+    availabilityInputLimit(model(value), "image_to_image", "image", timing),
+    3,
+  );
+  assert.equal(
+    availabilityInputLimit(model(value), "image_to_image", "video", timing),
+    null,
+  );
+  assert.equal(
+    availabilityInputLimit(
+      model(failedAvailability(value)),
+      "image_to_image",
+      "image",
+      timing,
+    ),
+    null,
+  );
+  assert.equal(
+    failedAvailability(value).operations[0].declaration?.status,
+    "unknown",
   );
 });

@@ -66,17 +66,11 @@ export function DraftAvailabilityCheck({
     }
   };
   return (
-    <>
-      <ModelAvailabilityCard
-        value={value?.signature === signature ? value.observation : null}
-        checking={pending === signature}
-        onRefresh={() => void check()}
-      />
-      {failure?.signature === signature && (
-        <p role="alert" className="cw-model-feedback">
-          {failure.message}
-        </p>
-      )}
-    </>
+    <ModelAvailabilityCard
+      value={value?.signature === signature ? value.observation : null}
+      checking={pending === signature}
+      onRefresh={() => void check()}
+      error={failure?.signature === signature ? failure.message : undefined}
+    />
   );
 }

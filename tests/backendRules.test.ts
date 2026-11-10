@@ -14,8 +14,40 @@ import {
   backendReferences,
   backendVideoMode,
   isGenerationModel,
+  serviceGenerationSettings,
   type ModelConfig,
 } from "../src/backend/rules.ts";
+import { failedAvailability } from "../src/backend/availability.ts";
+import { setActiveLocale } from "../src/i18n/messages.ts";
+
+test("fresh service counts validate transmitted images without rewriting saved rules", () => {
+  const configured = config("image", {
+    profile: "openai-image", allowedKinds: ["text", "image"], maxImages: 4,
+    imageOutputs: [{ aspectRatio: "1:1", size: "768x768" }],
+  });
+  const now = Date.now();
+  configured.availability = {
+    configId: configured.id, modelId: configured.modelId, identity: "fresh-count",
+    autoCheck: false, status: "available", reasonCode: "supported", checkedAt: now,
+    expiresAt: now + 30000, revision: "test", operations: [{
+      operation: "image_edit", profile: "image_to_image", method: "POST", path: "/v1/images/edits", output: "image",
+      status: "available", reasonCode: "supported", checkedAt: now, expiresAt: now + 30000,
+      declaration: { status: "available", reasonCode: "supported", checkedAt: now, expiresAt: now + 30000 },
+      inputDetails: [{ name: "image", source: "service", support: "supported", minCount: 1, maxCount: 1,
+        min: null, max: null, multipleOf: null, values: null }],
+    }],
+  };
+  const settings = serviceGenerationSettings({ ...generationDefaults("image"), modelConfigId: configured.id, prompt: "Keep the draft" }, configured);
+  const references = [media("image"), media("image")];
+  setActiveLocale("zh-CN");
+  assert.equal(backendBlocker(settings, references, [configured]), "最多支持 1 张图片，当前为 2 张。");
+  setActiveLocale("en-US");
+  assert.equal(backendBlocker(settings, references, [configured]), "Up to 1 images; 2 added.");
+  configured.availability = failedAvailability(configured.availability);
+  assert.equal(backendBlocker(settings, references, [configured]), null);
+  assert.equal(configured.inputRules.maxImages, 4);
+  setActiveLocale("zh-CN");
+});
 
 const config = (
   kind: ModelConfig["kind"],
