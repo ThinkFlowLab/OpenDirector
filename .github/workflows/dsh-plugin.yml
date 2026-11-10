@@ -33,3 +33,24 @@ jobs:
       - name: DSH plugin tests
         working-directory: plugins/deepseek-harness
         run: npm test
+      - name: Check the installable DSH bundle
+        working-directory: plugins/deepseek-harness
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { execFileSync } from 'node:child_process'
+          import { unlinkSync } from 'node:fs'
+
+          const run = (command, args) => execFileSync(command, args, { encoding: 'utf8' })
+          const [{ filename }] = JSON.parse(run('npm', ['pack', '--json']))
+          try {
+            const entries = new Set(run('tar', ['-tzf', filename]).trim().split('\n'))
+            const manifest = JSON.parse(run('tar', ['-xOzf', filename, 'package/package.json']))
+            for (const entry of [manifest.dsh?.bundle?.patch, manifest.exports?.['./client']]) {
+              assert.ok(entry?.startsWith('./') && entries.has('package/' + entry.slice(2)), entry)
+            }
+            assert.ok(manifest.version && manifest.engines?.dsh)
+          } finally {
+            unlinkSync(filename)
+          }
+          NODE
