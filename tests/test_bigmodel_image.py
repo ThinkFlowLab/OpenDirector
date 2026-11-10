@@ -168,7 +168,8 @@ def test_preflight_rejects_unsupported_intent_without_jobs_or_http(tmp_path, sou
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('source', ['ui', 'agent'])
-async def test_candidate_adoption_and_reopen_through_both_entry_points(tmp_path, source):
+@pytest.mark.parametrize('remove_watermark', [True, False])
+async def test_candidate_adoption_and_reopen_through_both_entry_points(tmp_path, source, remove_watermark):
     project = new_project(tmp_path)
     store, pid, session = project
     configs = ModelConfigs(tmp_path)
@@ -180,7 +181,7 @@ async def test_candidate_adoption_and_reopen_through_both_entry_points(tmp_path,
         return httpx.Response(200, json={'data': [{'url': URL}]}) if request.method == 'POST' else httpx.Response(200, content=picture())
     runner = runner_for(project, configs, handle)
     try:
-        runner.settings.update({'removeWatermark': False})
+        runner.settings.update({'removeWatermark': remove_watermark})
         request = command(project, config, prompt='A lake', parameters={'aspectRatio': '16:9'}, references=[note['id']])
         request = request.model_copy(update={'payload': request.payload.model_copy(update={'adoptionPolicy': 'candidate_only'})})
         if source == 'agent':
@@ -197,10 +198,12 @@ async def test_candidate_adoption_and_reopen_through_both_entry_points(tmp_path,
         [job] = snapshot.jobs
         assert job.status == 'succeeded' and not job.adopted
         assert job.execution.size == '1728x960' and job.execution.responseFormat == 'url'
-        assert job.adapterParameters == dict(size='1728x960', watermark_enabled=True)
+        assert job.adapterParameters == dict(size='1728x960', watermark_enabled=not remove_watermark)
+        assert job.execution.watermark is not remove_watermark
         assert job.inputSnapshot.model.modelId == 'glm-image'
         [payload] = [json.loads(call.content) for call in calls if call.method == 'POST']
         assert 'Blue water' in payload['prompt'] and payload['size'] == '1728x960'
+        assert payload['watermark_enabled'] is not remove_watermark
         spec = snapshot.generationSpecs[-1]
         assert spec.currentResultId is None and len(snapshot.results) == 1
         result = snapshot.results[0]

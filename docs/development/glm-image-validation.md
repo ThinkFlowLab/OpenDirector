@@ -60,6 +60,29 @@ Real Agent tool output preview / Agent 业务工具真实生成图片预览：
 
 ![Real GLM-Image Agent tool output](images/glm-image-237/agent-preview.jpg)
 
+## Watermark review follow-up / 水印审核补充
+
+The review requested real outputs with Remove watermark both off and on, and OpenAI compatible first in the image provider dropdown. The dropdown order is corrected and regression-tested. A bilingual note now appears above Generate only when a BigModel image/video profile is selected and Remove watermark is on. The note explains the provider's signed-waiver requirement and where to find it.
+
+Two additional live `glm-image` requests used the same prompt at 1280×1280. The first used the UI generation service with Remove watermark off; the second used Agent tools with it on. The intercepted POST body and persisted execution agreed in both cases:
+
+| Remove watermark | Sent `watermark_enabled` | Execution watermark | Actual visible output |
+| --- | --- | --- | --- |
+| Off | `true` | `true` | Watermark present |
+| On | `false` | `false` | Watermark present |
+
+Both images generated successfully, decoded, and were explicitly adopted. This reproduces the reviewer's observation even though request mapping is correct. The [official image API](https://docs.bigmodel.cn/api-reference/模型-api/图像生成) states that `false` is only permitted for customers who have signed the disclaimer under Personal Center → Security Management → Watermark Removal Management. Account waiver status was not independently inspected or changed; removal for a signed account remains unverified. The adapter preserves provider output and does not erase marks locally. These are the fourth and fifth authorized image submissions; no further image requests were made.
+
+![Actual outputs with the setting off and on](images/glm-image-237/watermark-comparison.jpg)
+
+The production browser check confirmed the Chinese/English note, its disappearance when Remove watermark is off, reappearance when on, and OpenAI compatible first in the image provider list. No additional generation was triggered in the browser.
+
+![Watermark note in Chinese](images/glm-image-237/note-zh.jpg)
+![Watermark note in English](images/glm-image-237/note-en.jpg)
+![Image provider order](images/glm-image-237/provider-order.jpg)
+
+Follow-up checks: the image/configuration/HTTP-logging Python selection passed 80 tests, including both settings through UI and Agent; the frontend suite passed 700 tests. Production build, i18n, contract consistency and diff checks passed.
+
 ## Automated checks / 自动检查
 
 The provider tests use mocked HTTP and real PNG/JPEG/WebP bytes; they do not make

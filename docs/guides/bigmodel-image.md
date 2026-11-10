@@ -27,8 +27,12 @@ The Agent uses the same model configuration, `generation.submit` command,
 validation, candidate storage and `result.select` adoption operation. Configuring
 the image service does not configure the conversational Agent's separate chat model.
 
-Watermarks follow **Remove watermark** in settings, mapped to BigModel's
-`watermark_enabled`. Disabling watermarks requires the provider's account agreement.
+**Remove watermark** is sent as the inverse of BigModel's `watermark_enabled`.
+BigModel only permits watermark removal for accounts that have signed its disclaimer
+in **Personal Center → Security Management → Watermark Removal Management**.
+Without that account permission, the provider may still return a watermarked image
+when removal is requested. A note above Generate explains this when removal is on.
+OpenDirector preserves the original provider output and does not erase watermarks locally.
 The adapter sends `model`, `prompt`, `size` and `watermark_enabled`; it does not send
 OpenAI-only `n`, `response_format` or `output_format` parameters.
 

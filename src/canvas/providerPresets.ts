@@ -65,6 +65,16 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
+    id: "custom",
+    name: "OpenAI 兼容",
+    logoOrganization: "openai",
+    kinds: ["agent", "image", "audio"],
+    url: "https://api.openai.com/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+  },
+  {
     id: "bigmodel",
     name: "智谱 BigModel",
     logoOrganization: "zai-org",
@@ -74,16 +84,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     connectionType: "api",
     authMode: "bearer",
     modelsByKind: { image: ["glm-image"] },
-  },
-  {
-    id: "custom",
-    name: "OpenAI 兼容",
-    logoOrganization: "openai",
-    kinds: ["agent", "image", "audio"],
-    url: "https://api.openai.com/v1",
-    protocol: "openai",
-    connectionType: "api",
-    authMode: "bearer",
   },
 
   {

@@ -5,6 +5,10 @@ import type { ModelConfig } from "../src/backend/rules.ts";
 import { modelDescription } from "../src/canvas/modelDescriptions.ts";
 import { getActiveLocale, setActiveLocale } from "../src/i18n/messages.ts";
 
+test("OpenAI compatible remains first in the image provider dropdown", () => {
+  assert.equal(providerOptions("image")[0]?.id, "custom");
+});
+
 test("BigModel offers GLM-Image with a localized label and a persistent provider identity", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "bigmodel")!;
   assert.equal(preset.url, "https://open.bigmodel.cn/api/paas/v4");

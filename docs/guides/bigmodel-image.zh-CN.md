@@ -22,8 +22,11 @@ PNG 素材并登记候选结果。沿用现有采用策略：输入未改变时�
 Agent 使用同一模型配置、`generation.submit` 命令、校验、候选存储及
 `result.select` 采用操作。图片服务配置与对话 Agent 使用的聊天模型配置相互独立。
 
-水印遵循设置中的「移除水印」，对应 BigModel 的 `watermark_enabled`。
-关闭水印需账户满足提供方的协议要求。适配器仅发送 `model`、`prompt`、`size`
+设置中的「去除水印」取反后发送为 BigModel 的 `watermark_enabled`。
+BigModel 仅允许已签署免责声明的账户去水印，签署路径为「个人中心 → 安全管理 → 去水印管理」。
+账户未取得该权限时，即使请求去水印，服务商仍可能返回带水印图片；开启去水印时，生成按钮上方会显示提示。
+OpenDirector 保留服务商原始输出，不在本地擦除水印。
+适配器仅发送 `model`、`prompt`、`size`
 和 `watermark_enabled`，不发送 OpenAI 专用的 `n`、`response_format` 和
 `output_format` 参数。
 
