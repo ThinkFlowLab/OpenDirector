@@ -59,6 +59,21 @@ function resultReference(input) {
   throw new InputError('result.source_mode')
 }
 
+function videoChoices(inputRules) {
+  const modes = inputRules?.videoModes ?? []
+  const caps = inputRules?.videoCapabilities
+  const choices = {}
+  for (const mode of ['first_frame', 'continuation']) {
+    if (!modes.includes(mode)) continue
+    if (mode === 'first_frame' && (!inputRules.allowedKinds?.includes('image') || !inputRules.maxImages)) continue
+    const resolution = mode === 'first_frame' ? caps?.defaultResolution ?? 'auto' : 'auto'
+    const outputs = caps?.outputs.filter(output => resolution === 'auto' || output.resolution === resolution) ?? []
+    const durations = [...new Set(outputs.flatMap(output => output.durations))].sort((a, b) => a - b)
+    choices[mode] = { durations, resolution, defaultDuration: caps?.defaultDuration ?? null }
+  }
+  return choices
+}
+
 function responseError(response, payload, text) {
   const detail = typeof payload?.detail === 'string'
     ? payload.detail
@@ -294,13 +309,15 @@ export class OpenDirectorClient {
   async creationModels({ signal } = {}) {
     const models = await this.models({ signal })
     return models.filter(model => (model.kind === 'image' && model.protocol !== 'vllm_omni_segmentation')
-      || (model.kind === 'audio' && !['vllm_omni_music', 'vllm_omni_score'].includes(model.protocol)))
+      || (model.kind === 'audio' && !['vllm_omni_music', 'vllm_omni_score'].includes(model.protocol))
+      || (model.kind === 'video' && Object.keys(videoChoices(model.inputRules)).length > 0))
       .map(({ id, kind, modelId, connectionType, inputRules }) => ({
         id, kind, modelId, connectionType,
         imageOutputs: inputRules?.imageOutputs ?? [],
         maxImages: inputRules?.allowedKinds?.includes('image') ? (inputRules.maxImages ?? 0) : 0,
         voiceRequired: inputRules?.voiceRequired === true,
         maxPromptCharacters: inputRules?.maxPromptCharacters,
+        ...(kind === 'video' && { videoChoices: videoChoices(inputRules) }),
       }))
   }
 
@@ -456,17 +473,28 @@ export class OpenDirectorClient {
     if (!Array.isArray(values) || (input.sourceResultIds != null && input.sourceResultId != null)) {
       throw new InputError('creation.references')
     }
-    if (values.length && (model.kind !== 'image' || values.length > model.maxImages)) {
+    const isVideo = model.kind === 'video'
+    const video = isVideo && Object.hasOwn(model.videoChoices, input.videoMode) && model.videoChoices[input.videoMode]
+    if (isVideo && !video) throw new InputError('creation.video_mode')
+    if (isVideo && values.length !== 1) throw new InputError('creation.video_source')
+    if (!isVideo && values.length && (model.kind !== 'image' || values.length > model.maxImages)) {
       throw new InputError('creation.reference_limit')
     }
     const sourceIds = values.map(id => requireUuid(id, 'sourceResultIds'))
     if (new Set(sourceIds).size !== sourceIds.length) throw new InputError('creation.references')
     let parameters
+    const videoSource = isVideo && resultReference({
+      kind: 'video', sourceResultId: sourceIds[0], parameters: { videoMode: input.videoMode },
+    })
     if (model.kind === 'image') {
       const output = input.output == null ? model.imageOutputs[0]
         : model.imageOutputs.find(item => item.size === input.output.size && item.aspectRatio === input.output.aspectRatio)
       if (!output && (input.output != null || model.imageOutputs.length)) throw new InputError('creation.output')
       parameters = output ? { size: output.size, aspectRatio: output.aspectRatio } : { size: 'auto' }
+    } else if (video) {
+      const durationSeconds = input.durationSeconds ?? video.defaultDuration
+      if (durationSeconds !== null && !video.durations.includes(durationSeconds)) throw new InputError('creation.video_duration')
+      parameters = { videoMode: input.videoMode, resolution: video.resolution, ...(durationSeconds !== null && { durationSeconds }) }
     } else {
       const voice = typeof input.voice === 'string' ? input.voice.trim() : ''
       if ((model.voiceRequired && !voice) || voice.length > 200) throw new InputError('creation.voice')
@@ -491,8 +519,10 @@ export class OpenDirectorClient {
       }
       const references = sourceIds.map((id, order) => {
         const source = snapshot.results.find(result => result.id === id)?.asset
-        if (source?.kind !== 'image') throw new InputError('result.candidate_missing')
-        return { binding: 'pinned', role: 'reference', order, source }
+        if (source?.kind !== (videoSource?.kind ?? 'image')) {
+          throw new InputError(isVideo ? 'creation.video_source' : 'result.candidate_missing')
+        }
+        return { binding: 'pinned', role: videoSource?.role ?? 'reference', order, source }
       })
       if (new Set(references.map(reference => reference.source.assetId)).size !== references.length) {
         throw new InputError('creation.references')
