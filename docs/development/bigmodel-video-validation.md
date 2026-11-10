@@ -61,3 +61,14 @@ git diff --check
 The Python provider tests use mocked HTTP and real media bytes. They cover request shape, all documented sizes and durations, frame ordering, invalid images and prompts, preflight rejection without a job, saved parameters after model edits, read retries, terminal provider failure, unknown submission, restart recovery, unauthenticated public CDN downloads, private redirects, credential redaction, candidate adoption and reopening through UI and Agent entry points. The full suite's skipped tests retain their existing environment gates.
 
 Only 720p, 5-second, silent generation was exercised against BigModel. Other supported sizes, 10 seconds, audio, account billing reconciliation and remote cancellation were not verified with the live service. Unknown submission and network/download failures were verified using mocks, not induced on the paid service. No API key, signed download URL or raw provider response is included here.
+
+## Watermark waiver review follow-up
+
+PR #254 requested a short note above Generate when BigModel is selected and Remove watermark is on. The composer now displays a translated note under exactly those conditions. It explains that BigModel requires a signed waiver in Personal Center → Security Management → Watermark Removal Management, and that outputs may otherwise retain watermarks. Both setup guides document the requirement and the inverse `watermark_enabled` mapping. No provider-side behavior or generated video is modified by this UI change.
+
+The production browser check used the existing saved video project and a local review server that rejects new provider POSTs. The note appeared above Generate in Chinese and English; turning Remove watermark off removed it immediately, and turning it back on restored it without reloading. No additional paid generation was submitted.
+
+![Chinese waiver note above Generate](assets/cogvideox-235/note-zh.jpg)
+![English waiver note above Generate](assets/cogvideox-235/note-en.jpg)
+
+Follow-up checks: 699 frontend tests passed, the production build passed with the existing chunk-size warning, the bilingual check reported 2,945 keys and zero problems, and generated-contract and diff checks passed. Backend generation behavior is unchanged by this follow-up; the original real-provider and Python verification above still describe their stated scope.

@@ -6,6 +6,8 @@ In Settings → Models, add **Zhipu BigModel video**, enter your BigModel API ke
 
 Create a video node and select the configured model. Choose an exact pixel size: `1280x720`, `720x1280`, `1024x1024`, `1920x1080`, `1080x1920`, `2048x1080`, or `3840x2160`. Duration is 5 or 10 seconds. Aspect ratio follows the selected size, so leave the separate ratio control on Auto. The adapter uses speed quality and 30 fps, and sends the chosen audio and watermark settings explicitly. Submitted jobs freeze these settings and their image inputs.
 
+With **Remove watermark** off, the adapter sends `watermark_enabled=true`; with it on, it sends `false`. BigModel requires a signed waiver before an account can remove watermarks: complete it in **Personal Center → Security Management → Watermark Removal Management**. When BigModel is selected and Remove watermark is on, a note above Generate explains this requirement. The setting requests removal; outputs may still contain watermarks if the account does not meet the provider requirement. Provider output is preserved without local watermark removal.
+
 The same commands serve canvas actions and Agent tools:
 
 - **Text to video:** enter a prompt with no selected frames.
