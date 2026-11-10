@@ -39,6 +39,7 @@ assert.equal((await call("/api/creation-test-health")).isolated, true);
 let mode = "unsupported",
   delay = 0,
   queries = 0;
+const queryEvents = [];
 const served = `capability-image-${crypto.randomUUID().slice(0, 8)}`;
 function document() {
   const route = {
@@ -124,6 +125,8 @@ const service = createServer((request, response) => {
     return;
   }
   queries += 1;
+  const queryEvent = { mode, received: Date.now() };
+  queryEvents.push(queryEvent);
   if (mode === "connection") {
     request.socket.destroy();
     return;
@@ -138,6 +141,7 @@ const service = createServer((request, response) => {
             ? 503
             : 200;
   setTimeout(() => {
+    queryEvent.responded = Date.now();
     response.writeHead(status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(body));
   }, delay);
@@ -156,12 +160,45 @@ await page.addInitScript(() => {
 });
 page.setDefaultTimeout(15000);
 const errors = [];
+const openConflicts = [];
+const sessionRenewals = new Set();
+const renewalFailures = [];
 const screenshots = [];
 page.on("pageerror", (error) => errors.push(error.message));
+page.on("response", async (response) => {
+  if (response.url().endsWith("/open-canvas") && response.status() === 409)
+    openConflicts.push(await response.text().catch(() => "unavailable"));
+});
 page.on("request", (request) => {
+  if (
+    request.method() === "PUT" &&
+    new URL(request.url()).pathname.startsWith("/api/creation/sessions/")
+  )
+    sessionRenewals.add(request);
   const session = request.headers()["x-opendirector-session"];
   if (session) headers["X-OpenDirector-Session"] = session;
 });
+page.on("requestfinished", async (request) => {
+  if (!sessionRenewals.has(request)) return;
+  const response = await request.response();
+  if (response?.status() !== 200) renewalFailures.push(response?.status());
+  sessionRenewals.delete(request);
+});
+page.on("requestfailed", (request) => {
+  if (sessionRenewals.has(request)) renewalFailures.push(request.failure());
+  sessionRenewals.delete(request);
+});
+async function reloadAfterRenewal() {
+  // Advancing the capability clock can also start a session heartbeat. Finish
+  // that request before pagehide releases the session during this reload.
+  await until(() => sessionRenewals.size === 0);
+  assert.deepEqual(
+    renewalFailures,
+    [],
+    "session renewals complete before reload",
+  );
+  await page.reload();
+}
 let saved;
 try {
   const projectId = crypto.randomUUID();
@@ -259,7 +296,9 @@ try {
           dirname(target),
           `${basename(target, extname(target))}-${state}-${locale}.png`,
         );
-        const option = page.locator(".cw-model-option").filter({ has: page.locator(".cw-model-availability") });
+        const option = page
+          .locator(".cw-model-option")
+          .filter({ has: page.locator(".cw-model-availability") });
         await option.scrollIntoViewIfNeeded();
         const bounds = await option.evaluate((element) => {
           const card = element
@@ -600,7 +639,7 @@ try {
   // Create a real generation object and prove API rejection has no job/provider side effect.
   const specId = crypto.randomUUID(),
     itemId = crypto.randomUUID();
-  await command("canvas.createGeneration", {
+  const created = await command("canvas.createGeneration", {
     spec: {
       id: specId,
       projectId,
@@ -620,6 +659,7 @@ try {
     },
     references: [],
   });
+  assert.equal(created.status, "applied");
   let snapshot = await call(projectPath);
   const spec = snapshot.generationSpecs.find((item) => item.id === specId);
   const callsBefore = (await call("/api/creation-test-health")).calls.length;
@@ -669,7 +709,7 @@ try {
   await page
     .getByRole("button", { name: "Close settings", exact: true })
     .click();
-  await page.reload();
+  await reloadAfterRenewal();
   const node = page.locator(`.react-flow__node[data-id="${itemId}"]`);
   await node.click();
   const composer = page.locator(".cw-generation-composer");
@@ -718,7 +758,7 @@ try {
     configIds: [saved.id],
     manual: true,
   });
-  await page.reload();
+  await reloadAfterRenewal();
   await page.locator(`.react-flow__node[data-id="${itemId}"]`).click();
   await until(
     async () =>
@@ -761,19 +801,64 @@ try {
   );
   await chinese.getByRole("button", { name: "设置", exact: true }).click();
   await chinese.getByRole("button", { name: "模型接入", exact: true }).click();
-  await chinese
-    .locator(".cw-model-setup-row")
-    .filter({ hasText: "图片模型" })
-    .getByRole("button")
-    .click();
+  const matchesRefresh = (manual) => (response) => {
+    if (
+      !response.url().endsWith("/api/model-configs/availability") ||
+      response.request().method() !== "POST"
+    )
+      return false;
+    const body = response.request().postDataJSON();
+    return (
+      body.manual === manual &&
+      body.configIds.includes(saved.id) &&
+      (!manual || body.configIds.length === 1)
+    );
+  };
+  // Opening a category checks its saved connections. Let that batch finish
+  // before testing a manual refresh, which shares the bounded worker queue.
+  const [categoryRefresh] = await Promise.all([
+    chinese.waitForResponse(matchesRefresh(false)),
+    chinese
+      .locator(".cw-model-setup-row")
+      .filter({ hasText: "图片模型" })
+      .getByRole("button")
+      .click(),
+  ]);
+  assert.equal(categoryRefresh.status(), 200);
+  await categoryRefresh.finished();
   const chineseService = chinese
     .locator(".cw-model-service")
     .filter({ hasText: served });
   await chineseService.locator("summary").first().click();
-  await chineseService
-    .getByRole("button", { name: /^(检查|刷新|重试)$/, exact: true })
-    .click();
-  await chineseService.getByText("服务未提供能力声明").first().waitFor();
+  await until(
+    async () =>
+      await chineseService
+        .getByRole("button", { name: /^(检查|刷新|重试)$/, exact: true })
+        .isEnabled(),
+  );
+  const [legacyRefresh] = await Promise.all([
+    chinese.waitForResponse(matchesRefresh(true)),
+    chineseService
+      .getByRole("button", { name: /^(检查|刷新|重试)$/, exact: true })
+      .click(),
+  ]);
+  assert.equal(legacyRefresh.status(), 200);
+  const legacyObservation = (await legacyRefresh.json()).models.find(
+    (model) => model.configId === saved.id,
+  );
+  assert.equal(legacyObservation?.reasonCode, "protocol_unavailable");
+  try {
+    await chineseService.getByText("服务未提供能力声明").first().waitFor();
+  } catch (failure) {
+    throw new Error(
+      JSON.stringify({
+        observation: legacyObservation,
+        displayed: await chineseService.innerText(),
+        browserTime: await chinese.evaluate(() => Date.now()),
+      }),
+      { cause: failure },
+    );
+  }
   await until(
     async () =>
       await chineseService
@@ -802,6 +887,8 @@ try {
     JSON.stringify({
       passed: true,
       queries,
+      openConflicts,
+      renewalFailures,
       screenshots,
       checks: [
         "draft isolation",
@@ -817,6 +904,26 @@ try {
     }),
   );
   await chinese.close();
+} catch (failure) {
+  console.error(
+    JSON.stringify({
+      failedPage: page.url(),
+      pageErrors: errors,
+      openConflicts,
+      queryEvents,
+      visibleText: await page
+        .locator("body")
+        .innerText()
+        .catch(() => "unavailable"),
+      canvasNodes: await page
+        .locator(".react-flow__node")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => node.getAttribute("data-id")),
+        )
+        .catch(() => []),
+    }),
+  );
+  throw failure;
 } finally {
   if (saved) await call(`/api/model-configs/${saved.id}`, undefined, "DELETE");
   await browser.close();

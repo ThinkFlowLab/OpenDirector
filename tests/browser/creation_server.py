@@ -33,19 +33,22 @@ if root.parent != Path(tempfile.gettempdir()).resolve() or not root.name.startsw
     parser.error('Browser fixtures require an opendirector-creation-* directory directly under the system temp directory')
 store = LocalProjects(root)
 configs = ModelConfigs(root)
+# These configurations use the in-process adapters below and have no HTTP
+# capability service. Keep their checks explicit so they do not occupy the
+# bounded query workers used by a browser test's real capability fixture.
 if not configs.list():
     for kind in ('agent', 'image'):
         configs.save(kind, 'http://127.0.0.1:12345/v1', f'fixture-{kind}', '',
-                     connection_type='self_hosted', protocol='openai', auth_mode='none')
+                     connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
 
 # Test-only adapters let the real preview and tool services exercise owned
 # assets, model selection and cancellation without contacting a GPU endpoint.
 if not any(model['kind'] == 'vision' for model in configs.list()):
     configs.save('vision', 'http://127.0.0.1:12345/v1', 'facebook/sam3', '',
-                 connection_type='self_hosted', protocol='vllm_omni', auth_mode='none')
+                 connection_type='self_hosted', protocol='vllm_omni', auth_mode='none', capability_auto_check=False)
 if not any(model['modelId'] == 'Qwen/Qwen-Image-2.1' for model in configs.list()):
     configs.save('image', 'http://127.0.0.1:12345/v1', 'Qwen/Qwen-Image-2.1', '',
-                 connection_type='self_hosted', protocol='openai', auth_mode='none')
+                 connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
 selection_gate = asyncio.Event()
 selection_gate.set()
 selection_calls, image_edit_calls = [], []
