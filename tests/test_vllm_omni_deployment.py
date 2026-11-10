@@ -162,13 +162,44 @@ def test_recycled_pid_never_stops_another_process(tmp_path, profile, monkeypatch
 
 def test_repeat_start_does_not_spawn_while_original_is_starting(tmp_path, profile, monkeypatch):
     record = dict(pid=123, processStart='same', profileSha256=deploy.profile_digest(profile),
-                  url='http://127.0.0.1:8091/v1', modelId=profile['modelId'])
+                  url='http://127.0.0.1:8091/v1', modelId=profile['modelId'], gpuUuid='GPU-assigned')
     deploy.write_json(tmp_path / 'services' / profile['id'] / 'state.json', record)
     monkeypatch.setattr(deploy, 'owned', lambda _: True)
+    monkeypatch.setattr(deploy, 'gpu_facts', lambda: host(profile)['gpus'])
+    monkeypatch.delenv('CUDA_VISIBLE_DEVICES', raising=False)
     monkeypatch.setattr(deploy, 'readiness', lambda *a: (_ for _ in ()).throw(deploy.DeploymentError('service_unreachable')))
     monkeypatch.setattr(deploy.subprocess, 'Popen', lambda *a, **k: pytest.fail('duplicate server'))
     with pytest.raises(deploy.DeploymentError, match='startup_pending'):
-        deploy.start(SimpleNamespace(root=tmp_path, port=8091), profile)
+        deploy.start(SimpleNamespace(root=tmp_path, port=8091, gpu='GPU-assigned'), profile)
+
+
+@pytest.mark.parametrize('selector,mask,expected', [
+    ('1', None, 'ready'),
+    ('GPU-assigned', None, 'ready'),
+    ('2', None, 'running_configuration_conflict'),
+    ('GPU-other', None, 'running_configuration_conflict'),
+    ('GPU-assigned', '2', 'running_configuration_conflict'),
+    ('', None, 'running_configuration_conflict'),
+])
+def test_repeat_start_respects_selected_and_visible_gpu(tmp_path, profile, monkeypatch, selector, mask, expected):
+    record = dict(pid=123, processStart='same', profileSha256=deploy.profile_digest(profile),
+                  url='http://127.0.0.1:8091/v1', modelId=profile['modelId'], gpuUuid='GPU-assigned')
+    deploy.write_json(tmp_path / 'services' / profile['id'] / 'state.json', record)
+    assigned = host(profile)['gpus'][0]
+    monkeypatch.setattr(deploy, 'gpu_facts', lambda: [assigned, dict(assigned, index=2, uuid='GPU-other')])
+    monkeypatch.setattr(deploy, 'owned', lambda _: True)
+    monkeypatch.setattr(deploy, 'status', lambda *args: {'status': 'ready', **record})
+    monkeypatch.setattr(deploy.subprocess, 'Popen', lambda *a, **k: pytest.fail('duplicate server'))
+    if mask is None:
+        monkeypatch.delenv('CUDA_VISIBLE_DEVICES', raising=False)
+    else:
+        monkeypatch.setenv('CUDA_VISIBLE_DEVICES', mask)
+    args = SimpleNamespace(root=tmp_path, port=8091, gpu=selector)
+    if expected == 'ready':
+        assert deploy.start(args, profile)['gpuUuid'] == record['gpuUuid']
+    else:
+        with pytest.raises(deploy.DeploymentError, match=expected):
+            deploy.start(args, profile)
 
 
 def test_unknown_generation_is_recorded_without_retry(tmp_path, profile, monkeypatch):

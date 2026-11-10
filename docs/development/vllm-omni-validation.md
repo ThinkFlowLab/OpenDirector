@@ -70,6 +70,12 @@ Ubuntu 22.04 主机，使用独立虚拟环境、Python 3.12.13、Node 24.22.2 �
   socket regression reproduced a TIME_WAIT address being mistaken for a live
   listener. The preflight now matches the HTTP server's `SO_REUSEADDR` setting;
   a live listener remains protected. 同端口停止后立即重启已在实机通过。
+- Repeating `start` against an owned service previously checked model and port
+  but could ignore a different requested GPU. It now also checks the explicit
+  selector and current CUDA visibility. Regression cases failed before the fix.
+  On the existing TTS service, the same GPU returned the original PID, a different
+  selector was rejected, and the original service remained ready; no new process
+  was started. 同一进程不会被错误地当作另一张 GPU 上的部署。
 - CLI `canvas add-material` omitted the asset name. Editing the resulting text
   item sent the invalid filename `.md`, and the backend correctly rejected it.
   The CLI now supplies the registered asset name as the item title; its existing

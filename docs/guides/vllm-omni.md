@@ -83,8 +83,9 @@ to make it appear compatible.
 Startup binds `127.0.0.1:8091`, records the owned process, and waits for health
 and the exact Model ID. `startup_pending` means the original process may still be
 loading: query `status` and inspect the reported log before taking another action.
-Repeated `start` does not launch another live instance. Use `--port` before `start`
-to select a free port. `stop` only signals the recorded process group after checking
+Repeated `start` does not launch another live instance; it requires the same
+profile, port and explicitly selected GPU within the current device visibility.
+Use `--port` before `start` to select a free port. `stop` only signals the recorded process group after checking
 its owner and process start identity.
 `status` describes only the model service; `stopped` does not mean that a separate
 installation or download process has finished.

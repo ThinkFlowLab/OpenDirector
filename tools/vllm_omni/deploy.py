@@ -434,6 +434,10 @@ def start(args, profile):
             if (record['profileSha256'] != profile_digest(profile) or
                     record['url'] != f'http://127.0.0.1:{args.port}/v1'):
                 raise DeploymentError('running_configuration_conflict')
+            visible = visible_gpus(gpu_facts(), os.environ.get('CUDA_VISIBLE_DEVICES'))
+            if not any(gpu['uuid'] == record['gpuUuid'] and args.gpu in {str(gpu['index']), gpu['uuid']}
+                       for gpu in visible):
+                raise DeploymentError('running_configuration_conflict')
             existing = status(args, profile)
             if existing['status'] != 'ready':
                 raise DeploymentError('startup_pending', **record)

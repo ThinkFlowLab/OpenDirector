@@ -57,6 +57,7 @@ python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" status
 
 服务默认绑定 `127.0.0.1:8091`，记录本次启动的进程，并等待健康检查与目标 Model ID。
 `startup_pending` 表示原进程可能仍在加载，应查询 `status` 和回执中的日志，不要重复启动。
+再次执行 `start` 时必须指定相同配方、端口和当前可见范围内的同一张 GPU。
 通过 `--port` 指定其他空闲端口。停止前会核对进程所有者和启动身份，只向记录的进程组发送停止信号。
 `status` 只描述模型服务；返回 `stopped` 不代表另一个安装或下载进程已经结束。
 vLLM、TorchInductor、Triton 和 FlashInfer 的编译缓存也保存在所选数据目录下。
