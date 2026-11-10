@@ -1,0 +1,154 @@
+{
+  "tier": "partial",
+  "upstreamEndpoint": "/v1/omni/capabilities",
+  "scope": "Partial declaration: some stages resolve, some do not, and `asr` must not be read as `audio.score`.",
+  "cases": [
+    {
+      "id": "mixed-stages",
+      "note": "One complete stage, one partly understood stage, and three stages this vocabulary cannot express.",
+      "payload": {
+        "object": "omni.capabilities",
+        "stages": [
+          {
+            "name": "tts",
+            "model": "tts-model",
+            "routes": [
+              "/v1/audio/speech"
+            ]
+          },
+          {
+            "name": "video",
+            "model": "video-model",
+            "routes": [
+              "/v1/videos",
+              "/v1/videos/depth",
+              "/v1/videos/track"
+            ]
+          },
+          {
+            "name": "asr",
+            "model": "asr-model",
+            "routes": [
+              "/v1/audio/transcriptions"
+            ]
+          },
+          {
+            "name": "image",
+            "model": "image-model",
+            "routes": [
+              "/v1/videos"
+            ]
+          },
+          {
+            "name": "embedding",
+            "model": "embedding-model",
+            "routes": [
+              "/v1/embeddings"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "endpoint": "present",
+        "stages": {
+          "asr": "unmapped",
+          "embedding": "unmapped",
+          "image": "unmapped",
+          "tts": "available",
+          "video": "partial"
+        },
+        "capabilities": {
+          "text.chat": "missing",
+          "image.generate": "missing",
+          "image.edit": "missing",
+          "image.segment": "missing",
+          "video.generate": "available",
+          "video.matting": "missing",
+          "video.motion_capture": "available",
+          "audio.speech": "available",
+          "audio.music": "missing",
+          "audio.score": "missing",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": [
+          {
+            "stage": "asr",
+            "route": "/v1/audio/transcriptions",
+            "reason": "unmapped_stage"
+          },
+          {
+            "stage": "embedding",
+            "route": "/v1/embeddings",
+            "reason": "unknown_route"
+          },
+          {
+            "stage": "image",
+            "route": "/v1/videos",
+            "reason": "stage_route_mismatch"
+          },
+          {
+            "stage": "video",
+            "route": "/v1/videos/track",
+            "reason": "unknown_route"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shared-transcription-route",
+      "note": "`score` and `asr` declare the same `/v1/audio/transcriptions` path; only `score` grants a capability.",
+      "payload": {
+        "object": "omni.capabilities",
+        "stages": [
+          {
+            "name": "score",
+            "model": "score-model",
+            "routes": [
+              "/v1/audio/transcriptions"
+            ]
+          },
+          {
+            "name": "asr",
+            "model": "asr-model",
+            "routes": [
+              "audio/transcriptions"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "endpoint": "present",
+        "stages": {
+          "asr": "unmapped",
+          "score": "available"
+        },
+        "capabilities": {
+          "text.chat": "missing",
+          "image.generate": "missing",
+          "image.edit": "missing",
+          "image.segment": "missing",
+          "video.generate": "missing",
+          "video.matting": "missing",
+          "video.motion_capture": "missing",
+          "audio.speech": "missing",
+          "audio.music": "missing",
+          "audio.score": "available",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": [
+          {
+            "stage": "asr",
+            "route": "/v1/audio/transcriptions",
+            "reason": "unmapped_stage"
+          }
+        ]
+      }
+    }
+  ]
+}

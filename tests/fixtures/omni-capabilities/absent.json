@@ -1,0 +1,90 @@
+{
+  "tier": "absent",
+  "upstreamEndpoint": "/v1/omni/capabilities",
+  "scope": "No declaration: every capability is unknown, so callers must fall back instead of degrading.",
+  "cases": [
+    {
+      "id": "no-endpoint-404",
+      "note": "GET returns 404 because the deployment predates the endpoint.",
+      "payload": null,
+      "expected": {
+        "endpoint": "absent",
+        "stages": {},
+        "capabilities": {
+          "text.chat": "unknown",
+          "image.generate": "unknown",
+          "image.edit": "unknown",
+          "image.segment": "unknown",
+          "video.generate": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
+          "audio.speech": "unknown",
+          "audio.music": "unknown",
+          "audio.score": "unknown",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": []
+      }
+    },
+    {
+      "id": "no-stages-field",
+      "note": "The endpoint answers but the body carries no `stages` field.",
+      "payload": {
+        "object": "omni.capabilities"
+      },
+      "expected": {
+        "endpoint": "absent",
+        "stages": {},
+        "capabilities": {
+          "text.chat": "unknown",
+          "image.generate": "unknown",
+          "image.edit": "unknown",
+          "image.segment": "unknown",
+          "video.generate": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
+          "audio.speech": "unknown",
+          "audio.music": "unknown",
+          "audio.score": "unknown",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": []
+      }
+    },
+    {
+      "id": "empty-stages",
+      "note": "The endpoint answers with an empty stage list, which declares nothing.",
+      "payload": {
+        "object": "omni.capabilities",
+        "stages": []
+      },
+      "expected": {
+        "endpoint": "absent",
+        "stages": {},
+        "capabilities": {
+          "text.chat": "unknown",
+          "image.generate": "unknown",
+          "image.edit": "unknown",
+          "image.segment": "unknown",
+          "video.generate": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
+          "audio.speech": "unknown",
+          "audio.music": "unknown",
+          "audio.score": "unknown",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": []
+      }
+    }
+  ]
+}

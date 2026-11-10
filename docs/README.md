@@ -10,6 +10,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Contributing](../CONTRIBUTING.md) | Label taxonomy, how to pick labels, and what a PR must satisfy | Process, labels, or submission requirements change |
 | [Unified project architecture](architecture/unified-project.md) | Business objects, shared entry points, and interaction rules | Object responsibilities, commands, persistence, or interaction rules change |
 | [Test contracts](architecture/test-contracts.md) | Test/production boundaries, how to avoid stale assertions and environment-dependent red runs | Test infrastructure, capability gates, or contract ownership change |
+| [Capability mapping contract / 能力映射表契约](architecture/capability-contract.md) | `(stage, route) → capability` table, the three degradation states, and how it feeds discovery | Stage/route vocabulary, capability ids, or discovery matching change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
 | [Issue #87 Windows handoff](development/issue-87-windows-handoff.md) ([中文](development/issue-87-windows-handoff.zh-CN.md)) | Native ACL repair and final text acceptance | The shared checkpoint or native validation scope changes |

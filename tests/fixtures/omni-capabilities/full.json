@@ -1,0 +1,142 @@
+{
+  "tier": "full",
+  "upstreamEndpoint": "/v1/omni/capabilities",
+  "scope": "Full declaration: the deployment lists every stage and route this contract knows.",
+  "cases": [
+    {
+      "id": "every-known-stage",
+      "note": "Every (stage, route) pair this contract knows is declared; model names are synthetic.",
+      "payload": {
+        "object": "omni.capabilities",
+        "stages": [
+          {
+            "name": "text",
+            "model": "chat-model",
+            "routes": [
+              "/v1/chat/completions"
+            ]
+          },
+          {
+            "name": "image",
+            "model": "image-model",
+            "routes": [
+              {
+                "path": "/v1/images/generations",
+                "methods": [
+                  "POST"
+                ]
+              },
+              "/v1/images/edits",
+              "/v1/images/segmentations"
+            ]
+          },
+          {
+            "name": "video",
+            "model": "video-model",
+            "routes": [
+              "/v1/videos",
+              "/v1/videos/segmentations",
+              "/v1/videos/depth"
+            ]
+          },
+          {
+            "name": "tts",
+            "model": "tts-model",
+            "routes": [
+              "/v1/audio/speech"
+            ]
+          },
+          {
+            "name": "music",
+            "model": "music-model",
+            "routes": [
+              "/v1/audio/speech"
+            ]
+          },
+          {
+            "name": "score",
+            "model": "score-model",
+            "routes": [
+              "/v1/audio/transcriptions?version=1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "endpoint": "present",
+        "stages": {
+          "image": "available",
+          "music": "available",
+          "score": "available",
+          "text": "available",
+          "tts": "available",
+          "video": "available"
+        },
+        "capabilities": {
+          "text.chat": "available",
+          "image.generate": "available",
+          "image.edit": "available",
+          "image.segment": "available",
+          "video.generate": "available",
+          "video.matting": "available",
+          "video.motion_capture": "available",
+          "audio.speech": "available",
+          "audio.music": "available",
+          "audio.score": "available",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": []
+      }
+    },
+    {
+      "id": "shared-speech-route",
+      "note": "`tts` and `music` declare the same `/v1/audio/speech` path; both keep their own capability.",
+      "payload": {
+        "object": "omni.capabilities",
+        "stages": [
+          {
+            "name": "tts",
+            "model": "tts-model",
+            "routes": [
+              "/v1/audio/speech"
+            ]
+          },
+          {
+            "name": "music",
+            "model": "music-model",
+            "routes": [
+              "/v1/audio/speech"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "endpoint": "present",
+        "stages": {
+          "music": "available",
+          "tts": "available"
+        },
+        "capabilities": {
+          "text.chat": "missing",
+          "image.generate": "missing",
+          "image.edit": "missing",
+          "image.segment": "missing",
+          "video.generate": "missing",
+          "video.matting": "missing",
+          "video.motion_capture": "missing",
+          "audio.speech": "available",
+          "audio.music": "available",
+          "audio.score": "missing",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": []
+      }
+    }
+  ]
+}
