@@ -72,7 +72,7 @@ for line in sys.stdin:
   text=blocks[-1]
   if mode!='wait':
    assert text.startswith('Current user request' + chr(10))
-   assert 'Summarize the delivered result and material limitations.' in text
+   assert 'delivered result and material limitations' not in text
    assert 'User model preferences for this turn:' in text and 'selected-image' in text
   patch=json.loads(Path(sys.argv[sys.argv.index('--patch')+1]).read_text())
   assert next(row for row in patch if row['id']=='skill-filesystem')['config']['includeDefaultRoots'] is False

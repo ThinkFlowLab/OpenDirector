@@ -34,17 +34,16 @@ def test_reasoning_trace_handles_fragmented_sse_without_changing_response(tmp_pa
         )
         server = await asyncio.start_server(gateway.connect, "127.0.0.1", 0)
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", server.sockets[0].getsockname()[1])
-            payload = json.dumps({"messages": [{"role": "user", "content": "hello"}]}).encode()
-            writer.write(
-                b"POST /chat/completions HTTP/1.1\r\nAuthorization: Bearer local-token\r\n"
-                + f"Content-Length: {len(payload)}\r\n\r\n".encode() + payload
-            )
-            await writer.drain()
-            response = await asyncio.wait_for(reader.read(), 5)
-            writer.close()
-            await writer.wait_closed()
-            assert response.split(b"\r\n\r\n", 1)[1] == body
+            port = server.sockets[0].getsockname()[1]
+            async with httpx.AsyncClient(trust_env=False, timeout=5) as client:
+                response = await client.post(
+                    f"http://127.0.0.1:{port}/chat/completions",
+                    headers={"Authorization": "Bearer local-token"},
+                    json={"messages": [{"role": "user", "content": "hello"}]},
+                )
+            assert response.status_code == 200
+            assert response.headers["transfer-encoding"] == "chunked"
+            assert response.content == body
             records = [json.loads(line) for line in trace.read_text().splitlines()]
             reasoning = [record for record in records if record["event"] == "model.reasoning"]
             assert "".join(record["text"] for record in reasoning) == "先检查工程状态。"
