@@ -160,9 +160,11 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             if kind == 'video' and mode == 'first_frame':
                 # Frame slots are per-slot: one image each, and the slot the
                 # caller asked for is kept so Ark receives last_frame as such.
-                role = role_by_asset.get(str(meta['id']), 'first_frame')
-                if role not in {'first_frame', 'last_frame'}:
-                    role = 'first_frame' if not result['images'] else 'last_frame'
+                # A plain 'reference' role is a first frame, matching what a
+                # single image meant before last_frame existed; it never turns
+                # into a last frame implicitly.
+                requested = role_by_asset.get(str(meta['id']))
+                role = requested if requested in {'first_frame', 'last_frame'} else 'first_frame'
                 if role in slot_roles:
                     raise ProjectError('首尾帧每个槽位只能使用一张图片，请在画布上明确指定首帧和尾帧。')
                 slot_roles.add(role)
