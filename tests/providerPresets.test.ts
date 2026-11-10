@@ -98,7 +98,7 @@ test("MOSS provider labels follow the display language", () => {
   }
 });
 
-test("Zhipu BigModel preset offers agent chat models by kind", () => {
+test("Zhipu BigModel preset offers chat and GLM-TTS models by kind", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu");
   assert.ok(preset);
   assert.equal(preset.url, "https://open.bigmodel.cn/api/paas/v4");
@@ -106,12 +106,15 @@ test("Zhipu BigModel preset offers agent chat models by kind", () => {
   assert.equal(preset.connectionType, "api");
   assert.equal(preset.authMode, "bearer");
   assert.equal(preset.logoOrganization, "zai-org");
-  assert.deepEqual(preset.kinds, ["agent"]);
+  // One connection serves both categories; the category picks the model list.
+  assert.deepEqual(preset.kinds, ["agent", "audio"]);
   assert.deepEqual(preset.modelsByKind, {
     agent: ["glm-5.3", "glm-5.3-flash", "glm-5.2"],
+    audio: ["glm-tts"],
   });
   assert.ok(providerOptions("agent").some((item) => item.id === "zhipu"));
-  for (const kind of ["image", "video", "audio", "vision"] as const)
+  assert.ok(providerOptions("audio").some((item) => item.id === "zhipu"));
+  for (const kind of ["image", "video", "vision"] as const)
     assert.ok(!providerOptions(kind).some((item) => item.id === "zhipu"));
 });
 
@@ -119,9 +122,11 @@ test("Zhipu provider labels follow the display language", () => {
   const previous = getActiveLocale();
   try {
     setActiveLocale("zh-CN");
-    assert.equal(providerOptions("agent").find((item) => item.id === "zhipu")?.name, "智谱 BigModel");
+    for (const kind of ["agent", "audio"] as const)
+      assert.equal(providerOptions(kind).find((item) => item.id === "zhipu")?.name, "智谱 BigModel");
     setActiveLocale("en-US");
-    assert.equal(providerOptions("agent").find((item) => item.id === "zhipu")?.name, "Zhipu BigModel");
+    for (const kind of ["agent", "audio"] as const)
+      assert.equal(providerOptions(kind).find((item) => item.id === "zhipu")?.name, "Zhipu BigModel");
   } finally {
     setActiveLocale(previous);
   }
@@ -201,4 +206,12 @@ test("MiniMax H3 image preset exposes both models in both display languages", ()
   } finally {
     setActiveLocale(previous);
   }
+});
+
+test("a saved Zhipu GLM-TTS connection reopens with its provider identity", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu")!;
+  const model: ModelConfig = { ...preset, id: "saved", kind: "audio", modelId: "glm-tts", url: `${preset.url}/`,
+    inputRules: { profile: "zhipu-speech", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
+  assert.equal(providerPresetFor(model), "zhipu");
+  assert.equal(providerPresetFor({ ...model, url: "https://other.test/v1" }), "custom");
 });

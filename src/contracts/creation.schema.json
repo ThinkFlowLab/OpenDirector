@@ -3503,6 +3503,9 @@
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "zhipu_speech_text",
+              "zhipu_speech_voice",
+              "zhipu_speech_reference",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -3520,7 +3523,9 @@
               "voice_provider_protocol",
               "voice_provider_error",
               "voice_provider_timeout",
-              "voice_model_unsupported"
+              "voice_model_unsupported",
+              "voice_name_taken",
+              "voice_provider_quota"
             ],
             "title": "Code",
             "type": "string"
@@ -14403,7 +14408,8 @@
             "description": "Voice registry protocol.",
             "enum": [
               "vllm_omni",
-              "moss"
+              "moss",
+              "zhipu"
             ],
             "title": "Provider",
             "type": "string"
@@ -18685,6 +18691,9 @@
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "zhipu_speech_text",
+              "zhipu_speech_voice",
+              "zhipu_speech_reference",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -18702,7 +18711,9 @@
               "voice_provider_protocol",
               "voice_provider_error",
               "voice_provider_timeout",
-              "voice_model_unsupported"
+              "voice_model_unsupported",
+              "voice_name_taken",
+              "voice_provider_quota"
             ],
             "title": "Code",
             "type": "string"
@@ -30039,7 +30050,8 @@
             "description": "Voice registry protocol.",
             "enum": [
               "vllm_omni",
-              "moss"
+              "moss",
+              "zhipu"
             ],
             "title": "Provider",
             "type": "string"

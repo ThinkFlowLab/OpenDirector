@@ -474,6 +474,11 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "zhipu_real.mjs",
+      "helper": true,
+      "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
     }
   ]
 }

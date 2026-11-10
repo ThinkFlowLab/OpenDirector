@@ -230,6 +230,9 @@ class CreationGeneration(GenerationRuntime):
             params = dict(size=params['size'], watermark_enabled=not self.settings.get()['removeWatermark'])
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
             params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'zhipu-speech':
+            params = dict(voice=intent['voice'], response_format='wav', stream=False,
+                          watermark_enabled=not self.settings.get()['removeWatermark'])
         return params
 
     @staticmethod
@@ -248,6 +251,8 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'audio':
             if input_rules(config)['profile'] == 'moss-speech':
                 return dict(kind=kind, voice=parameters['voice'], format='mp3')
+            if input_rules(config)['profile'] == 'zhipu-speech':
+                return dict(kind=kind, voice=parameters['voice'], format='wav', sampleRate=24000)
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
                 speaker=parameters.get('speaker') if config['protocol'] != 'openai' else None,
                 format='mp3', sampleRate=24000 if config['protocol'] != 'openai' else None)

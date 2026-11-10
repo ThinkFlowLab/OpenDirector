@@ -26,6 +26,7 @@ from opendirector.domain.bigmodel_image import validate_bigmodel_image
 from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
+from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
@@ -325,6 +326,41 @@ class MinimaxH3Images(ModelAdapter):
         if not data.startswith(b'\x89PNG\r\n\x1a\n'):
             raise protocol_failure('download')
         return MediaResult(data, 'png')
+
+
+class ZhipuSpeech(ModelAdapter):
+    """Zhipu BigModel GLM-TTS on /audio/speech.
+
+    The service only offers WAV or raw PCM, and its streaming mode returns PCM
+    chunks over SSE, so a non-streaming WAV request is the only complete
+    container. A 200 response is accepted only when the body is a RIFF/WAVE file:
+    the service also reports some errors as JSON with HTTP 200.
+    """
+
+    capabilities = frozenset({'audio.speech'})
+
+    async def speech(self, config, request: SpeechRequest, *, result_ready=None, watermark=True) -> MediaResult:
+        validate_zhipu_speech_input(request.text, request.voice)
+        payload = dict(model=config['modelId'], input=request.text, voice=request.voice,
+                       response_format='wav', stream=False, watermark_enabled=watermark)
+        secrets = (config.get('apiKey', ''),)
+
+        async def submit():
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/audio/speech'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    return await bounded(response, stage='submit', secrets=secrets)
+
+        data = await _call('submit', submit)
+        if not (data[:4] == b'RIFF' and data[8:12] == b'WAVE'):
+            try:
+                value = json.loads(data)
+            except (ValueError, UnicodeError):
+                value = None
+            if isinstance(value, dict) and value.get('error'):
+                raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
+            raise protocol_failure('submit')
+        return MediaResult(bytes(data), 'wav')
 
 
 class OpenAIImages(ModelAdapter):
@@ -797,6 +833,8 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return MossImages(transport, poll_interval)
     if profile == 'moss-speech':
         return MossSpeech(transport, poll_interval)
+    if profile == 'zhipu-speech':
+        return ZhipuSpeech(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':
         return OpenAIImages(transport, poll_interval, free_size=True, strength=True)
     if kind == 'image' and profile == 'vllm-omni-qwen-image':

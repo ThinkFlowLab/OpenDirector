@@ -457,6 +457,12 @@ export function serviceGenerationSettings(
     )
       next.voiceName = "2890a3a4-0012-4997-a545-8b045fe83bbe";
     if (
+      next.mode === "audio" &&
+      config.inputRules.profile === "zhipu-speech" &&
+      !next.voiceName
+    )
+      next.voiceName = "tongtong";
+    if (
       !generateAudioOptions({
         published: config.inputRules.generateAudioOptions ?? null,
         protocol: config.protocol,

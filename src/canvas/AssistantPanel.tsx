@@ -34,6 +34,7 @@ import {
 import { assetOptionId, referenceCandidates } from "./referenceCandidates.ts";
 import { type MentionOption } from "./referenceMentions";
 import { useAssistantChat } from "./useAssistantChat";
+import { needsAgentModel } from "./assistantReadiness.ts";
 import type { AssistantLayout } from "./useAssistantLayout";
 import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
@@ -138,6 +139,8 @@ export function AssistantPanel({
     chat.adding ||
     checkingReferences ||
     (chat.sending && !chat.started);
+  const currentRuntime = chat.runtimes.find((item) => item.id === (value.runtime ?? "default"));
+  const missingAgentModel = needsAgentModel(chat.loaded, currentRuntime, !!chat.agent);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
   const sessionDisabledReason = chat.changing
@@ -761,6 +764,13 @@ export function AssistantPanel({
             t("assistant.panel.checkingEngine")
           ) : chat.adding ? (
             t("assistant.panel.addingReferences")
+          ) : missingAgentModel ? (
+            <>
+              {t("assistant.agent.noAgentModels")}{" · "}
+              <button type="button" onClick={onOpenSettings}>
+                {t("assistant.agent.configureModel")}
+              </button>
+            </>
           ) : (
             `${chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.label ?? t("assistant.panel.chooseAgent")}`
           )}

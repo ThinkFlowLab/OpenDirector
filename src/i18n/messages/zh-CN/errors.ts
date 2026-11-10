@@ -99,7 +99,7 @@ export const errors = {
   "errors.rules.voiceId": "请输入服务支持的音色标识（字母、数字、点、下划线或连字符）。",
   "errors.rules.voiceRequired": "请先填写服务音色库中有效的音色 ID，再开始生成。",
   "errors.rules.referencesUnsupported": "当前模型不支持参考素材，请断开参考后再生成。",
-  "errors.generationFailure.voiceNotFound": "该音色不存在或当前账户无权使用，请在 MOSS 音色库核对音色 ID。",
+  "errors.generationFailure.voiceNotFound": "该音色不存在或当前账户无权使用，请在音色库重新选择可用音色。",
   "errors.rules.audioDisable": "当前视频适配器不支持关闭生成音频。",
   "errors.rules.duration": "当前模型不支持所选时长，请重新选择。",
   "errors.rules.resolution": "当前模型或参考模式不支持所选分辨率，请重新选择。",

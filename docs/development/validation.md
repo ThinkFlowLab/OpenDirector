@@ -299,6 +299,17 @@ The Python cases check how the shared thinking levels map to GLM reasoning_effor
 
 The browser case checks both display languages for the provider list and names, canonical URL prefill, GLM model preselection without remote discovery, manual addition of other model IDs, the saved connection reuse hint, save and reopen, key privacy in public model responses, and the assistant agent picker listing and keeping the selected Zhipu model. The browser never contacts open.bigmodel.cn and the API key is always a fixture value. Real streaming conversations, tool call execution and thinking level effects additionally require valid Zhipu credentials. Keep the conversation transcript, tool receipts and screenshots as evidence.
 
+智谱 BigModel GLM-TTS 接入使用以下检查：
+
+```sh
+.venv/bin/python -m pytest tests/test_zhipu.py tests/test_voice_library.py tests/test_generation_errors.py -q
+# 真实服务验收（会产生费用）：在隔离的 OPENDIRECTOR_ROOT 上启动 opendirector serve 后运行
+OPENDIRECTOR_URL=http://127.0.0.1:18238 ZHIPU_API_KEY=... ZHIPU_SAMPLE=/path/to/sample.wav node tests/browser/zhipu_real.mjs
+```
+
+Python 用例使用按真实服务响应录制的模拟 HTTP，检查 `/audio/speech` 只请求非流式 WAV 并按 RIFF/WAVE 字节验收（服务默认返回裸 PCM，且部分错误以 HTTP 200 + JSON 返回）、`1113` 余额不足归为额度而非限流、音色库只列出文档中的 7 个预置音色加 `PRIVATE` 复刻音色、复刻前的真实音频校验（mp3/wav、3–30 秒、10 MB）、复刻成功或失败后都删除上传的样本文件、`POST /voice/delete` 删除及重名/不存在的错误映射、试听只从公网 HTTPS 下载且不带凭据，以及统一生成服务的音色预检与执行快照。真实验收需要已充值且开通 GLM-TTS 的 BigModel 账户；保留预置音色与复刻音色生成的实际音频、复刻到删除的完整流程截图，并确认账户中没有遗留的 `voice-clone-input` 文件。
+
+
 ### Voice library / 音色库
 
 The voice browser workflow uses a separate isolated fixture. It runs the real shared voice service, media probing, project storage and generation acceptance with mocked provider HTTP; it does not contact MOSS or a GPU service.
