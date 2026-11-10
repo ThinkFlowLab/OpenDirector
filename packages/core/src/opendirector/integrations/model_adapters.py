@@ -524,6 +524,8 @@ class VllmOmniMusic(ModelAdapter):
         payload = {'model': config['modelId'], 'input': request.lyrics.strip() or self.INSTRUMENTAL,
                    'instructions': request.style, 'response_format': 'mp3',
                    'max_new_tokens': round(request.max_seconds * self.FRAMES_PER_SECOND)}
+        if request.seed is not None:
+            payload['seed'] = request.seed
         if request.score:
             # YuE2 renders the supplied score: cot=melody follows its melody, cot=full also its chords.
             payload['extra_params'] = {'cot': request.score_mode, 'abc': request.score}

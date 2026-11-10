@@ -176,7 +176,7 @@ class GenerationProviders(VolcengineGeneration):
                         score = await self._score(task, params)
                     result = await VllmOmniMusic(self.transport).music(config, MusicRequest(
                         task['prompt'], params.get('lyrics', ''), params['duration'], score=score,
-                        score_mode=params.get('score_mode', 'melody')))
+                        score_mode=params.get('score_mode', 'melody'), seed=params.get('seed')))
                     return result.suffix, result.data
                 if kind == 'audio':
                     result = await OpenAISpeech(self.transport).speech(config, SpeechRequest(task['prompt'], task['parameters'].get('voice')))
