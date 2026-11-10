@@ -49,6 +49,25 @@ def command(kind, project_id, payload, versions=()):
     )
 
 
+def lease_keeper(projects, project_id, session):
+    """Renew a fixture's edit lease while the fixture is written.
+
+    A full-scale fixture can take longer to build than the edit lease
+    (``LocalProjects.LEASE_SECONDS``) on a slow runner, and the next write is
+    then refused. The canvas keeps its lease with heartbeats; the fixture does
+    the same between its writes, never inside a measured call.
+    """
+    renewed = float("-inf")  # renew before the first write of each loop
+
+    def renew():
+        nonlocal renewed
+        if time.time() - renewed >= projects.local.LEASE_SECONDS / 3:
+            renewed = time.time()
+            projects.heartbeat(session, project_id)
+
+    return renew
+
+
 def timed(operation):
     start = time.perf_counter()
     value = operation()
@@ -60,12 +79,14 @@ def create_project(projects, name, node_count):
     projects.execute(command("project.create", project_id, {"name": name}))
     session = str(uuid4())
     projects.open(project_id, session)
+    renew = lease_keeper(projects, project_id, session)
     projects.execute(
         command("asset.writeText", project_id, {"name": "notes.md", "text": "hello"}),
         session=session,
     )
     asset = projects.snapshot(project_id).assets[0]
     for index in range(node_count):
+        renew()
         projects.execute(
             command(
                 "canvas.show",
@@ -100,7 +121,9 @@ def add_saves(projects, project_id, session, commits, nodes):
         item.id: item.revision for item in projects.snapshot(project_id).canvasItems
     }
     item_ids = list(revisions)[:nodes]
+    renew = lease_keeper(projects, project_id, session)
     for index in range(commits):
+        renew()
         item_id = item_ids[index % len(item_ids)]
         projects.execute(
             command(
