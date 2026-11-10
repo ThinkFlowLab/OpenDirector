@@ -41,8 +41,9 @@ window.__ModuleLoader__.load({
       actions: 'More actions', play: 'Play', pause: 'Pause', playbackFailed: 'Could not start playback.',
       references: 'Reference images', chooseReferences: 'Add reference images', hideReferences: 'Hide image picker',
       addReference: 'Add reference', removeReference: 'Remove reference', referenceImage: 'Reference image',
+      moveReferenceEarlier: 'Move reference {number} earlier', moveReferenceLater: 'Move reference {number} later',
       noMoreImages: 'No other saved images on this page.',
-      referenceOrder: 'The source comes first, followed by images in the order you add them.',
+      referenceOrder: 'The source stays first. Other images are sent in the order shown.',
       referenceLimit: 'This model accepts up to {count} reference images.',
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
       reference: 'OpenDirector project and result',
@@ -84,8 +85,9 @@ window.__ModuleLoader__.load({
       actions: '更多操作', play: '播放', pause: '暂停', playbackFailed: '暂时无法播放。',
       references: '参考图', chooseReferences: '添加参考图', hideReferences: '收起选图',
       addReference: '加入参考图', removeReference: '移除参考图', referenceImage: '参考图',
+      moveReferenceEarlier: '将参考图 {number} 前移', moveReferenceLater: '将参考图 {number} 后移',
       noMoreImages: '这一页没有其他已保存的图片。',
-      referenceOrder: '原图排在第一张，其他图片按加入顺序排列。',
+      referenceOrder: '原图固定在第一张，其他图片按显示顺序发送。',
       referenceLimit: '当前模型最多支持 {count} 张参考图。',
       referencesChanged: '请核对所选图片和模型的参考图上限，再试一次。',
       reference: 'OpenDirector 工程与结果',
@@ -271,6 +273,17 @@ window.__ModuleLoader__.load({
         setReferences(previous => previous.length >= limit || previous.some(item => item.assetId === image.assetId)
           ? previous : [...previous, image])
       }
+      function move(resultId, direction) {
+        setReferences(previous => {
+          const index = previous.findIndex(item => item.resultId === resultId)
+          const destination = index + direction
+          if (index < 1 || destination < 1 || destination >= previous.length) return previous
+          const reordered = [...previous]
+          reordered[index] = previous[destination]
+          reordered[destination] = previous[index]
+          return reordered
+        })
+      }
       const available = page?.results.filter(item => !references.some(reference => reference.assetId === item.assetId))
       const thumb = { width: '4rem', height: '4rem', objectFit: 'contain', display: 'block', borderRadius: '.3rem' }
       return h('section', { 'aria-label': t('references'), style: { display: 'grid', gap: '.4rem' } },
@@ -280,9 +293,16 @@ window.__ModuleLoader__.load({
           ...references.slice(1).map(({ assetId, resultId }, index) => h('figure', { key: resultId, style: { margin: 0 } },
             h('img', { src: mediaHref(projectId, assetId, 'image'), alt: '', loading: 'lazy', style: thumb }),
             h('figcaption', null, `${t('referenceImage')} ${index + 2}`),
-            button('×', () => setReferences(previous => previous.filter(item => item.resultId !== resultId)), {
-              disabled: locked, 'aria-label': `${t('removeReference')} ${index + 2}`,
-            })))),
+            h('div', { style: row },
+              references.length > 2 && button('↑', () => move(resultId, -1), {
+                disabled: locked || index === 0, 'aria-label': t('moveReferenceEarlier').replace('{number}', index + 2),
+              }),
+              references.length > 2 && button('↓', () => move(resultId, 1), {
+                disabled: locked || index === references.length - 2, 'aria-label': t('moveReferenceLater').replace('{number}', index + 2),
+              }),
+              button('×', () => setReferences(previous => previous.filter(item => item.resultId !== resultId)), {
+                disabled: locked, 'aria-label': `${t('removeReference')} ${index + 2}`,
+              }))))),
         !locked && limit > 1 && h('div', null,
           button(t(open ? 'hideReferences' : 'chooseReferences'), toggle, { 'aria-expanded': open, disabled: full && !open })),
         pickerOpen && h('div', null,

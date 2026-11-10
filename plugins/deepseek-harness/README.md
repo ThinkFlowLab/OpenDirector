@@ -47,7 +47,7 @@ For an open-ended request, use the chat as usual:
 
 To revise an image, choose **Edit** on its result card. Pick a model that accepts reference images, describe the change, and click **Generate one candidate**. The plugin pins the saved image and creates a separate generation node in the same project. You can compare the source and the new result before adopting it. These forms preserve your chat draft and submit directly to OpenDirector.
 
-If the model accepts multiple references, choose **Add reference images** to pick other saved images from the same project. The source is first. Additional references follow the order you add them.
+If the model accepts multiple references, choose **Add reference images** to pick other saved images from the same project. The source stays first. Use the arrows to change the order of the other references.
 
 If the submission reply is lost, choose **Check submission** to look up the original operation. For a job that failed after submission, open the canvas to inspect the saved generation settings and the failure details.
 
