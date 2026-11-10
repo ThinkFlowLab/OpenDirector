@@ -5,7 +5,7 @@
   "cases": [
     {
       "id": "every-operation-and-profile",
-      "note": "All six operations supported and enabled, all twelve profiles declared. Only `text_response` grants `text.chat`: the image and audio chat profiles are reported as `no_local_capability`, and `text_to_audio` grants `audio.music`.",
+      "note": "All six operations supported and enabled, all twelve profiles declared. Only `text_response` grants `text.chat`, and only `lyrics_to_music` grants `audio.music`: the image/audio chat profiles and `text_to_audio` are reported as `no_local_capability`.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -145,8 +145,8 @@
                     "id": "image_to_image",
                     "support": "supported",
                     "required_inputs": [
-                      "image",
-                      "text"
+                      "text",
+                      "image"
                     ],
                     "outputs": [
                       "image"
@@ -210,8 +210,8 @@
                     "id": "image_to_video",
                     "support": "supported",
                     "required_inputs": [
-                      "image",
-                      "text"
+                      "text",
+                      "image"
                     ],
                     "outputs": [
                       "video"
@@ -237,8 +237,7 @@
                     "id": "video_to_video",
                     "support": "supported",
                     "required_inputs": [
-                      "video",
-                      "text"
+                      "video"
                     ],
                     "outputs": [
                       "video"
@@ -478,6 +477,12 @@
         },
         "reasons": {},
         "unresolved": [
+          {
+            "operation": "audio_generation",
+            "profile": "text_to_audio",
+            "route": null,
+            "reason": "no_local_capability"
+          },
           {
             "operation": "chat",
             "profile": "audio_response",

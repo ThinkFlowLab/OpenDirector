@@ -20,19 +20,19 @@
 | `chat` | `image_response` | `("text",)` → `("image",)` | （无）输出是图像，不是本仓 `text.chat` |
 | `chat` | `audio_response` | `("text",)` → `("audio",)` | （无）输出是音频，不是本仓 `text.chat` |
 | `image_generation` | `text_to_image` | `("text",)` → `("image",)` | `image.generate` |
-| `image_edit` | `image_to_image` | `("image","text")` → `("image",)` | `image.edit` |
+| `image_edit` | `image_to_image` | `("text","image")` → `("image",)` | `image.edit` |
 | `video_generation` | `text_to_video` | `("text",)` → `("video",)` | `video.generate` |
-| `video_generation` | `image_to_video` | `("image","text")` → `("video",)` | `video.generate` |
-| `video_generation` | `video_to_video` | `("video","text")` → `("video",)` | `video.generate` |
+| `video_generation` | `image_to_video` | `("text","image")` → `("video",)` | `video.generate` |
+| `video_generation` | `video_to_video` | `("video",)` → `("video",)` | `video.generate` |
 | `speech` | `text_to_speech` | `("text",)` → `("audio",)` | `audio.speech` |
 | `speech` | `lyrics_to_music` | `("text","instructions")` → `("audio",)` | `audio.music` |
 | `speech` | `caption_to_audio` | `("text",)` → `("audio",)` | （无）音效/环境声，本仓无对应 id |
-| `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | `audio.music`（同为「文本生成音频」） |
+| `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | （无）扩散侧 `/v1/audio/generate` 契约，不是本仓 `audio.music` |
 
-两个「沉默」的行要一起读：
+本仓没有 id 的这四行（`image_response` / `audio_response` / `caption_to_audio` / `text_to_audio`）要一起读：
 
 - `image_response` / `audio_response` 上游确实发布，但本仓没有「图片/音频版 chat」id，所以**保持 `unknown`**，`unresolved` 里报 `no_local_capability`。绝不折进 `text.chat`。
-- `text_to_audio` 走的是扩散侧独立请求契约（`/v1/audio/generate`，无 voice/lyrics/instructions 映射，`docs/serving/capabilities.md:59-60`），但语义就是「文本生成音频」，与 `lyrics_to_music` 同属音频生成，因此映射到 `audio.music`。否则 StableAudio / LTX2-t2a 这种形状（`speech/text_to_speech=unsupported`、`audio_generation/text_to_audio=supported`）会把 `audio.music` 反判成 `missing`。
+- `text_to_audio` 走的是扩散侧独立请求契约（`/v1/audio/generate`，无 voice/lyrics/instructions 映射，`docs/serving/capabilities.md:59-60`），而本仓 `audio.music` 的**唯一**适配器 `VllmOmniMusic`（`integrations/model_adapters.py:510-537`）POST 的是 `/v1/audio/speech`，payload 必带歌词与 `instructions`。上游说这个 profile 没有这两样、本仓却要这两样，把它映射成 `audio.music` 就是承诺一个该部署从未接受的请求。所以 `text_to_audio` 也留空：`support=supported` 时 `unresolved` 报 `no_local_capability`，`audio.music` 只由 `lyrics_to_music` 决定，没有证据就是 `unknown`。这与「绝不把 `caption_to_audio` 塞进 `audio.speech`」是同一条规则。
 
 **operation → 路由**，三个维度都要对（`:42-54`）。上游的 `RouteKey` 是 `(transport, method, path)`，websocket 路由的 method 字面量就是 `WEBSOCKET`：
 
@@ -49,8 +49,8 @@
 
 三条 schema 事实决定了这份表的形状：
 
-- 响应顶层只有 `object` / `schema_version` / `observed_at` / `models` / `stages` / `routes`（`protocol/capabilities.py:73-79`），端点是 `response_model=OmniCapabilitiesResponse`、`response_model_exclude_none=True`（`api_server.py:2193`）。
-- **`exclude_none` 只能省掉值为 `None` 的可选字段**，也就是 profile 的 `request`（`RequestConstraints | None = None`）。列表/字典字段是 `default_factory`，空的时候序列化成 `[]`/`{}`，**不会缺席**：`profiles: []` 而不是「没有 `profiles` 键」。`support` / `exposure` / `reason_code` 在 operation 和 profile 上都是必填（`protocol/capabilities.py:36-52`），永远不会缺席；少了它们就不是上游能发出的 body。
+- 响应顶层只有 `object` / `schema_version` / `observed_at` / `models` / `stages` / `routes`（`protocol/capabilities.py:73-79`），端点是 `response_model=OmniCapabilitiesResponse`、`response_model_exclude_none=True`（`api_server.py:2193`）。顶层 `routes[]` 只是**该进程注册了哪些路径的展示清单**：`resolve()` 从不读它，所以把一个没有 operation 的路径写进去不会改变任何能力判定。
+- **`exclude_none` 只能省掉值为 `None` 的可选字段**，也就是 profile 的 `request`（`RequestConstraints | None = None`）。列表/字典字段是 `default_factory`，空的时候序列化成 `[]`/`{}`，**不会缺席**：`profiles: []` 而不是「没有 `profiles` 键」。`support` / `reason_code` 在 operation 与 profile 上都是必填，`exposure` 在 operation 与顶层路由上是必填（`protocol/capabilities.py:24-52`），永远不会缺席；少了它们就不是上游能发出的 body。**profile 自己没有 `exposure` 字段**（`:36-44`）：某个 profile 可达不可达，看的是它引用的各条路由的 `exposure` 聚合，而不是 profile 上的一个开关。
 - `models[].operations` **必须齐全 6 个**，少一个 pydantic 直接抛错（`protocol/capabilities.py:60-64`）；`models[].stage_ids` 是**数字字符串**，而且每个 model 拿到的都是同一份全量列表（`entrypoints/openai/serving_capabilities.py:400`）。
 
 ### 键是 (operation, profile)，不是 route，也不是 stage
@@ -70,7 +70,7 @@
 | `unmapped_stage` | 上游没有这个 operation（`asr`、`music`）。名字沿用上一版 stage-keyed 设计，含义是 operation 层缺口 | 上游词表缺口，不是本表漏行 |
 | `unknown_profile` | operation 认识，profile id 上游未发布（`speech_to_speech`） | 上游新增 profile，本表待补 |
 | `operation_mismatch` | profile 认识，但挂在别的 operation 下（`lyrics_to_music` 挂在 `audio_generation`） | 声明写错了 operation，或本表把归属搞错了 |
-| `no_local_capability` | profile 支持，但本仓没有对应 capability id（`caption_to_audio`、`image_response`、`audio_response`） | 词表待补 |
+| `no_local_capability` | profile 支持，但本仓没有对应 capability id（`caption_to_audio`、`text_to_audio`、`image_response`、`audio_response`） | 词表待补 |
 | `no_route_declared` | profile 说自己支持，却一条路由都没声明（`routes: []` 是上游合法默认值） | 声明不完整；可达性无法确认 |
 | `malformed_route` | 路由条目里没有可用的 `path`（畸形 body） | 上游 bug 或代理改写 |
 
@@ -96,6 +96,7 @@
 | operation `support=unsupported`（profile 说什么都一样） | `missing` | `reasons[cid] = "unsupported"` |
 | operation `support=supported` + `exposure=disabled`（部署关了路由） | `missing` | `reasons[cid] = "endpoint_disabled"` |
 | profile `support=supported`，但它声明的路由**全部** `exposure=disabled` | `missing` | `reasons[cid] = "route_disabled"` |
+| 自有路由全 `disabled`，但另有一条本表不认识的 `enabled`（或没写 `exposure`）路由 | `unknown` | 无（存在判断不了的通道，不是拒绝） |
 | profile 声明的路由全部 `exposure=unknown`（上游默认值） | `unknown` | 无（可达性无法确认，不是拒绝） |
 | profile `routes: []`（上游默认空列表） | `unknown` | `unresolved: no_route_declared` |
 | 路由条目没有可用 `path` | `unknown` | `unresolved: malformed_route` |
@@ -111,7 +112,7 @@
 
 两条边界值得单独记住：
 
-1. **一条不认得的路由不打穿已确认的 profile**。上游会加路由，本表会落后；只有当该 profile **全部**路由都不认得（或全部被拒）时才降为 `unknown`，否则保留判定并在 `unresolved` 里记一条。
+1. **一条不认得的路由既不打穿已确认的 profile，也不把「自有路由全 disabled」变成 `missing`**。上游会加路由，本表会落后：不认得的路由自身若说 `enabled`（或没写 `exposure`，上游默认即 `unknown`），就说明存在一条本表判断不了的通道，自有路由全关也就不构成「正面说不」，结果是 `unknown`；只有它自己也说 `disabled` 时，全 `disabled` 才仍然是 `missing`。已经确认（有 `enabled` 自有路由）的 profile 不受影响，继续 `available`。
 2. **`endpoint` 三值**区分「没答」与「答了但没声明」：`absent` / `empty` / `present`。前者该降级或报错，后者该提示「服务未声明能力」，两者对用户的意义完全不同。
 
 ### 有路由、没有 operation 的能力
@@ -152,20 +153,22 @@ from opendirector.domain.capability_contract import capabilities_for
 
 capabilities_for('speech', 'lyrics_to_music')   # ('audio.music',)
 capabilities_for('speech', 'text_to_speech')    # ('audio.speech',)
-capabilities_for('audio_generation', 'text_to_audio')  # ('audio.music',)
+capabilities_for('audio_generation', 'text_to_audio')  # ()：上游有 profile，本仓没有对应 id
 ```
 
 `resolve(payload)` 返回逐能力状态（`capabilities`）、缺失原因（`reasons`）、`topology`（`stages[]`，仅供展示）与 `unresolved`；`classified_capabilities()` 按表顺序给出词表，展示层据此排列。是否接进 `requests_for()` 由 #266 一侧决定，本契约只保证查找是成对的、稳定的、可测的。
 
-### 三档 fixture 与验证
+### 三档 fixture（外加一档防御输入）与验证
 
-`tests/fixtures/omni-capabilities/{full,partial,absent}.json` 按**真实响应形状**写：`stages[]` 是 `{id,type,depends_on}` 且 id 为数字字符串，`models[].operations` 六个齐全、每个含 `support`/`exposure`/`reason_code`/`profiles`/`execution`，每个 profile 都带 `support` 与 `routes[]`（可以是 `[]`），`image_response`/`audio_response` 的 `outputs` 照上游 `STANDARD_PROFILES` 分别是 `["image"]`/`["audio"]`。
+`tests/fixtures/omni-capabilities/{full,partial,absent}.json` 是**求值样本**，按真实响应形状写：`stages[]` 是 `{id,type,depends_on}` 且 id 为数字字符串，`models[].operations` 六个齐全、每个含 `support`/`exposure`/`reason_code`/`profiles`/`execution`，每个 profile 都带 `support`、`reason_code` 与 `routes[]`（可以是 `[]`），`required_inputs`/`outputs` 逐条照上游 `STANDARD_PROFILES`（含顺序；`image_response`/`audio_response` 分别是 `["image"]`/`["audio"]`）。
 
-- `full`：全支持全启用，12 个 profile 齐全；`image_response`/`audio_response`/`caption_to_audio` 报 `no_local_capability`，`text_to_audio` 让 `audio.music` 为 `available`。
-- `partial`：`support=unsupported`、operation `exposure=disabled`（`endpoint_disabled`）、profile 自己的路由 `disabled`（`route_disabled`）、`route_mismatch`、`no_local_capability`，以及整个 body 都是 `unknown` 枚举的形态。
+- `full`：全支持全启用，12 个 profile 齐全；`image_response`/`audio_response`/`caption_to_audio`/`text_to_audio` 报 `no_local_capability`（`text_to_audio` **不**授 `audio.music`，`audio.music` 由 `lyrics_to_music` 供货）。
+- `partial`：`support=unsupported`、operation `exposure=disabled`（`endpoint_disabled`）、profile 自己的路由 `disabled`（`route_disabled`）、`no_local_capability`，以及整个 body 都是 `unknown` 枚举的形态。
 - `absent`：没答（`absent`）、只答拓扑（`empty`）、六个 operation 都答了但 `profiles: []`（`present` 且全 `unknown`）。
 
-**上游不可能发出的形状**（`asr` operation 键、profile 挂在错 operation、缺必填 `support`、`profiles` 整键缺席）**不进 fixture**，只在对应测试里内联构造 —— 它们是防御性输入的用例，混进 fixture 会让「fixture = 真实样本」这句话变成假话。`test_fixtures_are_schema_valid` 只断言上游 schema 的**结构不变量**（六操作齐全、必填字段在、`profiles` 是列表、stages 形状、id 为数字字符串），不把上游 pydantic 源码抄一份进本仓。
+第四档 `malformed.json` **只用于防御输入**，不代表上游可能产出：里面的 body 是合法 pydantic（结构断言照样过），但上游投影发不出来（例如 profile 引用了别的 operation 的路由，或自有路由全 `disabled` 旁边挂着一条本表不认识的 `enabled` 路径）。代理、缓存、旧版本才可能把这种 body 交给我们，所以它只被防御性与结构断言读取，不进样本 oracle，也不参与「fixture = 真实样本」这句话。
+
+**上游不可能发出的形状**（`asr` operation 键、profile 挂在错 operation、缺必填 `support`、`profiles` 整键缺席）**不进 fixture**，只在对应测试里内联构造 —— 它们是防御性输入的用例，混进样本会让「fixture = 真实样本」这句话变成假话。`test_fixtures_are_schema_valid` 只断言上游 schema 的**结构不变量**（六键、`observed_at` 可解析且带时区、`reason_code` 在 operation 与 profile 上都在、`execution` 为 `{state,scope,observed_at}`、枚举值域、`profiles` 是列表、route 的 `transport`/`method`/`path` 齐全、stages 形状与数字字符串 id），不把上游 pydantic 源码抄一份进本仓。
 
 防「假覆盖」的回归测试（`tests/test_capability_contract.py`）：
 
@@ -178,11 +181,14 @@ capabilities_for('audio_generation', 'text_to_audio')  # ('audio.music',)
 | `test_a_profile_without_support_is_unknown_even_when_its_operation_is_supported` | profile 级字段缺席是 `unknown`（不是 `supported`） |
 | `test_a_profile_that_declares_no_route_is_unknown` | `supported + routes: []` 不能判 `available` |
 | `test_a_profile_whose_only_route_is_disabled_is_missing` | profile 路由全 `disabled` → `missing` + `route_disabled` |
+| `test_a_disabled_profile_with_an_unknown_enabled_route_is_unknown` | 自有路由全关 + 一条不认识的 `enabled` 路由 → `unknown`（不是 `missing`） |
 | `test_a_profile_whose_routes_are_all_unknown_cannot_be_confirmed` | 路由全 `unknown` → `unknown` |
 | `test_one_unrecognised_route_does_not_void_a_profile_that_answered` | 一条不认得的路由不打穿已确认的 profile |
 | `test_a_wrong_method_is_a_route_mismatch` | `DELETE /v1/chat/completions` 不授予 chat |
 | `test_an_image_only_chat_deployment_does_not_read_as_text_chat` | `image_response` 不折进 `text.chat` |
-| `test_text_to_audio_grants_audio_music` | `text_to_audio` → `audio.music` |
+| `test_text_to_audio_alone_does_not_make_audio_music_available` | `text_to_audio` 不授 `audio.music`，只报 `no_local_capability` |
+| `test_documented_required_inputs_match_fixtures` | 12 行上游 `required_inputs`/`outputs` 字面量表 = 两份文档表格 = 所有 fixture |
+| `test_fixtures_are_schema_valid` | 三档样本 + 防御档的结构不变量（`observed_at`、`reason_code`、`execution`、route 三元组） |
 | `test_a_refused_model_and_a_closed_route_are_told_apart` | `unsupported` / `endpoint_disabled` / `route_disabled` 三码可分 |
 
 ```bash
@@ -207,20 +213,20 @@ Source: `vllm-project/vllm-omni` PR #10102 (issue #10007), head `d1104f8`; every
 | `chat` | `image_response` | `("text",)` → `("image",)` | none — the output is an image, not this repo's `text.chat` |
 | `chat` | `audio_response` | `("text",)` → `("audio",)` | none — the output is audio, not this repo's `text.chat` |
 | `image_generation` | `text_to_image` | `("text",)` → `("image",)` | `image.generate` |
-| `image_edit` | `image_to_image` | `("image","text")` → `("image",)` | `image.edit` |
+| `image_edit` | `image_to_image` | `("text","image")` → `("image",)` | `image.edit` |
 | `video_generation` | `text_to_video` | `("text",)` → `("video",)` | `video.generate` |
-| `video_generation` | `image_to_video` | `("image","text")` → `("video",)` | `video.generate` |
-| `video_generation` | `video_to_video` | `("video","text")` → `("video",)` | `video.generate` |
+| `video_generation` | `image_to_video` | `("text","image")` → `("video",)` | `video.generate` |
+| `video_generation` | `video_to_video` | `("video",)` → `("video",)` | `video.generate` |
 | `speech` | `text_to_speech` | `("text",)` → `("audio",)` | `audio.speech` |
 | `speech` | `lyrics_to_music` | `("text","instructions")` → `("audio",)` | `audio.music` |
 | `speech` | `caption_to_audio` | `("text",)` → `("audio",)` | none — sound effect / ambience |
-| `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | `audio.music` (text to audio, same family) |
+| `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | none — the diffusion `/v1/audio/generate` contract, not this repo's `audio.music` |
 
-`image_response` and `audio_response` are published upstream but have no id here: they stay `unknown` and are reported as `no_local_capability` instead of being folded into `text.chat`. `text_to_audio` uses the separate diffusion request contract behind `/v1/audio/generate` (no voice, no lyrics; `docs/serving/capabilities.md:59-60`) yet is still text-to-audio, so it grants `audio.music` alongside `lyrics_to_music`; without that row a StableAudio / LTX2-t2a shape (`speech/text_to_speech=unsupported`, `audio_generation/text_to_audio=supported`) would report `audio.music=missing`.
+Four rows carry no id here (`image_response`, `audio_response`, `caption_to_audio`, `text_to_audio`), and they read together: `image_response` and `audio_response` are published upstream but have no id here, so they stay `unknown` and are reported as `no_local_capability` instead of being folded into `text.chat`. `text_to_audio` uses the separate diffusion request contract behind `/v1/audio/generate` (no voice, no lyrics, no instructions; `docs/serving/capabilities.md:59-60`), while the *only* `audio.music` adapter in this repository (`VllmOmniMusic`, `integrations/model_adapters.py:510-537`) posts `/v1/audio/speech` with lyrics **and** `instructions`, both required. Upstream says that profile has neither and this repository demands both, so mapping it to `audio.music` would promise a request the deployment never accepted: the profile is reported as `no_local_capability` and `audio.music` is decided by `lyrics_to_music` alone (no evidence → `unknown`). That is the same rule that keeps `caption_to_audio` off `audio.speech`.
 
 **Operation → routes** (`:42-54`) as `(transport, method, path)`, because upstream's `RouteKey` is exactly that and the websocket method literal is `WEBSOCKET`: `chat` → `http POST /v1/chat/completions`; `image_generation` → `http POST /v1/images/generations`; `image_edit` → `http POST /v1/images/edits`; `video_generation` → `http POST /v1/videos`, `http POST /v1/videos/sync`, `websocket WEBSOCKET /v1/realtime/video`; `speech` → `http POST /v1/audio/speech`; `audio_generation` → `http POST /v1/audio/generate`. `DELETE /v1/chat/completions` would be a 405 and a `websocket` declaration on an http route is wrong, so both are `route_mismatch`. `transport` defaults to `http` upstream (`protocol/capabilities.py:16-21`) and an absent transport is not a mismatch; `method` has no default and an absent one cannot be confirmed.
 
-Three schema facts shape the table: the body has only `object`, `schema_version`, `observed_at`, `models`, `stages`, `routes` (`protocol/capabilities.py:73-79`) and is served with `response_model_exclude_none=True` (`api_server.py:2193`); **`exclude_none` drops only `None`-valued optional fields** — in practice the profile's `request` — while `default_factory` lists serialize as `[]` (`profiles: []`, never a missing key) and `support`/`exposure`/`reason_code` are required on every operation and profile (`protocol/capabilities.py:36-52`), so a body lacking them is not a shape upstream can emit; and `models[].operations` **must list all six** or pydantic raises (`:60-64`), with `stage_ids` numeric strings, the *same* full list for every model (`entrypoints/openai/serving_capabilities.py:400`).
+Three schema facts shape the table: the body has only `object`, `schema_version`, `observed_at`, `models`, `stages`, `routes` (`protocol/capabilities.py:73-79`) and is served with `response_model_exclude_none=True` (`api_server.py:2193`) — the top-level `routes[]` is a display list of what the process registered, and `resolve()` never reads it, so publishing an unowned path there changes no verdict; **`exclude_none` drops only `None`-valued optional fields** — in practice the profile's `request` — while `default_factory` lists serialize as `[]` (`profiles: []`, never a missing key), `support`/`reason_code` are required on every operation and profile, `exposure` is required on every operation and top-level route (`protocol/capabilities.py:24-52`), and a profile has **no `exposure` field of its own** (`:36-44`): its reachability is the aggregation of the exposures of the routes it references; and `models[].operations` **must list all six** or pydantic raises (`:60-64`), with `stage_ids` numeric strings, the *same* full list for every model (`entrypoints/openai/serving_capabilities.py:400`).
 
 ### The key is the pair (operation, profile)
 
@@ -246,6 +252,7 @@ Routes still matter, in two ways: `OPERATION_ROUTES` records which operation own
 | operation `support=unsupported` | `missing` | `reasons[cid] = "unsupported"` |
 | operation `supported` + `exposure=disabled` | `missing` | `reasons[cid] = "endpoint_disabled"` |
 | all of the profile's routes `exposure=disabled` | `missing` | `reasons[cid] = "route_disabled"` |
+| owned routes all `disabled`, plus an `enabled` route this table cannot place (or one with no `exposure`) | `unknown` | none — a channel that cannot be judged, not a refusal |
 | all of the profile's routes `exposure=unknown` | `unknown` | none — reachability unconfirmed, not a refusal |
 | profile `routes: []` | `unknown` | `unresolved: no_route_declared` |
 | a route entry with no usable `path` | `unknown` | `unresolved: malformed_route` |
@@ -259,7 +266,7 @@ Routes still matter, in two ways: `OPERATION_ROUTES` records which operation own
 | answered, but no model declared an operation | all `unknown` | `endpoint = "empty"` |
 | operation answered with `profiles: []` | `unknown` | `endpoint = "present"` |
 
-Two boundaries to keep: one unrecognised route must not void a profile that answered (upstream adds routes; only when nothing usable remains does the profile fall to `unknown`), and `endpoint` distinguishes "did not answer" (`absent`) from "answered without declaring" (`empty`) from "declared" (`present`).
+Two boundaries to keep: one unrecognised route must not void a profile that answered, and must not turn "owned routes all disabled" into `missing` — if that route itself says `enabled` (or omits `exposure`, whose upstream default is `unknown`) a channel exists that this table cannot judge, so `unknown` is the only honest answer; only a route that also says `disabled` leaves all-`disabled` a refusal. And `endpoint` distinguishes "did not answer" (`absent`) from "answered without declaring" (`empty`) from "declared" (`present`).
 
 ### Routes without an operation
 
@@ -282,18 +289,20 @@ from opendirector.domain.capability_contract import capabilities_for
 
 capabilities_for('speech', 'lyrics_to_music')   # ('audio.music',)
 capabilities_for('speech', 'text_to_speech')    # ('audio.speech',)
-capabilities_for('audio_generation', 'text_to_audio')  # ('audio.music',)
+capabilities_for('audio_generation', 'text_to_audio')  # () — upstream publishes it, no id here
 ```
 
 `resolve(payload)` returns per-capability states, per-capability `reasons`, `topology` (display only) and `unresolved`; `classified_capabilities()` returns the vocabulary in table order. Whether to wire this into `requests_for()` is #266's decision; this contract only guarantees the lookup is paired, ordered and testable.
 
 ### Fixtures and checks
 
-`tests/fixtures/omni-capabilities/{full,partial,absent}.json` follow the real response shape — `stages[]` as `{id,type,depends_on}` with numeric-string ids, six complete `operations` per model each with `support`/`exposure`/`reason_code`/`profiles`/`execution`, every profile carrying `support` and `routes` (possibly `[]`), and `image_response`/`audio_response` outputs `["image"]`/`["audio"]` as published. `full` is the all-yes deployment, `partial` mixes refusals, a policy-disabled operation, a profile whose own route is disabled, a misplaced route and an all-`unknown` body, and `absent` covers no answer (`absent`), topology only (`empty`) and six operations that declare `profiles: []` (`present`, all `unknown`).
+`tests/fixtures/omni-capabilities/{full,partial,absent}.json` are the **evaluated sample** and follow the real response shape — `stages[]` as `{id,type,depends_on}` with numeric-string ids, six complete `operations` per model each with `support`/`exposure`/`reason_code`/`profiles`/`execution`, every profile carrying `support`, `reason_code` and `routes` (possibly `[]`), and `required_inputs`/`outputs` transcribed from upstream's `STANDARD_PROFILES` including order (`image_response`/`audio_response` are `["image"]`/`["audio"]`). `full` is the all-yes deployment, `partial` mixes refusals, a policy-disabled operation, a profile whose own route is disabled and an all-`unknown` body, and `absent` covers no answer (`absent`), topology only (`empty`) and six operations that declare `profiles: []` (`present`, all `unknown`). In `full`, four profiles report `no_local_capability` (`image_response`, `audio_response`, `caption_to_audio`, `text_to_audio`) — `text_to_audio` grants no `audio.music`; `audio.music` is supplied by `lyrics_to_music`.
 
-Shapes upstream can never emit — an `asr` operation key, a profile filed under the wrong operation, a missing required `support` — are built inline in the tests that defend against malformed input, never in a fixture, so "the fixtures are a real sample" stays true. `test_fixtures_are_schema_valid` asserts only the structural invariants of upstream's model, not a copy of it.
+A fourth file, `malformed.json`, is **defensive input only and not a sample of what upstream can produce**: its bodies are valid pydantic (the structural checks pass) but upstream's projection cannot emit them — a profile pointing at another operation's route, or owned routes all `disabled` beside an `enabled` path this table does not know. Only a proxy, a cache or an older revision can hand us one, so it is read by the defensive and structural checks alone, never by the sample oracle.
 
-Five regressions keep coverage honest: `test_real_shaped_body_resolves_non_empty_pairs`, `test_route_alone_cannot_distinguish_speech_profiles`, `test_stage_ids_do_not_collapse_capabilities`, `test_capabilities_without_an_upstream_profile_are_unknown_not_missing`, and `test_a_profile_without_support_is_unknown_even_when_its_operation_is_supported`; the route-level exposure, transport/method, chat-modality and missing-reason cases each have their own test, listed in the Chinese section above.
+Shapes upstream can never emit — an `asr` operation key, a profile filed under the wrong operation, a missing required `support` — are built inline in the tests that defend against malformed input, never in the sample fixtures. `test_fixtures_are_schema_valid` asserts only the structural invariants of upstream's model (six keys, `observed_at` parseable and timezone-aware, `reason_code` wherever `support` is, `execution` as `{state,scope,observed_at}`, the enum domains, `profiles` as a list, routes carrying `transport`/`method`/`path`, stage shape with numeric-string ids), not a copy of upstream's pydantic source.
+
+Five regressions keep coverage honest: `test_real_shaped_body_resolves_non_empty_pairs`, `test_route_alone_cannot_distinguish_speech_profiles`, `test_stage_ids_do_not_collapse_capabilities`, `test_capabilities_without_an_upstream_profile_are_unknown_not_missing`, and `test_a_profile_without_support_is_unknown_even_when_its_operation_is_supported`; the route-level exposure, transport/method, chat-modality, `text_to_audio` and missing-reason cases each have their own test, and `test_documented_required_inputs_match_fixtures` pins the twelve `required_inputs`/`outputs` rows against both doc tables and every fixture.
 
 ```bash
 PYTHONPATH=packages/core/src:apps/api/src python -m pytest tests/test_capability_contract.py -q

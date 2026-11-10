@@ -1,7 +1,8 @@
 """The capability contract translates upstream's (operation, profile) vocabulary.
 
-`tests/fixtures/omni-capabilities/` is the shared sample set: three tiers built
-from the response shape upstream actually publishes — `stages[]` as topology,
+`tests/fixtures/omni-capabilities/` is the shared sample set: three tiers
+(`full`, `partial`, `absent`) built from the response shape upstream actually
+publishes — `stages[]` as topology,
 `models[].operations[<operation>].profiles[]` as the declaration, and only
 optional fields ever absent. `test_fixtures_are_schema_valid` checks the
 structural invariants of that shape (`protocol/capabilities.py:16-79`), so a
@@ -9,10 +10,13 @@ fixture that upstream's own pydantic model would reject cannot be frozen into
 the oracle. The expected blocks are the reviewed oracle, not a copy of the
 mapping table, so changing a mapping has to argue with them.
 
-Shapes upstream can never publish — an `asr` operation key, a profile filed under
-the wrong operation, a missing required `support` — are built inline in the
-tests that defend against malformed input, never in a fixture, so the fixtures
-stay an honest sample of real bodies.
+A fourth file, `malformed.json`, holds bodies only a rewrite can produce — a
+profile pointing at another operation's route, a disabled route beside a path
+this table does not know. It is read by the defensive and structural checks
+alone, never by the sample oracle: it is input to defend against, not evidence
+of what upstream publishes. The shapes upstream can never emit — an `asr`
+operation key, a profile filed under the wrong operation, a missing required
+`support` — stay inline in the tests that defend against them.
 
 The last group guards the failure this table exists to prevent: a route (or a
 stage) that is read as if it named a capability. `/v1/audio/speech` carries
@@ -20,6 +24,7 @@ three profiles, `stages[].id` is opaque topology, and a registered endpoint
 without an operation proves nothing — each of those gets its own regression
 test below.
 """
+import datetime
 import json
 from pathlib import Path
 from typing import get_args
@@ -30,12 +35,17 @@ from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, EMPTY, ENDPOINT, MALFORMED_ROUTE, MISSING,
                                                      MISSING_REASONS, NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED,
                                                      OPERATION_MISMATCH, OPERATION_PROFILES, OPERATION_ROUTES,
-                                                     OPERATIONS, PRESENT, REASONS, ROUTED_PATHS, ROUTE_MISMATCH,
-                                                     UNKNOWN, UNKNOWN_PROFILE, UNKNOWN_ROUTE, UNMAPPED_STAGE, UNROUTED,
-                                                     UNROUTED_REASONS, capabilities_for, classified_capabilities,
-                                                     declarations, resolve, route_path)
+                                                     OPERATIONS, PRESENT, PROFILE_OPERATIONS, REASONS, ROUTED_PATHS,
+                                                     ROUTE_MISMATCH, UNKNOWN, UNKNOWN_PROFILE, UNKNOWN_ROUTE,
+                                                     UNMAPPED_STAGE, UNROUTED, UNROUTED_REASONS, capabilities_for,
+                                                     classified_capabilities, declarations, resolve, route_path)
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'omni-capabilities'
+CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / 'capability-contract.md'
+# The published sample. `malformed` is deliberately not among them: defining it
+# as a fourth tier here is what keeps defensive bodies out of the oracle.
+TIERS = ('absent', 'full', 'partial')
+DEFENSIVE_TIER = 'malformed'
 # Upstream bodies may name models; credentials and raw provider responses never
 # belong in a fixture, so their vocabulary is refused outright.
 FORBIDDEN = ('apikey', 'api_key', 'authorization', 'bearer', 'secret', 'password', 'cookie', '://')
@@ -63,19 +73,67 @@ UNROUTED_EXPECTED = {
 }
 
 
-def raw_cases():
+# Upstream's `STANDARD_PROFILES` (`vllm_omni/serving_capabilities.py:43-54`, head
+# `d1104f8`), transcribed as `(profile, required_inputs, outputs)`. Literal on
+# purpose: this is the one place in the change that claims to quote upstream, so
+# deriving it from the module under test would only prove the table echoes
+# itself. Order inside a tuple is part of the declaration (`image_to_image` is
+# text-then-image) and `image_response`/`audio_response` publish a non-text
+# output, which is why they grant nothing here.
+UPSTREAM_PROFILES = (
+    ('text_response', ('text',), ('text',)),
+    ('image_response', ('text',), ('image',)),
+    ('audio_response', ('text',), ('audio',)),
+    ('text_to_image', ('text',), ('image',)),
+    ('image_to_image', ('text', 'image'), ('image',)),
+    ('text_to_video', ('text',), ('video',)),
+    ('image_to_video', ('text', 'image'), ('video',)),
+    ('video_to_video', ('video',), ('video',)),
+    ('text_to_speech', ('text',), ('audio',)),
+    ('lyrics_to_music', ('text', 'instructions'), ('audio',)),
+    ('caption_to_audio', ('text',), ('audio',)),
+    ('text_to_audio', ('text',), ('audio',)),
+)
+
+
+def parse_observed(value):
+    """A datetime from an upstream `observed_at`, raising if it is not one."""
+    assert isinstance(value, str) and value, value
+    return datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+
+def raw_documents(tiers):
+    """Fixture documents of the requested tiers, in filename order."""
     paths = sorted(FIXTURES.glob('*.json'))
-    assert {path.stem for path in paths} == {'full', 'partial', 'absent'}
+    assert {path.stem for path in paths} == set(TIERS) | {DEFENSIVE_TIER}
     for path in paths:
+        if path.stem not in tiers:
+            continue
         document = json.loads(path.read_text(encoding='utf-8'))
-        assert document['upstreamEndpoint'] == ENDPOINT
+        assert document['tier'] == path.stem, path.stem
+        assert document['upstreamEndpoint'] == ENDPOINT, path.stem
         yield document, document['cases']
+
+
+def raw_cases():
+    """The published sample: bodies upstream's own projection can emit."""
+    return raw_documents(TIERS)
+
+
+def defensive_cases():
+    """Bodies a proxy, cache or older revision can hand us; never a sample."""
+    return raw_documents((DEFENSIVE_TIER,))
 
 
 def fixture_cases():
     for document, cases in raw_cases():
         for case in cases:
             yield pytest.param(case['payload'], case['expected'], id=f"{document['tier']}-{case['id']}")
+
+
+def defensive_params():
+    return [pytest.param(case['payload'], case['expected'], id=f"{document['tier']}-{case['id']}")
+            for document, cases in defensive_cases() for case in cases]
 
 
 def route(path, exposure='enabled', method='POST', transport='http'):
@@ -128,6 +186,17 @@ def every_operation():
 
 @pytest.mark.parametrize('payload, expected', list(fixture_cases()))
 def test_declaration_resolves_to_the_reviewed_expectation(payload, expected):
+    assert resolve(payload) == expected
+
+
+@pytest.mark.parametrize('payload, expected', defensive_params())
+def test_defensive_fixture_bodies_resolve_to_the_reviewed_expectation(payload, expected):
+    """`malformed.json` is input to defend against, not a sample of a real body.
+
+    It is kept apart from the sample oracle precisely so the three tiers above
+    can claim to be published shapes; these cases only prove the defensive
+    branches still answer as reviewed.
+    """
     assert resolve(payload) == expected
 
 
@@ -199,17 +268,28 @@ def test_operation_routes_follow_upstream_ownership():
 
 
 def test_unowned_endpoints_are_not_in_the_route_table():
-    """Registered routes without an operation must not be readable as capabilities."""
+    """Registered routes without an operation must not be readable as capabilities.
+
+    The top-level `routes[]` is display data: `resolve()` never consults it, which
+    is why this test resolves one set of declarations three times — with the
+    published routes, with none, and with only unowned paths — and requires one
+    identical result. Asserting "an unowned path is not in `ROUTED_PATHS`" alone
+    would only test a constant; the point is that publishing such a path in the
+    body changes no verdict.
+    """
     unowned = ('/v1/images/segmentations', '/v1/videos/segmentations', '/v1/videos/depth',
                '/v1/audio/transcriptions', '/v1/audio/speech/batch', '/v1/chat/completions/batch')
     for path in unowned:
         assert path not in ROUTED_PATHS, path
-    # Publishing them in the body's top-level `routes[]` still grants nothing.
-    payload = body(models=[])
-    payload['routes'] = [route(path) for path in unowned]
-    result = resolve(payload)
+    declared = body(every_operation())
+    from_unowned = {**declared, 'routes': [route(path) for path in unowned]}
+    from_nothing = {**declared, 'routes': []}
+    assert resolve(from_unowned) == resolve(from_nothing) == resolve(declared)
     for capability in ('image.segment', 'video.matting', 'video.motion_capture', 'audio.score'):
-        assert result['capabilities'][capability] == UNKNOWN, capability
+        assert resolve(from_unowned)['capabilities'][capability] == UNKNOWN, capability
+    # A body that carries only unowned routes and no model declaration answered
+    # nothing at all: it is `empty`, not a list of capabilities.
+    assert resolve(body(models=[], stages=[]) | {'routes': [route(path) for path in unowned]})['endpoint'] == EMPTY
 
 
 def test_music_is_a_speech_profile_on_the_speech_route():
@@ -242,9 +322,12 @@ def test_real_shaped_body_resolves_non_empty_pairs():
     for capability in ('text.chat', 'image.generate', 'image.edit', 'video.generate', 'audio.speech', 'audio.music'):
         assert result['capabilities'][capability] == AVAILABLE, capability
     assert result['topology'] == [{'id': '7', 'type': 'llm', 'depends_on': []}]
-    # `not_declared_locally`: the chat profiles whose output is not text carry no
-    # id here, so they are reported instead of being folded into `text.chat`.
-    assert result['unresolved'] == [{'operation': 'chat', 'profile': 'audio_response', 'route': None,
+    # `no_local_capability`: the chat profiles whose output is not text, and the
+    # diffusion `text_to_audio`, carry no id here, so they are reported instead
+    # of being folded into `text.chat` or `audio.music`.
+    assert result['unresolved'] == [{'operation': 'audio_generation', 'profile': 'text_to_audio', 'route': None,
+                                     'reason': NO_LOCAL_CAPABILITY},
+                                    {'operation': 'chat', 'profile': 'audio_response', 'route': None,
                                      'reason': NO_LOCAL_CAPABILITY},
                                     {'operation': 'chat', 'profile': 'image_response', 'route': None,
                                      'reason': NO_LOCAL_CAPABILITY},
@@ -442,6 +525,30 @@ def test_a_profile_whose_only_route_is_disabled_is_missing():
     assert result['unresolved'] == []
 
 
+def test_a_disabled_profile_with_an_unknown_enabled_route_is_unknown():
+    """Every known route off, plus a path this table cannot place that says `enabled`.
+
+    Upstream adds routes over time and this table can lag behind. An unrecognised
+    route that reports `enabled` is a channel whose reachability cannot be
+    confirmed, so the known-but-off routes are not proof of absence: `unknown`,
+    never `missing`. A route that cannot be placed is no excuse for a positive no.
+    """
+    result = resolve(body({'image_generation': operation(profiles=[
+        profile('text_to_image', routes=[route('/v1/images/generations', exposure='disabled'),
+                                         route('/v1/images/generations/stream')])])}))
+    assert result['capabilities']['image.generate'] == UNKNOWN
+    assert result['reasons'] == {}
+    assert result['unresolved'] == [{'operation': 'image_generation', 'profile': 'text_to_image',
+                                     'route': '/v1/images/generations/stream', 'reason': UNKNOWN_ROUTE}]
+    # An unrecognised route that is itself `disabled` adds no channel, so the
+    # known-off routes remain a refusal.
+    still_missing = resolve(body({'image_generation': operation(profiles=[
+        profile('text_to_image', routes=[route('/v1/images/generations', exposure='disabled'),
+                                         route('/v1/images/generations/stream', exposure='disabled')])])}))
+    assert still_missing['capabilities']['image.generate'] == MISSING
+    assert still_missing['reasons'] == {'image.generate': 'route_disabled'}
+
+
 def test_a_profile_whose_routes_are_all_unknown_cannot_be_confirmed():
     result = resolve(body({'image_generation': operation(profiles=[
         profile('text_to_image', routes=[route('/v1/images/generations', exposure='unknown')])])}))
@@ -550,13 +657,28 @@ def test_a_text_chat_deployment_still_reads_as_text_chat():
     assert result['unresolved'] == []
 
 
-def test_text_to_audio_grants_audio_music():
-    """StableAudio / LTX2-t2a serve `/v1/audio/generate`: text to audio is audio.music here."""
+def test_text_to_audio_alone_does_not_make_audio_music_available():
+    """`text_to_audio` is the diffusion `/v1/audio/generate` contract, not music.
+
+    It carries no lyrics and no `instructions`, while the only `audio.music`
+    adapter here (`VllmOmniMusic`) posts `/v1/audio/speech` with both required.
+    A deployment that publishes only `text_to_audio` therefore cannot answer an
+    `audio.music` request: the profile is reported and the capability stays
+    `unknown`, never a false `available`.
+    """
+    assert capabilities_for('audio_generation', 'text_to_audio') == ()
     result = resolve(body({'audio_generation': operation(profiles=[
         profile('text_to_audio', paths=table_paths('audio_generation'), outputs=('audio',))])}))
-    assert result['capabilities']['audio.music'] == AVAILABLE
+    assert result['capabilities']['audio.music'] != AVAILABLE
+    assert result['capabilities']['audio.music'] == UNKNOWN
+    assert {'operation': 'audio_generation', 'profile': 'text_to_audio', 'route': None,
+            'reason': NO_LOCAL_CAPABILITY} in result['unresolved']
     assert result['capabilities']['audio.speech'] == UNKNOWN
-    assert result['unresolved'] == []
+    # The music path is still the speech profile, on the speech route.
+    music = resolve(body({'speech': operation(profiles=[
+        profile('lyrics_to_music', paths=table_paths('speech'), inputs=('text', 'instructions'),
+                outputs=('audio',))])}))
+    assert music['capabilities']['audio.music'] == AVAILABLE
 
 
 # --- untranslatable declarations -----------------------------------------
@@ -696,54 +818,177 @@ def test_results_use_only_the_contract_vocabulary():
                 assert set(stage) == {'id', 'type', 'depends_on'}
 
 
-def test_fixtures_are_schema_valid():
-    """Structural invariants of upstream's response model, checked on our fixtures.
+def schema_problems(payload):
+    """Structural invariants upstream's pydantic models impose on a body.
 
-    Upstream ships these as pydantic models (`protocol/capabilities.py:16-79`,
-    head `d1104f8`). Re-implementing them here would be a second copy to keep in
-    sync, so this test only asserts the invariants a rejected body would break:
-    all six operations, `support`/`exposure` on every operation, `profiles` as a
-    list (it serializes as `[]`, it never disappears), the profile `support`
-    required, stages as `{id, type, depends_on}` with numeric-string ids.
+    Upstream ships `protocol/capabilities.py:16-79` as pydantic models. Copying
+    them here would be a second implementation to keep in sync, so this only
+    checks the invariants a rejected body would break: the six keys, `observed_at`
+    as a datetime, `reason_code` present wherever `support` is, `execution` as
+    `{state, scope, observed_at}`, `support`/`exposure` domains, `profiles` as a
+    list (it serializes as `[]`, it never disappears), and routes as
+    `{transport, method, path, exposure}` with a method.
     """
-    operations = set(OPERATIONS)
+    problems = []
+    if set(payload) != {'object', 'schema_version', 'observed_at', 'stages', 'models', 'routes'}:
+        problems.append(f'keys {sorted(payload)}')
+    if payload.get('object') != 'omni.capabilities' or payload.get('schema_version') != 1:
+        problems.append('object/schema_version')
+    try:
+        assert parse_observed(payload['observed_at']).tzinfo is not None
+    except (AssertionError, KeyError, TypeError, ValueError) as error:
+        problems.append(f'observed_at: {error!r}')
+    for stage in payload.get('stages', []):
+        if set(stage) != {'id', 'type', 'depends_on'}:
+            problems.append(f'stage keys {sorted(stage)}')
+        if not (isinstance(stage.get('id'), str) and stage['id'].isdigit()):
+            problems.append(f'stage id {stage.get("id")!r}')
+        if not isinstance(stage.get('depends_on'), list):
+            problems.append(f'stage depends_on {stage.get("depends_on")!r}')
+        if stage.get('type') not in {'llm', 'diffusion', 'unknown'}:
+            problems.append(f'stage type {stage.get("type")!r}')
+    for model in payload.get('models', []):
+        if not {'id', 'stage_ids', 'operations'} <= set(model):
+            problems.append(f'model keys {sorted(model)}')
+        stage_ids = model.get('stage_ids')
+        if not isinstance(stage_ids, list) or not all(isinstance(item, str) and item.isdigit()
+                                                      for item in stage_ids):
+            problems.append(f'model stage_ids {stage_ids!r}')
+        operations = model.get('operations')
+        if not isinstance(operations, dict) or set(operations) != set(OPERATIONS):
+            problems.append(f'operations {sorted(operations or ())}')
+            continue
+        for operation_id, declared in operations.items():
+            if declared.get('support') not in {'supported', 'unsupported', 'unknown'}:
+                problems.append(f'{operation_id} support {declared.get("support")!r}')
+            if declared.get('exposure') not in {'enabled', 'disabled', 'unknown'}:
+                problems.append(f'{operation_id} exposure {declared.get("exposure")!r}')
+            if not (isinstance(declared.get('reason_code'), str) and declared['reason_code']):
+                problems.append(f'{operation_id} reason_code {declared.get("reason_code")!r}')
+            execution = declared.get('execution')
+            if not isinstance(execution, dict) or set(execution) != {'state', 'scope', 'observed_at'}:
+                problems.append(f'{operation_id} execution {execution!r}')
+                continue
+            if execution['state'] not in {'unpaused', 'paused', 'unknown'}:
+                problems.append(f'{operation_id} execution.state {execution["state"]!r}')
+            if execution['scope'] not in {'deployment', 'worker'}:
+                problems.append(f'{operation_id} execution.scope {execution["scope"]!r}')
+            try:
+                assert parse_observed(execution['observed_at']).tzinfo is not None
+            except (AssertionError, TypeError, ValueError) as error:
+                problems.append(f'{operation_id} execution.observed_at: {error!r}')
+            if not isinstance(declared.get('profiles'), list):
+                problems.append(f'{operation_id} profiles {declared.get("profiles")!r}')
+                continue
+            for entry in declared['profiles']:
+                if entry.get('support') not in {'supported', 'unsupported', 'unknown'}:
+                    problems.append(f'{operation_id}/{entry.get("id")} support {entry.get("support")!r}')
+                if not (isinstance(entry.get('reason_code'), str) and entry['reason_code']):
+                    problems.append(f'{operation_id}/{entry.get("id")} reason_code')
+                if not isinstance(entry.get('required_inputs'), list):
+                    problems.append(f'{operation_id}/{entry.get("id")} required_inputs')
+                if not isinstance(entry.get('outputs'), list):
+                    problems.append(f'{operation_id}/{entry.get("id")} outputs')
+                if not isinstance(entry.get('routes'), list):
+                    problems.append(f'{operation_id}/{entry.get("id")} routes')
+                    continue
+                for reference in entry['routes']:
+                    if set(reference) != {'transport', 'method', 'path', 'exposure'}:
+                        problems.append(f'{operation_id}/{entry.get("id")} route keys {sorted(reference)}')
+                    if reference.get('transport') not in {'http', 'websocket'}:
+                        problems.append(f'{operation_id}/{entry.get("id")} transport {reference.get("transport")!r}')
+                    if not (isinstance(reference.get('method'), str) and reference['method']):
+                        problems.append(f'{operation_id}/{entry.get("id")} method {reference.get("method")!r}')
+                    if not isinstance(reference.get('path'), str):
+                        problems.append(f'{operation_id}/{entry.get("id")} path {reference.get("path")!r}')
+                    if reference.get('exposure') not in {'enabled', 'disabled', 'unknown'}:
+                        problems.append(f'{operation_id}/{entry.get("id")} exposure {reference.get("exposure")!r}')
+    # The top-level list is a different model (`CapabilityRoute`) with a required
+    # `exposure`; it is display data, but it still has to be structurally legal.
+    for declared_route in payload.get('routes', []):
+        if set(declared_route) != {'transport', 'method', 'path', 'exposure'}:
+            problems.append(f'top-level route keys {sorted(declared_route)}')
+        if declared_route.get('transport') not in {'http', 'websocket'}:
+            problems.append(f'top-level route transport {declared_route.get("transport")!r}')
+        if not (isinstance(declared_route.get('method'), str) and declared_route['method']):
+            problems.append(f'top-level route method {declared_route.get("method")!r}')
+    return problems
+
+
+def test_fixtures_are_schema_valid():
+    """Every fixture body, defensive ones included, is structurally legal."""
     seen_body = 0
-    for document, cases in raw_cases():
+    for document, cases in raw_documents(TIERS + (DEFENSIVE_TIER,)):
         for case in cases:
             payload = case['payload']
             if payload is None:
                 assert case['expected']['endpoint'] == ABSENT, case['id']
                 continue
             seen_body += 1
-            assert set(payload) == {'object', 'schema_version', 'observed_at', 'stages', 'models', 'routes'}, case['id']
-            assert payload['object'] == 'omni.capabilities' and payload['schema_version'] == 1
-            for stage in payload['stages']:
-                assert set(stage) == {'id', 'type', 'depends_on'}, case['id']
-                assert isinstance(stage['id'], str) and stage['id'].isdigit(), stage
-                assert isinstance(stage['depends_on'], list), stage
-                assert stage['type'] in {'llm', 'diffusion', 'unknown'}, stage
-            for model in payload['models']:
-                assert {'id', 'stage_ids', 'operations'} <= set(model), case['id']
-                assert isinstance(model['stage_ids'], list), model
-                assert all(isinstance(stage_id, str) and stage_id.isdigit() for stage_id in model['stage_ids'])
-                assert set(model['operations']) == operations, (case['id'], sorted(model['operations']))
-                for operation_id, declared in model['operations'].items():
-                    assert declared['support'] in {'supported', 'unsupported', 'unknown'}, (case['id'], operation_id)
-                    assert declared['exposure'] in {'enabled', 'disabled', 'unknown'}, (case['id'], operation_id)
-                    assert isinstance(declared.get('profiles'), list), (case['id'], operation_id)
-                    for entry in declared['profiles']:
-                        assert entry['support'] in {'supported', 'unsupported', 'unknown'}, (case['id'], entry['id'])
-                        assert isinstance(entry.get('routes'), list), entry
-                        assert isinstance(entry.get('required_inputs'), list), entry
-                        # Published `STANDARD_PROFILES` outputs (`serving_capabilities.py:43-45`).
-                        if entry['id'] == 'image_response':
-                            assert entry['outputs'] == ['image'], entry
-                        if entry['id'] == 'audio_response':
-                            assert entry['outputs'] == ['audio'], entry
-            for declared_route in payload['routes']:
-                assert set(declared_route) == {'transport', 'method', 'path', 'exposure'}, case['id']
-                assert declared_route['transport'] in {'http', 'websocket'}, declared_route
+            assert schema_problems(payload) == [], (document['tier'], case['id'])
     assert seen_body >= 5
+
+
+def rendered_cell(inputs, outputs):
+    """The doc's spelling of one profile row: `("text","image")` → `("image",)`."""
+
+    def cell(items):
+        body = ','.join(f'"{item}"' for item in items)
+        return '(' + body + (',' if len(items) == 1 else '') + ')'
+
+    return cell(inputs) + '→' + cell(outputs)
+
+
+def documented_profiles():
+    """`(profile, required_inputs → outputs cell)` pairs from the contract doc."""
+    cells = []
+    for line in CONTRACT_DOC.read_text(encoding='utf-8').splitlines():
+        parts = [part.strip() for part in line.split('|')]
+        # A four-column row splits into six parts: two outer empties plus cells.
+        if len(parts) != 6 or '→' not in parts[3]:
+            continue
+        profile_id = parts[2].strip('`')
+        if profile_id == 'profile':  # the header row
+            continue
+        cells.append((profile_id, parts[3].replace('`', '').replace(' ', '')))
+    return cells
+
+
+def test_documented_required_inputs_match_fixtures():
+    """The literal upstream table, both doc tables and every sample fixture agree.
+
+    `required_inputs` order is part of the declaration (`image_to_image` is
+    text-then-image), `video_to_video` needs no text, `lyrics_to_music` needs
+    `instructions`, and `image_response`/`audio_response` publish a non-text
+    output. `resolve()` reads none of it, so nothing else can catch rot here.
+    `malformed.json` is left out on purpose: it is defensive input, guarded by
+    the schema test, not part of the published sample this row set describes.
+    """
+    assert len(UPSTREAM_PROFILES) == 12
+    assert {profile_id for profile_id, _, _ in UPSTREAM_PROFILES} == set(PROFILE_OPERATIONS)
+    expected = {profile_id: (inputs, outputs) for profile_id, inputs, outputs in UPSTREAM_PROFILES}
+
+    cells = documented_profiles()
+    assert len(cells) == 24, 'the Chinese and the English table must each list all twelve profiles'
+    assert {profile_id for profile_id, _ in cells} == set(expected)
+    for profile_id, cell in cells:
+        inputs, outputs = expected[profile_id]
+        assert cell == rendered_cell(inputs, outputs), profile_id
+
+    seen = set()
+    for _, cases in raw_cases():
+        for case in cases:
+            payload = case['payload']
+            if not isinstance(payload, dict):
+                continue
+            for model_entry in payload['models']:
+                for declared in model_entry['operations'].values():
+                    for entry in declared['profiles']:
+                        inputs, outputs = expected[entry['id']]
+                        assert (tuple(entry['required_inputs']), tuple(entry['outputs'])) == (inputs, outputs), \
+                            (case['id'], entry['id'])
+                        seen.add(entry['id'])
+    assert seen == set(expected), f'fixtures never exercise {sorted(set(expected) - seen)}'
 
 
 def test_fixtures_carry_no_credentials_or_provider_responses():

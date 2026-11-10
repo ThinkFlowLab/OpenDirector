@@ -33,18 +33,24 @@ Five rules keep the table honest.
   text-only adapter (`integrations/model_adapters.py:566-580` reads
   `choices[0]["message"]["content"]` as a string), so only `text_response`
   grants it: an image-only chat deployment must not read as able to chat.
-  `caption_to_audio` (sound effect) has no id here either. `text_to_audio` does
-  grant `audio.music`: it is text-to-audio, the same family as
-  `lyrics_to_music`, and the only difference is the diffusion request contract
-  behind `/v1/audio/generate` (`docs/serving/capabilities.md:59-60`).
+  `caption_to_audio` (sound effect) has no id here either. Neither does
+  `text_to_audio`: it is the diffusion contract behind `/v1/audio/generate`
+  with no lyrics and no `instructions` (`docs/serving/capabilities.md:59-60`),
+  while this repository's only `audio.music` adapter posts `/v1/audio/speech`
+  with both (`VllmOmniMusic`, `integrations/model_adapters.py:510-537`).
+  Mapping it would promise a request the deployment never accepted — the same
+  error as pushing `caption_to_audio` onto `audio.speech`.
 * A declaration that says nothing is `unknown`, never `missing`. Optional fields
   are simply absent from a published body (`response_model_exclude_none=True`,
   `api_server.py:2193`) and `unknown` is a first-class upstream value
   (`support`, `exposure`; "Missing operations/profiles are unknown",
-  `serving_capabilities.py:84`). Required fields are never absent: `support`,
-  `exposure` and `reason_code` are mandatory on every operation and profile, and
-  all six operations must be listed (`protocol/capabilities.py:36-64`). A body
-  that omits them is malformed input to be defended against, not a shape
+  `serving_capabilities.py:84`). Required fields are never absent: `support` and
+  `reason_code` are mandatory on every operation and on every profile,
+  `exposure` on every operation and on every top-level route, and all six
+  operations must be listed (`protocol/capabilities.py:24-64`). A profile has no
+  `exposure` field of its own (`:36-44`): how reachable it is comes from
+  aggregating the exposures of the routes it references. A body that omits a
+  required field is malformed input to be defended against, not a shape
   upstream publishes. Only positive evidence produces `missing`, and the result
   keeps the two kinds apart in its `reasons` map: `unsupported` (the model
   refused the profile), `endpoint_disabled` (the deployment switched the
@@ -59,11 +65,13 @@ Five rules keep the table honest.
 * Reachability is decided on the profile's own route references, and their
   `exposure` is read. Every declared route `disabled` means `missing` with
   `route_disabled`; every route `unknown` (or no route at all) means `unknown`,
-  because reachability cannot be confirmed; one `enabled` route is enough. A
-  route this table does not recognise is reported in `unresolved`, but only
-  makes the profile `unknown` when nothing else was declared: upstream adds
-  routes over time, and one new path must not void a profile that already
-  answered.
+  because reachability cannot be confirmed; one `enabled` owned route is enough.
+  A route this table does not recognise is reported in `unresolved`, and its own
+  `exposure` still counts: such a route saying `enabled` (or nothing) is a
+  channel this table cannot judge, so owned routes that are all `disabled` are
+  not proof of absence and the profile stays `unknown` instead of `missing`. A
+  profile that already answered stays `available` either way: upstream adds
+  routes over time, and one new path must not void a confirmed profile.
 
 `asr` is not an omission on this side: upstream publishes no recognition
 operation at all (`OperationId` is a closed `Literal`) and the omni router never
@@ -112,14 +120,20 @@ OPERATIONS: tuple[str, ...] = (
 # able to chat, and would contradict this module's own refusal to push
 # `caption_to_audio` onto `audio.speech`.
 #
-# `caption_to_audio` is a sound-effect contract (upstream requires
-# `ambient_sound`, `tests/config/test_serving_capabilities.py:233`), not speech;
-# mapping it onto `audio.speech` would let a request carry a voice the deployment
-# never accepted. `text_to_audio` is the separate diffusion contract behind
-# `/v1/audio/generate` (no voice, no lyrics; `docs/serving/capabilities.md:59-60`)
-# but it is still text-to-audio, so it grants `audio.music` alongside
-# `lyrics_to_music`: without that row a StableAudio/LTX2-t2a shape would report
-# `audio.music=missing` while the deployment says it generates audio.
+# `caption_to_audio` is a sound-effect contract, not speech: MOSS-SoundEffect
+# overrides its `required_inputs` with `ambient_sound`
+# (`model_executor/models/moss_tts/pipeline.py:205`), and mapping it onto
+# `audio.speech` would let a request carry a voice the deployment never accepted.
+# `text_to_audio` is empty for the same kind of reason. It is the separate
+# diffusion contract behind `/v1/audio/generate`, with no lyrics and no
+# `instructions` (`docs/serving/capabilities.md:59-60`), while the only
+# `audio.music` adapter here (`VllmOmniMusic`, `integrations/model_adapters.py:510-537`)
+# posts `/v1/audio/speech` with lyrics *and* `instructions`, both required. A
+# deployment publishing `text_to_audio` cannot answer that request, so calling it
+# `audio.music` would be a false `available` — the same error as pushing
+# `caption_to_audio` onto `audio.speech`. Such a deployment reports
+# `no_local_capability`, and `audio.music` keeps whatever `lyrics_to_music`
+# says (no evidence -> `unknown`) rather than being granted by a neighbour.
 OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('chat', 'text_response', ('text.chat',)),
     ('chat', 'image_response', ()),
@@ -132,7 +146,7 @@ OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('speech', 'text_to_speech', ('audio.speech',)),
     ('speech', 'lyrics_to_music', ('audio.music',)),
     ('speech', 'caption_to_audio', ()),
-    ('audio_generation', 'text_to_audio', ('audio.music',)),
+    ('audio_generation', 'text_to_audio', ()),
 )
 
 # operation → the routes that operation owns, as `(transport, method, path)`
@@ -396,11 +410,12 @@ def _operation_verdict(operation):
     return 'unknown', None
 
 
-def _profile_verdict(entry, operation_verdict, operation_reason, exposures):
+def _profile_verdict(entry, operation_verdict, operation_reason, exposures, unrecognised=()):
     """`(verdict, reason)` for one profile inside an already-judged operation.
 
-    `exposures` holds one value per route reference the operation owns: an empty
-    list means the profile declared no usable route of its own.
+    `exposures` holds one value per route reference the operation owns, and
+    `unrecognised` one per declared route this table could not place: an empty
+    `exposures` means the profile declared no usable route of its own.
     """
     support = entry.get('support')
     if support == UNSUPPORTED:
@@ -409,10 +424,16 @@ def _profile_verdict(entry, operation_verdict, operation_reason, exposures):
         return 'no', operation_reason
     if support != SUPPORTED or operation_verdict != 'yes':
         return 'unknown', None
-    if not exposures:
-        return 'unknown', None
     if ENABLED in exposures:
         return 'yes', None
+    # A route this table cannot place still states whether it is switched on.
+    # One saying `enabled` (or nothing) is a channel whose reachability cannot be
+    # confirmed, so owned routes that are all `disabled` are not proof of
+    # absence: `unknown`, never `missing`.
+    if ENABLED in unrecognised or ROUTE_UNKNOWN in unrecognised:
+        return 'unknown', None
+    if not exposures:
+        return 'unknown', None
     if ROUTE_UNKNOWN in exposures:
         return 'unknown', None
     return 'no', ROUTE_DISABLED_REASON
@@ -436,13 +457,19 @@ def _check_route(operation, profile, key, unresolved):
 
 
 def _route_exposures(operation, profile, entry, unresolved):
-    """`(exposures of the routes this operation owns, whether any path was declared)`.
+    """`(owned route exposures, unrecognised route exposures, any path declared)`.
 
     A route reference whose path cannot be read is reported rather than dropped:
     silently ignoring it would turn a broken declaration into `unknown` with no
     explanation, which is the failure this module exists to prevent.
+
+    Routes the operation does not own are reported too, and their `exposure` is
+    kept in its own list: they may not grant a capability, but they can still
+    say that a channel exists, which is what keeps known-but-off routes from
+    being read as a refusal (see `_profile_verdict`).
     """
     exposures = []
+    unrecognised = []
     declared_path = False
     for value in _routes(entry):
         key = _route_key(value)
@@ -452,7 +479,9 @@ def _route_exposures(operation, profile, entry, unresolved):
         declared_path = True
         if _check_route(operation, profile, key, unresolved):
             exposures.append(_route_exposure(value))
-    return exposures, declared_path
+        else:
+            unrecognised.append(_route_exposure(value))
+    return exposures, unrecognised, declared_path
 
 
 def resolve(payload):
@@ -518,8 +547,9 @@ def resolve(payload):
                 if owner != key:
                     _note(unresolved, key, profile_id, None, OPERATION_MISMATCH)
                     continue
-                exposures, declared_path = _route_exposures(key, profile_id, entry, unresolved)
-                verdict, reason = _profile_verdict(entry, operation_verdict, operation_reason, exposures)
+                exposures, unrecognised, declared_path = _route_exposures(key, profile_id, entry, unresolved)
+                verdict, reason = _profile_verdict(entry, operation_verdict, operation_reason, exposures,
+                                                   unrecognised)
                 # A supported profile that declares no route at all: reachability
                 # cannot be confirmed, and nothing else explains the `unknown`.
                 if verdict == 'unknown' and not exposures and not declared_path:

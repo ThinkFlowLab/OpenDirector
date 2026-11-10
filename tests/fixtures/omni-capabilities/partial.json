@@ -1,11 +1,11 @@
 {
   "tier": "partial",
   "upstreamEndpoint": "/v1/omni/capabilities",
-  "scope": "Bodies that answer, but disagree with themselves: a policy-disabled operation, a profile whose own route is disabled, a misplaced route, an unsupported profile, and an operation that states `unknown`.",
+  "scope": "Bodies that answer, but disagree with themselves: a policy-disabled operation, a profile whose own route is disabled, an unsupported profile, a profile with no local id, and an operation that states `unknown`.",
   "cases": [
     {
       "id": "mixed-operations",
-      "note": "`image_generation` is supported but disabled (`endpoint_disabled`), `image_edit` is supported but its only route is `disabled` (`route_disabled`), one video profile declares an image path (`route_mismatch`), `lyrics_to_music` is unsupported while `text_to_audio` is supported, and `caption_to_audio` has no local id.",
+      "note": "`image_generation` is supported but disabled (`endpoint_disabled`), `image_edit` is supported but its only route is `disabled` (`route_disabled`), `lyrics_to_music` is unsupported while `text_to_audio` is supported (no local id, `no_local_capability`), and `caption_to_audio` has no local id either.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -144,8 +144,8 @@
                     "id": "image_to_image",
                     "support": "supported",
                     "required_inputs": [
-                      "image",
-                      "text"
+                      "text",
+                      "image"
                     ],
                     "outputs": [
                       "image"
@@ -186,7 +186,19 @@
                       {
                         "transport": "http",
                         "method": "POST",
-                        "path": "/v1/images/edits",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
                         "exposure": "enabled"
                       }
                     ],
@@ -197,8 +209,8 @@
                     "id": "image_to_video",
                     "support": "supported",
                     "required_inputs": [
-                      "image",
-                      "text"
+                      "text",
+                      "image"
                     ],
                     "outputs": [
                       "video"
@@ -218,8 +230,7 @@
                     "id": "video_to_video",
                     "support": "unsupported",
                     "required_inputs": [
-                      "video",
-                      "text"
+                      "video"
                     ],
                     "outputs": [
                       "video"
@@ -292,7 +303,7 @@
                     "id": "caption_to_audio",
                     "support": "supported",
                     "required_inputs": [
-                      "ambient_sound"
+                      "text"
                     ],
                     "outputs": [
                       "audio"
@@ -441,7 +452,7 @@
           "image.edit": "missing",
           "video.generate": "available",
           "audio.speech": "available",
-          "audio.music": "available",
+          "audio.music": "missing",
           "image.segment": "unknown",
           "video.matting": "unknown",
           "video.motion_capture": "unknown",
@@ -453,20 +464,21 @@
         },
         "reasons": {
           "image.generate": "endpoint_disabled",
-          "image.edit": "route_disabled"
+          "image.edit": "route_disabled",
+          "audio.music": "unsupported"
         },
         "unresolved": [
+          {
+            "operation": "audio_generation",
+            "profile": "text_to_audio",
+            "route": null,
+            "reason": "no_local_capability"
+          },
           {
             "operation": "speech",
             "profile": "caption_to_audio",
             "route": null,
             "reason": "no_local_capability"
-          },
-          {
-            "operation": "video_generation",
-            "profile": "text_to_video",
-            "route": "/v1/images/edits",
-            "reason": "route_mismatch"
           }
         ]
       }
@@ -612,7 +624,8 @@
                     "id": "image_to_image",
                     "support": "unknown",
                     "required_inputs": [
-                      "text"
+                      "text",
+                      "image"
                     ],
                     "outputs": [
                       "image"
@@ -676,7 +689,8 @@
                     "id": "image_to_video",
                     "support": "unknown",
                     "required_inputs": [
-                      "text"
+                      "text",
+                      "image"
                     ],
                     "outputs": [
                       "video"
@@ -702,7 +716,7 @@
                     "id": "video_to_video",
                     "support": "unknown",
                     "required_inputs": [
-                      "text"
+                      "video"
                     ],
                     "outputs": [
                       "video"
@@ -760,7 +774,8 @@
                     "id": "lyrics_to_music",
                     "support": "unknown",
                     "required_inputs": [
-                      "text"
+                      "text",
+                      "instructions"
                     ],
                     "outputs": [
                       "audio"
