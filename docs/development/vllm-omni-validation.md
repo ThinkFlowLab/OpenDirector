@@ -226,8 +226,6 @@ items. All five registered files matched their saved SHA256 fingerprints. The
 rendered video played to the end (10.026667 s, 640×360, no media error).
 应用进程重启后，工程对象、历史结果、采用状态与全部文件均保持，视频完整播放通过。
 
-![Generated image, narration, timeline, export and edited ASR transcript in the reopened project](assets/vllm-omni-validation.png)
-
 ## ASR followup / 语音转录增量
 
 On 2026-11-10 UTC, the same assigned Blackwell GPU served
@@ -269,6 +267,10 @@ editing note and saved a new immutable asset
 browser sessions reopened the item. A full app restart preserved all business
 object arrays and all seven file fingerprints; a fresh browser displayed the edit.
 这是外部 ASR 到工程文本素材的手动交接，没有伪造应用内转录任务，也没有新增应用内 ASR 工具。
+
+The screenshot shows the reopened browser session before the later app-process restart.
+
+![Generated image, narration, timeline, export and edited ASR transcript in the reopened project](assets/vllm-omni-validation.png)
 
 ## Participant trial and coverage / 真人试用与覆盖范围
 
