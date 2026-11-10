@@ -89,9 +89,13 @@ def _adapter_rules(config):
             # Omni reference takes up to 9 images, 3 videos and 3 audios; the
             # videos are capped at 15 s in total, which reference_inputs enforces.
             lite = seedance != 'full'
+            # Ark's first_frame mode takes a first and a last keyframe, each a
+            # single image, so both slots are declared here. Reference mode is
+            # the only way to feed more than two images.
             rules.update(profile='seedance-2.0', allowedKinds=['text', 'image', 'video', 'audio'], maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
                          videoBytes=200 * 1024 * 1024,
                          requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
+                         frameRoles=['first_frame', 'last_frame'],
                          outputResolutions=['480P', '720P'] if lite else ['480P', '720P', '1080P', '4K'],
                          referenceImageResolutions=['480P', '720P'] if lite else ['480P', '720P', '4K'])
     if kind == 'image' and model.rsplit('/', 1)[-1].lower() in {'qwen-image-2.1', 'qwen-image-2.1-turbo'}:
