@@ -37,6 +37,12 @@ window.__ModuleLoader__.load({
       allMedia: 'All media', video: 'Video', audio: 'Audio', allSelections: 'All results', other: 'Other results',
       newest: 'Newest first', oldest: 'Oldest first', loadMore: 'Load more', noMatches: 'No results match these filters.',
       actions: 'More actions', play: 'Play', pause: 'Pause', playbackFailed: 'Could not start playback.',
+      references: 'Reference images', chooseReferences: 'Add reference images', hideReferences: 'Hide image picker',
+      addReference: 'Add reference', removeReference: 'Remove reference', referenceImage: 'Reference image',
+      noMoreImages: 'No other saved images on this page.',
+      referenceOrder: 'The source comes first, followed by images in the order you add them.',
+      referenceLimit: 'This model accepts up to {count} reference images.',
+      referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
       reference: 'OpenDirector project and result',
     }
     const zh = {
@@ -72,6 +78,12 @@ window.__ModuleLoader__.load({
       allMedia: '全部素材', video: '视频', audio: '音频', allSelections: '全部结果', other: '其他结果',
       newest: '最新优先', oldest: '最早优先', loadMore: '加载更多', noMatches: '没有符合筛选条件的结果。',
       actions: '更多操作', play: '播放', pause: '暂停', playbackFailed: '暂时无法播放。',
+      references: '参考图', chooseReferences: '添加参考图', hideReferences: '收起选图',
+      addReference: '加入参考图', removeReference: '移除参考图', referenceImage: '参考图',
+      noMoreImages: '这一页没有其他已保存的图片。',
+      referenceOrder: '原图排在第一张，其他图片按加入顺序排列。',
+      referenceLimit: '当前模型最多支持 {count} 张参考图。',
+      referencesChanged: '请核对所选图片和模型的参考图上限，再试一次。',
       reference: 'OpenDirector 工程与结果',
     }
 
@@ -93,6 +105,10 @@ window.__ModuleLoader__.load({
         type: 'button', onClick, ...attrs,
         style: { ...buttonStyle, ...(primary && { background: surface, fontWeight: 600 }) },
       }, label)
+    }
+
+    function mediaHref(project, asset, kind) {
+      return '/api/opendirector/media?' + new URLSearchParams({ project, asset, kind })
     }
 
     function useComposerRequest(useInput, inputActions) {
@@ -212,6 +228,70 @@ window.__ModuleLoader__.load({
           button(t('loadMore'), () => setPage({ after: current.nextCursor }), { disabled: pending }))))
     }
 
+    function ReferencePicker({ projectId, references, setReferences, limit, locked, t }) {
+      const [open, setOpen] = useState(false)
+      const [after, setAfter] = useState(null)
+      const [page, setPage] = useState(null)
+      const [loading, setLoading] = useState(false)
+      const [error, setError] = useState(false)
+      const full = references.length >= limit
+      const pickerOpen = open && !locked && limit > 1
+      useEffect(() => {
+        if (!pickerOpen) return
+        const controller = new AbortController()
+        setLoading(true)
+        setError(false)
+        readLibrary(projectId, controller.signal, { kind: 'image' }, after).then(value => {
+          if (controller.signal.aborted) return
+          setPage(previous => {
+            if (!after || !previous) return value
+            const known = new Set(previous.results.map(item => item.resultId))
+            return { ...value, results: [...previous.results, ...value.results.filter(item => !known.has(item.resultId))] }
+          })
+          setLoading(false)
+        }).catch(() => {
+          if (controller.signal.aborted) return
+          setError(true)
+          setLoading(false)
+        })
+        return () => controller.abort()
+      }, [pickerOpen, after, projectId])
+      function toggle() {
+        if (!open) {
+          setAfter(null)
+          setPage(null)
+        }
+        setOpen(value => !value)
+      }
+      function add(image) {
+        setReferences(previous => previous.length >= limit || previous.some(item => item.assetId === image.assetId)
+          ? previous : [...previous, image])
+      }
+      const available = page?.results.filter(item => !references.some(reference => reference.assetId === item.assetId))
+      const thumb = { width: '4rem', height: '4rem', objectFit: 'contain', display: 'block', borderRadius: '.3rem' }
+      return h('section', { 'aria-label': t('references'), style: { display: 'grid', gap: '.4rem' } },
+        limit > 1 && h('small', null, t('referenceOrder')),
+        (limit > 1 || references.length > 1) && h('small', null, t('referenceLimit').replace('{count}', limit)),
+        references.length > 1 && h('div', { style: row },
+          ...references.slice(1).map(({ assetId, resultId }, index) => h('figure', { key: resultId, style: { margin: 0 } },
+            h('img', { src: mediaHref(projectId, assetId, 'image'), alt: '', loading: 'lazy', style: thumb }),
+            h('figcaption', null, `${t('referenceImage')} ${index + 2}`),
+            button('×', () => setReferences(previous => previous.filter(item => item.resultId !== resultId)), {
+              disabled: locked, 'aria-label': `${t('removeReference')} ${index + 2}`,
+            })))),
+        !locked && limit > 1 && h('div', null,
+          button(t(open ? 'hideReferences' : 'chooseReferences'), toggle, { 'aria-expanded': open, disabled: full && !open })),
+        pickerOpen && h('div', null,
+          loading && h('p', { role: 'status' }, t('loading')),
+          error && h('p', { role: 'alert' }, t('libraryError')),
+          available?.length === 0 && !loading && h('p', null, t('noMoreImages')),
+          h('div', { style: row }, ...(available ?? []).map((item, index) =>
+            button(h('img', { src: mediaHref(projectId, item.assetId, 'image'), alt: '', loading: 'lazy', style: thumb }),
+              () => add(item), { key: item.resultId, disabled: full, title: item.prompt || t('addReference'),
+                'aria-label': `${t('addReference')} ${index + 1}` }))),
+          page?.nextCursor && button(t('loadMore'), () => setAfter(page.nextCursor), { disabled: loading || full })))
+    }
+
     function GenerationDialog({ source, t, request, onClose }) {
       const dialog = useRef(null)
       const busy = useRef(false)
@@ -223,10 +303,13 @@ window.__ModuleLoader__.load({
       const [submitting, setSubmitting] = useState(false)
       const [pollError, setPollError] = useState(false)
       const [pollRun, setPollRun] = useState(0)
+      const [references, setReferences] = useState(() => source ? [source] : [])
       const isEdit = Boolean(source)
       const title = t(isEdit ? 'edit' : 'create')
-      const choices = catalog?.models.filter(model => model.kind === form.kind && (!source || model.canEdit))
+      const choices = catalog?.models.filter(model => model.kind === form.kind && (!source || model.maxImages > 0))
       const model = choices?.find(item => item.id === form.modelId)
+      const referenceLimit = model?.maxImages ?? 1
+      const tooManyReferences = Boolean(model) && references.length > referenceLimit
       const jobId = result?.jobId
       const projectId = result?.projectId
       const unknown = result?.status === 'unknown'
@@ -284,7 +367,7 @@ window.__ModuleLoader__.load({
           attempt.current ??= {
             projectId: source?.projectId ?? (newProject ? crypto.randomUUID() : form.projectId),
             operationId: crypto.randomUUID(),
-            ...(source && { sourceResultId: source.resultId }),
+            ...(source && { sourceResultIds: references.map(item => item.resultId) }),
             ...(newProject && { projectName: form.projectName.trim() }),
             kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
             output: model?.imageOutputs[form.output], voice: form.voice,
@@ -352,13 +435,17 @@ window.__ModuleLoader__.load({
             onChange: event => update('voice', event.target.value),
           })),
           source && h(Preview, { projectId: source.projectId, assetId: source.assetId, kind: source.kind, title: t('original'), t }),
+          source && h(ReferencePicker, { projectId: source.projectId, references, setReferences, limit: referenceLimit, locked, t }),
+          tooManyReferences && h('p', { role: 'alert' }, t('referencesChanged')),
           field(form.kind === 'audio' ? 'speechText' : source ? 'brief' : 'prompt', h('textarea', {
             required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
             value: form.prompt, onChange: event => update('prompt', event.target.value),
           })),
           (!locked || submitting || unknown) && button(t(submitting ? 'submitting' : unknown ? 'checkGeneration' : 'generate'),
-            undefined, { type: 'submit', primary: true, disabled: submitting || !model || !form.prompt.trim() })),
-        result?.status === 'rejected' && h('p', { role: 'alert' }, t(result.code === 'storage_busy' ? 'adoptBusy' : 'failedToSubmit')),
+            undefined, { type: 'submit', primary: true, disabled: submitting || !model || tooManyReferences || !form.prompt.trim() })),
+        result?.status === 'rejected' && h('p', { role: 'alert' }, t(result.code === 'storage_busy' ? 'adoptBusy'
+          : ['creation.references', 'creation.reference_limit', 'result.candidate_missing'].includes(result.code) ? 'referencesChanged'
+            : 'failedToSubmit')),
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
         jobId && h('p', { role: 'status' }, t(outcome ?? 'waiting')),
@@ -469,7 +556,7 @@ window.__ModuleLoader__.load({
       const trigger = useRef(null)
       const player = useRef(null)
       const adoption = useAdoption({ projectId, resultId, onAdopted })
-      const url = '/api/opendirector/media?' + new URLSearchParams({ project: projectId, asset: assetId, kind })
+      const url = mediaHref(projectId, assetId, kind)
       const downloadUrl = url + '&original=1'
       const video = kind === 'video'
       const audio = kind === 'audio'

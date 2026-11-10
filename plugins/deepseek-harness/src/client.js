@@ -284,7 +284,7 @@ export class OpenDirectorClient {
       .map(({ id, kind, modelId, connectionType, inputRules }) => ({
         id, kind, modelId, connectionType,
         imageOutputs: inputRules?.imageOutputs ?? [],
-        canEdit: inputRules?.allowedKinds?.includes('image') && inputRules.maxImages > 0,
+        maxImages: inputRules?.allowedKinds?.includes('image') ? (inputRules.maxImages ?? 0) : 0,
         voiceRequired: inputRules?.voiceRequired === true,
         maxPromptCharacters: inputRules?.maxPromptCharacters,
       }))
@@ -404,8 +404,15 @@ export class OpenDirectorClient {
     if (!prompt || Array.from(prompt).length > Math.min(model.maxPromptCharacters ?? PROMPT_LIMIT, PROMPT_LIMIT)) {
       throw new InputError('creation.prompt')
     }
-    const source = input.sourceResultId == null ? null : requireUuid(input.sourceResultId, 'sourceResultId')
-    if (source && (model.kind !== 'image' || !model.canEdit)) throw new InputError('creation.edit_model')
+    const values = input.sourceResultIds ?? (input.sourceResultId == null ? [] : [input.sourceResultId])
+    if (!Array.isArray(values) || (input.sourceResultIds != null && input.sourceResultId != null)) {
+      throw new InputError('creation.references')
+    }
+    if (values.length && (model.kind !== 'image' || values.length > model.maxImages)) {
+      throw new InputError('creation.reference_limit')
+    }
+    const sourceIds = values.map(id => requireUuid(id, 'sourceResultIds'))
+    if (new Set(sourceIds).size !== sourceIds.length) throw new InputError('creation.references')
     let parameters
     if (model.kind === 'image') {
       const output = input.output == null ? model.imageOutputs[0]
@@ -418,7 +425,7 @@ export class OpenDirectorClient {
       parameters = { creationType: 'audio', ...(voice && { voice }) }
     }
     if (input.projectName != null) {
-      if (source) throw new InputError('creation.model')
+      if (sourceIds.length) throw new InputError('creation.references')
       const project = await this.createProject({
         projectId, name: input.projectName, operationId: uuid5(intent, 'creation.project'), signal,
       })
@@ -433,14 +440,20 @@ export class OpenDirectorClient {
         return receipt ? { status: receipt.status, jobId: receipt.jobIds?.[0], code: receipt.issues?.[0]?.code }
           : { status: 'unknown', draftSaved: true }
       }
-      const reference = source ? snapshot.results.find(result => result.id === source)?.asset : null
-      if (source && reference?.kind !== 'image') throw new InputError('result.candidate_missing')
+      const references = sourceIds.map((id, order) => {
+        const source = snapshot.results.find(result => result.id === id)?.asset
+        if (source?.kind !== 'image') throw new InputError('result.candidate_missing')
+        return { binding: 'pinned', role: 'reference', order, source }
+      })
+      if (new Set(references.map(reference => reference.source.assetId)).size !== references.length) {
+        throw new InputError('creation.references')
+      }
       const right = snapshot.canvasItems.filter(item => item.parentId == null)
         .reduce((x, item) => Math.max(x, item.position.x + item.width + 48), 0)
       const { command, specId, itemId } = buildCreateGeneration({
         projectId, operationId: createId, kind: model.kind, modelConfigId, prompt, parameters,
         position: { x: right, y: 0 },
-        references: reference ? [{ binding: 'pinned', role: 'reference', order: 0, source: reference }] : [],
+        references,
       })
       const draft = await this.#command({ projectId, operationId: createId, command, session, signal })
       if (draft.status !== 'applied') return { status: 'rejected', code: draft.issues?.[0]?.code }

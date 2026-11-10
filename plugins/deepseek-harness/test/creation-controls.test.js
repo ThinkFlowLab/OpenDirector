@@ -4,16 +4,19 @@ import test from 'node:test'
 import { OpenDirectorClient } from '../src/client.js'
 import { uuid5 } from '../src/operations.js'
 
-test('a direct edit pins the saved asset and recovers the original submission', async () => {
-  const [projectId, operationId, sourceResultId, assetId, modelConfigId, jobId, priorItemId] =
-    Array.from({ length: 7 }, () => randomUUID())
+test('a direct edit pins saved assets in order and recovers the original submission', async () => {
+  const [projectId, operationId, sourceResultId, assetId, modelConfigId, jobId, priorItemId, extraResult, extraAsset] =
+    Array.from({ length: 9 }, () => randomUUID())
   const commands = []
   const receipts = new Map()
   const snapshot = {
     project: { id: projectId },
     generationSpecs: [],
     canvasItems: [{ id: priorItemId, parentId: null, position: { x: 40, y: 0 }, width: 352 }],
-    results: [{ id: sourceResultId, asset: { assetId, kind: 'image', revision: 1, fingerprint: 'a'.repeat(64) } }],
+    results: [
+      { id: extraResult, asset: { assetId: extraAsset, kind: 'image', revision: 1, fingerprint: 'b'.repeat(64) } },
+      { id: sourceResultId, asset: { assetId, kind: 'image', revision: 1, fingerprint: 'a'.repeat(64) } },
+    ],
   }
   const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
     async fetchImpl(url, request) {
@@ -21,7 +24,7 @@ test('a direct edit pins the saved asset and recovers the original submission', 
       if (path === '/api/model-configs') {
         return Response.json([{
           id: modelConfigId, kind: 'image', protocol: 'openai', modelId: 'fixture',
-          inputRules: { allowedKinds: ['image'], maxImages: 1, imageOutputs: [{ size: '1024x1024', aspectRatio: '1:1' }] },
+          inputRules: { allowedKinds: ['image'], maxImages: 2, imageOutputs: [{ size: '1024x1024', aspectRatio: '1:1' }] },
         }])
       }
       if (path.endsWith('/open')) return Response.json(snapshot)
@@ -45,15 +48,22 @@ test('a direct edit pins the saved asset and recovers the original submission', 
     },
   })
   const input = {
-    projectId, operationId, sourceResultId, kind: 'image', modelConfigId, prompt: 'Add a lamp',
+    projectId, operationId, sourceResultIds: [sourceResultId, extraResult], kind: 'image', modelConfigId, prompt: 'Add a lamp',
     output: { size: '1024x1024', aspectRatio: '1:1' },
   }
   await assert.rejects(client.startCreation({ ...input, output: { size: '2048x2048', aspectRatio: '1:1' } }),
     { name: 'InputError', key: 'creation.output' })
+  await assert.rejects(client.startCreation({ ...input, sourceResultIds: [sourceResultId, extraResult, randomUUID()] }),
+    { name: 'InputError', key: 'creation.reference_limit' })
+  await assert.rejects(client.startCreation({ ...input, sourceResultIds: [sourceResultId, sourceResultId] }),
+    { name: 'InputError', key: 'creation.references' })
+  await assert.rejects(client.startCreation({ ...input, sourceResultIds: [sourceResultId, randomUUID()] }),
+    { name: 'InputError', key: 'result.candidate_missing' })
   assert.equal(commands.length, 0)
   await assert.rejects(client.startCreation(input), { name: 'UnknownOperationError' })
   const [draft, submit] = commands
-  assert.equal(draft.payload.references[0].source.assetId, assetId)
+  assert.deepEqual(draft.payload.references.map(reference => [reference.order, reference.binding, reference.source.assetId]),
+    [[0, 'pinned', assetId], [1, 'pinned', extraAsset]])
   assert.equal(draft.payload.item.position.x, 440)
   assert.equal(submit.payload.adoptionPolicy, 'candidate_only')
   assert.equal(submit.commandId, uuid5(operationId, 'creation.submit'))
