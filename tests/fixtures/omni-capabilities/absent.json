@@ -1,7 +1,7 @@
 {
   "tier": "absent",
   "upstreamEndpoint": "/v1/omni/capabilities",
-  "scope": "No usable capability evidence: an unreachable endpoint, a topology-only body, and a body whose optional fields were dropped by exclude_none.",
+  "scope": "No usable capability evidence: no answer at all, an answer that carries only topology, and an answer whose operations declare no profile.",
   "cases": [
     {
       "id": "endpoint-unreachable",
@@ -26,12 +26,13 @@
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
+        "reasons": {},
         "unresolved": []
       }
     },
     {
       "id": "topology-only-body",
-      "note": "Stages are published but no model and no operation: topology is display, so it grants nothing.",
+      "note": "Stages are published but no model declared an operation: the service answered without declaring anything (`empty`, not `absent`), and topology is display.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -121,7 +122,7 @@
         ]
       },
       "expected": {
-        "endpoint": "absent",
+        "endpoint": "empty",
         "topology": [
           {
             "id": "7",
@@ -152,12 +153,13 @@
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
+        "reasons": {},
         "unresolved": []
       }
     },
     {
       "id": "operations-without-profiles",
-      "note": "The operation answered but `profiles` was dropped: an absent field means unknown, not unsupported.",
+      "note": "Six operations answered `supported`/`enabled` and each declares `profiles: []` — the published shape of \"no profile declared\" (`default_factory=list`), so every capability is `unknown`, not `missing`.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -187,6 +189,62 @@
                 "support": "supported",
                 "exposure": "enabled",
                 "reason_code": "model_declared",
+                "profiles": [],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "image_generation": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "image_edit": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "video_generation": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "speech": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "audio_generation": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [],
                 "execution": {
                   "state": "unpaused",
                   "scope": "worker",
@@ -297,6 +355,7 @@
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
+        "reasons": {},
         "unresolved": []
       }
     }

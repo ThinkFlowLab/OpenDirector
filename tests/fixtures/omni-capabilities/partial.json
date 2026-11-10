@@ -1,11 +1,11 @@
 {
   "tier": "partial",
   "upstreamEndpoint": "/v1/omni/capabilities",
-  "scope": "Bodies that answer, but disagree with themselves or with the vocabulary: unsupported, disabled, a misplaced route, an omitted field, unknown names.",
+  "scope": "Bodies that answer, but disagree with themselves: a policy-disabled operation, a profile whose own route is disabled, a misplaced route, an unsupported profile, and an operation that states `unknown`.",
   "cases": [
     {
       "id": "mixed-operations",
-      "note": "`image_generation` is supported but disabled, `image_edit` unsupported, one video profile declares an image path (route_mismatch), one profile omits `support`, `caption_to_audio` is supported with no local id.",
+      "note": "`image_generation` is supported but disabled (`endpoint_disabled`), `image_edit` is supported but its only route is `disabled` (`route_disabled`), one video profile declares an image path (`route_mismatch`), `lyrics_to_music` is unsupported while `text_to_audio` is supported, and `caption_to_audio` has no local id.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -59,8 +59,12 @@
                   {
                     "id": "image_response",
                     "support": "unsupported",
-                    "required_inputs": [],
-                    "outputs": [],
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
                     "routes": [
                       {
                         "transport": "http",
@@ -74,11 +78,11 @@
                   },
                   {
                     "id": "audio_response",
+                    "support": "unknown",
                     "required_inputs": [
                       "text"
                     ],
                     "outputs": [
-                      "text",
                       "audio"
                     ],
                     "routes": [
@@ -89,7 +93,7 @@
                         "exposure": "enabled"
                       }
                     ],
-                    "reason_code": "request_contract_unverified",
+                    "reason_code": "chat_prompt_contract_undeclared",
                     "constraints": {}
                   }
                 ],
@@ -132,24 +136,29 @@
                 }
               },
               "image_edit": {
-                "support": "unsupported",
+                "support": "supported",
                 "exposure": "enabled",
                 "reason_code": "model_declared",
                 "profiles": [
                   {
                     "id": "image_to_image",
-                    "support": "unsupported",
-                    "required_inputs": [],
-                    "outputs": [],
+                    "support": "supported",
+                    "required_inputs": [
+                      "image",
+                      "text"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
                     "routes": [
                       {
                         "transport": "http",
                         "method": "POST",
                         "path": "/v1/images/edits",
-                        "exposure": "enabled"
+                        "exposure": "disabled"
                       }
                     ],
-                    "reason_code": "model_not_supported",
+                    "reason_code": "model_declared",
                     "constraints": {}
                   }
                 ],
@@ -208,8 +217,13 @@
                   {
                     "id": "video_to_video",
                     "support": "unsupported",
-                    "required_inputs": [],
-                    "outputs": [],
+                    "required_inputs": [
+                      "video",
+                      "text"
+                    ],
+                    "outputs": [
+                      "video"
+                    ],
                     "routes": [
                       {
                         "transport": "http",
@@ -256,8 +270,13 @@
                   {
                     "id": "lyrics_to_music",
                     "support": "unsupported",
-                    "required_inputs": [],
-                    "outputs": [],
+                    "required_inputs": [
+                      "text",
+                      "instructions"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
                     "routes": [
                       {
                         "transport": "http",
@@ -297,7 +316,9 @@
                 }
               },
               "audio_generation": {
-                "reason_code": "request_contract_unverified",
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
                 "profiles": [
                   {
                     "id": "text_to_audio",
@@ -420,7 +441,7 @@
           "image.edit": "missing",
           "video.generate": "available",
           "audio.speech": "available",
-          "audio.music": "missing",
+          "audio.music": "available",
           "image.segment": "unknown",
           "video.matting": "unknown",
           "video.motion_capture": "unknown",
@@ -429,6 +450,10 @@
           "video.edit": "unknown",
           "image.cutout": "unknown",
           "audio.separate": "unknown"
+        },
+        "reasons": {
+          "image.generate": "endpoint_disabled",
+          "image.edit": "route_disabled"
         },
         "unresolved": [
           {
@@ -447,8 +472,8 @@
       }
     },
     {
-      "id": "unknown-vocabulary",
-      "note": "`asr` is not an upstream operation, `speech_to_speech` is not a profile, `lyrics_to_music` is filed under the wrong operation, and `/v1/videos/track` belongs to no operation at all.",
+      "id": "unknown-enums",
+      "note": "Every operation and profile states `unknown`: the third upstream value is a real answer, so nothing is claimed and nothing is refused.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -474,47 +499,55 @@
               "7"
             ],
             "operations": {
-              "asr": {
-                "support": "supported",
-                "exposure": "enabled",
-                "reason_code": "model_declared",
-                "profiles": [],
-                "execution": {
-                  "state": "unpaused",
-                  "scope": "worker",
-                  "observed_at": "2026-11-10T00:00:00Z"
-                }
-              },
-              "speech": {
-                "support": "supported",
-                "exposure": "enabled",
+              "chat": {
+                "support": "unknown",
+                "exposure": "unknown",
                 "reason_code": "model_declared",
                 "profiles": [
                   {
-                    "id": "text_to_speech",
-                    "support": "supported",
+                    "id": "text_response",
+                    "support": "unknown",
                     "required_inputs": [
                       "text"
                     ],
                     "outputs": [
-                      "audio"
+                      "text"
                     ],
                     "routes": [
                       {
                         "transport": "http",
                         "method": "POST",
-                        "path": "/v1/audio/speech",
+                        "path": "/v1/chat/completions",
                         "exposure": "enabled"
                       }
                     ],
-                    "reason_code": "model_declared",
+                    "reason_code": "request_contract_unverified",
                     "constraints": {}
                   },
                   {
-                    "id": "speech_to_speech",
-                    "support": "supported",
+                    "id": "image_response",
+                    "support": "unknown",
                     "required_inputs": [
-                      "audio",
+                      "text"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/chat/completions",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "audio_response",
+                    "support": "unknown",
+                    "required_inputs": [
                       "text"
                     ],
                     "outputs": [
@@ -524,11 +557,11 @@
                       {
                         "transport": "http",
                         "method": "POST",
-                        "path": "/v1/audio/speech",
+                        "path": "/v1/chat/completions",
                         "exposure": "enabled"
                       }
                     ],
-                    "reason_code": "model_declared",
+                    "reason_code": "request_contract_unverified",
                     "constraints": {}
                   }
                 ],
@@ -538,30 +571,61 @@
                   "observed_at": "2026-11-10T00:00:00Z"
                 }
               },
-              "audio_generation": {
-                "support": "supported",
-                "exposure": "enabled",
+              "image_generation": {
+                "support": "unknown",
+                "exposure": "unknown",
                 "reason_code": "model_declared",
                 "profiles": [
                   {
-                    "id": "lyrics_to_music",
-                    "support": "supported",
+                    "id": "text_to_image",
+                    "support": "unknown",
                     "required_inputs": [
-                      "text",
-                      "instructions"
+                      "text"
                     ],
                     "outputs": [
-                      "audio"
+                      "image"
                     ],
                     "routes": [
                       {
                         "transport": "http",
                         "method": "POST",
-                        "path": "/v1/audio/speech",
+                        "path": "/v1/images/generations",
                         "exposure": "enabled"
                       }
                     ],
-                    "reason_code": "model_declared",
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "image_edit": {
+                "support": "unknown",
+                "exposure": "unknown",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "image_to_image",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/images/edits",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
                     "constraints": {}
                   }
                 ],
@@ -572,13 +636,13 @@
                 }
               },
               "video_generation": {
-                "support": "supported",
-                "exposure": "enabled",
+                "support": "unknown",
+                "exposure": "unknown",
                 "reason_code": "model_declared",
                 "profiles": [
                   {
                     "id": "text_to_video",
-                    "support": "supported",
+                    "support": "unknown",
                     "required_inputs": [
                       "text"
                     ],
@@ -589,11 +653,179 @@
                       {
                         "transport": "http",
                         "method": "POST",
-                        "path": "/v1/videos/track",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
                         "exposure": "enabled"
                       }
                     ],
-                    "reason_code": "model_declared",
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "image_to_video",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "video"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "video_to_video",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "video"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "speech": {
+                "support": "unknown",
+                "exposure": "unknown",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_to_speech",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/speech",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "lyrics_to_music",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/speech",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "caption_to_audio",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/speech",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "audio_generation": {
+                "support": "unknown",
+                "exposure": "unknown",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_to_audio",
+                    "support": "unknown",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/generate",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "request_contract_unverified",
                     "constraints": {}
                   }
                 ],
@@ -696,7 +928,7 @@
           "image.generate": "unknown",
           "image.edit": "unknown",
           "video.generate": "unknown",
-          "audio.speech": "available",
+          "audio.speech": "unknown",
           "audio.music": "unknown",
           "image.segment": "unknown",
           "video.matting": "unknown",
@@ -707,32 +939,8 @@
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
-        "unresolved": [
-          {
-            "operation": "asr",
-            "profile": null,
-            "route": null,
-            "reason": "unmapped_stage"
-          },
-          {
-            "operation": "audio_generation",
-            "profile": "lyrics_to_music",
-            "route": null,
-            "reason": "operation_mismatch"
-          },
-          {
-            "operation": "speech",
-            "profile": "speech_to_speech",
-            "route": null,
-            "reason": "unknown_profile"
-          },
-          {
-            "operation": "video_generation",
-            "profile": "text_to_video",
-            "route": "/v1/videos/track",
-            "reason": "unknown_route"
-          }
-        ]
+        "reasons": {},
+        "unresolved": []
       }
     }
   ]

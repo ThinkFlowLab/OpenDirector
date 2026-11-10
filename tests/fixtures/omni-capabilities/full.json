@@ -5,7 +5,7 @@
   "cases": [
     {
       "id": "every-operation-and-profile",
-      "note": "All six operations supported and enabled, all twelve profiles declared; `text_to_audio` is supported but this repository has no id for it.",
+      "note": "All six operations supported and enabled, all twelve profiles declared. Only `text_response` grants `text.chat`: the image and audio chat profiles are reported as `no_local_capability`, and `text_to_audio` grants `audio.music`.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -64,7 +64,6 @@
                       "text"
                     ],
                     "outputs": [
-                      "text",
                       "image"
                     ],
                     "routes": [
@@ -85,7 +84,6 @@
                       "text"
                     ],
                     "outputs": [
-                      "text",
                       "audio"
                     ],
                     "routes": [
@@ -318,8 +316,12 @@
                   {
                     "id": "caption_to_audio",
                     "support": "unsupported",
-                    "required_inputs": [],
-                    "outputs": [],
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
                     "routes": [
                       {
                         "transport": "http",
@@ -474,10 +476,17 @@
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
+        "reasons": {},
         "unresolved": [
           {
-            "operation": "audio_generation",
-            "profile": "text_to_audio",
+            "operation": "chat",
+            "profile": "audio_response",
+            "route": null,
+            "reason": "no_local_capability"
+          },
+          {
+            "operation": "chat",
+            "profile": "image_response",
             "route": null,
             "reason": "no_local_capability"
           }

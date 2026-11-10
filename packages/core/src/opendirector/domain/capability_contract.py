@@ -16,7 +16,7 @@ Upstream publishes exactly six operations and twelve profiles
     speech            text_to_speech, lyrics_to_music, caption_to_audio
     audio_generation  text_to_audio
 
-Four rules keep the table honest.
+Five rules keep the table honest.
 
 * The key is `(operation, profile)`, never the route, never the stage.
   `/v1/audio/speech` is the single route of one operation and carries three
@@ -26,30 +26,55 @@ Four rules keep the table honest.
   refusing the others (`tests/config/test_serving_capabilities.py:233,251`:
   MOSS-SoundEffect serves `caption_to_audio` and reports `text_to_speech`
   unsupported on the same path).
-* `stages[]` is deployment topology, not a capability. It publishes only
-  `id` / `type` / `depends_on` (`protocol/capabilities.py:67-70`), the ids are
-  opaque numeric strings, and every model is handed the *same* full list
-  (`entrypoints/openai/serving_capabilities.py:400`). Keying capabilities on
-  stages would therefore give every model one shared state and no diagnosis;
-  this module returns the topology for display and never reads it to decide a
-  capability.
-* A declaration that says nothing is `unknown`, never `missing`. Absent fields
-  are the normal way to say "not established" (`response_model_exclude_none=True`,
+* A profile is never force-fitted onto a neighbouring id. The three `chat`
+  profiles publish different output modalities — `text_response` is `("text",)`,
+  `image_response` is `("image",)` and `audio_response` is `("audio",)`
+  (`serving_capabilities.py:43-45`) — and `text.chat` is consumed by a
+  text-only adapter (`integrations/model_adapters.py:566-580` reads
+  `choices[0]["message"]["content"]` as a string), so only `text_response`
+  grants it: an image-only chat deployment must not read as able to chat.
+  `caption_to_audio` (sound effect) has no id here either. `text_to_audio` does
+  grant `audio.music`: it is text-to-audio, the same family as
+  `lyrics_to_music`, and the only difference is the diffusion request contract
+  behind `/v1/audio/generate` (`docs/serving/capabilities.md:59-60`).
+* A declaration that says nothing is `unknown`, never `missing`. Optional fields
+  are simply absent from a published body (`response_model_exclude_none=True`,
   `api_server.py:2193`) and `unknown` is a first-class upstream value
-  (`support`, `exposure`, and "Missing operations/profiles are unknown",
-  `serving_capabilities.py:84`). Only positive evidence — `support=unsupported`
-  or `exposure=disabled` for the profile — produces `missing`.
+  (`support`, `exposure`; "Missing operations/profiles are unknown",
+  `serving_capabilities.py:84`). Required fields are never absent: `support`,
+  `exposure` and `reason_code` are mandatory on every operation and profile, and
+  all six operations must be listed (`protocol/capabilities.py:36-64`). A body
+  that omits them is malformed input to be defended against, not a shape
+  upstream publishes. Only positive evidence produces `missing`, and the result
+  keeps the two kinds apart in its `reasons` map: `unsupported` (the model
+  refused the profile), `endpoint_disabled` (the deployment switched the
+  operation's routes off) and `route_disabled` (every route the profile itself
+  declares is switched off).
 * A route without an operation proves nothing. `/v1/images/segmentations`,
   `/v1/videos/segmentations` and `/v1/videos/depth` are registered endpoints
   that no operation owns (`docs/serving/capabilities.md:41-43`): "segmentation
   and depth estimation do not acquire one of these operations merely by being
   present in a registry". Those capabilities stay `unknown` with
   `no_upstream_profile`.
+* Reachability is decided on the profile's own route references, and their
+  `exposure` is read. Every declared route `disabled` means `missing` with
+  `route_disabled`; every route `unknown` (or no route at all) means `unknown`,
+  because reachability cannot be confirmed; one `enabled` route is enough. A
+  route this table does not recognise is reported in `unresolved`, but only
+  makes the profile `unknown` when nothing else was declared: upstream adds
+  routes over time, and one new path must not void a profile that already
+  answered.
 
 `asr` is not an omission on this side: upstream publishes no recognition
-operation at all and the omni router never registers `/v1/audio/transcriptions`,
-so a caller naming it gets `unmapped_stage` — an upstream gap to be recorded,
-not a row we forgot to add, and never silently read as `audio.score`.
+operation at all (`OperationId` is a closed `Literal`) and the omni router never
+registers `/v1/audio/transcriptions` (no `@router` decorator in `api_server.py`;
+`recipes/inclusionAI/Ming-3.0-audio-flash.md:331` says the endpoint "is not
+currently available with `--omni`"). A body naming it is outside the vocabulary
+and is recorded as `unmapped_stage`. `audio.score` therefore cannot be judged
+from this endpoint: this repository's `VllmOmniScore` adapter does post to
+`/audio/transcriptions` (`integrations/model_adapters.py:547,556`), but a
+capabilities body never mentions that path, so the id stays `unknown` with
+`no_upstream_operation` instead of being derived from a route we happen to know.
 
 Not yet confirmed upstream (recorded here instead of assumed): the exact
 `observed_at` string format, whether `stages[].type` is ever the `"unknown"`
@@ -75,21 +100,30 @@ OPERATIONS: tuple[str, ...] = (
 # (operation, profile, capability ids that profile grants). Order is part of the
 # contract: `resolve()` emits capabilities in this order, so a presentation
 # change is a diff in one place. Every profile upstream publishes has a row,
-# including the two for which this repository has no capability id yet: an empty
+# including the ones for which this repository has no capability id yet: an empty
 # tuple is the honest answer ("upstream says it can, we cannot name it"), and a
 # supported declaration of such a profile is reported as `no_local_capability`
 # rather than dropped or force-fitted to a neighbouring id.
 #
+# `image_response` / `audio_response` are empty on purpose. They are chat
+# profiles whose published output is an image or an audio clip
+# (`serving_capabilities.py:44-45`), while `text.chat` here is served by a
+# text-only adapter: mapping them would make an image-only deployment read as
+# able to chat, and would contradict this module's own refusal to push
+# `caption_to_audio` onto `audio.speech`.
+#
 # `caption_to_audio` is a sound-effect contract (upstream requires
 # `ambient_sound`, `tests/config/test_serving_capabilities.py:233`), not speech;
-# `text_to_audio` is the separate diffusion contract behind
-# `/v1/audio/generate` (no voice, no lyrics; `docs/serving/capabilities.md:59-60`).
-# Mapping either onto `audio.speech` would let a request carry a voice the
-# deployment never accepted.
+# mapping it onto `audio.speech` would let a request carry a voice the deployment
+# never accepted. `text_to_audio` is the separate diffusion contract behind
+# `/v1/audio/generate` (no voice, no lyrics; `docs/serving/capabilities.md:59-60`)
+# but it is still text-to-audio, so it grants `audio.music` alongside
+# `lyrics_to_music`: without that row a StableAudio/LTX2-t2a shape would report
+# `audio.music=missing` while the deployment says it generates audio.
 OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('chat', 'text_response', ('text.chat',)),
-    ('chat', 'image_response', ('text.chat',)),
-    ('chat', 'audio_response', ('text.chat',)),
+    ('chat', 'image_response', ()),
+    ('chat', 'audio_response', ()),
     ('image_generation', 'text_to_image', ('image.generate',)),
     ('image_edit', 'image_to_image', ('image.edit',)),
     ('video_generation', 'text_to_video', ('video.generate',)),
@@ -98,55 +132,81 @@ OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('speech', 'text_to_speech', ('audio.speech',)),
     ('speech', 'lyrics_to_music', ('audio.music',)),
     ('speech', 'caption_to_audio', ()),
-    ('audio_generation', 'text_to_audio', ()),
+    ('audio_generation', 'text_to_audio', ('audio.music',)),
 )
 
-# operation → the routes that operation owns (`serving_capabilities.py:42-54`).
-# Kept beside the profile table so a declared profile can be checked against the
-# operation it claims: a profile pointing at another operation's path is a
-# declaration error, not a capability. `/v1/realtime/video` is a websocket route,
-# compared by path here because the capability question is about the endpoint.
+# operation → the routes that operation owns, as `(transport, method, path)`
+# (`entrypoints/openai/serving_capabilities.py:42-54`). Kept beside the profile
+# table so a declared profile can be checked against the operation it claims: a
+# profile pointing at another operation's path, or declaring a method or a
+# transport the operation does not serve, is a declaration error, not a
+# capability. The websocket route's `method` literal is `WEBSOCKET`
+# (`protocol/capabilities.py:17`), which is why the method is compared and not
+# merely the path: `DELETE /v1/chat/completions` is a 405, not chat.
 # Routes registered but owned by no operation (`/v1/audio/speech/batch`,
 # `/v1/chat/completions/batch`, the `segmentations`/`depth` endpoints, …) belong
 # to no value of this map, which is exactly why they cannot grant anything.
-OPERATION_ROUTES: dict[str, tuple[str, ...]] = {
-    'chat': ('/v1/chat/completions',),
-    'image_generation': ('/v1/images/generations',),
-    'image_edit': ('/v1/images/edits',),
-    'video_generation': ('/v1/videos', '/v1/videos/sync', '/v1/realtime/video'),
-    'speech': ('/v1/audio/speech',),
-    'audio_generation': ('/v1/audio/generate',),
+OPERATION_ROUTES: dict[str, tuple[tuple[str, str, str], ...]] = {
+    'chat': (('http', 'POST', '/v1/chat/completions'),),
+    'image_generation': (('http', 'POST', '/v1/images/generations'),),
+    'image_edit': (('http', 'POST', '/v1/images/edits'),),
+    'video_generation': (('http', 'POST', '/v1/videos'),
+                         ('http', 'POST', '/v1/videos/sync'),
+                         ('websocket', 'WEBSOCKET', '/v1/realtime/video')),
+    'speech': (('http', 'POST', '/v1/audio/speech'),),
+    'audio_generation': (('http', 'POST', '/v1/audio/generate'),),
 }
 
 AVAILABLE, MISSING, UNKNOWN = 'available', 'missing', 'unknown'
-ABSENT, PRESENT = 'absent', 'present'
+# `absent`: the endpoint did not answer (404, timeout, no capability body).
+# `empty`: it answered with a model list but no model declared an operation.
+# `present`: at least one model declared operations.
+ABSENT, EMPTY, PRESENT = 'absent', 'empty', 'present'
 
 # Upstream's three-valued vocabulary, shared by `support` and `exposure`
 # (`serving_capabilities.py:16`, `protocol/capabilities.py:13`).
 SUPPORTED, UNSUPPORTED = 'supported', 'unsupported'
 ENABLED, DISABLED = 'enabled', 'disabled'
 # `unknown` is the third value of both, and also the state of an absent field.
+ROUTE_UNKNOWN = UNKNOWN
+
+# Upstream's `transport` vocabulary (`protocol/capabilities.py:17`).
+HTTP, WEBSOCKET = 'http', 'websocket'
 
 # Why a declaration could not be translated. Each names a different fix, so a
 # reviewer can tell an upstream gap from a bug in this table.
 UNKNOWN_ROUTE = 'unknown_route'  # the path belongs to no operation at all
-ROUTE_MISMATCH = 'route_mismatch'  # the path belongs to a different operation
-UNMAPPED_STAGE = 'unmapped_stage'  # no such operation upstream (e.g. `asr`)
+ROUTE_MISMATCH = 'route_mismatch'  # path, transport or method belongs to another operation
+UNMAPPED_STAGE = 'unmapped_stage'  # no such operation upstream (e.g. `asr`); `stage` is the old name
 UNKNOWN_PROFILE = 'unknown_profile'  # operation known, profile id not published
 OPERATION_MISMATCH = 'operation_mismatch'  # profile known under another operation
 NO_LOCAL_CAPABILITY = 'no_local_capability'  # upstream profile, no id here
-REASONS = frozenset({UNKNOWN_ROUTE, ROUTE_MISMATCH, UNMAPPED_STAGE, UNKNOWN_PROFILE,
-                     OPERATION_MISMATCH, NO_LOCAL_CAPABILITY})
+NO_ROUTE_DECLARED = 'no_route_declared'  # supported profile that declares no route at all
+MALFORMED_ROUTE = 'malformed_route'  # a route entry without a usable path
+REASONS = frozenset({UNKNOWN_ROUTE, ROUTE_MISMATCH, UNMAPPED_STAGE, UNKNOWN_PROFILE, OPERATION_MISMATCH,
+                     NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED, MALFORMED_ROUTE})
 
 # Why a capability can never be decided from a declaration here.
 NO_UPSTREAM_PROFILE, NO_UPSTREAM_OPERATION = 'no_upstream_profile', 'no_upstream_operation'
 PARAMETER_ONLY, NO_LOCAL_ADAPTER = 'parameter_only', 'no_local_adapter'
 UNROUTED_REASONS = frozenset({NO_UPSTREAM_PROFILE, NO_UPSTREAM_OPERATION, PARAMETER_ONLY, NO_LOCAL_ADAPTER})
 
+# Why a capability is `missing`. `support=unsupported` and `exposure=disabled`
+# are both a positive no, but they are not the same fact: one is the model, the
+# other is the deployment's switch. Kept apart in `resolve()['reasons']`, most
+# specific first, so a screen can say "this deployment turned it off" instead of
+# "this model cannot do it".
+UNSUPPORTED_REASON = 'unsupported'
+ENDPOINT_DISABLED_REASON = 'endpoint_disabled'
+ROUTE_DISABLED_REASON = 'route_disabled'
+MISSING_REASONS = (UNSUPPORTED_REASON, ENDPOINT_DISABLED_REASON, ROUTE_DISABLED_REASON)
+
 # Capability ids no upstream profile can express, with the reason to show. Values
 # stay stable business codes; wording lives in the message catalogs. Every entry
 # here resolves to `unknown`: the endpoint does not publish the ability, so
-# "cannot judge" is the only defensible state.
+# "cannot judge" is the only defensible state. None of these ids is a value of
+# `OPERATION_PROFILES`, which is what makes `unknown` fall out of "no evidence"
+# rather than out of a special case in `resolve()`.
 UNROUTED: dict[str, str] = {
     # Endpoints exist, but no operation owns them (see the module docstring).
     'image.segment': NO_UPSTREAM_PROFILE,
@@ -165,7 +225,7 @@ UNROUTED: dict[str, str] = {
 BY_PAIR: dict[tuple[str, str], tuple[str, ...]] = {(operation, profile): capabilities
                                                   for operation, profile, capabilities in OPERATION_PROFILES}
 PROFILE_OPERATIONS: dict[str, str] = {profile: operation for operation, profile, _ in OPERATION_PROFILES}
-ROUTED_PATHS = frozenset(path for paths in OPERATION_ROUTES.values() for path in paths)
+ROUTED_PATHS = frozenset(path for routes in OPERATION_ROUTES.values() for _, _, path in routes)
 
 
 def route_path(value):
@@ -189,6 +249,27 @@ def route_path(value):
     if path == API_PREFIX or path.startswith(API_PREFIX + '/'):
         return path
     return API_PREFIX + path
+
+
+def _route_key(value):
+    """`(transport, method, path)` of a declared route; path is None when unusable.
+
+    `transport` defaults to `http` upstream (`protocol/capabilities.py:16-21`), so
+    an absent transport is not a mismatch. `method` has no default there: an
+    absent or blank method cannot be confirmed, and is compared as an empty
+    string that matches no owned route.
+    """
+    transport = value.get('transport') if isinstance(value, dict) else None
+    method = value.get('method') if isinstance(value, dict) else None
+    transport = transport.strip().lower() if isinstance(transport, str) and transport.strip() else HTTP
+    method = method.strip().upper() if isinstance(method, str) and method.strip() else ''
+    return transport, method, route_path(value)
+
+
+def _route_exposure(value):
+    """Declared exposure of one route reference; absent is `unknown` (the upstream default)."""
+    exposure = value.get('exposure') if isinstance(value, dict) else None
+    return exposure if exposure in (ENABLED, DISABLED) else ROUTE_UNKNOWN
 
 
 def capabilities_for(operation, profile):
@@ -297,32 +378,44 @@ def _topology(payload):
 
 
 def _operation_verdict(operation):
-    """`yes` / `no` / `unknown` for an operation from its own two enums.
+    """`(verdict, reason)` for an operation from its own two enums.
 
     Upstream keeps `support` and `exposure` independent: a supported operation
     can have disabled routes, and an installed route can coexist with an
     unsupported operation (`docs/serving/capabilities.md:45-51`). Either one
-    saying no is a definitive no for the deployment as it stands; anything less
-    than both saying yes is not enough to claim availability.
+    saying no is a definitive no for the deployment as it stands — but the reason
+    says which: the model refused, or the deployment closed the route.
     """
     support, exposure = operation.get('support'), operation.get('exposure')
-    if support == UNSUPPORTED or exposure == DISABLED:
-        return 'no'
+    if support == UNSUPPORTED:
+        return 'no', UNSUPPORTED_REASON
+    if exposure == DISABLED:
+        return 'no', ENDPOINT_DISABLED_REASON
     if support == SUPPORTED and exposure == ENABLED:
-        return 'yes'
-    return 'unknown'
+        return 'yes', None
+    return 'unknown', None
 
 
-def _profile_verdict(entry, operation_verdict):
-    """`yes` / `no` / `unknown` for one profile inside an already-judged operation."""
-    if operation_verdict == 'no':
-        return 'no'
+def _profile_verdict(entry, operation_verdict, operation_reason, exposures):
+    """`(verdict, reason)` for one profile inside an already-judged operation.
+
+    `exposures` holds one value per route reference the operation owns: an empty
+    list means the profile declared no usable route of its own.
+    """
     support = entry.get('support')
     if support == UNSUPPORTED:
-        return 'no'
+        return 'no', UNSUPPORTED_REASON
+    if operation_verdict == 'no':
+        return 'no', operation_reason
     if support != SUPPORTED or operation_verdict != 'yes':
-        return 'unknown'
-    return 'yes'
+        return 'unknown', None
+    if not exposures:
+        return 'unknown', None
+    if ENABLED in exposures:
+        return 'yes', None
+    if ROUTE_UNKNOWN in exposures:
+        return 'unknown', None
+    return 'no', ROUTE_DISABLED_REASON
 
 
 def _note(unresolved, operation, profile, route, reason):
@@ -332,13 +425,34 @@ def _note(unresolved, operation, profile, route, reason):
         unresolved.append(entry)
 
 
-def _check_route(operation, profile, path, unresolved):
-    """True when `path` is one the operation owns; otherwise report why not."""
-    if path in OPERATION_ROUTES[operation]:
+def _check_route(operation, profile, key, unresolved):
+    """True when `(transport, method, path)` is one the operation owns; else report why not."""
+    if key in OPERATION_ROUTES[operation]:
         return True
+    path = key[2]
     _note(unresolved, operation, profile, path,
           ROUTE_MISMATCH if path in ROUTED_PATHS else UNKNOWN_ROUTE)
     return False
+
+
+def _route_exposures(operation, profile, entry, unresolved):
+    """`(exposures of the routes this operation owns, whether any path was declared)`.
+
+    A route reference whose path cannot be read is reported rather than dropped:
+    silently ignoring it would turn a broken declaration into `unknown` with no
+    explanation, which is the failure this module exists to prevent.
+    """
+    exposures = []
+    declared_path = False
+    for value in _routes(entry):
+        key = _route_key(value)
+        if key[2] is None:
+            _note(unresolved, operation, profile, None, MALFORMED_ROUTE)
+            continue
+        declared_path = True
+        if _check_route(operation, profile, key, unresolved):
+            exposures.append(_route_exposure(value))
+    return exposures, declared_path
 
 
 def resolve(payload):
@@ -348,22 +462,31 @@ def resolve(payload):
     (404, timeout, disabled endpoint). Model names and any other provider fields
     never reach the result.
 
-    `endpoint` is `absent` when the body carries no operation entry at all, and
-    then every capability is `unknown` and nothing is listed as unresolved.
+    `endpoint` separates "did not answer" from "answered without declaring":
+    `absent` when there is no body or no model list at all, `empty` when a model
+    list came back but no model declared an operation, `present` otherwise. In
+    the first two cases every capability is `unknown`, `reasons` is empty and
+    nothing is listed as unresolved.
 
-    A capability is `available` only when some model's profile says so and its
-    operation is enabled; `missing` only when a profile or operation positively
-    says no; `unknown` otherwise — no body, an absent field, an unknown enum, an
-    unrouted capability, or a declaration this table could not translate.
+    A capability is `available` only when some model's profile says so, its
+    operation is enabled and at least one of its own routes is enabled;
+    `missing` only when a profile or operation positively says no, with the kind
+    of refusal in `reasons` (`unsupported`, `endpoint_disabled`,
+    `route_disabled`); `unknown` otherwise — no body, an absent field, an unknown
+    enum, an unrouted capability, or a declaration this table could not
+    translate.
     """
     vocabulary = classified_capabilities()
     unresolved: list[dict] = []
     topology = _topology(payload)
     evidence: dict[str, set[str]] = {}
+    refusals: dict[str, set[str]] = {}
 
-    def record(capabilities, verdict):
+    def record(capabilities, verdict, reason=None):
         for capability in capabilities:
             evidence.setdefault(capability, set()).add(verdict)
+            if verdict == 'no' and reason:
+                refusals.setdefault(capability, set()).add(reason)
 
     models = payload.get('models') if isinstance(payload, dict) else None
     declared = False
@@ -384,7 +507,7 @@ def resolve(payload):
                     if row_operation == key:
                         record(row_capabilities, 'unknown')
                 continue
-            operation_verdict = _operation_verdict(operation)
+            operation_verdict, operation_reason = _operation_verdict(operation)
             seen = set()
             for profile_id, entry in _profiles(operation):
                 seen.add(profile_id)
@@ -395,16 +518,15 @@ def resolve(payload):
                 if owner != key:
                     _note(unresolved, key, profile_id, None, OPERATION_MISMATCH)
                     continue
-                paths = [path for path in map(route_path, _routes(entry)) if path]
-                broken = [path for path in paths if not _check_route(key, profile_id, path, unresolved)]
-                verdict = _profile_verdict(entry, operation_verdict)
+                exposures, declared_path = _route_exposures(key, profile_id, entry, unresolved)
+                verdict, reason = _profile_verdict(entry, operation_verdict, operation_reason, exposures)
+                # A supported profile that declares no route at all: reachability
+                # cannot be confirmed, and nothing else explains the `unknown`.
+                if verdict == 'unknown' and not exposures and not declared_path:
+                    _note(unresolved, key, profile_id, None, NO_ROUTE_DECLARED)
                 capabilities = BY_PAIR[(key, profile_id)]
-                # Without a route we cannot confirm reachability, and a profile
-                # pointing at another operation's path tells us nothing reliable.
-                if verdict != 'no' and (broken or not paths):
-                    verdict = 'unknown'
                 if capabilities:
-                    record(capabilities, verdict)
+                    record(capabilities, verdict, reason)
                 elif verdict == 'yes':
                     _note(unresolved, key, profile_id, None, NO_LOCAL_CAPABILITY)
             # A profile the operation never mentions establishes nothing, unless
@@ -412,20 +534,32 @@ def resolve(payload):
             # standard profiles with unsupported upstream, so silence is silence).
             for row_operation, profile_id, row_capabilities in OPERATION_PROFILES:
                 if row_operation == key and profile_id not in seen:
-                    record(row_capabilities, 'no' if operation_verdict == 'no' else 'unknown')
+                    if operation_verdict == 'no':
+                        record(row_capabilities, 'no', operation_reason)
+                    else:
+                        record(row_capabilities, 'unknown')
 
     if not declared:
-        return {'endpoint': ABSENT, 'topology': topology,
-                'capabilities': {item: UNKNOWN for item in vocabulary}, 'unresolved': []}
+        # `models` being a list is the service answering; no operations at all
+        # means it answered without declaring anything, which is not the same as
+        # never having answered.
+        endpoint = EMPTY if isinstance(models, list) else ABSENT
+        return {'endpoint': endpoint, 'topology': topology, 'capabilities': {item: UNKNOWN for item in vocabulary},
+                'reasons': {}, 'unresolved': []}
     capabilities = {}
+    reasons = {}
     for item in vocabulary:
         verdicts = evidence.get(item, set())
         if 'yes' in verdicts:
             capabilities[item] = AVAILABLE
-        elif item in UNROUTED or 'unknown' in verdicts or not verdicts:
+        elif ROUTE_UNKNOWN in verdicts or not verdicts:
             capabilities[item] = UNKNOWN
         else:
             capabilities[item] = MISSING
-    return {'endpoint': PRESENT, 'topology': topology, 'capabilities': capabilities,
+            refusal = refusals.get(item, set())
+            reason = next((name for name in MISSING_REASONS if name in refusal), None)
+            if reason:
+                reasons[item] = reason
+    return {'endpoint': PRESENT, 'topology': topology, 'capabilities': capabilities, 'reasons': reasons,
             'unresolved': sorted(unresolved, key=lambda item: (item['operation'] or '', item['profile'] or '',
                                                                item['route'] or '', item['reason']))}
