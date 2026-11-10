@@ -56,6 +56,10 @@ opendirector model availability --refresh --manual --model MODEL_CONFIG_UUID
 
 Responses include a `revision` and model observations containing `identity`, `status`, `reasonCode`, `checkedAt`, `expiresAt` and exact operation decisions. Times use Unix milliseconds. `configId` is null for drafts. `capabilityAutoCheck` and runtime observations are excluded from accepted job execution snapshots.
 
+When a tool needs an unconfigured model, its HTTP request returns 409 with `code="tool_model_missing"` and `requiredCapability`, such as `image.edit`. The localized `detail` names the required operation and directs the user to Model connections. No tool task or provider request is created.
+
+工具缺少所需模型时，HTTP 返回 409、`code="tool_model_missing"` 和 `requiredCapability`（例如 `image.edit`）。`detail` 按界面语言说明需要的操作和添加模型的位置，不创建工具任务或发送模型请求。
+
 The remote protocol is `GET <API_BASE>/omni/capabilities`, with `object="omni.capabilities"` and `schema_version=1`. Missing models, profiles, routes or output information remain unknown. A worker-only pause does not prove that another request will use that worker. No result implies that every possible parameter combination or GPU resource requirement has been verified.
 
 ## Development checks / 开发验证
@@ -98,6 +102,7 @@ Declaration and execution observations have independent expiry fields. Expiring 
 .venv/bin/python -m pytest tests/test_model_availability.py tests/test_capability_acceptance.py -q
 .venv/bin/python -m pytest tests/test_capability_input_projection.py tests/test_vllm_omni_h3.py -q
 .venv/bin/python -m pytest tests/test_image_input_policy.py tests/test_tool_native_mask.py tests/test_request_capability_acceptance.py -q
+.venv/bin/python -m pytest tests/test_tool_model_errors.py tests/test_localization.py -q
 .venv/bin/python -m pytest tests/test_model_configs.py tests/test_model_catalog.py tests/test_creation_generation_service.py tests/test_tool_tasks.py tests/test_assistant_conversations.py tests/test_cli.py -q
 node --test tests/modelAvailability.test.ts
 # With the isolated API and Vite running as described in development validation:

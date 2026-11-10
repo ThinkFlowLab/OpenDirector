@@ -17,6 +17,7 @@ from opendirector.application.tool_operations import TOOLS, Source, ToolContext,
 from opendirector.application.model_availability import ModelAvailability, tool_request
 from opendirector.application.tool_image_inputs import image_execution, image_request_parameters, local_image_resize, validate_image_sources
 from opendirector.domain.capabilities import LABELS
+from opendirector.domain.capability_messages import MissingToolModelError
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError, identifier
@@ -113,7 +114,7 @@ class ToolTasks(ToolTaskLifecycle):
         candidates = self.providers().get(capability, [])
         public = next((item for item in candidates if item['id'] == chosen), None) if chosen else (candidates[0] if candidates else None)
         if public is None:
-            raise ProjectError(f'没有可用的「{LABELS[capability]}」模型，请在“模型接入”中添加。', 409)
+            raise MissingToolModelError(capability)
         config = self.configs.resolve(public['id'], public['kind'])
         return config, adapter_for(config, self.transport, self.poll_interval)
 

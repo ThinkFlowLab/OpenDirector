@@ -12,6 +12,7 @@ from filelock import Timeout
 from opendirector.installation import data_root, web_root
 from opendirector.wiring import configure_runtime
 from opendirector.domain.projects import ProjectError, identifier
+from opendirector.domain.capability_messages import MissingToolModelError
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
 from opendirector.application.creation_generation import CreationGeneration
@@ -91,6 +92,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.exception_handler(ProjectError)
     async def project_error(request, error):
+        required_capability = error.capability if isinstance(error, MissingToolModelError) else None
         return JSONResponse(
             {
                 "detail": localized_error(
@@ -98,8 +100,10 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                     chinese=str(error),
                     status=error.status,
                     code=error.code,
+                    required_capability=required_capability,
                 ),
                 "code": error.code,
+                **({'requiredCapability': required_capability} if required_capability else {}),
             },
             status_code=error.status,
         )

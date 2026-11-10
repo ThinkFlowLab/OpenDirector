@@ -10,7 +10,8 @@ from fastapi import Request
 from opendirector.domain.timeline_errors import timeline_error_message
 
 from opendirector.domain.creation.commands import CommandReceipt
-from opendirector.domain.capability_messages import english_capability_message
+from opendirector.domain.capabilities import Capability
+from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
     'execution_file_link': 'Execution files must not have hard links.',
@@ -112,12 +113,15 @@ def localized_error_for_language(
     chinese: str,
     status: int,
     code: str = "operation_rejected",
+    required_capability: Capability | None = None,
 ) -> str:
     specific = timeline_error_message(code, language)
     if specific is not None:
         return specific
     if not wants_english_language(language):
         return chinese
+    if code == 'tool_model_missing':
+        return missing_tool_model_message(required_capability, english=True)
     if code.startswith(('capability_', 'image_input_', 'tool_source_')):
         translated = english_capability_message(chinese)
         if translated:
@@ -144,12 +148,14 @@ def localized_error(
     chinese: str,
     status: int,
     code: str = "operation_rejected",
+    required_capability: Capability | None = None,
 ) -> str:
     return localized_error_for_language(
         request.headers.get("accept-language"),
         chinese=chinese,
         status=status,
         code=code,
+        required_capability=required_capability,
     )
 
 

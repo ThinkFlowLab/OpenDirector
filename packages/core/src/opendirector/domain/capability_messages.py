@@ -1,6 +1,33 @@
 """Translations for concrete capability failures, preserving their input detail."""
 import re
 
+from opendirector.domain.capabilities import Capability, LABELS
+from opendirector.domain.projects import ProjectError
+
+
+_TOOL_OPERATIONS = {
+    'text.chat': 'chat', 'image.generate': 'text-to-image generation', 'image.edit': 'image editing',
+    'image.cutout': 'subject cutout', 'video.generate': 'text-to-video generation',
+    'video.first_frame': 'first-frame video generation', 'video.edit': 'video inpainting',
+    'audio.speech': 'speech synthesis', 'audio.music': 'music generation', 'audio.score': 'music transcription',
+    'image.segment': 'image segmentation', 'video.matting': 'video matting',
+    'video.motion_capture': 'depth motion capture', 'audio.separate': 'audio separation',
+}
+
+
+def missing_tool_model_message(capability: Capability | None, *, english=False):
+    if english:
+        operation = _TOOL_OPERATIONS.get(capability, 'suitable')
+        return f'No {operation} model is available. Add one in Model connections.'
+    return f'没有可用的「{LABELS[capability]}」模型，请在“模型接入”中添加。'
+
+
+class MissingToolModelError(ProjectError):
+    """Keep the required operation separate from its presentation language."""
+    def __init__(self, capability: Capability):
+        super().__init__(missing_tool_model_message(capability), 409, code='tool_model_missing')
+        self.capability = capability
+
 
 _MESSAGES = {
     '服务已暂停，请恢复后重试。': 'Service paused. Resume it and try again.',
