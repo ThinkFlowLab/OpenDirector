@@ -6,9 +6,13 @@ English, so a missing translation never leaks Chinese into an English UI.
 """
 from fastapi import Request
 
+
+from opendirector.domain.timeline_errors import timeline_error_message
+
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
+    'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',
     'kling_image': 'Kling requires valid PNG or JPEG images up to 30 MB, at least 300 pixels on each edge, with an aspect ratio of 0.4–2.5. Video and audio references are not supported here.',
@@ -100,6 +104,9 @@ def localized_error_for_language(
     status: int,
     code: str = "operation_rejected",
 ) -> str:
+    specific = timeline_error_message(code, language)
+    if specific is not None:
+        return specific
     if not wants_english_language(language):
         return chinese
     # A generic operation code must not hide a more specific HTTP status.

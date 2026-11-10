@@ -3442,6 +3442,23 @@
           "code": {
             "description": "Stable error or issue code.",
             "enum": [
+              "timeline_package_invalid",
+              "timeline_package_too_large",
+              "timeline_revision_missing",
+              "timeline_import_missing",
+              "timeline_import_conflict",
+              "timeline_registration_rejected",
+              "timeline_font_too_large",
+              "timeline_font_unavailable",
+              "timeline_font_unsupported",
+              "timeline_font_invalid",
+              "timeline_font_fingerprint",
+              "timeline_font_coverage",
+              "timeline_font_total_bytes",
+              "timeline_font_unverified",
+              "timeline_font_mime",
+              "timeline_bundled_font_fingerprint",
+              "timeline_bundled_font_unavailable",
               "invalid_input",
               "revision_conflict",
               "role_restricted",
@@ -3977,6 +3994,18 @@
             "$ref": "#/$defs/ViewState",
             "description": "Client-specific canvas view state."
           },
+          "timelinePackageManifest": {
+            "$ref": "#/$defs/TimelinePackageManifest",
+            "description": "Native editable timeline bundle manifest."
+          },
+          "timelinePackageImport": {
+            "$ref": "#/$defs/TimelinePackageImportRequest",
+            "description": "Recoverable native bundle import request."
+          },
+          "timelinePackageReceipt": {
+            "$ref": "#/$defs/TimelinePackageImportReceipt",
+            "description": "Native bundle import progress and final receipt."
+          },
           "upload": {
             "$ref": "#/$defs/UploadInfo",
             "description": "Staged upload schema."
@@ -4001,6 +4030,9 @@
           "writeModel",
           "capabilities",
           "viewState",
+          "timelinePackageManifest",
+          "timelinePackageImport",
+          "timelinePackageReceipt",
           "upload"
         ],
         "title": "CreationContracts",
@@ -10970,7 +11002,7 @@
         "additionalProperties": false,
         "properties": {
           "spec": {
-            "description": "Configuration with its current revision; the server increments it on commit.",
+            "description": "Complete configuration with its current revision; the server increments it on commit. For updates, read the current spec, preserve unedited fields and submit its current expected version. Accepted job snapshots never change.",
             "discriminator": {
               "mapping": {
                 "audio": "#/$defs/AudioGenerationSpec",
@@ -12260,6 +12292,26 @@
             },
             "title": "Importedassets",
             "type": "array"
+          },
+          "fonts": {
+            "default": [],
+            "description": "Document-local registered font resources; omitted when empty.",
+            "items": {
+              "$ref": "#/$defs/TimelineFontResource"
+            },
+            "maxItems": 16,
+            "title": "Fonts",
+            "type": "array"
+          },
+          "overlays": {
+            "default": [],
+            "description": "Timed text ordered from bottom to top; omitted when empty.",
+            "items": {
+              "$ref": "#/$defs/TimelineTextOverlay"
+            },
+            "maxItems": 2000,
+            "title": "Overlays",
+            "type": "array"
           }
         },
         "required": [
@@ -12327,6 +12379,362 @@
           "data"
         ],
         "title": "TimelineDocument",
+        "type": "object"
+      },
+      "TimelineFontResource": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Stable document-local font ID.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "Display title of the font.",
+            "maxLength": 255,
+            "title": "Title",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Immutable registered font asset version."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "asset"
+        ],
+        "title": "TimelineFontResource",
+        "type": "object"
+      },
+      "TimelinePackageExportFile": {
+        "additionalProperties": false,
+        "properties": {
+          "editorId": {
+            "description": "Saved timeline ID in the active project.",
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Exact saved revision to export.",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "path": {
+            "description": "New output file under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "editorId",
+          "revision",
+          "path"
+        ],
+        "title": "TimelinePackageExportFile",
+        "type": "object"
+      },
+      "TimelinePackageImportFile": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Stable import operation identity.",
+            "format": "uuid",
+            "title": "Operationid",
+            "type": "string"
+          },
+          "archiveFingerprint": {
+            "description": "Expected SHA-256 of archive bytes.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Archivefingerprint",
+            "type": "string"
+          },
+          "path": {
+            "description": "Existing bundle under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "replaceEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit replacement target.",
+            "title": "Replaceeditorid"
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Expected replacement revision.",
+            "title": "Expectedrevision"
+          }
+        },
+        "required": [
+          "operationId",
+          "archiveFingerprint",
+          "path"
+        ],
+        "title": "TimelinePackageImportFile",
+        "type": "object"
+      },
+      "TimelinePackageImportReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Import identity.",
+            "format": "uuid",
+            "title": "Operationid",
+            "type": "string"
+          },
+          "status": {
+            "description": "Partial registration, complete publication, or terminal rejection.",
+            "enum": [
+              "registered",
+              "applied",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "editorId": {
+            "description": "Stable destination document ID.",
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "registeredAssetIds": {
+            "default": [],
+            "description": "Resources actually committed before final publication.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Registeredassetids",
+            "type": "array"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CommandReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Final atomic business command receipt, when committed."
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Stable failure code for retryable registration failure.",
+            "title": "Errorcode"
+          }
+        },
+        "required": [
+          "operationId",
+          "status",
+          "editorId"
+        ],
+        "title": "TimelinePackageImportReceipt",
+        "type": "object"
+      },
+      "TimelinePackageImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Stable identity for this entire import and all retries.",
+            "format": "uuid",
+            "title": "Operationid",
+            "type": "string"
+          },
+          "uploadHandle": {
+            "description": "Project/session-owned staged ZIP upload.",
+            "format": "uuid",
+            "title": "Uploadhandle",
+            "type": "string"
+          },
+          "archiveFingerprint": {
+            "description": "Fixed archive bytes for recovery and replay.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Archivefingerprint",
+            "type": "string"
+          },
+          "replaceEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit replacement target; omitted creates a timeline.",
+            "title": "Replaceeditorid"
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required original revision for replacement.",
+            "title": "Expectedrevision"
+          }
+        },
+        "required": [
+          "operationId",
+          "uploadHandle",
+          "archiveFingerprint"
+        ],
+        "title": "TimelinePackageImportRequest",
+        "type": "object"
+      },
+      "TimelinePackageManifest": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "const": "opendirector-timeline-bundle",
+            "default": "opendirector-timeline-bundle",
+            "description": "Native bundle format.",
+            "title": "Format",
+            "type": "string"
+          },
+          "version": {
+            "const": 1,
+            "default": 1,
+            "description": "Native bundle format version.",
+            "title": "Version",
+            "type": "integer"
+          },
+          "requiredCapabilities": {
+            "default": [],
+            "description": "Required editable document capabilities.",
+            "items": {
+              "const": "timeline.text.v1",
+              "type": "string"
+            },
+            "maxItems": 1,
+            "title": "Requiredcapabilities",
+            "type": "array"
+          },
+          "resources": {
+            "description": "Distinct logical resources; paths may share identical bytes.",
+            "items": {
+              "$ref": "#/$defs/TimelinePackageResource"
+            },
+            "maxItems": 4093,
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resources"
+        ],
+        "title": "TimelinePackageManifest",
+        "type": "object"
+      },
+      "TimelinePackageResource": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Original logical reference; only a package mapping key."
+          },
+          "name": {
+            "description": "Original resource filename.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "description": "Content-addressed archive member.",
+            "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]{1,10}$",
+            "title": "Path",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Verified media kind.",
+            "enum": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "file"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mimeType": {
+            "description": "Verified MIME type.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "size": {
+            "description": "Actual resource byte count.",
+            "maximum": 536870912,
+            "minimum": 0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "description": "SHA-256 identity of resource bytes.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "name",
+          "path",
+          "kind",
+          "mimeType",
+          "size",
+          "fingerprint"
+        ],
+        "title": "TimelinePackageResource",
         "type": "object"
       },
       "TimelinePublishRender": {
@@ -12467,6 +12875,219 @@
           "title"
         ],
         "title": "TimelineResource",
+        "type": "object"
+      },
+      "TimelineTextBackground": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Background color in #RRGGBB format.",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "opacity": {
+            "description": "Background opacity.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Opacity",
+            "type": "number"
+          },
+          "padding": {
+            "description": "Background padding in output pixels.",
+            "maximum": 128,
+            "minimum": 0,
+            "title": "Padding",
+            "type": "number"
+          }
+        },
+        "required": [
+          "color",
+          "opacity",
+          "padding"
+        ],
+        "title": "TimelineTextBackground",
+        "type": "object"
+      },
+      "TimelineTextOverlay": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Stable document-local text ID.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id",
+            "type": "string"
+          },
+          "start": {
+            "description": "Absolute start time in seconds.",
+            "minimum": 0,
+            "title": "Start",
+            "type": "number"
+          },
+          "end": {
+            "description": "Exclusive absolute end time in seconds.",
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "number"
+          },
+          "text": {
+            "description": "Plain text normalized to LF, counted in Unicode code points.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "x": {
+            "description": "Normalized text box left position.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "description": "Normalized text box top position.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          },
+          "maxWidth": {
+            "description": "Text box width as a fraction of output width.",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "title": "Maxwidth",
+            "type": "number"
+          },
+          "fontId": {
+            "description": "Font resource ID in this document.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Fontid",
+            "type": "string"
+          },
+          "style": {
+            "$ref": "#/$defs/TimelineTextStyle",
+            "description": "Output-space text styling."
+          },
+          "sourceAsset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen source text asset, independent of subsequent edits."
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text",
+          "x",
+          "y",
+          "maxWidth",
+          "fontId",
+          "style"
+        ],
+        "title": "TimelineTextOverlay",
+        "type": "object"
+      },
+      "TimelineTextStroke": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Stroke color in #RRGGBB format.",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "width": {
+            "description": "Stroke width in output pixels.",
+            "maximum": 32,
+            "minimum": 0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "color",
+          "width"
+        ],
+        "title": "TimelineTextStroke",
+        "type": "object"
+      },
+      "TimelineTextStyle": {
+        "additionalProperties": false,
+        "properties": {
+          "fontSize": {
+            "description": "Font size in output pixels.",
+            "maximum": 512,
+            "minimum": 1,
+            "title": "Fontsize",
+            "type": "number"
+          },
+          "color": {
+            "description": "Text color in #RRGGBB format.",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "align": {
+            "description": "Horizontal text alignment.",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Align",
+            "type": "string"
+          },
+          "lineHeight": {
+            "description": "Line height as a font size multiplier.",
+            "maximum": 3,
+            "minimum": 0.8,
+            "title": "Lineheight",
+            "type": "number"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimelineTextBackground"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional text background."
+          },
+          "stroke": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimelineTextStroke"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional text stroke."
+          }
+        },
+        "required": [
+          "fontSize",
+          "color",
+          "align",
+          "lineHeight"
+        ],
+        "title": "TimelineTextStyle",
         "type": "object"
       },
       "TimelineTrack": {
@@ -14360,6 +14981,18 @@
         "$ref": "#/$defs/ViewState",
         "description": "Client-specific canvas view state."
       },
+      "timelinePackageManifest": {
+        "$ref": "#/$defs/TimelinePackageManifest",
+        "description": "Native editable timeline bundle manifest."
+      },
+      "timelinePackageImport": {
+        "$ref": "#/$defs/TimelinePackageImportRequest",
+        "description": "Recoverable native bundle import request."
+      },
+      "timelinePackageReceipt": {
+        "$ref": "#/$defs/TimelinePackageImportReceipt",
+        "description": "Native bundle import progress and final receipt."
+      },
       "upload": {
         "$ref": "#/$defs/UploadInfo",
         "description": "Staged upload schema."
@@ -14384,6 +15017,9 @@
       "writeModel",
       "capabilities",
       "viewState",
+      "timelinePackageManifest",
+      "timelinePackageImport",
+      "timelinePackageReceipt",
       "upload"
     ],
     "title": "CreationContracts",
@@ -17941,6 +18577,23 @@
           "code": {
             "description": "Stable error or issue code.",
             "enum": [
+              "timeline_package_invalid",
+              "timeline_package_too_large",
+              "timeline_revision_missing",
+              "timeline_import_missing",
+              "timeline_import_conflict",
+              "timeline_registration_rejected",
+              "timeline_font_too_large",
+              "timeline_font_unavailable",
+              "timeline_font_unsupported",
+              "timeline_font_invalid",
+              "timeline_font_fingerprint",
+              "timeline_font_coverage",
+              "timeline_font_total_bytes",
+              "timeline_font_unverified",
+              "timeline_font_mime",
+              "timeline_bundled_font_fingerprint",
+              "timeline_bundled_font_unavailable",
               "invalid_input",
               "revision_conflict",
               "role_restricted",
@@ -18478,6 +19131,18 @@
             "$ref": "#/$defs/ViewState",
             "description": "Client-specific canvas view state."
           },
+          "timelinePackageManifest": {
+            "$ref": "#/$defs/TimelinePackageManifest",
+            "description": "Native editable timeline bundle manifest."
+          },
+          "timelinePackageImport": {
+            "$ref": "#/$defs/TimelinePackageImportRequest",
+            "description": "Recoverable native bundle import request."
+          },
+          "timelinePackageReceipt": {
+            "$ref": "#/$defs/TimelinePackageImportReceipt",
+            "description": "Native bundle import progress and final receipt."
+          },
           "upload": {
             "$ref": "#/$defs/UploadInfo",
             "description": "Staged upload schema."
@@ -18502,6 +19167,9 @@
           "writeModel",
           "capabilities",
           "viewState",
+          "timelinePackageManifest",
+          "timelinePackageImport",
+          "timelinePackageReceipt",
           "upload"
         ],
         "title": "CreationContracts",
@@ -25751,7 +26419,7 @@
         "additionalProperties": false,
         "properties": {
           "spec": {
-            "description": "Configuration with its current revision; the server increments it on commit.",
+            "description": "Complete configuration with its current revision; the server increments it on commit. For updates, read the current spec, preserve unedited fields and submit its current expected version. Accepted job snapshots never change.",
             "discriminator": {
               "mapping": {
                 "audio": "#/$defs/AudioGenerationSpec",
@@ -27119,6 +27787,26 @@
             },
             "title": "Importedassets",
             "type": "array"
+          },
+          "fonts": {
+            "default": [],
+            "description": "Document-local registered font resources; omitted when empty.",
+            "items": {
+              "$ref": "#/$defs/TimelineFontResource"
+            },
+            "maxItems": 16,
+            "title": "Fonts",
+            "type": "array"
+          },
+          "overlays": {
+            "default": [],
+            "description": "Timed text ordered from bottom to top; omitted when empty.",
+            "items": {
+              "$ref": "#/$defs/TimelineTextOverlay"
+            },
+            "maxItems": 2000,
+            "title": "Overlays",
+            "type": "array"
           }
         },
         "required": [
@@ -27190,6 +27878,372 @@
           "data"
         ],
         "title": "TimelineDocument",
+        "type": "object"
+      },
+      "TimelineFontResource": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Stable document-local font ID.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "Display title of the font.",
+            "maxLength": 255,
+            "title": "Title",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Immutable registered font asset version."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "asset"
+        ],
+        "title": "TimelineFontResource",
+        "type": "object"
+      },
+      "TimelinePackageExportFile": {
+        "additionalProperties": false,
+        "properties": {
+          "editorId": {
+            "description": "Saved timeline ID in the active project.",
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Exact saved revision to export.",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "path": {
+            "description": "New output file under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "editorId",
+          "revision",
+          "path"
+        ],
+        "title": "TimelinePackageExportFile",
+        "type": "object"
+      },
+      "TimelinePackageImportFile": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Stable import operation identity.",
+            "format": "uuid",
+            "title": "Operationid",
+            "type": "string"
+          },
+          "archiveFingerprint": {
+            "description": "Expected SHA-256 of archive bytes.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Archivefingerprint",
+            "type": "string"
+          },
+          "path": {
+            "description": "Existing bundle under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "replaceEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit replacement target.",
+            "title": "Replaceeditorid"
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Expected replacement revision.",
+            "title": "Expectedrevision"
+          }
+        },
+        "required": [
+          "operationId",
+          "archiveFingerprint",
+          "path",
+          "replaceEditorId",
+          "expectedRevision"
+        ],
+        "title": "TimelinePackageImportFile",
+        "type": "object"
+      },
+      "TimelinePackageImportReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Import identity.",
+            "format": "uuid",
+            "title": "Operationid",
+            "type": "string"
+          },
+          "status": {
+            "description": "Partial registration, complete publication, or terminal rejection.",
+            "enum": [
+              "registered",
+              "applied",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "editorId": {
+            "description": "Stable destination document ID.",
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "registeredAssetIds": {
+            "default": [],
+            "description": "Resources actually committed before final publication.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Registeredassetids",
+            "type": "array"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CommandReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Final atomic business command receipt, when committed."
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Stable failure code for retryable registration failure.",
+            "title": "Errorcode"
+          }
+        },
+        "required": [
+          "operationId",
+          "status",
+          "editorId",
+          "registeredAssetIds",
+          "receipt",
+          "errorCode"
+        ],
+        "title": "TimelinePackageImportReceipt",
+        "type": "object"
+      },
+      "TimelinePackageImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Stable identity for this entire import and all retries.",
+            "format": "uuid",
+            "title": "Operationid",
+            "type": "string"
+          },
+          "uploadHandle": {
+            "description": "Project/session-owned staged ZIP upload.",
+            "format": "uuid",
+            "title": "Uploadhandle",
+            "type": "string"
+          },
+          "archiveFingerprint": {
+            "description": "Fixed archive bytes for recovery and replay.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Archivefingerprint",
+            "type": "string"
+          },
+          "replaceEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit replacement target; omitted creates a timeline.",
+            "title": "Replaceeditorid"
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required original revision for replacement.",
+            "title": "Expectedrevision"
+          }
+        },
+        "required": [
+          "operationId",
+          "uploadHandle",
+          "archiveFingerprint",
+          "replaceEditorId",
+          "expectedRevision"
+        ],
+        "title": "TimelinePackageImportRequest",
+        "type": "object"
+      },
+      "TimelinePackageManifest": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "const": "opendirector-timeline-bundle",
+            "default": "opendirector-timeline-bundle",
+            "description": "Native bundle format.",
+            "title": "Format",
+            "type": "string"
+          },
+          "version": {
+            "const": 1,
+            "default": 1,
+            "description": "Native bundle format version.",
+            "title": "Version",
+            "type": "integer"
+          },
+          "requiredCapabilities": {
+            "default": [],
+            "description": "Required editable document capabilities.",
+            "items": {
+              "const": "timeline.text.v1",
+              "type": "string"
+            },
+            "maxItems": 1,
+            "title": "Requiredcapabilities",
+            "type": "array"
+          },
+          "resources": {
+            "description": "Distinct logical resources; paths may share identical bytes.",
+            "items": {
+              "$ref": "#/$defs/TimelinePackageResource"
+            },
+            "maxItems": 4093,
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format",
+          "version",
+          "requiredCapabilities",
+          "resources"
+        ],
+        "title": "TimelinePackageManifest",
+        "type": "object"
+      },
+      "TimelinePackageResource": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Original logical reference; only a package mapping key."
+          },
+          "name": {
+            "description": "Original resource filename.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "description": "Content-addressed archive member.",
+            "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]{1,10}$",
+            "title": "Path",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Verified media kind.",
+            "enum": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "file"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mimeType": {
+            "description": "Verified MIME type.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "size": {
+            "description": "Actual resource byte count.",
+            "maximum": 536870912,
+            "minimum": 0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "description": "SHA-256 identity of resource bytes.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "name",
+          "path",
+          "kind",
+          "mimeType",
+          "size",
+          "fingerprint"
+        ],
+        "title": "TimelinePackageResource",
         "type": "object"
       },
       "TimelinePublishRender": {
@@ -27335,6 +28389,222 @@
           "durationSeconds"
         ],
         "title": "TimelineResource",
+        "type": "object"
+      },
+      "TimelineTextBackground": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Background color in #RRGGBB format.",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "opacity": {
+            "description": "Background opacity.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Opacity",
+            "type": "number"
+          },
+          "padding": {
+            "description": "Background padding in output pixels.",
+            "maximum": 128,
+            "minimum": 0,
+            "title": "Padding",
+            "type": "number"
+          }
+        },
+        "required": [
+          "color",
+          "opacity",
+          "padding"
+        ],
+        "title": "TimelineTextBackground",
+        "type": "object"
+      },
+      "TimelineTextOverlay": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Stable document-local text ID.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id",
+            "type": "string"
+          },
+          "start": {
+            "description": "Absolute start time in seconds.",
+            "minimum": 0,
+            "title": "Start",
+            "type": "number"
+          },
+          "end": {
+            "description": "Exclusive absolute end time in seconds.",
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "number"
+          },
+          "text": {
+            "description": "Plain text normalized to LF, counted in Unicode code points.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "x": {
+            "description": "Normalized text box left position.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "description": "Normalized text box top position.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          },
+          "maxWidth": {
+            "description": "Text box width as a fraction of output width.",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "title": "Maxwidth",
+            "type": "number"
+          },
+          "fontId": {
+            "description": "Font resource ID in this document.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Fontid",
+            "type": "string"
+          },
+          "style": {
+            "$ref": "#/$defs/TimelineTextStyle",
+            "description": "Output-space text styling."
+          },
+          "sourceAsset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen source text asset, independent of subsequent edits."
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text",
+          "x",
+          "y",
+          "maxWidth",
+          "fontId",
+          "style",
+          "sourceAsset"
+        ],
+        "title": "TimelineTextOverlay",
+        "type": "object"
+      },
+      "TimelineTextStroke": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Stroke color in #RRGGBB format.",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "width": {
+            "description": "Stroke width in output pixels.",
+            "maximum": 32,
+            "minimum": 0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "color",
+          "width"
+        ],
+        "title": "TimelineTextStroke",
+        "type": "object"
+      },
+      "TimelineTextStyle": {
+        "additionalProperties": false,
+        "properties": {
+          "fontSize": {
+            "description": "Font size in output pixels.",
+            "maximum": 512,
+            "minimum": 1,
+            "title": "Fontsize",
+            "type": "number"
+          },
+          "color": {
+            "description": "Text color in #RRGGBB format.",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "align": {
+            "description": "Horizontal text alignment.",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Align",
+            "type": "string"
+          },
+          "lineHeight": {
+            "description": "Line height as a font size multiplier.",
+            "maximum": 3,
+            "minimum": 0.8,
+            "title": "Lineheight",
+            "type": "number"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimelineTextBackground"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional text background."
+          },
+          "stroke": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimelineTextStroke"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional text stroke."
+          }
+        },
+        "required": [
+          "fontSize",
+          "color",
+          "align",
+          "lineHeight",
+          "background",
+          "stroke"
+        ],
+        "title": "TimelineTextStyle",
         "type": "object"
       },
       "TimelineTrack": {
@@ -29304,6 +30574,18 @@
         "$ref": "#/$defs/ViewState",
         "description": "Client-specific canvas view state."
       },
+      "timelinePackageManifest": {
+        "$ref": "#/$defs/TimelinePackageManifest",
+        "description": "Native editable timeline bundle manifest."
+      },
+      "timelinePackageImport": {
+        "$ref": "#/$defs/TimelinePackageImportRequest",
+        "description": "Recoverable native bundle import request."
+      },
+      "timelinePackageReceipt": {
+        "$ref": "#/$defs/TimelinePackageImportReceipt",
+        "description": "Native bundle import progress and final receipt."
+      },
       "upload": {
         "$ref": "#/$defs/UploadInfo",
         "description": "Staged upload schema."
@@ -29328,6 +30610,9 @@
       "writeModel",
       "capabilities",
       "viewState",
+      "timelinePackageManifest",
+      "timelinePackageImport",
+      "timelinePackageReceipt",
       "upload"
     ],
     "title": "CreationContracts",

@@ -1,3 +1,5 @@
+import { validTimelineText } from "./timelineText.ts";
+
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 import { parseImageCrop } from "./imageCrop.ts";
 import { tNow } from "../i18n/messages.ts";
@@ -222,6 +224,8 @@ export function timelineError(value: unknown): string | null {
       ))
   )
     return tNow("errors.data.timelineAssets");
+  if (!validTimelineText(value as unknown as TimelineData))
+    return tNow("errors.data.timelineShape");
   const trackIds = new Set<string>(),
     clipIds = new Set<string>();
   let visualCount = 0;
@@ -318,6 +322,41 @@ export function copyTimeline(value: TimelineData): TimelineData {
     fps: value.fps,
     width: value.width,
     height: value.height,
+    ...(value.fonts?.length
+      ? {
+          fonts: value.fonts.map((font) => ({
+            ...font,
+            ...(font.asset ? { asset: { ...font.asset } } : {}),
+          })),
+        }
+      : {}),
+    ...(value.overlays?.length
+      ? {
+          overlays: value.overlays.map((overlay) => ({
+            ...overlay,
+            text: overlay.text.replace(/\r\n?/g, "\n"),
+            style: {
+              ...overlay.style,
+              ...(overlay.style.background
+                ? { background: { ...overlay.style.background } }
+                : {}),
+              ...(overlay.style.stroke
+                ? { stroke: { ...overlay.style.stroke } }
+                : {}),
+            },
+            ...(overlay.source
+              ? {
+                  source: {
+                    ...overlay.source,
+                    ...(overlay.source.asset
+                      ? { asset: { ...overlay.source.asset } }
+                      : {}),
+                  },
+                }
+              : {}),
+          })),
+        }
+      : {}),
     importedAssets: timelineImportedAssets(value).map(copyResource),
     tracks: value.tracks.map((track) => ({
       id: track.id,
@@ -383,8 +422,7 @@ export function subjectError(value: unknown): string | null {
   const resources = [value.main, ...value.auxiliaries, value.voice].filter(
     Boolean,
   ) as CanvasResource[];
-  if (!uniqueIds(resources))
-    return tNow("errors.data.subjectDuplicateAsset");
+  if (!uniqueIds(resources)) return tNow("errors.data.subjectDuplicateAsset");
   const nodeIds = resources.flatMap((resource) =>
     resource.nodeId ? [resource.nodeId] : [],
   );
@@ -788,9 +826,7 @@ export function parseNodeData(
       return {
         ok: false,
         error:
-          error instanceof Error
-            ? error.message
-            : tNow("errors.data.layers"),
+          error instanceof Error ? error.message : tNow("errors.data.layers"),
       };
     }
   }
@@ -800,6 +836,28 @@ export function parseNodeData(
 export function nodeResources(data: CanvasNodeData): CanvasResource[] {
   return [
     ...(data.timeline ? timelineImportedAssets(data.timeline) : []),
+    ...(data.timeline?.fonts?.map((font) => ({
+      id: font.id,
+      kind: "file" as const,
+      title: font.title,
+      src: font.src,
+      mimeType: font.mimeType,
+      ...(font.asset ? { assetId: font.asset.assetId } : {}),
+    })) ?? []),
+    ...(data.timeline?.overlays?.flatMap((overlay) =>
+      overlay.source
+        ? [
+            {
+              id: `timeline-text-source:${overlay.id}`,
+              kind: "text" as const,
+              ...overlay.source,
+              ...(overlay.source.asset
+                ? { assetId: overlay.source.asset.assetId }
+                : {}),
+            },
+          ]
+        : [],
+    ) ?? []),
     ...(data.timeline?.tracks.flatMap((track) =>
       track.clips.map((clip) => clip.resource),
     ) ?? []),
@@ -855,6 +913,57 @@ const sameClip = (a: TimelineClip, b: TimelineClip) =>
     a.volume === b.volume &&
     a.muted === b.muted);
 
+const sameAsset = (
+  a: import("../contracts/generated.ts").AssetRef | undefined,
+  b: import("../contracts/generated.ts").AssetRef | undefined,
+) =>
+  sameOptional(
+    a,
+    b,
+    (a, b) =>
+      a.assetId === b.assetId &&
+      a.revision === b.revision &&
+      a.kind === b.kind &&
+      a.fingerprint === b.fingerprint,
+  );
+const sameTextOverlay = (
+  a: import("./model.ts").TimelineTextOverlayView,
+  b: import("./model.ts").TimelineTextOverlayView,
+) =>
+  a === b ||
+  (a.id === b.id &&
+    a.text === b.text &&
+    a.start === b.start &&
+    a.end === b.end &&
+    a.x === b.x &&
+    a.y === b.y &&
+    a.maxWidth === b.maxWidth &&
+    a.fontId === b.fontId &&
+    a.style.fontSize === b.style.fontSize &&
+    a.style.color === b.style.color &&
+    a.style.align === b.style.align &&
+    a.style.lineHeight === b.style.lineHeight &&
+    ((a.style.background == null && b.style.background == null) ||
+      (a.style.background != null &&
+        b.style.background != null &&
+        a.style.background.color === b.style.background.color &&
+        a.style.background.opacity === b.style.background.opacity &&
+        a.style.background.padding === b.style.background.padding)) &&
+    ((a.style.stroke == null && b.style.stroke == null) ||
+      (a.style.stroke != null &&
+        b.style.stroke != null &&
+        a.style.stroke.color === b.style.stroke.color &&
+        a.style.stroke.width === b.style.stroke.width)) &&
+    sameOptional(
+      a.source,
+      b.source,
+      (a, b) =>
+        a.title === b.title &&
+        a.src === b.src &&
+        a.mimeType === b.mimeType &&
+        sameAsset(a.asset, b.asset),
+    ));
+
 /** Known domain facts are compared directly; media is never JSON-serialized during dragging. */
 export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
   return (
@@ -899,6 +1008,17 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
           a.fps === b.fps &&
           a.width === b.width &&
           a.height === b.height &&
+          sameArray(
+            a.fonts ?? [],
+            b.fonts ?? [],
+            (a, b) =>
+              a.id === b.id &&
+              a.title === b.title &&
+              a.src === b.src &&
+              a.mimeType === b.mimeType &&
+              sameAsset(a.asset, b.asset),
+          ) &&
+          sameArray(a.overlays ?? [], b.overlays ?? [], sameTextOverlay) &&
           sameArray(
             timelineImportedAssets(a),
             timelineImportedAssets(b),

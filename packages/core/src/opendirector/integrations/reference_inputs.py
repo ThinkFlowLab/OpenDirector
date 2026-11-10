@@ -100,7 +100,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     rules = input_rules({**config, 'kind': 'agent' if kind == 'text' else kind})
     mode = task.get('videoMode', 'first_frame')
     prompt = project_content(task['promptContent'], speech=kind == 'audio')[0] if task.get('promptContent') is not None else task['prompt']
-    result = {'prompt': prompt, 'images': [], 'audios': [], 'videos': [], 'manifest': [], 'rules': rules, 'continueFrom': None, 'continueSize': None}
+    result = {'prompt': prompt, 'images': [], 'imageRoles': [], 'audios': [], 'videos': [], 'manifest': [], 'rules': rules, 'continueFrom': None, 'continueSize': None}
     if kind == 'text':
         result['content'] = reference_content(store, task['projectId'], {'text': task['prompt'], 'content': task.get('promptContent'), 'assets': [{'id': asset_id} for asset_id in task['referenceIds']]}, manifest=result['manifest'], overrides=overrides)
         request_size(result['content'], rules['requestBytes'])
@@ -117,6 +117,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                            else '当前模型接口尚未接通素材参考模式，请选择该模型支持的生成方式。')
     total_audio_ms, total_video_ms, media_bytes = 0, 0, 0
     source_metadata, text_context = [], []
+    role_by_asset = {str(value['assetId']): value['role'] for value in task.get('referenceRoles') or []}
+    slot_roles = set()
     for index, (data, meta, source_kind) in enumerate(references(store, task['projectId'], task['referenceIds'], overrides), 1):
         entry = {'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'content'}
         if source_kind == 'video' and kind == 'video' and mode == 'continuation':
@@ -154,10 +156,23 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                 raise ProjectError(f'“{meta["name"]}”不符合视频参考图片尺寸要求：边长 300—6000 像素，宽高比 0.4—2.5。')
             if rules['profile'] == 'seedream-5.0-pro' and (width is None or height is None or min(width, height) <= 14 or not 196 <= width * height <= 36000000 or not 1 / 16 <= width / height <= 16):
                 raise ProjectError(f'“{meta["name"]}”不符合当前图片模型的参考尺寸要求。')
+            role = 'reference_image'
+            if kind == 'video' and mode == 'first_frame':
+                # Frame slots are per-slot: one image each, and the slot the
+                # caller asked for is kept so Ark receives last_frame as such.
+                # A plain 'reference' role is a first frame, matching what a
+                # single image meant before last_frame existed; it never turns
+                # into a last frame implicitly.
+                requested = role_by_asset.get(str(meta['id']))
+                role = requested if requested in {'first_frame', 'last_frame'} else 'first_frame'
+                if role in slot_roles:
+                    raise ProjectError('首尾帧每个槽位只能使用一张图片，请在画布上明确指定首帧和尾帧。')
+                slot_roles.add(role)
             result['images'].append(data_uri(data, mime))
+            result['imageRoles'].append(role)
             number = len(result['images'])
             result['prompt'] += f'\n参考{index}：{meta["name"]}，对应第{number}张参考图片（图片{number}，<Picture {number}>）。'
-            entry.update(role='first_frame' if kind == 'video' and mode == 'first_frame' else 'reference_image', number=number)
+            entry.update(role=role, number=number)
         elif source_kind == 'video':
             duration = meta.get('durationMs')
             if meta['type'] not in {'video/mp4', 'video/quicktime'} or len(data) > rules['videoBytes']:
@@ -183,7 +198,10 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         else:
             raise ProjectError(f'“{meta["name"]}”：当前模型和生成模式暂不支持此类参考，当前输入已保留。')
         result['manifest'].append(entry)
-    maximum = 1 if kind == 'video' and mode == 'first_frame' else rules['maxImages']
+    # A first/last keyframe pair is two images; models that only take a
+    # first frame stay at one.
+    frame_limit = 2 if 'last_frame' in (rules.get('frameRoles') or ()) else 1
+    maximum = frame_limit if kind == 'video' and mode == 'first_frame' else rules['maxImages']
     if result['images'] and not maximum:
         raise ProjectError('当前模型只按文字生成，不支持参考图片；请移除图片参考，或把外观要求写进提示词。当前输入已保留。')
     if len(result['images']) > maximum:

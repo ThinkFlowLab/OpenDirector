@@ -387,7 +387,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -412,6 +412,9 @@ export interface CreationContractsInput extends ContractInput {
   readonly writeModel: ModelConfigWriteInput;
   readonly capabilities: NodeCapabilitiesInput;
   readonly viewState: ViewStateInput;
+  readonly timelinePackageManifest: TimelinePackageManifestInput;
+  readonly timelinePackageImport: TimelinePackageImportRequestInput;
+  readonly timelinePackageReceipt: TimelinePackageImportReceiptInput;
   readonly upload: UploadInfoInput;
 }
 
@@ -1276,11 +1279,67 @@ export interface TimelineDataInput extends ContractInput {
   readonly height: number;
   readonly tracks: ReadonlyArray<TimelineTrackInput>;
   readonly importedAssets?: ReadonlyArray<TimelineResourceInput>;
+  readonly fonts?: ReadonlyArray<TimelineFontResourceInput>;
+  readonly overlays?: ReadonlyArray<TimelineTextOverlayInput>;
 }
 
 export interface TimelineDocumentInput extends EditorDocumentBaseInput {
   readonly kind: "timeline";
   readonly data: TimelineDataInput;
+}
+
+export interface TimelineFontResourceInput extends ContractInput {
+  readonly id: string;
+  readonly title: string;
+  readonly asset: AssetRefInput;
+}
+
+export interface TimelinePackageExportFileInput extends ContractInput {
+  readonly editorId: string;
+  readonly revision: number;
+  readonly path: string;
+}
+
+export interface TimelinePackageImportFileInput extends ContractInput {
+  readonly operationId: string;
+  readonly archiveFingerprint: string;
+  readonly path: string;
+  readonly replaceEditorId?: string | null;
+  readonly expectedRevision?: number | null;
+}
+
+export interface TimelinePackageImportReceiptInput extends ContractInput {
+  readonly operationId: string;
+  readonly status: "registered" | "applied" | "rejected";
+  readonly editorId: string;
+  readonly registeredAssetIds?: ReadonlyArray<string>;
+  readonly receipt?: CommandReceiptInput | null;
+  readonly errorCode?: string | null;
+}
+
+export interface TimelinePackageImportRequestInput extends ContractInput {
+  readonly operationId: string;
+  readonly uploadHandle: string;
+  readonly archiveFingerprint: string;
+  readonly replaceEditorId?: string | null;
+  readonly expectedRevision?: number | null;
+}
+
+export interface TimelinePackageManifestInput extends ContractInput {
+  readonly format?: "opendirector-timeline-bundle";
+  readonly version?: 1;
+  readonly requiredCapabilities?: ReadonlyArray<"timeline.text.v1">;
+  readonly resources: ReadonlyArray<TimelinePackageResourceInput>;
+}
+
+export interface TimelinePackageResourceInput extends ContractInput {
+  readonly source: AssetRefInput;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "text" | "image" | "video" | "audio" | "file";
+  readonly mimeType: string;
+  readonly size: number;
+  readonly fingerprint: string;
 }
 
 export interface TimelinePublishRenderInput extends ContractInput {
@@ -1301,6 +1360,39 @@ export interface TimelineResourceInput extends ContractInput {
   readonly asset: AssetRefInput;
   readonly title: string;
   readonly durationSeconds?: number | null;
+}
+
+export interface TimelineTextBackgroundInput extends ContractInput {
+  readonly color: string;
+  readonly opacity: number;
+  readonly padding: number;
+}
+
+export interface TimelineTextOverlayInput extends ContractInput {
+  readonly id: string;
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly maxWidth: number;
+  readonly fontId: string;
+  readonly style: TimelineTextStyleInput;
+  readonly sourceAsset?: AssetRefInput | null;
+}
+
+export interface TimelineTextStrokeInput extends ContractInput {
+  readonly color: string;
+  readonly width: number;
+}
+
+export interface TimelineTextStyleInput extends ContractInput {
+  readonly fontSize: number;
+  readonly color: string;
+  readonly align: "left" | "center" | "right";
+  readonly lineHeight: number;
+  readonly background?: TimelineTextBackgroundInput | null;
+  readonly stroke?: TimelineTextStrokeInput | null;
 }
 
 export interface TimelineTrackInput extends ContractInput {
@@ -1865,7 +1957,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -1890,6 +1982,9 @@ export interface CreationContracts extends Contract {
   readonly writeModel: ModelConfigWrite;
   readonly capabilities: NodeCapabilities;
   readonly viewState: ViewState;
+  readonly timelinePackageManifest: TimelinePackageManifest;
+  readonly timelinePackageImport: TimelinePackageImportRequest;
+  readonly timelinePackageReceipt: TimelinePackageImportReceipt;
   readonly upload: UploadInfo;
 }
 
@@ -2753,11 +2848,67 @@ export interface TimelineData extends Contract {
   readonly height: number;
   readonly tracks: ReadonlyArray<TimelineTrack>;
   readonly importedAssets: ReadonlyArray<TimelineResource>;
+  readonly fonts?: ReadonlyArray<TimelineFontResource>;
+  readonly overlays?: ReadonlyArray<TimelineTextOverlay>;
 }
 
 export interface TimelineDocument extends EditorDocumentBase {
   readonly kind: "timeline";
   readonly data: TimelineData;
+}
+
+export interface TimelineFontResource extends Contract {
+  readonly id: string;
+  readonly title: string;
+  readonly asset: AssetRef;
+}
+
+export interface TimelinePackageExportFile extends Contract {
+  readonly editorId: string;
+  readonly revision: number;
+  readonly path: string;
+}
+
+export interface TimelinePackageImportFile extends Contract {
+  readonly operationId: string;
+  readonly archiveFingerprint: string;
+  readonly path: string;
+  readonly replaceEditorId: string | null;
+  readonly expectedRevision: number | null;
+}
+
+export interface TimelinePackageImportReceipt extends Contract {
+  readonly operationId: string;
+  readonly status: "registered" | "applied" | "rejected";
+  readonly editorId: string;
+  readonly registeredAssetIds: ReadonlyArray<string>;
+  readonly receipt: CommandReceipt | null;
+  readonly errorCode: string | null;
+}
+
+export interface TimelinePackageImportRequest extends Contract {
+  readonly operationId: string;
+  readonly uploadHandle: string;
+  readonly archiveFingerprint: string;
+  readonly replaceEditorId: string | null;
+  readonly expectedRevision: number | null;
+}
+
+export interface TimelinePackageManifest extends Contract {
+  readonly format: "opendirector-timeline-bundle";
+  readonly version: 1;
+  readonly requiredCapabilities: ReadonlyArray<"timeline.text.v1">;
+  readonly resources: ReadonlyArray<TimelinePackageResource>;
+}
+
+export interface TimelinePackageResource extends Contract {
+  readonly source: AssetRef;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "text" | "image" | "video" | "audio" | "file";
+  readonly mimeType: string;
+  readonly size: number;
+  readonly fingerprint: string;
 }
 
 export interface TimelinePublishRender extends Contract {
@@ -2778,6 +2929,39 @@ export interface TimelineResource extends Contract {
   readonly asset: AssetRef;
   readonly title: string;
   readonly durationSeconds: number | null;
+}
+
+export interface TimelineTextBackground extends Contract {
+  readonly color: string;
+  readonly opacity: number;
+  readonly padding: number;
+}
+
+export interface TimelineTextOverlay extends Contract {
+  readonly id: string;
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly maxWidth: number;
+  readonly fontId: string;
+  readonly style: TimelineTextStyle;
+  readonly sourceAsset: AssetRef | null;
+}
+
+export interface TimelineTextStroke extends Contract {
+  readonly color: string;
+  readonly width: number;
+}
+
+export interface TimelineTextStyle extends Contract {
+  readonly fontSize: number;
+  readonly color: string;
+  readonly align: "left" | "center" | "right";
+  readonly lineHeight: number;
+  readonly background: TimelineTextBackground | null;
+  readonly stroke: TimelineTextStroke | null;
 }
 
 export interface TimelineTrack extends Contract {

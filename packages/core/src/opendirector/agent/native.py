@@ -1,15 +1,16 @@
 """CLI runtimes use native skills and a turn-scoped business CLI."""
 import asyncio
+from contextlib import AsyncExitStack
 import json
 import os
 from pathlib import Path
-from uuid import UUID
 import secrets
 import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from urllib.request import getproxies
+from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
 from opendirector.agent import cli_transport, deepseek
@@ -19,6 +20,8 @@ from opendirector.agent.process import terminate
 from opendirector.agent.tools import ROOT, SYSTEM
 from opendirector.installation import BUNDLED
 from opendirector.agent.skill_snapshot import prepare_skills
+from opendirector.agent.directory_links import link_directory, unlink_directory
+from opendirector.agent.owner_rights import native_owner_access
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.chat_completions import ChatCompletions
 
@@ -79,7 +82,8 @@ def codex_session_available(session_id: str) -> bool:
 
 def command(runtime: str, work: Path, socket: str, token: str, model: str | None,
             model_url: str, catalog: list[dict], *, input_modalities: list[str] | None = None,
-            bridge_env: dict[str, str] | None = None) -> tuple[list[str], dict[str, str]]:
+            bridge_env: dict[str, str] | None = None,
+            native_directory: Path | None = None) -> tuple[list[str], dict[str, str]]:
     binary = executable(runtime)
     if binary is None:
         raise ProjectError(BUNDLED_INSTALL_ERROR if runtime == 'default' else f'{runtime} CLI 未安装，请先安装。', 503)
@@ -104,8 +108,8 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
             env.update(XDG_CONFIG_HOME=str(work), OPENDIRECTOR_MODEL_KEY=token)
         env.update(OPENCODE_DISABLE_EXTERNAL_SKILLS='1', OPENCODE_DISABLE_CLAUDE_CODE_SKILLS='1', OPENCODE_CONFIG_CONTENT=json.dumps(config))
         # OpenCode uses inherited PWD when resolving its local directory.
-        env['PWD'] = str(work)
-        args = [binary, 'run', '--dir', str(work), '--pure', '--format', 'json', '--agent', 'opendirector']
+        env['PWD'] = str(native_directory or work)
+        args = [binary, 'run', '--dir', str(native_directory or work), '--pure', '--format', 'json', '--agent', 'opendirector']
         if model:
             args += ['--model', f'opendirector/{model}' if bundled else model]
         return args, env
@@ -120,8 +124,10 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
         (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.2'}))
-        if not (plugin / 'skills').is_symlink():
-            (plugin / 'skills').symlink_to(work / '.agents/skills', target_is_directory=True)
+        skill_root = work / '.agents/skills'
+        skill_root.mkdir(parents=True, exist_ok=True)
+        unlink_directory(plugin / 'skills')
+        link_directory(plugin / 'skills', skill_root)
         args = [binary, '-p', '--verbose', '--system-prompt', SYSTEM,
             '--output-format', 'stream-json', '--plugin-dir', str(plugin), '--tools', 'Skill,Bash,Read',
             '--strict-mcp-config', '--mcp-config', json.dumps({'mcpServers': {}}),
@@ -161,46 +167,57 @@ class NativeRuntime:
         selection = {'model': runtime_model, 'thinking': thinking}
         if config:
             selection.update(config=config.get('id'), modelId=config['modelId'])
-        saved = run.native_session(selection)
-        work_turn_id = turn_id
-        session_id = None
-        if saved and saved.get('workTurnId'):
-            previous_turn_id = UUID(saved['workTurnId'])
-            if (directory / 'agent-runs' / str(previous_turn_id) / 'work').is_dir():
-                work_turn_id = previous_turn_id
-                session_id = saved['sessionId']
-                if runtime == 'codex' and not codex_session_available(session_id):
-                    session_id = None
+        session_id = run.native_session_id(selection)
+        session_directory = run.native_session_directory() if session_id else None
+        if session_id and session_directory is None:
+            # Unverifiable session directories cannot be resumed. Preserve the
+            # old session and start with authoritative conversation context.
+            session_id = None
+        if session_id and runtime == 'codex' and not codex_session_available(session_id):
+            # Retain the validated workspace while rebuilding a missing native
+            # conversation from the full authoritative history.
+            session_id = None
         queue = asyncio.Queue(maxsize=128)
         pending = set()
         token = secrets.token_urlsafe(32)
         process = pump = stderr_task = None
         with TemporaryDirectory(prefix='od-agent-', dir=None if os.name == 'nt' else '/tmp') as temporary:
-            work = (directory / 'agent-runs' / str(work_turn_id) / 'work').resolve()
-            work.mkdir(parents=True, exist_ok=saved is not None)
+            reuse_workspace = session_directory is not None and runtime in {'codex', 'claude', 'deepseek'}
+            work = session_directory if reuse_workspace else (directory / 'agent-runs' / str(turn_id) / 'work').resolve()
+            work.mkdir(parents=True, exist_ok=reuse_workspace)
             gateway.execution_directory = work
-            if runtime == 'opencode' and session_id is None:
-                # Keep OpenCode's workspace discovery inside the canvas execution directory.
-                git = await asyncio.create_subprocess_exec(
-                    'git', 'init', '--quiet', '--template=', cwd=work,
-                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
-                )
-                _, error = await git.communicate()
-                if git.returncode:
-                    raise ProjectError(f'无法初始化画布执行目录：{error.decode(errors="replace").strip()}', 503)
-            roots = prepare_skills(work, catalog)
-            roots += [Path(item['filePath']).resolve().parent for item in catalog]
-            gateway.roots = roots
-            endpoint = str(Path(temporary) / 'cli.sock')
-            server, bridge_env = await cli_transport.start_server(gateway, queue, endpoint, pending)
-            model = None
-            if run.runtime == 'default':
-                model = ModelGateway(
-                    config, thinking, token, str(project_id), str(turn_id), self.transport,
-                    trace_path=directory / 'agent-runs' / f'{turn_id}.model.jsonl',
-                )
-            model_server = await asyncio.start_server(model.connect, '127.0.0.1', 0) if model else None
+            # OpenCode emits session events in the session's original instance
+            # directory. Keep that engine directory stable, while the gateway,
+            # CLI, skills and all published outputs remain scoped to this turn.
+            native_work = session_directory or work
+            server = model_server = model = None
+            permissions = AsyncExitStack()
             try:
+                if runtime == 'deepseek':
+                    # A fresh tree is initialized before copying files. A saved
+                    # session already has its standing projection; only lease
+                    # its ancestors and validate the populated tree on resume.
+                    await permissions.enter_async_context(native_owner_access(work,
+                        **({'initialized': True} if reuse_workspace else {})))
+                if runtime == 'opencode':
+                    git = await asyncio.create_subprocess_exec(
+                        'git', 'init', '--quiet', '--template=', cwd=work,
+                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, error = await git.communicate()
+                    if git.returncode:
+                        raise ProjectError(f'无法初始化画布执行目录：{error.decode(errors="replace").strip()}', 503)
+                roots = prepare_skills(work, catalog)
+                roots += [Path(item['filePath']).resolve().parent for item in catalog]
+                gateway.roots = roots
+                endpoint = str(Path(temporary) / 'cli.sock')
+                server, bridge_env = await cli_transport.start_server(gateway, queue, endpoint, pending)
+                if run.runtime == 'default':
+                    model = ModelGateway(
+                        config, thinking, token, str(project_id), str(turn_id), self.transport,
+                        trace_path=work.parent.with_suffix('.model.jsonl'),
+                    )
+                model_server = await asyncio.start_server(model.connect, '127.0.0.1', 0) if model else None
                 model_url = f'http://127.0.0.1:{model_server.sockets[0].getsockname()[1]}' if model_server else ''
                 deepseek_server = None
                 if runtime == 'deepseek':
@@ -209,6 +226,7 @@ class NativeRuntime:
                 else:
                     args, env = command(run.runtime, work, endpoint, token,
                         config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
+                        **({'native_directory': native_work} if runtime == 'opencode' else {}),
                         **({'input_modalities': config.get('inputModalities', ['text'])} if run.runtime == 'default' else {}))
                 if thinking != 'auto' and runtime == 'codex':
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
@@ -219,7 +237,8 @@ class NativeRuntime:
                         args += ['resume', session_id, '-']
                     else:
                         args += ['--session' if runtime == 'opencode' else '--resume', session_id]
-                execution_context = (f'Execution directory: {work}\n'
+                execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
+                    'Set the native shell workdir to this execution directory for file and media operations. '
                     'Use inherited PATH to discover installed programs with command -v. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
@@ -238,7 +257,7 @@ class NativeRuntime:
                         prompt = f'Use the native skill tool to load {name} before proceeding.\n' + prompt
                 env['OPENDIRECTOR_PROJECT_ID'] = str(run.project_id)
                 try:
-                    process = await asyncio.create_subprocess_exec(*args, cwd=work, env=env,
+                    process = await asyncio.create_subprocess_exec(*args, cwd=native_work, env=env,
                         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE, start_new_session=True, limit=64 * 1024 * 1024)
                 except OSError as error:
@@ -280,20 +299,24 @@ class NativeRuntime:
                         else:
                             while line := await process.stdout.readline():
                                 raw = json.loads(line)
+                                previous_session = reported_session
                                 if runtime == 'codex' and raw['type'] == 'thread.started':
                                     reported_session = raw.get('thread_id')
                                 elif runtime == 'opencode':
                                     reported_session = raw.get('sessionID') or reported_session
                                 elif runtime == 'claude':
                                     reported_session = raw.get('session_id') or reported_session
-                                if session_id and reported_session and session_id != reported_session:
+                                if (previous_session and reported_session != previous_session
+                                        or session_id and reported_session and reported_session != session_id):
                                     raise ProjectError('Harness 返回了不同的会话 ID。', 502)
                                 await queue.put({'native': raw})
                         if await process.wait():
                             await record_exit()
                             raise ProjectError(f'{runtime} 进程退出（{process.returncode}），请检查 CLI 登录和配置。', 502)
                         if reported_session:
-                            run.save_native_session(reported_session, selection, work_turn_id=work_turn_id)
+                            run.save_native_session(reported_session, selection,
+                                engine_directory=native_work,
+                                work_turn_id=run.turn_id if native_work == work and not reuse_workspace else UUID(native_work.parent.name))
                     except ProjectError:
                         if runtime == 'deepseek' and process.returncode:
                             await record_exit()
@@ -315,32 +338,40 @@ class NativeRuntime:
                             yield event
                     await pump
             finally:
-                await gateway.close()
-                server.close()
-                await server.wait_closed()
-                if model_server:
-                    model.closed = True
-                    model_server.close()
-                    await model_server.wait_closed()
-                    for task in model.active:
-                        task.cancel()
-                    await asyncio.gather(*model.active, return_exceptions=True)
-                if runtime == 'deepseek' and pump and not pump.done():
+                try:
+                    await gateway.close()
+                    if server:
+                        server.close()
+                        await server.wait_closed()
+                    if model_server:
+                        model.closed = True
+                        model_server.close()
+                        await model_server.wait_closed()
+                        for task in model.active:
+                            task.cancel()
+                        await asyncio.gather(*model.active, return_exceptions=True)
+                    if runtime == 'deepseek' and pump and not pump.done():
+                        while not queue.empty():
+                            queue.get_nowait()
+                        pump.cancel()
+                        await asyncio.gather(pump, return_exceptions=True)
+                    if process is not None:
+                        await terminate(process, group=True)
                     while not queue.empty():
                         queue.get_nowait()
-                    pump.cancel()
-                    await asyncio.gather(pump, return_exceptions=True)
-                if process is not None:
-                    await terminate(process, group=True)
-                while not queue.empty():
-                    queue.get_nowait()
-                if pump:
-                    pump.cancel()
-                    await asyncio.gather(pump, return_exceptions=True)
-                while not queue.empty():
-                    queue.get_nowait()
-                if stderr_task:
-                    stderr_task.cancel()
-                    await asyncio.gather(stderr_task, return_exceptions=True)
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
+                    if pump:
+                        pump.cancel()
+                        await asyncio.gather(pump, return_exceptions=True)
+                    while not queue.empty():
+                        queue.get_nowait()
+                    if stderr_task:
+                        stderr_task.cancel()
+                        await asyncio.gather(stderr_task, return_exceptions=True)
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+                finally:
+                    try:
+                        if process is not None and process.returncode is None:
+                            await terminate(process, group=True)
+                    finally:
+                        await permissions.__aexit__(*sys.exc_info())

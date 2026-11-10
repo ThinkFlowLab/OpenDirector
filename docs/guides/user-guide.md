@@ -135,9 +135,17 @@ For a local edit, mark an area or create a selection first, then enter your inst
 3. Preview and check the picture and sound.
 4. Click **Render MP4**. When rendering finishes, download the result or add it to the canvas.
 
-The timeline also supports JSON, FCPXML, and asset bundle exports. Choose the format that fits your needs. If your browser reports that a required encoding capability is unavailable, try again in a browser that supports it.
+Use **Add text** for a timed title, caption, or end card. You can also select a text resource and choose **Create from text resource**; this copies its current wording into an independently editable overlay and retains its source. Set the start/end in seconds, or drag the text bar and its edges. Drag the text in the preview to position it. Text properties include font, size, width, alignment, line height, color, background, and outline. **Bring forward** / **Send backward** control overlapping text. Undo and redo apply to local edits; **Apply edits** saves the document.
 
-Keep the page open while rendering. Closing the editor or canceling the render stops the current operation.
+The bundled **Noto Sans CJK SC** font works offline. **Import font** accepts static OTF/TTF files (up to 32 MiB each; used fonts together up to 64 MiB). A font must contain every character used. Missing characters show a diagnostic while you edit and prevent unsupported glyphs from being drawn; your wording is preserved so you can correct it or choose a suitable font. Missing files or characters block saving and export with an explanation. Text supports explicit line breaks and automatic wrapping. If the overflow warning appears, adjust the position, width, font size, or wording. Pure text renders over black, and text can extend beyond the last picture. Automatic transcription and SRT/ASS import are not provided.
+
+The AI assistant can edit the same saved timeline through the shared editor commands. Save local edits before handing work over. If another writer changes a document while you have a draft, your draft remains available and saving reports the conflict; reopen the latest version and reconcile the changes. Rendering and adding a result to the canvas are separate actions. Each added result retains the saved document revision and the actual media, font, and text-source references used for it; editing again does not overwrite an earlier result.
+
+Choose **Export editable package** to share a portable `.timeline.zip` containing the saved timeline and its actual resources. Export first saves the draft. In another project, **Import as new timeline** creates a separate timeline and leaves the current draft intact; **Replace current timeline from package** explicitly replaces the open saved document. Imported text, timing, styles, layers, and resources remain editable without the source project. The package limit is 512 MiB. If an import is incomplete, use **Retry the same package import** to continue that operation.
+
+Editable JSON describes the timeline within the same project and does not embed resource bytes. FCPXML and XML + media ZIP support timelines without text; they refuse text overlays rather than discarding them. Use MP4 for a finished video or the editable package for continued editing. If your browser reports that a required encoding capability is unavailable, use a browser that supports it.
+
+Keep the page and editor open while rendering. Closing the editor or canceling stops the current render. MP4 rendering requires the browser; the assistant cannot render a final video after the browser is closed.
 
 ## Save, back up, and download
 

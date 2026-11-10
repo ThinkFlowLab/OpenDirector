@@ -1,7 +1,25 @@
 export const errors = {
   "errors.generationFailure.policy": "The provider rejected the prompt or reference images under its content policy. Adjust the input before generating again.",
-  "errors.tools.error.submissionUnknown": "The generation request's acceptance is unknown. Check whether the provider received it before submitting again; it will not be resubmitted automatically.",
-  "errors.data.timelineShape": "The timeline size, frame rate, or tracks are invalid.",
+  "errors.archive.identityConflict":
+    "One logical timeline resource refers to conflicting files or metadata.",
+  "errors.archive.textResourceMissing":
+    'The timeline font or text source "{title}" is missing. Restore it before exporting.',
+  "errors.archive.integrity": "Archive asset integrity verification failed.",
+
+  "errors.export.textUnsupported":
+    "FCPXML cannot preserve timeline text. Use the native editable package or MP4.",
+  "errors.timeline.capabilityUnsupported":
+    "This timeline requires an unsupported capability.",
+
+  "errors.render.fontLoad": 'Could not load font "{title}".',
+  "errors.render.fontMissing": 'The timeline font "{fontId}" is missing.',
+  "errors.render.fontBudget": "Timeline fonts must not exceed 64 MiB in total.",
+  "errors.render.fontCoverage":
+    "The selected font does not cover all text characters.",
+  "errors.tools.error.submissionUnknown":
+    "The generation request's acceptance is unknown. Check whether the provider received it before submitting again; it will not be resubmitted automatically.",
+  "errors.data.timelineShape":
+    "The timeline size, frame rate, or tracks are invalid.",
   "errors.data.timelineAssets":
     "The timeline media library accepts only valid images, video, or audio.",
   "errors.data.timelineTrack":
@@ -54,8 +72,7 @@ export const errors = {
     "External nodes must use the director-stage type.",
   "errors.data.externalVersion":
     "The external director stage version id must be a uint64 decimal string.",
-  "errors.data.node":
-    "The node title, prompt, media, or settings are invalid.",
+  "errors.data.node": "The node title, prompt, media, or settings are invalid.",
   "errors.data.contentReference": "A structured content reference is invalid.",
   "errors.data.contentLimit":
     "Structured content exceeds the length or reference limit.",
@@ -76,12 +93,15 @@ export const errors = {
   "errors.rules.subjectEmpty": "The subject has no usable media yet.",
   "errors.rules.subjectReference":
     "The current model or mode does not accept media from a subject.",
-  "errors.rules.nodeKind": "The local service does not accept this node type yet.",
+  "errors.rules.nodeKind":
+    "The local service does not accept this node type yet.",
   "errors.rules.textEmpty": "The text node is empty.",
-  "errors.rules.textReference": "The current model does not accept text references.",
+  "errors.rules.textReference":
+    "The current model does not accept text references.",
   "errors.rules.videoContinuation":
     "Video can only be the previous segment in Continuation mode.",
-  "errors.rules.videoReference": "The current model does not accept video references.",
+  "errors.rules.videoReference":
+    "The current model does not accept video references.",
   "errors.rules.kindReference":
     "The current model does not accept {kind} references.",
   "errors.rules.mediaMissing": "The media has not been imported or was lost.",
@@ -113,7 +133,8 @@ export const errors = {
     "The selected music model does not support reference music. Use YuE2 or disconnect the reference.",
   "errors.rules.transcriptionRequired":
     "Reference music needs a transcription first. Add a transcription model in Model Connections (vLLM-Omni transcription endpoint).",
-  "errors.rules.speechOnly": "The current speech service only supports text-to-speech.",
+  "errors.rules.speechOnly":
+    "The current speech service only supports text-to-speech.",
   "errors.rules.voiceId":
     "Enter a voice id supported by the service (letters, numbers, dots, underscores, or hyphens).",
   "errors.rules.voiceRequired": "Enter a valid Voice ID from the service's voice library before generating.",
@@ -125,7 +146,8 @@ export const errors = {
     "The model does not support the selected duration. Choose again.",
   "errors.rules.resolution":
     "The model or reference mode does not support the selected resolution. Choose again.",
-  "errors.rules.videoMode": "The model does not support the selected video mode.",
+  "errors.rules.videoMode":
+    "The model does not support the selected video mode.",
   "errors.rules.lastFrame":
     "The current service only supports a first frame. Remove the last frame.",
   "errors.rules.lastFrameMissing":
@@ -162,7 +184,8 @@ export const errors = {
     "Stack members must be independent referenceable root nodes that are not part of another stack.",
   "errors.storage.parentMissing":
     "The parent of node {id} does not exist or is not a group.",
-  "errors.storage.parentCycle": "The group chain for node {id} contains a cycle.",
+  "errors.storage.parentCycle":
+    "The group chain for node {id} contains a cycle.",
   "errors.storage.edge":
     "An edge has an invalid shape or references a missing node.",
   "errors.storage.duplicateEdge": "Duplicate edge id: {id}",
@@ -172,7 +195,7 @@ export const errors = {
   "errors.storage.projectFrames":
     "Project settings reference a missing first or last frame.",
   "errors.storage.transientBlob":
-    "Media \"{title}\" still uses a temporary blob URL. Convert it to a data URL before saving so it is not lost on refresh.",
+    'Media "{title}" still uses a temporary blob URL. Convert it to a data URL before saving so it is not lost on refresh.',
   "errors.storage.serialize":
     "The canvas could not be serialized. Reduce project media or split the project: {reason}",
   "errors.storage.unknown": "Unknown error",
@@ -181,7 +204,8 @@ export const errors = {
     "The project changed. Reopen the selection tool.",
   "errors.backend.openFailed":
     "Could not open the project: {error}. The previous project could not regain edit access: {restore}",
-  "errors.backend.snapshotMismatch": "The project snapshot identity does not match.",
+  "errors.backend.snapshotMismatch":
+    "The project snapshot identity does not match.",
   "errors.backend.subscribeFailed": "Could not subscribe to changes.",
   "errors.backend.eventMismatch": "The project event identity does not match.",
   "errors.backend.uploadFailed":
@@ -213,9 +237,11 @@ export const errors = {
     "A media node cannot accept a generation reference directly.",
   "errors.backend.fixedReferenceMissing":
     "The pinned reference version is missing or its content changed.",
-  "errors.backend.savingResult": "The result is being saved. Try again shortly.",
+  "errors.backend.savingResult":
+    "The result is being saved. Try again shortly.",
   "errors.backend.editSourceUnsaved": "The edit source has not been saved.",
-  "errors.backend.notDirectorStage": "This is not a publishable director stage.",
+  "errors.backend.notDirectorStage":
+    "This is not a publishable director stage.",
   "errors.backend.noRealMedia": "The edit source has no real media.",
   "errors.backend.priorResultSaved":
     "An earlier result was saved; this output has not been submitted. Review it and apply again.",
@@ -245,8 +271,7 @@ export const errors = {
     "This adapter needs explicit pixel width and height (only H3 480P and 768P can be derived from the tier).",
   "errors.videoCapabilities.pixelBounds":
     "Landscape width and height must be integers from 64 to 8192, with width at least height, and must match the pixel alignment step.",
-  "errors.videoCapabilities.duplicateResolution":
-    "Resolutions cannot repeat.",
+  "errors.videoCapabilities.duplicateResolution": "Resolutions cannot repeat.",
   "errors.videoCapabilities.defaultOutput":
     "The default resolution and duration must belong to a declared output profile.",
   "errors.tools.saveBeforeSubmit":
@@ -272,8 +297,9 @@ export const errors = {
   "errors.tools.phase.upscaleEdge": "Upscaling to {edge}px",
   "errors.tools.phase.selection": "Applying the selection",
   "errors.tools.phase.cutout": "Detecting and cutting out the subject",
-  "errors.tools.phase.boxObjects": "Detecting boxed objects ({current}/{total})",
-  "errors.tools.phase.recognize": "Recognizing \"{label}\"",
+  "errors.tools.phase.boxObjects":
+    "Detecting boxed objects ({current}/{total})",
+  "errors.tools.phase.recognize": 'Recognizing "{label}"',
   "errors.tools.phase.background": "Filling in the background",
   "errors.tools.phase.removeFill": "Removing and filling",
   "errors.tools.phase.newView": "Generating a new view",
@@ -285,7 +311,7 @@ export const errors = {
   "errors.tools.phase.redrawCount": "Redrawing ({current}/{total})",
   "errors.tools.phase.compose": "Compositing the result",
   "errors.tools.phase.organizeVideo": "Preparing the video",
-  "errors.tools.phase.track": "Detecting and tracking \"{labels}\"",
+  "errors.tools.phase.track": 'Detecting and tracking "{labels}"',
   "errors.tools.phase.matteVideo": "Compositing the matte video",
   "errors.tools.phase.depth": "Estimating depth for every frame",
   "errors.tools.phase.separateAudio": "Separating the audio track",
@@ -320,8 +346,7 @@ export const errors = {
     "Connect an image segmentation model to detect selections automatically; you can still draw one manually.",
   "errors.tools.taskMessage.stopping":
     "Stopping; waiting for the current operation to finish safely.",
-  "errors.tools.taskMessage.notApplicable":
-    "No model call has been submitted.",
+  "errors.tools.taskMessage.notApplicable": "No model call has been submitted.",
   "errors.tools.taskMessage.notRequired":
     "The model call has finished; existing results and records are kept.",
   "errors.tools.taskMessage.notRequested":
@@ -334,8 +359,7 @@ export const errors = {
     "The provider does not support cancellation and may keep running.",
   "errors.tools.taskMessage.unknown":
     "The provider cancellation result is unknown. Check the original task; do not resubmit it directly.",
-  "errors.tools.taskMessage.stopped":
-    "Local processing stopped. {detail}",
+  "errors.tools.taskMessage.stopped": "Local processing stopped. {detail}",
   "errors.tools.taskMessage.cancelledHistory":
     "The history entry is marked cancelled without provider confirmation.",
   "errors.tools.taskMessage.interruptedUnknown":
@@ -377,8 +401,7 @@ export const errors = {
     "The generation result does not match the node's media type.",
   "errors.results.mediaChangedHistory":
     "The node media changed; the result is still kept in generation history.",
-  "errors.results.identityMismatch":
-    "The tool result identity does not match.",
+  "errors.results.identityMismatch": "The tool result identity does not match.",
   "errors.results.noMedia": "The result contains no valid media.",
   "errors.results.draftMismatch":
     "The edit draft does not match the source node.",
@@ -398,8 +421,7 @@ export const errors = {
   "errors.media.cropRange": "The video crop range is invalid.",
   "errors.media.noCaptureStream":
     "This browser does not support the Canvas captureStream needed for video cropping.",
-  "errors.media.noEncoder":
-    "This browser has no available WebM encoder.",
+  "errors.media.noEncoder": "This browser has no available WebM encoder.",
   "errors.media.noData": "Video encoding produced no data.",
   "errors.media.stopFailed": "Could not stop video encoding.",
   "errors.media.playbackInterrupted":
@@ -413,8 +435,7 @@ export const errors = {
   "errors.media.stalled":
     "Video playback stalled; nothing was produced. Please try again.",
   "errors.media.reencodeFailed": "Video re-encoding failed.",
-  "errors.videoAction.options":
-    "Choose an option supported by this operation.",
+  "errors.videoAction.options": "Choose an option supported by this operation.",
   "errors.videoAction.duration":
     "Wait until the video duration is known, then choose a valid range.",
   "errors.videoAction.prompt": "Describe the change you want.",
@@ -469,14 +490,11 @@ export const errors = {
     "Stack members must be referenceable nodes that are unlocked, ungrouped, and not part of another stack.",
   "errors.operations.stackInvalid":
     "The stack reference is invalid, or a member already belongs to another stack.",
-  "errors.operations.stackLocked":
-    "Locked nodes cannot be added to a stack.",
-  "errors.operations.stackUnlock":
-    "Unlock the nodes you want to remove first.",
+  "errors.operations.stackLocked": "Locked nodes cannot be added to a stack.",
+  "errors.operations.stackUnlock": "Unlock the nodes you want to remove first.",
   "errors.mask.size":
     "The mask size does not match the source image. Try again.",
-  "errors.mask.sizeShort":
-    "The mask size does not match the source image.",
+  "errors.mask.sizeShort": "The mask size does not match the source image.",
   "errors.mask.recognized":
     "{count, plural, one {Recognized # object. Adjust it with quick select, the brush, or the eraser.} other {Recognized # objects. Adjust them with quick select, the brush, or the eraser.}}",
   "errors.mask.none":
@@ -498,43 +516,39 @@ export const errors = {
     "Grid split needs 1–7 rows and 1–7 columns, producing at least 2 images.",
   "errors.nodeAction.gridPixels":
     "The row and column counts cannot exceed the image pixel dimensions.",
-  "errors.nodeAction.gridImage":
-    "Grid split requires a readable image node.",
+  "errors.nodeAction.gridImage": "Grid split requires a readable image node.",
   "errors.nodeAction.gridCanvas":
     "The browser cannot create an image-split canvas.",
   "errors.nodeAction.gridEncode": "Encoding the image-split result failed.",
   "errors.nodeAction.gridTitle": "Grid split · row {row}, column {column}",
   "errors.export.range": "The time is outside the FCPXML export range.",
   "errors.export.missingMedia":
-    "Media \"{title}\" has no file, so the full media bundle cannot be exported.",
+    'Media "{title}" has no file, so the full media bundle cannot be exported.',
   "errors.export.emptyTimeline": "Add clips to the timeline first.",
   "errors.export.fpsRange":
     "The project frame rate is outside the FCPXML rational range.",
   "errors.export.frameRange":
     "The timeline is outside the FCPXML frame-count range.",
   "errors.export.clipShort":
-    "Clip \"{title}\" is shorter than one project frame and cannot be exported.",
-  "errors.export.zipEntries":
-    "The media count exceeds the ZIP32 limit.",
-  "errors.export.zipName":
-    "A media-bundle file name is invalid or duplicated.",
+    'Clip "{title}" is shorter than one project frame and cannot be exported.',
+  "errors.export.zipEntries": "The media count exceeds the ZIP32 limit.",
+  "errors.export.zipName": "A media-bundle file name is invalid or duplicated.",
   "errors.export.zipSize":
     "The media bundle exceeds the 4 GiB ZIP32 limit. Split the timeline.",
   "errors.export.zipDirectory":
     "The media-bundle directory exceeds the ZIP32 limit.",
-  "errors.export.missingFile": "\"{title}\" has no media file.",
+  "errors.export.missingFile": '"{title}" has no media file.',
   "errors.export.notLocal":
-    "\"{title}\" is not local media. Import the media file first.",
-  "errors.export.readFailed": "Could not read \"{title}\": {status}",
+    '"{title}" is not local media. Import the media file first.',
+  "errors.export.readFailed": 'Could not read "{title}": {status}',
   "errors.export.emptyFile":
-    "\"{title}\" is empty, so the media bundle was not exported.",
+    '"{title}" is empty, so the media bundle was not exported.',
   "errors.export.readme":
     "OpenDirector FCPXML 1.10\nExtract the whole folder, then import project.fcpxml and keep the media relative paths.\nIncludes the original media, clip in/out points, order, speed, volume, mute, and multiple audio tracks; media is not transcoded.\nNLEs that support FCPXML can read it; the exact version and source codec support determine import compatibility. This does not claim direct import into Premiere or native CapCut projects.\nThe receiving application reads the real frame rate, channels, and sample rate; clip boundaries align to whole project frames, while source in-points and speed-change points use microsecond precision.\nFCPXML standard: https://developer.apple.com/documentation/professional-video-applications/creating-fcpxml-documents\n",
   "errors.zip.path": "Invalid path inside the archive: {path}",
   "errors.zip.exportSize":
     "The export exceeds the single-archive size limit. Split the project and try again.",
-  "errors.zip.unsupportedExtract":
-    "This browser cannot extract .canvas files.",
+  "errors.zip.unsupportedExtract": "This browser cannot extract .canvas files.",
   "errors.zip.damaged": "The archive is damaged and cannot be extracted.",
   "errors.zip.notCanvas": "The file is not a valid .canvas archive.",
   "errors.zip.directoryRange":
@@ -543,8 +557,7 @@ export const errors = {
     "The archive directory is damaged and cannot be read.",
   "errors.zip.encrypted": "The archive content is encrypted: {name}",
   "errors.zip.zip64": "ZIP64 archives are not supported yet.",
-  "errors.zip.entryDamaged":
-    "An archive entry is damaged and cannot be read.",
+  "errors.zip.entryDamaged": "An archive entry is damaged and cannot be read.",
   "errors.zip.entryRange": "An archive entry is outside the file bounds.",
   "errors.zip.unsupportedMethod":
     "The archive uses an unsupported compression method: {method}",
@@ -589,7 +602,8 @@ export const errors = {
     "This node only accepts {kind} media, and the uploaded file type does not match.",
   "errors.upload.unsupported":
     "This operation does not support this media type.",
-  "errors.upload.size": "The reference file exceeds the size limit ({kib} KiB).",
+  "errors.upload.size":
+    "The reference file exceeds the size limit ({kib} KiB).",
   "errors.pendingRef.unsupported":
     "This type cannot be used as a chat reference yet.",
   "errors.pendingRef.mediaMissing":
@@ -620,8 +634,7 @@ export const errors = {
   "errors.preview.empty": "No previewable media",
   "errors.preview.loading": "Loading preview…",
   "errors.preview.emptyText": "(empty text)",
-  "errors.preview.longText":
-    "The text is long; open the node to read it.",
+  "errors.preview.longText": "The text is long; open the node to read it.",
   "errors.preview.secondsUnit": "{value} s",
   "errors.connections.reference": "Reference edge",
   "errors.connections.delete": "Delete this edge",
@@ -678,8 +691,7 @@ export const errors = {
     "The provider could not find this task.",
   "errors.generationFailure.notFoundEndpoint":
     "The generation endpoint or model does not exist.",
-  "errors.generationFailure.cancelled":
-    "The provider task was cancelled.",
+  "errors.generationFailure.cancelled": "The provider task was cancelled.",
   "errors.generationFailure.expired": "The provider task expired.",
   "errors.generationFailure.failed": "The generation task failed.",
   "errors.generationFailure.referenceAudio":
@@ -712,14 +724,12 @@ export const errors = {
     "A subject can contain one video, or one main image plus up to three extra images. Remove the conflicting media first.",
   "errors.connection.subjectCapacity":
     "A subject can contain one main image and three extra images",
-  "errors.connection.subjectDuration":
-    "Subject video cannot exceed 15 seconds",
+  "errors.connection.subjectDuration": "Subject video cannot exceed 15 seconds",
   "errors.connection.sourceDuration":
     "Read the actual video or audio duration before adding it to the target node",
   "errors.timeline.libraryKind":
     "The timeline media library accepts only images, video, or audio.",
-  "errors.timeline.kind":
-    "The timeline accepts only images, video, or audio.",
+  "errors.timeline.kind": "The timeline accepts only images, video, or audio.",
   "errors.timeline.trackKind":
     "The media type does not match the target track.",
   "errors.timeline.duration":
@@ -735,14 +745,14 @@ export const errors = {
     "Choose a timeline JSON file exported by the local editor.",
   "errors.render.timelineEmpty": "Add media to the timeline first.",
   "errors.render.canvas": "Could not create the video frame.",
-  "errors.render.missingMedia": "Media \"{title}\" has no file.",
-  "errors.render.readFailed": "Could not read \"{title}\": {status}",
-  "errors.render.imageDecode": "Could not decode image \"{title}\".",
-  "errors.render.videoDecode": "Could not decode the video in \"{title}\".",
-  "errors.render.audioDecode": "Could not decode the audio in \"{title}\".",
-  "errors.render.noAudio": "\"{title}\" has no readable audio track.",
+  "errors.render.missingMedia": 'Media "{title}" has no file.',
+  "errors.render.readFailed": 'Could not read "{title}": {status}',
+  "errors.render.imageDecode": 'Could not decode image "{title}".',
+  "errors.render.videoDecode": 'Could not decode the video in "{title}".',
+  "errors.render.audioDecode": 'Could not decode the audio in "{title}".',
+  "errors.render.noAudio": '"{title}" has no readable audio track.',
   "errors.render.noFrame":
-    "\"{title}\" has no frame available at {time} seconds.",
+    '"{title}" has no frame available at {time} seconds.',
   "errors.render.layerLocalOnly":
     "Only local images are supported. Import the file first; no external image is requested.",
   "errors.render.layerDecode":
@@ -750,11 +760,10 @@ export const errors = {
   "errors.render.layerCanvas":
     "The browser cannot create a Canvas 2D layer canvas.",
   "errors.render.layerNotLoaded":
-    "Layer \"{name}\" has not finished loading and cannot be composited.",
+    'Layer "{name}" has not finished loading and cannot be composited.',
   "errors.render.layerNotPortable":
     "The image has not finished loading, so a portable layer file cannot be saved.",
-  "errors.render.mp4Invalid":
-    "The export duration or frame rate is invalid.",
+  "errors.render.mp4Invalid": "The export duration or frame rate is invalid.",
   "errors.render.mp4Even":
     "MP4 width and height must be even. Adjust the timeline size.",
   "errors.render.mp4H264":
@@ -786,8 +795,7 @@ export const errors = {
     "Media assembly source (keeps the media version added at the time)",
   "errors.refEvidence.referenceSource": "Reference source",
   "errors.refEvidence.targetNode": "Target node",
-  "errors.refEvidence.currentUsed":
-    "The current result uses this reference",
+  "errors.refEvidence.currentUsed": "The current result uses this reference",
   "errors.refEvidence.unknownInput": "No generation input recorded",
   "errors.refEvidence.missing": "Reference missing",
   "errors.refEvidence.pinnedDiff":
@@ -812,8 +820,7 @@ export const errors = {
     "The marks reached the save limit. Apply the local marks to generate an image before continuing.",
   "errors.import.readFailed": "Read failed",
   "errors.generation.targetMissing": "The target node no longer exists.",
-  "errors.history.limit":
-    "The history limit must be a positive integer.",
+  "errors.history.limit": "The history limit must be a positive integer.",
   "errors.stats.image": "Images",
   "errors.stats.video": "Video",
   "errors.stats.text": "Text",
@@ -839,8 +846,7 @@ export const errors = {
   "errors.tool.fieldSelect":
     "{label} is not one of the options available for this capability.",
   "errors.tool.fieldFormat": "{label} has an invalid format.",
-  "errors.tool.fieldColor":
-    "{label} must be a lowercase hexadecimal color.",
+  "errors.tool.fieldColor": "{label} must be a lowercase hexadecimal color.",
   "errors.tool.multiPreset":
     "The preset aspect ratio output size must match the measured size.",
   "errors.tool.multiCustom":
@@ -861,14 +867,12 @@ export const errors = {
     "Layer decomposition supports only known input formats: PNG / JPEG.",
   "errors.tool.layerPixels":
     "Layer decomposition needs an image with at least 262,144 pixels.",
-  "errors.tool.maskRequired":
-    "Edit and provide a valid selection mask first.",
+  "errors.tool.maskRequired": "Edit and provide a valid selection mask first.",
   "errors.tool.maskOwner":
     "The selection does not belong to the current source node. Edit the selection again.",
   "errors.tool.selectionSize":
     "Selection width and height must be positive integers.",
-  "errors.tool.maskSize":
-    "The mask size must match the source image size.",
+  "errors.tool.maskSize": "The mask size must match the source image size.",
   "errors.tool.productRegion":
     "Select the product region in the original scene.",
   "errors.tool.boxesRequired":
@@ -879,18 +883,15 @@ export const errors = {
     "The split region is outside the source image or has an invalid size.",
   "errors.tool.entryOnly":
     "This tool's parameter protocol is not connected yet; the task cannot be submitted.",
-  "errors.tool.draftFormat":
-    "The tool task draft format is invalid.",
+  "errors.tool.draftFormat": "The tool task draft format is invalid.",
   "errors.tool.draftVersion":
     "The tool task draft version or tool is not supported.",
   "errors.tool.draftSource": "The tool task source is invalid.",
   "errors.tool.draftParameters": "The tool task parameters are invalid.",
-  "errors.tool.paramLimit":
-    "The number of tool parameters exceeds the limit.",
+  "errors.tool.paramLimit": "The number of tool parameters exceeds the limit.",
   "errors.tool.paramValue": "A tool parameter contains an invalid value.",
   "errors.tool.selectionFormat": "The selection format is invalid.",
-  "errors.tool.selectionSource":
-    "The selection source or size is invalid.",
+  "errors.tool.selectionSource": "The selection source or size is invalid.",
   "errors.tool.maskInvalid": "The selection mask is invalid.",
   "errors.tool.boxInvalid": "The selection rectangle data is invalid.",
   "errors.tool.boxSize": "The selection rectangle size is invalid.",
@@ -909,9 +910,9 @@ export const errors = {
     "The model entry has been observed; normal generation parameters are unverified.",
   "errors.catalog.context2K": "2K · 1 image",
   "errors.catalog.contextOmni": "Omni reference · 4 s · 720P · 1 clip",
-  "errors.catalog.contextFirstLast":
-    "First/last frame · 5 s · 720P · 1 clip",
-  "errors.catalog.contextMusic": "Music generation · 30 s · measured in this run",
+  "errors.catalog.contextFirstLast": "First/last frame · 5 s · 720P · 1 clip",
+  "errors.catalog.contextMusic":
+    "Music generation · 30 s · measured in this run",
   "errors.catalog.contextVoice":
     "SpongeBob voice read · measured with this input, not priced per character",
 } as const;

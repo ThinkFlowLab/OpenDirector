@@ -28,7 +28,7 @@ def test_real_engine_shared_business_loop(tmp_path, monkeypatch):
     steps = [
         ('bash', {'command': 'opendirector project show'}),
         ('bash', {'command': 'opendirector asset write-text --help'}),
-        ('bash', {'command': "opendirector asset write-text --name engine.md --text 'Real engine, local model fixture'"}),
+        ('bash', {'command': 'opendirector asset write-text --name engine.md --text "Real engine, local model fixture"' if os.name == 'nt' else "opendirector asset write-text --name engine.md --text 'Real engine, local model fixture'"}),
     ]
     class Model(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -81,8 +81,9 @@ def test_real_engine_shared_business_loop(tmp_path, monkeypatch):
             'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
             pid, turn = str(uuid4()), str(uuid4())
             root = '/api/creation/projects/' + pid
-            assert client.post(root + '/commands', json=dict(type='project.create', projectId=pid,
-                commandId=str(uuid4()), payload=dict(name='Real engine'))).status_code == 200
+            created = client.post(root + '/commands', json=dict(type='project.create', projectId=pid,
+                commandId=str(uuid4()), payload=dict(name='Real engine')))
+            assert created.status_code == 200, created.text
             assert client.post(root + '/open').status_code == 200
             response = client.post(root + '/assistant/turns', json=dict(id=turn,
                 runtime='jiuwenswarm', runtimeModel='fixture-model#0', text='Read the project, inspect the command schema, then save the text plan.'))

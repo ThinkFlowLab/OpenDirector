@@ -120,7 +120,7 @@ L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭
 
 ### 脚本登记与 lane 归属
 
-[`tests/browser/manifest.json`](../../tests/browser/manifest.json) 是浏览器脚本 lane 归属与运行要求的唯一来源：`gate`（PR 门禁）、`extended`（nightly 普通隔离服务）、`extendedFixture`（nightly 独立 fixture 服务）、`production`（生产构建，要求 `previewSafe`）、`perf`（性能与输出验证）。`npm run check:browser-manifest`（Release checks 独立步骤）校验磁盘与清单一一对应、fixture 与 previewSafe 声明与源码一致、manifest 的 gate 集合与 release-checks.yml 实际调用一致；nightly 从清单派生各 lane 列表。新增浏览器脚本登记清单即可，不修改工作流列表。
+[`tests/browser/manifest.json`](../../tests/browser/manifest.json) 是浏览器脚本 lane 归属与运行要求的唯一来源：`gate`（PR 门禁）、`extended`（nightly 普通隔离服务）、`extendedFixture`（nightly 独立 fixture 服务）、`production`（生产构建，要求 `previewSafe`）、`perf`（性能与输出验证）、`manual`（需要可见桌面或独立平台 wheel 的人工触发验收）。`npm run check:browser-manifest`（Release checks 独立步骤）校验磁盘与清单一一对应、fixture 与 previewSafe 声明与源码一致、manifest 的 gate 集合与 release-checks.yml 实际调用一致；nightly 从清单派生各 lane 列表。新增浏览器脚本登记清单即可，不修改工作流列表。
 
 `mp4_render_probe.mjs` 与 `reference_drag_performance.mjs` 需要导入 `/src/*.ts`，只在 dev server 上运行；`vite preview` lane 只运行不导入 `/src` 的脚本。需要 `--assistant-fixture` 的浏览器脚本不属于普通隔离服务阶段。
 
@@ -206,6 +206,39 @@ node tests/browser/provider_settings.mjs
 ```
 
 浏览器用例使用隔离服务验证提供商预设、手动添加、逐模型图片输入能力、保存不推理、已有连接复用及取消草稿。不会向外部提供商发送请求或保存真实密钥。
+
+## 定时文字与可移植时间线
+
+```sh
+node tests/browser/timeline_text_editing.mjs   # UI/共用命令、保存重启、冲突/锁、双语与输入草稿
+node tests/browser/timeline_text_render.mjs    # 真实字体、像素/时序、文字片尾与音频、取消
+node tests/browser/timeline_text_archive.mjs   # UI↔CLI 跨工程包、重启续编、MP4 与交换拒绝
+node tests/browser/timeline_text_desktop.mjs   # 独立可见 Chrome：横竖 1080p、2000 条/10 分钟与进程 RSS 采样
+node tests/browser/timeline_workflow.mjs      # 原有无文字时间线与真实媒体行为
+```
+
+前三个文字脚本各自启动临时项目服务和 Vite，使用独立端口；不要指向真实工程。桌面脚本使用新的测试专用 Chrome profile 和可见窗口，不连接用户浏览器。通过 `PLAYWRIGHT_MODULE`、`CHROMIUM_PATH` 指定已有安装；`TIMELINE_TEXT_EVIDENCE` 可指定桌面输出目录，默认 `test-results/issue87/desktop`。运行前检查脚本顶部的端口环境变量；与其他浏览器用例顺序执行以免相互影响测量。
+
+验收须检查实际 `ffprobe` 编码、尺寸和时长，以及导出帧中的中文、起止帧和重叠层次。640×360 自动化通过不能替代桌面 1920×1080 / 1080×1920。浏览器实际编码能力不足应记录为运行环境限制，不能降尺寸后宣称通过 1080p。2000 条、600 秒测量使用同一媒体、帧率和尺寸的无文字基线，分别报告编辑交互延迟、采样 JS 堆、实际合成耗时及文件大小；JS 堆不是整个浏览器/系统内存，也不是精确的进程峰值。
+
+定时文字验收证据见 [Issue #87 验收记录](issue-87-validation.md)。记录必须明确测试替身、真实文件验证、平台边界和已有基线失败；未完成的桌面、wheel 或跨平台检查不能标为通过。
+
+实际 wheel 验证还须在新的隔离虚拟环境安装构建产物，运行 `scripts/verify_install.py`，然后直接检查已安装服务的 `/fonts/manifest.json`、字体字节和许可证，不能用 Vite 的静态资源代替。可运行：
+
+```sh
+OPENDIRECTOR_INSTALLED_PYTHON=/absolute/path/to/wheel-venv/bin/python \
+  node tests/browser/timeline_text_installed.mjs
+```
+
+该脚本自行启动已安装后端，不启动 Vite；后台 PATH 不包含 Node，浏览器仍使用约定的 Playwright/Chrome 安装。实际创建时间线、添加文字、检查预览及缺字诊断/恢复、保存、重启后重开。桌面性能脚本以 500 毫秒间隔采样该隔离 Chrome 实例通过 CDP 报告的进程 PID：POSIX 使用 `ps` RSS，Windows 使用实际 `GetProcessMemoryInfo` 工作集。总和可能重复计算共享页，并非独占内存或精确瞬时峰值，不含 Python/Vite/Node 控制进程。完整逐次采样保存在 `report.json`；存活进程采样失败会报错，零值仅用于内核确认已退出的 PID。
+
+七组时间线脚本共用仓库中的 `tests/browser/host.mjs` 与 `windows_host.py`，不依赖本机忽略目录副本。源码 `PYTHONPATH` 使用平台分隔符，已安装服务移除源码导入和宿主 PATH；Windows 子进程先挂入本测试的私有 Job Object，再开始执行，清理仅终止该 Job。设置 `PYTHON` 指向 **未打包的 Python.org 虚拟环境**，installed 组另设置 `OPENDIRECTOR_INSTALLED_PYTHON` 指向全新 wheel 环境。Microsoft Store Python 的激活启动器曾在真实检查中留下 Job 外的孙进程，host adapter 会在启动测试应用前明确拒绝该解释器；这是测试宿主的支持边界，不把它改为 skip 或改变产品沙箱。
+
+The seven timeline suites share the tracked host adapter. Source imports use the native path delimiter; installed servers have no source import path or ambient Node PATH. Windows uses a private job and actual kernel working-set samples for CDP PIDs. Set `PYTHON` to an unpackaged Python.org venv and `OPENDIRECTOR_INSTALLED_PYTHON` to a fresh wheel venv. Packaged Microsoft Store Python is explicitly rejected before launching the test application because native tests observed descendants outside job ownership. This is a host prerequisite, not a skipped test or a product sandbox change.
+
+解释器发现顺序为显式 `PYTHON`、工程 `.venv`、PATH 中的 `python3` / `python`。显式路径无效时报错；不会静默换解释器。CI 不必创建 `.venv`，但 PATH 必须提供满足项目版本要求的 Python。
+
+Interpreter discovery uses explicit `PYTHON`, then the project `.venv`, then PATH `python3` / `python`. Invalid explicit overrides fail instead of selecting another interpreter. CI may install Python globally; the interpreter must meet the project's supported version requirement.
 
 MOSS 图像与语音接入使用以下检查。浏览器命令连接本文前述隔离 API 和 Vite；可通过环境变量改用其他端口。
 

@@ -17,6 +17,12 @@ TEXT_REFERENCE_BYTES = 64 * 1024
 # omits imageBytes. Adapter profiles publish their own imageBytes.
 AGENT_IMAGE_BYTES = 32 * 1024 * 1024
 DEFAULT_VIDEO_BYTES = 50 * 1024 * 1024
+TIMELINE_FONT_LIMIT = 16
+TIMELINE_OVERLAY_LIMIT = 2000
+TIMELINE_TEXT_MAX_LENGTH = 4096
+TIMELINE_TEXT_TOTAL_LENGTH = 200000
+TIMELINE_FONT_BYTES = 32 * 1024 * 1024
+TIMELINE_FONT_TOTAL_BYTES = 64 * 1024 * 1024
 FRAME_IMAGE_LIMIT = 2
 PROMPT_MAX_LENGTH = 20000
 TEXT_MAX_TOKENS = 32768
@@ -40,6 +46,12 @@ VIDEO_ASPECT_RATIOS = (
 
 def facts_payload():
     return {
+        'timelineFontLimit': TIMELINE_FONT_LIMIT,
+        'timelineOverlayLimit': TIMELINE_OVERLAY_LIMIT,
+        'timelineTextMaxLength': TIMELINE_TEXT_MAX_LENGTH,
+        'timelineTextTotalLength': TIMELINE_TEXT_TOTAL_LENGTH,
+        'timelineFontBytes': TIMELINE_FONT_BYTES,
+        'timelineFontTotalBytes': TIMELINE_FONT_TOTAL_BYTES,
         'maxReferences': MAX_REFERENCES,
         'textReferenceBytes': TEXT_REFERENCE_BYTES,
         'agentImageBytes': AGENT_IMAGE_BYTES,

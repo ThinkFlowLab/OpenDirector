@@ -231,6 +231,11 @@
       ]
     },
     {
+      "file": "host.mjs",
+      "helper": true,
+      "note": "Portable host process ownership, environment and real RSS adapters."
+    },
+    {
       "file": "jiuwenswarm_picker.mjs",
       "previewSafe": true,
       "lanes": [
@@ -238,15 +243,15 @@
       ]
     },
     {
+      "file": "layerApply.mjs",
+      "helper": true,
+      "note": "Shared layer-studio receipt helper, imported by canvas_crop and canvas_layers."
+    },
+    {
       "file": "local_output_delivery.mjs",
       "lanes": [
         "gate"
       ]
-    },
-    {
-      "file": "layerApply.mjs",
-      "helper": true,
-      "note": "Shared layer-studio receipt helper, imported by canvas_crop and canvas_layers."
     },
     {
       "file": "locale.mjs",
@@ -399,6 +404,44 @@
     },
     {
       "file": "subject_node_media.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "timeline_text_archive.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "timeline_text_coverage.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "timeline_text_desktop.mjs",
+      "lanes": [
+        "manual"
+      ],
+      "note": "Requires a visible desktop Chrome session and platform memory sampling; run as native platform acceptance."
+    },
+    {
+      "file": "timeline_text_editing.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
+      "file": "timeline_text_installed.mjs",
+      "lanes": [
+        "manual"
+      ],
+      "note": "Requires OPENDIRECTOR_INSTALLED_PYTHON from a fresh platform wheel installation."
+    },
+    {
+      "file": "timeline_text_render.mjs",
       "lanes": [
         "extended"
       ]

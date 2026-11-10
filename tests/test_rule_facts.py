@@ -10,7 +10,22 @@ from opendirector.domain.rule_facts import (
     MUSIC_SECONDS_MIN, PROMPT_MAX_LENGTH, SERVICE_VOICE_PATTERN, STORED_VOICE_PATTERN,
     TEXT_DEFAULT_MAX_TOKENS, TEXT_MAX_TOKENS, TEXT_REFERENCE_BYTES, VIDEO_ASPECT_RATIOS,
     derivation_vectors,
+    facts_payload,
 )
+
+
+def test_timeline_contract_limits_are_published_as_shared_facts():
+    from opendirector.domain.creation.editors import TimelineData, TimelineTextOverlay
+    facts = facts_payload()
+    assert {key: facts.get(key) for key in (
+        'timelineFontLimit', 'timelineOverlayLimit', 'timelineTextMaxLength',
+        'timelineTextTotalLength', 'timelineFontBytes', 'timelineFontTotalBytes',
+    )} == dict(timelineFontLimit=16, timelineOverlayLimit=2000, timelineTextMaxLength=4096,
+              timelineTextTotalLength=200000, timelineFontBytes=32 * 1024**2, timelineFontTotalBytes=64 * 1024**2)
+    schema = TimelineData.model_json_schema()['properties']
+    assert schema['fonts']['maxItems'] == facts['timelineFontLimit']
+    assert schema['overlays']['maxItems'] == facts['timelineOverlayLimit']
+    assert TimelineTextOverlay.model_json_schema()['properties']['text']['maxLength'] == facts['timelineTextMaxLength']
 
 
 def test_voice_precheck_is_stricter_than_the_stored_contract_pattern():

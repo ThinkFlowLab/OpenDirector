@@ -381,16 +381,28 @@ def test_destination_appearing_during_recovery_is_never_overwritten(projects):
 
 @requires_posix()
 def test_symlinks_and_missing_commit_records_are_not_followed_or_replaced(projects, tmp_path):
+    from process_helpers import directory_link
     created = create(projects)
     commits = projects.root / 'Example' / 'commits'
     file = commits / f'{created.commandId}.json'
     outside = tmp_path / 'outside.json'
     outside.write_bytes(file.read_bytes())
     file.unlink()
-    file.symlink_to(outside)
+    if os.name == 'nt':
+        redirected = tmp_path / 'outside-commits'
+        commits.rename(redirected)
+        (redirected / file.name).write_bytes(outside.read_bytes())
+        directory_link(commits, redirected)
+    else:
+        file.symlink_to(outside)
     with pytest.raises(ProjectError, match='符号链接'):
         projects.snapshot(created.projectId)
-    file.unlink()
+    if os.name == 'nt':
+        commits.rmdir()
+        commits.mkdir()
+        assert (redirected / file.name).read_bytes() == outside.read_bytes()
+    else:
+        file.unlink()
     with pytest.raises(ProjectError, match='缺失或损坏'):
         projects.snapshot(created.projectId)
     assert json.loads(outside.read_text())['receipt']['status'] == 'applied'

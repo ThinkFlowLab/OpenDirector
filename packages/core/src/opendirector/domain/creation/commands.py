@@ -191,7 +191,7 @@ class SpecPromptWrite(Contract):
 
 
 class SpecWrite(Contract):
-    spec: GenerationSpec = Field(description='Configuration with its current revision; the server increments it on commit.')
+    spec: GenerationSpec = Field(description='Complete configuration with its current revision; the server increments it on commit. For updates, read the current spec, preserve unedited fields and submit its current expected version. Accepted job snapshots never change.')
 
 
 class ReferenceWrite(Contract):
@@ -394,7 +394,9 @@ def command_fingerprint(command: Command) -> str:
     return digest(command)
 
 
-IssueCode = Literal['invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+from opendirector.domain.timeline_errors import TimelineIssueCode
+
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',

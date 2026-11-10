@@ -1,19 +1,20 @@
+import { spawnOwned as spawn, stopOwned, pythonExecutable, sourcePythonPath, executable } from "./host.mjs";
 /** Owns isolated API/Vite processes; restarts the API over the SAME project root. */
 import assert from "node:assert/strict";
 import { creationJourney } from "./creation_journey.mjs";
 const full = process.argv.includes("--full-creation");
-import { spawn, execFileSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile, rename } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, writeFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { once } from "node:events";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
 );
 const root = await mkdtemp(join(tmpdir(), "opendirector-creation-timeline-"));
-const evidence = await mkdtemp(
+const evidence = process.env.TIMELINE_TEXT_EVIDENCE ?? await mkdtemp(
   join(tmpdir(), "opendirector-timeline-evidence-"),
 );
+await mkdir(evidence, { recursive: true });
 const apiPort = process.env.TIMELINE_API_PORT ?? "8031",
   webPort = process.env.TIMELINE_WEB_PORT ?? "5191";
 const api = `http://127.0.0.1:${apiPort}`,
@@ -31,10 +32,7 @@ function run(command, args, env = {}) {
   return child;
 }
 async function stop(child) {
-  if (!child || child.exitCode !== null) return;
-  const ended = once(child, "exit");
-  child.kill("SIGTERM");
-  await ended;
+  await stopOwned(child);
 }
 async function until(check) {
   const end = Date.now() + 30000;
@@ -49,9 +47,9 @@ async function until(check) {
 }
 async function startApi() {
   server = run(
-    process.env.PYTHON ?? ".venv/bin/python",
+    pythonExecutable(),
     ["tests/browser/creation_server.py", "--port", apiPort, "--root", root],
-    { PYTHONPATH: "packages/core/src:apps/api/src" },
+    { PYTHONPATH: sourcePythonPath() },
   );
   await until(
     async () =>
@@ -82,13 +80,13 @@ const command = (pid, type, payload) =>
     payload,
   });
 function ffmpeg(args) {
-  return execFileSync("ffmpeg", ["-v", "error", "-y", ...args], {
+  return execFileSync(executable("ffmpeg"), ["-v", "error", "-y", ...args], {
     maxBuffer: 20 * 1024 * 1024,
   });
 }
 function probe(path) {
   return JSON.parse(
-    execFileSync("ffprobe", [
+    execFileSync(executable("ffprobe"), [
       "-v",
       "error",
       "-show_streams",

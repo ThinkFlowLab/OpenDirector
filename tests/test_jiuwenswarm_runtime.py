@@ -6,6 +6,7 @@ import sys
 from uuid import uuid4
 
 import pytest
+from process_helpers import python_cli
 from fastapi.testclient import TestClient
 
 from opendirector.agent import jiuwenswarm as jiuwen
@@ -17,7 +18,7 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
-FAKE = r'''import json, os, subprocess, sys, time
+FAKE = r'''import json, os, shutil, subprocess, sys, time
 from pathlib import Path
 request = json.loads(sys.stdin.readline())
 assert request['schema_version'] == '0.1'
@@ -73,7 +74,9 @@ if mode == 'wait':
  emit('result',status='cancelled',exit_code=130,error={'code':'CANCELLED'},output='Waiting')
  raise SystemExit(130)
 assert request['host_tools'] == []
-outcome = json.loads(subprocess.check_output(['opendirector', 'asset', 'write-text', '--name', 'plan.md', '--text', 'Native plan'], text=True))
+cli = shutil.which('opendirector')
+assert cli and Path(cli).parent.samefile(Path.cwd() / '.opendirector-bin')
+outcome = json.loads(subprocess.check_output([cli, 'asset', 'write-text', '--name', 'plan.md', '--text', 'Native plan'], text=True))
 assert outcome['status'] == 'applied', outcome
 emit('event',event_type='chat.tool_call',payload={'tool':{'call_id':'skill-1','name':'skill_tool','arguments':{'skill_name':'example'},'status':'started','result':None}})
 emit('event',event_type='chat.tool_result',payload={'tool':{'call_id':'skill-1','name':'skill_tool','arguments':None,'status':'completed','result':'Skill body'}})
@@ -95,7 +98,7 @@ emit('result',status='completed',exit_code=0,error=None,output=output)
 @pytest.fixture
 def cli(tmp_path, monkeypatch):
     binary = tmp_path / 'jiuwenswarm-process'
-    binary.write_text(f'#!{sys.executable}\n' + FAKE)
+    binary = python_cli(binary, FAKE)
     binary.chmod(0o755)
     monkeypatch.setattr(jiuwen, 'executable', lambda: str(binary))
     state = tmp_path / 'native'

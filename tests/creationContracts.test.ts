@@ -47,7 +47,10 @@ test("Python-normalized project retains typed editor and media relationships", (
   // This fixture is parsed and compared to its Python source in test_creation_contracts.py.
   // TypeScript alone does not validate untrusted JSON; the Python boundary does.
   const project = JSON.parse(
-    readFileSync(new URL("./fixtures/creation-project.json", import.meta.url), "utf8"),
+    readFileSync(
+      new URL("./fixtures/creation-project.json", import.meta.url),
+      "utf8",
+    ),
   ) as ProjectSnapshot;
   assert.equal(new Set(project.canvasItems.map((item) => item.kind)).size, 11);
   const timeline = project.editorDocuments.find(
@@ -58,19 +61,60 @@ test("Python-normalized project retains typed editor and media relationships", (
   assert.equal(timeline.data.tracks[1].clips[0].outPoint, 4);
   assert.ok(project.canvasItems.map(label).includes(":timeline"));
   assert.equal(project.jobs[0].inputSnapshot.spec.currentResultId, null);
-  assert.equal(project.generationSpecs[0].currentResultId, project.results[0].id);
+  assert.equal(
+    project.generationSpecs[0].currentResultId,
+    project.results[0].id,
+  );
 });
 
 test("schema publishes the same command for HTTP and Agent adapters", () => {
   const schema = JSON.parse(
-    readFileSync(new URL("../src/contracts/creation.schema.json", import.meta.url), "utf8"),
+    readFileSync(
+      new URL("../src/contracts/creation.schema.json", import.meta.url),
+      "utf8",
+    ),
   );
   const input = schema.input.$defs;
-  assert.equal(input.GenerationSubmitCommand.properties.type.const, "generation.submit");
+  assert.equal(
+    input.GenerationSubmitCommand.properties.type.const,
+    "generation.submit",
+  );
   assert.equal(input.GenerationSubmit.properties.specId.format, "uuid");
-  assert.equal(input.CanvasShow.properties.item.discriminator.propertyName, "kind");
-  assert.equal(input.ImageCanvasItem.properties.binding.discriminator.propertyName, "role");
+  assert.equal(
+    input.CanvasShow.properties.item.discriminator.propertyName,
+    "kind",
+  );
+  assert.equal(
+    input.ImageCanvasItem.properties.binding.discriminator.propertyName,
+    "role",
+  );
   assert.equal(input.ModelSnapshot.additionalProperties, false);
   assert.equal(input.ModelSnapshot.properties.apiKey, undefined);
-  assert.equal(input.ModelConfigWrite.properties.apiKey.anyOf[0].writeOnly, true);
+  assert.equal(
+    input.ModelConfigWrite.properties.apiKey.anyOf[0].writeOnly,
+    true,
+  );
+});
+
+test("text output fields stay optional for pre-text commits and reference immutable file assets", () => {
+  const schema = JSON.parse(
+    readFileSync(
+      new URL("../src/contracts/creation.schema.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const mode of ["input", "output"]) {
+    const defs = schema[mode].$defs;
+    assert.ok(!defs.TimelineData.required.includes("fonts"));
+    assert.ok(!defs.TimelineData.required.includes("overlays"));
+    assert.equal(
+      defs.TimelineTextOverlay.properties.sourceAsset.anyOf[0].$ref,
+      "#/$defs/AssetRef",
+    );
+    assert.equal(
+      defs.TimelineFontResource.properties.asset.$ref,
+      "#/$defs/AssetRef",
+    );
+    assert.equal(defs.TimelineTextOverlay.properties.src, undefined);
+  }
 });
