@@ -201,6 +201,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     projectRenaming,
     projected,
     readJobs,
+    recoverServiceTask,
     ready,
     referenceEdges,
     referencePreviews,
@@ -2058,10 +2059,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                           return;
                         }
                         {
-                          await creationClient(doc.id).control(
-                            job.taskId,
-                            action,
-                          );
+                          if (action === "recover") await recoverServiceTask(job);
+                          else await creationClient(doc.id).control(job.taskId, action);
                           return;
                         }
                       } catch (error) {

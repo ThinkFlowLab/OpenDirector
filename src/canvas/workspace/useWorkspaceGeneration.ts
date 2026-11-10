@@ -18,6 +18,7 @@ import { type CanvasNode } from "../model";
 import { getNodeGenerationSettings } from "../NodeComposer";
 import { serviceGenerationPlan, textGenerationPlan } from "../workspaceInteraction.ts";
 import { generationPrepareBlock } from "./entryPoints.ts";
+import { JobFailureNotifications } from "./jobFailureNotifications.ts";
 import { CANVAS_TOOLS, type CanvasToolTask } from "../toolCatalog";
 
 import { translateToolText } from "../toolText.ts";
@@ -56,6 +57,23 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     t,
     toolCatalog,
   } = rt;
+  const failureWatch = useRef({
+    documentId: doc.id,
+    notifications: new JobFailureNotifications(),
+  });
+  if (failureWatch.current.documentId !== doc.id)
+    failureWatch.current = {
+      documentId: doc.id,
+      notifications: new JobFailureNotifications(),
+    };
+  const failureNotifications = failureWatch.current.notifications;
+  const recoverServiceTask = async (job: Job) => {
+    if (!job.taskId) return;
+    const receipt = await creationClient(doc.id).control(job.taskId, "recover");
+    if (receipt.status !== "rejected" && job.revision !== undefined)
+      failureNotifications.recovered(job.id, job.revision);
+    setJobs(await readJobs());
+  };
 
   useEffect(() => {
     if (!arrivingNodes.size) return;
@@ -362,6 +380,10 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       setJobs(await readJobs());
     } catch (error) {
       const uncertain = error instanceof ToolSubmissionError && error.uncertain;
+      // Admission errors remain visible even if a project switch removes this
+      // local job. Claim first so its failed projection cannot also notify.
+      const report = !run.controller.signal.aborted &&
+        (uncertain || failureNotifications.claim(id));
       updateJob(id, {
         status: uncertain
           ? "running"
@@ -386,7 +408,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
         change(() => cleaned);
         await persist(cleaned);
       }
-      if (!run.controller.signal.aborted)
+      if (report)
         notify(`「${title}」：${errorMessage(error)}`);
     } finally {
       serviceRuns.current.delete(id);
@@ -419,20 +441,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   /** A job the service gives up on must say so: the node otherwise just stays
    * empty and the prompt looks like it did nothing. Failures that predate this
    * session are history, not news; a job we watched run always qualifies. */
-  const failureWatch = useRef({
-    mountedAt: Date.now(),
-    active: new Set<string>(),
-    reported: new Set<string>(),
-  });
   useEffect(() => {
-    const watch = failureWatch.current;
     for (const job of jobs) {
-      if (job.status === "running") watch.active.add(job.id);
-      if (job.status !== "failed" && job.status !== "interrupted") continue;
-      if (watch.reported.has(job.id)) continue;
-      const recent = (job.createdAt ?? 0) >= watch.mountedAt - 5_000;
-      if (!recent && !watch.active.has(job.id)) continue;
-      watch.reported.add(job.id);
+      if (!failureNotifications.observe(job)) continue;
       const node = [...doc.nodes, ...(doc.hiddenNodes ?? [])].find(
         (item) => item.id === (job.targetNodeId ?? job.nodeId),
       );
@@ -446,7 +457,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
           : t("generation.error.jobFailed", { name }),
       );
     }
-  }, [jobs, doc.nodes, doc.hiddenNodes, notify, t]);
+  }, [jobs, doc.nodes, doc.hiddenNodes, failureNotifications, notify, t]);
 
   const toolPlacementQueue = useRef<Promise<unknown>>(Promise.resolve());
   const placingTools = useRef(new Set<string>());
@@ -683,6 +694,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   rt.revealResults = revealResults;
   rt.syncServiceResults = syncServiceResults;
   rt.runServiceTask = runServiceTask;
+  rt.recoverServiceTask = recoverServiceTask;
   rt.runToolTask = runToolTask;
   rt.observedRuns = observedRuns;
   rt.failureWatch = failureWatch;

@@ -33,6 +33,14 @@ function fixture() {
   };
 }
 
+test("the history projection retains the execution revision used by confirmed recovery", () => {
+  const { snapshot, active } = fixture();
+  const job = { ...active, status: "failed" as const, revision: 17 };
+  const projected = creationJobs({ ...snapshot, jobs: [job] })[0]!;
+  assert.equal(projected.revision, 17);
+  assert.equal(projected.status, "failed");
+});
+
 test("a slow old preview cannot delay preparation or cancellation metadata", async () => {
   const { snapshot, active } = fixture();
   const asset = snapshot.assets.find(
