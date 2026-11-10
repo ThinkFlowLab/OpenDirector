@@ -959,6 +959,8 @@ export const errors = {
   "errors.capability.label.inputs": "inputs",
   "errors.capability.label.width": "Image width",
   "errors.capability.label.height": "Image height",
+  "errors.capability.label.size": "Image dimensions",
+  "errors.capability.dimensions": "Image dimensions do not meet the service requirements.",
   "errors.capability.label.duration": "Duration",
   "errors.capability.label.speed": "Speech speed",
   "errors.capability.label.language": "Language",

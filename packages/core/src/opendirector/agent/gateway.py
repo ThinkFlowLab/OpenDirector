@@ -22,6 +22,8 @@ class ToolResult:
         code = self.value.get('code') if isinstance(self.value, dict) else None
         if code is None and isinstance(self.value, dict):
             issues = self.value.get('issues')
+            if issues is None and isinstance(self.value.get('receipt'), dict):
+                issues = self.value['receipt'].get('issues')
             if isinstance(issues, list) and len(issues) == 1 and isinstance(issues[0], dict):
                 code = issues[0].get('code')
         return {'type': 'tool', 'name': name,

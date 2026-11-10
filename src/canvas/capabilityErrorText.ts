@@ -14,6 +14,7 @@ const EXACT: Record<string, string> = {
   "请先选择需要修改的区域。": "selectionRequired",
   "无法读取图片或选区，请重新选择。": "selectionUnreadable",
   "来源素材必须是图片。": "sourceType",
+  "图片尺寸不符合服务要求。": "dimensions",
 };
 const LABELS: Record<string, string> = {
   文字回复: "textReplies",
@@ -40,6 +41,7 @@ const LABELS: Record<string, string> = {
   所需素材: "inputs",
   图片宽度: "width",
   图片高度: "height",
+  图片尺寸: "size",
   时长: "duration",
   语速: "speed",
   语言: "language",

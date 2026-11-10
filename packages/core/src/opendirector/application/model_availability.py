@@ -15,6 +15,7 @@ from opendirector.domain.omni_capabilities import timestamp
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.request_constraints import INPUT_ROLES, constraint_failure, input_details
+from opendirector.domain.capability_messages import constraint_rejection
 from opendirector.domain.voices import effective_speech_voice
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.capability_probe import CapabilityProbe, PAUSE_SECONDS, automatic, identity
@@ -66,7 +67,7 @@ def generation_request(config, spec, references, *, parameters=None):
     candidates = requests_for(config)
     if not candidates:
         return None
-    transmitted = [item for item in references if item.transmission != 'context_only']
+    transmitted = [item for item in references if item.transmission == 'content']
     kinds = {item.asset.kind for item in transmitted}
     if spec.kind == 'image':
         profile = 'image_to_image' if 'image' in kinds else 'text_to_image'
@@ -77,6 +78,10 @@ def generation_request(config, spec, references, *, parameters=None):
     else:
         profile = 'text_response'
     request = next((item for item in candidates if item.profile == profile), None)
+    if spec.kind == 'video' and any(item.transmission == 'latent' for item in references):
+        # A cached continuation ID is not a video upload. Keep its profile
+        # unknown unless declared, while retaining the actual route for pause.
+        request = replace(candidates[0], profile='video_continuation')
     # The resolved reference transmission is the same one frozen for execution.
     # Music sends the prompt as instructions and lyrics (or arrangement tags
     # for instrumental music) as the text field on /audio/speech.
@@ -233,12 +238,15 @@ class ModelAvailability:
             result['reasonCode'] = 'model_not_declared' if model is None else 'operation_not_declared'
             return self._declaration(result)
         profile = next((item for item in operation.profiles if item.id == request.profile), None)
+        route = None
         if operation.support == 'unsupported':
             result.update(status='unavailable', reasonCode='operation_unsupported')
         elif operation.exposure == 'disabled':
             result.update(status='unavailable', reasonCode='operation_disabled')
         elif profile is None:
             result['reasonCode'] = 'profile_not_declared'
+            route = next((route for item in operation.profiles for route in item.routes
+                          if route.transport == 'http' and route.method == request.method and route.path == request.path), None)
         elif profile.support == 'unsupported':
             result.update(status='unavailable', reasonCode='profile_unsupported')
         else:
@@ -276,26 +284,22 @@ class ModelAvailability:
                 failure = constraint_failure(contract, counts, dict(request.parameters))
                 if failure and result['status'] != 'unavailable':
                     result.update(status='unavailable', reasonCode=failure[0])
-            self._declaration(result)
-            # Only a route which serves this exact request can establish pause.
-            execution = operation.execution
-            if route:
-                try:
-                    timestamp(execution.observed_at)
-                    active = self.probe.clock() < observation.received + PAUSE_SECONDS
-                    result['execution'] = dict(state=execution.state if active else 'unknown', scope=execution.scope,
-                        checkedAt=round(observation.checked * 1000),
-                        expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000) if active else None)
-                except (ValueError, TypeError, AttributeError):
-                    pass
-            if route and execution.state == 'paused' and execution.scope == 'deployment':
-                try:
-                    timestamp(execution.observed_at)  # Validate provenance, without comparing unrelated machine clocks.
-                    if self.probe.clock() < observation.received + PAUSE_SECONDS:
-                        result.update(status='unavailable', reasonCode='execution_paused', expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000))
-                except (ValueError, TypeError, AttributeError):
-                    pass
-        return result if 'declaration' in result else self._declaration(result)
+        self._declaration(result)
+        # Execution is an operation fact on the actual endpoint. An unknown
+        # input profile does not invalidate a fresh deployment pause there.
+        execution = operation.execution
+        if route:
+            try:
+                timestamp(execution.observed_at)
+                active = self.probe.clock() < observation.received + PAUSE_SECONDS
+                result['execution'] = dict(state=execution.state if active else 'unknown', scope=execution.scope,
+                    checkedAt=round(observation.checked * 1000),
+                    expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000) if active else None)
+                if active and execution.state == 'paused' and execution.scope == 'deployment':
+                    result.update(status='unavailable', reasonCode='execution_paused', expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000))
+            except (ValueError, TypeError, AttributeError):
+                pass
+        return result
 
     def require(self, config, request, prepared=None):
         if prepared is not None:
@@ -318,30 +322,7 @@ class ModelAvailability:
                 {role: 1 for role in request.inputs} if request.inputs is not None else None)
             failure = constraint_failure(contract, counts, dict(request.parameters)) if contract else None
             if failure and decision['reasonCode'] == failure[0]:
-                reason, details = failure
-                roles = {'image': '图片', 'audio': '音频', 'video': '视频', 'text': '文字',
-                         'voice': '音色', 'reference_audio': '参考音频', 'instructions': '风格说明',
-                         'reference_text': '参考文本', 'mask_image': '选区', 'reference_image': '标注参考图片'}
-                name = roles.get(details.get('input'), '素材')
-                if reason == 'input_count_exceeded':
-                    if details['input'] == 'image':
-                        code = 'image_input_count'
-                    message = f"最多支持 {details['maximum']} 个{name}输入，当前为 {details['actual']} 个。"
-                    if details['input'] == 'image':
-                        message = f"最多支持 {details['maximum']} 张图片，当前为 {details['actual']} 张。"
-                elif reason == 'input_unsupported':
-                    message = f'该模型不支持{name}输入。'
-                elif reason == 'required_inputs_missing':
-                    if 'inputs' in details:
-                        choices = '或'.join(roles.get(role, '所需素材') for role in details['inputs'])
-                        message = f'请提供{choices}。'
-                    else:
-                        message = f'请添加{name}。'
-                else:
-                    parameter = {'width': '图片宽度', 'height': '图片高度', 'duration': '时长', 'seconds': '时长',
-                                 'voice': '音色', 'speed': '语速', 'language': '语言', 'fps': '帧率',
-                                 'num_frames': '帧数', 'generate_audio': '音频生成选项'}.get(details.get('parameter'), '所选参数')
-                    message = f'{parameter}不符合服务要求。'
+                code, message = constraint_rejection(*failure)
             raise AvailabilityError(code, message)
 
     def model(self, config):

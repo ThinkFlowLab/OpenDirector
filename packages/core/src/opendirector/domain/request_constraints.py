@@ -9,6 +9,14 @@ INPUT_ROLES = frozenset({'text', 'image', 'video', 'audio', 'instructions', 'voi
     'first_frame', 'last_frame'})
 
 
+def _enum_value(value, normalization):
+    if not isinstance(value, str) or normalization is None:
+        return value
+    if normalization == 'strip_lower':
+        return value.strip().lower()
+    return value.lower() if normalization == 'lower' else value.title()
+
+
 def constraint_failure(contract: RequestConstraints, counts: dict[str, int] | None, parameters: dict):
     """Return a localizable cause and arguments. Missing facts impose no limit."""
     if counts is not None:
@@ -35,8 +43,10 @@ def constraint_failure(contract: RequestConstraints, counts: dict[str, int] | No
             continue
         if constraint.support == 'unsupported':
             return 'parameter_unsupported', {'parameter': name}
-        if constraint.enum is not None and not any(isinstance(value, bool) == isinstance(option, bool) and value == option
-                                                  for option in constraint.enum):
+        if constraint.enum is not None and not any(
+                isinstance(value, bool) == isinstance(option, bool)
+                and _enum_value(value, constraint.enum_normalization) == _enum_value(option, constraint.enum_normalization)
+                for option in constraint.enum):
             return 'parameter_value_unsupported', {'parameter': name}
         numeric = type(value) in {int, float}
         if ((constraint.type == 'integer' and type(value) is not int)
@@ -57,7 +67,9 @@ def input_details(contract):
         return []
     details = [dict(name=name, support=value.support, source='service', minCount=value.min_count,
                     maxCount=value.max_count) for name, value in contract.inputs.items()]
-    details.extend(dict(name=name, support=value.support, source='service', values=value.enum,
+    details.extend(dict(name=name, support=value.support, source='service',
+                        values=([option for option in value.enum if option != '']
+                                if name == 'voice' and value.enum is not None else value.enum),
                         min=value.minimum, max=value.maximum, multipleOf=value.step)
                    for name, value in contract.parameters.items())
     if contract.max_output_pixels is not None:

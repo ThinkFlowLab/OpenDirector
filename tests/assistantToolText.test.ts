@@ -24,3 +24,16 @@ test("agent tool errors never show Chinese in the English reply card", () => {
   setActiveLocale("zh-CN");
   assert.equal(assistantToolText("本轮工具入口已关闭。"), "本轮工具入口已关闭。");
 });
+
+test("image geometry rejections retain their concrete cause in both languages", () => {
+  setActiveLocale("en-US");
+  assert.equal(
+    assistantToolText("图片尺寸不符合服务要求。", undefined, "capability_unavailable"),
+    "Image dimensions do not meet the service requirements.",
+  );
+  setActiveLocale("zh-CN");
+  assert.equal(
+    assistantToolText("图片尺寸不符合服务要求。", undefined, "capability_unavailable"),
+    "图片尺寸不符合服务要求。",
+  );
+});

@@ -31,12 +31,16 @@ class ParameterConstraint(Declaration):
     support: Support = 'unknown'
     type: Literal['string', 'integer', 'number', 'boolean'] | None = None
     enum: list[str | int | float | bool] | None = Field(default=None, max_length=1024)
+    enum_normalization: Literal['lower', 'title', 'strip_lower'] | None = None
     minimum: Number | None = None
     maximum: Number | None = None
     step: Number | None = Field(default=None, gt=0)
 
     @model_validator(mode='after')
     def bounds(self):
+        if self.enum_normalization is not None and (
+                self.type != 'string' or self.enum is None or not all(isinstance(value, str) for value in self.enum)):
+            raise ValueError('enum normalization requires a string enum')
         if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
             raise ValueError('inverted parameter bounds')
         return self

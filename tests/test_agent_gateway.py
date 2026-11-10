@@ -30,6 +30,14 @@ def test_tool_events_preserve_concrete_capability_error_codes():
     assert receipt.event('generation.submit')['error'] == '该模型不支持文字回复。'
 
 
+def test_tool_event_preserves_nested_import_receipt_issue():
+    result = ToolResult(value={'status': 'rejected', 'receipt': {'issues': [
+        {'code': 'timeline_font_coverage', 'message': 'Missing glyphs'}]}}, error='Missing glyphs')
+    assert result.event('timeline.import_package')['code'] == 'timeline_font_coverage'
+    result.value['receipt']['issues'].append({'code': 'timeline_asset_missing', 'message': 'Missing asset'})
+    assert 'code' not in result.event('timeline.import_package')
+
+
 @pytest.fixture
 def gateway(tmp_path):
     projects = CreationProjects(LocalProjects(tmp_path))

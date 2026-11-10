@@ -485,9 +485,9 @@ def test_cache_is_bounded_and_does_not_persist(tmp_path):
 
 
 @pytest.mark.parametrize('references,expected', [
-    ([('image', 'attachment')], 'unavailable'),
-    ([('image', 'attachment'), ('audio', 'attachment')], 'available'),
-    ([('image', 'attachment'), ('audio', 'context_only')], 'unavailable'),
+    ([('image', 'content')], 'unavailable'),
+    ([('image', 'content'), ('audio', 'content')], 'available'),
+    ([('image', 'content'), ('audio', 'context_only')], 'unavailable'),
 ])
 def test_video_required_audio_is_checked_on_actual_request_not_catalog(service, references, expected):
     configs, _, state, availability = service
@@ -526,7 +526,7 @@ def test_generation_profiles_and_tool_inputs_follow_the_actual_adapter(service):
     configs, saved, _, _ = service
     base = private(configs, saved)
     def ref(kind):
-        return SimpleNamespace(asset=SimpleNamespace(kind=kind), transmission='attachment')
+        return SimpleNamespace(asset=SimpleNamespace(kind=kind), transmission='content')
     for kind, protocol, refs, profile, inputs in [
         ('image', 'openai', [], 'text_to_image', {'text'}),
         ('image', 'openai', [ref('image')], 'image_to_image', {'text', 'image'}),

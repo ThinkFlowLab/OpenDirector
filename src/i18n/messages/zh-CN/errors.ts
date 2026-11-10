@@ -741,6 +741,8 @@ export const errors = {
   "errors.capability.label.inputs": "素材",
   "errors.capability.label.width": "图片宽度",
   "errors.capability.label.height": "图片高度",
+  "errors.capability.label.size": "图片尺寸",
+  "errors.capability.dimensions": "图片尺寸不符合服务要求。",
   "errors.capability.label.duration": "时长",
   "errors.capability.label.speed": "语速",
   "errors.capability.label.language": "语言",

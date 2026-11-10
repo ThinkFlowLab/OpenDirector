@@ -22,6 +22,7 @@ from test_creation_canvas_service import project
 from test_model_availability import document
 from test_tool_native_mask import multipart
 from test_tool_tasks import png, upload
+from test_voice_library import wav
 
 
 def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True):
@@ -103,6 +104,68 @@ def submit(entry, project, runner, probe, command):
                 time.sleep(.01)
             assert jobs and all(job.status in {'succeeded', 'failed'} for job in jobs), 'Generation did not finish'
         return receipt
+
+
+@pytest.mark.parametrize('voice,normalization,expected', [
+    ('AF_HEART', 'lower', 'accepted'), ('DEFAULT', 'strip_lower', 'accepted'),
+    (None, 'strip_lower', 'accepted'),
+    ('not-a-speaker', 'lower', 'rejected'),
+])
+def test_speech_enum_admission_preserves_the_serialized_voice(project, voice, normalization, expected):
+    store, pid, session = project
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('audio', 'http://speech.test/v1', 'test-speech', '',
+        connection_type='self_hosted', protocol='openai', auth_mode='none')
+    declaration = document('speech', 'text_to_speech', '/v1/audio/speech', 'audio', model=config['modelId'])
+    declaration['models'][0]['operations']['speech']['profiles'][0]['routes'][0]['request'] = {
+        'parameters': {'voice': {'type': 'string', 'enum': ['default', 'af_heart', ''],
+                                 'enum_normalization': normalization}}}
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    posts = []
+    def generate(request):
+        assert request.method == 'POST' and request.url.path == '/v1/audio/speech'
+        posts.append(json.loads(request.read()))
+        return httpx.Response(200, content=wav())
+    runner = CreationGeneration(store, configs, availability=ModelAvailability(configs, probe))
+    runner.provider = GenerationProviders(runner.store, httpx.MockTransport(generate))
+    try:
+        command = generation_command(project, config, parameters={'voice': voice})
+        receipt = submit('service', project, runner, probe, command)
+        assert receipt['status'] == expected, receipt
+        if expected == 'accepted':
+            job = store.snapshot(pid).jobs[0]
+            assert job.status == 'succeeded', job
+            assert job.inputSnapshot.spec.parameters.voice == voice
+            assert posts[0]['voice'] == (voice if voice is not None else 'default')
+        else:
+            assert not store.snapshot(pid).jobs and not posts
+            assert receipt['issues'][0]['code'] == 'capability_unavailable'
+    finally:
+        probe.close()
+
+
+def test_metadata_audio_cannot_satisfy_a_required_chat_audio_input(project):
+    store, pid, session = project
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('agent', 'http://chat.test/v1', 'test-chat', '',
+        connection_type='self_hosted', protocol='openai', auth_mode='none')
+    declaration = document(model=config['modelId'])
+    declaration['models'][0]['operations']['chat']['profiles'][0]['required_inputs'] = ['text', 'audio']
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    posts = []
+    def generate(request):
+        posts.append(request)
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'Should not run'}}]})
+    runner = CreationGeneration(store, configs, availability=ModelAvailability(configs, probe))
+    runner.provider = GenerationProviders(runner.store, httpx.MockTransport(generate))
+    source = upload(store, str(pid), session, 'reference.wav', wav())
+    try:
+        receipt = submit('service', project, runner, probe, generation_command(project, config, references=[source]))
+        assert receipt['status'] == 'rejected', receipt
+        assert receipt['issues'][0]['code'] == 'capability_unavailable'
+        assert not store.snapshot(pid).jobs and not posts
+    finally:
+        probe.close()
 
 
 @pytest.mark.parametrize('entry', ['service', 'http', 'agent'])
