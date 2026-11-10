@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with OpenDirector. This file covers the issue/PR labels and the checklist we ask for before a change is reviewed. Architecture rules live in [AGENTS.md](AGENTS.md); reproducible checks and evidence requirements live in [docs/development/validation.md](docs/development/validation.md).
+Thanks for helping with OpenDirector. This file covers the issue/PR labels and the checklist we ask for before a change is reviewed. Architecture rules live in [AGENTS.md](AGENTS.md); reproducible checks and evidence requirements live in [docs/development/validation.md](docs/development/validation.md). Tag and daily release practice lives in [docs/development/release.md](docs/development/release.md).
 
 ## Label taxonomy
 
