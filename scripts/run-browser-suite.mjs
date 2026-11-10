@@ -33,6 +33,7 @@ const workflows = [
     name: "project list overflow",
     script: "tests/browser/project_list_overflow.mjs",
   },
+  { name: "session lease", script: "tests/browser/session_lease.mjs" },
   { name: "mp4 export", script: "tests/browser/mp4_export.mjs" },
   { name: "editor save", script: "tests/browser/editor_save.mjs" },
   { name: "canvas crop", script: "tests/browser/canvas_crop.mjs" },

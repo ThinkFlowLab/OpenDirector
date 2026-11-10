@@ -16,6 +16,7 @@ import {
   ApiError,
   headers,
   json,
+  reloadedTab,
   request,
   responseError,
   storageRequest,
@@ -160,13 +161,16 @@ export class CreationClient {
         this.install(canvas ? canvas.snapshot : (opened as ProjectSnapshot));
         break;
       } catch (error) {
-        // The old page's keepalive release can arrive just after a reload's
-        // first open. Genuine concurrent windows retain their lease protection.
+        // A storage lock timeout is retried. After a reload, the old page's
+        // keepalive release can also arrive just after this first open, so a
+        // reloaded tab briefly waits for its own lease too. A fresh window
+        // refused by another live window (`project_open_elsewhere`) fails at once.
         if (
           attempt >= 7 ||
           !(error instanceof ApiError) ||
           error.status !== 409 ||
-          error.code !== "storage_busy"
+          (error.code !== "storage_busy" &&
+            !(reloadedTab && error.code === "project_open_elsewhere"))
         )
           throw error;
         await new Promise((resolve) =>

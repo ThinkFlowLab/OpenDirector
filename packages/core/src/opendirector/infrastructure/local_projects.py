@@ -123,7 +123,7 @@ class LocalProjects:
         identifier(session)
         project_id = project["id"]
         if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND expires>?", (project_id, session, time.time())).fetchone():
-            raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="storage_busy")
+            raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="project_open_elsewhere")
         lease = db.execute("SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, time.time())).fetchone()
         if lease and lease["path"] != project["path"]:
             raise ProjectError("项目目录已在应用外改名或移动，请复制未保存内容并刷新页面。", 409)
