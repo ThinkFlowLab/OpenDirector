@@ -47,7 +47,7 @@ export function ModelCapabilityCard({
     saved?.videoAdapter ??
     connection.videoAdapter ??
     "auto";
-  const official = ["minimax_video_v2", "kling_video"].includes(
+  const official = ["minimax_video_v2", "kling_video", "bigmodel_video"].includes(
     connection.protocol,
   );
   const nativeKey = `${connection.protocol}:${modelId}`;
@@ -167,7 +167,9 @@ export function ModelCapabilityCard({
           <div className="cw-model-capability-facts">
             <span>
               {t(
-                connection.protocol === "kling_video"
+                connection.protocol === "bigmodel_video"
+                  ? "models.service.bigmodelVideoSummary"
+                  : connection.protocol === "kling_video"
                   ? modelId === "kling-4.0-flash"
                     ? "models.service.klingFlashSummary"
                     : "models.service.klingSummary"
@@ -193,7 +195,9 @@ export function ModelCapabilityCard({
             )}
             <small>
               {t(
-                connection.protocol === "kling_video"
+                connection.protocol === "bigmodel_video"
+                  ? "models.service.bigmodelVideoReferences"
+                  : connection.protocol === "kling_video"
                   ? "models.service.klingReferences"
                   : "models.service.officialReferences",
               )}

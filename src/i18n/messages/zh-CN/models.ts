@@ -1,5 +1,9 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.protocolOption.bigmodelVideo": "智谱 BigModel 视频接口（CogVideoX-3）",
+  "models.service.bigmodelVideoSummary": "文生视频 / 单图生视频 / 首尾帧",
+  "models.service.bigmodelVideoReferences": "PNG 或 JPEG，单张最多 5 MB。提示词最多 512 字符；选择像素尺寸和 5 或 10 秒时长。",
+
   "models.service.proxyMode": "网络连接方式",
   "models.service.proxySystem": "跟随系统代理",
   "models.service.proxyDirect": "直连（不使用代理）",

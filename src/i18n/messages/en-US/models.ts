@@ -1,5 +1,9 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.protocolOption.bigmodelVideo": "Zhipu BigModel video API (CogVideoX-3)",
+  "models.service.bigmodelVideoSummary": "Text-to-video / single image / first-last frames",
+  "models.service.bigmodelVideoReferences": "PNG or JPEG, up to 5 MB each. Prompts allow 512 characters. Choose a pixel size and a 5- or 10-second duration.",
+
   "models.service.proxyMode": "Network connection mode",
   "models.service.proxySystem": "Use system proxy",
   "models.service.proxyDirect": "Direct (no proxy)",

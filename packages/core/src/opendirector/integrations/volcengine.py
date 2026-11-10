@@ -253,6 +253,7 @@ class VolcengineGeneration:
                 current = httpx.URL(url)
                 for _ in range(6):
                     pinned, headers, extensions = await _public_result_url(current)
+                    extensions['model_secrets'] = secrets
                     async with client.stream('GET', pinned, headers=headers, extensions=extensions,
                                              follow_redirects=False) as response:
                         if response.is_redirect:

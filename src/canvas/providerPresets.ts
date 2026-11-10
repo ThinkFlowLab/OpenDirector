@@ -4,6 +4,7 @@ import { getActiveLocale } from "../i18n/messages.ts";
 
 /** Preset labels are product copy; ids, protocols and URLs stay stable. */
 const EN_NAMES: Record<string, string> = {
+  "智谱 BigModel 视频": "Zhipu BigModel video",
   "OpenAI 兼容": "OpenAI compatible",
   "MiniMax 官方视频": "MiniMax official video",
   "可灵官方视频": "Kling official video",
@@ -63,6 +64,17 @@ export interface ProviderPreset {
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: "bigmodel-video",
+    name: "智谱 BigModel 视频",
+    logoOrganization: "zai-org",
+    kinds: ["video"],
+    url: "https://open.bigmodel.cn/api/paas/v4",
+    protocol: "bigmodel_video",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: { video: ["cogvideox-3"] },
+  },
   {
     id: "custom",
     name: "OpenAI 兼容",

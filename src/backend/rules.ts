@@ -68,6 +68,7 @@ export interface ModelConfig {
     | "volcengine"
     | "minimax_video_v2"
     | "kling_video"
+    | "bigmodel_video"
     | "vllm_omni"
     | "vllm_omni_segmentation"
     | "vllm_omni_music"

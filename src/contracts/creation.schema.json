@@ -3447,6 +3447,12 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -8012,6 +8018,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8168,6 +8175,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8313,6 +8321,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8439,6 +8448,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -17946,6 +17956,12 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -22718,6 +22734,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -22864,6 +22881,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23014,6 +23032,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23144,6 +23163,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
