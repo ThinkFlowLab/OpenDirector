@@ -20,6 +20,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Bilingual interface](development/i18n.md) | Language selection, message organization, and checks | Language policy, message structure, or checks change |
 | [Python installation and packaging](development/packaging.md) | Installation, platform wheel builds, and isolated verification | Packaging, resource paths, or build process changes |
 | [Business CLI](guides/cli.md) | Querying, editing, and generating through a terminal or Agent Shell | Commands, authorization, or receipt semantics change |
+| [DeepSeek Harness plugin](../plugins/deepseek-harness/README.md) | Installing the DSH bundle and editing an OpenDirector project from DSH | Plugin setup, tools, or creation workflows change |
 | [Video model capabilities](guides/video-model-capabilities.md) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
 | [Model availability / 模型可用状态](guides/model-availability.md) | Optional runtime declarations, automatic checks, shared admission and API/CLI/Agent queries | Capability protocol, refresh, or acceptance rules change |
 | [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |

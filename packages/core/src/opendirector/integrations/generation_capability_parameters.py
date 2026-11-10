@@ -18,6 +18,9 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
             width, height = map(int, size.split('x')) if 'x' in size else (WIDTH, HEIGHT)
             width, height = adapter_for(config).size(width, height)
             result = dict(size=f'{width}x{height}', response_format='b64_json', output_format='png')
+            if profile == 'vllm-omni-image':
+                from opendirector.integrations.vllm_omni_image import SAMPLING_FIELDS
+                result.update({key: parameters[key] for key in SAMPLING_FIELDS if key in parameters})
         else:
             # The generic OpenAI generation provider does not transmit its
             # internal response_format/output_format preparation defaults.

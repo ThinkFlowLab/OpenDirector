@@ -89,6 +89,7 @@ opendirector serve
 - [使用指南](docs/guides/user-guide.zh-CN.md)：模型接入、AI 协作、画布、媒体编辑与导出。
 - [故障排查](docs/guides/user-guide.zh-CN.md#故障排查)：安装、生成、保存与导出问题。
 - [业务 CLI](docs/guides/cli.md)：通过终端或 Agent Shell 操作工程。
+- [DeepSeek Harness 插件](plugins/deepseek-harness/README.zh-CN.md)：从 DSH 生成素材、跟踪任务，再回到 OpenDirector 继续编辑。
 - [文档索引](docs/README.md)：架构、开发与验证文档。
 
 ## 社区交流

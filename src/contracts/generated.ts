@@ -650,6 +650,8 @@ export interface ImageExecutionInput extends ContractInput {
   readonly responseFormat?: "url" | "b64_json" | null;
   readonly outputFormat?: "png";
   readonly watermark?: boolean | null;
+  readonly numInferenceSteps?: number | null;
+  readonly guidanceScale?: number | null;
 }
 
 export interface ImageGenerationSpecInput extends GenerationSpecBaseInput {
@@ -2282,6 +2284,8 @@ export interface ImageExecution extends Contract {
   readonly responseFormat: "url" | "b64_json" | null;
   readonly outputFormat: "png";
   readonly watermark: boolean | null;
+  readonly numInferenceSteps?: number | null;
+  readonly guidanceScale?: number | null;
 }
 
 export interface ImageGenerationSpec extends GenerationSpecBase {

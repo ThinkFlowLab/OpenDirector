@@ -152,6 +152,8 @@ def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
                 'parameters': {'left': 0.5, 'right': 0.5, 'top': 0, 'bottom': 0, 'outputWidth': 128, 'outputHeight': 48, 'prompt': '海边'}})
     assert task['status'] == 'succeeded', task['error']
     assert b'name="strength"' in calls[0] and '海边'.encode() in calls[0]
+    # Edits keep the service defaults: strength picks where on the step schedule the edit starts.
+    assert b'name="num_inference_steps"' not in calls[0] and b'name="guidance_scale"' not in calls[0]
     image = output_image(store, project_id, task)
     assert image.size == (128, 48)
     assert image.getpixel((64, 24))[2] > 200 and image.getpixel((2, 24))[0] > 200  # original centre, drawn border

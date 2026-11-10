@@ -23,6 +23,8 @@ npm run check:i18n
 
 `tests/test_native_runtime.py` 默认使用 CLI 和技能发现替身检查新会话、恢复会话及工程写入。真实 bundled OpenCode 集成测试需设置 `OPENDIRECTOR_REAL_CLI=1`；它使用模拟模型服务，不调用付费模型，在独立进程中限制运行时间，超时输出阶段和线程堆栈并终止跟踪到的 CLI 进程。Linux 上的故障注入还检查超时后进程已退出，其他平台的进程树清理需要相应平台验证。安装验证仍须运行上述版本命令。
 
+Release checks runs these real CLI cases in a dedicated `Bundled OpenCode model gateway regression` step with `OPENDIRECTOR_REAL_CLI=1`. This uses local mock models and must verify final text, tool-result continuation, request counts, persisted assets and session resumption, not merely HTTP 200 or process startup. Gateway tests must also distinguish a properly terminated HTTP body from interrupted streaming and cancellation. Fresh Default `hello` cases exercise plain and reasoning streams through the actual bundled runtime, require exactly one provider request (including auxiliary calls), no native or business tool calls, and the complete reply on disk. The runtime tool surface remains enabled; model replies are simulated.
+
 Windows 使用对应虚拟环境的 Python 路径。涉及真实媒体探测、工具处理或对应测试时，需要 PATH 中的 `ffmpeg` 和 `ffprobe`；视频处理使用 `libx264` 编码器，可通过 `ffmpeg -encoders` 检查是否包含它。不因纯文档修改而运行全部生成或媒体测试。
 
 macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统旧版 `python3`。安装验证需使用全新源码目录、新建 `.venv` 和 `pip install -e .`；构建由 pip 钩子执行，然后通过正式 `serve` 入口检查页面、上传、刷新与服务重启恢复。wheel 与 editable 的隔离验收见 [Python 安装与发布](packaging.md)。实测边界见 [macOS 安装验证记录](macos-install-validation.md)。
@@ -266,5 +268,9 @@ OPENDIRECTOR_API_URL=http://127.0.0.1:8030 npm run dev -- --port 5190
 # Terminal 3 (Playwright installed as for the other browser checks)
 CREATION_API_URL=http://127.0.0.1:8030 CREATION_WEB_URL=http://127.0.0.1:5190 node tests/browser/voice_library.mjs
 ```
+
+For a slow-response regression, set `VOICE_REOPEN_DELAY_MS=17000` for the browser command. It delays the reopened asset request beyond the ordinary 15-second interaction timeout. Cold navigation, saved-state and reopened-media waits have explicit 45-second limits; HTTP errors still fail immediately with their status. No generation is retried.
+
+慢响应回归：在浏览器命令的环境变量中设置 `VOICE_REOPEN_DELAY_MS=17000`，让重开后的资源请求超过普通交互的 15 秒等待。冷启动导航、保存状态和重开媒体分别有明确的 45 秒上限；HTTP 错误仍立即报告状态并失败，不重试生成。
 
 The bilingual browser workflow covers opening/outside click/Escape, keyboard tabs, four-column and narrow layouts, real previews and unavailable previews, metadata filters, scoped favorites, loading/error/retry, invalid and valid local audio, creation, selection, Drama3 transcript and Nano reference requirements, supported deletion and failure feedback, model/service switching, project reopening and persisted job input. `moss_speech.mjs` is retained as an alias for this integrated workflow. The pagination regression includes a 15,001-voice catalog. With a configured MOSS account, open the library, go to the next page, and return to the first. Verify the page counts and that returning to the first page restores its entries using read-only requests. Python tests verify provider fields, pagination, credentials, account boundaries, actual audio/container/duration validation, and equivalent Agent operations. Actual provider synthesis still requires a configured service, account permission and a recording authorized for use.

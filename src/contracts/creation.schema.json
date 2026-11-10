@@ -6413,6 +6413,34 @@
             "default": null,
             "description": "Whether provider watermarking is enabled.",
             "title": "Watermark"
+          },
+          "numInferenceSteps": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion sampling step count.",
+            "title": "Numinferencesteps"
+          },
+          "guidanceScale": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion guidance scale.",
+            "title": "Guidancescale"
           }
         },
         "required": [
@@ -22194,6 +22222,34 @@
             "default": null,
             "description": "Whether provider watermarking is enabled.",
             "title": "Watermark"
+          },
+          "numInferenceSteps": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion sampling step count.",
+            "title": "Numinferencesteps"
+          },
+          "guidanceScale": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion guidance scale.",
+            "title": "Guidancescale"
           }
         },
         "required": [

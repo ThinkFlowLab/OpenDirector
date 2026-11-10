@@ -30,6 +30,9 @@ Labels are short, English and prefixed by dimension, so issues and PRs can be fi
 | `area:install` | Install, startup, environment support |
 | `area:i18n` | Localisation and bilingual UI |
 | `area:ci` | Continuous integration and checks |
+| `area:performance` | Performance and responsiveness / 性能与响应速度 |
+| `area:docs` | Documentation / 文档 |
+| `area:desktop` | Desktop integration / 桌面集成 |
 
 ### `modality:` and `provider:` — only when relevant
 
@@ -55,6 +58,20 @@ The default GitHub labels `bug`, `enhancement` and `documentation` were retired 
 - An issue gets one `type:`, every `area:` it touches, and a `modality:` / `provider:` pair only when the work is specific to that service.
 - A pull request carries at least one `type:` and one `area:` label, so the change appears in both filters.
 - When a label does not fit, open an issue with `type:meta` and propose the new dimension instead of inventing a free-form tag.
+
+## Automatic reviewer requests / 自动邀请审查人
+
+Edit [`.github/reviewer-routing.json`](.github/reviewer-routing.json) to maintain label-to-reviewer mappings and the fallback list. Open, ready-for-review, reopened and label-change events invite **all** owners of all matching labels, deduplicated. The PR author, already requested reviewers and people who submitted a review are excluded. With no matching label, all fallback reviewers are considered; a matched label whose only owner is the author does not activate fallback. Drafts are skipped. Existing invitations are never removed, including after label removal. Removing a label never adds fallback reviewers when no mapped labels remain. New commits do not re-request review. Existing PRs need a label change or reopening to trigger routing after installation.
+
+修改 [`.github/reviewer-routing.json`](.github/reviewer-routing.json) 维护标签与审查人的映射及默认名单。PR 创建、转为可审查、重开或标签变化时，邀请所有匹配标签的全部负责人并去重，排除作者、已邀请及已提交审查的人。无标签匹配时使用全部默认候选；匹配标签的唯一负责人是作者时，不启用默认名单。草稿跳过，已有邀请始终保留，移除标签也不撤回邀请；移除后无匹配标签时不追加默认审查人，新提交不重复邀请。功能安装后，已有 PR 需修改标签或重开才能触发。
+
+The same configuration's `labels` list declares new labels. A push to main affecting the routing files, or a manual workflow dispatch, creates missing labels without updating or deleting existing ones. To change an existing label's color or description, use GitHub's Labels page. Reviewer accounts must be eligible for review requests in this repository; an unavailable account produces a warning while remaining candidates are still requested. API permission failures fail the job. No live review invitations are sent by local tests.
+
+配置中的 `labels` 列表声明新增标签。路由文件合入 main 或手动运行工作流后，补建缺少的标签，不修改或删除已有标签。修改已有标签的颜色或说明请使用 GitHub Labels 页面。候选账号必须具有仓库审查邀请资格；无法邀请的账号会产生警告，其余候选继续处理；API 权限错误使任务失败。本地测试不发送真实邀请。
+
+The privileged workflow only checks out the PR base commit, never the contributor's head, and executes no PR-supplied code. Validate changes with `node --test tests/reviewerRouting.test.ts`.
+
+具有写权限的工作流只检出 PR 的目标分支提交，不检出或执行贡献者分支代码。修改后运行 `node --test tests/reviewerRouting.test.ts` 验证。
 
 ## Pull request checklist
 

@@ -25,7 +25,7 @@ from test_tool_tasks import png, upload
 from test_voice_library import wav
 
 
-def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True):
+def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True, sampling_maximum=None):
     store, _, _ = project
     configs = ModelConfigs(store.local.repository)
     config = configs.save('image', 'http://images.test/v1', model, '',
@@ -39,6 +39,9 @@ def image_runtime(project, maximum, model='served-image-alias', *, declared_mode
     profile['routes'][0]['request'] = {'inputs': {'image': {
         'support': 'supported', 'min_count': int(editing), 'max_count': maximum}},
         'parameters': {'response_format': {'support': 'supported', 'enum': ['b64_json']}}}
+    if sampling_maximum is not None:
+        profile['routes'][0]['request']['parameters']['num_inference_steps'] = {
+            'support': 'supported', 'type': 'integer', 'maximum': sampling_maximum}
     queries, posts = [], []
     def discover(request):
         queries.append(request)
@@ -70,6 +73,24 @@ def test_checked_image_parameters_match_serialized_request(project, model, editi
         assert {key: str(value) for key, value in checked.items() if key not in {'width', 'height'}} == {
             key: str(value) for key, value in wire.items() if key not in {'model', 'prompt'}}
         assert wire['size'] == f"{checked['width']}x{checked['height']}"
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('entry', ['service', 'http', 'agent'])
+def test_fixed_image_sampling_is_checked_before_acceptance(project, entry):
+    store, pid, session = project
+    runner, config, probe, queries, posts = image_runtime(
+        project, 0, 'Tongyi-MAI/Z-Image-Turbo', editing=False, sampling_maximum=8)
+    command = generation_command(project, config)
+    before = store.snapshot(pid)
+    try:
+        receipt = submit(entry, project, runner, probe, command)
+        assert receipt['status'] == 'rejected', receipt
+        assert len(queries) == 1 and posts == []
+        after = store.snapshot(pid)
+        assert not after.jobs
+        assert after.generationSpecs == before.generationSpecs and after.assets == before.assets
     finally:
         probe.close()
 
