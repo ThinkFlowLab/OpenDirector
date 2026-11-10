@@ -160,3 +160,14 @@ def test_disabled_endpoint_reason_survives_a_fresh_pause_observation(service, co
     result = availability.decision(config, request)
     assert result['reasonCode'] == result['declaration']['reasonCode'] == 'route_disabled'
     assert result['execution']['state'] == 'paused'
+
+
+def test_global_endpoint_closure_does_not_require_a_profile_route(service):
+    configs, saved, state, availability = service
+    config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document']['models'][0]['operations']['video_generation']['profiles'][0]['routes'] = []
+    state['document']['routes'][0]['exposure'] = 'disabled'
+    availability.prepare(config)
+    result = availability.decision(config, requests_for(config)[0])
+    assert result['status'] == 'unavailable' and result['reasonCode'] == 'route_disabled'

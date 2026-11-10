@@ -246,10 +246,7 @@ class ModelAvailability:
         elif operation.exposure == 'disabled':
             result.update(status='unavailable', reasonCode='operation_disabled')
         elif profile is None:
-            if exposed and exposed.exposure == 'disabled':
-                result.update(status='unavailable', reasonCode='route_disabled')
-            else:
-                result['reasonCode'] = 'profile_not_declared'
+            result['reasonCode'] = 'profile_not_declared'
             route = next((route for item in operation.profiles for route in item.routes
                           if route.transport == 'http' and route.method == request.method and route.path == request.path), None)
         elif profile.support == 'unsupported':
@@ -287,6 +284,8 @@ class ModelAvailability:
                 failure = constraint_failure(contract, counts, dict(request.parameters))
                 if failure and result['status'] != 'unavailable':
                     result.update(status='unavailable', reasonCode=failure[0])
+        if exposed and exposed.exposure == 'disabled' and result['status'] != 'unavailable':
+            result.update(status='unavailable', reasonCode='route_disabled')
         self._declaration(result)
         # Execution is an operation fact on the actual endpoint. An unknown
         # input profile does not invalidate a fresh deployment pause there.
