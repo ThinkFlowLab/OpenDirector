@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_models import MINIMAX_MODELS, minimax_capabilities
+from opendirector.domain.kling_models import kling_capabilities
 
 VideoAdapter = Literal['auto', 'fasth3', 'minimax_h3', 'standard']
 Second = Annotated[StrictInt, Field(ge=1, le=60)]
@@ -61,6 +62,8 @@ def seedance_20_variant(model):
 
 
 def preset_capabilities(profile, model=''):
+    if profile == 'kling-official':
+        return kling_capabilities(model)
     if profile in {'fasth3-omni', 'vllm-omni-h3'}:
         return {'outputs': [{'resolution': label, 'durations': list(range(4, 16)), 'width': width, 'height': height}
                             for label, width, height in [('480P', 832, 480), ('768P', 1344, 768)]],
@@ -87,9 +90,19 @@ def capability_fields(config, rules):
                 raise ProjectError('输出规格超出所选 MiniMax 型号支持的范围。')
         else:
             capabilities = native
+    if rules['profile'] == 'kling-official':
+        validate_kling_outputs(capabilities, config['modelId'])
     rules['videoCapabilities'] = capabilities
     rules['outputResolutions'] = [item['resolution'] for item in capabilities['outputs']] if capabilities else []
     return rules
+
+
+def validate_kling_outputs(capabilities, model_id='kling-4.0'):
+    native = kling_capabilities(model_id)
+    allowed = {item['resolution']: item['durations'] for item in native['outputs']}
+    if any(item['resolution'] not in allowed or any(second not in allowed[item['resolution']] for second in item['durations'])
+           or item.get('width') is not None or item.get('height') is not None for item in capabilities['outputs']):
+        raise ProjectError('可灵输出规格无效，请选择所选型号支持的分辨率和整数时长。', 422, code='kling_output')
 
 
 def check_video_config(kind, protocol, adapter, capabilities):
@@ -108,6 +121,9 @@ def check_video_config(kind, protocol, adapter, capabilities):
             capabilities = VideoCapabilities.model_validate(capabilities).model_dump(exclude_none=True)
         except ValueError:
             raise ProjectError('视频输出规格无效，请检查分辨率、尺寸、时长和默认值。') from None
+        if protocol == 'kling_video':
+            validate_kling_outputs(capabilities)
+            return capabilities
         if protocol == 'minimax_video_v2':
             if any(item['resolution'].upper() not in {'480P', '768P', '2K'} or
                    any(second not in range(4, 16) for second in item['durations']) or

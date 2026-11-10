@@ -11,6 +11,8 @@ import {
   copyGenerationSettings,
   isGenerationSettings,
 } from "../src/canvas/dataBoundary.ts";
+import { getNodeGenerationSettings } from "../src/canvas/generationSettings.ts";
+import { createNode } from "../src/canvas/model.ts";
 
 test("voice registration keeps all upload data in the multipart body", async (test) => {
   const fields = {
@@ -297,4 +299,60 @@ test("direct embeddings report the same incompatibility as the voice registry", 
     voiceIssue({ ...selection, embeddingDim: 2048 }, capabilities),
     null,
   );
+});
+
+test("a model that lost its voice library cannot strand a node on the old voice", () => {
+  // The operator edited this same model config into a plain OpenAI-compatible
+  // TTS, so the node keeps its modelId but the capability is gone. The composer
+  // only offers the library while that capability exists, so a stored selection
+  // would block generation with no control left to replace it.
+  const withoutLibrary = {
+    ...config,
+    inputRules: {
+      ...config.inputRules,
+      voiceLibrary: undefined,
+    },
+  };
+  assert.ok(
+    backendBlocker(settings, [], [withoutLibrary]),
+    "the raw settings are blocked on a voice the model cannot use",
+  );
+  const serviced = serviceGenerationSettings(settings, withoutLibrary, [], false);
+  assert.equal(serviced.voiceSelection, undefined);
+  assert.equal(serviced.voiceName, undefined);
+  assert.equal(backendBlocker(serviced, [], [withoutLibrary]), null);
+});
+
+test("a model that keeps its voice library still retains the stored selection", () => {
+  const serviced = serviceGenerationSettings(settings, config, [], false);
+  assert.deepEqual(serviced.voiceSelection, selection);
+  assert.equal(serviced.voiceName, "Alice");
+  assert.equal(backendBlocker(serviced, [], [config]), null);
+});
+
+/** The composer reads a node through here, so this is the boundary that decides
+ * what the blocker and the run both see after a model configuration changes. */
+function readSettings(models: readonly ModelConfig[]) {
+  const node = createNode("audio", { x: 0, y: 0 });
+  return getNodeGenerationSettings(
+    { ...node, data: { ...node.data, settings } },
+    models,
+  );
+}
+
+test("reopening a node on a model without the voice library drops the stored voice", () => {
+  const withoutLibrary = {
+    ...config,
+    inputRules: { ...config.inputRules, voiceLibrary: undefined },
+  };
+  const read = readSettings([withoutLibrary]);
+  assert.equal(read.voiceSelection, undefined);
+  assert.equal(read.voiceName, undefined);
+  assert.equal(voiceIssue(read.voiceSelection, undefined), null);
+});
+
+test("reopening a node on a model that keeps the library still reads its voice", () => {
+  const read = readSettings([config]);
+  assert.deepEqual(read.voiceSelection, selection);
+  assert.equal(read.voiceName, "Alice");
 });

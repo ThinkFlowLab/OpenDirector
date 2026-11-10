@@ -41,7 +41,7 @@ def _identifier(value, limit, secrets):
     return value
 
 
-def provider_failure(value, *, stage, headers=None, http_status=None, secrets=(), expected_task_id=None):
+def provider_failure(value, *, stage, headers=None, http_status=None, secrets=(), expected_task_id=None, provider=None):
     value = value if isinstance(value, dict) else {}
     error = value.get('error')
     error = error if isinstance(error, dict) else value
@@ -81,6 +81,17 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
     elif code == '55000000':
         category = 'temporary'
     message, suggestion = _REASONS[category]
+    if provider == 'kling':
+        kling_categories = {'1000': 'authentication', '1001': 'authentication', '1002': 'authentication',
+            '1003': 'authentication', '1004': 'authentication', '1100': 'permission', '1101': 'quota',
+            '1102': 'quota', '1103': 'permission', '1200': 'input', '1201': 'input', '1202': 'input',
+            '1203': 'input', '1300': 'input', '1301': 'input', '1302': 'rate_limit',
+            '1303': 'rate_limit', '1304': 'permission', '5000': 'temporary', '5001': 'temporary', '5002': 'temporary'}
+        category = kling_categories.get(code, category)
+        message, suggestion = _REASONS[category]
+        if code in {'1300', '1301'}:
+            message, suggestion = ('供应商判定提示词或参考图片违反内容政策，已拒绝生成。',
+                                   '请调整提示词或参考素材后再生成；当前输入和已有结果保留。')
     diagnostic = error.get('message', '')
     diagnostic = diagnostic[:8192].lower() if isinstance(diagnostic, str) else ''
     if http_status in {400, 422} and category == 'input':
@@ -116,7 +127,7 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         if http_status == 200 or (http_status == 500 and expected_task_id
                 and value.get('object') == 'video' and value.get('id') == expected_task_id):
             terminal_status = value['status']
-    if terminal_status == 'failed' and category == 'temporary':
+    if terminal_status == 'failed' and (category == 'temporary' or provider == 'kling' and category == 'provider'):
         category, message = 'provider', '生成服务任务已失败。'
         suggestion = '请排查任务失败原因，确认后可重新生成。'
     context = MODEL_JOB_CONTEXT.get()

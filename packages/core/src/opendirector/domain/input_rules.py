@@ -5,6 +5,7 @@ from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTE
 from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
+from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -37,6 +38,13 @@ def _adapter_rules(config):
         # SheetSage2 transcription service: it turns a reference recording into
         # a score for music generation and never generates audio itself.
         rules.update(profile='vllm-omni-score', allowedKinds=[], maxImages=0)
+        return rules
+    if kind == 'video' and config.get('protocol') == 'kling_video':
+        kling_capabilities(model)
+        rules.update(profile='kling-official', allowedKinds=['text', 'image'], maxImages=10,
+                     imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024,
+                     videoModes=['first_frame', 'reference'], frameRoles=list(KLING_MODELS[model]['frameRoles']),
+                     aspectRatios=list(KLING_RATIOS))
         return rules
     if kind == 'video' and config.get('protocol') == 'minimax_video_v2':
         rules.update(profile='minimax-h3-official', allowedKinds=['text', 'image', 'video', 'audio'],
@@ -81,9 +89,13 @@ def _adapter_rules(config):
             # Omni reference takes up to 9 images, 3 videos and 3 audios; the
             # videos are capped at 15 s in total, which reference_inputs enforces.
             lite = seedance != 'full'
+            # Ark's first_frame mode takes a first and a last keyframe, each a
+            # single image, so both slots are declared here. Reference mode is
+            # the only way to feed more than two images.
             rules.update(profile='seedance-2.0', allowedKinds=['text', 'image', 'video', 'audio'], maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
                          videoBytes=200 * 1024 * 1024,
                          requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
+                         frameRoles=['first_frame', 'last_frame'],
                          outputResolutions=['480P', '720P'] if lite else ['480P', '720P', '1080P', '4K'],
                          referenceImageResolutions=['480P', '720P'] if lite else ['480P', '720P', '4K'])
     if kind == 'image' and model.rsplit('/', 1)[-1].lower() in {'qwen-image-2.1', 'qwen-image-2.1-turbo'}:

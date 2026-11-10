@@ -70,8 +70,7 @@ def test_startup_recovers_without_hiding_the_interrupted_target(prepared):
 def test_another_live_worker_is_not_marked_interrupted(tool_project):
     _, _, _, pid, session, _, value, factory = tool_project
     async def run():
-        owner, peer = factory(), factory()
-        owner.limit = asyncio.Semaphore(1)
+        owner, peer = factory(concurrency=1), factory()
         await owner.limit.acquire()
         try:
             await owner.submit(pid, value, session)

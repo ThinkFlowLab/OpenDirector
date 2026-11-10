@@ -1,5 +1,9 @@
 import { dataUrlToBlob, downloadFilename } from "./downloadAssets.ts";
-import type { CanvasDocument } from "./model.ts";
+import type { CanvasDocument, TimelineTextSourceView } from "./model.ts";
+import {
+  TIMELINE_TEXT_CAPABILITY,
+  timelineHasTextResources,
+} from "./timeline.ts";
 import { parseDocument } from "./storage.ts";
 import { createZip, readZip, type ZipEntry } from "./zipArchive.ts";
 import { tNow } from "../i18n/messages.ts";
@@ -8,15 +12,46 @@ import { tNow } from "../i18n/messages.ts";
  * `canvas.json` is the document and `assets/` holds the media bytes. Keeps the
  * document readable and stops embedded base64 from bloating a single file. */
 export const CANVAS_ARCHIVE_MAGIC = "opendirector-canvas";
-/** v2 records each asset's provenance so generation nodes survive a round trip.
- * v1 archives still import; their generation nodes fall back to plain material. */
-export const CANVAS_ARCHIVE_VERSION = 2;
+/** v3 protects timeline text and its bundled font/source resources.
+ * v2 records generation provenance; v1/v2 remain readable for older documents. */
+export const CANVAS_ARCHIVE_VERSION = 3;
 export const CANVAS_DOCUMENT_ENTRY = "canvas.json";
 export const CANVAS_ASSET_DIRECTORY = "assets";
 
 const UNSAFE_FILE_NAME = /[\\/:*?"<>|\u0000-\u001f\u007f]/g;
 /** Field names that hold media: node sources, palettes and adopted outputs. */
 export const MEDIA_FIELDS = new Set(["src", "sourceImageUri", "output"]);
+
+function textResources(document: CanvasDocument) {
+  return [...document.nodes, ...(document.hiddenNodes ?? [])].flatMap(
+    (node) => {
+      const timeline = node.data.timeline;
+      return [
+        ...(timeline?.fonts ?? []).map((view) => ({
+          view: view as TimelineTextSourceView,
+          identity: `font:${node.id}:${view.id}`,
+        })),
+        ...(timeline?.overlays ?? []).flatMap((overlay) =>
+          overlay.source
+            ? [
+                {
+                  view: overlay.source,
+                  identity: `source:${node.id}:${overlay.id}`,
+                },
+              ]
+            : [],
+        ),
+      ];
+    },
+  );
+}
+
+function hasText(document: CanvasDocument): boolean {
+  return [...document.nodes, ...(document.hiddenNodes ?? [])].some(
+    (node) =>
+      node.data.timeline && timelineHasTextResources(node.data.timeline),
+  );
+}
 
 export interface CanvasArchive {
   blob: Blob;
@@ -52,7 +87,10 @@ function uniquePath(
   mimeType: string,
   taken: Set<string>,
 ): string {
-  const name = fileName(downloadFilename(title, mimeType), tNow("errors.archive.mediaFallback"));
+  const name = fileName(
+    downloadFilename(title, mimeType),
+    tNow("errors.archive.mediaFallback"),
+  );
   if (!taken.has(name)) {
     taken.add(name);
     return name;
@@ -180,7 +218,8 @@ export async function buildCanvasArchive(
     const ownType =
       typeof record.mimeType === "string" ? record.mimeType : mimeType;
     // A node states where its own picture came from; descendants inherit it.
-    const ownProvenance = asProvenance(record.generationProvenance) ?? provenance;
+    const ownProvenance =
+      asProvenance(record.generationProvenance) ?? provenance;
     for (const [key, entry] of Object.entries(record)) {
       if (
         MEDIA_FIELDS.has(key) &&
@@ -193,6 +232,15 @@ export async function buildCanvasArchive(
     }
   };
 
+  // Timeline Views may expose project media URLs as well as data/blob URLs.
+  // Every font and original text source is required for a portable archive.
+  for (const { view } of textResources(copy)) {
+    if (!view.src)
+      throw new Error(
+        tNow("errors.archive.textResourceMissing", { title: view.title }),
+      );
+    view.src = await register(view.src, view.title, view.mimeType);
+  }
   await visit(copy, document.title, "");
 
   const canvasJson = `${JSON.stringify(copy, null, 2)}\n`;
@@ -201,7 +249,10 @@ export async function buildCanvasArchive(
 
   const manifest = {
     magic: CANVAS_ARCHIVE_MAGIC,
-    formatVersion: CANVAS_ARCHIVE_VERSION,
+    formatVersion: hasText(copy) ? CANVAS_ARCHIVE_VERSION : 2,
+    ...(hasText(copy)
+      ? { requiredCapabilities: [TIMELINE_TEXT_CAPABILITY] }
+      : {}),
     name: document.title,
     exportedAt: (options.now ?? new Date()).toISOString(),
     document: CANVAS_DOCUMENT_ENTRY,
@@ -246,7 +297,14 @@ interface ArchiveManifest {
   magic?: unknown;
   formatVersion?: unknown;
   document?: unknown;
-  assets?: { path?: unknown; mimeType?: unknown; provenance?: unknown }[];
+  requiredCapabilities?: unknown;
+  assets?: {
+    path?: unknown;
+    mimeType?: unknown;
+    provenance?: unknown;
+    byteSize?: unknown;
+    sha256?: unknown;
+  }[];
 }
 
 const BASE64_ALPHABET =
@@ -295,15 +353,18 @@ export async function readCanvasArchive(
 ): Promise<CanvasArchiveContents> {
   const files = await readZip(file);
   const manifestEntry = files.get("manifest.json");
-  if (!manifestEntry)
-    throw new Error(tNow("errors.archive.noManifest"));
+  if (!manifestEntry) throw new Error(tNow("errors.archive.noManifest"));
   let manifest: ArchiveManifest;
   try {
     manifest = JSON.parse(new TextDecoder().decode(manifestEntry));
   } catch {
     throw new Error(tNow("errors.archive.manifestInvalid"));
   }
-  if (manifest.magic !== CANVAS_ARCHIVE_MAGIC)
+  if (
+    !manifest ||
+    typeof manifest !== "object" ||
+    manifest.magic !== CANVAS_ARCHIVE_MAGIC
+  )
     throw new Error(tNow("errors.archive.notCanvas"));
   const version = manifest.formatVersion;
   if (
@@ -313,16 +374,28 @@ export async function readCanvasArchive(
   )
     throw new Error(tNow("errors.archive.versionInvalid"));
   if (version > CANVAS_ARCHIVE_VERSION)
-    throw new Error(
-      tNow("errors.archive.versionNewer", { version }),
-    );
+    throw new Error(tNow("errors.archive.versionNewer", { version }));
+  const capabilities =
+    manifest.requiredCapabilities === undefined
+      ? []
+      : manifest.requiredCapabilities;
+  if (
+    !Array.isArray(capabilities) ||
+    capabilities.some(
+      (capability) => capability !== TIMELINE_TEXT_CAPABILITY,
+    ) ||
+    (version === 3 && !capabilities.includes(TIMELINE_TEXT_CAPABILITY))
+  )
+    throw new Error(tNow("errors.timeline.capabilityUnsupported"));
   const documentPath =
     typeof manifest.document === "string" && manifest.document
       ? manifest.document
       : CANVAS_DOCUMENT_ENTRY;
   const documentEntry = files.get(documentPath);
   if (!documentEntry)
-    throw new Error(tNow("errors.archive.missingDocument", { path: documentPath }));
+    throw new Error(
+      tNow("errors.archive.missingDocument", { path: documentPath }),
+    );
   let raw: unknown;
   try {
     raw = JSON.parse(new TextDecoder().decode(documentEntry));
@@ -332,10 +405,27 @@ export async function readCanvasArchive(
   const parsed = parseDocument(raw);
   if (!parsed.ok) throw new Error(parsed.error.message);
   const document = parsed.value;
+  if (hasText(document) && version < 3)
+    throw new Error(tNow("errors.archive.versionInvalid"));
   const mimeTypes = new Map<string, string>();
   const provenances = new Map<string, ArchiveProvenance>();
+  if (manifest.assets !== undefined && !Array.isArray(manifest.assets))
+    throw new Error(tNow("errors.archive.manifestInvalid"));
   for (const asset of manifest.assets ?? [])
     if (typeof asset?.path === "string" && typeof asset.mimeType === "string") {
+      const bytes = files.get(asset.path);
+      if (!bytes)
+        throw new Error(
+          tNow("errors.archive.missingMedia", { entry: asset.path }),
+        );
+      if (
+        (asset.byteSize !== undefined && asset.byteSize !== bytes.length) ||
+        (asset.sha256 !== undefined &&
+          (typeof asset.sha256 !== "string" ||
+            !/^[a-f0-9]{64}$/.test(asset.sha256) ||
+            (await sha256(bytes)) !== asset.sha256))
+      )
+        throw new Error(tNow("errors.archive.integrity"));
       mimeTypes.set(asset.path, asset.mimeType);
       const provenance = asProvenance(asset.provenance);
       if (provenance) provenances.set(asset.path, provenance);
@@ -366,6 +456,17 @@ export async function readCanvasArchive(
       if (known) provenance.set(url, known);
     }
   };
+  const bundledViews = textResources(document).filter(
+    ({ view }) =>
+      view.src?.startsWith(`${CANVAS_ASSET_DIRECTORY}/`) && files.has(view.src),
+  );
   visit(document);
+  for (const { view, identity } of bundledViews) {
+    const original = view.asset;
+    view.importIdentity = original
+      ? `asset:${original.kind}:${original.assetId}:${original.revision}:${original.fingerprint}`
+      : (view.importIdentity ?? identity);
+    delete view.asset;
+  }
   return { document, assets: restored.size, provenance };
 }

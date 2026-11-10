@@ -12,6 +12,10 @@ const browser = await chromium.launch({
   args: ["--no-sandbox"],
 });
 const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
+await page.addInitScript(() => {
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+  localStorage.setItem("opendirector.locale.v1", "zh-CN");
+});
 page.setDefaultTimeout(20000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -151,7 +155,7 @@ try {
     .locator("[data-reference]")
     .filter({ hasText: "可见参考" });
   await visibleChip.waitFor();
-  assert.equal(await hiddenChip.count(), 0);
+  assert.equal(await hiddenChip.count(), 1);
   assert.equal(await page.locator('.cw-reference-thumbnail [title*="隐藏参考"]').count(), 0);
   assert.ok(fixture.before.jobs[0].inputSnapshot.references.some(
     (ref) => ref.sourceVersion?.id === fixture.source,
@@ -160,7 +164,7 @@ try {
     await visibleChip.evaluate((el) => getComputedStyle(el).borderStyle),
     "solid",
   );
-  // Restoring a legacy source reveals its saved relationship again.
+  // Restoring the source changes its display without recreating the reference.
   await page.evaluate(async ({ id, source }) => {
     const { creationClient, objectVersion } =
       await import("/src/backend/creationClient.ts");
@@ -214,7 +218,7 @@ try {
   assert.equal(await page.locator(".cw-node-reference-button").count(), 0);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS hidden reference excluded from current composer, historical inputs retained",
+    "PASS hidden reference retained in composer and history; explicit removal remains separate",
   );
 } finally {
   await page

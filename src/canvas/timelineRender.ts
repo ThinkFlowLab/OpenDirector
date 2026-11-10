@@ -15,6 +15,11 @@ import {
   type TimelineSegment,
 } from "./timeline";
 import { encodeMp4 } from "./mp4Export";
+import {
+  prepareTimelineFonts,
+  drawTimelineText,
+  type TimelineFontSession,
+} from "./timelineTextRenderer.ts";
 
 /** Source trims, speed, offset, mute and volume share the editor's timeline semantics. */
 export async function renderTimelineMp4(
@@ -43,13 +48,17 @@ export async function renderTimelineMp4(
   const sounds: { segment: TimelineSegment; sink: AudioBufferSink }[] = [];
   const disposeInputs = () => inputs.forEach((input) => input.dispose());
   signal.addEventListener("abort", disposeInputs, { once: true });
+  let fonts: TimelineFontSession | undefined;
   try {
+    fonts = await prepareTimelineFonts(timeline, signal);
     for (const segment of segments) {
       signal.throwIfAborted();
       const { clip, track } = segment,
         resource = clip.resource;
       if (!resource.src)
-        throw new Error(tNow("errors.render.missingMedia", { title: resource.title }));
+        throw new Error(
+          tNow("errors.render.missingMedia", { title: resource.title }),
+        );
       if (resource.kind === "image") {
         if (!images.has(resource.src)) {
           const response = await fetch(resource.src, { signal });
@@ -82,7 +91,9 @@ export async function renderTimelineMp4(
                 cleanup();
                 reject(
                   new Error(
-                    tNow("errors.render.imageDecode", { title: resource.title }),
+                    tNow("errors.render.imageDecode", {
+                      title: resource.title,
+                    }),
                   ),
                 );
               };
@@ -154,7 +165,7 @@ export async function renderTimelineMp4(
       fps: timeline.fps,
       signal,
       progress,
-      draw: async (time) => {
+      draw: async (time, frameIndex) => {
         context.fillStyle = "#000000";
         context.fillRect(0, 0, canvas.width, canvas.height);
         const segment = segments.find(
@@ -163,34 +174,36 @@ export async function renderTimelineMp4(
             time >= item.start &&
             time < item.end,
         );
-        if (!segment) return;
-        const resource = segment.clip.resource;
-        if (resource.kind === "image") {
-          const image = images.get(resource.src!)!;
-          const ratio = Math.min(
-            canvas.width / image.naturalWidth,
-            canvas.height / image.naturalHeight,
-          );
-          const width = image.naturalWidth * ratio,
-            height = image.naturalHeight * ratio;
-          context.drawImage(
-            image,
-            (canvas.width - width) / 2,
-            (canvas.height - height) / 2,
-            width,
-            height,
-          );
-        } else {
-          const frame = await videos.get(segment.clip.id)!.next();
-          if (!frame.value)
-            throw new Error(
-              tNow("errors.render.noFrame", {
-                title: resource.title,
-                time: time.toFixed(2),
-              }),
+        if (segment) {
+          const resource = segment.clip.resource;
+          if (resource.kind === "image") {
+            const image = images.get(resource.src!)!;
+            const ratio = Math.min(
+              canvas.width / image.naturalWidth,
+              canvas.height / image.naturalHeight,
             );
-          context.drawImage(frame.value.canvas, 0, 0);
+            const width = image.naturalWidth * ratio,
+              height = image.naturalHeight * ratio;
+            context.drawImage(
+              image,
+              (canvas.width - width) / 2,
+              (canvas.height - height) / 2,
+              width,
+              height,
+            );
+          } else {
+            const frame = await videos.get(segment.clip.id)!.next();
+            if (!frame.value)
+              throw new Error(
+                tNow("errors.render.noFrame", {
+                  title: resource.title,
+                  time: time.toFixed(2),
+                }),
+              );
+            context.drawImage(frame.value.canvas, 0, 0);
+          }
         }
+        drawTimelineText(context, timeline, frameIndex, fonts!);
       },
       ...(sounds.length
         ? {
@@ -248,6 +261,7 @@ export async function renderTimelineMp4(
         : {}),
     });
   } finally {
+    fonts?.dispose();
     signal.removeEventListener("abort", disposeInputs);
     disposeInputs();
     images.forEach((image) => image.removeAttribute("src"));

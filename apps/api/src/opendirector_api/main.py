@@ -65,7 +65,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             finally:
                 await creation_generation.close()
 
-    app = FastAPI(title="OpenDirector Local API", version="0.1.1", lifespan=lifespan)
+    app = FastAPI(title="OpenDirector Local API", version="0.1.2", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider))
     app.include_router(library_routes(creation_projects))
@@ -309,6 +309,11 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     dist = web_root()
     if dist.is_dir():
         app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
+        # Installed builds retain the same public font URLs as the dev server.
+        # StaticFiles confines reads to this directory and rejects escaping symlinks.
+        font_root = dist / "fonts"
+        if font_root.is_dir() and not font_root.is_symlink() and font_root.resolve().is_relative_to(dist.resolve()):
+            app.mount("/fonts", StaticFiles(directory=font_root), name="fonts")
 
         @app.get("/")
         def index():

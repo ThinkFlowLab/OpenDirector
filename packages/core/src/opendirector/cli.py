@@ -22,6 +22,7 @@ from typer._click.exceptions import UsageError
 from opendirector.agent.tools import COMMANDS, command_help
 from opendirector.domain.creation.commands import COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 
 app = typer.Typer(no_args_is_help=True, help="Start OpenDirector and create or edit projects.",
     epilog="Run opendirector COMMAND --help for subcommands and usage. "
@@ -40,6 +41,7 @@ GROUP_HELP = {
     "generation": "Submit a configured generation task.",
     "result": "Select a generated result for adoption.",
     "editor": "Create and save editable media documents.",
+    "timeline": "Discover resources for editable timelines.",
     "history": "Undo or redo reversible project operations.",
     "creation": "Apply multiple project operations atomically.",
 }
@@ -57,6 +59,75 @@ def group(name: str) -> typer.Typer:
     return groups[name]
 
 
+@group("timeline").command("default-font", help="Find the bundled timeline font without opening a project.")
+def timeline_default_font():
+    from opendirector.installation import default_timeline_font
+    path = default_timeline_font()
+    try:
+        manifest = json.loads((path.parent / "manifest.json").read_text(encoding="utf-8"))
+        fingerprint = "sha256:" + sha256(path.read_bytes()).hexdigest()
+        if fingerprint != manifest["fingerprint"]:
+            raise timeline_error('timeline_bundled_font_fingerprint', 409)
+    except (OSError, ValueError, KeyError):
+        raise timeline_error('timeline_bundled_font_unavailable', 409) from None
+    emit(dict(path=str(path), version=manifest["version"], fingerprint=fingerprint))
+
+
+@group("timeline").command("export", help="Export an exact saved revision as a portable editable .timeline.zip.")
+def timeline_export(ctx: typer.Context, editor_id: Annotated[UUID, typer.Option()],
+                    revision: Annotated[int, typer.Option(min=1)], output: Annotated[Path, typer.Option()]):
+    client = ctx.obj
+    client.command = ctx.command_path
+    if client.live:
+        emit(client.call("timeline_package_export", dict(editorId=str(editor_id), revision=revision, path=str(output))))
+        return
+    with client.http.stream("GET", client.path(f"/timelines/{editor_id}/package"), params={"revision": revision}) as response:
+        if not response.is_success:
+            response.read()
+            raise client.response_error(response)
+        # Exclusive creation keeps a failed download from overwriting a user's file.
+        try:
+            with output.open("xb") as stream:
+                for chunk in response.iter_bytes(): stream.write(chunk)
+        except BaseException:
+            # An existing destination is never ours to remove.
+            if not isinstance(sys.exc_info()[1], FileExistsError): output.unlink(missing_ok=True)
+            raise
+    emit(dict(path=str(output), editorId=str(editor_id), revision=revision))
+
+
+@group("timeline").command("import", help="Import an editable bundle; default creates a new timeline.")
+def timeline_import(ctx: typer.Context, file: Path, operation_id: Annotated[UUID, typer.Option()],
+                    replace_editor: Annotated[UUID | None, typer.Option()] = None,
+                    expected_revision: Annotated[int | None, typer.Option(min=1)] = None):
+    from opendirector.domain.creation.timeline_packages import TimelinePackageImportRequest
+    from opendirector.infrastructure.creation_files import file_identity
+    client = ctx.obj
+    client.command = ctx.command_path
+    fingerprint, _ = file_identity(file)
+    arguments = dict(operationId=str(operation_id), archiveFingerprint=fingerprint,
+        replaceEditorId=str(replace_editor) if replace_editor else None, expectedRevision=expected_revision)
+    handle = uuid5(operation_id, "archive-upload")
+    request = TimelinePackageImportRequest.model_validate({**arguments, 'uploadHandle': handle})
+    if client.live:
+        value = client.call("timeline_package_import", {**arguments, 'path': str(file)}, identity=operation_id)
+    else:
+        client.open()
+        try:
+            client.request("GET", client.path(f"/timeline-package-imports/{operation_id}"))
+            existing = True
+        except ProjectError as error:
+            if error.status != 404: raise
+            existing = False
+        if not existing:
+            with file.open('rb') as stream:
+                client.request("PUT", client.path(f"/uploads/{handle}"), content=stream,
+                    headers={"X-Asset-Name": quote(file.name, safe=''), "X-Asset-Kind": "file"})
+        value = client.request("POST", client.path("/timeline-package-imports"), json=request.model_dump(mode='json'))
+    emit(value)
+    if value['status'] != 'applied': raise typer.Exit(1)
+
+
 class Client:
     def __init__(self, project, url, session, operation_id):
         self.project = project
@@ -68,12 +139,24 @@ class Client:
         self.opened = False
         self.owns_session = session is None
         self.http = httpx.Client(base_url=url, trust_env=False, timeout=120,
-            headers={"X-OpenDirector-Request": "1", "X-OpenDirector-Session": self.session})
+            headers={"X-OpenDirector-Request": "1", "X-OpenDirector-Session": self.session,
+                     "Accept-Language": os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US')})
+
+    @staticmethod
+    def response_error(response):
+        try:
+            value = response.json()
+        except ValueError:
+            value = None
+        if isinstance(value, dict) and isinstance(value.get('detail'), str):
+            code = value.get('code')
+            return ProjectError(value['detail'], response.status_code, code=code if isinstance(code, str) else None)
+        return ProjectError(response.text, response.status_code)
 
     def request(self, method, path, **kwargs):
         response = self.http.request(method, path, **kwargs)
         if not response.is_success:
-            raise ProjectError(response.text, response.status_code)
+            raise self.response_error(response)
         return response.json()
 
     def path(self, suffix=""):
@@ -97,7 +180,7 @@ class Client:
             with connection.makefile("rb") as reader:
                 response = json.loads(reader.readline(64 * 1024 * 1024))
         if response.get("error"):
-            raise ProjectError(response["error"])
+            raise ProjectError(response["error"], code=response.get('code'))
         return response["value"]
 
     def models(self):
@@ -541,7 +624,11 @@ def main():
                        for item in error.errors(include_input=False, include_url=False, include_context=False)]})
         raise SystemExit(1)
     except (ProjectError, OSError, ValueError, httpx.HTTPError) as error:
-        emit({"error": str(error)})
+        value = {"error": str(error)}
+        if isinstance(error, ProjectError):
+            value['code'] = error.code
+            value['error'] = timeline_error_message(error.code, os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US')) or str(error)
+        emit(value)
         raise SystemExit(1)
 
 

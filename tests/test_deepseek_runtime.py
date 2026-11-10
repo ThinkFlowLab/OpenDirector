@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
+from process_helpers import python_cli
 
 from opendirector.agent import deepseek
 from opendirector.agent.context import RunContext
@@ -18,7 +19,7 @@ from opendirector_api.main import create_app
 from opendirector.infrastructure.local_projects import LocalProjects
 
 FAKE = r'''
-import json, os, subprocess, sys
+import json, os, shutil, subprocess, sys
 from pathlib import Path
 assert sys.argv[1:3] == ['--profile','acp']
 assert len(sys.argv) == 5 and sys.argv[3] == '--patch', sys.argv[1::2]
@@ -42,7 +43,7 @@ if resumed:
 else:
  workspace_marker.write_text(str(Path.cwd()))
 servers=req['params']['mcpServers']
-assert Path(req['params']['cwd']).resolve() == Path.cwd(), req['params']['cwd']
+assert Path(req['params']['cwd']).samefile(Path.cwd()), req['params']['cwd']
 model=dict(id='model',currentValue='route/default',options=[dict(group='route',options=[dict(value='route/default',name='Default model')])])
 if mode=='efforts':
  model['options'][0]['options'].append(dict(value='route/other',name='Other model'))
@@ -59,7 +60,7 @@ for line in sys.stdin:
  elif req['method']=='session/cancel':
   Path(os.environ['DEEPSEEK_CANCELLED']).write_text('cancelled') if 'DEEPSEEK_CANCELLED' in os.environ else None
  elif req['method']=='session/prompt':
-  assert os.environ['PWD'] == str(Path.cwd())
+  assert Path(os.environ['PWD']).samefile(Path.cwd())
   blocks=[block['text'] for block in req['params']['prompt']]
   if resumed:
    assert blocks[0].startswith('Execution directory:')
@@ -88,9 +89,11 @@ for line in sys.stdin:
   assert servers == []
   assert 'OPENDIRECTOR_AGENT_TOKEN' not in os.environ
   assert 'OPENDIRECTOR_AGENT_CONTEXT' not in os.environ
-  context = json.loads(subprocess.check_output(['opendirector', 'project', 'show'], text=True))
+  cli = shutil.which('opendirector')
+  assert cli and Path(cli).parent.samefile(Path.cwd() / '.opendirector-bin')
+  context = json.loads(subprocess.check_output([cli, 'project', 'show'], text=True))
   assert context['project']['id']
-  outcome = json.loads(subprocess.check_output(['opendirector', 'asset', 'write-text', '--name', 'deepseek.md', '--text', 'CLI saved'], text=True))
+  outcome = json.loads(subprocess.check_output([cli, 'asset', 'write-text', '--name', 'deepseek.md', '--text', 'CLI saved'], text=True))
   assert outcome['status'] == 'applied', outcome
   write(dict(method='session/update',params=dict(sessionId=sid,update=dict(sessionUpdate='tool_call',toolCallId='native-read',title='read',rawInput={'path':'file'},status='in_progress'))))
   write(dict(method='session/update',params=dict(sessionId=sid,update=dict(sessionUpdate='tool_call_update',toolCallId='native-read',status='completed',content=[]))))
@@ -103,7 +106,7 @@ for line in sys.stdin:
 @pytest.fixture
 def cli(tmp_path, monkeypatch):
     binary = tmp_path / 'dsh'
-    binary.write_text(f'#!{sys.executable}\n' + FAKE)
+    binary = python_cli(binary, FAKE)
     binary.chmod(0o755)
     monkeypatch.setenv('PATH', str(tmp_path) + os.pathsep + os.environ['PATH'])
     skill = tmp_path / '.opendirector/skills/example'

@@ -10,6 +10,7 @@ import { defaultTranslate } from "./assistantTranslate.ts";
  * messages without ever showing Chinese in the English interface.
  */
 const BY_MESSAGE: Record<string, MessageKey> = {
+  "供应商判定提示词或参考图片违反内容政策，已拒绝生成。": "errors.generationFailure.policy",
   "生成服务拒绝了输入内容或参数。": "errors.generationFailure.input",
   "生成服务拒绝了参考素材。": "errors.generationFailure.reference",
   "生成服务鉴权失败。": "errors.generationFailure.authentication",

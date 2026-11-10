@@ -9,6 +9,8 @@ from uuid import UUID, uuid5
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from opendirector.application.creation_artifacts import publish_artifact
 from opendirector.application.creation_assets import CreationAssets
+from opendirector.application.creation_timeline_packages import CreationTimelinePackages
+from opendirector.domain.creation.timeline_packages import TimelinePackageExportFile, TimelinePackageImportFile
 from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.voice_library import VoiceLibrary
 from opendirector.domain.creation.assets import AssetProvenance
@@ -19,6 +21,7 @@ from opendirector.domain.projects import ProjectError
 from opendirector.domain.voices import VOICE_CREATE_TEXT_LIMITS
 from opendirector.infrastructure.creation_projects import directory
 from opendirector.infrastructure.local_projects import child
+from opendirector.infrastructure.execution_files import execution_file
 
 from opendirector.installation import SOURCE_ROOT, BUNDLED
 
@@ -250,6 +253,9 @@ def tools() -> list[dict]:
                               {'type': 'object', 'properties': {'type': command_type, 'payload': {'type': 'object'},
                                'expectedVersions': versions, 'expectedPreview': {'type': ['string', 'null']}}, '$defs': definitions,
                                'required': ['type', 'payload'], 'additionalProperties': False}))
+    result.append(tool_schema('timeline_package_export', 'Export an exact saved timeline revision to a new .timeline.zip file in the active execution directory. No editing session or open editor UI is required.', TimelinePackageExportFile.model_json_schema()))
+    result.append(tool_schema('timeline_package_import', 'Import a .timeline.zip file from this execution directory. Reuse operationId and archiveFingerprint on retry. Omit replacement fields to create a new editable timeline.', TimelinePackageImportFile.model_json_schema()))
+
     for name, description, properties, required in [
         ('voice_list', 'Read the selected model voice library and compatibility requirements. For large MOSS libraries use pageSize 150. '
          'Continue with nextCursor as after and the returned connectionId until nextCursor is null.',
@@ -281,6 +287,18 @@ class AgentTools:
     async def execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
                       name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None,
                       execution_directory: Path | None = None) -> JsonValue:
+        if name in {'timeline_package_export', 'timeline_package_import'}:
+            with self.projects.local.transaction() as db:
+                project_directory, _, _ = self.projects._load(db, project_id)
+            work = execution_directory or project_directory / 'agent-runs' / str(turn_id) / 'work'
+            packages = CreationTimelinePackages(self.projects)
+            if name == 'timeline_package_export':
+                request = TimelinePackageExportFile.model_validate(arguments)
+                return await asyncio.to_thread(packages.export_execution_file, project_id, request, execution_directory=work)
+            request = TimelinePackageImportFile.model_validate(arguments)
+            receipt = await asyncio.to_thread(packages.import_execution_file, project_id, request, execution_directory=work, session=session)
+            return receipt.model_dump(mode='json')
+
         if name in {'voice_list', 'voice_create', 'voice_delete'}:
             model_id = str(UUID(arguments['modelConfigId']))
             if name == 'voice_list':
@@ -289,12 +307,12 @@ class AgentTools:
             if name == 'voice_delete':
                 await asyncio.to_thread(self.voices.delete, model_id, arguments['voiceId'], arguments['connectionId'])
                 return {'deleted': True, 'voiceId': arguments['voiceId'], 'connectionId': arguments['connectionId']}
-            target = Path(arguments['path']).resolve()
-            if execution_directory is None or not target.is_relative_to(execution_directory.resolve()):
+            target = Path(arguments['path'])
+            if execution_directory is None:
                 raise ProjectError('只能上传本轮执行目录内的录音。', 403)
             _, capabilities = self.voices._config(model_id)
             def recording():
-                with target.open('rb') as stream:
+                with execution_file(execution_directory, str(target)) as stream:
                     return stream.read(capabilities['maxBytes'] + 1)
             data = await asyncio.to_thread(recording)
             return await asyncio.to_thread(self.voices.create, model_id, data, filename=target.name,
@@ -321,7 +339,10 @@ class AgentTools:
                 target = directory((execution_directory or project_directory / 'agent-runs' / str(turn_id) / 'work') / 'previews')
                 target.mkdir(parents=True, exist_ok=True)
                 source = Path(result['preview']['path'])
-                destination = child(target, source.name)
+                # Asset IDs identify immutable content; repeating the source's
+                # full fingerprint here adds 65 characters to an already deep
+                # execution path and exceeds Windows' ordinary path limit.
+                destination = child(target, query.objectId.hex + source.suffix)
                 await asyncio.to_thread(shutil.copyfile, source, destination)
                 result['preview']['path'] = str(destination.resolve())
             return result

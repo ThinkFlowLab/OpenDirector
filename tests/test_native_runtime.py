@@ -15,6 +15,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import httpx
 import pytest
+from process_helpers import assert_process_exited, python_cli
 
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.agent import native
@@ -41,10 +42,10 @@ if 'Continue plan' in prompt:
  assert workspace_marker.read_text() == str(Path.cwd())
 else:
  workspace_marker.write_text(str(Path.cwd()))
-assert list(Path('.agents/skills').glob('*/SKILL.md'))
-assert str(Path.cwd()) in prompt
-subprocess.run(['sh', '-c', 'printf \"native execution works\" > environment-check.txt'], check=True)
-cli = [sys.executable, os.environ['OD']]
+work = Path(prompt.split('Execution directory: ', 1)[1].split(chr(10), 1)[0])
+assert list((work / '.agents/skills').glob('*/SKILL.md'))
+subprocess.run([sys.executable, '-c', 'from pathlib import Path; Path("environment-check.txt").write_text("native execution works")'], cwd=work, check=True)
+cli = [sys.executable, '-m', 'opendirector.cli']
 def invoke(*arguments):
  response = subprocess.check_output([*cli, *arguments], text=True)
  return json.loads(response)
@@ -126,8 +127,7 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime,
         {'preview': {'path': str(preview), 'mimeType': 'image/webp'}})
     def command(kind, work, socket, token, model, model_url, catalog, **kwargs):
         return [sys.executable, str(script), "--"], {**os.environ, 'TEST_RUNTIME':kind,
-            'OPENDIRECTOR_AGENT_SOCKET':socket,
-            'OD':str(native.ROOT / 'scripts/opendirector.py')}
+            'PWD':str(kwargs.get('native_directory') or work), **(kwargs.get('bridge_env') or {'OPENDIRECTOR_AGENT_SOCKET':socket})}
     monkeypatch.setattr(native, 'command', command)
     monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
     async def fixture_skills(*args):
@@ -165,7 +165,67 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime,
         response = client.post(path + '/assistant/turns', json={**turn, 'id': str(uuid4()), 'text': 'Continue plan'})
         events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
         assert events[-1]['error'] is None, events
+        if runtime in {'default', 'opencode'}:
+            saved_session = next(local.root.rglob(f'{runtime}-sessions/*/session.json'))
+            saved = json.loads(saved_session.read_text())
+            assert saved['sessionId'] == 'test-native' and saved['directory'] == str(work)
+        workspaces = list(local.root.rglob('agent-runs/*/work'))
+        assert len(workspaces) == (1 if runtime in {'codex', 'claude'} else 2)
+        assert all((directory / 'environment-check.txt').read_text() == 'native execution works' for directory in workspaces)
 
+
+
+def test_claude_continuation_refreshes_skills_using_real_command(tmp_path, monkeypatch):
+    script = python_cli(tmp_path / 'claude fixture', '''import json,sys
+from pathlib import Path
+prompt = sys.stdin.read()
+marker = Path('first-turn.txt')
+skill = Path('plugin/skills/character-replacement/SKILL.md').read_text()
+if marker.exists():
+ assert sys.argv[sys.argv.index('--resume') + 1] == 'fixture-session'
+ assert marker.read_text() == str(Path.cwd())
+ assert 'second skill version' in skill
+else:
+ assert '--resume' not in sys.argv
+ assert 'first skill version' in skill
+ marker.write_text(str(Path.cwd()))
+print(json.dumps({'type':'assistant','session_id':'fixture-session',
+ 'message':{'content':[{'type':'text','text':'completed'}]}}),flush=True)
+''')
+    monkeypatch.setattr(native, 'executable', lambda _: str(script))
+    directory = tmp_path / 'project'; directory.mkdir()
+    entry = tmp_path / '.opendirector/skills/character-replacement/SKILL.md'
+    common = dict(runtime='claude', project_id=uuid4(), session=str(uuid4()),
+        conversation_id=uuid4(), directory=directory, config=None, selected_skills=[],
+        skills=[{'name': 'character-replacement', 'filePath': str(entry)}])
+    async def closed(): pass
+    async def exercise():
+        records = []
+        messages = []
+        for version in ['first', 'second']:
+            entry.write_text(version + ' skill version', encoding='utf-8')
+            messages.append({'role': 'user', 'content': version})
+            run = RunContext(**common, turn_id=uuid4(), messages=list(messages))
+            gateway = SimpleNamespace(close=closed)
+            events = [event async for event in native.NativeRuntime().stream(run, gateway)]
+            assert events == [{'type': 'delta', 'text': 'completed'}]
+            records.append(json.loads((run.native_session_path() / 'session.json').read_text()))
+            messages.append({'role': 'assistant', 'content': 'completed'})
+        assert records[0]['sessionId'] == records[1]['sessionId'] == 'fixture-session'
+        assert records[0]['directory'] == records[1]['directory']
+        workspaces = list(directory.glob('agent-runs/*/work'))
+        assert len(workspaces) == 1
+        assert (workspaces[0] / 'plugin/skills/character-replacement/SKILL.md').read_text() == 'second skill version'
+    asyncio.run(exercise())
+
+
+def test_claude_skill_alias_refuses_to_replace_a_real_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
+    occupied = tmp_path / 'plugin/skills'; occupied.mkdir(parents=True)
+    sentinel = occupied / 'keep.txt'; sentinel.write_text('keep')
+    with pytest.raises(FileExistsError):
+        native.command('claude', tmp_path, 'socket', 'token', None, '', [])
+    assert sentinel.read_text() == 'keep'
 
 
 def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
@@ -222,6 +282,34 @@ def test_codex_reconnect_does_not_end_turn():
         'type': 'agent_message', 'text': 'Connected'}}) == [{'type': 'delta', 'text': 'Connected'}]
     with pytest.raises(ProjectError):
         native.text_events('codex', {'type': 'turn.failed'})
+
+
+@pytest.mark.parametrize('identities', [['unexpected'], ['original', 'unexpected']])
+def test_opencode_resume_rejects_unexpected_or_changing_session_ids(tmp_path, monkeypatch, identities):
+    from opendirector.infrastructure.creation_projects import CreationProjects
+    run = RunContext(runtime='opencode', project_id=uuid4(), turn_id=uuid4(),
+        session=str(uuid4()), conversation_id=uuid4(), runtime_model='test-model',
+        directory=tmp_path, config=None, selected_skills=[],
+        messages=[{'role': 'user', 'content': 'first'}, {'role': 'assistant', 'content': 'answer'},
+                  {'role': 'user', 'content': 'continue'}])
+    saved = run.native_session_path() / 'session.json'
+    saved.parent.mkdir(parents=True)
+    engine_directory = tmp_path / 'agent-runs' / str(uuid4()) / 'work'
+    engine_directory.mkdir(parents=True)
+    previous = dict(sessionId='original', messages=2, directory=str(engine_directory),
+                    selection=dict(model='test-model', thinking='auto'))
+    saved.write_text(json.dumps(previous))
+    source = 'import json; ' + '; '.join('print(' + repr(json.dumps(dict(
+        type='text', sessionID=identity, part=dict(text='output')))) + ')' for identity in identities)
+    monkeypatch.setattr(native, 'command', lambda *args, **kwargs:
+        ([sys.executable, '-c', source], dict(os.environ)))
+    instance = AgentRuntimes(CreationProjects(LocalProjects(tmp_path)), None, ModelConfigs(tmp_path))
+    async def consume():
+        with pytest.raises(ProjectError, match='会话 ID'):
+            async for _ in instance.stream(run):
+                pass
+    asyncio.run(consume())
+    assert json.loads(saved.read_text()) == previous
 
 
 @pytest.mark.parametrize("runtime", ["default"])
@@ -337,6 +425,13 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
         assert 'OpenCode ready.' in json.dumps(messages[:-1])
         assert 'Continue the plan.' in json.dumps(messages[-1])
         assert 'Use the skill and save a plan.' not in json.dumps(messages[-1])
+        # A new turn retains the native session and its complete transcript.
+        traces = list(local.root.rglob('*.opencode.jsonl'))
+        ids = [{json.loads(line)['native']['sessionID']
+                for line in trace.read_text(encoding='utf-8').splitlines()
+                if json.loads(line).get('native', {}).get('sessionID')} for trace in traces]
+        assert len(ids) == 2 and all(len(value) == 1 for value in ids)
+        assert ids[0] == ids[1]
 
 
 def test_real_opencode_watchdog_cleans_up_stalled_cli(tmp_path):
@@ -371,7 +466,12 @@ def test_cancel_native_process_group(tmp_path, monkeypatch, runtime):
     async def check():
         script = tmp_path / 'wait.py'
         marker = tmp_path / 'pid.txt'
-        script.write_text('import os,sys,time\nfrom pathlib import Path\nPath(sys.argv[1]).write_text(str(os.getpid()))\nsys.stdin.read()\ntime.sleep(60)\n')
+        child_marker = marker.with_suffix('.child')
+        script.write_text('import os,sys,time,subprocess\nfrom pathlib import Path\n'
+            'subprocess.Popen([sys.executable, "-c", '
+            '"import os,sys,time; from pathlib import Path; Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)", '
+            'str(Path(sys.argv[1]).with_suffix(".child"))])\n'
+            'Path(sys.argv[1]).write_text(str(os.getpid()))\nsys.stdin.read()\ntime.sleep(60)\n')
         def command(*args, **kwargs):
             return [sys.executable, str(script), str(marker)], dict(os.environ)
         monkeypatch.setattr(native, 'command', command)
@@ -384,14 +484,14 @@ def test_cancel_native_process_group(tmp_path, monkeypatch, runtime):
                 pass
         task = asyncio.create_task(consume())
         async with asyncio.timeout(10):
-            while not marker.exists():
+            while not marker.exists() or not child_marker.exists():
                 await asyncio.sleep(.02)
         pid = int(marker.read_text())
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        with pytest.raises(ProcessLookupError):
-            os.kill(pid, 0)
+        assert_process_exited(pid)
+        assert_process_exited(int(child_marker.read_text()))
     asyncio.run(check())
 
 

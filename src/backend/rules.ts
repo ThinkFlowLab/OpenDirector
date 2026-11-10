@@ -69,6 +69,7 @@ export interface ModelConfig {
     | "openai"
     | "volcengine"
     | "minimax_video_v2"
+    | "kling_video"
     | "vllm_omni"
     | "vllm_omni_segmentation"
     | "vllm_omni_music"
@@ -131,10 +132,17 @@ export function serviceAudioSettings(
   if (settings.mode !== "audio") return settings;
   const music = isMusicModel(config);
   const seconds = settings.durationSeconds;
+  // A model that publishes no voice library cannot validate a stored
+  // connection-scoped selection, and the composer only offers the library while
+  // that capability exists. Keeping the selection would block generation with
+  // "the voice belongs to another service" and leave no control to replace it,
+  // so drop it here rather than waiting for a model switch to do the same.
+  const unusable = !config.inputRules.voiceLibrary && Boolean(settings.voiceSelection);
   return {
     ...settings,
     audioCreationType: music ? "music" : "audio",
     audioMode: "tts",
+    ...(unusable ? { voiceSelection: undefined, voiceName: undefined } : {}),
     ...(music && !(seconds >= MUSIC_SECONDS.min && seconds <= MUSIC_SECONDS.max)
       ? { durationSeconds: MUSIC_SECONDS.initial }
       : {}),

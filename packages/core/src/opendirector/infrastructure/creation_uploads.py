@@ -19,6 +19,7 @@ from opendirector.infrastructure.creation_projects import directory, durable_jso
 from opendirector.infrastructure.local_projects import child, read_json
 from opendirector.infrastructure.rename import rename_path
 from opendirector.media.probe import probe_file
+from opendirector.media.fonts import FONT_SIGNATURES, inspect_font
 
 
 def asset_name(value):
@@ -51,6 +52,11 @@ def inspect_file(path: Path, name: str, *, expected_kind=None):
     """Reuse OpenDirector media limits and ffprobe, while keeping large files on disk."""
     suffix = Path(name).suffix.lower()
     size = path.stat().st_size
+    with path.open('rb') as stream:
+        prefix = stream.read(16)
+    if suffix in {'.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2'} or prefix[:4] in FONT_SIGNATURES:
+        font = inspect_font(path)
+        return 'file', MediaMetadata(size=size, mimeType=font.mimeType)
     if suffix in {'.txt', '.md'} or expected_kind == 'text':
         if size > MAX_CREATION_TEXT_BYTES:
             raise ProjectError('文本素材应不超过 1 MiB。', 413)

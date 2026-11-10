@@ -25,6 +25,7 @@ import { getActiveLocale } from "../i18n/messages.ts";
 import type { BackendModels } from "../backend/models";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import { isGenerationModel } from "../backend/rules";
+import { resolveGenerationModel } from "./modelResolution.ts";
 import {
   contentText,
   referenceContent,
@@ -267,7 +268,13 @@ export function useAssistantChat(
           (model) => model.kind === kind && isGenerationModel(model),
         );
         if (!options.some((model) => model.id === selections[kind])) {
-          const next = options[0]?.id ?? null;
+          // Canvas creation uses the same deterministic generation fallback
+          // before the assistant conversation has loaded. Loading the picker
+          // must not silently change that choice to the API's first row.
+          const resolution = kind === "agent" ? null
+            : resolveGenerationModel({}, kind, catalog.models);
+          const next = kind === "agent" ? options[0]?.id ?? null
+            : resolution?.status === "default" ? resolution.modelConfigId : null;
           if (selections[kind] !== next) {
             selections[kind] = next;
             changed = true;

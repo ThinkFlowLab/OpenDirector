@@ -1,3 +1,4 @@
+import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 import {
   useEffect,
   useMemo,
@@ -6,12 +7,22 @@ import {
   type PointerEvent,
   type CSSProperties,
 } from "react";
+import { TimelineTextInspector } from "./TimelineTextInspector";
+import { TimelineTextLane, TimelineTextPosition } from "./TimelineTextLane";
+import { TimelineTextPreview } from "./TimelineTextPreview";
+import {
+  addTimelineText,
+  updateTimelineText,
+  removeTimelineText,
+  reorderTimelineText,
+} from "./timelineText";
 import { ControlSlider } from "./ControlSlider";
 import type {
   CanvasNode,
   CanvasResource,
   TimelineClip,
   TimelineData,
+  TimelineTextSourceView,
 } from "./model";
 import { copyTimeline, timelineError } from "./dataBoundary";
 import {
@@ -23,6 +34,7 @@ import {
   placeTimelineClip,
   removeTimelineClip,
   timelineDuration,
+  timelineHasTextResources,
   timelineSegments,
   updateTimelineClip,
   splitTimelineClip,
@@ -59,6 +71,16 @@ export interface TimelineEditorProps {
   onPrepareRender?: (
     timeline: TimelineData,
   ) => Promise<(result: LinkedMediaResult) => Promise<boolean>>;
+  onExportEditablePackage?: (timeline: TimelineData) => Promise<Blob>;
+  onPreparePackageImport?: (
+    file: File,
+    replace: boolean,
+  ) => () => Promise<TimelineData | void>;
+  latestNode?: CanvasNode;
+  onRefreshFromProject?: () => void;
+  onReadTextResource?: (
+    resource: CanvasResource,
+  ) => Promise<TimelineTextSourceView>;
   onClose: () => void;
 }
 const timeLabel = (time: number) =>
@@ -86,6 +108,11 @@ export function TimelineEditor({
   onRender,
   onPrepareRender,
   onClose,
+  onReadTextResource,
+  onExportEditablePackage,
+  onPreparePackageImport,
+  latestNode,
+  onRefreshFromProject,
 }: TimelineEditorProps) {
   const { t } = useI18n();
   const [timeline, setTimeline] = useState(() =>
@@ -106,15 +133,52 @@ export function TimelineEditor({
       },
     ),
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null),
+  const [selection, setSelection] = useState<{
+      kind: "clip" | "text";
+      id: string;
+    } | null>(null),
     [position, setPosition] = useState(0),
     [playing, setPlaying] = useState(false);
+  const [externalChanged, setExternalChanged] = useState(false);
+  const [textInputDirty, setTextInputDirty] = useState(false);
+  const [textInputValid, setTextInputValid] = useState(true);
+  const [gesturePending, setGesturePending] = useState(false);
+  const gestureActive = useRef(false);
+  const setGestureActivity = (pending: boolean) => {
+    gestureActive.current = pending;
+    setGesturePending(pending);
+  };
+  const baselineTimeline = useRef(timeline);
+  const initialSignature = useMemo(
+    () => JSON.stringify(node.data.timeline),
+    [node.data.timeline],
+  );
+  const latestSignature = useMemo(
+    () => JSON.stringify(latestNode?.data.timeline),
+    [latestNode?.data.timeline],
+  );
+  const currentSignature = useMemo(() => JSON.stringify(timeline), [timeline]);
+  const sourceTimeline = useRef(initialSignature);
+  const baselineSignature = useRef(currentSignature);
+  const nativePackageInput = useRef<HTMLInputElement>(null);
+  const nativeReplace = useRef(false);
+  const nativePending = useRef<{
+    replace: boolean;
+    run: () => Promise<TimelineData | void>;
+  } | null>(null);
+  const [nativeMessage, setNativeMessage] = useState("");
+  const [nativeRetry, setNativeRetry] = useState(false);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [audioTrack, setAudioTrack] = useState("");
   const [inserted, setInserted] = useState(false);
   const [renderProgress, setRenderProgress] = useState<number | null>(null);
   const [rendered, setRendered] = useState<Blob | null>(null);
+  const [textSourceId, setTextSourceId] = useState("");
+  const fontInput = useRef<HTMLInputElement>(null);
+  const textResources = resources.filter(
+    (r) => r.kind === "text" && !/\.(srt|ass|vtt)$/i.test(r.title),
+  );
   const jsonInput = useRef<HTMLInputElement>(null),
     history = useRef<{ past: TimelineData[]; future: TimelineData[] }>({
       past: [],
@@ -204,6 +268,36 @@ export function TimelineEditor({
   timelineRef.current = timeline;
   positionRef.current = position;
   playingRef.current = playing;
+  useEffect(() => {
+    if (!latestNode || latestSignature === sourceTimeline.current || busy)
+      return;
+    if (
+      !textInputDirty &&
+      !gestureActive.current &&
+      !clipDrag.current &&
+      currentSignature === baselineSignature.current &&
+      latestNode.data.timeline
+    ) {
+      const next = copyTimeline(latestNode.data.timeline);
+      baselineTimeline.current = next;
+      sourceTimeline.current = latestSignature;
+      baselineSignature.current = JSON.stringify(next);
+      timelineRef.current = next;
+      history.current = { past: [], future: [] };
+      coalesce.current = null;
+      setTimeline(next);
+      setExternalChanged(false);
+      onRefreshFromProject?.();
+    } else setExternalChanged(true);
+  }, [
+    latestNode,
+    latestSignature,
+    currentSignature,
+    busy,
+    textInputDirty,
+    gesturePending,
+    onRefreshFromProject,
+  ]);
   const [libraryKind, setLibraryKind] = useState<TimelineLibraryKind>("all"),
     [librarySource, setLibrarySource] = useState<TimelineLibrarySource>("all");
   const libraryResources = useMemo(
@@ -216,6 +310,7 @@ export function TimelineEditor({
     [timeline, dragPreview],
   );
   const duration = timelineDuration(timeline);
+  const hasTextResources = timelineHasTextResources(timeline);
   const trackWidth = Math.max(
     viewportWidth,
     191 + (duration + 2) * pixelsPerSecond,
@@ -267,6 +362,11 @@ export function TimelineEditor({
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
   }, [pixelsPerSecond, busy]);
+  const selectedId = selection?.kind === "clip" ? selection.id : null;
+  const selectedText =
+    selection?.kind === "text"
+      ? timeline.overlays?.find((o) => o.id === selection.id)
+      : undefined;
   const selected = segments.find((segment) => segment.clip.id === selectedId);
   const currentVisual = segments.find(
     (segment) =>
@@ -394,6 +494,7 @@ export function TimelineEditor({
   const cancelDrag = () => {
     const drag = clipDrag.current;
     clipDrag.current = null;
+    if (drag) setGestureActivity(false);
     setDragPreview(null);
     setDragMessage("");
     if (drag && tracksRef.current?.hasPointerCapture(drag.pointerId))
@@ -461,7 +562,9 @@ export function TimelineEditor({
       setDragMessage(t("timeline.error.dropHint"));
     } catch (error) {
       drag.error =
-        error instanceof Error ? error.message : t("timeline.error.placeFailed");
+        error instanceof Error
+          ? error.message
+          : t("timeline.error.placeFailed");
       setDragMessage(drag.error);
     }
   };
@@ -469,7 +572,6 @@ export function TimelineEditor({
     const drag = clipDrag.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     moveDrag(event);
-    cancelDrag();
     if (drag.moved) {
       if (drag.next) change(() => drag.next!);
       else setError(drag.error);
@@ -479,6 +581,7 @@ export function TimelineEditor({
       );
       if (segment) seek(segment.start);
     }
+    cancelDrag();
   };
   const beginLoad = () => {
     loading.current?.abort();
@@ -530,12 +633,12 @@ export function TimelineEditor({
           if (!ownsLoad(controller)) return;
           failures.push(
             t("timeline.error.fileReadFailed", {
-            name: file.name,
-            error:
-              error instanceof Error
-                ? error.message
-                : t("timeline.error.readFailed"),
-          }),
+              name: file.name,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : t("timeline.error.readFailed"),
+            }),
           );
         }
         if (!ownsLoad(controller)) return;
@@ -551,13 +654,13 @@ export function TimelineEditor({
             );
           } catch (error) {
             failures.push(
-            t("timeline.error.addClipFailed", {
-              title: resource.title,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : t("timeline.error.cannotAddClip"),
-            }),
+              t("timeline.error.addClipFailed", {
+                title: resource.title,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : t("timeline.error.cannotAddClip"),
+              }),
             );
           }
         }
@@ -574,11 +677,144 @@ export function TimelineEditor({
       if (ownsLoad(controller)) setBusy(false);
     }
   };
+  const createText = async (resource?: CanvasResource) => {
+    const controller = beginLoad();
+    try {
+      let text = t("timeline.text.defaultText"),
+        source: TimelineTextSourceView | undefined;
+      if (resource) {
+        if (!textResources.includes(resource))
+          throw new Error(t("timeline.text.sourceError"));
+        source = onReadTextResource
+          ? await onReadTextResource(resource)
+          : {
+              title: resource.title,
+              src:
+                resource.src ??
+                `data:text/plain;charset=utf-8,${encodeURIComponent(resource.text ?? "")}`,
+              mimeType: "text/plain",
+            };
+        if (resource.text !== undefined) text = resource.text;
+        else {
+          const response = await fetch(source.src!, {
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(t("timeline.text.sourceError"));
+          text = await response.text();
+        }
+      }
+      if (!ownsLoad(controller)) return;
+      const id = crypto.randomUUID();
+      const start =
+        Math.floor(positionRef.current * timelineRef.current.fps + 1e-9) /
+        timelineRef.current.fps;
+      change((current) => {
+        const defaultFont = {
+          id: "noto-sans-cjk-sc-regular",
+          title: t("timeline.text.defaultFont"),
+          src: "/fonts/NotoSansCJKsc-Regular.otf",
+          mimeType: "font/otf",
+        };
+        const font = current.fonts?.[0] ?? defaultFont;
+        return addTimelineText(
+          { ...current, fonts: current.fonts?.length ? current.fonts : [font] },
+          {
+            id,
+            text,
+            start,
+            end: start + 3,
+            x: 0.1,
+            y: 0.82,
+            maxWidth: 0.8,
+            fontId: font.id,
+            style: {
+              fontSize: Math.max(
+                1,
+                Math.min(512, Math.round(current.height * 0.05)),
+              ),
+              color: "#FFFFFF",
+              align: "center",
+              lineHeight: 1.2,
+              background: { color: "#000000", opacity: 0.5, padding: 4 },
+            },
+            ...(source ? { source } : {}),
+          },
+        );
+      });
+      setSelection({ kind: "text", id });
+    } catch (reason) {
+      if (ownsLoad(controller))
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("timeline.error.editFailed"),
+        );
+    } finally {
+      if (ownsLoad(controller)) setBusy(false);
+    }
+  };
+  const importFont = async (file: File) => {
+    const controller = beginLoad();
+    try {
+      const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      if (
+        file.size > RULE_FACTS.timelineFontBytes ||
+        file.size < 12 ||
+        !/\.(otf|ttf)$/i.test(file.name) ||
+        !(
+          (signature[0] === 0 &&
+            signature[1] === 1 &&
+            signature[2] === 0 &&
+            signature[3] === 0) ||
+          String.fromCharCode(...signature) === "OTTO"
+        )
+      )
+        throw new Error(t("timeline.text.fontError"));
+      const src = await mediaBlobDataUrl(
+        new Blob([file], {
+          type: /\.otf$/i.test(file.name) ? "font/otf" : "font/ttf",
+        }),
+        controller.signal,
+      );
+      if (!ownsLoad(controller)) return;
+      const font = {
+        id: crypto.randomUUID(),
+        title: file.name,
+        src,
+        mimeType: /\.otf$/i.test(file.name) ? "font/otf" : "font/ttf",
+      };
+      change((current) => {
+        const next = { ...current, fonts: [...(current.fonts ?? []), font] };
+        return selectedText
+          ? updateTimelineText(next, selectedText.id, { fontId: font.id })
+          : next;
+      });
+    } catch (reason) {
+      if (ownsLoad(controller))
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("timeline.text.fontError"),
+        );
+    } finally {
+      if (ownsLoad(controller)) setBusy(false);
+    }
+  };
+  const textCallbacks = {
+    timeline,
+    selectedId: selection?.kind === "text" ? selection.id : null,
+    onSelect: (id: string) => setSelection({ kind: "text" as const, id }),
+    onPreview: setDragPreview,
+    onGestureChange: setGestureActivity,
+    onCommit: (id: string, patch: Parameters<typeof updateTimelineText>[2]) =>
+      change((current) => updateTimelineText(current, id, patch)),
+  };
   const seek = (time: number) => {
     setPlaying(false);
     setPosition(Math.max(0, Math.min(duration, time)));
   };
   const exportXml = () => {
+    if (!textInputValid || gestureActive.current) return;
     try {
       const text = exportTimelineFcpxml(timelineRef.current, node.data.title);
       downloadFile(
@@ -595,6 +831,7 @@ export function TimelineEditor({
     }
   };
   const exportPackage = async () => {
+    if (!textInputValid || gestureActive.current) return;
     const controller = beginLoad(),
       snapshot = copyTimeline(timelineRef.current);
     setPlaying(false);
@@ -624,7 +861,95 @@ export function TimelineEditor({
       }
     }
   };
+  const exportEditablePackage = async () => {
+    if (
+      !onExportEditablePackage ||
+      busy ||
+      !textInputValid ||
+      gestureActive.current
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setPlaying(false);
+    try {
+      const snapshot = copyTimeline(timelineRef.current);
+      const blob = await onExportEditablePackage(snapshot);
+      baselineTimeline.current = timelineRef.current;
+      baselineSignature.current = JSON.stringify(timelineRef.current);
+      downloadFile(blob, `${node.data.title || "timeline"}.timeline.zip`);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : t("timeline.package.failed"),
+      );
+    } finally {
+      if (active.current) setBusy(false);
+    }
+  };
+  const runNativeImport = async () => {
+    const pending = nativePending.current;
+    if (!pending || busy) return;
+    setBusy(true);
+    setError("");
+    setNativeMessage("");
+    setNativeRetry(false);
+    setPlaying(false);
+    try {
+      const restored = await pending.run();
+      if (!active.current) return;
+      if (pending.replace && restored) {
+        const next = copyTimeline(restored);
+        timelineRef.current = next;
+        baselineTimeline.current = next;
+        baselineSignature.current = JSON.stringify(next);
+        sourceTimeline.current = JSON.stringify(restored);
+        history.current = { past: [], future: [] };
+        coalesce.current = null;
+        setTimeline(next);
+        setSelection(null);
+        setAudioTrack("");
+        setPosition(0);
+        setTextInputDirty(false);
+        setTextInputValid(true);
+        setExternalChanged(false);
+      }
+      nativePending.current = null;
+      setNativeMessage(
+        t(
+          pending.replace
+            ? "timeline.package.replaced"
+            : "timeline.package.created",
+        ),
+      );
+    } catch (reason) {
+      if (active.current) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("timeline.package.failed"),
+        );
+        setNativeRetry(true);
+      }
+    } finally {
+      if (active.current) setBusy(false);
+    }
+  };
+  const importEditablePackage = (file: File) => {
+    if (!onPreparePackageImport) return;
+    try {
+      nativePending.current = {
+        replace: nativeReplace.current,
+        run: onPreparePackageImport(file, nativeReplace.current),
+      };
+      void runNativeImport();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : t("timeline.package.failed"),
+      );
+    }
+  };
   const exportJson = () => {
+    if (!textInputValid || gestureActive.current) return;
     try {
       const json = exportTimeline(timeline, node.data.title);
       const url = URL.createObjectURL(
@@ -670,7 +995,14 @@ export function TimelineEditor({
     setPlaying(false);
     // A new gesture after undo or redo must not merge into the popped entry.
     coalesce.current = null;
-    setSelectedId(null);
+    setSelection((current) =>
+      current &&
+      (current.kind === "text"
+        ? next.overlays?.some((o) => o.id === current.id)
+        : next.tracks.some((t) => t.clips.some((c) => c.id === current.id)))
+        ? current
+        : null,
+    );
     refreshHistory((value) => value + 1);
   };
   const importJson = async (file: File) => {
@@ -680,7 +1012,7 @@ export function TimelineEditor({
       if (!ownsLoad(controller)) return;
       const parsed = importTimeline(text);
       change(() => parsed);
-      setSelectedId(null);
+      setSelection(null);
       setAudioTrack("");
       setPosition(0);
     } catch (reason) {
@@ -699,7 +1031,7 @@ export function TimelineEditor({
       throw new Error(t("timeline.error.notApplied"));
   };
   const applyTimeline = async () => {
-    if (busy) return;
+    if (busy || !textInputValid || gestureActive.current) return;
     setBusy(true);
     setError("");
     try {
@@ -719,6 +1051,7 @@ export function TimelineEditor({
     ((result: LinkedMediaResult) => Promise<boolean>) | null
   >(null);
   const renderVideo = async () => {
+    if (!textInputValid || gestureActive.current) return;
     const controller = beginLoad(),
       snapshot = copyTimeline(timelineRef.current);
     setPlaying(false);
@@ -831,11 +1164,7 @@ export function TimelineEditor({
 
   const trackTitle = (track: (typeof timeline.tracks)[number]) =>
     track.title ||
-    t(
-      track.kind === "audio"
-        ? "timeline.track.audio"
-        : "timeline.track.video",
-    );
+    t(track.kind === "audio" ? "timeline.track.audio" : "timeline.track.video");
 
   return (
     <EditorModal
@@ -844,28 +1173,66 @@ export function TimelineEditor({
       className="cw-timeline-dialog"
       onClose={onClose}
       onApply={() => void applyTimeline()}
-      disabled={busy || node.locked}
+      disabled={busy || node.locked || !textInputValid || gesturePending}
       error={error}
       actions={
         <>
+          {onPreparePackageImport && (
+            <>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  nativeReplace.current = false;
+                  nativePackageInput.current?.click();
+                }}
+              >
+                {t("timeline.package.importNew")}
+              </button>
+              <button
+                disabled={busy || node.locked}
+                onClick={() => {
+                  nativeReplace.current = true;
+                  nativePackageInput.current?.click();
+                }}
+              >
+                {t("timeline.package.replace")}
+              </button>
+            </>
+          )}
+          {onExportEditablePackage && (
+            <button
+              disabled={busy || !textInputValid || gesturePending}
+              onClick={() => void exportEditablePackage()}
+            >
+              {t("timeline.package.export")}
+            </button>
+          )}
           <button disabled={busy} onClick={() => jsonInput.current?.click()}>
             {t("timeline.action.importJson")}
           </button>
-          <button disabled={busy} onClick={exportJson}>
+          <button
+            disabled={busy || !textInputValid || gesturePending}
+            onClick={exportJson}
+          >
             <CanvasIcon name="download" size={16} />
             {t("timeline.action.exportJson")}
           </button>
-          <button disabled={busy || !duration} onClick={exportXml}>
+          <button
+            disabled={busy || !duration || !textInputValid || gesturePending || hasTextResources}
+            title={hasTextResources ? t("timeline.text.unsupportedExchange") : undefined}
+            onClick={exportXml}
+          >
             {t("timeline.action.exportFcpXml")}
           </button>
           <button
-            disabled={busy || !duration}
+            disabled={busy || !duration || !textInputValid || gesturePending || hasTextResources}
+            title={hasTextResources ? t("timeline.text.unsupportedExchange") : undefined}
             onClick={() => void exportPackage()}
           >
             {t("timeline.action.exportZip")}
           </button>
           <button
-            disabled={busy || !duration}
+            disabled={busy || !duration || !textInputValid || gesturePending}
             onClick={() => void renderVideo()}
           >
             {t("timeline.action.renderMp4")}
@@ -873,6 +1240,26 @@ export function TimelineEditor({
         </>
       }
     >
+      {hasTextResources && (
+        <p className="cw-domain-note">
+          {t("timeline.text.unsupportedExchange")}
+        </p>
+      )}
+      {nativeMessage && (
+        <p className="cw-domain-note" role="status">
+          {nativeMessage}
+        </p>
+      )}
+      {nativeRetry && (
+        <button disabled={busy} onClick={() => void runNativeImport()}>
+          {t("timeline.package.retry")}
+        </button>
+      )}
+      {externalChanged && (
+        <p className="cw-domain-note" role="status">
+          {t("timeline.text.changed")}
+        </p>
+      )}
       {packageProgress !== null && (
         <div className="cw-render-status" role="status">
           <progress value={packageProgress} max={1} />
@@ -970,6 +1357,50 @@ export function TimelineEditor({
         >
           {libraryShown && (
             <aside className="cw-timeline-library">
+              <div className="cw-timeline-text-actions">
+                <button onClick={() => void createText()}>
+                  {t("timeline.text.add")}
+                </button>
+                <label className="cw-domain-field">
+                  {t("timeline.text.source")}
+                  <select
+                    value={textSourceId}
+                    onChange={(e) => setTextSourceId(e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {textResources.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  disabled={!textSourceId}
+                  onClick={() =>
+                    void createText(
+                      textResources.find((r) => r.id === textSourceId),
+                    )
+                  }
+                >
+                  {t("timeline.text.fromSource")}
+                </button>
+                <button onClick={() => fontInput.current?.click()}>
+                  {t("timeline.text.importFont")}
+                </button>
+                <input
+                  type="file"
+                  hidden
+                  accept=".otf,.ttf"
+                  ref={fontInput}
+                  aria-label={t("timeline.text.fontFile")}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void importFont(f);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
               <div className="cw-domain-section-heading">
                 <h3>{t("timeline.library.title")}</h3>
                 <button
@@ -980,9 +1411,7 @@ export function TimelineEditor({
                   {t("timeline.library.import")}
                 </button>
               </div>
-              <p className="cw-domain-note">
-                {t("timeline.library.hint")}
-              </p>
+              <p className="cw-domain-note">{t("timeline.library.hint")}</p>
               <div className="cw-domain-row">
                 <select
                   aria-label={t("timeline.library.typeFilter")}
@@ -1005,9 +1434,15 @@ export function TimelineEditor({
                     )
                   }
                 >
-                  <option value="all">{t("timeline.library.allSources")}</option>
-                  <option value="canvas">{t("timeline.library.canvasAssets")}</option>
-                  <option value="imported">{t("timeline.library.imported")}</option>
+                  <option value="all">
+                    {t("timeline.library.allSources")}
+                  </option>
+                  <option value="canvas">
+                    {t("timeline.library.canvasAssets")}
+                  </option>
+                  <option value="imported">
+                    {t("timeline.library.imported")}
+                  </option>
                 </select>
               </div>
               <div className="cw-domain-resource-list">
@@ -1106,62 +1541,87 @@ export function TimelineEditor({
             />
           )}
           <div className="cw-timeline-monitor">
-            <div
-              className={`cw-timeline-screen${currentVisual?.clip.resource.src ? "" : " is-empty"}`}
-              style={{ aspectRatio: `${timeline.width}/${timeline.height}` }}
-            >
-              {currentVisual?.clip.resource.src ? (
-                currentVisual.clip.resource.kind === "image" ? (
-                  <img
-                    src={currentVisual.clip.resource.src}
-                    alt={currentVisual.clip.resource.title}
-                  />
-                ) : (
-                  <video
-                    key={currentVisual.clip.id}
-                    ref={bindMedia(currentVisual.clip)}
-                    src={currentVisual.clip.resource.src}
-                    playsInline
+            <div className="cw-timeline-picture-area">
+              <div
+                className={`cw-timeline-screen${duration ? "" : " is-empty"}`}
+                style={{
+                  aspectRatio: `${timeline.width}/${timeline.height}`,
+                  width: `min(100cqw, calc(100cqh * ${timeline.width / timeline.height}))`,
+                }}
+              >
+                {currentVisual?.clip.resource.src ? (
+                  currentVisual.clip.resource.kind === "image" ? (
+                    <img
+                      src={currentVisual.clip.resource.src}
+                      alt={currentVisual.clip.resource.title}
+                    />
+                  ) : (
+                    <video
+                      key={currentVisual.clip.id}
+                      ref={bindMedia(currentVisual.clip)}
+                      src={currentVisual.clip.resource.src}
+                      playsInline
+                      preload="auto"
+                      onLoadedMetadata={(event) =>
+                        mediaReady(
+                          event.currentTarget,
+                          currentVisual.clip,
+                          currentVisual.start,
+                        )
+                      }
+                      onError={() => {
+                        setPlaying(false);
+                        setError(t("timeline.player.videoError"));
+                      }}
+                    />
+                  )
+                ) : !duration ? (
+                  <div className="cw-timeline-monitor-empty">
+                    <CanvasIcon name="video" size={38} />
+                    <span>
+                      {duration
+                        ? t("timeline.player.noVideo")
+                        : t("timeline.player.empty")}
+                    </span>
+                  </div>
+                ) : null}
+                <TimelineTextPreview
+                  timeline={dragPreview ?? timeline}
+                  position={position}
+                  className="cw-timeline-text-preview"
+                  onError={(reason) => setError(reason.message)}
+                />
+                <TimelineTextPosition
+                  {...textCallbacks}
+                  timeline={dragPreview ?? timeline}
+                  position={position}
+                />
+                {currentAudio.map((segment) => (
+                  <audio
+                    key={segment.clip.id}
+                    ref={bindMedia(segment.clip)}
+                    src={segment.clip.resource.src}
                     preload="auto"
                     onLoadedMetadata={(event) =>
                       mediaReady(
                         event.currentTarget,
-                        currentVisual.clip,
-                        currentVisual.start,
+                        segment.clip,
+                        segment.start,
                       )
                     }
                     onError={() => {
                       setPlaying(false);
-                      setError(t("timeline.player.videoError"));
+                      setError(t("timeline.player.audioError"));
                     }}
                   />
-                )
-              ) : (
-                <div className="cw-timeline-monitor-empty">
-                  <CanvasIcon name="video" size={38} />
-                  <span>
-                    {duration
-                      ? t("timeline.player.noVideo")
-                      : t("timeline.player.empty")}
-                  </span>
-                </div>
-              )}
-              {currentAudio.map((segment) => (
-                <audio
-                  key={segment.clip.id}
-                  ref={bindMedia(segment.clip)}
-                  src={segment.clip.resource.src}
-                  preload="auto"
-                  onLoadedMetadata={(event) =>
-                    mediaReady(event.currentTarget, segment.clip, segment.start)
-                  }
-                  onError={() => {
-                    setPlaying(false);
-                    setError(t("timeline.player.audioError"));
-                  }}
-                />
-              ))}
+                ))}
+              </div>
             </div>
+            {currentVisual && !currentVisual.clip.resource.src && (
+              <p role="alert" className="cw-domain-note">
+                {t("timeline.player.sourceUnavailable")}
+              </p>
+            )}
             <div className="cw-timeline-transport">
               <button
                 aria-label={t("timeline.player.start")}
@@ -1173,7 +1633,9 @@ export function TimelineEditor({
               <button
                 className="cw-timeline-play"
                 aria-label={
-                  playing ? t("timeline.player.pause") : t("timeline.player.play")
+                  playing
+                    ? t("timeline.player.pause")
+                    : t("timeline.player.play")
                 }
                 disabled={!duration || busy}
                 onClick={() => {
@@ -1224,7 +1686,42 @@ export function TimelineEditor({
                   : t("timeline.properties.project")}
               </h3>
             </div>
-            {selected ? (
+            {selectedText ? (
+              <TimelineTextInspector
+                onValidityChange={setTextInputValid}
+                onError={(reason) => setError(reason.message)}
+                onDraftChange={setTextInputDirty}
+                timeline={timeline}
+                overlay={selectedText}
+                onChange={(patch, gesture) => {
+                  if (!Object.keys(patch).length) {
+                    coalesce.current = null;
+                    return;
+                  }
+                  change(
+                    (current) =>
+                      updateTimelineText(current, selectedText.id, patch),
+                    gesture && `${gesture}:${selectedText.id}`,
+                  );
+                }}
+                onDelete={() => {
+                  change((current) =>
+                    removeTimelineText(current, selectedText.id),
+                  );
+                  setSelection(null);
+                }}
+                onReorder={(delta) =>
+                  change((current) => {
+                    const ids = current.overlays!.map((o) => o.id),
+                      index = ids.indexOf(selectedText.id),
+                      target = index + delta;
+                    if (target < 0 || target >= ids.length) return current;
+                    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+                    return reorderTimelineText(current, ids);
+                  })
+                }
+              />
+            ) : selected ? (
               <>
                 <strong>{selected.clip.resource.title}</strong>
                 <p className="cw-domain-note">
@@ -1372,7 +1869,7 @@ export function TimelineEditor({
                       change((current) =>
                         removeTimelineClip(current, selected.clip.id),
                       );
-                      setSelectedId(null);
+                      setSelection(null);
                     }}
                   >
                     {t("timeline.properties.delete")}
@@ -1606,6 +2103,13 @@ export function TimelineEditor({
                 ))}
               </div>
             </div>
+            <TimelineTextLane
+              {...textCallbacks}
+              timeline={dragPreview ?? timeline}
+              pixelsPerSecond={pixelsPerSecond}
+              visibleDuration={visibleDuration}
+              position={position}
+            />
             {timeline.tracks.map((track) => (
               <div className="cw-timeline-track" key={track.id}>
                 <div className="cw-timeline-track-label">
@@ -1622,7 +2126,9 @@ export function TimelineEditor({
                       }))
                     }
                     aria-label={t(
-                      track.muted ? "timeline.track.unmute" : "timeline.track.mute",
+                      track.muted
+                        ? "timeline.track.unmute"
+                        : "timeline.track.mute",
                       { title: trackTitle(track) },
                     )}
                   >
@@ -1690,7 +2196,7 @@ export function TimelineEditor({
                         onClick={(event) => {
                           event.stopPropagation();
                           if (event.detail === 0) {
-                            setSelectedId(segment.clip.id);
+                            setSelection({ kind: "clip", id: segment.clip.id });
                             seek(segment.start);
                           }
                         }}
@@ -1716,7 +2222,8 @@ export function TimelineEditor({
                             next: null,
                             error: "",
                           };
-                          setSelectedId(segment.clip.id);
+                          setGestureActivity(true);
+                          setSelection({ kind: "clip", id: segment.clip.id });
                           setPlaying(false);
                           tracksRef.current?.setPointerCapture(event.pointerId);
                         }}
@@ -1737,6 +2244,18 @@ export function TimelineEditor({
         <p className="cw-domain-note cw-timeline-footnote">
           {t("timeline.track.dragHint")}
         </p>
+        <input
+          className="cw-domain-file-input"
+          ref={nativePackageInput}
+          type="file"
+          accept="application/zip,.zip"
+          aria-label={t("timeline.package.importAria")}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) importEditablePackage(file);
+            event.target.value = "";
+          }}
+        />
         <input
           className="cw-domain-file-input"
           ref={jsonInput}

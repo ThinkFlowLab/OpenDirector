@@ -6,6 +6,7 @@ import pytest
 from capabilities import requires_posix
 
 from opendirector.agent import runtime
+from process_helpers import python_cli
 
 
 @pytest.mark.parametrize(('engine', 'output', 'exit_code', 'expected'), [
@@ -18,7 +19,7 @@ from opendirector.agent import runtime
 @requires_posix()
 def test_login_readiness(tmp_path, monkeypatch, engine, output, exit_code, expected):
     cli = tmp_path / 'cli'
-    cli.write_text(f'#!{sys.executable}\nprint({output!r})\nraise SystemExit({exit_code})\n')
+    cli = python_cli(cli, f'print({output!r})\nraise SystemExit({exit_code})\n')
     cli.chmod(0o755)
     monkeypatch.setattr(runtime.native, 'executable', lambda _: cli)
     assert asyncio.run(runtime.runtime_readiness(engine)) == expected
@@ -112,7 +113,10 @@ def test_runtime_catalog_can_skip_probes_and_check_one_harness(tmp_path, monkeyp
 @requires_posix()
 def test_bundled_readiness_runs_binary(tmp_path, monkeypatch, content, expected):
     binary = tmp_path / 'opencode.exe'
-    binary.write_text(content)
+    if content.startswith('#!'):
+        binary = python_cli(binary, content)
+    else:
+        binary.write_text(content)
     binary.chmod(0o755)
     monkeypatch.setattr(runtime.native, 'executable', lambda _: str(binary))
     assert asyncio.run(runtime.runtime_readiness('default')) == expected

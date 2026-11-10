@@ -944,13 +944,15 @@ test("reference replacement and hiding preserve the intended project relationshi
     ["canvas.hide"],
   );
   assert.equal(client.snapshot.references[0]!.id, ref.id);
-  // A hidden node source drops out of the current prompt. A reference pinned
-  // directly to an asset remains editable with its original identity.
-  for (const binding of ["follow_current", "pinned"] as const) {
+  // Display hiding must preserve every active business reference in the prompt.
+  for (const binding of ["follow_current", "pinned", "pinned_source"] as const) {
     const reference: Reference =
       binding === "follow_current"
         ? ref
-        : { ...ref, binding: "pinned", source: assetReference(asset) };
+        : {
+            ...ref, binding: "pinned", source: assetReference(asset),
+            ...(binding === "pinned_source" ? { sourceVersion: { objectType: "canvas_item" as const, id: source.id, revision: 1 } } : {}),
+          };
     const hidden = {
       ...basis,
       eventCursor: 2,
@@ -968,12 +970,12 @@ test("reference replacement and hiding preserve the intended project relationshi
     };
     client.install(hidden);
     const rendered = await projection.read();
-    assert.equal(rendered.edges.length, binding === "follow_current" ? 1 : 0);
+    assert.equal(rendered.edges.length, binding === "pinned" ? 0 : 1);
     assert.equal(rendered.hiddenNodes?.[0]?.id, source.id);
     const current = rendered.nodes[0]!;
     assert.equal(
       current.data.promptMentions?.[0]?.referenceId,
-      binding === "pinned" ? ref.id : undefined,
+      ref.id,
     );
     projection.baseline = rendered;
     projection.basis = hidden;
@@ -1039,7 +1041,7 @@ test("reference replacement and hiding preserve the intended project relationshi
         update.payload.promptContent?.some(
           (part) => part.type === "reference" && part.referenceId === ref.id,
         ),
-        binding === "pinned",
+        true,
       );
     const inactive = { ...reference, active: false, revision: 2 };
     const removed = {

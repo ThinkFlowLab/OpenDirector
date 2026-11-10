@@ -73,7 +73,7 @@ class ToolGateway:
                 error = None
                 if isinstance(value, dict):
                     if value.get('status') == 'rejected':
-                        error = '; '.join(issue['message'] for issue in value['issues'])
+                        error = '; '.join(issue['message'] for issue in value.get('issues', (value.get('receipt') or {}).get('issues', []))) or 'Timeline package import was rejected.'
                     elif value.get('error'):
                         error = str(value['error'])
                 return ToolResult(value={**value, 'error': error} if error else value, error=error)
@@ -88,7 +88,10 @@ class ToolGateway:
                 error = '; '.join(messages)
                 return ToolResult(value={'error': error}, error=error)
             except (ProjectError, ValueError, KeyError, OSError, UnicodeError) as failure:
-                return ToolResult(value={'error': str(failure)}, error=str(failure))
+                value = {'error': str(failure)}
+                if isinstance(failure, ProjectError):
+                    value['code'] = failure.code
+                return ToolResult(value=value, error=str(failure))
 
     async def close(self) -> None:
         self.closed = True

@@ -8,3 +8,5 @@ prune packages/core/src/opendirector/_bundled
 prune node_modules
 prune dist
 prune build
+
+recursive-include public/fonts *

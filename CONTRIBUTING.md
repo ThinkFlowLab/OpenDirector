@@ -64,3 +64,4 @@ The default GitHub labels `bug`, `enhancement` and `documentation` were retired 
 4. Never claim real-provider verification you did not run. State what was validated with a model double, what needs credentials, and what remains unverified.
 5. Credentials, private assets and raw provider responses never enter commits, fixtures, logs or receipts.
 6. Run the checks from [docs/development/validation.md](docs/development/validation.md) locally, or make it explicit which ones you could not run.
+7. For a user-visible change, attach screenshots or a short demo in the pull request, or mark N/A with a reason, as asked in the evidence section of the [pull request template](.github/pull_request_template.md).

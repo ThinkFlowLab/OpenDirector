@@ -2,13 +2,15 @@
 #    uv pip compile pyproject.toml --extra test --universal --output-file requirements.txt
 -e .
 annotated-doc==0.0.5
-    # via fastapi
+    # via
+    #   fastapi
+    #   typer
 annotated-types==0.8.0
     # via pydantic
 anyio==4.15.1
     # via
+    #   opendirector (pyproject.toml)
     #   httpx
-    #   opendirector
     #   starlette
 certifi==2026.7.22
     # via
@@ -19,11 +21,17 @@ click==8.5.0
     #   import-linter
     #   uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
-    # via pytest
+    # via
+    #   pytest
+    #   typer
+distlib==0.4.4
+    # via opendirector (pyproject.toml)
 fastapi==0.143.2
-    # via opendirector
+    # via opendirector (pyproject.toml)
 filelock==3.32.7
-    # via opendirector
+    # via opendirector (pyproject.toml)
+fonttools==4.68.0
+    # via opendirector (pyproject.toml)
 grimp==3.19
     # via import-linter
 h11==0.16.0
@@ -33,14 +41,13 @@ h11==0.16.0
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
-    # via
-    #   opendirector
+    # via opendirector (pyproject.toml)
 idna==3.20
     # via
     #   anyio
     #   httpx
 import-linter==2.16
-    # via opendirector
+    # via opendirector (pyproject.toml)
 iniconfig==2.3.1
     # via pytest
 markdown-it-py==4.2.0
@@ -52,13 +59,13 @@ opentelemetry-api==1.45.1
 packaging==26.3
     # via pytest
 pillow==13.0.0
-    # via opendirector
+    # via opendirector (pyproject.toml)
 pluggy==1.7.0
     # via pytest
 pydantic==2.14.1
     # via
+    #   opendirector (pyproject.toml)
     #   fastapi
-    #   opendirector
 pydantic-core==2.50.1
     # via pydantic
 pygments==2.21.0
@@ -66,17 +73,23 @@ pygments==2.21.0
     #   pytest
     #   rich
 pytest==9.1.1
-    # via opendirector
+    # via opendirector (pyproject.toml)
 python-multipart==0.0.33
-    # via opendirector
+    # via opendirector (pyproject.toml)
 pyyaml==6.0.3
-    # via opendirector
+    # via opendirector (pyproject.toml)
 rich==15.0.0
-    # via import-linter
+    # via
+    #   import-linter
+    #   typer
+shellingham==1.5.4
+    # via typer
 starlette==1.8.0
     # via
+    #   opendirector (pyproject.toml)
     #   fastapi
-    #   opendirector
+typer==0.27.3
+    # via opendirector (pyproject.toml)
 typing-extensions==4.16.0
     # via
     #   anyio
@@ -91,4 +104,4 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
 uvicorn==0.54.0
-    # via opendirector
+    # via opendirector (pyproject.toml)

@@ -9,6 +9,8 @@ from opendirector.domain.capabilities import ImageRequest
 from opendirector.domain.generation import GenerationError
 from opendirector.integrations.model_adapters import OpenAIImages
 from opendirector.integrations.providers import GenerationProviders
+from opendirector.integrations.kling_video import KlingVideoGeneration
+from test_kling_video import config as kling_config, task as kling_task
 from test_openai_images import CONFIG, png
 
 
@@ -155,3 +157,82 @@ def test_compatible_generation_recovery_uses_the_same_public_host_policy(resolve
     with pytest.raises(GenerationError):
         asyncio.run(provider.resume_result(CONFIG, 'png', 'http://127.0.0.1:8019/private'))
     assert calls == []
+
+
+@pytest.mark.parametrize('url', [
+    'https://127.0.0.1:8443/private', 'https://[::1]/private',
+    'https://localhost/private', 'https://169.254.169.254/private',
+    'https://10.0.0.1/private', 'https://[fc00::1]/private',
+])
+def test_kling_recovery_rejects_private_destinations_before_get(url, resolve):
+    calls = []
+    provider = GenerationProviders(None, httpx.MockTransport(
+        lambda request: calls.append(request) or httpx.Response(200, content=b'video')))
+    with pytest.raises(GenerationError):
+        asyncio.run(provider.resume_result(kling_config(), 'mp4', url))
+    assert calls == []
+
+
+@pytest.mark.parametrize('addresses', [
+    ['127.0.0.1'], ['::1'], ['169.254.169.254'],
+    ['93.184.216.34', '10.0.0.1'], ['2606:4700:4700::1111', 'fc00::1'], [],
+])
+def test_kling_recovery_rejects_private_or_mixed_dns_before_get(resolve, addresses):
+    resolve[0][:] = addresses
+    calls = []
+    provider = GenerationProviders(None, httpx.MockTransport(
+        lambda request: calls.append(request) or httpx.Response(200, content=b'video')))
+    with pytest.raises(GenerationError):
+        asyncio.run(provider.resume_result(kling_config(), 'mp4', 'https://cdn.test/video'))
+    assert calls == []
+
+
+def test_kling_initial_download_rejects_private_dns_before_result_get(resolve):
+    resolve[0][:] = ['10.0.0.1']
+    calls = []
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, json={'code': 0, 'data': [{'id': 'remote-1', 'status': 'succeeded',
+            'outputs': [{'type': 'video', 'url': 'https://cdn.test/video'}]}]})
+    async def submitted(identity):
+        pytest.fail('resuming a submitted task must not resubmit')
+    adapter = KlingVideoGeneration(None, httpx.MockTransport(handle))
+    with pytest.raises(GenerationError):
+        asyncio.run(adapter.generate(kling_config(), kling_task(externalTaskId='remote-1'), submitted))
+    assert len(calls) == 1 and calls[0].url.path == '/tasks'
+
+
+def test_kling_public_recovery_pins_ip_and_preserves_host_tls_and_signed_path(resolve):
+    calls = []
+    provider = GenerationProviders(None, httpx.MockTransport(
+        lambda request: calls.append(request) or httpx.Response(200, content=b'video')))
+    assert asyncio.run(provider.resume_result(kling_config(), 'mp4',
+        'https://cdn.test/result.mp4?signature=keep%2Bme')) == ('mp4', b'video')
+    assert len(calls) == 1
+    assert str(calls[0].url) == 'https://93.184.216.34/result.mp4?signature=keep%2Bme'
+    assert calls[0].headers['host'] == 'cdn.test'
+    assert calls[0].extensions['sni_hostname'] == 'cdn.test'
+    assert 'authorization' not in calls[0].headers
+    assert resolve[1] == ['cdn.test']
+
+
+def test_kling_recovery_rejects_dns_failure_before_get(monkeypatch):
+    def failed(*args, **kwargs):
+        raise socket.gaierror('resolver unavailable')
+
+    monkeypatch.setattr(socket, 'getaddrinfo', failed)
+    calls = []
+    provider = GenerationProviders(None, httpx.MockTransport(
+        lambda request: calls.append(request) or httpx.Response(200, content=b'video')))
+    with pytest.raises(GenerationError):
+        asyncio.run(provider.resume_result(kling_config(), 'mp4', 'https://cdn.test/video'))
+    assert calls == []
+
+
+def test_kling_download_does_not_follow_redirects(resolve):
+    calls = []
+    provider = GenerationProviders(None, httpx.MockTransport(
+        lambda request: calls.append(request) or httpx.Response(302, headers={'Location': 'https://127.0.0.1/private'})))
+    with pytest.raises(GenerationError):
+        asyncio.run(provider.resume_result(kling_config(), 'mp4', 'https://cdn.test/video'))
+    assert len(calls) == 1

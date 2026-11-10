@@ -6,6 +6,7 @@ import { getActiveLocale } from "../i18n/messages.ts";
 const EN_NAMES: Record<string, string> = {
   "OpenAI 兼容": "OpenAI compatible",
   "MiniMax 官方视频": "MiniMax official video",
+  "可灵官方视频": "Kling official video",
   "MOSS 开放平台": "MOSS Open Platform",
   "火山方舟 / Agent Plan": "Volcano Ark / Agent Plan",
   "vLLM-Omni 图片接口": "vLLM-Omni image API",
@@ -95,6 +96,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelsByKind: {
       video: ["MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite", "MiniMax-H3-Max"],
     },
+  },
+  {
+    id: "kling-video",
+    logoOrganization: "KlingAI",
+    name: "可灵官方视频",
+    kinds: ["video"],
+    url: "https://api-beijing.klingai.com",
+    protocol: "kling_video",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: { video: ["kling-4.0", "kling-4.0-flash"] },
   },
   {
     id: "deepseek",

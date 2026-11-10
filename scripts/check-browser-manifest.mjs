@@ -45,7 +45,7 @@ for (const entry of entries) {
   if (!onDisk.includes(entry.file)) fail(`${entry.file} is in the manifest but not on disk`);
 }
 
-const KNOWN_LANES = new Set(["gate", "extended", "extendedFixture", "production", "perf"]);
+const KNOWN_LANES = new Set(["gate", "extended", "extendedFixture", "production", "perf", "manual"]);
 for (const entry of entries) {
   const text = entry.file === undefined ? "" : fs.readFileSync(path.join(browserDir, entry.file), "utf8");
   const importsSrc = text.includes('"/src/');
@@ -92,5 +92,5 @@ const count = (lane) => entries.filter((entry) => (entry.lanes ?? []).includes(l
 console.log(
   `Browser manifest OK: ${entries.length} entries, ` +
     `gate=${count("gate")} extended=${count("extended")} extendedFixture=${count("extendedFixture")} ` +
-    `production=${count("production")} perf=${count("perf")} helper=${entries.filter((entry) => entry.helper).length}`,
+    `production=${count("production")} perf=${count("perf")} manual=${count("manual")} helper=${entries.filter((entry) => entry.helper).length}`,
 );

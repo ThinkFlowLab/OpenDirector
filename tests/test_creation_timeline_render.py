@@ -6,6 +6,7 @@ import pytest
 
 from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.domain.creation.assets import AssetProvenance
+from opendirector.domain.projects import ProjectError
 from opendirector.application.creation_canvas import asset_ref
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -29,6 +30,9 @@ def prepared(project):
     document = dict(id=doc_id, projectId=pid, kind='timeline', data=dict(width=64, height=64, fps=24, tracks=[
         dict(id='visual', title='Visual', kind='visual', clips=[dict(id='clip', inPoint=0, outPoint=4, speed=2,
             resource=dict(asset=asset_ref(source), title='Source', durationSeconds=4))])]))
+    # FFmpeg and background imports do not renew edit leases. The active UI
+    # sends open heartbeats; establish that same precondition before editing.
+    store.open(pid, session)
     assert send(store, pid, 'creation.batch', session=session, operations=[
         dict(type='editor.create', payload=dict(document=document)),
         dict(type='canvas.show', payload=dict(item=dict(id=item_id, projectId=pid, kind='timeline',
@@ -103,3 +107,145 @@ def test_timeline_rejects_clip_beyond_actual_duration_even_when_client_claims_lo
     receipt = send(store, pid, 'editor.save', session=session, versions=versions, document=document)
     assert receipt.status == 'rejected'
     assert store.snapshot(pid) == before
+
+
+def prepared_text(project, tmp_path, *, pure_text=False, output_seconds=3):
+    from test_timeline_fonts import timeline_document, tiny_font
+    store, pid, session = project
+    media_source, _, _, _ = prepared(project)
+    text_document, font, text_source = timeline_document(project, tmp_path)
+    # A retained but unused font is not an input to this render.
+    assets = CreationToolAssets(store)
+    unused_path = tiny_font(tmp_path / 'unused.ttf', characters='B')
+    unused_record = assets.import_file(pid, uuid4(), 'unused.ttf', unused_path.read_bytes(), session,
+                                       provenance=AssetProvenance(source='upload'))
+    unused = assets.assets.get(pid, unused_record['id'])
+    text_document['data']['fonts'].append(dict(id='unused', title='Unused', asset=asset_ref(unused)))
+    doc = store.snapshot(pid).editorDocuments[0]
+    changed = doc.model_dump(mode='json')
+    changed['data'].update(fonts=text_document['data']['fonts'], overlays=text_document['data']['overlays'])
+    if pure_text:
+        changed['data']['tracks'][0]['clips'] = []
+    assert send(store, pid, 'editor.save', session=session,
+                versions=[ver('editor_document', doc)], document=changed).status == 'applied'
+    assets = CreationToolAssets(store)
+    record = assets.import_file(pid, uuid4(), 'text-render.mp4', clip(output_seconds), session,
+                                provenance=AssetProvenance(source='upload'))
+    output = assets.assets.get(pid, record['id'])
+    snapshot = store.snapshot(pid)
+    item, doc = snapshot.canvasItems[0], snapshot.editorDocuments[0]
+    versions = [ver('canvas_item', item), ver('editor_document', doc), ver('asset', output)]
+    payload = dict(itemId=item.id, editorId=doc.id, asset=asset_ref(output), outputId=uuid4(), title='Text render')
+    return media_source, font, text_source, output, versions, payload
+
+
+@pytest.mark.parametrize('actor', ['ui', 'agent'])
+@pytest.mark.parametrize('pure_text', [False, True])
+def test_text_tail_publication_keeps_exact_input_revision_and_immutable_outputs(project, tmp_path, actor, pure_text):
+    from opendirector.application.creation_canvas import CreationCanvas
+    from opendirector.domain.creation.commands import ObjectQuery, parse_command
+    store, pid, session = project
+    media_source, font, text_source, output, versions, payload = prepared_text(project, tmp_path, pure_text=pure_text)
+    original = store.snapshot(pid).editorDocuments[0]
+    original_bytes = (store.root / 'Unified' / output.path).read_bytes()
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='timeline.publishRender',
+                                 expectedVersions=versions, payload=payload))
+    receipt = store.execute(command, session=session, source=actor)
+    assert receipt.status == 'applied', receipt
+    assert store.execute(command, session=session, source=actor) == receipt
+    published = next(a for a in store.snapshot(pid).assets if a.id == output.id)
+    expected_sources = (() if pure_text else (asset_ref(media_source),)) + (asset_ref(font), asset_ref(text_source))
+    assert published.provenance.sources == expected_sources
+    assert published.provenance.editorRevision == original.revision
+    changed = original.model_dump(mode='json')
+    changed['data']['overlays'][0]['text'] = 'B中'
+    assert send(store, pid, 'editor.save', session=session, versions=[ver('editor_document', original)],
+                document=changed).status == 'applied'
+    current = store.snapshot(pid).editorDocuments[0]
+    assets = CreationToolAssets(store)
+    record = assets.import_file(pid, uuid4(), 'text-render-B.mp4', clip(3), session,
+                                provenance=AssetProvenance(source='upload'))
+    output_b = assets.assets.get(pid, record['id'])
+    item = store.snapshot(pid).canvasItems[0]
+    second = {**payload, 'outputId': uuid4(), 'asset': asset_ref(output_b)}
+    assert send(store, pid, 'timeline.publishRender', session=session,
+                versions=[ver('canvas_item', item), ver('editor_document', current), ver('asset', output_b)], **second).status == 'applied'
+    reopened = CreationProjects(LocalProjects(store.local.repository))
+    snapshot = reopened.snapshot(pid)
+    assert next(a for a in snapshot.assets if a.id == output.id) == published
+    assert output_b.id != output.id
+    assert next(a for a in snapshot.assets if a.id == output_b.id).provenance.editorRevision == current.revision
+    query = ObjectQuery(queryId=uuid4(), type='object.get', projectId=pid, objectId=original.id, revision=original.revision)
+    assert CreationCanvas(reopened).query_snapshot(query) == original
+    assert CreationCanvas(reopened).query_snapshot(ObjectQuery(queryId=uuid4(), type='object.get', projectId=pid, objectId=current.id)) == current
+    assert (store.root / snapshot.project.name / published.path).read_bytes() == original_bytes
+    # Even after the accepted basis changes, an identical delivery replays its
+    # first receipt; changing the input under that command ID is rejected.
+    assert reopened.execute(command, session=session, source=actor) == receipt
+    altered = command.model_copy(update={'payload': command.payload.model_copy(update={'title': 'Different'})})
+    with pytest.raises(ProjectError) as conflict:
+        reopened.execute(altered, session=session, source=actor)
+    assert conflict.value.code == 'command_conflict'
+
+
+@pytest.mark.parametrize('change', ['duration', 'missing_font', 'missing_text_source', 'stale', 'parent_locked'])
+def test_text_render_publish_rechecks_resources_versions_and_parent_lock(project, tmp_path, change):
+    store, pid, session = project
+    _, font, text_source, output, versions, payload = prepared_text(project, tmp_path,
+        output_seconds=2 if change == 'duration' else 3)
+    if change in {'missing_font', 'missing_text_source'}:
+        missing = font if change == 'missing_font' else text_source
+        (store.root / 'Unified' / missing.path).unlink()
+    elif change == 'stale':
+        doc = store.snapshot(pid).editorDocuments[0]
+        changed = doc.model_dump(mode='json'); changed['data']['overlays'][0]['text'] = 'B'
+        assert send(store, pid, 'editor.save', session=session,
+                    versions=[ver('editor_document', doc)], document=changed).status == 'applied'
+    elif change == 'parent_locked':
+        parent_id = uuid4()
+        item = store.snapshot(pid).canvasItems[0]
+        assert send(store, pid, 'creation.batch', session=session, versions=[ver('canvas_item', item)], operations=[
+            dict(type='canvas.show', payload=dict(item=dict(id=parent_id, projectId=pid, kind='group'))),
+            dict(type='canvas.update', payload=dict(itemId=item.id, parentId=parent_id)),
+        ]).status == 'applied'
+        snapshot = store.snapshot(pid)
+        versions[0] = ver('canvas_item', snapshot.canvasItems[0])
+        parent = next(i for i in snapshot.canvasItems if i.id == parent_id)
+        assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', parent)],
+                    itemId=parent.id, locked=True).status == 'applied'
+    before = store.snapshot(pid)
+    receipt = send(store, pid, 'timeline.publishRender', session=session, versions=versions, **payload)
+    assert receipt.status == 'rejected', receipt
+    assert store.snapshot(pid) == before
+    assert next(a for a in before.assets if a.id == output.id).provenance.source == 'upload'
+    stream, _ = CreationToolAssets(store).assets.open_media(pid, output.id)
+    with stream:
+        assert stream.read() == clip(2 if change == 'duration' else 3)
+
+
+@pytest.mark.parametrize('omitted', ['editor_document', 'canvas_item'])
+def test_publication_requires_captured_source_versions_for_every_actor(project, omitted):
+    from pydantic import ValidationError
+    store, pid, session = project
+    _, _, versions, payload = prepared(project)
+    before = store.snapshot(pid)
+    with pytest.raises(ValidationError, match='expectedVersions missing current versions'):
+        send(store, pid, 'timeline.publishRender', session=session,
+             versions=[value for value in versions if value['objectType'] != omitted], **payload)
+    assert store.snapshot(pid) == before
+
+
+def test_atomic_text_save_and_publication_is_rejected_before_it_can_change_render_basis(project, tmp_path):
+    from pydantic import ValidationError
+    store, pid, session = project
+    _, _, _, output, versions, payload = prepared_text(project, tmp_path)
+    original = store.snapshot(pid).editorDocuments[0]
+    changed = original.model_dump(mode='json'); changed['data']['overlays'][0]['text'] = 'B'
+    before = store.snapshot(pid)
+    with pytest.raises(ValidationError, match='union_tag_invalid'):
+        send(store, pid, 'creation.batch', session=session, versions=versions, operations=[
+            dict(type='timeline.publishRender', payload=payload),
+            dict(type='editor.save', payload=dict(document=changed)),
+        ])
+    assert store.snapshot(pid) == before
+    assert next(a for a in before.assets if a.id == output.id).provenance.source == 'upload'

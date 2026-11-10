@@ -39,6 +39,7 @@ const PROTOCOLS: Record<
   video: [
     ["vllm_omni", "models.protocolOption.videos"],
     ["minimax_video_v2", "models.protocolOption.minimaxVideo"],
+    ["kling_video", "models.protocolOption.klingVideo"],
     ["volcengine", "models.protocolOption.volcengine"],
     ["vllm_omni_segmentation", "models.protocolOption.segmentation"],
     ["vllm_omni_depth", "models.protocolOption.depth"],
@@ -146,6 +147,8 @@ export function ModelServiceForm({
   const placeholders =
     value.protocol === "minimax_video_v2"
       ? ["https://api.minimax.cn/v2", "MiniMax-H3"]
+      : value.protocol === "kling_video"
+        ? ["https://api-beijing.klingai.com", "kling-4.0"]
       : value.protocol === "vllm_omni_music"
         ? MUSIC_PLACEHOLDERS
         : score
@@ -166,7 +169,7 @@ export function ModelServiceForm({
     setValue((current) => ({
       ...current,
       ...patch,
-      ...(patch.protocol === "minimax_video_v2"
+      ...(["minimax_video_v2", "kling_video"].includes(patch.protocol ?? "")
         ? ({
             connectionType: "api",
             authMode: "bearer",
@@ -513,7 +516,7 @@ export function ModelServiceForm({
             </button>
           </div>
         </fieldset>
-        {value.protocol === "minimax_video_v2" && (
+        {["minimax_video_v2", "kling_video"].includes(value.protocol) && (
           <p className="cw-model-note">{t("models.service.minimaxNote")}</p>
         )}
         <ModelPicker

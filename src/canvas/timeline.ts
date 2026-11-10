@@ -40,6 +40,7 @@ export function timelineDuration(timeline: TimelineData): number {
   return Math.max(
     0,
     ...timelineSegments(timeline).map((segment) => segment.end),
+    ...(timeline.overlays ?? []).map((overlay) => overlay.end),
   );
 }
 
@@ -286,7 +287,8 @@ export function placeTimelineClip(
   trackId: string,
   time: number,
 ): TimelineData {
-  if (!Number.isFinite(time)) throw new Error(tNow("errors.timeline.dropFinite"));
+  if (!Number.isFinite(time))
+    throw new Error(tNow("errors.timeline.dropFinite"));
   const segments = timelineSegments(timeline);
   const source = segments.find((segment) => segment.clip.id === clipId);
   const target = timeline.tracks.find((track) => track.id === trackId);
@@ -349,12 +351,23 @@ export function addAudioTrack(timeline: TimelineData): TimelineData {
   };
 }
 
+export const TIMELINE_TEXT_CAPABILITY = "timeline.text.v1";
+
+export function timelineHasTextResources(timeline: TimelineData): boolean {
+  return Boolean(timeline.fonts?.length || timeline.overlays?.length);
+}
+
 export function exportTimeline(timeline: TimelineData, title: string): string {
   checked(timeline);
   return JSON.stringify(
     {
       format: "opendirector-editable-timeline",
-      version: 1,
+      version: timelineHasTextResources(timeline) ? 2 : 1,
+      ...(timelineHasTextResources(timeline)
+        ? { requiredCapabilities: [TIMELINE_TEXT_CAPABILITY] }
+        : {}),
+      resourceScope: "same-project",
+      resourcesEmbedded: false,
       title,
       timeUnit: "seconds",
       description:
@@ -454,13 +467,26 @@ export function importTimeline(text: string): TimelineData {
     !("format" in value) ||
     value.format !== "opendirector-editable-timeline" ||
     !("version" in value) ||
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     !("timeUnit" in value) ||
     value.timeUnit !== "seconds" ||
     !("timeline" in value)
   )
     throw new Error(tNow("errors.timeline.importJson"));
+  const capabilities =
+    "requiredCapabilities" in value ? value.requiredCapabilities : [];
+  if (
+    !Array.isArray(capabilities) ||
+    capabilities.some(
+      (capability) => capability !== TIMELINE_TEXT_CAPABILITY,
+    ) ||
+    (value.version === 2 && !capabilities.includes(TIMELINE_TEXT_CAPABILITY))
+  )
+    throw new Error(tNow("errors.timeline.capabilityUnsupported"));
   const error = timelineError(value.timeline);
   if (error) throw new Error(error);
-  return copyTimeline(value.timeline as TimelineData);
+  const timeline = value.timeline as TimelineData;
+  if (value.version === 1 && timelineHasTextResources(timeline))
+    throw new Error(tNow("errors.timeline.importJson"));
+  return copyTimeline(timeline);
 }

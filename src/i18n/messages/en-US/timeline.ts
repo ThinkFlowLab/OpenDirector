@@ -1,5 +1,21 @@
 /** Timeline editor, rendering, export and track labels. */
 export const timeline = {
+  "timeline.text.unsupportedExchange": "FCPXML and XML + media ZIP cannot retain text or fonts. Use an editable package to continue editing, or MP4 for the rendered video.",
+  "timeline.player.sourceUnavailable": "The current media source is unavailable. Restore the source file and retry.",
+  "timeline.package.export": "Export editable package",
+  "timeline.package.importNew": "Import as new timeline",
+  "timeline.package.replace": "Replace current timeline from package",
+  "timeline.package.importAria": "Import editable timeline package",
+  "timeline.package.created":
+    "Imported as a new timeline. Your current draft is unchanged.",
+  "timeline.package.replaced":
+    "Current timeline replaced with the imported package.",
+  "timeline.package.retry": "Retry the same package import",
+  "timeline.package.failed":
+    "The editable package operation did not complete. Retry using the same import.",
+  "timeline.package.targetMissing":
+    "The saved timeline is unavailable. Reopen it and try again.",
+
   "timeline.header.title": "Timeline · {title}",
   "timeline.header.subtitle":
     "Local visual-track sequencing, multi-track playback, and source in/out editing",
@@ -18,8 +34,7 @@ export const timeline = {
   "timeline.action.addedToCanvas": "Added to canvas",
   "timeline.pack.progress": "Packaging media {percent}%",
   "timeline.render.progress": "Rendering {percent}%",
-  "timeline.render.done":
-    "MP4 complete · {size} MB (timeline at render time)",
+  "timeline.render.done": "MP4 complete · {size} MB (timeline at render time)",
 
   "timeline.library.title": "Media library",
   "timeline.library.import": "Import",
@@ -35,7 +50,8 @@ export const timeline = {
   "timeline.library.canvasAssets": "Canvas media",
   "timeline.library.imported": "Imported",
   "timeline.library.remove": "Remove {title} from the library",
-  "timeline.library.removeHint": "Removes it from the library only; existing clips stay",
+  "timeline.library.removeHint":
+    "Removes it from the library only; existing clips stay",
   "timeline.library.empty":
     "Import from this computer or reference media nodes on the canvas.",
   "timeline.library.addAudio": "Add audio to track",
@@ -106,7 +122,8 @@ export const timeline = {
     "Drag cancelled. Drop the clip inside a target track.",
   "timeline.error.dragHint":
     "Drop the clip on a target track; press Esc to cancel.",
-  "timeline.error.dropHint": "Release to apply the position; press Esc to cancel.",
+  "timeline.error.dropHint":
+    "Release to apply the position; press Esc to cancel.",
   "timeline.error.placeFailed": "The clip could not be placed.",
   "timeline.error.assetReadFailed": "The media could not be read.",
   "timeline.error.fileReadFailed": "{name}: {error}",
@@ -134,7 +151,8 @@ export const timeline = {
     "Read the real video or audio duration before adding it to the timeline.",
   "timeline.error.finiteTime": "The time must be a finite number.",
   "timeline.error.dropTime": "The drop time must be a finite number.",
-  "timeline.error.dragMissing": "The dragged clip or target track was not found.",
+  "timeline.error.dragMissing":
+    "The dragged clip or target track was not found.",
   "timeline.error.sameKindTrack": "Drop the clip on a track of the same type.",
   "timeline.error.playheadInsideClip":
     "The playhead must be inside the selected clip.",
@@ -151,10 +169,12 @@ export const timeline = {
   "timeline.error.clipShorterThanFrame":
     "Clip “{title}” is shorter than one project frame and cannot be exported.",
   "timeline.error.zipTooMany": "The media count exceeds the ZIP32 limit.",
-  "timeline.error.zipName": "A media package filename is invalid or duplicated.",
+  "timeline.error.zipName":
+    "A media package filename is invalid or duplicated.",
   "timeline.error.zipTooLarge":
     "The media package exceeds the ZIP32 4 GiB limit. Split the timeline.",
-  "timeline.error.zipDirectory": "The media package directory exceeds the ZIP32 limit.",
+  "timeline.error.zipDirectory":
+    "The media package directory exceeds the ZIP32 limit.",
   "timeline.error.mediaMissing": "“{title}” has no media file.",
   "timeline.error.notLocalMedia":
     "“{title}” is not local media. Import the file first.",
@@ -169,4 +189,49 @@ export const timeline = {
   "timeline.error.noAudioTrack": "“{title}” has no readable audio track.",
   "timeline.error.noFrameAt": "“{title}” has no picture at {time} s.",
   "timeline.error.sourceMissing": "The timeline source no longer exists.",
+  "timeline.text.add": "Add text",
+  "timeline.text.fromSource": "Create from text resource",
+  "timeline.text.source": "Text resource",
+  "timeline.text.font": "Font",
+  "timeline.text.importFont": "Import font",
+  "timeline.text.fontFile": "Import OTF or TTF font",
+  "timeline.text.defaultFont": "Noto Sans CJK SC",
+  "timeline.text.defaultText": "Text",
+  "timeline.text.content": "Text content",
+  "timeline.text.properties": "Text properties",
+  "timeline.text.start": "Start (s)",
+  "timeline.text.end": "End (s)",
+  "timeline.text.x": "Horizontal position",
+  "timeline.text.y": "Vertical position",
+  "timeline.text.maxWidth": "Text width",
+  "timeline.text.fontSize": "Font size (px)",
+  "timeline.text.color": "Text color",
+  "timeline.text.align": "Alignment",
+  "timeline.text.left": "Left",
+  "timeline.text.center": "Center",
+  "timeline.text.right": "Right",
+  "timeline.text.lineHeight": "Line height",
+  "timeline.text.background": "Background",
+  "timeline.text.backgroundColor": "Background color",
+  "timeline.text.opacity": "Background opacity",
+  "timeline.text.padding": "Background padding (px)",
+  "timeline.text.stroke": "Outline",
+  "timeline.text.strokeColor": "Outline color",
+  "timeline.text.strokeWidth": "Outline width (px)",
+  "timeline.text.up": "Bring forward",
+  "timeline.text.down": "Send backward",
+  "timeline.text.delete": "Delete text",
+  "timeline.text.lane": "Text overlays",
+  "timeline.text.move": "Move text",
+  "timeline.text.resizeStart": "Adjust text start",
+  "timeline.text.resizeEnd": "Adjust text end",
+  "timeline.text.position": "Drag text position",
+  "timeline.text.overflow":
+    "Text extends below the frame. Output is cropped at the frame edge.",
+  "timeline.text.sourceError":
+    "Choose a plain text resource. Subtitle timecodes are not parsed.",
+  "timeline.text.fontError":
+    "Choose a valid OTF or TTF font up to 32 MiB. The draft is kept.",
+  "timeline.text.changed":
+    "The project changed while this draft was open. Close and reopen to load it; saving keeps the original version check.",
 } as const;

@@ -5,6 +5,12 @@
 // pre-check uses serviceVoicePattern and must not compile storedVoicePattern.
 
 export const RULE_FACTS = {
+  "timelineFontLimit": 16,
+  "timelineOverlayLimit": 2000,
+  "timelineTextMaxLength": 4096,
+  "timelineTextTotalLength": 200000,
+  "timelineFontBytes": 33554432,
+  "timelineFontTotalBytes": 67108864,
   "maxReferences": 64,
   "textReferenceBytes": 65536,
   "agentImageBytes": 33554432,
