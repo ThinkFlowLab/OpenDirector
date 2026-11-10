@@ -13,6 +13,7 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
     generationSpecs: [{ id: spec, revision: 4, currentResultId: original }],
     canvasItems: [{ id: item, revision: 7, binding: { role: 'generation', objectRef: { id: spec } } }],
     jobs: [{ id: job, inputSnapshot: { spec: { prompt: 'Add a lamp' } } }],
+    assets: [{ id: audio, metadata: { durationSeconds: 4.92 } }, { id: candidateAsset, metadata: { width: 512, height: 512 } }],
     results: [
       { id: original, specId: spec, asset: { kind: 'image', assetId: originalAsset } },
       { id: candidate, specId: spec, jobId: job, asset: { kind: 'image', assetId: candidateAsset } },
@@ -76,6 +77,7 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
     [candidate, false, 'Add a lamp'],
     [original, true, ''],
   ])
+  assert.deepEqual(results.map(result => result.details), [{ durationSeconds: 4.92 }, { width: 512, height: 512 }, undefined])
   assert.deepEqual(calls, [['GET', '/api/creation/projects'], ['GET', path]])
   const current = await library({ url: '/api/opendirector/library?' + new URLSearchParams({
     project, kind: 'image', selection: 'current', order: 'oldest',
@@ -122,6 +124,7 @@ test('library filters the full history before pagination and keeps a stable page
   const snapshot = {
     project: { id: project, name: 'Studio' }, jobs: [],
     generationSpecs: [{ id: spec, currentResultId: images[0].id }],
+    assets: [{ id: videos.at(-1).asset.assetId, metadata: { width: 832, height: 480, durationSeconds: 5.0625 } }],
     results: [...images, ...videos],
   }
   const client = new OpenDirectorClient({ baseUrl: 'http://localhost', canvasBaseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
@@ -131,6 +134,8 @@ test('library filters the full history before pagination and keeps a stable page
     },
   })
   const first = await client.libraryResults(project, { kind: 'image' })
+  const video = await client.libraryResults(project, { kind: 'video' })
+  assert.deepEqual(video.results[0].details, { width: 832, height: 480, durationSeconds: 5.0625 })
   const order = [...images].reverse().map(item => item.id)
   assert.deepEqual(first.results.map(item => item.resultId), order.slice(0, 12))
   assert.equal(first.nextCursor, order[11])

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { mediaDetails } from './presentation.js'
 import {
   buildCreateGeneration,
   buildJobCancelCommand,
@@ -34,6 +35,10 @@ export function joinUrl(baseUrl, path) {
 
 function creationPath(projectId) {
   return `${PROJECTS}/${projectId}`
+}
+
+function assetMetadata(snapshot) {
+  return new Map((snapshot.assets ?? []).map(asset => [asset.id, asset.metadata]))
 }
 
 function resultReference(input) {
@@ -247,6 +252,7 @@ export class OpenDirectorClient {
     const snapshot = await this.project(projectId, { signal })
     const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
+    const metadata = assetMetadata(snapshot)
     const results = []
     const step = order === 'oldest' ? 1 : -1
     const cursorIndex = cursor === null ? null : snapshot.results.findIndex(result => result.id === cursor)
@@ -258,12 +264,14 @@ export class OpenDirectorClient {
       if (!Object.hasOwn(MEDIA_TYPES, asset.kind) || (kind !== 'all' && asset.kind !== kind)) continue
       const selected = specs.get(specId)?.currentResultId === id
       if ((selection === 'current' && !selected) || (selection === 'other' && selected)) continue
+      const details = mediaDetails(metadata.get(asset.assetId))
       results.push({
         resultId: id,
         specId,
         assetId: asset.assetId,
         kind: asset.kind,
         selected,
+        ...(details && { details }),
         prompt: jobs.get(jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 160) ?? '',
       })
     }
@@ -313,8 +321,14 @@ export class OpenDirectorClient {
     const results = Array.isArray(snapshot?.results)
       ? snapshot.results.filter((item) => item.jobId === job)
       : []
+    const metadata = assetMetadata(snapshot)
+    const resultDetails = Object.fromEntries(results.flatMap(({ asset }) => {
+      const details = mediaDetails(metadata.get(asset.assetId))
+      return details ? [[asset.assetId, details]] : []
+    }))
     return {
       job: value, results, projectName: snapshot.project.name,
+      ...(Object.keys(resultDetails).length && { resultDetails }),
       registered: results.length > 0,
       adopted: snapshot.generationSpecs.some(spec => results.some(result => result.id === spec.currentResultId)),
     }
@@ -330,11 +344,14 @@ export class OpenDirectorClient {
     const snapshot = await this.project(project, { signal })
     const specId = job.inputSnapshot.spec.id
     const selected = snapshot.generationSpecs.find(spec => spec.id === specId)?.currentResultId
+    const metadata = assetMetadata(snapshot)
     return {
       status: job.status,
-      results: snapshot.results.filter(result => result.specId === specId).map(result => ({
-        resultId: result.id, assetId: result.asset.assetId, kind: result.asset.kind, selected: result.id === selected,
-      })),
+      results: snapshot.results.filter(result => result.specId === specId).map(({ id, asset }) => {
+        const details = mediaDetails(metadata.get(asset.assetId))
+        return { resultId: id, assetId: asset.assetId, kind: asset.kind, selected: id === selected,
+          ...(details && { details }) }
+      }),
     }
   }
 

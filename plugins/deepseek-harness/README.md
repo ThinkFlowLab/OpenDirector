@@ -38,6 +38,8 @@ If you choose an image size and then change models, the form keeps your choice w
 
 Choose **Generate another candidate** to run the same canvas node again with its saved settings. Compare the results in the dialog and choose **Adopt** on the one you want to use.
 
+Cards show the file's actual dimensions and duration when available. Click an image to view the original in DSH, then switch between **Actual size** and **Fit to window**.
+
 For an open-ended request, use the chat as usual:
 
 > Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.

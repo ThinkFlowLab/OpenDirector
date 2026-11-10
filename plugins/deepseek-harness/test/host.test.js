@@ -19,8 +19,9 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
   const snapshot = {
     project: { id: projectId, revision: 1, name: 'Studio' },
     generationSpecs: [{ id: specId, currentResultId: null }],
+    assets: [{ id: asset.assetId, metadata: { width: 512, height: 512 } }],
     jobs: [{ id: jobId, revision: 3, status: 'succeeded', originItemId: null, errorDetails: null,
-      cancelRequested: false, remoteCancellation: 'not_requested' }],
+      cancelRequested: false, remoteCancellation: 'not_requested', execution: { kind: 'image' } }],
     results: [{ id: resultId, specId, jobId, asset }],
   }
   const server = createServer((request, response) => {
@@ -67,6 +68,7 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     const english = await readJob()
     assert.equal(english.value.job.originItemId, null)
     assert.equal(english.value.job.errorDetails, null)
+    assert.deepEqual(english.meta.mediaPreview.candidates[0].details, { width: 512, height: 512 })
     assert.match(english.content[0].text, /Candidate saved in this project/)
     assert.match(english.content[0].text, /^revision: 3$/m)
     assert.match(english.content[0].text, /cancelRequested: false/)

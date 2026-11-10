@@ -6,6 +6,8 @@ window.__ModuleLoader__.load({
     const namespace = 'opendirector'
     const en = {
       images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
+      viewOriginal: 'View original image', fitImage: 'Fit to window', actualImageSize: 'Actual size',
+      originalUnavailable: 'Could not load the original image.', duration: '{seconds} s',
       candidate: 'Candidate', unavailable: 'Preview unavailable. Open the canvas to view this result.',
       canvas: 'Open canvas', edit: 'Edit', firstFrame: 'Animate', continue: 'Continue', adopt: 'Adopt', adopted: 'Result adopted',
       create: 'Create media', send: 'Send request', cancel: 'Cancel',
@@ -53,6 +55,8 @@ window.__ModuleLoader__.load({
     }
     const zh = {
       images: '图片结果', videos: '视频结果', original: '原图', sourceClip: '源片段',
+      viewOriginal: '查看原图', fitImage: '适应窗口', actualImageSize: '实际大小',
+      originalUnavailable: '暂时无法加载原图。', duration: '{seconds} 秒',
       candidate: '候选', unavailable: '暂时无法预览。可在画布查看。',
       canvas: '打开画布', edit: '改图', firstFrame: '转成视频', continue: '续写', adopt: '采用', adopted: '已采用结果',
       create: '创作素材', send: '发送请求', cancel: '取消',
@@ -231,8 +235,8 @@ window.__ModuleLoader__.load({
         h('h3', null, t('recent')),
         current.results.length === 0 ? h('p', null, t(filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
           : h('div', { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
-            ...current.results.map(({ resultId, assetId, kind, selected, prompt }, index) => h(Preview, {
-              key: resultId, projectId, resultId, assetId, kind, selected, prompt, t, request, canvasUrl: current.canvasUrl,
+            ...current.results.map(({ resultId, assetId, kind, selected, prompt, details }, index) => h(Preview, {
+              key: resultId, projectId, resultId, assetId, kind, selected, prompt, details, t, request, canvasUrl: current.canvasUrl,
               title: `${t('candidate')} ${index + 1}`,
               onAdopted: refresh,
             }))),
@@ -488,7 +492,8 @@ window.__ModuleLoader__.load({
             required: model?.voiceRequired, disabled: locked, maxLength: 200, value: form.voice,
             onChange: event => update('voice', event.target.value),
           })),
-          source && h(Preview, { projectId: source.projectId, assetId: source.assetId, kind: source.kind, title: t('original'), t }),
+          source && h(Preview, { projectId: source.projectId, assetId: source.assetId, kind: source.kind,
+            details: source.details, title: t('original'), t }),
           source && h(ReferencePicker, { projectId: source.projectId, references, setReferences, limit: referenceLimit, locked, t }),
           tooManyReferences && h('p', { role: 'alert' }, t('referencesChanged')),
           field(form.kind === 'audio' ? 'speechText' : source ? 'brief' : 'prompt', h('textarea', {
@@ -613,12 +618,40 @@ window.__ModuleLoader__.load({
       }, t(label))))
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, t, request, onAdopted, canvasUrl }) {
+    function OriginalImageDialog({ url, title, t, onClose }) {
+      const dialog = useRef(null)
+      const [actualSize, setActualSize] = useState(false)
+      const [status, setStatus] = useState('loading')
+      useEffect(() => { dialog.current.showModal() }, [])
+      return h('dialog', {
+        ref: dialog, 'aria-label': t('viewOriginal'),
+        onClose: event => { if (event.target === event.currentTarget) onClose() },
+        onContextMenu: event => event.stopPropagation(),
+        style: { ...dialogStyle, width: 'min(72rem, calc(100vw - 2rem))' },
+      },
+        h('header', { style: { ...row, justifyContent: 'space-between', marginBottom: '.65rem' } },
+          h('strong', null, title),
+          h('div', { style: row },
+            button(t(actualSize ? 'fitImage' : 'actualImageSize'), () => setActualSize(value => !value),
+              { disabled: status !== 'ready' }),
+            button(t('close'), () => dialog.current.close(), { autoFocus: true }))),
+        status === 'loading' && h('p', { role: 'status' }, t('loading')),
+        status === 'failed' ? h('p', { role: 'alert' }, t('originalUnavailable'))
+          : h('div', { style: { maxHeight: '62vh', overflow: 'auto', background: surface, borderRadius: '.55rem' } },
+            h('img', {
+              src: url, alt: title, onLoad: () => setStatus('ready'), onError: () => setStatus('failed'),
+              style: { display: 'block', margin: 'auto', maxWidth: actualSize ? 'none' : '100%',
+                maxHeight: actualSize ? 'none' : '62vh', width: 'auto', height: 'auto' },
+            })))
+    }
+
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, request, onAdopted, canvasUrl }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [brief, setBrief] = useState('')
       const [status, setStatus] = useState('')
       const [editing, setEditing] = useState(false)
+      const [viewingOriginal, setViewingOriginal] = useState(false)
       const [menu, setMenu] = useState(null)
       const trigger = useRef(null)
       const player = useRef(null)
@@ -627,14 +660,22 @@ window.__ModuleLoader__.load({
       const downloadUrl = url + '&original=1'
       const video = kind === 'video'
       const audio = kind === 'audio'
+      const image = kind === 'image'
+      const facts = [
+        (image || video) && details?.width && details?.height && `${details.width} × ${details.height}`,
+        (video || audio) && details?.durationSeconds
+          && t('duration').replace('{seconds}', Number(details.durationSeconds.toFixed(2))),
+      ].filter(Boolean)
       const mediaStyle = { width: '100%', height: 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
         borderRadius: '.55rem', background: surface }
       const onError = () => setFailed(true)
       const media = video
         ? h('video', { ref: player, src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
         : audio ? h('audio', { ref: player, src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
-          : h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
-          h('img', { src: url, alt: title, loading: 'lazy', onError, style: mediaStyle }))
+          : h('button', { type: 'button', onClick: () => setViewingOriginal(true),
+            'aria-label': t('viewOriginal'), 'aria-haspopup': 'dialog', title: t('viewOriginal'),
+            style: { padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in' },
+          }, h('img', { src: url, alt: title, loading: 'lazy', onError, style: mediaStyle }))
       function message(key, detail = '') {
         return [t(key), t('reference') + ' ' + projectId + ' / ' + resultId, detail].filter(Boolean).join('\n')
       }
@@ -682,6 +723,7 @@ window.__ModuleLoader__.load({
         : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
       const actions = [
         kind === 'image' && { label: 'edit', run: () => setEditing(true) },
+        image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
         kind === 'image' && { label: 'firstFrame', run: () => open('firstFramePrompt') },
         video && { label: 'continue', run: () => open('continuePrompt') },
         (video || audio) && !failed && { label: player.current?.paused === false ? 'pause' : 'play', run: togglePlayback },
@@ -694,8 +736,10 @@ window.__ModuleLoader__.load({
         onContextMenu: resultId ? contextMenu : undefined,
         style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' },
       },
-        h('figcaption', { style: { color: muted, fontSize: '.8em', fontWeight: 600 } }, title),
-        failed ? h('p', null, t('unavailable')) : media,
+        h('figcaption', { style: { ...row, color: muted, fontSize: '.8em' } },
+          h('strong', null, title), facts.length > 0 && h('span', null, facts.join(' · '))),
+        failed ? h('div', { style: row }, h('span', null, t('unavailable')),
+          image && button(t('viewOriginal'), () => setViewingOriginal(true), { 'aria-haspopup': 'dialog' })) : media,
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
@@ -725,7 +769,10 @@ window.__ModuleLoader__.load({
             button(t('cancel'), () => { setAction(null); setBrief(''); setStatus('') })),
           status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)),
         editing && h(GenerationDialog, {
-          source: { projectId, assetId, resultId, kind }, t, request, onClose: () => setEditing(false),
+          source: { projectId, assetId, resultId, kind, details }, t, request, onClose: () => setEditing(false),
+        }),
+        viewingOriginal && h(OriginalImageDialog, {
+          url: downloadUrl, title, t, onClose: () => setViewingOriginal(false),
         }))
     }
 
@@ -749,10 +796,10 @@ window.__ModuleLoader__.load({
         h('div', { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' } },
           preview.sourceAssetId && h(Preview, {
             key: preview.sourceAssetId, projectId: meta.projectId, assetId: preview.sourceAssetId,
-            kind: sourceKind, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
+            kind: sourceKind, details: preview.sourceDetails, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
           }),
-          ...preview.candidates.map(({ resultId, assetId }, index) => h(Preview, {
-            key: resultId, projectId: meta.projectId, assetId, resultId, kind, t, request, canvasUrl: meta.canvasUrl,
+          ...preview.candidates.map(({ resultId, assetId, details }, index) => h(Preview, {
+            key: resultId, projectId: meta.projectId, assetId, resultId, kind, details, t, request, canvasUrl: meta.canvasUrl,
             title: preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate'),
           }))))
     }

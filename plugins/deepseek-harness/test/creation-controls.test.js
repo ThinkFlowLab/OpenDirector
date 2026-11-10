@@ -80,6 +80,7 @@ test('another candidate reuses the node and reconciles a lost response without a
   const jobs = [prior]
   const snapshot = {
     jobs,
+    assets: [{ id: firstAsset, metadata: { width: 512, height: 512 } }],
     generationSpecs: [{ id: specId, revision: 3, kind: 'image', currentResultId: firstId }],
     canvasItems: [{ id: itemId, revision: 2, binding: { objectRef: { id: specId } } }],
     results: [{ id: firstId, specId, jobId, asset: { assetId: firstAsset, kind: 'image' } }],
@@ -117,7 +118,7 @@ test('another candidate reuses the node and reconciles a lost response without a
   assert.deepEqual(await client.creationStatus(projectId, repeatId), {
     status: 'succeeded',
     results: [
-      { resultId: firstId, assetId: firstAsset, kind: 'image', selected: true },
+      { resultId: firstId, assetId: firstAsset, kind: 'image', selected: true, details: { width: 512, height: 512 } },
       { resultId: secondId, assetId: secondAsset, kind: 'image', selected: false },
     ],
   })

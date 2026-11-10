@@ -1,5 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { renderToolResult } from './presentation.js'
+import { mediaDetails, renderToolResult } from './presentation.js'
 import {
   GENERATION_KINDS,
   MEDIA_KINDS,
@@ -81,11 +81,16 @@ function presentationMeta(_args, value) {
     const source = kind === 'video'
       ? references.find(ref => ref.role === 'continuation' || ref.role === 'first_frame')
       : kind === 'image' ? references.find(ref => ref.asset?.kind === 'image') : undefined
+    const sourceDetails = mediaDetails(source?.metadata)
     meta.mediaPreview = {
       kind,
       projectName: value.projectName,
       ...(source && { sourceAssetId: source.asset.assetId, sourceKind: source.asset.kind }),
-      candidates: candidates.map(result => ({ resultId: result.id, assetId: result.asset.assetId })),
+      ...(sourceDetails && { sourceDetails }),
+      candidates: candidates.map(({ id, asset }) => {
+        const details = value.resultDetails?.[asset.assetId]
+        return { resultId: id, assetId: asset.assetId, ...(details && { details }) }
+      }),
     }
   }
   return meta
@@ -475,6 +480,7 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
         registered: value.registered,
         adopted: value.adopted,
         results: value.results,
+        ...(value.resultDetails && { resultDetails: value.resultDetails }),
       }
     },
   })
