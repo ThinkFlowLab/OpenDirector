@@ -266,10 +266,18 @@ object arrays and all seven file fingerprints; a fresh browser displayed the edi
 
 The user volunteered for the first-use trial and received concrete host-specific
 steps using a fresh application data directory and the existing model environment
-and weights. This is an assisted cached setup, not clean-install timing. Start,
-service-ready and first-usable-asset timestamps, manual actions, interventions and
-recovery observations remain **pending actual participant execution**. Listening
-feedback above is complete and separate. 同意参与不等于完成试用，不填写推测数据。
+and weights. The participant subsequently confirmed completion:
+**“我完成了首次部署实操，都没有问题，生成的很快，但我不知道具体时间”**.
+The first-use trial is therefore complete on the basis of participant-reported
+successful execution, with no problems reported and a positive subjective speed
+assessment. 此次真人首次部署定性验收通过，听感反馈仍单独记录。
+
+This was an assisted cached setup. Exact start, service-ready and first-usable-asset
+timestamps and elapsed time were **not measured**. Manual-action, help and retry
+counts and step-specific recovery timings were not supplied; they remain
+unrecorded rather than zero. The overall feedback does not establish an
+independently timed recovery result or a clean-install performance benchmark.
+“生成的很快”保留为参与者主观评价，不换算成秒数，不用此前 Agent 推理耗时替代真人首次成功耗时。
 
 The user explicitly chose only the allocated Blackwell GPU for this followup.
 Consumer laptops, RTX A6000/SM86 inference, multi-GPU serving, native Windows and
