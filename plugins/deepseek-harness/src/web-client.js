@@ -35,10 +35,19 @@ window.__ModuleLoader__.load({
       noModels: 'Configure a compatible model in OpenDirector first.',
       failedToSubmit: 'Could not submit generation. Check your project and model settings.',
       generationUnknown: 'Submission has not been confirmed. Check the original operation.',
+      retrySubmission: 'Try submitting again', retryGeneration: 'Retry generation',
+      connectionUnavailable: 'Could not reach OpenDirector. Reconnect, then try submitting again.',
+      progressUnavailable: 'Could not check progress. Once connected, check the same job again.',
+      providerUnknown: 'The model service may have received the request. Check the original job with the provider first.',
+      rateLimited: 'The model service is rate limiting requests. Wait a moment before trying again.',
+      credentialsRejected: 'The model service rejected the credentials. Check the API key in Model connections.',
+      permissionDenied: 'The model service denied access. Check that the account can use this model.',
+      inputRejected: 'The model service rejected the inputs. Open the canvas to review the settings or reference media.',
+      recoverOnCanvas: 'Open the canvas to recover the existing job.',
       draftSaved: 'The generation settings are saved on the canvas.',
       waiting: 'Waiting for OpenDirector…', queued: 'Queued', running: 'Generating…',
       succeeded: 'Candidate ready', stopped: 'Generation stopped', failed: 'Generation failed',
-      quota: 'The model service reported a quota error. Check the provider before trying again.',
+      quota: 'Check the model account’s balance or quota before trying again.',
       checkProgress: 'Check progress', download: 'Download original',
       libraryType: 'Filter by media', librarySelection: 'Filter by selection', libraryOrder: 'Sort results',
       allMedia: 'All media', video: 'Video', audio: 'Audio', allSelections: 'All results', other: 'Other results',
@@ -84,10 +93,19 @@ window.__ModuleLoader__.load({
       noModels: '请先在 OpenDirector 配置支持此操作的模型。',
       failedToSubmit: '暂时无法提交生成，请检查工程和模型设置。',
       generationUnknown: '尚未确认任务是否提交，请查询原操作。',
+      retrySubmission: '重新提交', retryGeneration: '重试生成',
+      connectionUnavailable: '暂时连不上 OpenDirector。恢复连接后可以重新提交。',
+      progressUnavailable: '暂时查不到进度。恢复连接后，可以继续查询原任务。',
+      providerUnknown: '模型服务可能已经收到请求。请先到服务商处核对原任务。',
+      rateLimited: '模型服务限制了请求频率，请稍等再试。',
+      credentialsRejected: '模型服务拒绝了当前凭证。请在「模型接入」中检查密钥。',
+      permissionDenied: '模型服务拒绝了访问。请检查当前账号是否有权使用此模型。',
+      inputRejected: '模型服务拒绝了输入。请到画布检查生成设置或参考素材。',
+      recoverOnCanvas: '可打开画布恢复原任务。',
       draftSaved: '本次生成配置已保存到画布。',
       waiting: '等待 OpenDirector…', queued: '排队中', running: '生成中…',
       succeeded: '候选已生成', stopped: '生成已停止', failed: '生成失败',
-      quota: '模型服务返回额度错误，请检查服务商后再试。',
+      quota: '请检查模型账号的余额或套餐额度，再重试生成。',
       checkProgress: '查询进度', download: '下载原文件',
       libraryType: '按素材类型筛选', librarySelection: '按采用状态筛选', libraryOrder: '排序',
       allMedia: '全部素材', video: '视频', audio: '音频', allSelections: '全部结果', other: '其他结果',
@@ -114,6 +132,17 @@ window.__ModuleLoader__.load({
     const dialogStyle = { width: 'min(46rem, calc(100vw - 2rem))', maxHeight: '80vh', boxSizing: 'border-box',
       color: 'inherit', background: surface, border, borderRadius: '.85rem', padding: '1rem' }
     const libraryDefaults = { kind: 'all', selection: 'all', order: 'newest' }
+    const submissionMessages = new Map([
+      ['storage_busy', 'adoptBusy'], ['creation.unavailable', 'connectionUnavailable'],
+      ['creation.repeat_unavailable', 'repeatUnavailable'], ['revision_conflict', 'adoptConflict'],
+      ['creation.references', 'referencesChanged'], ['creation.reference_limit', 'referencesChanged'],
+      ['result.candidate_missing', 'referencesChanged'],
+    ])
+    const generationMessages = new Map([
+      ['quota', 'quota'], ['rate_limit', 'rateLimited'], ['authentication', 'credentialsRejected'],
+      ['permission', 'permissionDenied'], ['input', 'inputRejected'], ['reference', 'inputRejected'],
+      ['submission_unknown', 'providerUnknown'],
+    ])
 
     function button(label, onClick, options = {}) {
       const { primary, ...attrs } = options
@@ -387,6 +416,7 @@ window.__ModuleLoader__.load({
             if (!response.ok) throw new Error('Job status unavailable')
             const value = await response.json()
             if (controller.signal.aborted) return
+            setPollError(false)
             setProgress(previous => ({ ...value, jobId, results: value.results ?? previous?.results ?? [] }))
             if (['accepted', 'queued', 'running'].includes(value.status)) timer = setTimeout(poll, 2500)
           } catch {
@@ -401,11 +431,21 @@ window.__ModuleLoader__.load({
         busy.current = true
         setSubmitting(true)
         function receive(value) {
+          const current = attempt.current
+          if (value.projectCreated && current?.projectName) {
+            const project = { id: current.projectId, name: current.projectName }
+            setCatalog(previous => previous.projects.some(item => item.id === project.id) ? previous
+              : { ...previous, projects: [...previous.projects, project] })
+            setForm(previous => ({ ...previous, projectId: project.id }))
+          }
           if (attempt.current?.repeatJobId && !value.jobId) {
-            setRepeatStatus(value.status === 'unknown' ? 'generationUnknown' : value.code === 'storage_busy' ? 'adoptBusy'
-              : value.code === 'creation.repeat_unavailable' ? 'repeatUnavailable' : 'failedToSubmit')
+            setRepeatStatus(value.status === 'unknown' ? 'generationUnknown'
+              : submissionMessages.get(value.code) ?? 'failedToSubmit')
           } else {
-            setResult({ ...value, projectId: attempt.current?.projectId })
+            setResult(previous => ({ ...value, projectId: current?.projectId,
+              ...(value.status === 'unknown' && previous?.draftSaved
+                && { draftSaved: true, canvasUrl: value.canvasUrl ?? previous.canvasUrl }),
+            }))
             setRepeatStatus(null)
           }
           if (value.status !== 'unknown') attempt.current = null
@@ -451,9 +491,13 @@ window.__ModuleLoader__.load({
       }
       const status = progress?.jobId === jobId ? progress?.status : null
       const candidates = progress?.results ?? []
-      const outcome = status === 'failed' && progress.category === 'quota' ? 'quota'
-        : ['cancelled', 'interrupted'].includes(status) ? 'stopped'
-          : status === 'accepted' ? 'queued' : status
+      const providerUnknown = Boolean(status) && progress.category === 'submission_unknown'
+      const canRetry = status === 'failed' && progress.canRetry
+      const outcome = providerUnknown ? 'providerUnknown'
+        : status === 'failed' ? generationMessages.get(progress.category) ?? 'failed'
+          : ['cancelled', 'interrupted'].includes(status) ? 'stopped' : status === 'accepted' ? 'queued' : status
+      const submitLabel = submitting ? 'submitting' : unknown ? 'checkGeneration'
+        : result?.status === 'rejected' ? 'retrySubmission' : 'generate'
       return h('dialog', {
         ref: dialog, onClose: event => { if (event.target === event.currentTarget) onClose() },
         'aria-label': title, style: dialogStyle,
@@ -500,16 +544,16 @@ window.__ModuleLoader__.load({
             required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
             value: form.prompt, onChange: event => update('prompt', event.target.value),
           })),
-          (!locked || submitting || unknown) && button(t(submitting ? 'submitting' : unknown ? 'checkGeneration' : 'generate'),
+          (!locked || submitting || unknown) && button(t(submitLabel),
             undefined, { type: 'submit', primary: true,
               disabled: submitting || !model || tooManyReferences || outputUnavailable || !form.prompt.trim() })),
-        result?.status === 'rejected' && h('p', { role: 'alert' }, t(result.code === 'storage_busy' ? 'adoptBusy'
-          : ['creation.references', 'creation.reference_limit', 'result.candidate_missing'].includes(result.code) ? 'referencesChanged'
-            : 'failedToSubmit')),
+        result?.status === 'rejected' && h('p', { role: 'alert' }, t(submissionMessages.get(result.code) ?? 'failedToSubmit')),
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
-        jobId && h('p', { role: 'status' }, t(outcome ?? 'waiting')),
-        pollError && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
+        jobId && h('p', { role: status === 'failed' || providerUnknown ? 'alert' : 'status' }, t(outcome ?? 'waiting')),
+        status && progress.canResume && h('p', null, t('recoverOnCanvas')),
+        pollError && h('p', { role: 'alert' }, t('progressUnavailable')),
+        (pollError || providerUnknown) && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
         result?.canvasUrl && (jobId || result.draftSaved) && canvasLink(result.canvasUrl, t),
         candidates.length > 0 && h('div', {
           style: { display: 'grid', gap: '.7rem', marginBlock: '.7rem',
@@ -521,8 +565,9 @@ window.__ModuleLoader__.load({
             results: previous.results.map(item => ({ ...item, selected: item.resultId === candidate.resultId })),
           })),
         }))),
-        status === 'succeeded' && candidates.length > 0 && h('div', { style: row },
-          button(t(submitting ? 'submitting' : repeatStatus === 'generationUnknown' ? 'checkGeneration' : 'repeatGeneration'),
+        ((status === 'succeeded' && candidates.length > 0) || canRetry) && h('div', { style: row },
+          button(t(submitting ? 'submitting' : repeatStatus === 'generationUnknown' ? 'checkGeneration'
+            : canRetry ? 'retryGeneration' : 'repeatGeneration'),
             () => send(() => ({ projectId, operationId: crypto.randomUUID(), repeatJobId: jobId })), { disabled: submitting }),
           h('small', { style: { color: muted } }, t('repeatHint'))),
         repeatStatus && h('p', { role: repeatStatus === 'generationUnknown' ? 'status' : 'alert' }, t(repeatStatus)))

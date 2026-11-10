@@ -23,6 +23,7 @@ import {
 const PROJECTS = '/api/creation/projects'
 const PROMPT_LIMIT = 20000
 const LIBRARY_PAGE_SIZE = 12
+const RETRYABLE_FAILURES = new Set(['quota', 'rate_limit', 'authentication', 'permission', 'temporary', 'provider'])
 const MEDIA_TYPES = {
   image: ['image/webp', 'image/png', 'image/jpeg', 'image/gif', 'image/avif'],
   video: ['video/mp4', 'video/webm', 'video/quicktime'],
@@ -39,6 +40,11 @@ function creationPath(projectId) {
 
 function assetMetadata(snapshot) {
   return new Map((snapshot.assets ?? []).map(asset => [asset.id, asset.metadata]))
+}
+
+function canRetryFailedJob(job) {
+  return job?.status === 'failed' && job.recovery === 'retry' && !job.cancelRequested
+    && RETRYABLE_FAILURES.has(job.errorDetails?.category)
 }
 
 function resultReference(input) {
@@ -340,7 +346,14 @@ export class OpenDirectorClient {
     const job = await this.#request('POST', `${creationPath(project)}/queries`, {
       body: { type: 'job.get', projectId: project, queryId: randomUUID(), objectId: id }, signal,
     })
-    if (job.status !== 'succeeded') return { status: job.status, category: job.errorDetails?.category }
+    if (job.status !== 'succeeded') {
+      return {
+        status: job.status,
+        category: job.errorDetails?.category,
+        ...(canRetryFailedJob(job) && { canRetry: true }),
+        ...(job.resumeAllowed && ['failed', 'interrupted'].includes(job.status) && { canResume: true }),
+      }
+    }
     const snapshot = await this.project(project, { signal })
     const specId = job.inputSnapshot.spec.id
     const selected = snapshot.generationSpecs.find(spec => spec.id === specId)?.currentResultId
@@ -363,6 +376,14 @@ export class OpenDirectorClient {
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return null
       throw error
+    }
+  }
+
+  async #submissionReceipt(projectId, operationId, signal) {
+    try {
+      return await this.receipt(projectId, operationId, { signal })
+    } catch (cause) {
+      throw new UnknownOperationError({ projectId, operationId, cause })
     }
   }
 
@@ -412,11 +433,13 @@ export class OpenDirectorClient {
     const submitId = uuid5(intent, 'creation.submit')
     if (input.check === true) {
       const submitted = await this.receipt(projectId, submitId, { signal })
-      if (submitted) return { status: submitted.status, jobId: submitted.jobIds?.[0], code: submitted.issues?.[0]?.code }
+      if (submitted) return { status: submitted.status, jobId: submitted.jobIds?.[0], code: submitted.issues?.[0]?.code,
+        ...(input.repeatJobId == null && submitted.status === 'rejected' && { draftSaved: true }),
+        ...(input.projectName != null && { projectCreated: true }) }
       if (input.repeatJobId != null) return { status: 'unknown' }
       const draft = await this.receipt(projectId, createId, { signal })
       return draft?.status === 'rejected'
-        ? { status: 'rejected', code: draft.issues?.[0]?.code }
+        ? { status: 'rejected', code: draft.issues?.[0]?.code, ...(input.projectName != null && { projectCreated: true }) }
         : { status: 'unknown', draftSaved: draft?.status === 'applied' }
     }
     if (input.repeatJobId != null) {
@@ -458,11 +481,12 @@ export class OpenDirectorClient {
         return { status: 'rejected', code: project.issues?.[0]?.code }
       }
     }
-    return this.#withLease(projectId, signal, async (session, snapshot) => {
+    const started = await this.#withLease(projectId, signal, async (session, snapshot) => {
       const existing = snapshot.generationSpecs.some(spec => spec.id === uuid5(createId, 'spec'))
       if (existing) {
-        const receipt = await this.receipt(projectId, submitId, { signal })
-        return receipt ? { status: receipt.status, jobId: receipt.jobIds?.[0], code: receipt.issues?.[0]?.code }
+        const receipt = await this.#submissionReceipt(projectId, submitId, signal)
+        return receipt ? { status: receipt.status, jobId: receipt.jobIds?.[0], code: receipt.issues?.[0]?.code,
+          ...(receipt.status === 'rejected' && { draftSaved: true }) }
           : { status: 'unknown', draftSaved: true }
       }
       const references = sourceIds.map((id, order) => {
@@ -487,25 +511,38 @@ export class OpenDirectorClient {
         expectedSpecRevision: draft.changed.find(item => item.id === specId)?.revision,
         expectedItemRevision: draft.changed.find(item => item.id === itemId)?.revision,
       })
-      const accepted = await this.#command({ projectId, operationId: submitId, command: submit, session, signal })
-      return { status: accepted.status, jobId: accepted.jobIds?.[0], code: accepted.issues?.[0]?.code, draftSaved: true }
+      try {
+        const accepted = await this.#command({ projectId, operationId: submitId, command: submit, session, signal })
+        return { status: accepted.status, jobId: accepted.jobIds?.[0], code: accepted.issues?.[0]?.code, draftSaved: true }
+      } catch (error) {
+        if (error instanceof HttpError) return { status: 'rejected', code: error.code, draftSaved: true }
+        throw error
+      }
+    }).catch(error => {
+      if (input.projectName != null && error instanceof HttpError) return { status: 'rejected', code: error.code }
+      if (input.projectName != null && (error instanceof NetworkError || error instanceof RequestTimeoutError)) {
+        return { status: 'rejected', code: 'creation.unavailable' }
+      }
+      throw error
     })
+    return input.projectName == null ? started : { ...started, projectCreated: true }
   }
 
   async #repeatCreation(projectId, submitId, jobId, signal) {
     return this.#withLease(projectId, signal, async (session, snapshot) => {
-      const existing = await this.receipt(projectId, submitId, { signal })
+      const existing = await this.#submissionReceipt(projectId, submitId, signal)
       if (existing) return { status: existing.status, jobId: existing.jobIds?.[0], code: existing.issues?.[0]?.code }
       const job = snapshot.jobs.find(item => item.id === jobId)
       const spec = snapshot.generationSpecs.find(item => item.id === job?.inputSnapshot?.spec?.id)
       const item = snapshot.canvasItems.find(item => item.id === job?.originItemId)
-      if (job?.status !== 'succeeded' || !spec || !['image', 'audio'].includes(spec.kind)
+      if ((job?.status !== 'succeeded' && !canRetryFailedJob(job)) || !spec || !['image', 'audio'].includes(spec.kind)
         || item?.binding?.objectRef?.id !== spec.id) {
         throw new InputError('creation.repeat_unavailable')
       }
       const command = buildSubmitCommand({
         projectId, operationId: submitId, specId: spec.id, originItemId: item.id,
         expectedSpecRevision: spec.revision, expectedItemRevision: item.revision,
+        ...(job.status === 'failed' && { previousJobId: job.id }),
       })
       const receipt = await this.#command({ projectId, operationId: submitId, command, session, signal })
       return { status: receipt.status, jobId: receipt.jobIds?.[0], code: receipt.issues?.[0]?.code }

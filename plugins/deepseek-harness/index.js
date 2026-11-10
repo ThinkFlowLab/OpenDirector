@@ -1,7 +1,7 @@
 import Schema from '@deepseek-ai/schemastery'
 import { OpenDirectorClient } from './src/client.js'
 import { resolveConfig } from './src/config.js'
-import { ConfigError, HttpError, InputError, UnknownOperationError } from './src/errors.js'
+import { ConfigError, HttpError, InputError, NetworkError, RequestTimeoutError, UnknownOperationError } from './src/errors.js'
 import { createMessages } from './src/i18n.js'
 import { createOpenDirectorTools } from './src/tools.js'
 
@@ -173,8 +173,10 @@ export function apply(ctx, config) {
           return Response.json({ ...value, canvasUrl: client.canvasUrl(input.projectId) }, { headers })
         } catch (error) {
           const unknown = error instanceof UnknownOperationError || (input.check === true && !(error instanceof InputError))
+          const code = error instanceof NetworkError || error instanceof RequestTimeoutError
+            ? 'creation.unavailable' : errorCode(error)
           return Response.json(unknown ? { status: 'unknown' }
-            : { status: 'rejected', code: errorCode(error) }, { headers })
+            : { status: 'rejected', code }, { headers })
         }
       },
     }), 'OpenDirector creation controls')

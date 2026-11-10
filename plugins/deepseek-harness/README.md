@@ -40,6 +40,8 @@ Choose **Generate another candidate** to run the same canvas node again with its
 
 Cards show the file's actual dimensions and duration when available. Click an image to view the original in DSH, then switch between **Actual size** and **Fit to window**.
 
+If you lose the connection, use **Check submission** or **Check progress** to look up the same operation. If the provider confirms a quota or rate limit failure, fix the issue and choose **Retry generation** to use the same node. When a canvas holds the project open, save and close it, then try again in the same dialog.
+
 For an open-ended request, use the chat as usual:
 
 > Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.

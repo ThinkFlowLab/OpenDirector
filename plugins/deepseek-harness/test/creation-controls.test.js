@@ -123,3 +123,84 @@ test('another candidate reuses the node and reconciles a lost response without a
     ],
   })
 })
+
+test('only a confirmed failed job can start a linked retry on the same node', async () => {
+  const [projectId, specId, itemId, jobId, uncertainId, reviewId, nextId] = Array.from({ length: 7 }, randomUUID)
+  const quota = {
+    id: jobId, inputSnapshot: { spec: { id: specId } }, originItemId: itemId, status: 'failed',
+    errorDetails: { category: 'quota' }, recovery: 'retry',
+  }
+  const jobs = [
+    quota,
+    { ...quota, id: uncertainId, errorDetails: { category: 'submission_unknown' } },
+    { ...quota, id: reviewId, recovery: 'review' },
+  ]
+  const snapshot = {
+    jobs,
+    generationSpecs: [{ id: specId, revision: 3, kind: 'image' }],
+    canvasItems: [{ id: itemId, revision: 2, binding: { objectRef: { id: specId } } }],
+  }
+  const commands = []
+  const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
+    async fetchImpl(url, request) {
+      const path = new URL(url).pathname
+      if (path.endsWith('/queries')) {
+        return Response.json(jobs.find(job => job.id === JSON.parse(request.body).objectId))
+      }
+      if (path.endsWith('/open')) return Response.json(snapshot)
+      if (request.method === 'DELETE') return Response.json({})
+      if (path.includes('/receipts/')) return Response.json({}, { status: 404 })
+      assert.ok(path.endsWith('/commands'))
+      commands.push(JSON.parse(request.body))
+      return Response.json({ status: 'accepted', jobIds: [nextId] })
+    },
+  })
+  assert.deepEqual(await client.creationStatus(projectId, jobId), { status: 'failed', category: 'quota', canRetry: true })
+  assert.deepEqual(await client.creationStatus(projectId, uncertainId), { status: 'failed', category: 'submission_unknown' })
+  assert.deepEqual(await client.creationStatus(projectId, reviewId), { status: 'failed', category: 'quota' })
+  const repeat = repeatJobId => client.startCreation({ projectId, operationId: randomUUID(), repeatJobId })
+  await assert.rejects(repeat(uncertainId), { name: 'InputError', key: 'creation.repeat_unavailable' })
+  await assert.rejects(repeat(reviewId), { name: 'InputError', key: 'creation.repeat_unavailable' })
+  assert.equal(commands.length, 0)
+  assert.equal((await repeat(jobId)).jobId, nextId)
+  const [command] = commands
+  assert.equal(commands.length, 1)
+  assert.equal(command.type, 'generation.submit')
+  assert.equal(command.payload.specId, specId)
+  assert.equal(command.payload.originItemId, itemId)
+  assert.equal(command.payload.previousJobId, jobId)
+  assert.equal(command.payload.adoptionPolicy, 'candidate_only')
+})
+
+test('known rejections keep a newly created project and any saved draft identifiable', async () => {
+  const [projectId, modelConfigId, operationId] = Array.from({ length: 3 }, () => randomUUID())
+  let busy = true
+  const commands = []
+  const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
+    async fetchImpl(url, request) {
+      const path = new URL(url).pathname
+      if (path === '/api/model-configs') return Response.json([{ id: modelConfigId, kind: 'image', protocol: 'openai' }])
+      if (path.endsWith('/open')) return busy
+        ? Response.json({ code: 'storage_busy' }, { status: 409 })
+        : Response.json({ generationSpecs: [], canvasItems: [], results: [] })
+      if (request.method === 'DELETE') return Response.json({})
+      assert.ok(path.endsWith('/commands'))
+      const command = JSON.parse(request.body)
+      commands.push(command.type)
+      if (command.type === 'project.create') return Response.json({ status: 'applied' })
+      if (command.type === 'canvas.createGeneration') return Response.json({
+        status: 'applied', changed: [command.payload.spec.id, command.payload.item.id].map(id => ({ id, revision: 1 })),
+      })
+      return Response.json({ code: 'revision_conflict' }, { status: 409 })
+    },
+  })
+  const input = { projectId, modelConfigId, operationId, kind: 'image', prompt: 'Studio' }
+  assert.deepEqual(await client.startCreation({ ...input, projectName: 'Studio' }), {
+    status: 'rejected', code: 'storage_busy', projectCreated: true,
+  })
+  busy = false
+  assert.deepEqual(await client.startCreation({ ...input, operationId: randomUUID() }), {
+    status: 'rejected', code: 'revision_conflict', draftSaved: true,
+  })
+  assert.deepEqual(commands, ['project.create', 'canvas.createGeneration', 'generation.submit'])
+})

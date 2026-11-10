@@ -228,6 +228,7 @@ export function buildSubmitCommand({
   expectedSpecRevision,
   originItemId,
   expectedItemRevision,
+  previousJobId,
 } = {}) {
   const id = requireUuid(projectId, 'projectId')
   const commandId = requireUuid(operationId, 'operationId')
@@ -252,6 +253,7 @@ export function buildSubmitCommand({
       specId: spec,
       expectedSpecRevision: revision,
       ...(origin == null ? {} : { originItemId: origin }),
+      ...(previousJobId == null ? {} : { previousJobId: requireUuid(previousJobId, 'previousJobId') }),
       adoptionPolicy: 'candidate_only',
       showAdditionalResult: false,
     },
