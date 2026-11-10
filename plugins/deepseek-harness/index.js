@@ -1,7 +1,7 @@
 import Schema from '@deepseek-ai/schemastery'
 import { OpenDirectorClient } from './src/client.js'
 import { resolveConfig } from './src/config.js'
-import { ConfigError, HttpError, InputError } from './src/errors.js'
+import { ConfigError, HttpError, InputError, UnknownOperationError } from './src/errors.js'
 import { createMessages } from './src/i18n.js'
 import { createOpenDirectorTools } from './src/tools.js'
 
@@ -62,5 +62,69 @@ export function apply(ctx, config) {
         }
       },
     }), 'OpenDirector media previews')
+
+    const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/library',
+      methods: ['GET'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        try {
+          const projectId = new URL(request.url, 'http://localhost').searchParams.get('project')
+          if (projectId !== null) {
+            const library = await client.recentResults(projectId, { signal: request.signal })
+            return Response.json(library, { headers })
+          }
+          const value = await client.listProjects({ signal: request.signal })
+          const projects = value.projects.map(({ id, name }) => ({ id, name }))
+          return Response.json({ projects }, { headers })
+        } catch (error) {
+          const status = error instanceof InputError ? 400
+            : error instanceof HttpError && error.status === 404 ? 404
+              : 502
+          return new Response(null, { status, headers })
+        }
+      },
+    }), 'OpenDirector project library')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/adopt',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        // The DSH connection authenticates the request. Require a same-origin
+        // browser action as well, so a cross-origin form cannot adopt a result.
+        const site = request.headers.get('sec-fetch-site')
+        if (request.headers.get('x-opendirector-action') !== '1' || (site && site !== 'same-origin')) {
+          return new Response(null, { status: 403, headers })
+        }
+        let input
+        try {
+          input = await request.json()
+          if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Invalid action')
+        } catch {
+          return new Response(null, { status: 400, headers })
+        }
+        const { projectId, resultId, operationId } = input
+        const check = input.check === true
+        try {
+          const receipt = await client.adoptCandidate({
+            projectId, resultId, operationId, check, signal: request.signal,
+          })
+          return Response.json({
+            status: receipt?.status ?? 'unknown',
+            code: receipt?.issues?.[0]?.code,
+            canvasUrl: client.canvasUrl(projectId),
+          }, { headers })
+        } catch (error) {
+          if (error instanceof UnknownOperationError || (check && !(error instanceof InputError))) {
+            return Response.json({ status: 'unknown' }, { headers })
+          }
+          const code = error instanceof HttpError ? error.code
+            : error instanceof InputError ? error.key : 'unavailable'
+          return Response.json({ status: 'rejected', code }, { headers })
+        }
+      },
+    }), 'OpenDirector result adoption')
   })
 }

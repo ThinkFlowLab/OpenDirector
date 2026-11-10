@@ -38,10 +38,14 @@ In DSH Web, choose **Create media** in the composer and describe what you want:
 
 1. DSH uses `opendirector_projects` and `opendirector_project` to create the project and find its image model. It saves a node with `opendirector_create_generation`, submits it with `opendirector_submit`, then checks the job ID with `opendirector_job`.
 2. Once the job succeeds, inspect the saved candidate right in DSH Web. You can also open the project link and find the candidate under **Generation history**. Close the canvas tab before asking DSH to write to the project.
-3. Choose **Adopt** on the candidate card. The action prepares a draft in the same DSH conversation. Review and send it. DSH reads the current revisions and calls `opendirector_adopt_result`.
+3. Choose **Adopt** on the candidate card. The plugin reads the current revisions, selects the result, and shows a link to the canvas.
 4. Follow the `/ai-canvas/<projectId>` link back to the same project. Double-click the image node's title, rename it, and reopen the project to check that the new name and the selected image are still there.
 
 To revise an image, choose **Edit** on its result card. Describe the change on the card and choose **Send request**. Use a model that accepts reference images. DSH uses `sourceResultId` to pin the exact saved image, then creates a separate generation node in the same project. The result card shows the source and candidate together. Both remain available on the canvas. Card actions preserve your current draft and attachments.
+
+### Pick up an earlier project
+
+Choose **Resume project** next to the composer, then select an OpenDirector project. You can preview its six most recently saved images and videos, see which results are current, and adopt a candidate in the same project. Browsing and adopting work without a conversation model. If a canvas is open for editing, save and close it before trying to adopt again. If the connection drops during adoption, choose **Check adoption** to look up the original write.
 
 ### Continue a video
 
@@ -119,7 +123,7 @@ Cancellation is an explicit `opendirector_cancel` action. Aborting a tool reques
 
 Tools return canonical JSON for programmatic use. Submission, progress, candidate selection, and cancellation render short localized summaries with the project name, useful IDs, next step, and project link. A full project/model read is available when the agent needs it.
 
-DSH Web shows saved images and videos on result cards in the current interface language. Editing and continuation can be sent from the card. **Adopt** prepares a draft for you to review before sending. Once it succeeds, the receipt has a direct link to the editable canvas.
+DSH Web shows saved images and videos on result cards in the current interface language. Editing and continuation can be sent from the card. **Adopt** selects the result directly and links back to the canvas.
 
 ## Development checks
 

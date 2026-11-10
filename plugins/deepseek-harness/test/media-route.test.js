@@ -34,7 +34,9 @@ test('media route accepts relative URLs, forwards ranges, and ends a stalled bod
       inject(_services, configure) {
         configure({
           effect(register) { register() },
-          connection: { fetch: { register(value) { route = value } } },
+          connection: { fetch: { register(value) {
+            if (value.path === '/api/opendirector/media') route = value
+          } } },
         })
       },
     }, { baseUrl: 'http://127.0.0.1:' + server.address().port, requestTimeoutMs: 750 })

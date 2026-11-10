@@ -6,6 +6,7 @@ import {
   buildResultSelectCommand,
   buildSubmitCommand,
   requireUuid,
+  uuid5,
 } from './operations.js'
 import {
   HttpError,
@@ -231,6 +232,27 @@ export class OpenDirectorClient {
     return this.#request('GET', creationPath(id), { signal })
   }
 
+  async recentResults(projectId, { signal } = {}) {
+    const snapshot = await this.project(projectId, { signal })
+    const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
+    const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
+    const results = []
+    // Results are appended when registered, even when jobs finish out of order.
+    for (let index = snapshot.results.length - 1; index >= 0 && results.length < 6; index--) {
+      const { id, specId, jobId, asset } = snapshot.results[index]
+      if (asset.kind !== 'image' && asset.kind !== 'video') continue
+      results.push({
+        resultId: id,
+        specId,
+        assetId: asset.assetId,
+        kind: asset.kind,
+        selected: specs.get(specId)?.currentResultId === id,
+        prompt: jobs.get(jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 160) ?? '',
+      })
+    }
+    return { projectId, projectName: snapshot.project.name, canvasUrl: this.canvasUrl(projectId), results }
+  }
+
   async models({ signal } = {}) {
     return this.#request('GET', '/api/model-configs', { signal })
   }
@@ -316,6 +338,29 @@ export class OpenDirectorClient {
 
   async adoptResult(input) {
     return this.#write(buildResultSelectCommand(input), input.signal)
+  }
+
+  async adoptCandidate({ projectId, resultId, operationId, check, signal }) {
+    const project = requireUuid(projectId, 'projectId')
+    const result = requireUuid(resultId, 'resultId')
+    const commandId = uuid5(requireUuid(operationId, 'operationId'), `result.select:${project}:${result}`)
+    if (check) {
+      return this.receipt(project, commandId, { signal })
+    }
+    return this.#withLease(project, signal, async (session, snapshot) => {
+      const candidate = snapshot.results.find(item => item.id === result)
+      const spec = snapshot.generationSpecs.find(item => item.id === candidate?.specId)
+      if (!spec) throw new InputError('result.candidate_missing')
+      if (spec.currentResultId === result) return { status: 'noop' }
+      const expectedCanvasVersions = snapshot.canvasItems
+        .filter(item => item.binding.objectRef?.id === spec.id || item.binding.draftSpec?.id === spec.id)
+        .map(({ id, revision }) => ({ id, revision }))
+      const command = buildResultSelectCommand({
+        projectId: project, operationId: commandId, specId: spec.id, resultId: result,
+        expectedSpecRevision: spec.revision, expectedCanvasVersions,
+      })
+      return this.#command({ projectId: project, operationId: commandId, command, session, signal })
+    })
   }
 
   async cancelJob(input) {
