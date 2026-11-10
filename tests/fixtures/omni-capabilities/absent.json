@@ -1,25 +1,25 @@
 {
   "tier": "absent",
   "upstreamEndpoint": "/v1/omni/capabilities",
-  "scope": "No declaration: every capability is unknown, so callers must fall back instead of degrading.",
+  "scope": "No usable capability evidence: an unreachable endpoint, a topology-only body, and a body whose optional fields were dropped by exclude_none.",
   "cases": [
     {
-      "id": "no-endpoint-404",
-      "note": "GET returns 404 because the deployment predates the endpoint.",
+      "id": "endpoint-unreachable",
+      "note": "404, timeout or a disabled endpoint: nothing is claimed, nothing is missing.",
       "payload": null,
       "expected": {
         "endpoint": "absent",
-        "stages": {},
+        "topology": [],
         "capabilities": {
           "text.chat": "unknown",
           "image.generate": "unknown",
           "image.edit": "unknown",
-          "image.segment": "unknown",
           "video.generate": "unknown",
-          "video.matting": "unknown",
-          "video.motion_capture": "unknown",
           "audio.speech": "unknown",
           "audio.music": "unknown",
+          "image.segment": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
           "audio.score": "unknown",
           "video.first_frame": "unknown",
           "video.edit": "unknown",
@@ -30,53 +30,267 @@
       }
     },
     {
-      "id": "no-stages-field",
-      "note": "The endpoint answers but the body carries no `stages` field.",
-      "payload": {
-        "object": "omni.capabilities"
-      },
-      "expected": {
-        "endpoint": "absent",
-        "stages": {},
-        "capabilities": {
-          "text.chat": "unknown",
-          "image.generate": "unknown",
-          "image.edit": "unknown",
-          "image.segment": "unknown",
-          "video.generate": "unknown",
-          "video.matting": "unknown",
-          "video.motion_capture": "unknown",
-          "audio.speech": "unknown",
-          "audio.music": "unknown",
-          "audio.score": "unknown",
-          "video.first_frame": "unknown",
-          "video.edit": "unknown",
-          "image.cutout": "unknown",
-          "audio.separate": "unknown"
-        },
-        "unresolved": []
-      }
-    },
-    {
-      "id": "empty-stages",
-      "note": "The endpoint answers with an empty stage list, which declares nothing.",
+      "id": "topology-only-body",
+      "note": "Stages are published but no model and no operation: topology is display, so it grants nothing.",
       "payload": {
         "object": "omni.capabilities",
-        "stages": []
+        "schema_version": 1,
+        "observed_at": "2026-11-10T00:00:00Z",
+        "stages": [
+          {
+            "id": "7",
+            "type": "llm",
+            "depends_on": []
+          },
+          {
+            "id": "42",
+            "type": "diffusion",
+            "depends_on": [
+              "7"
+            ]
+          }
+        ],
+        "models": [],
+        "routes": [
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/sync",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "websocket",
+            "method": "WEBSOCKET",
+            "path": "/v1/realtime/video",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/audio/speech",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/audio/generate",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/segmentations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/segmentations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/depth",
+            "exposure": "enabled"
+          }
+        ]
       },
       "expected": {
         "endpoint": "absent",
-        "stages": {},
+        "topology": [
+          {
+            "id": "7",
+            "type": "llm",
+            "depends_on": []
+          },
+          {
+            "id": "42",
+            "type": "diffusion",
+            "depends_on": [
+              "7"
+            ]
+          }
+        ],
         "capabilities": {
           "text.chat": "unknown",
           "image.generate": "unknown",
           "image.edit": "unknown",
-          "image.segment": "unknown",
           "video.generate": "unknown",
-          "video.matting": "unknown",
-          "video.motion_capture": "unknown",
           "audio.speech": "unknown",
           "audio.music": "unknown",
+          "image.segment": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
+          "audio.score": "unknown",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "unresolved": []
+      }
+    },
+    {
+      "id": "operations-without-profiles",
+      "note": "The operation answered but `profiles` was dropped: an absent field means unknown, not unsupported.",
+      "payload": {
+        "object": "omni.capabilities",
+        "schema_version": 1,
+        "observed_at": "2026-11-10T00:00:00Z",
+        "stages": [
+          {
+            "id": "7",
+            "type": "llm",
+            "depends_on": []
+          },
+          {
+            "id": "42",
+            "type": "diffusion",
+            "depends_on": [
+              "7"
+            ]
+          }
+        ],
+        "models": [
+          {
+            "id": "model-d",
+            "stage_ids": [
+              "7"
+            ],
+            "operations": {
+              "chat": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              }
+            }
+          }
+        ],
+        "routes": [
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/sync",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "websocket",
+            "method": "WEBSOCKET",
+            "path": "/v1/realtime/video",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/audio/speech",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/audio/generate",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/segmentations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/segmentations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/depth",
+            "exposure": "enabled"
+          }
+        ]
+      },
+      "expected": {
+        "endpoint": "present",
+        "topology": [
+          {
+            "id": "7",
+            "type": "llm",
+            "depends_on": []
+          },
+          {
+            "id": "42",
+            "type": "diffusion",
+            "depends_on": [
+              "7"
+            ]
+          }
+        ],
+        "capabilities": {
+          "text.chat": "unknown",
+          "image.generate": "unknown",
+          "image.edit": "unknown",
+          "video.generate": "unknown",
+          "audio.speech": "unknown",
+          "audio.music": "unknown",
+          "image.segment": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
           "audio.score": "unknown",
           "video.first_frame": "unknown",
           "video.edit": "unknown",
