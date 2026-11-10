@@ -280,6 +280,22 @@ SSH forwarding command for local port 18092. These outputs corroborate detection
 resource selection and service readiness; the supplied transcript has no timing
 measurements. 已补充用户实际命令回执，转发命令本身不另作端点连通性测试结果。
 
+The participant later provided application logs identifying project
+`3440abf9-3590-4fe5-bd8e-365344b0ff23` and job
+`97d60f57-5117-5ce0-8623-29a18f57094c`. A read-only query of the running
+application confirmed the Qwen3-TTS job succeeded and the resulting audio was
+registered and adopted as the current result. Asset
+`79ad4ec1-8443-56f2-bc46-d0ef138759b0` is an 8.856-second, 24 kHz mono MP3;
+its actual bytes matched SHA256
+`e60a3025f00fc8047565668fec53ae7f33a17fa060079bd174e67e6971b90ca5` and fully
+decoded with FFmpeg. 用户试用的真实工程任务、素材和采用关系均已只读核对。
+
+The supplied log reports a model HTTP 200 and `headers_ms: 1777`, the time to
+response headers for that model request. It is not the complete job duration or
+time from first deployment action to first success. The project query establishes
+the current persisted state; it does not independently prove a process restart or
+the fault-recovery steps. 收到响应头的耗时不能用作首次成功耗时，当前工程状态也不等于重启验证。
+
 This was an assisted cached setup. Exact start, service-ready and first-usable-asset
 timestamps and elapsed time were **not measured**. Manual-action, help and retry
 counts and step-specific recovery timings were not supplied; they remain
