@@ -60,8 +60,31 @@ The remote protocol is `GET <API_BASE>/omni/capabilities`, with `object="omni.ca
 
 ## Development checks / 开发验证
 
+### Input constraints and region editing / 输入限制与选区编辑
+
+图片能力分别显示文字生图、单图编辑和多图编辑。已知限制会说明图片数量、选区蒙版及独立参考图；缺失数量声明不会被解释为无限数量。服务能力与应用处理限制分别显示，临时检查不会修改保存的配置。
+
+`profile.request` 描述模型输入；`profile.routes[].request` 是对应请求路径的完整有效约束。消费者只使用实际调用路径的声明，不将模型级约束外推到没有声明的路径。`inputs` 描述角色、支持情况及最少/最多数量，`required_any_of` 表示至少提供其中一种输入，`parameters` 描述明确的枚举或数值限制。字段缺失保持未知。默认参数不代表唯一支持值。
+
+普通生成与工具都按最终发送的图片校验数量；主图和普通参考图合计，蒙版及独立标注参考分别统计。商品替换会先合成场景与商品，因此两个来源对应一张模型输入。超量输入会被拒绝，不会截取图片列表。Z-Image-Turbo 支持一张图片的编辑请求。
+
+选区、消除、扩图和商品替换会在服务明确支持、输入与尺寸符合要求时使用原生蒙版。蒙版为灰度 PNG，白色表示修改，黑色表示保留；图片、蒙版与请求尺寸一致。当前请求不适用时使用原有编辑方式，保留用户指定输出尺寸。原生请求失败不会自动再发送普通编辑请求。结果仍经过原有选区合成，消除和商品替换保留已有的边缘柔化。
+
+新工具任务保存 `imageExecutionPolicy` 和 `imageExecution`，固定请求方式、输入角色及必要限制。运行状态和期限不写入这些记录。旧任务没有这些字段时沿用已接受的请求行为；恢复或重放不会重新选择编辑方式。
+
+The image card distinguishes text-to-image, single-image editing and multi-image editing. Known limits describe image counts, selection masks and independent references. Missing limits remain unknown. Service declarations and application limits are separate and do not rewrite saved settings.
+
+Only the matched `profile.routes[].request` supplies effective request constraints. `profile.request` describes model facts without proving that every route implements them. Input roles carry explicit counts, `required_any_of` describes alternative required inputs, and parameters carry known enums or numeric bounds. Defaults are not allowed-value lists.
+
+Generation and tools count the images actually sent. A mask and an independent annotation reference have separate roles. Product replacement combines its two source assets into one model image. Excess images are rejected rather than truncated. Z-Image-Turbo accepts a single-image editing request.
+
+Existing region-editing tools automatically use native masks when the declared route and unchanged requested dimensions allow it. Masks use grayscale PNG: white edits and black preserves. Otherwise the existing editing method remains available. A failed native request never triggers another generation automatically. Existing final compositing and edge feathering are retained. Accepted tools freeze the chosen request policy and input roles; historical tasks and replay retain their original behavior.
+
+Declaration and execution observations have independent expiry fields. Expiring a pause restores the still-valid declaration. The interface displays a shared expiry or query failure once and does not repeat it for every operation.
+
 ```sh
 .venv/bin/python -m pytest tests/test_model_availability.py tests/test_capability_acceptance.py -q
+.venv/bin/python -m pytest tests/test_image_input_policy.py tests/test_tool_native_mask.py tests/test_request_capability_acceptance.py -q
 .venv/bin/python -m pytest tests/test_model_configs.py tests/test_model_catalog.py tests/test_creation_generation_service.py tests/test_tool_tasks.py tests/test_assistant_conversations.py tests/test_cli.py -q
 node --test tests/modelAvailability.test.ts
 # With the isolated API and Vite running as described in development validation:
