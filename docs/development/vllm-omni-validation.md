@@ -272,6 +272,14 @@ The first-use trial is therefore complete on the basis of participant-reported
 successful execution, with no problems reported and a positive subjective speed
 assessment. 此次真人首次部署定性验收通过，听感反馈仍单独记录。
 
+The participant also supplied terminal evidence: `doctor` detected Linux x86_64,
+Python 3.12.7, driver 580.126.09 and Blackwell SM120; `plan` selected the assigned
+GPU 1 and returned `eligible` with no blockers; `start` returned `ready` for the
+exact Qwen3-TTS model on loopback port 8092. The transcript includes the foreground
+SSH forwarding command for local port 18092. These outputs corroborate detection,
+resource selection and service readiness; the supplied transcript has no timing
+measurements. 已补充用户实际命令回执，转发命令本身不另作端点连通性测试结果。
+
 This was an assisted cached setup. Exact start, service-ready and first-usable-asset
 timestamps and elapsed time were **not measured**. Manual-action, help and retry
 counts and step-specific recovery timings were not supplied; they remain
