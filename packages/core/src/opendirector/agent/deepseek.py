@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 import yaml
 
 from opendirector.agent.process import terminate
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.domain.projects import ProjectError
 
 
@@ -78,7 +79,7 @@ class Client:
 
 
 def arguments(private, skill_root=None):
-    binary = shutil.which('dsh')
+    binary = cli_executable('dsh')
     if binary is None:
         raise ProjectError('DeepSeek Harness 尚未安装，请安装 dsh CLI。', 503)
     home = Path(os.environ.get('DSH_HOME', Path.home() / '.dsh')).expanduser()

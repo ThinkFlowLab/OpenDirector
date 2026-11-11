@@ -14,6 +14,7 @@ from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
 from opendirector.agent import cli_transport, deepseek
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
@@ -37,7 +38,7 @@ def executable(runtime: str) -> str | None:
                 return str(path)
         path = BUNDLED / 'bin' / ('opencode.exe' if os.name == 'nt' else 'opencode')
         return str(path) if path.is_file() else None
-    return shutil.which('dsh' if runtime == 'deepseek' else runtime)
+    return cli_executable('dsh' if runtime == 'deepseek' else runtime)
 
 
 _CODEX_ISOLATION: dict[str, tuple[str, ...]] = {}

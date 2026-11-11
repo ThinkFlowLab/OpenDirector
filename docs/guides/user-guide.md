@@ -4,6 +4,8 @@
 
 ## Connect models
 
+For external agent harnesses (Codex, OpenCode, Claude Code, DeepSeek Harness and JiuwenSwarm), OpenDirector checks the backend's `PATH` first, then common CLI installation directories. These include user bins, npm/nvm, Bun, Volta, Windows Scoop and Python Scripts, and macOS Homebrew and user Python bins. It also checks Codex desktop installs, OpenCode's `.opencode/bin`, Claude's `.claude/local`, and configured npm, pipx and uv bin directories. It checks known directories without scanning the whole disk. Finding a CLI does not establish authentication or configuration readiness. For other locations, add the CLI directory to the backend's `PATH` and restart the backend. The Default agent continues to use the bundled OpenCode.
+
 Click the gear at the bottom left to open **Settings**, then open **Model connections**. Add models for chat, image, video, or audio generation as needed.
 
 For optional Kling 4.0 and Flash video generation, follow [Generate videos with Kling](kling-video.md). Both support text, first-frame, and image-reference generation. Standard Kling 4.0 also supports first-and-last frames. Adding the service preserves your existing model selection.

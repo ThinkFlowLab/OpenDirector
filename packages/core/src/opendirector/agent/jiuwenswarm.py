@@ -15,12 +15,13 @@ from opendirector.agent.skill_snapshot import prepare_skills, copy_skill_tree
 from opendirector.agent.directory_links import link_directory, unlink_directory
 from opendirector.agent.tools import SYSTEM
 from opendirector.agent import cli_transport
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.process import terminate
 from opendirector.domain.projects import ProjectError
 
 
 def executable():
-    return shutil.which('jiuwenswarm-process')
+    return cli_executable('jiuwenswarm-process')
 
 
 async def model_choices(binary=None):
