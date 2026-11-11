@@ -69,7 +69,7 @@ Routes still matter, in two ways: `OPERATION_ROUTES` records which operation own
 | an unrecognised path, and nothing else usable | `unknown` | `unresolved: unknown_route` |
 | another operation's path, or a wrong method/transport | `unknown` | `unresolved: route_mismatch` |
 | upstream profile, no id here | `unknown` | `unresolved: no_local_capability` |
-| profile supported, but the id's required role is never declared (`REQUIRED_ROLES`) | `unknown` | `unresolved: role_not_declared` |
+| profile supported, but the id's required role is never declared on one of the profile's own open routes (`REQUIRED_ROLES`) | `unknown` | `unresolved: role_not_declared` |
 | unknown operation / profile / misplaced profile | no evidence → `unknown` | `unresolved: unmapped_stage` / `unknown_profile` / `operation_mismatch` |
 | `supported`, `enabled`, one `enabled` route | `available` | none |
 | a capability no upstream profile can express | `unknown` | `UNROUTED[cid]` (`no_upstream_profile` / `no_upstream_operation` / `parameter_only` / `no_local_adapter`) |
