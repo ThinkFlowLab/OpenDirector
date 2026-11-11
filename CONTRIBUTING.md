@@ -82,3 +82,17 @@ The privileged workflow only checks out the PR base commit, never the contributo
 5. Credentials, private assets and raw provider responses never enter commits, fixtures, logs or receipts.
 6. Run the checks from [docs/development/validation.md](docs/development/validation.md) locally, or make it explicit which ones you could not run.
 7. For a user-visible change, attach screenshots or a short demo in the pull request, or mark N/A with a reason, as asked in the evidence section of the [pull request template](.github/pull_request_template.md).
+
+## Model-assisted PR labels / 大模型自动标签
+
+The reviewer workflow classifies open, non-draft PRs on opened, synchronize and ready-for-review events before requesting reviewers. Configure the upstream repository Actions Secret `wtc_github` with the API key; never commit its value. `.github/auto-labels.json` selects `https://api.deepseek.com`, model `deepseek-flash`, and confidence threshold 0.8. Title, body, filenames and bounded patches are sent to DeepSeek; familiar sensitive-file patterns omit patches, but this is not a guarantee of secret detection. Do not include credentials in PRs.
+
+审查工作流在PR创建、新提交和转为可审查时，先分类再邀请审查人，跳过草稿。在上游仓库配置Actions Secret `wtc_github`保存API Key，不提交真实值。`.github/auto-labels.json`配置DeepSeek地址、`deepseek-flash`模型及0.8置信度阈值。标题、正文、文件名和限量diff会发送给DeepSeek；常见敏感文件名不发送patch，但不保证自动识别所有秘密，PR中不得包含凭据。
+
+Only existing `type:*`, `area:*`, `modality:*` and `provider:*` labels from the allowed catalog may be added. The classifier cannot set priority, ready or process-status labels, create labels, remove manual labels or replace an existing type. Invalid responses, missing credentials and provider failures use conservative path rules; unmatched changes retain normal fallback reviewer routing. New commits may add labels but do not remove earlier labels or reviewer requests. Manual label changes do not call the model or immediately re-add removed labels.
+
+只添加白名单内已存在的类型、领域、媒体和服务商标签；不设置优先级、ready及流程状态，不创建标签、不删除人工标签、不替换已有type。响应无效、未配置Secret或服务失败时使用保守路径规则，仍无匹配时沿用默认审查人。新提交可追加标签，不撤销旧标签或邀请；人工标签变化不调用模型，也不会立即补回被移除标签。
+
+One bounded model request (60 seconds, 1500 output tokens) is made per eligible run, with no automatic inference retry or cross-run cache. Repeated eligible events can incur additional API usage. File context is limited to 200 files and 32000 patch characters; partial context may reduce classification accuracy. Before mutation, a changed head SHA, label set, draft or closed state causes the stale result to be skipped. The privileged workflow executes only trusted base-commit scripts, never PR-head code. Model errors and raw responses are not logged. Additions and fallback mode appear in Actions summary. Validate with `node --test tests/autoLabels.test.ts tests/reviewerRouting.test.ts` and `npm run build`; mocked tests do not establish live API availability. The workflow becomes active after merging into main.
+
+每次符合条件的运行最多一次模型请求（60秒、1500输出token），无自动推理重试或跨运行缓存；重复事件可能产生额外费用。最多提供200个文件及32000字符patch，上下文截断可能影响准确性。写入前复查head SHA、标签和PR状态，变化时跳过过期结果。具有写权限的工作流只运行可信base提交脚本，不执行PR分支代码；不记录模型错误正文或原始响应，Actions摘要显示添加标签和兜底方式。运行上述测试及完整构建；模拟测试不代表真实API可用。合入main后生效。

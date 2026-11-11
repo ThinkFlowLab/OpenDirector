@@ -7,7 +7,7 @@ const { selectReviewers, run } = routing;
 test('reviewer workflow action references use full 40-character commit pins', () => {
   const workflow = readFileSync(new URL('../.github/workflows/reviewer-routing.yml', import.meta.url), 'utf8');
   const pins = [...workflow.matchAll(/uses:\s+actions\/[\w-]+@(\S+)/g)];
-  assert.equal(pins.length, 2);
+  assert.equal(pins.length, 3);
   for (const [, pin] of pins) assert.match(pin, /^[0-9a-f]{40}$/);
 });
 
