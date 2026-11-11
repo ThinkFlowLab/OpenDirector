@@ -37,6 +37,8 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
         if config.get('protocol') == 'vllm_omni_music':
             from opendirector.integrations.model_adapters import VllmOmniMusic
             result['max_new_tokens'] = round(parameters.get('duration', MUSIC_SECONDS_INITIAL) * VllmOmniMusic.FRAMES_PER_SECOND)
+            if parameters.get('seed') is not None:
+                result['seed'] = parameters['seed']
         elif profile == 'moss-speech':
             result.update(voice_id=parameters.get('voice'), delivery_method='url', stream=False)
         else:
