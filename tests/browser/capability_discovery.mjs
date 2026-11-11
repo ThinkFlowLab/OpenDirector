@@ -42,6 +42,7 @@ let mode = "unsupported",
 const queryEvents = [];
 const served = `capability-image-${crypto.randomUUID().slice(0, 8)}`;
 function document() {
+  const unsupported = ["unsupported", "stale", "future"].includes(mode);
   const route = {
     transport: "http",
     method: "POST",
@@ -62,21 +63,23 @@ function document() {
     ]),
   );
   operations.image_generation = {
-    support: mode === "unsupported" ? "unsupported" : "supported",
+    support: unsupported ? "unsupported" : "supported",
     exposure: "enabled",
     profiles: [
       {
         id: "text_to_image",
-        support: mode === "unsupported" ? "unsupported" : "supported",
+        support: unsupported ? "unsupported" : "supported",
         required_inputs: ["text"],
         outputs: ["image"],
         routes: [route],
       },
     ],
     execution: {
-      state: mode === "paused" ? "paused" : "unpaused",
+      state: ["paused", "old_pause"].includes(mode) ? "paused" : "unpaused",
       scope: "deployment",
-      observed_at: new Date().toISOString(),
+      observed_at: new Date(
+        Date.now() - (mode === "old_pause" ? 21000 : 0),
+      ).toISOString(),
     },
   };
   const editRoute = {
@@ -97,12 +100,12 @@ function document() {
     },
   };
   operations.image_edit = {
-    support: mode === "unsupported" ? "unsupported" : "supported",
+    support: unsupported ? "unsupported" : "supported",
     exposure: "enabled",
     profiles: [
       {
         id: "image_to_image",
-        support: mode === "unsupported" ? "unsupported" : "supported",
+        support: unsupported ? "unsupported" : "supported",
         required_inputs: ["text", "image"],
         outputs: ["image"],
         routes: [editRoute],
@@ -113,7 +116,10 @@ function document() {
   return {
     object: "omni.capabilities",
     schema_version: 1,
-    observed_at: new Date().toISOString(),
+    observed_at: new Date(
+      Date.now() +
+        (mode === "stale" ? -21 * 86400000 : mode === "future" ? 10000 : 0),
+    ).toISOString(),
     models: [{ id: served, stage_ids: ["7"], operations }],
     stages: [{ id: "7", type: "diffusion", depends_on: [] }],
     routes: [route, editRoute],
@@ -492,6 +498,13 @@ try {
   );
 
   const draftCheckUrl = "**/api/model-configs/availability/check";
+  await checkDraft("old_pause");
+  assert.equal(
+    await draft.getByText("Service paused", { exact: true }).count(),
+    0,
+  );
+  assert.equal(await draft.locator("[data-availability=available]").count(), 3);
+  await checkDraft("partial");
   await presentInBothLanguages("partial", {
     "en-US": "Image count not confirmed",
     "zh-CN": "多图数量待确认",
@@ -501,6 +514,20 @@ try {
   await page.clock.install();
   await page.clock.pauseAt(new Date());
   for (const [state, expected] of [
+    [
+      "stale",
+      {
+        "en-US": "Service declaration expired. Refresh to check again.",
+        "zh-CN": "服务声明已过期，请刷新",
+      },
+    ],
+    [
+      "future",
+      {
+        "en-US": "Service observation time is invalid. Check the clocks.",
+        "zh-CN": "服务观测时间异常，请检查时钟",
+      },
+    ],
     [
       "legacy",
       {
@@ -706,6 +733,17 @@ try {
     .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
     .click();
   await serviceCard.getByText("Supported").first().waitFor();
+  // A remote negative declaration already 21 days old must not block this
+  // saved selection or the actual generation performed below.
+  mode = "stale";
+  const stale = await call("/api/model-configs/availability", {
+    configIds: [saved.id],
+    manual: true,
+  });
+  assert.equal(
+    stale.models.find((item) => item.configId === saved.id).reasonCode,
+    "stale_declaration",
+  );
   await page
     .getByRole("button", { name: "Close settings", exact: true })
     .click();

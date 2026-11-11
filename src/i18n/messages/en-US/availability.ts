@@ -49,6 +49,10 @@ export const availability = {
   "availability.reason.execution_paused": "Service paused",
   "availability.reason.observation_expired":
     "Results expired. Refresh to check again.",
+  "availability.reason.stale_declaration":
+    "Service declaration expired. Refresh to check again.",
+  "availability.reason.observation_time_invalid":
+    "Service observation time is invalid. Check the clocks.",
   "availability.reason.connection_failed":
     "Cannot connect. Check the service URL.",
   "availability.reason.authentication_failed":

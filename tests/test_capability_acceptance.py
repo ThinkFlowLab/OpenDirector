@@ -32,7 +32,7 @@ from opendirector_api.main import create_app
 from opendirector_api import agent
 from test_creation_canvas_service import project, ver
 from test_creation_generation_service import Provider, runtime, configure
-from test_model_availability import document, NOW
+from test_model_availability import document
 from test_tool_tasks import png, upload, images_server, video_server, H3, configure as configure_tools
 from test_generation_recovery import video
 from generation_helpers import command as generation_command, settled

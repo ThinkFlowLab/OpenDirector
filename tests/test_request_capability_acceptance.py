@@ -25,7 +25,8 @@ from test_tool_tasks import png, upload
 from test_voice_library import wav
 
 
-def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True, sampling_maximum=None):
+def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True, sampling_maximum=None,
+                  observation_age=0, pause_age=None, support='supported'):
     store, _, _ = project
     configs = ModelConfigs(store.local.repository)
     config = configs.save('image', 'http://images.test/v1', model, '',
@@ -33,7 +34,10 @@ def image_runtime(project, maximum, model='served-image-alias', *, declared_mode
     operation, profile_id, path = (('image_edit', 'image_to_image', '/v1/images/edits') if editing
                                    else ('image_generation', 'text_to_image', '/v1/images/generations'))
     declaration = document(operation, profile_id, path, 'image',
-                           model=declared_model or model)
+                           model=declared_model or model, now=time.time() - observation_age, support=support)
+    if pause_age is not None:
+        execution = document(now=time.time() - pause_age)['models'][0]['operations']['chat']['execution']
+        declaration['models'][0]['operations'][operation]['execution'] = {**execution, 'state': 'paused'}
     profile = declaration['models'][0]['operations'][operation]['profiles'][0]
     profile['required_inputs'] = ['text', 'image'] if editing else ['text']
     profile['routes'][0]['request'] = {'inputs': {'image': {
@@ -55,6 +59,43 @@ def image_runtime(project, maximum, model='served-image-alias', *, declared_mode
     runner = CreationGeneration(store, configs, availability=ModelAvailability(configs, probe))
     runner.provider = GenerationProviders(runner.store, httpx.MockTransport(generate), poll_interval=0)
     return runner, config, probe, queries, posts
+
+
+@pytest.mark.parametrize('entry', ['service', 'http', 'agent'])
+@pytest.mark.parametrize('age,pause_age,support,maximum,accepted', [
+    (0, None, 'unsupported', 4, False),
+    (21 * 86400, None, 'unsupported', 4, True),
+    (0, None, 'supported', 1, False),
+    (30, None, 'supported', 1, True),
+    (-3, None, 'supported', 1, True),
+    (0, 0, 'supported', 4, False),
+    (0, 5, 'supported', 4, True),
+])
+def test_only_fresh_evidence_rejects_real_image_submission(project, entry, age, pause_age, support, maximum, accepted):
+    store, pid, session = project
+    runner, config, probe, queries, posts = image_runtime(
+        project, maximum, observation_age=age, pause_age=pause_age, support=support)
+    sources = [upload(store, str(pid), session, f'source-{index}.png', png()) for index in range(2)]
+    command = generation_command(project, config, references=sources)
+    before = store.snapshot(pid)
+    try:
+        receipt = submit(entry, project, runner, probe, command)
+        assert receipt['status'] == ('accepted' if accepted else 'rejected'), receipt
+        after = store.snapshot(pid)
+        assert len(queries) == 1
+        if accepted:
+            assert len(after.jobs) == len(posts) == 1
+            assert after.jobs[0].status == 'succeeded'
+            assert len(after.jobs[0].inputSnapshot.references) == 2
+            assert after.jobs[0].inputSnapshot.model.modelId == config['modelId']
+            assert len(posts[0][1]) == 2  # Both source images reached the actual multipart request.
+            assert len(after.assets) == len(before.assets) + 1
+            assert after.jobs[0].technicalCheck.status == 'passed'
+        else:
+            assert not after.jobs and not posts
+            assert after.generationSpecs == before.generationSpecs and after.assets == before.assets
+    finally:
+        probe.close()
 
 
 @pytest.mark.parametrize('model', ['served-image-alias', 'Tongyi-MAI/Z-Image-Turbo', 'Qwen/Qwen-Image-2.1'])

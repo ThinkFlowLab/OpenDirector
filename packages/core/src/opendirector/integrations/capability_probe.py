@@ -13,7 +13,7 @@ import time
 
 import httpx
 
-from opendirector.domain.omni_capabilities import OmniCapabilities
+from opendirector.domain.omni_capabilities import OmniCapabilities, timestamp
 from opendirector.integrations.http_settings import auth_headers, trust_environment
 from opendirector.integrations.volcengine import endpoint
 
@@ -21,6 +21,14 @@ DECLARATION_SECONDS = 30
 PAUSE_SECONDS = 5
 QUERY_SECONDS = 2
 FAILURE_SECONDS = 2
+FUTURE_TOLERANCE_SECONDS = 2
+
+
+def remaining_lifetime(observed_at, checked, maximum):
+    age = checked - timestamp(observed_at)
+    if age < -FUTURE_TOLERANCE_SECONDS:
+        raise ValueError('observation exceeds future clock tolerance')
+    return max(0, maximum - max(0, age))
 
 
 def identity(config, *, service=False):
@@ -46,6 +54,14 @@ class Observation:
     received: float
     valid_until: float
 
+    def execution_deadline(self, execution):
+        """Convert source age once against receipt time, then use a monotonic deadline."""
+        try:
+            remaining = remaining_lifetime(execution.observed_at, self.checked, PAUSE_SECONDS)
+        except (ValueError, TypeError, AttributeError):
+            remaining = 0
+        return min(self.valid_until, self.received + remaining)
+
 
 class CapabilityProbe:
     def __init__(self, *, transport=None, clock=time.monotonic, wall_clock=time.time, timeout=QUERY_SECONDS, capacity=128):
@@ -60,8 +76,15 @@ class CapabilityProbe:
         self._workers.shutdown(wait=False, cancel_futures=True)
 
     def _observation(self, document, reason):
-        lifetime = DECLARATION_SECONDS if document else FAILURE_SECONDS
         received, checked = self.clock(), self.wall_clock()
+        lifetime = FAILURE_SECONDS
+        if document:
+            try:
+                lifetime = remaining_lifetime(document.observed_at, checked, DECLARATION_SECONDS)
+                if lifetime == 0:
+                    document, reason, lifetime = None, 'stale_declaration', FAILURE_SECONDS
+            except (ValueError, TypeError, AttributeError):
+                document, reason, lifetime = None, 'observation_time_invalid', FAILURE_SECONDS
         return Observation(document, reason, checked, checked + lifetime, received, received + lifetime)
 
     def peek(self, config):
@@ -90,11 +113,14 @@ class CapabilityProbe:
         key = identity(config, service=True)
         with self._lock:
             observation = self._cache.get(key)
-            # Paused observations need another read after their shorter lifetime.
-            paused = observation and observation.document and any(
-                op.execution.state == 'paused' for model in observation.document.models for op in model.operations.values())
-            if (not manual and observation and observation.valid_until > self.clock()
-                    and (not paused or observation.received + PAUSE_SECONDS > self.clock())):
+            now = self.clock()
+            # Refresh a pause that expired locally. An already-stale remote pause
+            # cannot block admission and must not cause a query on every request.
+            expired_pause = observation and observation.document and any(
+                op.execution.state == 'paused'
+                and observation.received < observation.execution_deadline(op.execution) <= now
+                for model in observation.document.models for op in model.operations.values())
+            if not manual and observation and observation.valid_until > now and not expired_pause:
                 return observation
             future = self._pending.get(key)
             if future is None:

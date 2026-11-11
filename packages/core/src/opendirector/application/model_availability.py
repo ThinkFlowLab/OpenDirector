@@ -11,14 +11,13 @@ import hashlib
 import json
 from urllib.parse import urlsplit
 
-from opendirector.domain.omni_capabilities import timestamp
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.request_constraints import INPUT_ROLES, constraint_failure, input_details
 from opendirector.domain.capability_messages import constraint_rejection
 from opendirector.domain.voices import effective_speech_voice
 from opendirector.domain.projects import ProjectError
-from opendirector.integrations.capability_probe import CapabilityProbe, PAUSE_SECONDS, automatic, identity
+from opendirector.integrations.capability_probe import CapabilityProbe, automatic, identity
 from opendirector.integrations.generation_capability_parameters import generation_capability_parameters
 from opendirector.integrations.volcengine import endpoint
 
@@ -296,16 +295,13 @@ class ModelAvailability:
         # input profile does not invalidate a fresh deployment pause there.
         execution = operation.execution
         if route:
-            try:
-                timestamp(execution.observed_at)
-                active = self.probe.clock() < observation.received + PAUSE_SECONDS
-                result['execution'] = dict(state=execution.state if active else 'unknown', scope=execution.scope,
-                    checkedAt=round(observation.checked * 1000),
-                    expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000) if active else None)
-                if active and execution.state == 'paused' and execution.scope == 'deployment' and result['reasonCode'] != 'route_disabled':
-                    result.update(status='unavailable', reasonCode='execution_paused', expiresAt=round((observation.checked + PAUSE_SECONDS) * 1000))
-            except (ValueError, TypeError, AttributeError):
-                pass
+            deadline = observation.execution_deadline(execution)
+            active = self.probe.clock() < deadline
+            expires = round((observation.checked + deadline - observation.received) * 1000) if active else None
+            result['execution'] = dict(state=execution.state if active else 'unknown', scope=execution.scope,
+                checkedAt=round(observation.checked * 1000), expiresAt=expires)
+            if active and execution.state == 'paused' and execution.scope == 'deployment' and result['reasonCode'] != 'route_disabled':
+                result.update(status='unavailable', reasonCode='execution_paused', expiresAt=expires)
         return result
 
     def require(self, config, request, prepared=None):

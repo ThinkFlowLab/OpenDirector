@@ -18,7 +18,9 @@
 
 提交时还会核对该模式声明的必要输入。例如图生视频声明同时需要图片和音频，只提供图片会在接受任务前被拒绝；补充实际传输的音频后可以提交。仅作为上下文的素材不计入传输输入。目录没有具体任务输入，不会因此禁用整个模型；无法理解的必要输入名称保留 `unknown`。
 
-声明在内存中保留 30 秒；可信部署暂停状态最多保留 5 秒。内部使用本地单调时钟计算有效期，系统时钟调整和服务时钟偏差不改变到期规则；对外时间用于界面展示。单次查询或一次多服务刷新共用 2 秒总等待预算，包含等待已有共享请求的时间。独立服务通过同一个最多 4 个线程的查询池并发读取，排队数量和缓存均有容量限制。失败可以短时间后重试，进程重启后重新获得观察。目录读取不会访问模型服务，到期会改变目录版本。
+声明从服务的 `observed_at` 开始最多有效 30 秒；执行状态从其独立的 `observed_at` 开始最多有效 5 秒，且不超过声明有效期。收到响应时扣除已经经过的时间，例如产生于 28 秒前的声明只再缓存 2 秒。时间最多允许向未来偏差 2 秒，偏差不会延长有效期。过期或时间异常的声明变为未知，相关输入和参数限制也不再拒绝请求；旧暂停失效时，仍有效的模型声明继续使用。接收后使用单调时钟倒计时，系统时间调整不会延长或缩短有效期。
+
+单次查询或一次多服务刷新共用 2 秒总等待预算，包含等待已有共享请求的时间。独立服务通过同一个最多 4 个线程的查询池并发读取，排队数量和缓存均有容量限制。失败可以短时间后重试，进程重启后重新获得观察。目录读取不会访问模型服务，到期会改变目录版本。音乐任务的能力检查、发送参数和保存记录使用同一个随机种子 `seed`；恢复和重放沿用已接受任务的种子。
 
 生成、工具和使用设置模型的助手共享接受规则。服务查询位于项目存储事务之外，接受新任务时再次核对连接身份。明确拒绝不会创建生成任务，也不会调用生成接口。工具的本地操作和可选翻译保留原有行为。已接受任务的快照、恢复、下载、取消和同一命令重放继续使用原有规则；最新能力状态不会重新拒绝它们。能力状态不会清除音色或替换用户选择。
 
@@ -40,7 +42,9 @@ Text responses and image responses on Chat Completions are distinct. Music uses 
 
 Admission also checks a matched profile's required inputs against the actual adapter request. An image-to-video profile requiring audio rejects a submission without transmitted audio, while the catalog remains selectable. Context-only references are not transmitted inputs. Unrecognized required-input names remain unknown.
 
-Declarations expire after 30 seconds. A proven deployment-wide pause expires after at most 5 seconds. Internal expiration uses a local monotonic clock; service timestamps identify observations, and wall-clock timestamps are presentation data. Each query or multi-service refresh shares one two-second wait budget, including existing shared requests. Independent services use the same four-worker pool with bounded pending requests and cache. Concurrent reads are coalesced and failures permit short retries. Catalog reads never contact providers; expiration changes their revision.
+Declarations are valid for at most 30 seconds from the service's `observed_at`. Execution observations have an independent five-second limit from their own `observed_at`, capped by the declaration lifetime. Receipt deducts source age: a declaration already 28 seconds old is cached for at most two more seconds. Future timestamps are tolerated by at most two seconds and never extend either lifetime. Expired or invalid-time declarations become unknown, including their input and parameter constraints. A stale pause does not invalidate a still-fresh model declaration. After receipt, monotonic deadlines prevent wall-clock changes from extending or shortening validity.
+
+Each query or multi-service refresh shares one two-second wait budget, including existing shared requests. Independent services use the same four-worker pool with bounded pending requests and cache. Concurrent reads are coalesced and failures permit short retries. Catalog reads never contact providers; expiration changes their revision. Music admission checks the same random `seed` that is transmitted and persisted; recovery and replay retain the seed fixed at acceptance.
 
 Generation, tools and settings-backed assistant turns share acceptance rules. Network reads occur outside project transactions; connection identity is checked again when accepting work. Explicit rejection creates no job and submits no inference. Local tools and optional translation retain their behavior. Accepted snapshots, recovery, downloads, cancellation and idempotent replay do not undergo new capability admission. Observations never clear voice selections or silently choose another model.
 

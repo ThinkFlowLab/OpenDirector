@@ -48,6 +48,9 @@ export const availability = {
   "availability.reason.output_unsupported": "不支持此输出类型",
   "availability.reason.execution_paused": "服务已暂停",
   "availability.reason.observation_expired": "检查结果已过期，请刷新",
+  "availability.reason.stale_declaration": "服务声明已过期，请刷新",
+  "availability.reason.observation_time_invalid":
+    "服务观测时间异常，请检查时钟",
   "availability.reason.connection_failed": "无法连接服务，请检查地址",
   "availability.reason.authentication_failed": "认证失败，请检查密钥",
   "availability.reason.protocol_unavailable": "服务未提供能力声明",

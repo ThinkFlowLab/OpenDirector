@@ -21,15 +21,16 @@ from opendirector.integrations.capability_probe import CapabilityProbe
 NOW = 1794225600.0
 
 
-def document(operation='chat', profile='text_response', path='/v1/chat/completions', output='text', *, model='demo', support='supported'):
+def document(operation='chat', profile='text_response', path='/v1/chat/completions', output='text', *, model='demo', support='supported', now=None):
+    now = time.time() if now is None else now
     return {'object': 'omni.capabilities', 'schema_version': 1,
-            'observed_at': datetime.fromtimestamp(NOW, timezone.utc).isoformat(),
+            'observed_at': datetime.fromtimestamp(now, timezone.utc).isoformat(),
             'models': [{'id': model, 'stage_ids': ['0'], 'operations': {operation: {
                 'support': support, 'exposure': 'enabled', 'reason_code': 'model_declared',
                 'profiles': [{'id': profile, 'support': support, 'outputs': [output],
                               'required_inputs': ['text'], 'routes': [{'method': 'POST', 'path': path}]}],
                 'execution': {'state': 'unpaused', 'scope': 'deployment',
-                              'observed_at': datetime.fromtimestamp(NOW, timezone.utc).isoformat()}}}}],
+                              'observed_at': datetime.fromtimestamp(now, timezone.utc).isoformat()}}}}],
             'routes': [{'transport': 'http', 'method': 'POST', 'path': path, 'exposure': 'enabled'}]}
 
 
@@ -37,7 +38,7 @@ def document(operation='chat', profile='text_response', path='/v1/chat/completio
 def service(tmp_path):
     configs = ModelConfigs(tmp_path)
     saved = configs.save('agent', 'http://models.test/v1', 'demo', '', connection_type='self_hosted', auth_mode='none')
-    state = {'document': document(), 'status': 200, 'calls': [], 'clock': NOW}
+    state = {'document': document(now=NOW), 'status': 200, 'calls': [], 'clock': NOW}
 
     def respond(request):
         state['calls'].append(request)
@@ -56,7 +57,7 @@ def private(configs, saved):
 def image_contract(service, *, maximum=4):
     configs, _, state, availability = service
     saved = configs.save('image', 'http://images.test/v1', 'image-alias', '', connection_type='self_hosted', auth_mode='none')
-    state['document'] = document('image_edit', 'image_to_image', '/v1/images/edits', 'image', model='image-alias')
+    state['document'] = document('image_edit', 'image_to_image', '/v1/images/edits', 'image', model='image-alias', now=state['clock'])
     profile = state['document']['models'][0]['operations']['image_edit']['profiles'][0]
     profile['required_inputs'] = ['text', 'image']
     profile['request'] = {'inputs': {'image': {'support': 'supported', 'max_count': 99}}}
@@ -159,7 +160,7 @@ def test_native_mask_policy_uses_actual_geometry_and_operator_limits(service, ad
 ])
 def test_explicit_role_constraints_are_shared_across_operations(service, operation, profile, path, output, role):
     configs, saved, state, availability = service
-    state['document'] = document(operation, profile, path, output)
+    state['document'] = document(operation, profile, path, output, now=state['clock'])
     item = state['document']['models'][0]['operations'][operation]['profiles'][0]
     item['routes'][0]['request'] = {'inputs': {role: {'support': 'unsupported'}}}
     availability.refresh()
@@ -182,7 +183,7 @@ def test_speech_checks_the_same_explicit_or_default_voice_as_the_adapter(service
     configs, _, state, availability = service
     saved = configs.save('audio', 'http://speech.test/v1', 'speech-alias', '', connection_type='self_hosted', auth_mode='none')
     config = private(configs, saved)
-    state['document'] = document('speech', 'text_to_speech', '/v1/audio/speech', 'audio', model='speech-alias')
+    state['document'] = document('speech', 'text_to_speech', '/v1/audio/speech', 'audio', model='speech-alias', now=state['clock'])
     profile = state['document']['models'][0]['operations']['speech']['profiles'][0]
     profile['required_inputs'] = ['text', 'voice']
     profile['routes'][0]['request'] = {'inputs': {'voice': {'support': 'supported', 'min_count': 1}},
@@ -274,6 +275,31 @@ def test_no_inference_from_a_different_model_profile_or_route(service, mutation)
     assert availability.model(private(configs, saved))['status'] == 'unknown'
 
 
+def test_other_model_support_does_not_override_the_selected_model(service):
+    configs, saved, state, availability = service
+    selected = state['document']['models'][0]['operations']['chat']
+    selected['support'] = selected['profiles'][0]['support'] = 'unsupported'
+    state['document']['models'] += document(model='another-model', now=state['clock'])['models']
+    availability.refresh()
+    config = private(configs, saved)
+    with pytest.raises(ProjectError):
+        availability.require(config, requests_for(config)[0])
+    assert availability.decision({**config, 'modelId': 'another-model'}, requests_for(config)[0])['status'] == 'available'
+
+
+def test_video_tool_modes_cannot_grant_each_other_support(service):
+    configs, saved, state, availability = service
+    config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video', now=state['clock'])
+    state['document']['models'][0]['operations']['video_generation']['profiles'] += [
+        {'id': 'image_to_video', 'support': 'unsupported'},
+        {'id': 'video_to_video', 'support': 'unknown'},
+    ]
+    availability.prepare(config)
+    for capability, expected in [('video.generate', 'available'), ('video.first_frame', 'unavailable'), ('video.edit', 'unknown')]:
+        assert availability.decision(config, tool_request(config, capability))['status'] == expected
+
+
 def test_independent_pause_and_declaration_expiry_changes_projection_without_network(service):
     configs, saved, state, availability = service
     execution = state['document']['models'][0]['operations']['chat']['execution']
@@ -291,12 +317,12 @@ def test_independent_pause_and_declaration_expiry_changes_projection_without_net
 
 
 @pytest.mark.parametrize('scope,observed', [('worker', NOW), ('deployment', NOW - 10), ('deployment', NOW + 100)])
-def test_pause_scope_and_local_expiry_do_not_depend_on_remote_clock(service, scope, observed):
+def test_worker_stale_and_future_pauses_do_not_block_requests(service, scope, observed):
     configs, saved, state, availability = service
     state['document']['models'][0]['operations']['chat']['execution'].update(state='paused', scope=scope,
         observed_at=datetime.fromtimestamp(observed, timezone.utc).isoformat())
     availability.refresh()
-    assert availability.list()['models'][0]['status'] == ('available' if scope == 'worker' else 'unavailable')
+    assert availability.list()['models'][0]['status'] == 'available'
     state['clock'] += 5.01
     assert availability.list()['models'][0]['status'] == 'available'
 
@@ -422,7 +448,7 @@ def test_connection_changes_invalidate_identity_and_late_response(service):
 def test_music_uses_lyrics_profile_on_speech_and_not_generic_audio_generation(service):
     configs, _, state, availability = service
     saved = configs.save('audio', 'http://music.test/v1', 'demo', '', connection_type='self_hosted', protocol='vllm_omni_music')
-    state['document'] = document('speech', 'lyrics_to_music', '/v1/audio/speech', 'audio')
+    state['document'] = document('speech', 'lyrics_to_music', '/v1/audio/speech', 'audio', now=state['clock'])
     state['document']['models'][0]['operations']['speech']['profiles'].append({'id': 'text_to_speech', 'support': 'unsupported'})
     state['document']['models'][0]['operations']['audio_generation'] = {'support': 'unsupported'}
     config = private(configs, saved)
@@ -500,7 +526,7 @@ def test_cache_is_bounded_and_does_not_persist(tmp_path):
 def test_video_required_audio_is_checked_on_actual_request_not_catalog(service, references, expected):
     configs, _, state, availability = service
     config = {**configs.resolve(configs.list()[0]['id'], 'agent'), 'kind': 'video', 'protocol': 'vllm_omni'}
-    state['document'] = document('video_generation', 'image_to_video', '/v1/videos', 'video')
+    state['document'] = document('video_generation', 'image_to_video', '/v1/videos', 'video', now=state['clock'])
     profile = state['document']['models'][0]['operations']['video_generation']['profiles'][0]
     profile.update(required_inputs=['text', 'image', 'audio'], outputs=['video', 'audio'])
     availability.prepare(config)

@@ -11,6 +11,8 @@ const SHARED_REASONS = new Set([
   "not_checked",
   "execution_paused",
   "observation_expired",
+  "stale_declaration",
+  "observation_time_invalid",
   "query_timeout",
   "query_busy",
   "query_failed",

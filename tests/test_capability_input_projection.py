@@ -70,7 +70,7 @@ def test_speech_admission_uses_normalization_without_rewriting_voice(service, vo
     configs, _, state, availability = service
     saved = configs.save('audio', 'http://speech.test/v1', 'demo', '', connection_type='self_hosted')
     config = private(configs, saved)
-    state['document'] = document('speech', 'text_to_speech', '/v1/audio/speech', 'audio')
+    state['document'] = document('speech', 'text_to_speech', '/v1/audio/speech', 'audio', now=state['clock'])
     state['document']['models'][0]['operations']['speech']['profiles'][0]['routes'][0]['request'] = {
         'parameters': {'voice': {'type': 'string', 'enum': options, 'enum_normalization': rule}}}
     availability.prepare(config)
@@ -109,7 +109,7 @@ def test_content_image_counts_survive_metadata_and_context_filtering(service):
 def test_continuation_does_not_claim_video_upload_but_honors_route_pause(service, paused):
     configs, saved, state, availability = service
     config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
-    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video', now=state['clock'])
     operation = state['document']['models'][0]['operations']['video_generation']
     upload = deepcopy(operation['profiles'][0])
     upload.update(id='video_to_video', support='unsupported')
@@ -138,7 +138,7 @@ def test_continuation_does_not_claim_video_upload_but_honors_route_pause(service
 def test_unknown_continuation_profile_still_honors_a_disabled_http_endpoint(service, route, unavailable):
     configs, saved, state, availability = service
     config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
-    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video', now=state['clock'])
     state['document']['routes'] = [route] if route else []
     availability.prepare(config)
     request = generation_request(config, SimpleNamespace(kind='video'), [reference('video', 'latent')])
@@ -151,7 +151,7 @@ def test_unknown_continuation_profile_still_honors_a_disabled_http_endpoint(serv
 def test_disabled_endpoint_reason_survives_a_fresh_pause_observation(service, continuation):
     configs, saved, state, availability = service
     config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
-    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video', now=state['clock'])
     state['document']['routes'][0]['exposure'] = 'disabled'
     state['document']['models'][0]['operations']['video_generation']['execution']['state'] = 'paused'
     availability.prepare(config)
@@ -165,7 +165,7 @@ def test_disabled_endpoint_reason_survives_a_fresh_pause_observation(service, co
 def test_global_endpoint_closure_does_not_require_a_profile_route(service):
     configs, saved, state, availability = service
     config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
-    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video')
+    state['document'] = document('video_generation', 'text_to_video', '/v1/videos', 'video', now=state['clock'])
     state['document']['models'][0]['operations']['video_generation']['profiles'][0]['routes'] = []
     state['document']['routes'][0]['exposure'] = 'disabled'
     availability.prepare(config)
