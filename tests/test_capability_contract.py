@@ -1006,6 +1006,33 @@ def test_fixtures_obey_upstream_construction_invariants():
                             keys = {(reference['transport'], reference['method'], reference['path'])
                                     for reference in entry['routes']}
                             assert keys == legal, (case['id'], entry['id'], sorted(legal - keys))
+                    # 2026-11-11 加：`/v1/realtime/video` 是上游唯一会改写 exposure 的路由
+                    # （`entrypoints/openai/serving_capabilities.py:342-347`：profile 的
+                    # required_inputs 含 video 或 audio → forced disabled，否则沿用该路由自身）。
+                    # 一条路径对同一 operation 的所有 profile 是同一个 route 对象，所以除这条
+                    # 改写外 exposure 必须一致；`image_to_video`（text+image）曾被写成 disabled。
+                    per_path: dict[str, set[str]] = {}
+                    for entry in declared['profiles']:
+                        for reference in entry['routes']:
+                            per_path.setdefault(reference['path'], set()).add(reference['exposure'])
+                    for path, seen in per_path.items():
+                        if path == '/v1/realtime/video':
+                            continue
+                        assert len(seen) == 1, (case['id'], operation_id, path, sorted(seen))
+                    realtime_base = {reference['exposure']
+                                     for entry in declared['profiles']
+                                     for reference in entry['routes']
+                                     if reference['path'] == '/v1/realtime/video'
+                                     and not {'video', 'audio'} & set(entry['required_inputs'])}
+                    assert len(realtime_base) <= 1, (case['id'], operation_id, sorted(realtime_base))
+                    for entry in declared['profiles']:
+                        for reference in entry['routes']:
+                            if reference['path'] != '/v1/realtime/video':
+                                continue
+                            forced = {'video', 'audio'} & set(entry['required_inputs'])
+                            wanted = 'disabled' if forced else next(iter(realtime_base), reference['exposure'])
+                            assert reference['exposure'] == wanted, (
+                                case['id'], operation_id, entry['id'], reference['exposure'], wanted)
             checked += 1
     assert checked >= 5
 

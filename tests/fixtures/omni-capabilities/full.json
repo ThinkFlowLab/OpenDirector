@@ -233,7 +233,7 @@
                         "transport": "websocket",
                         "method": "WEBSOCKET",
                         "path": "/v1/realtime/video",
-                        "exposure": "disabled"
+                        "exposure": "enabled"
                       }
                     ],
                     "reason_code": "model_declared",

@@ -232,7 +232,7 @@
                         "transport": "websocket",
                         "method": "WEBSOCKET",
                         "path": "/v1/realtime/video",
-                        "exposure": "disabled"
+                        "exposure": "enabled"
                       }
                     ],
                     "reason_code": "model_declared",
@@ -767,7 +767,7 @@
                         "transport": "websocket",
                         "method": "WEBSOCKET",
                         "path": "/v1/realtime/video",
-                        "exposure": "unknown"
+                        "exposure": "disabled"
                       }
                     ],
                     "reason_code": "request_contract_unverified",
