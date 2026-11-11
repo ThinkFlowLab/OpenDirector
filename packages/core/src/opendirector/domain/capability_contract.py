@@ -78,8 +78,9 @@ Six rules keep the table honest.
   with `support=supported`. Roles gathered from different routes are not a request —
   `/v1/videos` naming `source_video` beside `/v1/videos/sync` naming the two
   noise masks makes an edit request servable on neither. Silence, an absent
-  `support` and `support=unknown` all keep the id `unknown`; when every open
-  route has decided every required role and none carries the whole set, the
+  `support` and `support=unknown` all keep the id `unknown`; when at least one
+  route is open and every open route has decided every required role while none
+  carries the whole set, the
   document has said no — including the case where two routes each refuse a
   different role — and the id is `missing` with `unsupported`, because "the
   deployment refuses that input" needs a different fix from "the document does
@@ -396,7 +397,11 @@ def _role_support(request):
 
 
 def _role_routes(entry, operation):
-    """Role maps of the profile's open owned routes, and whether one is undecided.
+    """What the profile's own route references say about one request role set.
+
+    Returns three things: one `{role: support}` map per open owned route, whether
+    an owned route is undecided, and the exposure of every declared route this
+    table cannot place.
 
     One map per route, in declaration order, because a request leaves on exactly
     one of them: a role named by `/v1/videos/sync` says nothing about a request
@@ -408,37 +413,38 @@ def _role_routes(entry, operation):
 
     A route contributes nothing when its `exposure` is not `enabled` (a closed
     route cannot serve the request) or when it is not one of the operation's own
-    routes. An owned route whose exposure cannot be read counts in the second
-    element instead: it may still serve, so it must not turn a refusal into a
-    positive no — the same rule `_profile_verdict` applies to reachability.
+    routes. Those two absences are not the same, so they are returned apart: an
+    owned route whose exposure cannot be read may still serve, and an unplaceable
+    route says nothing this table can read — either one must keep a refusal from
+    becoming a positive no, the same rule `_profile_verdict` applies to
+    reachability.
     """
     if not isinstance(entry, dict) or not isinstance(operation, str):
-        return [], False
+        return [], False, []
     owned = set(OPERATION_ROUTES.get(operation, ()))
     roles = []
+    unplaceable = []
     undecided = False
     for value in _routes(entry):
-        if _route_key(value) not in owned:
-            continue
         exposure = _route_exposure(value)
-        if exposure == ENABLED:
+        if _route_key(value) not in owned:
+            unplaceable.append(exposure)
+        elif exposure == ENABLED:
             roles.append(_role_support(value.get('request')))
         elif exposure == ROUTE_UNKNOWN:
             undecided = True
-    return roles, undecided
+    return roles, undecided, unplaceable
 
 
-def role_verdict(entry, operation, required, unrecognised_exposures=()):
+def role_verdict(entry, operation, required):
     """Can one open route of the profile carry every required role?
 
     The rule `resolve()` applies to `REQUIRED_ROLES`, exposed for a caller that
-    holds one profile's declaration and needs the same answer. `required` is the
-    role set one capability needs (`required_roles_for()`); a bare string is read
-    as one role, and anything unreadable as an empty set, which is `yes`.
-
-    `unrecognised_exposures` are the `exposure` values of declared routes this
-    table cannot place; a route reference may be passed instead and is read the
-    same way.
+    holds one profile's declaration and needs the same answer — it reads the
+    whole declaration, unplaceable routes included, so a three-argument call and
+    `resolve()` cannot disagree. `required` is the role set one capability needs
+    (`required_roles_for()`); a bare string is read as one role, and anything
+    unreadable as an empty set, which is `yes`.
 
     `yes` — one open route declares all of them with `support=supported`.
     `no` — at least one route is open, no route carries the whole set, and every
@@ -458,12 +464,10 @@ def role_verdict(entry, operation, required, unrecognised_exposures=()):
     required = tuple(required)
     if not required:
         return 'yes'
-    routes, undecided = _role_routes(entry, operation)
+    routes, undecided, unplaceable = _role_routes(entry, operation)
     if any(all(roles.get(role) == SUPPORTED for role in required) for roles in routes):
         return 'yes'
-    exposures = {_route_exposure(value) if isinstance(value, dict) else value
-                 for value in unrecognised_exposures}
-    if not routes or undecided or ENABLED in exposures or ROUTE_UNKNOWN in exposures:
+    if not routes or undecided or ENABLED in unplaceable or ROUTE_UNKNOWN in unplaceable:
         return 'unknown'
     if all(roles.get(role) in (SUPPORTED, UNSUPPORTED) for roles in routes for role in required):
         return 'no'
@@ -750,7 +754,7 @@ def resolve(payload):
                         capability_verdict, capability_reason = verdict, reason
                         required = required_roles_for(capability)
                         if required and verdict == 'yes':
-                            roles = role_verdict(entry, key, required, unrecognised)
+                            roles = role_verdict(entry, key, required)
                             if roles == 'no':
                                 # Every open route has decided the role set and
                                 # none carries it: a positive no, reported like a

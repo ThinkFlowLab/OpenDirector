@@ -612,13 +612,19 @@ def test_a_complete_request_needs_one_route_and_a_refusal_is_missing():
     assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})]},
                         'video_generation', ('first_frame',)) == 'no'
     assert role_verdict({'routes': [route('/v1/videos')]}, 'video_generation', ()) == 'yes'
-    # A bare string is one role, and an unplaceable route reference is read as
-    # the exposure it carries.
+    # A bare string is one role, not a sequence of characters: the same three
+    # answers hold as for a tuple.
     assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'supported'})]},
                         'video_generation', 'first_frame') == 'yes'
     assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})]},
-                        'video_generation', ('first_frame',),
-                        [{'path': '/v1/videos/stream', 'exposure': 'enabled'}]) == 'unknown'
+                        'video_generation', 'first_frame') == 'no'
+    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {})]},
+                        'video_generation', 'first_frame') == 'unknown'
+    # The call reads the whole declaration, so an unplaceable route that is on
+    # keeps the answer `unknown` here exactly as it does inside `resolve()`.
+    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                                    route_with_inputs('/v1/videos/stream', {'first_frame': 'supported'})]},
+                        'video_generation', ('first_frame',)) == 'unknown'
 
     # A constraint that is not an object is neither authorisation nor refusal.
     bare_constraint = resolve(body({'video_generation': operation(profiles=[profile(
