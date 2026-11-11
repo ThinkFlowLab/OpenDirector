@@ -1,6 +1,7 @@
 """MiniMax T2A wire contract and real MP3 persistence with mocked provider HTTP."""
 import asyncio
 import json
+import socket
 from uuid import uuid4
 
 import httpx
@@ -82,13 +83,40 @@ def test_official_models_have_read_only_voice_library_and_shared_rules(model):
 @pytest.mark.parametrize('patch', [
     {'url': 'https://api.minimax.cn.evil.test/v1'}, {'url': 'https://api.minimax.io/v1'},
     {'url': 'http://api.minimax.cn/v1'}, {'url': 'https://api.minimax.cn:8443/v1'},
-    {'url': 'https://api.minimax.cn/v2'}, {'modelId': 'speech-2.8-unknown'},
+    {'url': 'https://api.minimax.cn/v2'},
     {'connectionType': 'self_hosted'},
 ])
 def test_other_services_and_lookalikes_keep_the_generic_adapter(patch):
     config = {**CONFIG, **patch}
     assert isinstance(adapter_for(config), OpenAISpeech)
     assert input_rules(config)['profile'] != 'minimax-speech'
+
+
+@pytest.mark.parametrize('entry', [input_rules, adapter_for])
+def test_unknown_official_model_is_rejected(entry):
+    with pytest.raises(ProjectError) as failure:
+        entry({**CONFIG, 'modelId': 'speech-2.8-unknown'})
+    assert failure.value.code == 'minimax_speech_model'
+
+
+@pytest.mark.parametrize('batch', [False, True])
+@pytest.mark.parametrize('locale, message', [
+    ('zh-CN', '不支持该 MiniMax 语音型号，请选择预设中的型号。'),
+    ('en-US', 'Unsupported MiniMax speech model. Choose a model from the preset.'),
+])
+def test_unknown_model_save_is_localized_and_atomic(context, batch, locale, message):
+    project, configs, _ = context
+    before = configs.path.read_bytes()
+    payload = {**CONFIG, 'modelId': 'speech-2.8-unknown'}
+    if batch:
+        payload['modelIds'] = ['speech-2.8-hd', payload.pop('modelId')]
+    with TestClient(create_app(project[0].local), headers={
+        'X-OpenDirector-Request': '1', 'Accept-Language': locale,
+    }) as client:
+        response = client.post('/api/model-configs' + ('/batch' if batch else ''), json=payload)
+    assert response.status_code == 422
+    assert response.json()['detail'] == message
+    assert configs.path.read_bytes() == before
 
 
 def test_system_voices_preserve_ids_and_account_scope(context):
@@ -322,7 +350,8 @@ async def test_real_mp3_snapshot_adoption_replay_and_reopen(context, mp3, source
 
 
 @pytest.mark.anyio
-async def test_failed_download_recovers_after_model_removal_without_resubmitting(context, mp3):
+@pytest.mark.parametrize('configuration_change', ['deleted', 'changed'])
+async def test_failed_download_recovers_after_model_removal_without_resubmitting(context, mp3, configuration_change):
     project, configs, saved = context
     store, pid, session = project
     calls, healthy = [], False
@@ -342,7 +371,10 @@ async def test_failed_download_recovers_after_model_removal_without_resubmitting
         assert not store.snapshot(pid).assets
     finally:
         await first.close()
-    configs.delete(saved['id'])
+    if configuration_change == 'deleted':
+        configs.delete(saved['id'])
+    else:
+        configs.save('audio', 'https://changed.test/v1', 'tts-1', 'different-key', saved['id'], protocol='openai')
     healthy = True
     reopened = CreationProjects(LocalProjects(store.local.repository))
     restarted = runner_for(((reopened, pid, session), configs, saved), handle)
@@ -352,6 +384,57 @@ async def test_failed_download_recovers_after_model_removal_without_resubmitting
         snapshot = reopened.snapshot(pid)
         assert snapshot.jobs[0].id == failed.id and snapshot.jobs[0].status == 'succeeded'
         assert len(snapshot.assets) == len(snapshot.results) == 1
+        assert sum(call.url.path == '/v1/t2a_v2' for call in calls) == 1
+    finally:
+        await restarted.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('configuration_change', ['deleted', 'changed'])
+@pytest.mark.parametrize('destination', ['private', 'dns', 'redirect'])
+async def test_recovery_keeps_public_download_checks(context, mp3, monkeypatch, configuration_change, destination):
+    project, configs, saved = context
+    store, pid, _ = project
+    calls, recovering = [], False
+    url = 'http://127.0.0.1/private' if destination == 'private' else 'https://cdn.test/speech.mp3'
+    monkeypatch.setattr(socket, 'getaddrinfo', lambda host, port, **kwargs: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, '',
+         ('127.0.0.1' if recovering and destination == 'dns' else '93.184.215.14', port)),
+    ])
+    def handle(request):
+        calls.append(request)
+        if request.url.path == '/v1/get_voice': return httpx.Response(200, json=VOICES)
+        if request.method == 'POST':
+            return httpx.Response(200, json={**SUCCESS, 'data': {'audio': url, 'status': 2}})
+        if not recovering: raise httpx.ReadTimeout('download outage', request=request)
+        if destination == 'redirect' and request.url.path != '/private':
+            return httpx.Response(302, headers={'Location': 'http://127.0.0.1/private'})
+        return httpx.Response(200, content=mp3)
+    first = runner_for(context, handle)
+    try:
+        first._launch(*prepared(first, project, saved, prompt='Read this', parameters=selection(saved)))
+        await settled(first)
+        [job] = store.snapshot(pid).jobs
+        assert job.recovery == 'download'
+    finally:
+        await first.close()
+    if configuration_change == 'deleted':
+        configs.delete(saved['id'])
+    else:
+        configs.save('audio', 'https://changed.test/v1', 'tts-1', 'different-key', saved['id'], protocol='openai')
+    recovering = True
+    before = len(calls)
+    restarted = runner_for(context, handle)
+    try:
+        await restarted.start()
+        await settled(restarted)
+        snapshot = store.snapshot(pid)
+        assert snapshot.jobs[0].errorDetails.category == 'protocol'
+        assert snapshot.jobs[0].errorDetails.stage == 'download'
+        assert len(calls) - before == (1 if destination == 'redirect' else 0)
+        assert all(call.url.host == '93.184.215.14' and 'authorization' not in call.headers
+                   for call in calls if call.method == 'GET')
+        assert not snapshot.assets and not snapshot.results
         assert sum(call.url.path == '/v1/t2a_v2' for call in calls) == 1
     finally:
         await restarted.close()

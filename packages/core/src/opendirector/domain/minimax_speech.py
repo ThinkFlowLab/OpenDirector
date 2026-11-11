@@ -17,7 +17,7 @@ def is_minimax_speech(config):
     return (config.get('kind') == 'audio' and config.get('protocol') == 'openai'
             and config.get('connectionType', 'api') == 'api'
             and url.scheme == 'https' and url.hostname == 'api.minimax.cn' and url.port in {None, 443}
-            and url.path.rstrip('/') == '/v1' and config.get('modelId') in MINIMAX_SPEECH_MODELS)
+            and url.path.rstrip('/') == '/v1')
 
 
 def validate_minimax_speech_input(text, voice):

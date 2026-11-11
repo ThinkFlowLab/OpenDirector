@@ -615,10 +615,8 @@ class CreationGeneration(GenerationRuntime):
                 valid = False
             if not valid:
                 if mode == 'download':
-                    # The private locator belongs to the accepted result, not
-                    # the current model selection. Never attach another model's
-                    # credentials or turn this read into a new submission.
-                    config = None
+                    # Keep the accepted adapter and download policy without current credentials.
+                    config = {**job.inputSnapshot.model.model_dump(mode='json'), 'apiKey': '', 'authMode': 'none'}
                 else:
                     task.update(status='interrupted', recovery='review', resumeAllowed=False)
                     await asyncio.to_thread(self.checkpoint, project_id, task, pinned)

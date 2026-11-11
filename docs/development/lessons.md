@@ -65,6 +65,7 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** Accepting a cross-origin result URL from a configured model service.
 - **Lesson:** [PR #210](https://github.com/ThinkFlowLab/OpenDirector/pull/210) added compatible image CDN downloads without provider credentials, but initially left arbitrary local and private hosts reachable. Credential isolation and bounded responses do not constrain the network destination.
 - **Check:** Preserve explicitly configured local service origins; validate all DNS answers for unconfigured hosts, connect to a checked public IP while retaining the original Host and TLS identity, and revalidate every redirect. Cover local metadata addresses, IPv6, mixed DNS answers, redirect loops, and recovery without another model submission.
+- **Recovery follow-up:** [PR #283](https://github.com/ThinkFlowLab/OpenDirector/pull/283) reproduced download recovery losing its adapter's public-host checks after a model was removed or changed. Recover with the accepted model snapshot and no credentials instead of an untyped download. Test private URLs, changed DNS answers and redirects after configuration removal or replacement.
 
 
 ## An acknowledged editor save invalidates earlier automatic callbacks

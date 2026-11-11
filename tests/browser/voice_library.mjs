@@ -40,6 +40,12 @@ async function until(check) {
   throw Error("Expected persisted voice state was not observed");
 }
 async function reopenAudio(page, assetPath, savedLabel) {
+  await waitForSaved(page, savedLabel);
+  // Acknowledge this page's lease release before reopening its persisted audio.
+  const released = page.waitForResponse(response => response.request().method() === "DELETE" &&
+    new URL(response.url()).pathname.startsWith("/api/creation/sessions/"));
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+  assert.ok((await released).ok());
   const started = Date.now();
   const statuses = [];
   let receive, timer;
@@ -144,6 +150,7 @@ const copy = {
     settings: "Settings", models: "Model connections", audioOverview: "Audio model",
     addService: "Add service", provider: "Provider", speech: "MiniMax Official Speech",
     url: "Service URL (Base URL)", saveService: "Save service", manage: "Manage",
+    addModel: "Add manually", unsupportedModel: "Unsupported MiniMax speech model. Choose a model from the preset.",
     cancel: "Cancel", closeSettings: "Close settings",
     tools: "Canvas creation tools",
     add: "Add Audio",
@@ -182,6 +189,7 @@ const copy = {
     settings: "设置", models: "模型接入", audioOverview: "音频模型",
     addService: "添加服务", provider: "提供商", speech: "MiniMax 官方语音",
     url: "服务地址（Base URL）", saveService: "保存服务", manage: "管理",
+    addModel: "手动添加", unsupportedModel: "不支持该 MiniMax 语音型号，请选择预设中的型号。",
     cancel: "取消", closeSettings: "关闭设置",
     tools: "画布创作工具",
     add: "添加音频",
@@ -955,6 +963,13 @@ try {
       }
       assert.equal(await page.locator('.cw-model-option img[title="MiniMax"]').count(), 2);
       await page.screenshot({ path: `${output}/${locale}-minimax-provider.png`, fullPage: true });
+      await page.getByRole("button", { name: L.addModel, exact: true }).click();
+      await page.locator("#manual-model-id").fill("speech-2.8-unknown");
+      await page.locator("#manual-model-id").press("Enter");
+      await page.getByRole("button", { name: L.saveService, exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: L.unsupportedModel }).waitFor();
+      await page.screenshot({ path: `${output}/${locale}-minimax-unsupported.png`, fullPage: true });
+      await page.getByRole("checkbox", { name: "speech-2.8-unknown", exact: true }).uncheck();
       await page.getByRole("button", { name: L.saveService, exact: true }).click();
       await page.getByRole("button", { name: L.addService, exact: true }).waitFor();
       const minimax = (await call("/api/model-configs")).filter(model => model.inputRules.profile === "minimax-speech");

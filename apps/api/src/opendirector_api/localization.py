@@ -51,6 +51,7 @@ ENGLISH_BY_CODE = {
     "minimax_image_count": "MiniMax H3 image editing accepts up to 16 reference images.",
     "minimax_image_bytes": "MiniMax H3 image reference requests cannot exceed 64 MiB.",
     "minimax_speech_text": "Enter the text to read aloud, up to 9,999 characters.",
+    "minimax_speech_model": "Unsupported MiniMax speech model. Choose a model from the preset.",
     "minimax_speech_voice": "Choose a voice available to your MiniMax account from the voice library.",
     "minimax_speech_reference": "MiniMax speech synthesis does not accept references. Enter the text to read aloud and choose a voice.",
     "moss_image_size": "MOSS image dimensions must be 256–2048, multiples of 16, and no more than 2,097,152 pixels in total.",
