@@ -23,6 +23,9 @@ window.__ModuleLoader__.load({
       projectsEmpty: 'No OpenDirector projects yet.', resultsEmpty: 'This project has no saved media results.',
       loading: 'Loading…', refresh: 'Refresh results', libraryError: 'Could not load OpenDirector. Try refreshing.',
       recent: 'Saved results', selected: 'Current result', adopting: 'Adopting…', checkAdoption: 'Check adoption',
+      tasks: 'Tasks', tasksEmpty: 'No generation tasks match these filters.', viewTask: 'View progress',
+      taskProgress: 'Task progress', backgroundHint: 'You can close this dialog and find the task under Resume project → Tasks.',
+      cancelled: 'Cancelled', interrupted: 'Interrupted',
       adoptUnknown: 'Adoption has not been confirmed yet. Check its status.',
       adoptBusy: 'Save and close the open OpenDirector canvas, then try again.',
       adoptConflict: 'This result or canvas has changed. Refresh the project before trying again.',
@@ -84,6 +87,9 @@ window.__ModuleLoader__.load({
       projectsEmpty: '还没有 OpenDirector 工程。', resultsEmpty: '这个工程还没有保存素材结果。',
       loading: '加载中…', refresh: '刷新结果', libraryError: '暂时无法读取 OpenDirector，请刷新重试。',
       recent: '已保存的结果', selected: '当前结果', adopting: '正在采用…', checkAdoption: '查询采用状态',
+      tasks: '任务', tasksEmpty: '没有符合筛选条件的生成任务。', viewTask: '查看进度',
+      taskProgress: '任务进度', backgroundHint: '关闭弹窗后，可以从「继续工程 → 任务」找回。',
+      cancelled: '已取消', interrupted: '已中断',
       adoptUnknown: '尚未确认是否采用，请查询状态。',
       adoptBusy: '请保存并关闭已打开的 OpenDirector 画布，然后重试。',
       adoptConflict: '结果或画布状态已变，请刷新工程后再试。',
@@ -191,6 +197,9 @@ window.__ModuleLoader__.load({
       const [pending, setPending] = useState(true)
       const [filters, setFilters] = useState(libraryDefaults)
       const [page, setPage] = useState({})
+      const [view, setView] = useState('results')
+      const [task, setTask] = useState(null)
+      const taskView = view === 'jobs'
       useEffect(() => {
         dialog.current.showModal()
       }, [])
@@ -198,12 +207,14 @@ window.__ModuleLoader__.load({
         const controller = new AbortController()
         setPending(true)
         setError(false)
-        readLibrary(projectId, controller.signal, filters, page.after).then(value => {
+        readLibrary(projectId, controller.signal, { ...filters, view }, page.after).then(value => {
           if (controller.signal.aborted) return
           if (projectId) setLibrary(previous => {
             if (!page.after || previous?.projectId !== projectId) return value
-            const known = new Set(previous.results.map(result => result.resultId))
-            return { ...value, results: [...previous.results, ...value.results.filter(result => !known.has(result.resultId))] }
+            const items = previous[view]
+            const itemId = item => taskView ? item.jobId : item.resultId
+            const known = new Set(items.map(itemId))
+            return { ...value, [view]: [...items, ...value[view].filter(item => !known.has(itemId(item)))] }
           })
           else setProjects(value.projects)
           setPending(false)
@@ -213,11 +224,16 @@ window.__ModuleLoader__.load({
           setPending(false)
         })
         return () => controller.abort()
-      }, [projectId, filters, page])
+      }, [projectId, filters, page, view])
       const current = library?.projectId === projectId ? library : null
       const refresh = () => setPage({})
       function changeProject(id) {
         setProjectId(id)
+        setLibrary(null)
+        refresh()
+      }
+      function changeView(value) {
+        setView(value)
         setLibrary(null)
         refresh()
       }
@@ -249,15 +265,28 @@ window.__ModuleLoader__.load({
         button(t('refresh'), refresh, { disabled: pending }),
         current && canvasLink(current.canvasUrl, t)),
       projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
+        button(t('recent'), () => changeView('results'), { 'aria-pressed': !taskView }),
+        button(t('tasks'), () => changeView('jobs'), { 'aria-pressed': taskView })),
+      projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
         filterControl('kind', 'libraryType', [['all', 'allMedia'], ['image', 'picture'], ['video', 'video'], ['audio', 'audio']]),
-        filterControl('selection', 'librarySelection', [['all', 'allSelections'], ['current', 'selected'], ['other', 'other']]),
+        !taskView && filterControl('selection', 'librarySelection', [['all', 'allSelections'], ['current', 'selected'], ['other', 'other']]),
         filterControl('order', 'libraryOrder', [['newest', 'newest'], ['oldest', 'oldest']])),
       pending && h('p', { role: 'status' }, t('loading')),
       error && h('p', { role: 'alert' }, t('libraryError')),
       projects?.length === 0 && h('p', null, t('projectsEmpty')),
-      current && h('section', { 'aria-label': t('recent') },
-        h('h3', null, t('recent')),
-        current.results.length === 0 ? h('p', null, t(filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
+      current && h('section', { 'aria-label': t(taskView ? 'tasks' : 'recent') },
+        h('h3', null, t(taskView ? 'tasks' : 'recent')),
+        taskView ? (current.jobs.length === 0 ? h('p', null, t('tasksEmpty'))
+          : h('div', { style: { display: 'grid', gap: '.65rem' } },
+            ...current.jobs.map(job => h('article', {
+              key: job.jobId, style: { display: 'grid', gap: '.4rem', padding: '.65rem', border, borderRadius: '.55rem' },
+            },
+            h('strong', null, t(['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.status)
+              ? job.status : 'waiting')),
+            h('small', { style: { color: muted } }, job.modelId),
+            h('p', { style: { margin: 0, overflowWrap: 'anywhere' } }, job.prompt),
+            button(t('viewTask'), () => setTask({ ...job, projectId, canvasUrl: current.canvasUrl }), { 'aria-haspopup': 'dialog' })))))
+          : current.results.length === 0 ? h('p', null, t(filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
           : h('div', { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
             ...current.results.map(({ resultId, assetId, kind, selected, prompt, details }, index) => h(Preview, {
               key: resultId, projectId, resultId, assetId, kind, selected, prompt, details, t, canvasUrl: current.canvasUrl,
@@ -265,7 +294,10 @@ window.__ModuleLoader__.load({
               onAdopted: refresh,
             }))),
         current.nextCursor && h('div', { style: { marginTop: '.7rem' } },
-          button(t('loadMore'), () => setPage({ after: current.nextCursor }), { disabled: pending }))))
+          button(t('loadMore'), () => setPage({ after: current.nextCursor }), { disabled: pending }))),
+      task && h(GenerationDialog, {
+        existingJob: task, t, onClose: () => { setTask(null); refresh() },
+      }))
     }
 
     function ReferencePicker({ projectId, references, setReferences, limit, locked, t }) {
@@ -350,7 +382,7 @@ window.__ModuleLoader__.load({
           page?.nextCursor && button(t('loadMore'), () => setAfter(page.nextCursor), { disabled: loading || full })))
     }
 
-    function GenerationDialog({ source, videoMode, t, onClose }) {
+    function GenerationDialog({ source, videoMode, existingJob, t, onClose }) {
       const dialog = useRef(null)
       const busy = useRef(false)
       const attempt = useRef(null)
@@ -359,7 +391,7 @@ window.__ModuleLoader__.load({
         kind: videoMode ? 'video' : 'image', projectId: '', projectName: '', modelId: '',
         prompt: '', output: null, voice: '', durationSeconds: null,
       })
-      const [result, setResult] = useState(null)
+      const [result, setResult] = useState(existingJob ?? null)
       const [progress, setProgress] = useState(null)
       const [repeatStatus, setRepeatStatus] = useState(null)
       const [submitting, setSubmitting] = useState(false)
@@ -368,7 +400,7 @@ window.__ModuleLoader__.load({
       const [references, setReferences] = useState(() => source && !videoMode ? [source] : [])
       const fromResult = Boolean(source)
       const continuation = videoMode === 'continuation'
-      const title = t(continuation ? 'continue' : videoMode ? 'firstFrame' : fromResult ? 'edit' : 'create')
+      const title = t(existingJob ? 'taskProgress' : continuation ? 'continue' : videoMode ? 'firstFrame' : fromResult ? 'edit' : 'create')
       const choices = catalog?.models.filter(model => model.kind === form.kind
         && (videoMode ? model.videoChoices?.[videoMode] : !source || model.maxImages > 0))
       const model = choices?.find(item => item.id === form.modelId)
@@ -394,6 +426,7 @@ window.__ModuleLoader__.load({
         dialog.current.showModal()
       }, [])
       useEffect(() => {
+        if (existingJob) return
         const controller = new AbortController()
         Promise.all([
           fromResult ? Promise.resolve({ projects: [] }) : readLibrary(null, controller.signal),
@@ -407,7 +440,7 @@ window.__ModuleLoader__.load({
           if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
         })
         return () => controller.abort()
-      }, [fromResult])
+      }, [fromResult, existingJob])
       useEffect(() => {
         if (!jobId) return
         const controller = new AbortController()
@@ -512,7 +545,8 @@ window.__ModuleLoader__.load({
       },
         h('header', { style: { ...row, justifyContent: 'space-between' } },
           h('strong', null, title), button(t('close'), () => dialog.current.close())),
-        !catalog && h('p', { role: 'status' }, t('loading')),
+        !existingJob && !catalog && h('p', { role: 'status' }, t('loading')),
+        existingJob && h('p', { style: { overflowWrap: 'anywhere' } }, existingJob.prompt),
         catalog?.error && h('p', { role: 'alert' }, t('libraryError')),
         catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
           !source && field('chooseProject', h('select', {
@@ -569,6 +603,7 @@ window.__ModuleLoader__.load({
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
         jobId && h('p', { role: status === 'failed' || providerUnknown ? 'alert' : 'status' }, t(outcome ?? 'waiting')),
+        jobId && h('small', null, t('backgroundHint')),
         continuation && status === 'failed' && progress.category === 'reference' && h('p', null, t('continuationUnavailable')),
         status && progress.canResume && h('p', null, t('recoverOnCanvas')),
         pollError && h('p', { role: 'alert' }, t('progressUnavailable')),

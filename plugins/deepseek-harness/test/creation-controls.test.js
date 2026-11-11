@@ -124,7 +124,7 @@ test('direct video uses published durations and pins the exact source for each m
     ['candidate_only', 'candidate_only'])
 })
 
-test('another candidate reuses the node and reconciles a lost response without another submit', async () => {
+test('another video candidate reuses the node and reconciles a lost response without another submit', async () => {
   const [projectId, operationId, jobId, repeatId, specId, itemId, firstId, secondId, firstAsset, secondAsset] =
     Array.from({ length: 10 }, () => randomUUID())
   const commands = []
@@ -133,9 +133,9 @@ test('another candidate reuses the node and reconciles a lost response without a
   const snapshot = {
     jobs,
     assets: [{ id: firstAsset, metadata: { width: 512, height: 512 } }],
-    generationSpecs: [{ id: specId, revision: 3, kind: 'image', currentResultId: firstId }],
+    generationSpecs: [{ id: specId, revision: 3, kind: 'video', currentResultId: firstId }],
     canvasItems: [{ id: itemId, revision: 2, binding: { objectRef: { id: specId } } }],
-    results: [{ id: firstId, specId, jobId, asset: { assetId: firstAsset, kind: 'image' } }],
+    results: [{ id: firstId, specId, jobId, asset: { assetId: firstAsset, kind: 'video' } }],
   }
   let receipt
   const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
@@ -151,7 +151,7 @@ test('another candidate reuses the node and reconciles a lost response without a
       assert.ok(path.endsWith('/commands'))
       commands.push(JSON.parse(request.body))
       jobs.push({ ...prior, id: repeatId })
-      snapshot.results.push({ id: secondId, specId, jobId: repeatId, asset: { assetId: secondAsset, kind: 'image' } })
+      snapshot.results.push({ id: secondId, specId, jobId: repeatId, asset: { assetId: secondAsset, kind: 'video' } })
       receipt = { status: 'accepted', jobIds: [repeatId] }
       throw new Error('submission response lost')
     },
@@ -170,8 +170,8 @@ test('another candidate reuses the node and reconciles a lost response without a
   assert.deepEqual(await client.creationStatus(projectId, repeatId), {
     status: 'succeeded',
     results: [
-      { resultId: firstId, assetId: firstAsset, kind: 'image', selected: true, details: { width: 512, height: 512 } },
-      { resultId: secondId, assetId: secondAsset, kind: 'image', selected: false },
+      { resultId: firstId, assetId: firstAsset, kind: 'video', selected: true, details: { width: 512, height: 512 } },
+      { resultId: secondId, assetId: secondAsset, kind: 'video', selected: false },
     ],
   })
 })

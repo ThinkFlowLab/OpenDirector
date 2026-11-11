@@ -306,6 +306,31 @@ export class OpenDirectorClient {
     return this.#request('GET', '/api/model-configs', { signal })
   }
 
+  async libraryJobs(projectId, { kind = 'all', order = 'newest', after, signal } = {}) {
+    requireEnum(kind, 'kind', ['all', ...Object.keys(MEDIA_TYPES)])
+    requireEnum(order, 'order', ['newest', 'oldest'])
+    const cursor = after == null ? null : requireUuid(after, 'after')
+    const snapshot = await this.project(projectId, { signal })
+    const cursorIndex = cursor === null ? null : snapshot.jobs.findIndex(job => job.id === cursor)
+    if (cursorIndex === -1) throw new InputError('library.cursor_expired')
+    const step = order === 'oldest' ? 1 : -1
+    const start = cursorIndex === null ? (step === 1 ? 0 : snapshot.jobs.length - 1) : cursorIndex + step
+    const jobs = []
+    for (let index = start; index >= 0 && index < snapshot.jobs.length && jobs.length <= LIBRARY_PAGE_SIZE; index += step) {
+      const job = snapshot.jobs[index]
+      const spec = job.inputSnapshot.spec
+      if (!Object.hasOwn(MEDIA_TYPES, spec.kind) || (kind !== 'all' && spec.kind !== kind)) continue
+      jobs.push({
+        jobId: job.id, kind: spec.kind, status: job.status, prompt: spec.prompt.slice(0, 160),
+        modelId: job.inputSnapshot.model.modelId,
+      })
+    }
+    const hasMore = jobs.length > LIBRARY_PAGE_SIZE
+    if (hasMore) jobs.pop()
+    return { projectId, projectName: snapshot.project.name, canvasUrl: this.canvasUrl(projectId), jobs,
+      nextCursor: hasMore ? jobs.at(-1).jobId : null }
+  }
+
   async creationModels({ signal } = {}) {
     const models = await this.models({ signal })
     return models.filter(model => (model.kind === 'image' && model.protocol !== 'vllm_omni_segmentation')
@@ -565,7 +590,7 @@ export class OpenDirectorClient {
       const job = snapshot.jobs.find(item => item.id === jobId)
       const spec = snapshot.generationSpecs.find(item => item.id === job?.inputSnapshot?.spec?.id)
       const item = snapshot.canvasItems.find(item => item.id === job?.originItemId)
-      if ((job?.status !== 'succeeded' && !canRetryFailedJob(job)) || !spec || !['image', 'audio'].includes(spec.kind)
+      if ((job?.status !== 'succeeded' && !canRetryFailedJob(job)) || !spec || !Object.hasOwn(MEDIA_TYPES, spec.kind)
         || item?.binding?.objectRef?.id !== spec.id) {
         throw new InputError('creation.repeat_unavailable')
       }

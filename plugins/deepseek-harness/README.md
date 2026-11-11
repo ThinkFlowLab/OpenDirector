@@ -61,6 +61,8 @@ If the submission reply is lost, choose **Check submission** to look up the orig
 
 Choose **Resume project** next to the composer, then select an OpenDirector project. Filter the saved results by media type or current selection, sort by when they were saved, and choose **Load more** for the next page. If a canvas is open for editing, save and close it before trying to adopt a result. If the connection drops during adoption, choose **Check adoption** to look up the original write.
 
+Choose **Tasks** to find running, completed, and failed generations, including work submitted before you refreshed DSH. Filter by media type or change the order to find an earlier task. **View progress** opens that saved task. Completed candidates can be previewed and adopted there. A confirmed retryable failure offers **Retry generation** on the existing node. Closing the dialog keeps the task available in this list.
+
 Right-click a result card or choose **More actions** on it. The menu shows the actions for that media type, including downloading the original file. Use the arrow keys to move between actions, and press Escape to return to the card.
 
 ### Animate an image or continue a clip

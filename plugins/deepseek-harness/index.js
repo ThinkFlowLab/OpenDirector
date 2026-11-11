@@ -90,10 +90,13 @@ export function apply(ctx, config) {
           const params = new URL(request.url, 'http://localhost').searchParams
           const projectId = params.get('project')
           if (projectId !== null) {
-            const library = await client.libraryResults(projectId, {
+            const options = {
               kind: params.get('kind') ?? undefined, selection: params.get('selection') ?? undefined,
               order: params.get('order') ?? undefined, after: params.get('after'), signal: request.signal,
-            })
+            }
+            const library = params.get('view') === 'jobs'
+              ? await client.libraryJobs(projectId, options)
+              : await client.libraryResults(projectId, options)
             return Response.json(library, { headers })
           }
           const value = await client.listProjects({ signal: request.signal })
