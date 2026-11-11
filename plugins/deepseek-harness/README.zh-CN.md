@@ -28,6 +28,10 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 包内 JavaScript 可直接运行，无需构建。压缩包安装会安装依赖；链接源码目录则使用该目录自己的 `node_modules`。两种方式都不依赖 npm 发布或市场收录。
 
+## 平台验收范围
+
+交互流程已在 WSL Ubuntu 中运行的 DSH Web 验证。Windows 原生检查覆盖插件加载、工具执行和 HTTP 路由。插件检查工作流包含 Linux、Windows 和 macOS 三个系统。DSH 桌面客户端仍待安装及完整素材流程验收。
+
 ## 试一次完整创作
 
 先在 OpenDirector 的**设置 → 模型连接**中配置一个图片模型。[使用指南](../../docs/guides/user-guide.zh-CN.md)介绍了连接方式，下面的示例会使用该服务。

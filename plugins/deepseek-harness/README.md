@@ -28,6 +28,10 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 The bundle ships ready-to-run JavaScript and needs no build. Tarball installation installs its dependencies; a linked checkout keeps its own `node_modules`. Neither route requires an npm release or a marketplace listing.
 
+## Platform coverage
+
+The interactive workflow has been verified in DSH Web with the host running in WSL Ubuntu. Native Windows checks cover plugin loading, tool execution and HTTP routes. The plugin workflow includes Linux, Windows and macOS jobs. DSH Desktop still needs an end-to-end installation and media check.
+
 ## Try a complete workflow
 
 In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](../../docs/guides/user-guide.md) explains model connections. The example uses that configured service.
