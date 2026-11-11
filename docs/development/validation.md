@@ -245,6 +245,13 @@ adoption, rejection before submission and request-size limits. These tests do no
 call MiniMax, verify model quality, or exercise a live Agent conversation. Camera
 HDR profiles and platform wheel installation require separate validation.
 
+HEIF regression coverage also includes conditional browser-image reads (304 without
+decoding, while still checking original-file integrity), localized decoder errors,
+standalone thumbnail registration, alpha compositing, multi-image rejection and
+full-resolution display at the 25-million-pixel limit. Timeline package tests preserve
+HEIF bytes and extensions through export/import; the browser check covers FCPXML
+media ZIP output and refuses an orphaned preview download in both languages.
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh

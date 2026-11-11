@@ -444,6 +444,16 @@ export class CreationClient {
     const id = this.sourceAssets.get(src);
     return this.snapshot.assets.find((asset) => asset.id === id);
   }
+  async originalMedia(src: string, mimeType?: string, signal?: AbortSignal) {
+    const asset = this.assetForSource(src);
+    if (asset && ["image/heic", "image/heif"].includes(asset.metadata.mimeType))
+      return this.blob(asset.id, { signal });
+    if (["image/heic", "image/heif"].includes(mimeType ?? ""))
+      throw new Error(tNow("errors.archive.readMedia"));
+    const response = await fetch(src, { signal });
+    if (!response.ok) throw new Error(tNow("errors.archive.readMedia"));
+    return response.blob();
+  }
   async importBlob(
     blob: Blob,
     name: string,

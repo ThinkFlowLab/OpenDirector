@@ -36,6 +36,31 @@ function empty(): ProjectSnapshot {
   };
 }
 
+test("original media refuses orphaned HEIF previews and preserves ordinary drafts", async () => {
+  const snapshot = empty(), client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const original = globalThis.fetch;
+  const requested: string[] = [];
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return new Response("original", { headers: { "Content-Type": "image/heic" } });
+  };
+  try {
+    for (const suffix of ["heic", "heif"])
+      await assert.rejects(client.originalMedia("blob:display", `image/${suffix}`), /素材|media/);
+    assert.equal(requested.length, 0);
+    const asset = { id: crypto.randomUUID(), metadata: { mimeType: "image/heic" } } as Asset;
+    client.install({ ...snapshot, assets: [asset] });
+    client.rememberSource("blob:display", asset.id);
+    assert.equal(await (await client.originalMedia("blob:display", "image/heic")).text(), "original");
+    assert.ok(requested[0]!.endsWith(`/assets/${asset.id}/content`));
+    await client.originalMedia("blob:draft", "image/png");
+    assert.equal(requested[1], "blob:draft");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("history reads coalesce per cursor, invalidate after changes and retry failures", async () => {
   const original = globalThis.fetch;
   const snapshot = empty();

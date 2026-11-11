@@ -68,7 +68,7 @@ The first launch creates an untitled canvas. Later launches can restore the most
 - Use the left toolbar or double-click empty canvas space to create text, image, video, audio, timeline, or subject nodes.
 - Right-click empty canvas space to create a node, paste, undo, or redo.
 - Click **Upload** on the left or drag files onto the canvas to add assets. Use **Asset library** to choose existing assets.
-- HEIC and HEIF photos are supported. OpenDirector retains the original file and creates an oriented, full-resolution PNG for browser display. Downloads and canvas archives retain the original. Files must decode successfully and contain at most 25 million pixels.
+- Single-image HEIC and HEIF photos are supported; multi-image files and sequences are rejected. OpenDirector retains the original file and creates an oriented, full-resolution PNG for browser display. Downloads, canvas archives and timeline media packages retain the original. Files must decode successfully and contain at most 25 million pixels. If an original is unavailable, exporting reports an error instead of substituting the display preview.
 - Double-click a node's name to rename it. Double-click its content to open the appropriate editor or preview.
 
 The canvas saves automatically. Before closing it or switching projects, check that the top-left status reads **Saved locally**. If saving fails, keep the page open and follow the error message.

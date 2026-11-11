@@ -10,6 +10,8 @@ from collections import OrderedDict
 from io import BytesIO
 from pathlib import Path
 
+from PIL import Image
+
 from opendirector.domain.projects import ProjectError
 from opendirector.media import heif_type
 from opendirector.media.processing import open_image
@@ -57,7 +59,9 @@ def _render(data: bytes, kind: str) -> bytes | None:
             image = open_image(data)
             image.thumbnail((WIDTH, WIDTH))
             output = BytesIO()
-            image.convert('RGB').save(output, 'JPEG', quality=80)
+            background = Image.new('RGB', image.size, 'white')
+            background.paste(image, mask=image.getchannel('A'))
+            background.save(output, 'JPEG', quality=80)
             return output.getvalue()
         except ProjectError:
             return None

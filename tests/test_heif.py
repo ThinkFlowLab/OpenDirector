@@ -1,6 +1,8 @@
 import asyncio
 from io import BytesIO
 from pathlib import Path
+import subprocess
+import sys
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -12,7 +14,9 @@ from opendirector.agent.gateway import ToolGateway
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.media import heif_type
+from opendirector.media.processing import open_image
 from opendirector.media.thumbnails import preview
+from opendirector.domain.projects import ProjectError
 from opendirector_api.main import create_app
 from test_creation_assets import storage, import_asset
 from test_agent_artifacts import publication
@@ -58,7 +62,7 @@ def test_heif_original_preview_orientation_and_reopen(storage, suffix, name):
 
 
 @pytest.mark.parametrize('locale', ['zh-CN', 'en-US'])
-@pytest.mark.parametrize('invalid', ['corrupt', 'pixels', 'sequence'])
+@pytest.mark.parametrize('invalid', ['corrupt', 'pixels', 'sequence', 'multiple_images'])
 def test_invalid_image_upload_is_localized_and_does_not_publish(storage, locale, invalid):
     projects, pid, session = storage
     if invalid == 'corrupt':
@@ -66,6 +70,14 @@ def test_invalid_image_upload_is_localized_and_does_not_publish(storage, locale,
     elif invalid == 'sequence':
         data = (FIXTURES / 'oriented.heic').read_bytes()
         data = data[:8] + b'hevc' + data[12:]
+    elif invalid == 'multiple_images':
+        output = BytesIO()
+        Image.new('RGB', (64, 64), 'red').save(output, 'HEIF', save_all=True,
+            append_images=[Image.new('RGB', (64, 64), 'blue')])
+        data = output.getvalue()
+        assert heif_type(data) == 'image/heic'
+        with Image.open(BytesIO(data)) as image:
+            assert image.n_frames == 2
     else:
         output = BytesIO()
         Image.new('RGB', (5001, 5000)).save(output, 'PNG')
@@ -87,6 +99,101 @@ def test_heif_detection_does_not_admit_avif_video_or_sequences():
                  b'\x00\x00\x00\x18ftyphevc\x00\x00\x00\x00',
                  b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00'):
         assert heif_type(data) is None
+
+
+def test_browser_image_revalidation_skips_decode_but_checks_original(storage, monkeypatch):
+    projects, pid, _ = storage
+    asset, _, _ = import_asset(storage, 'photo.heic', (FIXTURES / 'oriented.heic').read_bytes())
+    with TestClient(create_app(projects.local)) as client:
+        path = f'/api/creation/projects/{pid}/assets/{asset.id}/browser-image'
+        headers = {'X-OpenDirector-Request': '1'}
+        display = client.get(path, headers=headers)
+        assert display.status_code == 200
+        changed = client.get(path, headers={**headers, 'If-None-Match': '"stale"'})
+        assert changed.status_code == 200 and changed.content == display.content
+        def forbidden_decode(*args):
+            raise AssertionError('An unchanged image must not be decoded again')
+        monkeypatch.setattr('opendirector.application.creation_assets.open_image', forbidden_decode, raising=False)
+        headers['If-None-Match'] = display.headers['etag']
+        unchanged = client.get(path, headers=headers)
+        assert unchanged.status_code == 304 and unchanged.content == b''
+        assert unchanged.headers['etag'] == display.headers['etag']
+        assert unchanged.headers['cache-control'] == 'private, no-cache'
+        (projects.root / 'Assets' / asset.path).write_bytes(b'tampered')
+        assert client.get(path, headers=headers).status_code == 409
+
+
+@pytest.mark.parametrize('locale', ['zh-CN', 'en-US'])
+def test_non_heif_browser_image_is_rejected_even_with_matching_validator(storage, locale):
+    projects, pid, _ = storage
+    asset, _, _ = import_asset(storage)
+    with TestClient(create_app(projects.local)) as client:
+        response = client.get(f'/api/creation/projects/{pid}/assets/{asset.id}/browser-image', headers={
+            'X-OpenDirector-Request': '1', 'Accept-Language': locale,
+            'If-None-Match': f'"browser-image-{asset.fingerprint}"'})
+    assert response.status_code == 422
+    assert ('does not support' if locale == 'en-US' else '不支持预览') in response.json()['detail']
+
+
+def test_decode_failure_has_localizable_code():
+    with pytest.raises(ProjectError) as error:
+        open_image(b'broken image')
+    assert error.value.status == 422 and error.value.code == 'image_decode'
+
+
+def test_standalone_asset_thumbnail_registers_heif_decoder():
+    subprocess.run([sys.executable, '-c', '''
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.ports.gateway import register_gateway
+from PIL import Image
+register_gateway(SimpleNamespace(uploads=lambda projects: None))
+service = CreationAssets(None)
+asset = SimpleNamespace(kind='image', fingerprint='standalone')
+data = Path('tests/fixtures/heif/oriented.heic').read_bytes()
+service.open_media = lambda *args: (BytesIO(data), asset)
+with Image.open(BytesIO(service.thumbnail(None, None)[0])) as image:
+    assert image.size == (192, 320)
+'''], check=True)
+
+
+def test_heif_library_thumbnail_composites_transparency():
+    output = BytesIO()
+    Image.new('RGBA', (64, 64), (255, 0, 0, 0)).save(output, 'HEIF')
+    data = output.getvalue()
+    with Image.open(BytesIO(data)) as source:
+        assert source.convert('RGBA').getpixel((32, 32))[3] == 0
+    with Image.open(BytesIO(preview('transparent-heif', data, 'image'))) as image:
+        assert min(image.getpixel((32, 32))) > 245
+
+
+@pytest.mark.parametrize('locale', ['zh-CN', 'en-US'])
+@pytest.mark.parametrize('route', ['browser-image', 'thumbnail'])
+def test_preview_decode_failure_is_localized(storage, monkeypatch, locale, route):
+    projects, pid, _ = storage
+    asset, _, _ = import_asset(storage, 'photo.heic', (FIXTURES / 'oriented.heic').read_bytes())
+    def failed_decoder(*args, **kwargs):
+        raise OSError('decoder failure')
+    monkeypatch.setattr(Image, 'open', failed_decoder)
+    with TestClient(create_app(projects.local)) as client:
+        response = client.get(f'/api/creation/projects/{pid}/assets/{asset.id}/{route}', headers={
+            'X-OpenDirector-Request': '1', 'Accept-Language': locale})
+    assert response.status_code == 422
+    assert ('decoded' if locale == 'en-US' else '无法读取图片') in response.json()['detail']
+
+
+def test_heif_at_pixel_limit_has_full_resolution_browser_display(storage):
+    projects, pid, _ = storage
+    output = BytesIO()
+    Image.new('RGB', (5000, 5000), 'red').save(output, 'HEIF', quality=10, enc_params={'preset': 'ultrafast'})
+    asset, _, _ = import_asset(storage, 'large.heic', output.getvalue())
+    assert (asset.metadata.width, asset.metadata.height) == (5000, 5000)
+    display, _ = CreationAssets(projects).browser_image(pid, asset.id)
+    with Image.open(BytesIO(display)) as image:
+        assert image.size == (5000, 5000)
+        assert image.getpixel((4999, 4999))[0] > 200
 
 
 @pytest.mark.parametrize('suffix', ['heic', 'heif'])

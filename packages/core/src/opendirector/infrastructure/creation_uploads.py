@@ -75,8 +75,8 @@ def inspect_file(path: Path, name: str, *, expected_kind=None):
     if suffix in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'} or image_bytes or expected_kind == 'image':
         try:
             with Image.open(path, formats=['PNG', 'JPEG', 'GIF', 'WEBP', 'HEIF']) as image:
-                if image.format == 'HEIF' and not heif_type(prefix):
-                    raise ValueError('Unsupported HEIF subtype')
+                if image.format == 'HEIF' and (not heif_type(prefix) or image.n_frames != 1):
+                    raise ValueError('Unsupported HEIF subtype or frame count')
                 if image.width * image.height > 25_000_000:
                     raise ProjectError('图片像素总数应不超过 2500 万。', 413, code='image_pixel_limit')
                 image.load()

@@ -88,7 +88,7 @@ export function captureClipboardMedia(
     read = readBlob,
     resolve = () => undefined,
   }: {
-    read?: (src: string) => Promise<Blob>;
+    read?: (src: string, mimeType?: string) => Promise<Blob>;
     /** The saved asset behind a field, from its recorded ID or its preview URL. */
     resolve?: (
       src: string,
@@ -106,7 +106,7 @@ export function captureClipboardMedia(
           : undefined;
       if (saved && !sources.has(src)) sources.set(src, { projectId, ...saved });
       if (blobs.has(src)) return;
-      const pending = read(src);
+      const pending = read(src, key === "src" && typeof record.mimeType === "string" ? record.mimeType : undefined);
       // A failed read is reported by the paste that needs it.
       pending.catch(() => {});
       blobs.set(src, pending);

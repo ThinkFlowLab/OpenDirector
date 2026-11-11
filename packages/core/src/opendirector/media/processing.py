@@ -22,7 +22,7 @@ def open_image(data: bytes) -> Image.Image:
         image = Image.open(io.BytesIO(data))
         image.load()
     except (OSError, ValueError, EOFError, Image.DecompressionBombError):
-        raise ProjectError('无法读取图片素材。', 422) from None
+        raise ProjectError('无法读取图片素材。', 422, code='image_decode') from None
     return ImageOps.exif_transpose(image).convert('RGBA')
 
 

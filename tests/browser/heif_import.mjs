@@ -96,6 +96,26 @@ try {
       assert.deepEqual(pixels.size, [192, 320]);
       assert.ok(pixels.red > 200 && pixels.blue > 200);
     }
+    // An orphaned display PNG must not become a file named *.heic.
+    await page.evaluate(async projectId => {
+      const { creationClient } = await import("/src/backend/creationClient.ts");
+      const client = creationClient(projectId);
+      window.restoreHeifSource = () => { client.assetForSource = original; };
+      const original = client.assetForSource;
+      client.assetForSource = () => undefined;
+    }, projectId);
+    const unexpectedDownloads = [];
+    const onDownload = download => unexpectedDownloads.push(download);
+    page.on("download", onDownload);
+    try {
+      await page.locator(`.react-flow__node[data-id="${imported.canvasItems[0].id}"]`).click({ button: "right" });
+      await page.getByRole("menuitem", { name: locale === "en-US" ? "Download asset" : "下载素材", exact: true }).click();
+      await page.getByText(locale === "en-US" ? /Could not read the canvas media/ : /无法读取画布素材/).waitFor();
+      assert.equal(unexpectedDownloads.length, 0);
+    } finally {
+      page.off("download", onDownload);
+      await page.evaluate(() => { window.restoreHeifSource(); delete window.restoreHeifSource; });
+    }
     await page.getByLabel(locale === "en-US" ? "Choose local asset files" : "选择本地素材文件", { exact: true }).setInputFiles({
       name: "corrupt.heic", mimeType: "image/heic", buffer: heic.subarray(0, 100) });
     await page.getByText(locale === "en-US" ? /image could not be decoded/ : /无法读取图片/).waitFor();
@@ -163,6 +183,38 @@ try {
   assert.equal(freshCopy.metadata.mimeType, "image/heic");
   const freshBytes = await fetch(api + project + `/assets/${freshCopy.id}/content`, { headers });
   assert.deepEqual(Buffer.from(await freshBytes.arrayBuffer()), heic);
+  const timelineId = await page.evaluate(async ({ projectId, assets }) => {
+    const { creationClient } = await import("/src/backend/creationClient.ts");
+    const client = creationClient(projectId), itemId = crypto.randomUUID(), editorId = crypto.randomUUID();
+    const resources = assets.map(asset => ({ title: "Photo", asset: {
+      assetId: asset.id, kind: "image", revision: asset.revision, fingerprint: asset.fingerprint } }));
+    const receipt = await client.command("creation.batch", { operations: [
+      { type: "editor.create", payload: { document: { id: editorId, projectId, kind: "timeline", data: {
+        fps: 24, width: 640, height: 360, importedAssets: resources,
+        tracks: [{ id: "visual", kind: "visual", title: "Visual", clips: resources.map((resource, index) => ({
+          id: `clip-${index}`, resource, inPoint: 0, outPoint: 1 })) }] } } } },
+      { type: "canvas.show", payload: { item: { id: itemId, projectId, kind: "timeline", title: "HEIF timeline",
+        position: { x: 700, y: 100 }, binding: { role: "editor", objectRef: { id: editorId, kind: "timeline" } } } } },
+    ] });
+    if (receipt.status !== "applied") throw Error(JSON.stringify(receipt));
+    return itemId;
+  }, { projectId, assets: originals });
+  await page.reload();
+  await page.locator(`.react-flow__node[data-id="${timelineId}"]`).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Open editor", exact: true }).click();
+  await page.locator(".cw-timeline-dialog").waitFor();
+  const [timelineDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "XML + media ZIP", exact: true }).click(),
+  ]);
+  const timelineFiles = await readZip(await readFile(await timelineDownload.path()));
+  for (const [suffix, bytes] of [["heic", heic], ["heif", heif]]) {
+    const entry = [...timelineFiles].find(([path]) => path.endsWith(`.${suffix}`));
+    assert.ok(entry);
+    assert.deepEqual(Buffer.from(entry[1]), bytes);
+  }
+  await page.locator(".cw-timeline-dialog").getByRole("button", { name: "Close editor", exact: true }).click();
+  await page.locator(".cw-timeline-dialog").waitFor({ state: "hidden" });
   await page.locator(`.react-flow__node[data-id="${originalNode.id}"]`).click();
   await page.locator(".cw-workspace").focus();
   await page.keyboard.press("Control+c");
@@ -192,7 +244,7 @@ try {
     }), [192, 320]);
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, projectId, checks: ["upload", "mixed drop", "orientation", "reload", "bilingual rejection", "original download and archive round trip", "both model submissions with fixture results", "cross-project paste fallback"] }));
+  console.log(JSON.stringify({ passed: true, projectId, checks: ["upload", "mixed drop", "orientation", "reload", "bilingual rejection", "orphaned preview download rejection", "original download and archive round trip", "FCPXML original bytes", "both model submissions with fixture results", "cross-project paste fallback"] }));
 } finally {
   await browser.close();
 }

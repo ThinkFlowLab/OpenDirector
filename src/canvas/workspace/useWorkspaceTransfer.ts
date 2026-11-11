@@ -440,7 +440,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     const projectId = historyRef.current.present.id;
     const client = creationClient(projectId);
     return captureClipboardMedia(projectId, fragment, {
-      read: (src) => readProjectMedia(src, projectId),
+      read: (src, mimeType) => client.originalMedia(src, mimeType),
       resolve: (src, assetId) => {
         // A just-imported node may show its upload before it records the asset.
         const asset = assetId
@@ -562,21 +562,12 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     setSelected([]);
     setMenu(null);
   };
-  const readProjectMedia = async (src: string, projectId: string) => {
-    const client = creationClient(projectId);
-    const asset = client.assetForSource(src);
-    if (asset && ["image/heic", "image/heif"].includes(asset.metadata.mimeType))
-      return client.blob(asset.id);
-    const response = await fetch(src);
-    if (!response.ok) throw new Error(t("errors.archive.readMedia"));
-    return response.blob();
-  };
   const downloadNode = async (node: CanvasNode) => {
     try {
       if (node.data.src)
         downloadFile(
           ["image/heic", "image/heif"].includes(node.data.mimeType ?? "")
-            ? await readProjectMedia(node.data.src, historyRef.current.present.id)
+            ? await creationClient(historyRef.current.present.id).originalMedia(node.data.src, node.data.mimeType)
             : node.data.src,
           downloadFilename(node.data.title, node.data.mimeType),
         );
@@ -596,7 +587,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     try {
       const document = historyRef.current.present;
       const archive = await buildCanvasArchive(document, {
-        read: (src) => readProjectMedia(src, document.id),
+        read: (src, mimeType) => creationClient(document.id).originalMedia(src, mimeType),
       });
       downloadFile(archive.blob, archive.filename);
     } catch (error) {
