@@ -19,3 +19,7 @@ def web_root() -> Path:
 
 def builtin_skills() -> Path:
     return SOURCE_ROOT / 'packages/agent/skills' if SOURCE_ROOT else BUNDLED / 'skills'
+
+
+def default_timeline_font() -> Path:
+    return (SOURCE_ROOT / 'public/fonts' if SOURCE_ROOT else web_root() / 'fonts') / 'NotoSansCJKsc-Regular.otf'

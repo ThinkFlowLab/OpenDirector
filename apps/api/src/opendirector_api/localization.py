@@ -6,6 +6,9 @@ English, so a missing translation never leaks Chinese into an English UI.
 """
 from fastapi import Request
 
+
+from opendirector.domain.timeline_errors import timeline_error_message
+
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
@@ -15,6 +18,7 @@ ENGLISH_BY_CODE = {
     'bigmodel_video_frames': 'Use text, one first-frame image, or an explicit first/last pair. Each frame slot accepts one image; a last frame requires a first frame. Reference and continuation modes are not supported.',
     'bigmodel_video_prompt': 'CogVideoX-3 prompts allow up to 512 characters. Provide a prompt or frame image.',
     'bigmodel_video_cancel': 'Remote BigModel video cancellation is not connected. The task may continue running and incur charges.',
+    'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',
     'kling_image': 'Kling requires valid PNG or JPEG images up to 30 MB, at least 300 pixels on each edge, with an aspect ratio of 0.4–2.5. Video and audio references are not supported here.',
@@ -49,6 +53,9 @@ ENGLISH_BY_CODE = {
     "moss_speech_voice": "Enter a Voice ID available to your MOSS account.",
     "moss_speech_reference": "MOSS speech generation does not accept references. Enter speech text and a Voice ID.",
     "moss_prompt_limit": "MOSS requires a nonempty prompt of at most 4,000 characters, including text references.",
+    "minimax_image_reference": "MiniMax H3 references must be PNG, JPEG, or WebP, with edges of 128–8192 pixels and a long-to-short edge ratio of at most 4:1.",
+    "minimax_image_count": "MiniMax H3 image editing accepts up to 16 reference images.",
+    "minimax_image_bytes": "MiniMax H3 image reference requests cannot exceed 64 MiB.",
     "moss_image_size": "MOSS image dimensions must be 256–2048, multiples of 16, and no more than 2,097,152 pixels in total.",
     "moss_image_reference": "MOSS image generation does not accept image references or editing inputs.",
     "moss_layout_reference": "MOSS layout JSON does not accept additional text references. Put the requirements in the JSON or remove the text references.",
@@ -106,6 +113,9 @@ def localized_error_for_language(
     status: int,
     code: str = "operation_rejected",
 ) -> str:
+    specific = timeline_error_message(code, language)
+    if specific is not None:
+        return specific
     if not wants_english_language(language):
         return chinese
     # A generic operation code must not hide a more specific HTTP status.

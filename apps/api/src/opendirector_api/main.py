@@ -309,6 +309,11 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     dist = web_root()
     if dist.is_dir():
         app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
+        # Installed builds retain the same public font URLs as the dev server.
+        # StaticFiles confines reads to this directory and rejects escaping symlinks.
+        font_root = dist / "fonts"
+        if font_root.is_dir() and not font_root.is_symlink() and font_root.resolve().is_relative_to(dist.resolve()):
+            app.mount("/fonts", StaticFiles(directory=font_root), name="fonts")
 
         @app.get("/")
         def index():

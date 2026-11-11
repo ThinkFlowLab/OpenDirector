@@ -72,3 +72,14 @@ The production browser check used the existing saved video project and a local r
 ![English waiver note above Generate](assets/cogvideox-235/note-en.jpg)
 
 Follow-up checks: 699 frontend tests passed, the production build passed with the existing chunk-size warning, the bilingual check reported 2,945 keys and zero problems, and generated-contract and diff checks passed. Backend generation behavior is unchanged by this follow-up; the original real-provider and Python verification above still describe their stated scope.
+
+## Main-branch conflict resolution
+
+Merged main `0bdc3a7b2a582cbb65a44e07a879775a9fc71fb1` after GitHub reported conflicts. The resolution retains the CogVideoX-3 error codes and translations alongside upstream timeline error codes and execution-file errors. JSON/TypeScript contracts were regenerated from the merged Python definitions. Text, single-image and first/last-frame generation, durable task recovery and the conditional watermark waiver note remain in scope; no paid provider request was added.
+
+Post-merge validation:
+
+- Frontend: all 767 tests passed. Production build, bilingual keys (3,006; zero problems), browser-locale checks, generated-contract consistency, all four import boundaries, dependency consistency and diff checks passed.
+- Full Python suite: 1,655 passed, 100 skipped, **one failed** in `tests/test_native_runtime.py::test_native_events_real_cli_and_shared_write[True-codex]`. Its fixture CLI exited after a write was rejected because the project edit session had expired. The cause of that expiry was not established. The native runtime implementation and test are unchanged relative to main.
+- The failing case passed alone (one passed), and the entire native-runtime module then passed (25 passed, five skipped). No source changes were made between these runs. These reruns do not turn the original full-suite failure into a clean full-suite pass; the occurrence remains recorded here.
+- Build output retains its chunk-size warning and Python retains the Starlette/httpx deprecation warning. Skipped cases remain unverified. Original real-provider evidence above applies to its earlier revisions; this conflict update used automated and local checks only.

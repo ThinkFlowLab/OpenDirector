@@ -1,0 +1,14 @@
+{
+  "fps": 24, "width": 640, "height": 360,
+  "visual": [{"id":"visual-a","file":"visual-a.mp4","start":0,"end":3},{"id":"visual-b","file":"visual-b.mp4","start":3,"end":6}],
+  "audio": [{"id":"audio-a","file":"audio-a.wav","start":1,"end":3},{"id":"audio-b","file":"audio-b.wav","start":4,"end":6}],
+  "overlays": [{"id":"text-a","start":1,"end":3,"text":"第一行中文\n第二行中文"},{"id":"text-b","start":2,"end":4,"text":"Mixed 中英文字"},{"id":"text-tail","start":6,"end":7,"text":"片尾 End"}],
+  "frames": {"23":[],"24":["text-a"],"47":["text-a"],"48":["text-a","text-b"],"71":["text-a","text-b"],"72":["text-b"],"95":["text-b"],"96":[],"143":[],"144":["text-tail"],"167":["text-tail"],"168":[]},
+  "extraScenarios": {
+    "textOnly":{"visual":[],"overlays":[{"id":"text-only","start":2,"end":4,"text":"纯文字 Text only"}],"duration":4},
+    "noText":{"overlays":[],"duration":6},
+    "fontFailure":{"damagedBytes":"not a font","missingGlyph":"choose a character not covered by the pinned font"},
+    "interleaved":{"editorId":"shared-editor","steps":["UI create/save","Agent query/edit/save same editor","UI query/edit/save same editor","restart/query"]},
+    "concurrentRender":{"steps":["save revision N","start render from N","another writer saves N+1 or locks owner","publish N conflicts; generated file retained"]}
+  }
+}

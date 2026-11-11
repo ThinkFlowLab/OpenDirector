@@ -23,6 +23,15 @@ class InfrastructurePorts(Protocol):
     def file_identity(self, path: Path):
         """Return the fingerprint and size of a regular file."""
 
+    def execution_file(self, directory: Path, path: str, *, create=False):
+        """Open a scoped execution file through the platform's guarded adapter."""
+
+    def sync_directory(self, path: Path) -> None:
+        """Persist a directory entry where the platform supports it."""
+
+    def timeline_package_imports(self, projects):
+        """Recoverable import journal bound to one project repository."""
+
     def asset_name(self, value: str) -> str:
         """Normalize a user-supplied asset name."""
 

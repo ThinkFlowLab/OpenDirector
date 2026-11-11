@@ -1,0 +1,35 @@
+name: DSH plugin checks
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/deepseek-harness/**'
+      - '.github/workflows/dsh-plugin.yml'
+      - '.nvmrc'
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/deepseek-harness/**'
+      - '.github/workflows/dsh-plugin.yml'
+      - '.nvmrc'
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: plugins/deepseek-harness/package-lock.json
+      - name: Install DSH plugin dependencies
+        working-directory: plugins/deepseek-harness
+        run: npm ci
+      - name: DSH plugin tests
+        working-directory: plugins/deepseek-harness
+        run: npm test

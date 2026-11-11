@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "command": {
+    "commandId": "00000000-0000-0000-0000-0000000153e3",
+    "projectId": "00000000-0000-0000-0000-0000000153d9",
+    "type": "editor.create",
+    "expectedVersions": [],
+    "expectedPreview": null,
+    "payload": {
+      "document": {
+        "id": "00000000-0000-0000-0000-0000000153da",
+        "projectId": "00000000-0000-0000-0000-0000000153d9",
+        "revision": 1,
+        "schemaVersion": 1,
+        "inputConnections": [],
+        "kind": "timeline",
+        "data": {
+          "fps": 24,
+          "width": 640,
+          "height": 360,
+          "tracks": [
+            {
+              "id": "visual",
+              "kind": "visual",
+              "title": "Visual",
+              "muted": false,
+              "clips": []
+            }
+          ],
+          "importedAssets": []
+        }
+      }
+    }
+  },
+  "previousHead": "00000000-0000-0000-0000-0000000153e2",
+  "snapshot": {
+    "format": "opendirector-project",
+    "formatVersion": 2,
+    "project": {
+      "id": "00000000-0000-0000-0000-0000000153d9",
+      "revision": 1,
+      "name": "Timeline baseline"
+    },
+    "assets": [],
+    "generationSpecs": [],
+    "references": [],
+    "canvasItems": [],
+    "editorDocuments": [
+      {
+        "id": "00000000-0000-0000-0000-0000000153da",
+        "projectId": "00000000-0000-0000-0000-0000000153d9",
+        "revision": 1,
+        "schemaVersion": 1,
+        "inputConnections": [],
+        "kind": "timeline",
+        "data": {
+          "fps": 24,
+          "width": 640,
+          "height": 360,
+          "tracks": [
+            {
+              "id": "visual",
+              "kind": "visual",
+              "title": "Visual",
+              "muted": false,
+              "clips": []
+            }
+          ],
+          "importedAssets": []
+        }
+      }
+    ],
+    "jobs": [],
+    "results": [],
+    "eventCursor": 2,
+    "undoClearedThrough": 0
+  },
+  "receipt": {
+    "commandId": "00000000-0000-0000-0000-0000000153e3",
+    "projectId": "00000000-0000-0000-0000-0000000153d9",
+    "inputFingerprint": "d3b77d5a37819495c15eb1ef6c241e2e612d685a86f5f40a38975d3a2ea587be",
+    "status": "applied",
+    "changed": [
+      {
+        "objectType": "editor_document",
+        "id": "00000000-0000-0000-0000-0000000153da",
+        "revision": 1
+      }
+    ],
+    "jobIds": [],
+    "issues": [],
+    "eventCursor": 2
+  },
+  "event": {
+    "schemaVersion": 1,
+    "projectId": "00000000-0000-0000-0000-0000000153d9",
+    "cursor": 2,
+    "commandId": "00000000-0000-0000-0000-0000000153e3",
+    "source": "ui",
+    "changed": [
+      {
+        "version": {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-0000000153da",
+          "revision": 1
+        },
+        "change": "created"
+      }
+    ],
+    "jobIds": []
+  }
+}

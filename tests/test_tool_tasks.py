@@ -71,7 +71,9 @@ def run(store, configs, transport, project_id, session, value):
         tools = ToolTasks(store.local, configs, CreationToolAssets(store), transport=transport, poll_interval=0, projects=store)
         try:
             task = await tools.submit(project_id, {'id': str(uuid4()), 'boxes': [], 'parameters': {}, **value}, session)
-            await asyncio.gather(*tools.jobs.values(), return_exceptions=True)
+            # Unexpected recipe exceptions must keep their original traceback.
+            # Expected business failures are recorded by ToolTasks._run itself.
+            await asyncio.gather(*tools.jobs.values())
             return tools.get(project_id, task['id'])
         finally:
             await tools.close()
@@ -82,6 +84,23 @@ def output_image(store, project_id, task, index=0):
     with store.local.transaction() as db:
         directory = store._find(db, project_id)[0]
     return Image.open(io.BytesIO(CreationToolAssets(store).read_bytes(project_id, task['outputs'][index]['id']))).convert('RGB')
+
+
+def test_run_helper_surfaces_unexpected_background_recipe_exception(project, monkeypatch):
+    from opendirector.application import tool_image_edits
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'poster.png', png((64, 36)))
+    failure = RuntimeError('unexpected local media failure')
+    def failed_scale(*args, **kwargs):
+        raise failure
+    monkeypatch.setattr(tool_image_edits.media, 'scale_to_long_edge', failed_scale)
+    configs = ModelConfigs(store.local.repository)
+    with pytest.raises(RuntimeError, match='unexpected local media failure') as caught:
+        run(store, configs, None, project_id, session,
+            {'tool': 'image-hd', 'sourceAssetIds': [source], 'parameters': {'resolution': '2K'}})
+    assert caught.value is failure
+    tasks = ToolTasks(store.local, configs, None, projects=store).list(project_id)
+    assert len(tasks) == 1 and tasks[0]['status'] == 'failed' and tasks[0]['outputs'] == []
 
 
 def test_adapters_declare_capabilities_from_profiles_not_operations():
@@ -133,6 +152,8 @@ def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
                 'parameters': {'left': 0.5, 'right': 0.5, 'top': 0, 'bottom': 0, 'outputWidth': 128, 'outputHeight': 48, 'prompt': '海边'}})
     assert task['status'] == 'succeeded', task['error']
     assert b'name="strength"' in calls[0] and '海边'.encode() in calls[0]
+    # Edits keep the service defaults: strength picks where on the step schedule the edit starts.
+    assert b'name="num_inference_steps"' not in calls[0] and b'name="guidance_scale"' not in calls[0]
     image = output_image(store, project_id, task)
     assert image.size == (128, 48)
     assert image.getpixel((64, 24))[2] > 200 and image.getpixel((2, 24))[0] > 200  # original centre, drawn border

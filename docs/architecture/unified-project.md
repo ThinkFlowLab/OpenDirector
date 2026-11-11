@@ -108,6 +108,10 @@ Skill 提供规划方法与领域知识，由 harness 按需加载；技能内�
 
 隐藏展示对象保留逻辑来源和历史。删除素材前检查参考、编辑文档、生成任务、工具任务、结果、历史与来源依赖；依赖无法确认时不能报告素材未使用。
 
+隐藏来源或其展示分组不改变活动参考、结构化提示词、生成输入、引用数量限制或结果采用依据。移除生成参考使用明确的参考操作；可见性仅影响画布投影。任务接受后继续保留当时的精确输入版本与内容指纹。
+
+Hiding a source display or its group does not change active references, structured prompts, generation inputs, reference limits, or result adoption. Change creative references through explicit reference operations; visibility only affects the canvas projection. Accepted jobs retain their exact input versions and content fingerprints.
+
 ## 存储、通知和交互
 
 工程文件是权威数据。对象、文件、回执和变更记录通过明确的提交顺序与恢复机制协调；SQLite 可用于租约等运行协调。凭证不进入普通工程、公开回执或模型快照。

@@ -64,7 +64,7 @@ def video_parameters(node, records, *, duration_seconds=None):
     frames = requested_frames + (5 - requested_frames) % 17
     result = {'seconds': str(math.ceil(seconds)), 'duration': seconds,
               'size': '480x832' if portrait else '832x480', 'fps': 24, 'num_frames': frames,
-              'num_inference_steps': 8, 'guidance_scale': 1, 'seed': 1234}
+              'num_inference_steps': 8, 'guidance_scale': 1}
     if edit:
         # Original audio is retained unless the user asks to change it. This is
         # local muxing, independent of the model's generative audio prediction.

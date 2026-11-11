@@ -191,7 +191,7 @@ class SpecPromptWrite(Contract):
 
 
 class SpecWrite(Contract):
-    spec: GenerationSpec = Field(description='Configuration with its current revision; the server increments it on commit.')
+    spec: GenerationSpec = Field(description='Complete configuration with its current revision; the server increments it on commit. For updates, read the current spec, preserve unedited fields and submit its current expected version. Accepted job snapshots never change.')
 
 
 class ReferenceWrite(Contract):
@@ -394,13 +394,16 @@ def command_fingerprint(command: Command) -> str:
     return digest(command)
 
 
-IssueCode = Literal['invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+from opendirector.domain.timeline_errors import TimelineIssueCode
+
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',
+                    'minimax_image_reference', 'minimax_image_count', 'minimax_image_bytes',
                     'voice_library_unsupported', 'voice_connection_changed', 'voice_reference_required',
                     'voice_transcript_required', 'voice_transcript_too_long', 'voice_description_too_long',
                     'voice_not_found', 'voice_delete_unsupported',

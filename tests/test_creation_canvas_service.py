@@ -176,12 +176,13 @@ def test_frame_mode_limits_current_image_sources_and_rejects_over_limit_mode_swi
     assert store.snapshot(pid) == before
     source = before.canvasItems[0]
     assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
-    assert connect(2).status == ('applied' if binding == 'follow_current' else 'rejected')
+    # A hidden display does not free an active reference's business slot.
+    hidden_limit = connect(2)
+    assert hidden_limit.status == 'rejected' and '最多连接 2' in hidden_limit.issues[0].message
     spec = store.snapshot(pid).generationSpecs[-1]
     reference_spec = spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': 'reference'})})
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=reference_spec).status == 'applied'
-    if binding == 'pinned':
-        assert connect(2).status == 'applied'
+    assert connect(2).status == 'applied'
     hidden = store.snapshot(pid).canvasItems[0]
     assert send(store, pid, 'canvas.show', session=session, versions=[ver('canvas_item', hidden)], item=hidden).status == 'applied'
     current = store.snapshot(pid).generationSpecs[-1]

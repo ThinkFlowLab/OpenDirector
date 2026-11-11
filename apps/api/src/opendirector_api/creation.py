@@ -1,11 +1,16 @@
 """Authoritative project endpoints for the canvas creation workflow."""
 from uuid import UUID
+from pathlib import Path
+from base64 import b64encode
+from hashlib import sha256
+from io import BytesIO
 import asyncio
 import json
 import re
 from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Header, Query, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from filelock import Timeout
 from starlette.background import BackgroundTask
@@ -14,14 +19,44 @@ from starlette.concurrency import run_in_threadpool
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.creation_history import CreationHistory
+from opendirector.application.creation_timeline_packages import CreationTimelinePackages
+from opendirector.domain.creation.timeline_packages import TimelinePackageImportRequest, TimelinePackageImportReceipt
 from opendirector.domain.creation.assets import Asset, UploadInfo
 from opendirector.domain.creation.base import MediaKind
 from opendirector.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
 from opendirector.domain.creation.project import ProjectSnapshot, ViewState
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.media.fonts import MAX_FONT_BYTES, inspect_font
 from opendirector_api.models import AssetSource, Session
 from opendirector_api.localization import localized_receipt
+
+from opendirector_api.localization import localized_error_for_language
+
+
+class FontCoverageResponse(BaseModel):
+    fingerprint: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    # One bit per Unicode scalar position: fixed 139,264 bytes / 185,688 base64 chars.
+    coverage: str = Field(min_length=185688, max_length=185688)
+
+
+def preview_font_coverage(value: bytes) -> FontCoverageResponse:
+    inspection = inspect_font(BytesIO(value))
+    mask = bytearray(0x110000 // 8)
+    for code in inspection.characters:
+        mask[code >> 3] |= 1 << (code & 7)
+    return FontCoverageResponse(fingerprint='sha256:' + sha256(value).hexdigest(),
+                                coverage=b64encode(mask).decode('ascii'))
+
+
+class TemporaryPackageResponse(FileResponse):
+    """Package lifetime ends on completion, disconnect, or cancelled response."""
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            Path(self.path).unlink(missing_ok=True)
 
 
 def creation_routes(projects: CreationProjects, generation=None):
@@ -29,6 +64,22 @@ def creation_routes(projects: CreationProjects, generation=None):
     assets = CreationAssets(projects)
     canvas = CreationCanvas(projects)
     history = CreationHistory(projects, assets=assets)
+    timeline_packages = CreationTimelinePackages(projects)
+
+    @router.post('/fonts/inspect', response_model=FontCoverageResponse)
+    async def inspect_preview_font(request: Request, response: Response,
+                                   content_length: int | None = Header(default=None, ge=0)):
+        # Read-only byte inspection also works for unregistered local drafts.
+        # No filesystem paths, project changes, text, or session acquisition.
+        if content_length is not None and content_length > MAX_FONT_BYTES:
+            raise timeline_error('timeline_font_too_large', 413)
+        value = bytearray()
+        async for chunk in request.stream():
+            if len(value) + len(chunk) > MAX_FONT_BYTES:
+                raise timeline_error('timeline_font_too_large', 413)
+            value.extend(chunk)
+        response.headers['Cache-Control'] = 'no-store'
+        return await run_in_threadpool(preview_font_coverage, bytes(value))
 
     @router.get('/projects')
     def list_projects():
@@ -94,6 +145,30 @@ def creation_routes(projects: CreationProjects, generation=None):
         else:
             receipt = await run_in_threadpool(projects.execute, value, session=session, imported_from=imported_from)
         return localized_receipt(request, receipt)
+
+    def package_display_receipt(request, result):
+        if result.receipt is None:
+            return result
+        displayed = result.receipt.model_copy(update={'issues': tuple(issue.model_copy(update={
+            'message': localized_error_for_language(request.headers.get('accept-language'), chinese=issue.message,
+                status=409, code=issue.code),
+        }) for issue in result.receipt.issues)})
+        return result.model_copy(update={'receipt': displayed})
+
+    @router.get('/projects/{project_id}/timelines/{editor_id}/package')
+    def export_timeline_package(project_id: UUID, editor_id: UUID, revision: int = Query(ge=1)):
+        path = timeline_packages.export(project_id, editor_id, revision)
+        return TemporaryPackageResponse(path, media_type='application/zip', filename=f'{editor_id}.timeline.zip',
+            headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+    @router.post('/projects/{project_id}/timeline-package-imports', response_model=TimelinePackageImportReceipt)
+    def import_timeline_package(project_id: UUID, value: TimelinePackageImportRequest,
+                                request: Request, x_opendirector_session: UUID = Header()):
+        return package_display_receipt(request, timeline_packages.import_package(project_id, value, session=str(x_opendirector_session)))
+
+    @router.get('/projects/{project_id}/timeline-package-imports/{operation_id}', response_model=TimelinePackageImportReceipt)
+    def timeline_package_receipt(project_id: UUID, operation_id: UUID, request: Request):
+        return package_display_receipt(request, timeline_packages.receipt(project_id, operation_id))
 
     @router.get('/projects/{project_id}/canvas/{item_id}/status')
     async def item_status(project_id: UUID, item_id: UUID, wait_seconds: float = Query(default=0, ge=0, le=30)):

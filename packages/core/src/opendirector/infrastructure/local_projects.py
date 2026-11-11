@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import time
 
@@ -19,21 +20,50 @@ def child(directory: Path, name: str) -> Path:
 
 
 def read_json(path: Path):
+    path = Path(_json_path(path))
     if path.is_symlink():
         raise ProjectError("不能读取符号链接项目文件。", 409)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _json_path(path: str | Path) -> str:
+    # Win32 metadata APIs still apply MAX_PATH on some native installations.
+    # This is lexical spelling only; never resolve a link to a different object.
+    value = os.path.abspath(path)
+    if sys.platform != 'win32' or value.startswith('\\\\?\\'):
+        return value
+    return '\\\\?\\UNC\\' + value[2:] if value.startswith('\\\\') else '\\\\?\\' + value
+
+
+def _replace_json(temporary: str, path: Path) -> None:
+    # Windows readers/scanners can briefly deny an atomic replacement. Retry
+    # only these native errors, using the same already-flushed temporary file.
+    # Never unlink the destination or fall back to an in-place write. Persistent
+    # permission errors still propagate, and every attempt rechecks the link rule.
+    deadline = time.monotonic() + 0.5
+    while True:
+        if Path(_json_path(path)).is_symlink():
+            raise ProjectError("不能覆盖符号链接项目文件。", 409)
+        try:
+            os.replace(_json_path(temporary), _json_path(path))
+            return
+        except OSError as error:
+            remaining = deadline - time.monotonic()
+            if os.name != 'nt' or getattr(error, 'winerror', None) not in {5, 32, 33} or remaining <= 0:
+                raise
+            time.sleep(min(0.01, remaining))
+
+
 def write_json(path: Path, value) -> None:
-    if path.is_symlink():
+    if Path(_json_path(path)).is_symlink():
         raise ProjectError("不能覆盖符号链接项目文件。", 409)
-    fd, temporary = tempfile.mkstemp(prefix=".opendirector-", suffix=".tmp", dir=path.parent)
+    fd, temporary = tempfile.mkstemp(prefix=".opendirector-", suffix=".tmp", dir=_json_path(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(value, stream, ensure_ascii=False, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        _replace_json(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

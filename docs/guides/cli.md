@@ -61,6 +61,46 @@ Agent 的 Shell 通过 PATH 使用同一个 `opendirector`。宿主提供受令�
 
 `--spec` accepts a JSON object, not a UUID, and overrides the entire `payload.spec` from `--file`. If the file already contains the configuration, use `opendirector generation-spec update --file update.json` without `--spec`. Query assets with `query object.get` and obtain preview access with `query asset.preview`; `query asset` is not supported.
 
+## 可编辑时间线文字与跨工程包
+
+时间线文字与媒体使用同一 `editor.create` / `editor.save` 文档，正文、时间、样式、层次和字体资产均保存在工程中。先通过 `query object.get` 读取文档，保留完整文档结构并携带当前 `editor_document` 版本提交；不要直接修改项目文件。`editor save --help` / `--help-field payload.document` 提供正式契约。正文来源是可选的不可变文本资产引用，不会随着来源后续变化自动改写文字。
+
+```bash
+# 离线发现随安装分发的字体；不打开工程或登记素材
+opendirector timeline default-font
+# 将返回路径作为 file 素材导入目标工程，再在文档 fonts 中引用其 AssetRef
+opendirector --project PROJECT_UUID asset import /path/to/NotoSansCJKsc-Regular.otf --kind file
+
+# 从已保存的确定版本导出；输出文件必须尚不存在
+opendirector --project SOURCE_PROJECT_UUID timeline export \
+  --editor-id EDITOR_UUID --revision 3 --output ./captions.timeline.zip
+
+# 默认创建新时间线，目标工程由 --project 明确指定
+opendirector --project TARGET_PROJECT_UUID timeline import ./captions.timeline.zip \
+  --operation-id IMPORT_OPERATION_UUID
+
+# 只有显式替换才修改现有文档；需要目标的当前版本
+opendirector --project TARGET_PROJECT_UUID timeline import ./captions.timeline.zip \
+  --operation-id REPLACE_OPERATION_UUID \
+  --replace-editor TARGET_EDITOR_UUID --expected-revision 2
+```
+
+包内包含文档保留的实际字体、剪辑及媒体库资源、正文来源和默认字体许可证；目标工程登记自己的资源引用，不依赖源工程地址。包上限为 512 MiB；不接受未知版本、未知能力、不完整资源或指纹不匹配的包。包导入回执区分资源已登记与文档已应用，只有 `applied` 表示时间线已经完成写入。重试使用相同 `--operation-id`、文件和参数；同身份不同输入会拒绝。最终替换仍检查版本、节点和父组锁，已登记资源不会被描述为完整成功。
+
+Agent 在 macOS/Linux 执行目录导出失败时，输出位置可能保留不完整文件。请先检查文件，并选择新的输出文件名重试；既有文件不会被覆盖，也不会因失败清理而删除并发写入者的替换文件。失败回执不表示包已完整导出。
+
+Agent 执行上下文可使用相同命令，路径须位于本轮执行目录。`timeline default-font` 返回安装目录中的只读字体路径；先将该字体复制到本轮授权执行目录，再通过 `asset import` 登记，不能直接以安装路径绕过执行目录边界。不要传入其他工程或会话以绕过当前授权。包导入/导出可在编辑面板关闭时调用，MP4 合成仍需前端浏览器参与。可编辑 JSON 只描述同工程结构；含文字的时间线不能导出为 FCPXML 或旧 XML 媒体包。
+
+### Editable timeline text and portable packages
+
+Text uses the same complete `editor.create` / `editor.save` document as media. Read the current document with `query object.get`, preserve its structure, and submit its current `editor_document` revision. The schema and nested fields are available through `editor save --help` and `--help-field payload.document`. `timeline default-font` finds the bundled offline font without opening a project; import that file into the target project before referencing its AssetRef. Text-source references retain immutable provenance and do not automatically refresh the wording.
+
+The commands above export an exact saved revision, import it as a new timeline, or explicitly replace a target with `--replace-editor` and `--expected-revision`. Export destinations must not already exist. Native `.timeline.zip` packages include all retained font, clip, media-library and text-source resources plus the bundled font license; target resources belong to the target project. The package limit is 512 MiB. Unknown versions/capabilities, missing resources, and fingerprint mismatches reject import. Only an `applied` receipt confirms the completed timeline write; retry incomplete operations with the same operation ID, file, and arguments. Replacement rechecks the current revision and owner/parent locks.
+
+An unsuccessful Agent export to its macOS/Linux execution directory can leave an incomplete file. Inspect the output and choose a fresh filename for retry. Existing files are never overwritten, and failure cleanup does not delete another writer's replacement. A failed receipt does not certify a complete package.
+
+In an Agent execution context, files must remain inside the authorized execution directory and commands remain scoped to that context. `timeline default-font` returns a read-only installation path; copy that font into the authorized execution directory before using `asset import`. The installation path does not bypass that boundary. Package commands do not require an open editor. MP4 rendering requires the browser. Editable JSON describes same-project structure; FCPXML and legacy XML media bundles refuse text overlays.
+
 
 ## Voice library
 

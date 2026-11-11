@@ -51,7 +51,14 @@ function savedAssetId(
   key: string,
 ) {
   if (key !== "src") return undefined;
-  const id = record === node.data ? node.data.backendAssetId : record.assetId;
+  const asset = record.asset;
+  const id =
+    record === node.data
+      ? node.data.backendAssetId
+      : (record.assetId ??
+        (asset && typeof asset === "object"
+          ? (asset as Record<string, unknown>).assetId
+          : undefined));
   return typeof id === "string" ? id : undefined;
 }
 
@@ -162,8 +169,10 @@ export async function transferClipboardMedia(
           record[key] = registered.src;
           if (record === node.data && key === "src")
             node.data.backendAssetId = registered.assetId;
-          else if (key === "src" && "assetId" in record)
-            record.assetId = registered.assetId;
+          else if (key === "src") {
+            if ("asset" in record) delete record.asset;
+            if ("assetId" in record) record.assetId = registered.assetId;
+          }
         }),
       );
     });
@@ -194,6 +203,7 @@ export async function transferClipboardMedia(
 }
 
 function mediaKind(mimeType: string): CanvasResource["kind"] {
+  if (mimeType.split(";")[0] === "text/plain") return "text";
   const family = mimeType.split("/")[0] as CanvasResource["kind"];
   return ["image", "video", "audio"].includes(family) ? family : "file";
 }

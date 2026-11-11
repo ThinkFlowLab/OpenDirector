@@ -13,6 +13,11 @@ for location in (root, common.parent):
     python = location / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if python.is_file():
         if Path(sys.executable).parent != python.parent:
+            if os.name == "nt":
+                # The Windows CRT execv does not quote arguments containing
+                # spaces. Let subprocess build the native command line and
+                # propagate the child's status to the caller.
+                raise SystemExit(subprocess.call([str(python), *sys.argv]))
             os.execv(python, [str(python), *sys.argv])
         break
 sys.path.insert(0, str(root / "packages/core/src"))
