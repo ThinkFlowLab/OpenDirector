@@ -31,6 +31,40 @@ def h3_frames(seconds):
     return 17 * min(max(steps, 6), 20) + 5
 
 
+def generation_fields(parameters, mode, *, has_images=False, has_audio=False, continue_size=None):
+    """Prepare the same non-media fields for admission and multipart execution."""
+    fields = {'fps': parameters.get('fps', FPS),
+              'num_frames': parameters.get('num_frames', h3_frames(parameters.get('duration', 5)))}
+    if parameters.get('resolution') and parameters.get('size'):
+        fields['size'] = parameters['size']
+    extra = {}
+    if mode == 'continuation':
+        extra['task'] = 'ref2va' if has_images or has_audio else 't2va'
+        width, height = continue_size or (None, None)
+        if width and height:
+            fields['size'] = f'{width}x{height}'
+    elif mode == 'reference':
+        extra['task'] = 'ref2va'
+    elif has_images:
+        extra['task'] = 'fl2va'
+    else:
+        extra['task'] = 't2va'
+        if 'size' not in fields:
+            ratio = parameters.get('ratio')
+            extra['aspect_ratio'] = ratio if ratio in RATIOS else '16:9'
+    return fields, extra
+
+
+def capability_parameters(fields, extra):
+    """Expose actual scalar request fields, including the serialized extra_params."""
+    result = {**fields, **extra}
+    size = result.get('size')
+    if isinstance(size, str) and 'x' in size:
+        width, height = size.split('x')
+        result.update(width=int(width), height=int(height))
+    return result
+
+
 def _upload(data_uri, name):
     header, payload = data_uri.split(',', 1)
     mime = header.removeprefix('data:').split(';', 1)[0]
@@ -64,35 +98,16 @@ class VllmOmniGeneration:
 
     def form(self, config, task, prepared):
         mode = task.get('videoMode', 'first_frame')
-        seconds = task['parameters'].get('duration', 5)
-        ratio = task['parameters'].get('ratio')
+        values, extra = generation_fields(task['parameters'], mode, has_images=bool(prepared['images']),
+                                         has_audio=bool(prepared['audios']), continue_size=prepared['continueSize'])
         fields = {'model': config['modelId'], 'prompt': prepared['prompt'],
-                  'fps': str(task['parameters'].get('fps', FPS)),
-                  'num_frames': str(task['parameters'].get('num_frames', h3_frames(seconds)))}
-        if task['parameters'].get('resolution') and task['parameters'].get('size'):
-            fields['size'] = task['parameters']['size']
-        files, extra = [], {}
+                  **{key: str(value) for key, value in values.items()}}
+        files = []
         if mode == 'continuation':
-            # T2VA follows the cached tail closely; attached images or audio
-            # make it a Ref2VA continuation, whose cut can be less seamless.
-            references = prepared['images'] or prepared['audios']
-            extra.update(task='ref2va' if references else 't2va', continue_from=prepared['continueFrom'])
-            width, height = prepared['continueSize'] or (None, None)
-            if width and height:
-                fields['size'] = f'{width}x{height}'
-        else:
-            if mode == 'reference':
-                extra['task'] = 'ref2va'
-            elif prepared['images']:
-                extra['task'] = 'fl2va'
-                files.append(('input_reference', _upload(prepared['images'][0], 'first_frame')))
-                prepared = {**prepared, 'images': []}
-            else:
-                extra['task'] = 't2va'
-                # An explicit size already fixes the frame; sending a conflicting
-                # aspect_ratio would contradict it.
-                if 'size' not in fields:
-                    extra['aspect_ratio'] = ratio if ratio in RATIOS else '16:9'
+            extra['continue_from'] = prepared['continueFrom']
+        elif mode != 'reference' and prepared['images']:
+            files.append(('input_reference', _upload(prepared['images'][0], 'first_frame')))
+            prepared = {**prepared, 'images': []}
         files.extend(('input_references', _upload(image, f'image_{index}')) for index, image in enumerate(prepared['images'], 1))
         files.extend(('input_references', _upload(audio, f'audio_{index}')) for index, audio in enumerate(prepared['audios'], 1))
         fields['extra_params'] = json.dumps(extra)

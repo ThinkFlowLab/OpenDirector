@@ -39,6 +39,8 @@ class RequestOperation:
     inputs: frozenset[str] | None = None
     input_counts: tuple[tuple[str, int], ...] | None = None
     parameters: tuple[tuple[str, str | int | float | bool], ...] = ()
+    # Purposes this particular adapter request needs, in addition to media kinds.
+    required_roles: frozenset[str] = frozenset()
 
 
 def requests_for(config, *, inputs=None):
@@ -93,16 +95,37 @@ def generation_request(config, spec, references, *, parameters=None):
         inputs.add('instructions')
     counts = Counter(item.asset.kind for item in transmitted if item.asset.kind in inputs)
     counts['text'] = 1
+    roles = Counter()
+    if spec.kind == 'video':
+        mode = getattr(getattr(spec, 'parameters', None), 'videoMode', 'first_frame')
+        if any(item.transmission == 'latent' for item in references):
+            mode = 'continuation'
+        for item in transmitted:
+            kind = item.asset.kind
+            role = getattr(item, 'role', 'reference')
+            if kind == 'image':
+                purpose = ('last_frame' if role == 'last_frame' else 'first_frame') if mode == 'first_frame' else 'reference_image'
+            elif kind in {'video', 'audio'}:
+                purpose = 'reference_' + kind
+            else:
+                continue
+            roles[purpose] += 1
+        counts.update(roles)
+        inputs.update(roles)
     if profile == 'lyrics_to_music':
         counts['instructions'] = 1
-    actual = generation_capability_parameters(config, spec.kind, parameters, has_images='image' in kinds) if parameters is not None else {}
+    continuation = next((item for item in references if item.transmission == 'latent'), None)
+    metadata = getattr(continuation, 'metadata', None)
+    actual = generation_capability_parameters(config, spec.kind, parameters, has_images='image' in kinds,
+        video_mode=getattr(getattr(spec, 'parameters', None), 'videoMode', 'first_frame'), has_audio='audio' in kinds,
+        continue_size=(metadata.width, metadata.height) if metadata is not None else None) if parameters is not None else {}
     if profile == 'text_to_speech':
         voice = effective_speech_voice(config, getattr(getattr(spec, 'parameters', None), 'voice', None))
         counts['voice'] = 1
         inputs.add('voice')
         actual['voice'] = voice
     return replace(request, inputs=frozenset(inputs), input_counts=tuple(counts.items()),
-                   parameters=tuple(actual.items())) if request else None
+                   parameters=tuple(actual.items()), required_roles=frozenset(roles)) if request else None
 
 
 def tool_request(config, capability, *, actual=False):
@@ -111,7 +134,12 @@ def tool_request(config, capability, *, actual=False):
                'video.edit': 'video_to_video',
                'audio.speech': 'text_to_speech', 'audio.music': 'lyrics_to_music'}.get(capability)
     request = next((item for item in requests_for(config) if item.profile == profile), None)
-    if request is None or not actual:
+    if request is None:
+        return request
+    roles = (frozenset({'first_frame'}) if capability == 'video.first_frame' else
+             frozenset({'source_video', 'video_noise_mask', 'audio_noise_mask'}) if capability == 'video.edit' else frozenset())
+    request = replace(request, required_roles=roles)
+    if not actual:
         return request
     # These are the arguments of the existing tool adapters, not all source
     # assets: e.g. a video-to-video tool does not transmit an audio attachment.
@@ -122,7 +150,8 @@ def tool_request(config, capability, *, actual=False):
         inputs.add('video')
     elif profile == 'lyrics_to_music':
         inputs.add('instructions')
-    return replace(request, inputs=frozenset(inputs))
+    inputs.update(roles)
+    return replace(request, inputs=frozenset(inputs), input_counts=tuple((role, 1) for role in sorted(inputs)))
 
 
 def _revision(value):

@@ -8,7 +8,8 @@ from opendirector.domain.rule_facts import MUSIC_SECONDS_INITIAL
 from opendirector.domain.voices import effective_speech_voice
 
 
-def generation_capability_parameters(config, kind, parameters, *, has_images=False):
+def generation_capability_parameters(config, kind, parameters, *, has_images=False,
+                                     video_mode='first_frame', has_audio=False, continue_size=None):
     profile = input_rules(config)['profile']
     if kind == 'image':
         size = parameters.get('size', '')
@@ -45,11 +46,9 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
             result['voice'] = effective_speech_voice(config, parameters.get('voice'))
     elif kind == 'video':
         if profile == 'vllm-omni-h3':
-            from opendirector.integrations.vllm_omni import FPS, h3_frames
-            result = dict(fps=parameters.get('fps', FPS),
-                          num_frames=parameters.get('num_frames', h3_frames(parameters.get('duration', 5))))
-            if parameters.get('resolution') and parameters.get('size'):
-                result['size'] = parameters['size']
+            from opendirector.integrations.vllm_omni import capability_parameters, generation_fields
+            result = capability_parameters(*generation_fields(parameters, video_mode, has_images=has_images,
+                has_audio=has_audio, continue_size=continue_size))
         elif profile == 'fasth3-omni':
             result = dict(seconds=float(parameters.get('seconds', 5)), size=parameters.get('size', '832x480'),
                           num_inference_steps=8, guidance_scale=1, fps=24, seed=parameters.get('seed', 1234))

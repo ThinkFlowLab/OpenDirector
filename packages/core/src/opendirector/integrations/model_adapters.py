@@ -545,23 +545,38 @@ class VllmOmniVideo(ModelAdapter):
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             raise protocol_failure(stage) from None
 
-    def _fields(self, config, prompt, frames, seed=None, avoid=''):
-        fields = {'model': config['modelId'], 'prompt': prompt, 'fps': str(self.FPS), 'num_frames': str(frames)}
+    @classmethod
+    def video_parameters(cls, seconds, *, first_frame=False, aspect_ratio='16:9', seed=None):
+        fields = {'fps': cls.FPS, 'num_frames': cls.frames(seconds)}
         if seed is not None:
-            fields['seed'] = str(seed)
+            fields['seed'] = seed
+        extra = {'task': 'fl2va'} if first_frame else {
+            'task': 't2va', 'aspect_ratio': aspect_ratio if aspect_ratio in cls.RATIOS else '16:9'}
+        return fields, extra
+
+    @classmethod
+    def edit_parameters(cls, seconds, width, height):
+        if not 4 <= seconds <= cls.MAX_SECONDS + 0.05:
+            raise ProjectError(f'单次视频局部重绘需要 4–{cls.MAX_SECONDS} 秒的片段。', 422)
+        frames = cls.frames(seconds)
+        width, height = cls.canvas(width, height)
+        return ({'fps': cls.FPS, 'num_frames': frames, 'size': f'{width}x{height}'},
+                {'task': 't2va', 'aspect_ratio': cls.ratio(width, height), 'duration': frames / cls.FPS})
+
+    @staticmethod
+    def _fields(config, prompt, values, extra, avoid=''):
+        fields = {'model': config['modelId'], 'prompt': prompt,
+                  **{key: str(value) for key, value in values.items()}, 'extra_params': json.dumps(extra)}
         if avoid:
             fields['negative_prompt'] = avoid
         return fields
 
     async def video(self, config, request: VideoRequest, *, submitted=None) -> MediaResult:
-        fields = self._fields(config, request.prompt, self.frames(request.seconds), request.seed, request.avoid)
+        fields = self._fields(config, request.prompt, *self.video_parameters(request.seconds,
+            first_frame=request.first_frame is not None, aspect_ratio=request.aspect_ratio, seed=request.seed), request.avoid)
         files = []
         if request.first_frame is not None:
-            extra = {'task': 'fl2va'}
             files.append(('input_reference', ('first_frame.png', request.first_frame, 'image/png')))
-        else:
-            extra = {'task': 't2va', 'aspect_ratio': request.aspect_ratio if request.aspect_ratio in self.RATIOS else '16:9'}
-        fields['extra_params'] = json.dumps(extra)
         return await self._job(config, fields, files, submitted)
 
     @classmethod
@@ -570,14 +585,11 @@ class VllmOmniVideo(ModelAdapter):
             return media.conform(work.write('in.mp4', data), work.path / 'out.mp4', width=width, height=height, fps=cls.FPS).read_bytes()
 
     async def edit_video(self, config, request: VideoEditRequest, *, submitted=None) -> MediaResult:
-        if not 4 <= request.seconds <= self.MAX_SECONDS + 0.05:
-            raise ProjectError(f'单次视频局部重绘需要 4–{self.MAX_SECONDS} 秒的片段。', 422)
-        frames = self.frames(request.seconds)
-        width, height = self.canvas(request.width, request.height)
+        values, extra = self.edit_parameters(request.seconds, request.width, request.height)
+        frames = values['num_frames']
+        width, height = map(int, values['size'].split('x'))
         source = await blocking(self._conformed, request.source, width, height)
-        fields = self._fields(config, request.prompt, frames, avoid=request.avoid)
-        fields.update(size=f'{width}x{height}',
-                      extra_params=json.dumps({'task': 't2va', 'aspect_ratio': self.ratio(width, height), 'duration': frames / self.FPS}))
+        fields = self._fields(config, request.prompt, values, extra, request.avoid)
         files = [('source_video', ('source.mp4', source, 'video/mp4')),
                  ('video_noise_mask', ('video-mask.json', json.dumps(self.picture_mask(request.picture, frames)).encode(), 'application/json')),
                  ('audio_noise_mask', ('audio-mask.json', json.dumps(self.sound_mask(request.sound, frames)).encode(), 'application/json'))]
