@@ -678,8 +678,19 @@ window.__ModuleLoader__.load({
       const menu = useRef(null)
       useLayoutEffect(() => {
         const element = menu.current
-        element.style.left = `${Math.max(8, Math.min(position.x, window.innerWidth - element.offsetWidth - 8))}px`
-        element.style.top = `${Math.max(8, Math.min(position.y, window.innerHeight - element.offsetHeight - 8))}px`
+        element.style.left = '0px'
+        element.style.top = '0px'
+        const origin = element.getBoundingClientRect()
+        element.style.left = '100px'
+        element.style.top = '100px'
+        const shifted = element.getBoundingClientRect()
+        const scaleX = (shifted.left - origin.left) / 100 || 1
+        const scaleY = (shifted.top - origin.top) / 100 || 1
+        const left = Math.max(8, Math.min(position.x, window.innerWidth - origin.width - 8))
+        const top = Math.max(8, Math.min(position.y, window.innerHeight - origin.height - 8))
+        // Measure CSS offsets in viewport coordinates to include host zoom without integer-size rounding.
+        element.style.left = `${(left - origin.left) / scaleX}px`
+        element.style.top = `${(top - origin.top) / scaleY}px`
         element.querySelector('[role="menuitem"]')?.focus()
       }, [position])
       useEffect(() => {
