@@ -16,7 +16,7 @@ Upstream publishes exactly six operations and twelve profiles
     speech            text_to_speech, lyrics_to_music, caption_to_audio
     audio_generation  text_to_audio
 
-Five rules keep the table honest.
+Six rules keep the table honest.
 
 * The key is `(operation, profile)`, never the route, never the stage.
   `/v1/audio/speech` is the single route of one operation and carries three
@@ -72,6 +72,21 @@ Five rules keep the table honest.
   not proof of absence and the profile stays `unknown` instead of `missing`. A
   profile that already answered stays `available` either way: upstream adds
   routes over time, and one new path must not void a confirmed profile.
+* A role has to come from one route. A capability in `REQUIRED_ROLES` names
+  request roles upstream may not publish, and a request leaves on exactly one
+  route: one open route the operation owns has to declare every required role
+  with `support=supported`. Roles gathered from different routes are not a request —
+  `/v1/videos` naming `source_video` beside `/v1/videos/sync` naming the two
+  noise masks makes an edit request servable on neither. Silence, an absent
+  `support` and `support=unknown` all keep the id `unknown`; when every open
+  route has decided every required role and none carries the whole set, the
+  document has said no — including the case where two routes each refuse a
+  different role — and the id is `missing` with `unsupported`, because "the
+  deployment refuses that input" needs a different fix from "the document does
+  not say". One exception keeps that refusal from hardening: a declared route
+  this table cannot place that is `enabled` or carries no `exposure`, or an own
+  route whose `exposure` cannot be read, may still serve, and then the id stays
+  `unknown`.
 
 `asr` is not an omission on this side: upstream publishes no recognition
 operation at all (`OperationId` is a closed `Literal`) and the omni router never
@@ -206,8 +221,12 @@ OPERATION_MISMATCH = 'operation_mismatch'  # profile known under another operati
 NO_LOCAL_CAPABILITY = 'no_local_capability'  # upstream profile, no id here
 NO_ROUTE_DECLARED = 'no_route_declared'  # supported profile that declares no route at all
 MALFORMED_ROUTE = 'malformed_route'  # a route entry without a usable path
-# The profile is published and supported, but this id needs a request role the
-# document never declares (see `REQUIRED_ROLES`). Not a refusal: `unknown`.
+# The profile is published and supported, but this id needs a request role no
+# single open route declares as supported (see `REQUIRED_ROLES`): the role is
+# absent, split across routes, or refused on one route while another stays
+# silent. Not a refusal: `unknown`. A document that decides every role on every
+# open route and still offers no complete one is not reported here — that is a
+# `missing` verdict with `unsupported`, the same answer a refusing profile gets.
 ROLE_NOT_DECLARED = 'role_not_declared'
 REASONS = frozenset({UNKNOWN_ROUTE, ROUTE_MISMATCH, UNMAPPED_STAGE, UNKNOWN_PROFILE, OPERATION_MISMATCH,
                      NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED, MALFORMED_ROUTE, ROLE_NOT_DECLARED})
@@ -330,8 +349,10 @@ def capabilities_for(operation, profile):
 # `voice`, `instructions`). A profile saying `image_to_video` therefore proves it
 # accepts an image, not that the image is a first frame; `video_to_video` proves
 # it accepts a video, not that it takes latent masks. Both ids stay `unknown`
-# until a route declares the role, and a document that never declares it keeps
-# them `unknown` — the only honest state.
+# until one of the profile's own open routes declares every role the id needs;
+# a document that never declares them keeps them `unknown`, while one that
+# decides every role on every open route and still carries none reports
+# `missing` with `unsupported`.
 # `first_frame` names the slot, not the wire field: the adapter sends it as
 # `input_reference` with `task=fl2va`. The role name is what the document would
 # have to publish, so the two sides share one spelling.
@@ -345,48 +366,108 @@ def required_roles_for(capability_id):
     """The request roles one capability needs, or `()` when a declaration suffices.
 
     `()` means the profile's own `required_inputs` are the whole story (modality
-    level). A non-empty tuple means every named role must appear in the
-    `request.inputs` of one of the profile's own open routes with
-    `support=supported` before this id can read `available`; a role the document
-    never declares leaves it `unknown`.
+    level). A non-empty tuple means one of the profile's own open routes must
+    declare every named role with `support=supported` before this id can read
+    `available` — all of them on the same route, since a request leaves on one.
+    A role the document never declares leaves it `unknown`; a document that
+    decides every required role on every open route while none carries the set
+    leaves it `missing` with `unsupported` (`role_verdict()` applies the rule).
     """
     if not isinstance(capability_id, str):
         return ()
     return REQUIRED_ROLES.get(capability_id.strip(), ())
 
 
-def _supported_roles(request):
-    """Role names one `RequestConstraints` marks `support=supported`."""
+def _role_support(request):
+    """`{role: declared support}` of one `RequestConstraints`, membership kept.
+
+    `supported` and `unsupported` are both answers; an absent or unrecognised
+    `support` is stored as None, so a refusal stays distinguishable from silence
+    and from a value this table does not read.
+    """
     inputs = request.get('inputs') if isinstance(request, dict) else None
     if not isinstance(inputs, dict):
-        return set()
-    return {str(role).strip() for role, constraint in inputs.items()
-            if isinstance(constraint, dict) and constraint.get('support') == SUPPORTED}
+        return {}
+    support = {}
+    for role, constraint in inputs.items():
+        value = constraint.get('support') if isinstance(constraint, dict) else None
+        support[str(role).strip()] = value if value in (SUPPORTED, UNSUPPORTED) else None
+    return support
 
 
-def declared_roles(entry, operation):
-    """Role names a profile declares as supported on its own open routes.
+def _role_routes(entry, operation):
+    """Role maps of the profile's open owned routes, and whether one is undecided.
 
-    Reads only `routes[*].request.inputs[*].support`. The route reference is
-    where upstream's projection lands the per-path facts, and it already carries
-    the profile-level constraints it copied (`_route_request` starts from
-    `dict(request.inputs)`), so reading the profile's own `request` as well would
-    only re-add what a route just narrowed.
+    One map per route, in declaration order, because a request leaves on exactly
+    one of them: a role named by `/v1/videos/sync` says nothing about a request
+    sent to `/v1/videos`. Reads `routes[*].request.inputs[*].support`; the route
+    reference is where upstream's projection lands the per-path facts, and it
+    already carries the profile-level constraints it copied (`_route_request`
+    starts from `dict(request.inputs)`), so reading the profile's own `request`
+    as well would only re-add what a route just narrowed.
 
     A route contributes nothing when its `exposure` is not `enabled` (a closed
-    route cannot serve the request), when it is not one of the operation's own
-    routes, or when the input is not `support=supported`: silence is not
-    evidence, and neither is a path this table does not own.
+    route cannot serve the request) or when it is not one of the operation's own
+    routes. An owned route whose exposure cannot be read counts in the second
+    element instead: it may still serve, so it must not turn a refusal into a
+    positive no — the same rule `_profile_verdict` applies to reachability.
     """
     if not isinstance(entry, dict) or not isinstance(operation, str):
-        return set()
+        return [], False
     owned = set(OPERATION_ROUTES.get(operation, ()))
-    roles = set()
+    roles = []
+    undecided = False
     for value in _routes(entry):
-        if _route_exposure(value) != ENABLED or _route_key(value) not in owned:
+        if _route_key(value) not in owned:
             continue
-        roles |= _supported_roles(value.get('request'))
-    return roles
+        exposure = _route_exposure(value)
+        if exposure == ENABLED:
+            roles.append(_role_support(value.get('request')))
+        elif exposure == ROUTE_UNKNOWN:
+            undecided = True
+    return roles, undecided
+
+
+def role_verdict(entry, operation, required, unrecognised_exposures=()):
+    """Can one open route of the profile carry every required role?
+
+    The rule `resolve()` applies to `REQUIRED_ROLES`, exposed for a caller that
+    holds one profile's declaration and needs the same answer. `required` is the
+    role set one capability needs (`required_roles_for()`); a bare string is read
+    as one role, and anything unreadable as an empty set, which is `yes`.
+
+    `unrecognised_exposures` are the `exposure` values of declared routes this
+    table cannot place; a route reference may be passed instead and is read the
+    same way.
+
+    `yes` — one open route declares all of them with `support=supported`.
+    `no` — at least one route is open, no route carries the whole set, and every
+    open route has decided every role (each one either supported or refused), so
+    no request this deployment accepts can carry it. Two routes that each refuse
+    a different role are as final as one route refusing all of them.
+    `unknown` — anything else: no open route, a role nobody names, an absent or
+    unrecognised `support`, or an alternative this table cannot decide (an owned
+    route whose exposure is unreadable, or an unplaceable route left enabled or
+    without an `exposure`). That last case follows `_profile_verdict`: a channel
+    that may still serve keeps a refusal from hardening into `missing`.
+    """
+    if isinstance(required, str):
+        required = (required,)
+    elif not isinstance(required, (tuple, list, set, frozenset)):
+        required = ()
+    required = tuple(required)
+    if not required:
+        return 'yes'
+    routes, undecided = _role_routes(entry, operation)
+    if any(all(roles.get(role) == SUPPORTED for role in required) for roles in routes):
+        return 'yes'
+    exposures = {_route_exposure(value) if isinstance(value, dict) else value
+                 for value in unrecognised_exposures}
+    if not routes or undecided or ENABLED in exposures or ROUTE_UNKNOWN in exposures:
+        return 'unknown'
+    if all(roles.get(role) in (SUPPORTED, UNSUPPORTED) for roles in routes for role in required):
+        return 'no'
+    return 'unknown'
 
 
 def candidates_for(capability_id):
@@ -604,8 +685,9 @@ def resolve(payload):
 
     A capability is `available` only when some model's profile says so, its
     operation is enabled and at least one of its own routes is enabled;
-    `missing` only when a profile or operation positively says no, with the kind
-    of refusal in `reasons` (`unsupported`, `endpoint_disabled`,
+    `missing` only when a profile, an operation or the role gate positively says
+    no, with the kind of refusal in `reasons` (`unsupported` — including a
+    required input role no open route carries, `endpoint_disabled`,
     `route_disabled`); `unknown` otherwise — no body, an absent field, an unknown
     enum, an unrouted capability, or a declaration this table could not
     translate.
@@ -661,16 +743,28 @@ def resolve(payload):
                     _note(unresolved, key, profile_id, None, NO_ROUTE_DECLARED)
                 capabilities = BY_PAIR[(key, profile_id)]
                 if capabilities:
-                    required = {role for capability in capabilities for role in required_roles_for(capability)}
-                    if required and verdict == 'yes':
-                        missing = required - declared_roles(entry, key)
-                        if missing:
-                            # A broad profile (i2v / v2v) does not authorise a
-                            # narrower tool: one of the profile's own open routes
-                            # has to name the role, and silence is not evidence.
-                            verdict, reason = 'unknown', None
-                            _note(unresolved, key, profile_id, None, ROLE_NOT_DECLARED)
-                    record(capabilities, verdict, reason)
+                    # The role gate is per capability, not per row: a row that
+                    # ever grants a gated id beside an ungated one must not let
+                    # the gated id's refusal reach the other one.
+                    for capability in capabilities:
+                        capability_verdict, capability_reason = verdict, reason
+                        required = required_roles_for(capability)
+                        if required and verdict == 'yes':
+                            roles = role_verdict(entry, key, required, unrecognised)
+                            if roles == 'no':
+                                # Every open route has decided the role set and
+                                # none carries it: a positive no, reported like a
+                                # refusing profile because upstream has to change
+                                # the same thing.
+                                capability_verdict, capability_reason = 'no', UNSUPPORTED_REASON
+                            elif roles != 'yes':
+                                # A broad profile (i2v / v2v) does not authorise a
+                                # narrower tool: one of the profile's own open
+                                # routes has to name every role, and silence is
+                                # not evidence.
+                                capability_verdict, capability_reason = 'unknown', None
+                                _note(unresolved, key, profile_id, None, ROLE_NOT_DECLARED)
+                        record((capability,), capability_verdict, capability_reason)
                 elif verdict == 'yes':
                     _note(unresolved, key, profile_id, None, NO_LOCAL_CAPABILITY)
             # A profile the operation never mentions establishes nothing, unless

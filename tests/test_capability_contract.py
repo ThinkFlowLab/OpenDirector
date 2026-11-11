@@ -38,8 +38,9 @@ from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, BY_PAIR,
                                                      OPERATIONS, PRESENT, PROFILE_OPERATIONS, REASONS, ROUTED_PATHS,
                                                      ROUTE_MISMATCH, UNKNOWN, UNKNOWN_PROFILE, UNKNOWN_ROUTE,
                                                      UNMAPPED_STAGE, UNROUTED, UNROUTED_REASONS, capabilities_for,
-                                                     ROLE_NOT_DECLARED, candidates_for, classified_capabilities,
-                                                     declarations, required_roles_for, resolve, route_path)
+                                                     ROLE_NOT_DECLARED, UNSUPPORTED_REASON, candidates_for,
+                                                     classified_capabilities, declarations, required_roles_for,
+                                                     resolve, role_verdict, route_path)
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'omni-capabilities'
 CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / 'capability-contract.md'
@@ -464,12 +465,16 @@ def test_a_video_profile_grants_a_narrower_id_only_when_its_route_declares_the_r
         routes=[closed, route('/v1/videos/sync'), route('/v1/realtime/video')])])}))
     assert disabled_only['capabilities']['video.first_frame'] == UNKNOWN
 
-    # `support=unsupported` or an absent `support` is not a declaration either.
-    for declared in ({'support': 'unsupported', 'max_count': 0}, {}):
+    # An absent or unrecognised `support` is not a declaration either.
+    for declared in ({}, {'max_count': 0}, {'support': 'unknown'}):
         unresolved_shape = resolve(body({'video_generation': operation(profiles=[profile(
             'image_to_video', inputs=('text', 'image'), outputs=('video',),
             routes=[{**route('/v1/videos'), 'request': {'inputs': {'first_frame': declared}}}])])}))
         assert unresolved_shape['capabilities']['video.first_frame'] == UNKNOWN, declared
+
+    # `support=unsupported` is a different answer: a positive refusal, covered
+    # with the rest of the role gate in
+    # `test_a_complete_request_needs_one_route_and_a_refusal_is_missing`.
 
     # A path this operation does not own cannot declare the role either.
     foreign = resolve(body({'video_generation': operation(profiles=[profile(
@@ -487,6 +492,167 @@ def test_a_video_profile_grants_a_narrower_id_only_when_its_route_declares_the_r
     assert partial_roles['capabilities']['video.edit'] == UNKNOWN
     assert {'operation': 'video_generation', 'profile': 'video_to_video', 'route': None,
             'reason': ROLE_NOT_DECLARED} in partial_roles['unresolved']
+
+
+def test_a_complete_request_needs_one_route_and_a_refusal_is_missing():
+    """Roles on two routes are not one request; a refusal is not a gap.
+
+    `/v1/videos` and `/v1/videos/sync` are two different requests, so
+    `source_video` declared on the first beside the two noise masks on the second
+    cannot be combined: a request leaves on one route. `support=unsupported` is
+    the other side of the same rule — the deployment saying no, which is
+    `missing` with `unsupported`, not the `unknown` of a document that is silent.
+    """
+    complete = {'source_video': 'supported', 'video_noise_mask': 'supported', 'audio_noise_mask': 'supported'}
+    split = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'source_video': 'supported'}),
+                route_with_inputs('/v1/videos/sync', {'video_noise_mask': 'supported',
+                                                      'audio_noise_mask': 'supported'})])])}))
+    assert split['capabilities']['video.edit'] == UNKNOWN
+    assert {'operation': 'video_generation', 'profile': 'video_to_video', 'route': None,
+            'reason': ROLE_NOT_DECLARED} in split['unresolved']
+
+    # One route carrying the whole set is still enough, wherever it sits.
+    whole = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route('/v1/videos'), route_with_inputs('/v1/videos/sync', complete)])])}))
+    assert whole['capabilities']['video.edit'] == AVAILABLE
+    assert whole['unresolved'] == []
+
+    # Refused on the only candidate route: no request can carry that input.
+    refused = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})])])}))
+    assert refused['capabilities']['video.first_frame'] == MISSING
+    assert refused['reasons'] == {'video.first_frame': UNSUPPORTED_REASON}
+    assert refused['unresolved'] == []
+
+    # Refused on every open route is the same answer.
+    refused_twice = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                route_with_inputs('/v1/videos/sync', {'first_frame': 'unsupported'})])])}))
+    assert refused_twice['capabilities']['video.first_frame'] == MISSING
+
+    # A sibling that has not decided keeps it `unknown`: it may still serve.
+    undecided = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                route('/v1/videos/sync')])])}))
+    assert undecided['capabilities']['video.first_frame'] == UNKNOWN
+    assert undecided['reasons'] == {}
+
+    # So does a route this table cannot read but that is switched on.
+    unreadable = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                route_with_inputs('/v1/videos/stream', {'first_frame': 'supported'})])])}))
+    assert unreadable['capabilities']['video.first_frame'] == UNKNOWN
+    assert {'operation': 'video_generation', 'profile': 'image_to_video',
+            'route': '/v1/videos/stream', 'reason': UNKNOWN_ROUTE} in unreadable['unresolved']
+
+    # Two routes that each refuse a different role are as final as one refusing
+    # both: no route can carry the set, and every route has said so.
+    complementary = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'source_video': 'supported',
+                                                 'video_noise_mask': 'unsupported',
+                                                 'audio_noise_mask': 'unsupported'}),
+                route_with_inputs('/v1/videos/sync', {'source_video': 'unsupported',
+                                                      'video_noise_mask': 'supported',
+                                                      'audio_noise_mask': 'supported'})])])}))
+    assert complementary['capabilities']['video.edit'] == MISSING
+    assert complementary['reasons'] == {'video.edit': UNSUPPORTED_REASON}
+
+    # A three-role id is refused by the one role nobody accepts.
+    partial_refusal = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'source_video': 'supported',
+                                                'video_noise_mask': 'unsupported',
+                                                'audio_noise_mask': 'unsupported'})])])}))
+    assert partial_refusal['capabilities']['video.edit'] == MISSING
+    assert partial_refusal['reasons'] == {'video.edit': UNSUPPORTED_REASON}
+
+    # An unrecognised route with no `exposure` is `unknown` exposure, not a
+    # refusal: it must keep the answer `unknown` too.
+    silent_unrecognised = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                {'transport': 'http', 'method': 'POST', 'path': '/v1/videos/stream'}])])}))
+    assert silent_unrecognised['capabilities']['video.first_frame'] == UNKNOWN
+    assert silent_unrecognised['reasons'] == {}
+    assert {'operation': 'video_generation', 'profile': 'image_to_video',
+            'route': '/v1/videos/stream', 'reason': UNKNOWN_ROUTE} in silent_unrecognised['unresolved']
+
+    # And an own route whose exposure cannot be read: it may still serve, so a
+    # refusal on its sibling is not the whole story either.
+    unread_exposure = route_with_inputs('/v1/videos/sync', {'first_frame': 'supported'})
+    del unread_exposure['exposure']
+    undecided_exposure = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                unread_exposure])])}))
+    assert undecided_exposure['capabilities']['video.first_frame'] == UNKNOWN
+    assert undecided_exposure['reasons'] == {}
+
+    # A refusal on a closed route proves nothing: that route cannot serve.
+    closed = route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})
+    closed['exposure'] = 'disabled'
+    closed_only = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[closed, route('/v1/videos/sync')])])}))
+    assert closed_only['capabilities']['video.first_frame'] == UNKNOWN
+
+    # A caller holding one declaration gets the same three answers, and an empty
+    # one is undecided rather than refused.
+    assert role_verdict({}, 'video_generation', ('first_frame',)) == 'unknown'
+    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'supported'})]},
+                        'video_generation', ('first_frame',)) == 'yes'
+    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})]},
+                        'video_generation', ('first_frame',)) == 'no'
+    assert role_verdict({'routes': [route('/v1/videos')]}, 'video_generation', ()) == 'yes'
+    # A bare string is one role, and an unplaceable route reference is read as
+    # the exposure it carries.
+    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'supported'})]},
+                        'video_generation', 'first_frame') == 'yes'
+    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})]},
+                        'video_generation', ('first_frame',),
+                        [{'path': '/v1/videos/stream', 'exposure': 'enabled'}]) == 'unknown'
+
+    # A constraint that is not an object is neither authorisation nor refusal.
+    bare_constraint = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[{**route('/v1/videos'), 'request': {'inputs': {'first_frame': 'supported'}}}])])}))
+    assert bare_constraint['capabilities']['video.first_frame'] == UNKNOWN
+    assert bare_constraint['reasons'] == {}
+    assert {'operation': 'video_generation', 'profile': 'image_to_video', 'route': None,
+            'reason': ROLE_NOT_DECLARED} in bare_constraint['unresolved']
+
+
+def test_a_profile_row_grants_at_most_one_role_gated_id():
+    """A role-gated row grants nothing else, so a refusal cannot reach a free id."""
+    for operation, profile_id, capabilities in OPERATION_PROFILES:
+        gated = [capability for capability in capabilities if required_roles_for(capability)]
+        assert not gated or tuple(gated) == tuple(capabilities), (operation, profile_id, capabilities)
+
+
+def test_a_gated_ids_refusal_does_not_reach_the_ids_beside_it(monkeypatch):
+    """The gate runs per capability, so a mixed row cannot lend it a verdict.
+
+    No row in the table mixes a gated id with an ungated one, and the invariant
+    above keeps it that way; this pins the code, not just the table, by handing
+    `resolve()` one such row: `video.first_frame` is refused, `video.generate`
+    beside it is not.
+    """
+    monkeypatch.setitem(BY_PAIR, ('video_generation', 'image_to_video'),
+                        ('video.generate', 'video.first_frame'))
+    mixed = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})])])}))
+    assert mixed['capabilities']['video.first_frame'] == MISSING
+    assert mixed['reasons'] == {'video.first_frame': UNSUPPORTED_REASON}
+    assert mixed['capabilities']['video.generate'] == AVAILABLE
 
 
 # --- states ---------------------------------------------------------------
