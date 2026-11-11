@@ -3,14 +3,12 @@
 import asyncio
 import base64
 import json
-import socket
-from ipaddress import ip_address
 from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
 import httpx
 
-from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, trust_environment
+from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, public_target, trust_environment
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.projects import ProjectError
@@ -37,34 +35,8 @@ async def bounded(response, *, stage, secrets=(), limit=MAX_ASSET_BYTES):
 
 async def _public_result_url(url):
     """Pin an unconfigured download to checked public DNS answers, retaining TLS identity."""
-    try:
-        target = httpx.URL(url)
-    except httpx.InvalidURL:
-        raise protocol_failure('download') from None
-    host = target.host.rstrip('.').lower()
-    if (target.scheme not in {'http', 'https'} or not host or target.userinfo
-            or '%' in host or host == 'localhost' or host.endswith('.localhost')):
-        raise protocol_failure('download')
-    try:
-        addresses = [ip_address(host)]
-    except ValueError:
-        try:
-            answers = await asyncio.wait_for(asyncio.to_thread(
-                socket.getaddrinfo, host, target.port or (443 if target.scheme == 'https' else 80),
-                type=socket.SOCK_STREAM), timeout=15)
-        except (OSError, asyncio.TimeoutError):
-            raise transport_failure('download') from None
-        addresses = [ip_address(answer[4][0]) for answer in answers]
-    for address in addresses:
-        checked_address = getattr(address, 'ipv4_mapped', None) or address
-        if (not checked_address.is_global or checked_address.is_multicast
-                or checked_address.is_reserved):
-            raise protocol_failure('download')
-    if not addresses:
-        raise protocol_failure('download')
-    # A pooled connection to one IP must not reuse another hostname's TLS identity.
-    headers = {'Host': target.netloc.decode('ascii'), 'Connection': 'close'}
-    return target.copy_with(host=str(addresses[0])), headers, {'sni_hostname': target.host}
+    return await public_target(url, unsafe=lambda: protocol_failure('download'),
+                               unresolved=lambda: transport_failure('download'))
 
 
 class VolcengineGeneration:

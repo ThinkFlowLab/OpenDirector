@@ -15,7 +15,7 @@ from opendirector.domain.capabilities import SpeechRequest
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
-from opendirector.domain.zhipu_speech import ZHIPU_PRESET_VOICES, is_zhipu_speech
+from opendirector.domain.zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_PRESET_VOICES, is_zhipu_speech
 from opendirector.integrations.chat_completions import chat_payload
 from opendirector.integrations.model_adapters import OpenAISpeech, ZhipuSpeech, adapter_for
 from opendirector.integrations.generation_errors import provider_failure
@@ -103,6 +103,10 @@ def test_profile_requires_the_official_endpoint_and_model():
     assert library_rules['provider'] == 'zhipu' and library_rules['canDelete']
     assert library_rules['formats'] == ['wav', 'mp3'] and library_rules['maxBytes'] == 10 * 1024 * 1024
     assert not library_rules['requiresTranscript'] and not library_rules['requiresReferenceAudio']
+    # The form shows an optional transcript from this capability, never from the provider name.
+    assert library_rules['acceptsTranscript']
+    # The default voice is published so the client does not hardcode one.
+    assert rules['defaultVoice'] == ZHIPU_DEFAULT_VOICE
     assert SECRET not in json.dumps(rules)
     assert isinstance(adapter_for(value), ZhipuSpeech)
     for patch in ({'url': 'https://open.bigmodel.cn/api/paas/v3'}, {'url': 'http://open.bigmodel.cn/api/paas/v4'},

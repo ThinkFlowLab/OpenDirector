@@ -178,7 +178,7 @@ export function CreateVoiceForm({
         disabled={busy}
         onChange={(event) => setName(event.target.value)}
       />
-      {(isVllm || capabilities.provider === "zhipu") && (
+      {(capabilities.requiresTranscript || capabilities.acceptsTranscript) && (
         <>
           <label htmlFor={`${prefix}-transcript`}>
             {t(

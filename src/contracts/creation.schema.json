@@ -6604,6 +6604,20 @@
             "description": "Whether speech generation requires an explicit service voice ID.",
             "title": "Voicerequired"
           },
+          "defaultVoice": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service voice ID applied when a required selection is still empty.",
+            "title": "Defaultvoice"
+          },
           "referencesAllowed": {
             "anyOf": [
               {
@@ -14426,6 +14440,12 @@
             "title": "Requirestranscript",
             "type": "boolean"
           },
+          "acceptsTranscript": {
+            "default": false,
+            "description": "Registry stores an optional reference transcript when one is supplied.",
+            "title": "Acceptstranscript",
+            "type": "boolean"
+          },
           "requiresReferenceAudio": {
             "description": "Registered voice must have actual reference audio.",
             "title": "Requiresreferenceaudio",
@@ -21932,6 +21952,20 @@
             "default": null,
             "description": "Whether speech generation requires an explicit service voice ID.",
             "title": "Voicerequired"
+          },
+          "defaultVoice": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service voice ID applied when a required selection is still empty.",
+            "title": "Defaultvoice"
           },
           "referencesAllowed": {
             "anyOf": [
@@ -30068,6 +30102,12 @@
             "title": "Requirestranscript",
             "type": "boolean"
           },
+          "acceptsTranscript": {
+            "default": false,
+            "description": "Registry stores an optional reference transcript when one is supplied.",
+            "title": "Acceptstranscript",
+            "type": "boolean"
+          },
           "requiresReferenceAudio": {
             "description": "Registered voice must have actual reference audio.",
             "title": "Requiresreferenceaudio",
@@ -30142,6 +30182,7 @@
           "provider",
           "connectionId",
           "requiresTranscript",
+          "acceptsTranscript",
           "requiresReferenceAudio",
           "supportsUploadedVoices",
           "referenceEmbeddingDimension",

@@ -1,7 +1,5 @@
 """Shared voice registry operations for HTTP, Agent and generation acceptance."""
 import json
-import socket
-from ipaddress import ip_address
 from pathlib import Path
 import tempfile
 from time import monotonic
@@ -12,7 +10,7 @@ import httpx
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.voices import VOICE_CREATE_TEXT_LIMITS, voice_error, voice_library_capabilities, valid_voice_name, voice_incompatibility
 from opendirector.domain.zhipu_speech import ZHIPU_CLONE_MODEL, ZHIPU_CLONE_PREVIEW_TEXT, ZHIPU_PRESET_VOICES
-from opendirector.integrations.http_settings import auth_headers, trust_environment
+from opendirector.integrations.http_settings import auth_headers, public_target_sync, trust_environment
 from opendirector.integrations.volcengine import endpoint
 from opendirector.media.probe import probe_file
 
@@ -24,22 +22,8 @@ _CURRENT_CONNECTION = object()
 
 def _public_https(url):
     """Pin an account listing's CDN preview to a checked public HTTPS address, keeping TLS identity."""
-    parsed = urlsplit(url)
-    host = (parsed.hostname or '').rstrip('.').lower()
-    if parsed.scheme != 'https' or not host or parsed.username or parsed.password or host == 'localhost' or host.endswith('.localhost'):
-        raise voice_error('voice_provider_error', 502)
-    try:
-        answers = [answer[4][0] for answer in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)]
-    except OSError:
-        raise voice_error('voice_provider_error', 502) from None
-    for answer in answers:
-        address = ip_address(answer)
-        address = getattr(address, 'ipv4_mapped', None) or address
-        if not address.is_global or address.is_multicast or address.is_reserved:
-            raise voice_error('voice_provider_error', 502)
-    if not answers: raise voice_error('voice_provider_error', 502)
-    target = httpx.URL(url)
-    return target.copy_with(host=answers[0]), {'Host': target.netloc.decode('ascii'), 'Connection': 'close'}, {'sni_hostname': target.host}
+    failure = lambda: voice_error('voice_provider_error', 502)
+    return public_target_sync(url, unsafe=failure, unresolved=failure, schemes=('https',))
 
 
 class VoiceLibrary:

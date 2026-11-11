@@ -669,6 +669,7 @@ export interface InputRulesInput extends ContractInput {
   readonly voiceLibrary?: VoiceLibraryCapabilitiesInput | null;
   readonly maxPromptCharacters?: number | null;
   readonly voiceRequired?: boolean | null;
+  readonly defaultVoice?: string | null;
   readonly referencesAllowed?: boolean | null;
   readonly allowedKinds: ReadonlyArray<"text" | "image" | "video" | "audio">;
   readonly maxImages: number;
@@ -1533,6 +1534,7 @@ export interface VoiceLibraryCapabilitiesInput extends ContractInput {
   readonly provider: "vllm_omni" | "moss" | "zhipu";
   readonly connectionId: string;
   readonly requiresTranscript: boolean;
+  readonly acceptsTranscript?: boolean;
   readonly requiresReferenceAudio: boolean;
   readonly supportsUploadedVoices?: boolean;
   readonly referenceEmbeddingDimension?: number | null;
@@ -2242,6 +2244,7 @@ export interface InputRules extends Contract {
   readonly voiceLibrary?: VoiceLibraryCapabilities | null;
   readonly maxPromptCharacters?: number | null;
   readonly voiceRequired?: boolean | null;
+  readonly defaultVoice?: string | null;
   readonly referencesAllowed?: boolean | null;
   readonly allowedKinds: ReadonlyArray<"text" | "image" | "video" | "audio">;
   readonly maxImages: number;
@@ -3105,6 +3108,7 @@ export interface VoiceLibraryCapabilities extends Contract {
   readonly provider: "vllm_omni" | "moss" | "zhipu";
   readonly connectionId: string;
   readonly requiresTranscript: boolean;
+  readonly acceptsTranscript: boolean;
   readonly requiresReferenceAudio: boolean;
   readonly supportsUploadedVoices: boolean;
   readonly referenceEmbeddingDimension: number | null;

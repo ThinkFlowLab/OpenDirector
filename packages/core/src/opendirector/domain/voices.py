@@ -48,7 +48,7 @@ def voice_library_capabilities(config):
     name = config.get('modelId', '').rsplit('/', 1)[-1].lower().replace('_', '-')
     if is_zhipu_speech(config):
         return _scoped(config, 'zhipu', dict(
-            requiresTranscript=False, requiresReferenceAudio=False, supportsUploadedVoices=True,
+            requiresTranscript=False, acceptsTranscript=True, requiresReferenceAudio=False, supportsUploadedVoices=True,
             referenceEmbeddingDimension=None, canDelete=True, maxBytes=10 * 1024 * 1024,
             formats=['wav', 'mp3'], minSeconds=3, maxSeconds=30))
     moss = is_moss_speech(config)
@@ -79,7 +79,8 @@ def voice_library_capabilities(config):
     qwen_base = name.startswith('qwen3-tts') and name.endswith('-base')
     dimension = (1024 if '0.6b' in name else 2048 if '1.7b' in name else None) if qwen_base else None
     reference = reference or qwen_base
-    return _scoped(config, provider, dict(requiresTranscript=transcript,
+    # vLLM registrations carry ref_text whenever the caller has one.
+    return _scoped(config, provider, dict(requiresTranscript=transcript, acceptsTranscript=not moss,
                 requiresReferenceAudio=reference, supportsUploadedVoices=uploaded,
                 referenceEmbeddingDimension=dimension, canDelete=not moss, maxBytes=10 * 1024 * 1024,
                 formats=['wav', 'mp3', 'm4a', 'flac'] if moss else ['wav', 'mp3', 'flac', 'ogg', 'aac', 'webm', 'm4a', 'mp4'],

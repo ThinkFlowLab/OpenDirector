@@ -7,7 +7,7 @@ from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 from .bigmodel_image import is_bigmodel_image
-from .zhipu_speech import ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
+from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -39,7 +39,8 @@ def _adapter_rules(config):
         return rules
     if is_zhipu_speech(config):
         rules.update(profile='zhipu-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
-                     referencesAllowed=False, maxPromptCharacters=ZHIPU_SPEECH_CHARACTERS)
+                     referencesAllowed=False, maxPromptCharacters=ZHIPU_SPEECH_CHARACTERS,
+              defaultVoice=ZHIPU_DEFAULT_VOICE)
         return rules
     if kind == 'vision' or config.get('protocol') == 'vllm_omni_segmentation':
         # Shared image segmentation / video tracking service, never a generator.
