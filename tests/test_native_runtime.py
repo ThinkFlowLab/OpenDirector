@@ -251,6 +251,10 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
             assert 'steps' not in config['agent']['opendirector']
             assert config['permission']['*'] == 'deny'
             assert config['skills']['paths'] == [str(work / '.agents/skills')]
+            if runtime == 'default':
+                assert config['agent']['title'] == {'disable': True}
+            else:
+                assert 'title' not in config['agent']
 
 
 def test_codex_only_passes_supported_isolation_flags(tmp_path, monkeypatch):
@@ -312,25 +316,22 @@ def test_opencode_resume_rejects_unexpected_or_changing_session_ids(tmp_path, mo
     assert json.loads(saved.read_text()) == previous
 
 
-@pytest.mark.parametrize("runtime", ["default"])
-@pytest.mark.parametrize("resume", [False, True])
-def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume, monkeypatch, request):
+@pytest.fixture
+def real_opencode_worker(tmp_path, monkeypatch, request):
+    """Bound real CLI cases in isolated workers and clean up owned processes."""
     if os.environ.get('OPENDIRECTOR_REAL_CLI') != '1':
         pytest.skip('Set OPENDIRECTOR_REAL_CLI=1 to run the bundled CLI integration')
     if native.executable('default') is None:
         pytest.skip('Bundled OpenCode is not installed')
     if os.environ.get('OPENDIRECTOR_REAL_CLI_WORKER') != '1':
-        case = f'{__file__}::test_real_opencode_native_skill_and_gateway_write[{resume}-{runtime}]'
-        result = subprocess.run([sys.executable, '-m', 'pytest', case, '-s', '-q'],
+        result = subprocess.run([sys.executable, '-m', 'pytest', request.node.nodeid, '-s', '-q'],
             env={**os.environ, 'OPENDIRECTOR_REAL_CLI_WORKER': '1'},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=90)
         assert result.returncode == 0, result.stdout
-        return
+        return False
 
     for name in ('XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME'):
         monkeypatch.setenv(name, str(tmp_path / name.lower()))
-    # A watchdog in the isolated worker can report all thread stacks and kill
-    # CLI process groups even when TestClient is blocked waiting for a stream.
     from opendirector.agent.process import _signal_tree
     processes = []
     spawn = asyncio.create_subprocess_exec
@@ -359,7 +360,93 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
     watchdog.daemon = True
     watchdog.start()
     request.addfinalizer(watchdog.cancel)
+    return True
+
+
+@pytest.mark.parametrize('reasoning', [False, True], ids=['plain', 'thinking'])
+def test_real_opencode_default_hello_saves_direct_reply(tmp_path, monkeypatch, real_opencode_worker, reasoning):
+    if not real_opencode_worker:
+        return
     requests = []
+    reply = 'Hello! How can I help?'
+
+    class GreetingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            deltas = [{'role': 'assistant', 'content': ''}]
+            if reasoning:
+                deltas.append({'reasoning_content': 'A greeting needs no project tools.'})
+            deltas.extend([{'content': 'Hello! '}, {'content': 'How can I help?'}])
+            for delta in [*deltas, {}]:
+                chunk = {'id': 'hello', 'object': 'chat.completion.chunk', 'created': 1,
+                    'model': 'test-model', 'choices': [{'index': 0, 'delta': delta,
+                        'finish_reason': None if delta else 'stop'}]}
+                frame = ('data: ' + json.dumps(chunk) + '\n\n').encode()
+                for index in range(0, len(frame), 7):
+                    yield frame[index:index + 7]
+                await asyncio.sleep(.01)
+            yield b'data: [DONE]\n\n'
+
+    def model(request):
+        # Count every provider call, including title generation and retries.
+        requests.append(json.loads(request.content))
+        assert request.headers['authorization'] == 'Bearer server-only-key'
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=GreetingStream())
+
+    async def no_skills(*args):
+        return []
+    monkeypatch.setattr('opendirector_api.agent.skills', no_skills)
+    local = LocalProjects(tmp_path)
+    config = ModelConfigs(tmp_path).save('agent', 'http://test.invalid/v1', 'test-model', 'server-only-key')
+    provider = ChatCompletions(httpx.MockTransport(model))
+    with TestClient(create_app(local, chat_provider=provider), headers={
+            'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
+        path = project(client)
+        assert client.get(path + '/assistant').json()['messages'] == []
+        turn = {'id': str(uuid4()), 'runtime': 'default', 'modelId': config['id'], 'text': 'hello'}
+        response = client.post(path + '/assistant/turns', json=turn)
+        assert response.status_code == 200
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
+        assert events[-1]['type'] == 'end' and events[-1]['error'] is None, events
+        assert ''.join(event['text'] for event in events if event['type'] == 'delta') == reply
+        assert not any(event['type'] == 'tool' for event in events)
+        assert len(requests) == 1
+        # Keep the production tool surface available: the test must not achieve
+        # zero calls by disabling tools or forcing tool_choice=none.
+        assert requests[0]['tool_choice'] == 'auto'
+        assert any(tool['function']['name'] == 'bash' for tool in requests[0]['tools'])
+        saved = client.get(path + '/assistant').json()
+        assert len(saved['messages']) == 2
+        assert saved['messages'][0]['text'] == 'hello'
+        summaries = client.get(path + '/assistant/conversations').json()['items']
+        assert len(summaries) == 1 and summaries[0]['title'] == 'hello'
+        assistant = saved['messages'][-1]
+        assert assistant['text'] == reply and assistant['status'] == 'complete'
+        assert assistant.get('tools', []) == []
+        disk = json.loads(next(local.root.rglob('conversation.json')).read_text(encoding='utf-8'))
+        assert disk['messages'] == saved['messages']
+        snapshot = client.get(path).json()
+        assert snapshot['assets'] == [] and snapshot['jobs'] == []
+        trace = next(local.root.rglob(f"{turn['id']}.opencode.jsonl"))
+        native_events = [json.loads(line).get('native', {}) for line in trace.read_text(encoding='utf-8').splitlines()]
+        assert not any(event.get('type') == 'tool_use' for event in native_events)
+        assert sum(event.get('type') == 'step_finish' for event in native_events) == 1
+        model_trace = next(local.root.rglob(f"{turn['id']}.model.jsonl"))
+        model_events = [json.loads(line) for line in model_trace.read_text(encoding='utf-8').splitlines()]
+        assert sum(event['event'] == 'model.request' for event in model_events) == 1
+        assert sum(event['event'] == 'model.completed' for event in model_events) == 1
+        # Replaying an accepted turn must not submit another provider request.
+        assert '已接受' in client.post(path + '/assistant/turns', json=turn).text
+        assert len(requests) == 1
+        assert client.get(path + '/assistant').json()['messages'] == saved['messages']
+
+
+@pytest.mark.parametrize("runtime", ["default"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume, monkeypatch, real_opencode_worker):
+    if not real_opencode_worker:
+        return
+    requests = []
+    write_receipts = []
     def model(request):
         payload = json.loads(request.content)
         if payload.get('tools'):
@@ -379,13 +466,20 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
                 'command': "opendirector asset write-text --name real-native.md --text 'Real OpenCode plan'",
                 'description': 'Register the plan in the project'})}
         else:
+            if count == 3:
+                receipt = json.loads(next(message['content'] for message in payload['messages']
+                    if message.get('role') == 'tool' and message.get('tool_call_id') == 'call-2'))
+                assert receipt['status'] == 'applied'
+                write_receipts.append(receipt)
             call = None
         delta = {'tool_calls':[{'index':0,'id':f'call-{count}','type':'function','function':call}]} if call else {'content':'OpenCode ready.'}
         chunk = {'id':f'completion-{count}','object':'chat.completion.chunk','created':1,'model':'test-model',
             'choices':[{'index':0,'delta':delta,'finish_reason':None}]}
         finish = {**chunk,'choices':[{'index':0,'delta':{},'finish_reason':'tool_calls' if call else 'stop'}]}
+        reasoning = {**chunk, 'choices': [{'index': 0,
+            'delta': {'reasoning_content': 'Check the request.'}, 'finish_reason': None}]}
         return httpx.Response(200,headers={'content-type':'text/event-stream'},content=(
-            'data: '+json.dumps(chunk)+'\n\ndata: '+json.dumps(finish)+'\n\ndata: [DONE]\n\n').encode())
+            'data: '+json.dumps(reasoning)+'\n\ndata: '+json.dumps(chunk)+'\n\ndata: '+json.dumps(finish)+'\n\ndata: [DONE]\n\n').encode())
     local = LocalProjects(tmp_path)
     config = ModelConfigs(tmp_path).save('agent','http://test.invalid/v1','test-model','server-only-key')
     provider = ChatCompletions(httpx.MockTransport(model))
@@ -404,7 +498,10 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
         events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
         assert events[-1]['error'] is None, events
         assert events[-1]['conversation']['messages'][-1]['text'] == 'OpenCode ready.'
-        assert client.get(path).json()['assets'][0]['name'] == 'real-native.md'
+        assets = client.get(path).json()['assets']
+        assert len(assets) == 1 and assets[0]['name'] == 'real-native.md'
+        assert len(write_receipts) == 1
+        assert assets[0]['id'] == write_receipts[0]['assetId']
         assert len(requests) == 3
         saved = client.get(path + '/assistant').json()
         assert saved['skills'] == []

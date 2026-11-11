@@ -8,6 +8,7 @@ from opendirector.domain.rule_facts import (
     FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES,
 )
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.references import project_content
 
 
@@ -156,6 +157,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                 raise ProjectError(f'“{meta["name"]}”不符合视频参考图片尺寸要求：边长 300—6000 像素，宽高比 0.4—2.5。')
             if rules['profile'] == 'seedream-5.0-pro' and (width is None or height is None or min(width, height) <= 14 or not 196 <= width * height <= 36000000 or not 1 / 16 <= width / height <= 16):
                 raise ProjectError(f'“{meta["name"]}”不符合当前图片模型的参考尺寸要求。')
+            if rules['profile'] == 'minimax-h3-image':
+                validate_minimax_image_reference(mime, width, height)
             role = 'reference_image'
             if kind == 'video' and mode == 'first_frame':
                 # Frame slots are per-slot: one image each, and the slot the

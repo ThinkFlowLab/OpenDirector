@@ -23,6 +23,8 @@ npm run check:i18n
 
 `tests/test_native_runtime.py` 默认使用 CLI 和技能发现替身检查新会话、恢复会话及工程写入。真实 bundled OpenCode 集成测试需设置 `OPENDIRECTOR_REAL_CLI=1`；它使用模拟模型服务，不调用付费模型，在独立进程中限制运行时间，超时输出阶段和线程堆栈并终止跟踪到的 CLI 进程。Linux 上的故障注入还检查超时后进程已退出，其他平台的进程树清理需要相应平台验证。安装验证仍须运行上述版本命令。
 
+Release checks runs these real CLI cases in a dedicated `Bundled OpenCode model gateway regression` step with `OPENDIRECTOR_REAL_CLI=1`. This uses local mock models and must verify final text, tool-result continuation, request counts, persisted assets and session resumption, not merely HTTP 200 or process startup. Gateway tests must also distinguish a properly terminated HTTP body from interrupted streaming and cancellation. Fresh Default `hello` cases exercise plain and reasoning streams through the actual bundled runtime, require exactly one provider request (including auxiliary calls), no native or business tool calls, and the complete reply on disk. The runtime tool surface remains enabled; model replies are simulated.
+
 Windows 使用对应虚拟环境的 Python 路径。涉及真实媒体探测、工具处理或对应测试时，需要 PATH 中的 `ffmpeg` 和 `ffprobe`；视频处理使用 `libx264` 编码器，可通过 `ffmpeg -encoders` 检查是否包含它。不因纯文档修改而运行全部生成或媒体测试。
 
 macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统旧版 `python3`。安装验证需使用全新源码目录、新建 `.venv` 和 `pip install -e .`；构建由 pip 钩子执行，然后通过正式 `serve` 入口检查页面、上传、刷新与服务重启恢复。wheel 与 editable 的隔离验收见 [Python 安装与发布](packaging.md)。实测边界见 [macOS 安装验证记录](macos-install-validation.md)。
@@ -249,6 +251,17 @@ CREATION_API_URL=http://127.0.0.1:8019 CREATION_WEB_URL=http://127.0.0.1:5179 no
 
 Python 用例使用模拟 HTTP 服务及真实 PNG、MP3，检查请求字段、音色、执行快照、文件探测、工程重开和下载恢复不重复生成。通用错误分类和安全提示由现有错误测试负责。浏览器用例检查两种语言下的提供商及型号列表、获取模型失败的具体原因、音色必填、保存重开和实际音频播放；播放器使用隔离服务的 WAV 替身，不代表 MOSS 已生成语音。真实验收另需有效 MOSS 凭证和音色 ID，并保留实际音频、模型标识及播放器截图。
 
+Zhipu BigModel chat access uses the following checks. Browser commands connect to the isolated API and Vite described earlier in this document. Environment variables can override the ports.
+
+```sh
+.venv/bin/python -m pytest tests/test_zhipu.py tests/test_model_configs.py -q
+node --test tests/providerPresets.test.ts
+CREATION_API_URL=http://127.0.0.1:8019 CREATION_WEB_URL=http://127.0.0.1:5179 node tests/browser/zhipu_provider.mjs
+```
+
+The Python cases check how the shared thinking levels map to GLM reasoning_effort. GLM accepts only low, high and max for reasoning_effort. The auto level omits the parameter so the provider default applies, and an unknown level falls back to high as in the DeepSeek branch. Other hosts and the DeepSeek behavior stay unchanged.
+
+The browser case checks both display languages for the provider list and names, canonical URL prefill, GLM model preselection without remote discovery, manual addition of other model IDs, the saved connection reuse hint, save and reopen, key privacy in public model responses, and the assistant agent picker listing and keeping the selected Zhipu model. The browser never contacts open.bigmodel.cn and the API key is always a fixture value. Real streaming conversations, tool call execution and thinking level effects additionally require valid Zhipu credentials. Keep the conversation transcript, tool receipts and screenshots as evidence.
 
 ### Voice library / 音色库
 

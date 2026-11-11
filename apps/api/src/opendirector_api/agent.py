@@ -347,7 +347,6 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                             content += '\nReferenced project assets: ' + json.dumps(references, ensure_ascii=False)
                             content += '\nThese are asset references, not visual observations. Inspect media with available tools before describing its contents.'
                         context.append({'role': message['role'], 'content': content})
-                    context[-1]['content'] += '\nSummarize the delivered result and material limitations. Keep execution IDs, revisions and receipts in tool details unless requested.'
                     if preferences:
                         context[-1]['content'] += '\nUser model preferences for this turn: ' + json.dumps(preferences, ensure_ascii=False)
                         context[-1]['content'] += '\nUse these models for new generation unless the user explicitly requests another. If unavailable or unsuitable, explain and ask before substituting. Keep existing nodes on their configured models unless the user requests a change.'

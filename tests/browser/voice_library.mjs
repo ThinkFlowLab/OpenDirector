@@ -265,6 +265,14 @@ try {
       page.getByRole("button", { name: L.library, exact: true }).click();
     const dialog = () =>
       page.getByRole("dialog", { name: L.library, exact: true });
+    const assertSelectedVoice = async (expectedName) => {
+      const choices = dialog().locator(".cw-voice-name");
+      await choices.first().waitFor();
+      const pressed = choices.and(dialog().getByRole("button", { pressed: true }));
+      const unpressed = dialog().locator('.cw-voice-name[aria-pressed="false"]');
+      assert.deepEqual(await pressed.allTextContents(), expectedName ? [expectedName] : []);
+      assert.equal(await unpressed.count(), await choices.count() - (expectedName ? 1 : 0));
+    };
     const selectModel = async (config) => {
       await page.getByRole("combobox", { name: L.model, exact: true }).click();
       await page
@@ -319,6 +327,7 @@ try {
       await dialog()
         .getByRole("button", { name: "Sample voice", exact: true })
         .waitFor();
+      await assertSelectedVoice(null);
       assert.equal(await dialog().getByRole("tab").count(), 3);
       assert.equal(
         await dialog()
@@ -563,11 +572,16 @@ try {
       await page.keyboard.press("Escape");
       await selectModel(normal);
       await open();
+      await dialog().getByRole("button", { name: "Sample voice", exact: true }).click();
+      await until(async () => (await params()).voiceSelection?.voiceId === "sample");
+      await open();
+      await assertSelectedVoice("Sample voice");
       await dialog()
         .getByRole("button", { name: createdName, exact: true })
         .click();
       await until(async () => (await params()).voice === vllmVoiceId);
       await open();
+      await assertSelectedVoice(createdName);
       await dialog().getByRole("tab", { name: L.mine, exact: true }).click();
       const entry = dialog()
         .locator(".cw-voice-entry")

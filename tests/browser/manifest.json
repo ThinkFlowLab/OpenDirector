@@ -7,11 +7,10 @@
     },
     {
       "file": "assistant_activity.mjs",
-      "previewSafe": true,
       "lanes": [
-        "gate",
-        "production"
-      ]
+        "gate"
+      ],
+      "note": "Mounts /tests/browser/assistant_activity_fixture.tsx through Vite. vite preview cannot serve that module, so this script is not in the production lane."
     },
     {
       "file": "assistant_auxiliary_panels.mjs",
@@ -468,6 +467,13 @@
         "gate"
       ],
       "note": "Runs with voice_library_server.py in the Release checks voice library phase."
+    },
+    {
+      "file": "zhipu_provider.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ]
     }
   ]
 }

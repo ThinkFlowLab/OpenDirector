@@ -102,6 +102,9 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
                 'skill': {'*': 'deny', **{item['name']: 'allow' for item in catalog}}},
             'mcp': {}}
         if bundled:
+            # OpenDirector owns conversation titles. The native title is unused
+            # and would submit a second paid model request on a fresh greeting.
+            config['agent']['title'] = {'disable': True}
             config['provider'] = {'opendirector': {'npm': '@ai-sdk/openai-compatible', 'name': 'OpenDirector',
                 'options': {'baseURL': model_url, 'apiKey': '{env:OPENDIRECTOR_MODEL_KEY}'},
                 'models': {model: {'name': model, 'modalities': {'input': input_modalities or ['text'], 'output': ['text']}}}}}

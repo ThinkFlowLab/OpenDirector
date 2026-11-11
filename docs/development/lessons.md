@@ -25,6 +25,12 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Lesson:** Commits `28d61dce` and `0a5630ac` each recorded the same generation test failing on the baseline. That historical record does not establish whether the test still fails today.
 - **Check:** Record the versions and results used in the comparison. Link an existing issue or create one when appropriate. Report the check as failed; a baseline failure is not a pass.
 
+## Shared browser lanes are not isolated by a fresh page alone
+
+- **Trigger:** Adding a browser script to the nightly extended, production, or perf lane, or changing model setup, session leases, or preview serving.
+- **Lesson:** Nightly runs many scripts against one creation server. The first-run welcome covers the canvas until every model kind exists, so a script that does not dismiss it fails when it is the first click on a fresh server. A script that opens whichever project sorts first can hit a lease still held by an earlier script. Fixture scripts that read `CREATION_WEB_URL` stay on the regular dev server unless the lane overrides it. `vite preview` does not serve `/src` or `/tests` modules.
+- **Check:** Dismiss `opendirector.modelSetup.v1` before the first navigation, and open a project the script itself created when the server is already populated. Point assistant-fixture scripts at their own web URL, and keep `/src` or `/tests` imports out of the production lane. `npm run check:browser-manifest` checks the dismissal, the fixture URL, and those imports.
+
 ## Native permission plans are not committed permissions
 
 - **Trigger:** Retrying an ACL read/modify/write or rolling back failed initialization.
@@ -66,3 +72,10 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** A workspace timer retains its document while an editor commit installs a newer authoritative baseline.
 - **Lesson:** A timer may run after the editor's saving flag clears but before React installs the new document. Comparing that old closure against the new baseline can turn a view-only save into a business rollback, invalidating a previously captured publication version.
 - **Check:** Invalidate scheduled automatic callbacks when the editor transaction starts, drain queued saves and explicitly persist the current draft before the edit. Preserve publication CAS checks. Exercise the real due callback at the acknowledgment boundary; isolate projection-test gates by snapshot identity, assert release/restoration and always clean up. Distinguish a forced reproduction from proof of the exact CI schedule.
+
+
+## An upstream response and a consumer finishing it are separate facts
+
+- **Trigger:** Forwarding streamed model responses through the loopback gateway.
+- **Lesson:** [Issue #274](https://github.com/ThinkFlowLab/OpenDirector/issues/274) reproduced bundled OpenCode 1.19.5 / Bun 1.4.4 receiving every byte of a close-delimited response but never completing its body reader. Tools could execute before a 300-second timeout replayed the same model context. Python consumers completed the same response, so Python-only tests missed the integration failure.
+- **Check:** Preserve incremental forwarding with explicit HTTP framing. Terminate the body only after successful upstream exhaustion; leave transport failures and cancellation distinguishable from completion. Exercise the actual bundled consumer with a local mock model, asserting request and tool execution counts, continuation with tool results, final text and persisted state. HTTP completion is not model completion or business acceptance.

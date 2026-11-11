@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
 import re
+import secrets
 from uuid import uuid4, uuid5
 
 from filelock import FileLock, Timeout
@@ -77,6 +78,15 @@ class ProviderMedia:
         if any(config.get(key) != frozen.get(key) for key in SNAPSHOT_KEYS):
             raise ProjectError('已接受任务的扒谱模型配置已变化，请新建尝试。', 409)
         return config
+
+
+def new_seed():
+    """A sampling seed for one job, drawn when it is accepted and kept with it.
+
+    Without one, a self-hosted model can fall back to a fixed seed and return
+    the same take whenever the same request is generated again.
+    """
+    return secrets.randbelow(2**31)
 
 
 class CreationGeneration(GenerationRuntime):
@@ -149,10 +159,15 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
+            if input_rules(config)['profile'] == 'vllm-omni-image':
+                from opendirector.integrations.vllm_omni_image import SAMPLING
+                params.update(SAMPLING)
         if spec.kind == 'audio' and intent['creationType'] == 'music':
-            # The adapter snapshot fixes what is sent: style (prompt), lyrics and length cap.
+            # The adapter snapshot fixes what is sent: style (prompt), lyrics, length cap
+            # and seed. MiniMax Music 3 uses seed 0 when none is sent, so every job
+            # would otherwise return the same song for the same request.
             params = {'creation_type': 'music', 'lyrics': intent.get('lyrics', ''),
-                      'duration': intent.get('durationSeconds') or DEFAULT_MUSIC_SECONDS}
+                      'duration': intent.get('durationSeconds') or DEFAULT_MUSIC_SECONDS, 'seed': new_seed()}
             if node['referenceIds']:
                 # The reference recording is transcribed into a score first, by
                 # the transcription model chosen now, not one configured later.
@@ -176,6 +191,7 @@ class CreationGeneration(GenerationRuntime):
                 # FastH3's wire contract sends duration; its derived frame
                 # estimate is not an explicitly submitted execution parameter.
                 params.pop('num_frames', None)
+                params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
             if seconds is None and config.get('videoCapabilities'):
@@ -221,11 +237,12 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile == 'moss-image' else None,
-                outputFormat='png', watermark=parameters.get('watermark'))
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image'} else None,
+                outputFormat='png', watermark=parameters.get('watermark'),
+                numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
-                        scoreMode=parameters.get('score_mode'))
+                        scoreMode=parameters.get('score_mode'), seed=parameters.get('seed'))
         if kind == 'audio':
             if input_rules(config)['profile'] == 'moss-speech':
                 return dict(kind=kind, voice=parameters['voice'], format='mp3')
