@@ -604,27 +604,89 @@ def test_a_complete_request_needs_one_route_and_a_refusal_is_missing():
         routes=[closed, route('/v1/videos/sync')])])}))
     assert closed_only['capabilities']['video.first_frame'] == UNKNOWN
 
-    # A caller holding one declaration gets the same three answers, and an empty
-    # one is undecided rather than refused.
+    # The public gate and the report answer the same declaration the same way;
+    # the focused cases live in `test_the_role_gate_answers_as_resolve_does`.
+
+
+ROLE_GATE_CASES = {
+    'complete route': [route_with_inputs('/v1/videos', {'source_video': 'supported',
+                                                       'video_noise_mask': 'supported',
+                                                       'audio_noise_mask': 'supported'})],
+    'split across routes': [route_with_inputs('/v1/videos', {'source_video': 'supported'}),
+                            route_with_inputs('/v1/videos/sync', {'video_noise_mask': 'supported',
+                                                                  'audio_noise_mask': 'supported'})],
+    'refused on its only route': [route_with_inputs('/v1/videos', {'source_video': 'unsupported',
+                                                                   'video_noise_mask': 'unsupported',
+                                                                   'audio_noise_mask': 'unsupported'})],
+    'two routes, complementary refusals': [route_with_inputs('/v1/videos', {'source_video': 'supported',
+                                                                           'video_noise_mask': 'unsupported',
+                                                                           'audio_noise_mask': 'unsupported'}),
+                                           route_with_inputs('/v1/videos/sync', {'source_video': 'unsupported',
+                                                                                'video_noise_mask': 'supported',
+                                                                                'audio_noise_mask': 'supported'})],
+    'silent sibling': [route_with_inputs('/v1/videos', {'source_video': 'unsupported',
+                                                        'video_noise_mask': 'unsupported',
+                                                        'audio_noise_mask': 'unsupported'}),
+                       route('/v1/videos/sync')],
+    'sibling without exposure': [route_with_inputs('/v1/videos', {'source_video': 'unsupported',
+                                                                 'video_noise_mask': 'unsupported',
+                                                                 'audio_noise_mask': 'unsupported'}),
+                                 {**route('/v1/videos/sync'), 'exposure': None}],
+    'unplaceable route left on': [route_with_inputs('/v1/videos', {'source_video': 'unsupported',
+                                                                  'video_noise_mask': 'unsupported',
+                                                                  'audio_noise_mask': 'unsupported'}),
+                                  route_with_inputs('/v1/videos/stream', {'source_video': 'supported'})],
+    'malformed route reference': [route_with_inputs('/v1/videos', {'source_video': 'unsupported',
+                                                                  'video_noise_mask': 'unsupported',
+                                                                  'audio_noise_mask': 'unsupported'}),
+                                  {'method': 'POST', 'exposure': 'enabled'}],
+}
+ROLE_GATE_STATES = {'yes': AVAILABLE, 'no': MISSING, 'unknown': UNKNOWN}
+
+
+def test_a_malformed_route_reference_is_not_a_channel():
+    """A reference with no usable path is reported, never counted as a route that may serve.
+
+    `_route_exposures()` notes it as `malformed_route` and keeps it out of the
+    reachability decision; the role gate has to agree, or a broken reference
+    would silently keep a refusal from being a refusal.
+    """
+    entry = profile('video_to_video', inputs=('video',), outputs=('video',), routes=[
+        route_with_inputs('/v1/videos', {'source_video': 'unsupported',
+                                         'video_noise_mask': 'unsupported',
+                                         'audio_noise_mask': 'unsupported'}),
+        {'method': 'POST', 'exposure': 'enabled'},
+    ])
+    result = resolve(body({'video_generation': operation(profiles=[entry])}))
+    assert result['capabilities']['video.edit'] == MISSING
+    assert result['reasons'] == {'video.edit': UNSUPPORTED_REASON}
+    assert {'operation': 'video_generation', 'profile': 'video_to_video', 'route': None,
+            'reason': MALFORMED_ROUTE} in result['unresolved']
+
+
+@pytest.mark.parametrize('name', list(ROLE_GATE_CASES))
+def test_the_role_gate_answers_as_resolve_does(name):
+    """One declaration, one role answer: `resolve()` asks this gate, never re-derives it.
+
+    The profile's own verdict and its routes' reachability are decided before the
+    gate, so this compares the role question only.
+    """
+    entry = profile('video_to_video', inputs=('video',), outputs=('video',), routes=ROLE_GATE_CASES[name])
+    result = resolve(body({'video_generation': operation(profiles=[entry])}))
+    verdict = role_verdict(entry, 'video_generation', required_roles_for('video.edit'))
+    assert result['capabilities']['video.edit'] == ROLE_GATE_STATES[verdict], name
+
+
+def test_a_role_string_is_one_role_and_an_undecided_role_stays_unknown():
+    """The gate's boundary cases: a bare string, no requirement, no declaration."""
     assert role_verdict({}, 'video_generation', ('first_frame',)) == 'unknown'
-    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'supported'})]},
-                        'video_generation', ('first_frame',)) == 'yes'
-    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})]},
-                        'video_generation', ('first_frame',)) == 'no'
     assert role_verdict({'routes': [route('/v1/videos')]}, 'video_generation', ()) == 'yes'
-    # A bare string is one role, not a sequence of characters: the same three
-    # answers hold as for a tuple.
     assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'supported'})]},
                         'video_generation', 'first_frame') == 'yes'
     assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})]},
                         'video_generation', 'first_frame') == 'no'
     assert role_verdict({'routes': [route_with_inputs('/v1/videos', {})]},
                         'video_generation', 'first_frame') == 'unknown'
-    # The call reads the whole declaration, so an unplaceable route that is on
-    # keeps the answer `unknown` here exactly as it does inside `resolve()`.
-    assert role_verdict({'routes': [route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
-                                    route_with_inputs('/v1/videos/stream', {'first_frame': 'supported'})]},
-                        'video_generation', ('first_frame',)) == 'unknown'
 
     # A constraint that is not an object is neither authorisation nor refusal.
     bare_constraint = resolve(body({'video_generation': operation(profiles=[profile(

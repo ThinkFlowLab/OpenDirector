@@ -426,8 +426,14 @@ def _role_routes(entry, operation):
     unplaceable = []
     undecided = False
     for value in _routes(entry):
+        key = _route_key(value)
+        if key[2] is None:
+            # No usable path: `_route_exposures()` reports that as
+            # `malformed_route` instead of counting a channel, so it cannot keep
+            # a refusal from becoming a positive no here either.
+            continue
         exposure = _route_exposure(value)
-        if _route_key(value) not in owned:
+        if key not in owned:
             unplaceable.append(exposure)
         elif exposure == ENABLED:
             roles.append(_role_support(value.get('request')))
@@ -440,9 +446,11 @@ def role_verdict(entry, operation, required):
     """Can one open route of the profile carry every required role?
 
     The rule `resolve()` applies to `REQUIRED_ROLES`, exposed for a caller that
-    holds one profile's declaration and needs the same answer — it reads the
-    whole declaration, unplaceable routes included, so a three-argument call and
-    `resolve()` cannot disagree. `required` is the role set one capability needs
+    holds one profile's declaration and needs the same answer for the role
+    question — it reads the whole declaration, unplaceable routes included. The
+    profile's own verdict and its routes' reachability are decided before this
+    gate runs, so a refused profile still reads refused however this call
+    answers. `required` is the role set one capability needs
     (`required_roles_for()`); a bare string is read as one role, and anything
     unreadable as an empty set, which is `yes`.
 
