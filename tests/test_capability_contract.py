@@ -1102,7 +1102,7 @@ def documented_profiles():
 
 
 def test_documented_required_inputs_match_fixtures():
-    """The literal upstream table, both doc tables and every fixture agree.
+    """The literal upstream table, the doc table and every fixture agree.
 
     `required_inputs` order is part of the declaration (`image_to_image` is
     text-then-image), `video_to_video` needs no text, `lyrics_to_music` needs
@@ -1118,7 +1118,7 @@ def test_documented_required_inputs_match_fixtures():
     expected = {profile_id: (inputs, outputs) for profile_id, inputs, outputs in UPSTREAM_PROFILES}
 
     cells = documented_profiles()
-    assert len(cells) == 24, 'the Chinese and the English table must each list all twelve profiles'
+    assert len(cells) == 12, 'the documented table must list all twelve profiles'
     assert {profile_id for profile_id, _ in cells} == set(expected)
     for profile_id, cell in cells:
         inputs, outputs = expected[profile_id]
