@@ -92,6 +92,8 @@ try {
     assert.equal(preset.execution.voice, "tongtong");
     assert.equal(preset.execution.format, "wav");
     await page.locator("audio").first().waitFor({ state: "attached" });
+    const presetSource = await page.locator("audio").first().getAttribute("src");
+    assert.ok(presetSource, "The preset result must load a playable source");
     await page.screenshot({ path: `${output}/${locale}-2-preset-result.png`, fullPage: true });
 
     // Clone: upload, create and select the new voice.
@@ -110,6 +112,11 @@ try {
     await until(async () => (await dialog().count()) === 0);
     const cloned = await generate(L.cloneText, 2);
     assert.equal(cloned.execution.voice, selection.voiceId);
+    // The node is reused, so wait for its player to load the clone's own result.
+    await until(async () => {
+      const source = await page.locator("audio").first().getAttribute("src");
+      return source && source !== presetSource;
+    });
     await page.screenshot({ path: `${output}/${locale}-4-clone-result.png`, fullPage: true });
 
     // Delete the cloned voice from the library.
