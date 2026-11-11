@@ -30,14 +30,14 @@ Five rules keep the table honest.
   profiles publish different output modalities — `text_response` is `("text",)`,
   `image_response` is `("image",)` and `audio_response` is `("audio",)`
   (`serving_capabilities.py:43-45`) — and `text.chat` is consumed by a
-  text-only adapter (`integrations/model_adapters.py:566-580` reads
+  text-only adapter (`integrations/model_adapters.py:631-647` reads
   `choices[0]["message"]["content"]` as a string), so only `text_response`
   grants it: an image-only chat deployment must not read as able to chat.
   `caption_to_audio` (sound effect) has no id here either. Neither does
   `text_to_audio`: it is the diffusion contract behind `/v1/audio/generate`
   with no lyrics and no `instructions` (`docs/serving/capabilities.md:59-60`),
   while this repository's only `audio.music` adapter posts `/v1/audio/speech`
-  with both (`VllmOmniMusic`, `integrations/model_adapters.py:510-537`).
+  with both (`VllmOmniMusic`, `integrations/model_adapters.py:573-604`).
   Mapping it would promise a request the deployment never accepted — the same
   error as pushing `caption_to_audio` onto `audio.speech`.
 * A declaration that says nothing is `unknown`, never `missing`. Optional fields
@@ -127,7 +127,7 @@ OPERATIONS: tuple[str, ...] = (
 # `text_to_audio` is empty for the same kind of reason. It is the separate
 # diffusion contract behind `/v1/audio/generate`, with no lyrics and no
 # `instructions` (`docs/serving/capabilities.md:59-60`), while the only
-# `audio.music` adapter here (`VllmOmniMusic`, `integrations/model_adapters.py:510-537`)
+# `audio.music` adapter here (`VllmOmniMusic`, `integrations/model_adapters.py:573-604`)
 # posts `/v1/audio/speech` with lyrics *and* `instructions`, both required. A
 # deployment publishing `text_to_audio` cannot answer that request, so calling it
 # `audio.music` would be a false `available` — the same error as pushing
@@ -137,12 +137,11 @@ OPERATIONS: tuple[str, ...] = (
 #
 # The three `video_generation` profiles are told apart the way the adapter tells
 # their requests apart (`VllmOmniVideo.video` / `.edit_video`,
-# `integrations/model_adapters.py:467-590`): `text_to_video` sends no reference
+# `integrations/model_adapters.py:405-540`): `text_to_video` sends no reference
 # and `task=t2va`, `image_to_video` sends `input_reference` and `task=fl2va`
 # (first frame), `video_to_video` sends `source_video` plus the frame and audio
-# masks. That is the same pairing the application already uses when it turns a
-# capability into a request (`application/model_availability.py:109-112`), so one
-# profile grants exactly one id here: an image-to-video deployment is not a
+# masks. That is the pairing `application/tool_tasks.py:362` already makes when it
+# picks the capability for a request, so one profile grants exactly one id here: an image-to-video deployment is not a
 # text-to-video one, and a video-to-video deployment is not either.
 OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('chat', 'text_response', ('text.chat',)),

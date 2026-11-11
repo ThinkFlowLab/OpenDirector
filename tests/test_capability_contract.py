@@ -413,8 +413,8 @@ def test_each_video_profile_grants_only_the_id_its_request_shape_supplies():
 
     The adapter sends no reference for `t2v`, `input_reference` + `task=fl2va`
     for `i2v`, and `source_video` + masks for `v2v`
-    (`integrations/model_adapters.py:467-590`); `application/model_availability.py:109-112`
-    already pairs the ids the same way.
+    (`integrations/model_adapters.py:405-540`); `application/tool_tasks.py:362`
+    already picks the capability the same way.
     """
     assert capabilities_for('video_generation', 'text_to_video') == ('video.generate',)
     assert capabilities_for('video_generation', 'image_to_video') == ('video.first_frame',)

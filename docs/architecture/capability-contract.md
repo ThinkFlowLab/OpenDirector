@@ -12,7 +12,7 @@
 `chat` / `image_generation` / `image_edit` / `video_generation` / `speech` / `audio_generation`。
 没有 `asr`、`transcription`、`segmentation`、`depth`、`music`。
 
-**12 个 profile**（`:43-54`），以及本仓对应的 capability id。**输出模态不同的 profile 不合并**：`text.chat` 在本仓由纯文本适配器消费（`integrations/model_adapters.py:566-580` 直接取 `choices[0]["message"]["content"]` 当字符串），把「只出图」的 chat 部署折进 `text.chat` 会让它看起来能聊天。
+**12 个 profile**（`:43-54`），以及本仓对应的 capability id。**输出模态不同的 profile 不合并**：`text.chat` 在本仓由纯文本适配器消费（`integrations/model_adapters.py:631-647` 直接取 `choices[0]["message"]["content"]` 当字符串），把「只出图」的 chat 部署折进 `text.chat` 会让它看起来能聊天。
 
 | operation | profile | 上游 `required_inputs` → `outputs` | 本仓 capability id |
 | --- | --- | --- | --- |
@@ -29,12 +29,12 @@
 | `speech` | `caption_to_audio` | `("text",)` → `("audio",)` | （无）音效/环境声，本仓无对应 id |
 | `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | （无）扩散侧 `/v1/audio/generate` 契约，不是本仓 `audio.music` |
 
-`video_generation` 的三行必须**一对一**，不能都折进 `video.generate`。本仓适配器是按请求形状分开的（`VllmOmniVideo.video` / `.edit_video`，`integrations/model_adapters.py:467-590`）：`text_to_video` 不带参考图、`task=t2va`；`image_to_video` 带 `input_reference`、`task=fl2va`（首帧）；`video_to_video` 带 `source_video` 与画面/音频 mask。这与本仓把 capability 翻成请求时的既有配对完全一致（`application/model_availability.py:109-112`：`video.generate`↔`text_to_video`、`video.first_frame`↔`image_to_video`、`video.edit`↔`video_to_video`）。一个部署只声明 `image_to_video` 时，它服务得了「首帧生视频」，服务不了「文生视频」；三个 profile 合起来给一个 id，就是在 `video.generate` 上误放。
+`video_generation` 的三行必须**一对一**，不能都折进 `video.generate`。本仓适配器是按请求形状分开的（`VllmOmniVideo.video` / `.edit_video`，`integrations/model_adapters.py:405-540`）：`text_to_video` 不带参考图、`task=t2va`；`image_to_video` 带 `input_reference`、`task=fl2va`（首帧）；`video_to_video` 带 `source_video` 与画面/音频 mask。这与本仓既有的配对一致：`application/tool_tasks.py:362` 在有首帧时选 `video.first_frame`、否则选 `video.generate`；#266 的请求侧表也是这么配三者的。一个部署只声明 `image_to_video` 时，它服务得了「首帧生视频」，服务不了「文生视频」；三个 profile 合起来给一个 id，就是在 `video.generate` 上误放。
 
 本仓没有 id 的这四行（`image_response` / `audio_response` / `caption_to_audio` / `text_to_audio`）要一起读：
 
 - `image_response` / `audio_response` 上游确实发布，但本仓没有「图片/音频版 chat」id，所以**保持 `unknown`**，`unresolved` 里报 `no_local_capability`。绝不折进 `text.chat`。
-- `text_to_audio` 走的是扩散侧独立请求契约（`/v1/audio/generate`，无 voice/lyrics/instructions 映射，`docs/serving/capabilities.md:59-60`），而本仓 `audio.music` 的**唯一**适配器 `VllmOmniMusic`（`integrations/model_adapters.py:510-537`）POST 的是 `/v1/audio/speech`，payload 必带歌词与 `instructions`。上游说这个 profile 没有这两样、本仓却要这两样，把它映射成 `audio.music` 就是承诺一个该部署从未接受的请求。所以 `text_to_audio` 也留空：`support=supported` 时 `unresolved` 报 `no_local_capability`，`audio.music` 只由 `lyrics_to_music` 决定，没有证据就是 `unknown`。这与「绝不把 `caption_to_audio` 塞进 `audio.speech`」是同一条规则。
+- `text_to_audio` 走的是扩散侧独立请求契约（`/v1/audio/generate`，无 voice/lyrics/instructions 映射，`docs/serving/capabilities.md:59-60`），而本仓 `audio.music` 的**唯一**适配器 `VllmOmniMusic`（`integrations/model_adapters.py:573-604`）POST 的是 `/v1/audio/speech`，payload 必带歌词与 `instructions`。上游说这个 profile 没有这两样、本仓却要这两样，把它映射成 `audio.music` 就是承诺一个该部署从未接受的请求。所以 `text_to_audio` 也留空：`support=supported` 时 `unresolved` 报 `no_local_capability`，`audio.music` 只由 `lyrics_to_music` 决定，没有证据就是 `unknown`。这与「绝不把 `caption_to_audio` 塞进 `audio.speech`」是同一条规则。
 
 **operation → 路由**，三个维度都要对（`:42-54`）。上游的 `RouteKey` 是 `(transport, method, path)`，websocket 路由的 method 字面量就是 `WEBSOCKET`：
 
@@ -213,7 +213,7 @@ Source: `vllm-project/vllm-omni` PR #10102 (issue #10007), head `d1104f8`; every
 
 **Six closed operations** (`vllm_omni/serving_capabilities.py:15,19-26`): `chat`, `image_generation`, `image_edit`, `video_generation`, `speech`, `audio_generation`. There is no `asr`, `transcription`, `segmentation`, `depth` or `music`.
 
-**Twelve profiles** (`:43-54`) and the ids this repository has for them. Profiles with a different output modality are not merged: `text.chat` here is consumed by a text-only adapter (`integrations/model_adapters.py:566-580` reads `choices[0]["message"]["content"]` as a string), so an image-only chat deployment must not read as able to chat.
+**Twelve profiles** (`:43-54`) and the ids this repository has for them. Profiles with a different output modality are not merged: `text.chat` here is consumed by a text-only adapter (`integrations/model_adapters.py:631-647` reads `choices[0]["message"]["content"]` as a string), so an image-only chat deployment must not read as able to chat.
 
 | operation | profile | upstream `required_inputs` → `outputs` | capability here |
 | --- | --- | --- | --- |
@@ -230,7 +230,9 @@ Source: `vllm-project/vllm-omni` PR #10102 (issue #10007), head `d1104f8`; every
 | `speech` | `caption_to_audio` | `("text",)` → `("audio",)` | none — sound effect / ambience |
 | `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | none — the diffusion `/v1/audio/generate` contract, not this repo's `audio.music` |
 
-Four rows carry no id here (`image_response`, `audio_response`, `caption_to_audio`, `text_to_audio`), and they read together: `image_response` and `audio_response` are published upstream but have no id here, so they stay `unknown` and are reported as `no_local_capability` instead of being folded into `text.chat`. `text_to_audio` uses the separate diffusion request contract behind `/v1/audio/generate` (no voice, no lyrics, no instructions; `docs/serving/capabilities.md:59-60`), while the *only* `audio.music` adapter in this repository (`VllmOmniMusic`, `integrations/model_adapters.py:510-537`) posts `/v1/audio/speech` with lyrics **and** `instructions`, both required. Upstream says that profile has neither and this repository demands both, so mapping it to `audio.music` would promise a request the deployment never accepted: the profile is reported as `no_local_capability` and `audio.music` is decided by `lyrics_to_music` alone (no evidence → `unknown`). That is the same rule that keeps `caption_to_audio` off `audio.speech`.
+The three `video_generation` rows stay **one-to-one**. The adapter already distinguishes the shapes (`VllmOmniVideo.video` / `.edit_video`, `integrations/model_adapters.py:405-540`): `text_to_video` carries no reference and sends `task=t2va`, `image_to_video` carries `input_reference` with `task=fl2va` (first frame), `video_to_video` carries `source_video` plus the picture and audio masks. `application/tool_tasks.py:362` already picks `video.first_frame` whenever a first frame is present, and only `video.generate` otherwise. Folding all three onto `video.generate` therefore let an image-to-video-only deployment read as able to do text-to-video — a false `available`, not merely a missing one.
+
+Four rows carry no id here (`image_response`, `audio_response`, `caption_to_audio`, `text_to_audio`), and they read together: `image_response` and `audio_response` are published upstream but have no id here, so they stay `unknown` and are reported as `no_local_capability` instead of being folded into `text.chat`. `text_to_audio` uses the separate diffusion request contract behind `/v1/audio/generate` (no voice, no lyrics, no instructions; `docs/serving/capabilities.md:59-60`), while the *only* `audio.music` adapter in this repository (`VllmOmniMusic`, `integrations/model_adapters.py:573-604`) posts `/v1/audio/speech` with lyrics **and** `instructions`, both required. Upstream says that profile has neither and this repository demands both, so mapping it to `audio.music` would promise a request the deployment never accepted: the profile is reported as `no_local_capability` and `audio.music` is decided by `lyrics_to_music` alone (no evidence → `unknown`). That is the same rule that keeps `caption_to_audio` off `audio.speech`.
 
 **Operation → routes** (`:42-54`) as `(transport, method, path)`, because upstream's `RouteKey` is exactly that and the websocket method literal is `WEBSOCKET`: `chat` → `http POST /v1/chat/completions`; `image_generation` → `http POST /v1/images/generations`; `image_edit` → `http POST /v1/images/edits`; `video_generation` → `http POST /v1/videos`, `http POST /v1/videos/sync`, `websocket WEBSOCKET /v1/realtime/video`; `speech` → `http POST /v1/audio/speech`; `audio_generation` → `http POST /v1/audio/generate`. `DELETE /v1/chat/completions` would be a 405 and a `websocket` declaration on an http route is wrong, so both are `route_mismatch`. `transport` defaults to `http` upstream (`protocol/capabilities.py:16-21`) and an absent transport is not a mismatch; `method` has no default and an absent one cannot be confirmed.
 
