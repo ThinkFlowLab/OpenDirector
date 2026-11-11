@@ -1188,6 +1188,19 @@
             "default": null,
             "description": "Whether reference music supplies melody or full accompaniment.",
             "title": "Scoremode"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Random seed fixed when the job was accepted.",
+            "title": "Seed"
           }
         },
         "required": [
@@ -16810,6 +16823,19 @@
             "default": null,
             "description": "Whether reference music supplies melody or full accompaniment.",
             "title": "Scoremode"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Random seed fixed when the job was accepted.",
+            "title": "Seed"
           }
         },
         "required": [

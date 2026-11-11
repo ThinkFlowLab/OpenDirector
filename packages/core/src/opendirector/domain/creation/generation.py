@@ -267,6 +267,7 @@ class AudioExecution(Contract):
         default=None, exclude_if=lambda value: value is None, description='Maximum generated audio duration in seconds.')
     # Set when the piece follows a reference recording's transcribed score.
     scoreMode: Literal['melody', 'full'] | None = Field(default=None, exclude_if=lambda value: value is None, description='Whether reference music supplies melody or full accompaniment.')
+    seed: int | None = Field(default=None, strict=True, exclude_if=lambda value: value is None, description='Random seed fixed when the job was accepted.')
 
 
 class TextExecution(TextParameters):
