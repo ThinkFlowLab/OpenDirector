@@ -29,12 +29,12 @@ class VoiceLibrary:
         if capabilities is None: raise voice_error('voice_library_unsupported', 409)
         return config, capabilities
 
-    def _request(self, config, method, suffix='', **kwargs):
+    def _request(self, config, method, suffix='', path='/audio/voices', **kwargs):
         try:
             # Sync service runs in worker threads, including job preparation.
             with httpx.Client(transport=self.transport, trust_env=trust_environment(config['url'], config=config),
                               timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
-                with client.stream(method, endpoint(config['url'], '/audio/voices') + suffix,
+                with client.stream(method, endpoint(config['url'], path) + suffix,
                                    headers=auth_headers(config), **kwargs) as response:
                     data = bytearray()
                     for chunk in response.iter_bytes():
@@ -134,6 +134,21 @@ class VoiceLibrary:
             records[identity] = (record, locator)
         return list(records.values()), None
 
+    def _minimax_page(self, config, capabilities):
+        # https://platform.minimaxi.com/docs/api-reference/voice-management-get
+        # Errors arrive as HTTP 200 with a nonzero base_resp.status_code.
+        value = self._request(config, 'POST', path='/get_voice', json={'voice_type': 'system'})
+        status = value.get('base_resp')
+        if not isinstance(status, dict) or type(status.get('status_code')) is not int:
+            raise voice_error('voice_provider_protocol', 502)
+        if status['status_code'] != 0:
+            raise voice_error('voice_provider_error', 502)
+        items = value.get('system_voice')
+        if not isinstance(items, list) or len(items) > 10000 or not all(isinstance(item, dict) for item in items):
+            raise voice_error('voice_provider_protocol', 502)
+        return [self._record({'id': item.get('voice_id'), 'name': item.get('voice_name')}, capabilities,
+                             source='builtin', has_audio=False, config=config) for item in items], None
+
     @staticmethod
     def _valid_cursor(cursor):
         return isinstance(cursor, str) and 0 < len(cursor) <= 2048 and cursor == cursor.strip() and cursor.isprintable()
@@ -169,6 +184,8 @@ class VoiceLibrary:
             self._assert_current(config, capabilities)
             if capabilities['provider'] == 'moss':
                 records, cursor = self._moss_page(config, capabilities, limit, after)
+            elif capabilities['provider'] == 'minimax':
+                records, cursor = self._minimax_page(config, capabilities)
             else:
                 records, cursor = self._vllm_page(config, capabilities)
             for record, _ in records:

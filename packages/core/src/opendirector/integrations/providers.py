@@ -18,7 +18,7 @@ from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import MinimaxH3Images, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore
+from opendirector.integrations.model_adapters import MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
 from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
@@ -37,6 +37,7 @@ class GenerationProviders(VolcengineGeneration):
         self.minimax_image = MinimaxH3Images(transport, poll_interval)
         self.moss_image = MossImages(transport, poll_interval)
         self.moss_speech = MossSpeech(transport, poll_interval)
+        self.minimax_speech = MinimaxSpeech(transport, poll_interval)
 
     def _profile_adapter(self, config):
         if config and config.get('protocol') == 'kling_video':
@@ -93,6 +94,9 @@ class GenerationProviders(VolcengineGeneration):
             return suffix, await self.moss_image.download(config, url)
         if config and input_rules(config)['profile'] == 'moss-speech':
             return suffix, await self.moss_speech.download(config, url)
+        if config and input_rules(config)['profile'] == 'minimax-speech':
+            result = await self.minimax_speech.download(config, url)
+            return result.suffix, result.data
         if not config or config.get('protocol') in {None, 'volcengine'}:
             return await super().resume_result(config, suffix, url)
         # Only send a service token back to that exact configured origin.
@@ -129,6 +133,11 @@ class GenerationProviders(VolcengineGeneration):
         if input_rules(config)['profile'] == 'moss-speech':
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
             result = await self.moss_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
+                result_ready=result_ready)
+            return result.suffix, result.data
+        if input_rules(config)['profile'] == 'minimax-speech':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            result = await self.minimax_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
                 result_ready=result_ready)
             return result.suffix, result.data
         if config.get('protocol') in {None, 'volcengine'} or task['kind'] == 'text':

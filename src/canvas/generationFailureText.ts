@@ -39,6 +39,7 @@ const BY_MESSAGE: Record<string, MessageKey> = {
   "生成服务连接超时或中断。": "errors.generationFailure.temporary",
   "生成服务返回了无法识别或不完整的结果。":
     "errors.generationFailure.protocol",
+  "所选音色不存在或不可用。": "errors.generationFailure.voiceNotFound",
 };
 
 const BY_CATEGORY: Record<string, MessageKey> = {

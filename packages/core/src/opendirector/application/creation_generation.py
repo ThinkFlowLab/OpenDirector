@@ -228,6 +228,8 @@ class CreationGeneration(GenerationRuntime):
             params.update(prompt_enhance=False, watermark=not self.settings.get()['removeWatermark'])
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
             params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'minimax-speech':
+            params = dict(voice=intent['voice'], format='mp3', output_format='url', stream=False)
         return params
 
     @staticmethod
@@ -244,7 +246,7 @@ class CreationGeneration(GenerationRuntime):
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
                         scoreMode=parameters.get('score_mode'), seed=parameters.get('seed'))
         if kind == 'audio':
-            if input_rules(config)['profile'] == 'moss-speech':
+            if input_rules(config)['profile'] in {'moss-speech', 'minimax-speech'}:
                 return dict(kind=kind, voice=parameters['voice'], format='mp3')
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
                 speaker=parameters.get('speaker') if config['protocol'] != 'openai' else None,
