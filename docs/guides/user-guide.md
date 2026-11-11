@@ -97,7 +97,7 @@ Choose **Create voice** to upload a local recording, name it, and review its pla
 
 On Zhipu BigModel Open Platform, select `glm-tts`. The library lists the seven documented system voices and the voices cloned on that account. To clone a voice, upload a 3–30 second MP3 or WAV recording of at most 10 MB; the recording transcript is optional but improves similarity. OpenDirector deletes the uploaded sample from the account after registration. Each request reads at most 1,024 characters, and references are not accepted. Cloned voices can be deleted from the library.
 
-The same provider can also be added as a conversation Agent: click **Fetch models** to read the account's GLM models (for example `glm-4.5-flash` or `glm-5.3-flash`) and select the ones to enable.
+The same provider also offers conversation models: select the Agent category and the preset preselects the supported GLM chat models without contacting the service, as described under model connections.
 
 Selected voices are saved in the project; favorites are saved as browser preferences. Both are scoped to the configured service and account. Compatible models sharing a service can retain the selection; another service or account requires its own registered voice. Use a voice’s secondary menu to copy its provider ID or delete an uploaded voice where supported. Deletion requires confirmation; MOSS deletion is unavailable until its API supports it. Service errors are shown without credentials; an unsupported model keeps its existing voice controls.
 
