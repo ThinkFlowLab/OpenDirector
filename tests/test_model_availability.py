@@ -529,6 +529,8 @@ def test_video_required_audio_is_checked_on_actual_request_not_catalog(service, 
     state['document'] = document('video_generation', 'image_to_video', '/v1/videos', 'video', now=state['clock'])
     profile = state['document']['models'][0]['operations']['video_generation']['profiles'][0]
     profile.update(required_inputs=['text', 'image', 'audio'], outputs=['video', 'audio'])
+    profile['routes'][0].update(exposure='enabled', request={'inputs': {
+        'first_frame': {'support': 'supported'}, 'reference_audio': {'support': 'supported'}}})
     availability.prepare(config)
     catalog_request = next(item for item in requests_for(config) if item.profile == 'image_to_video')
     assert availability.decision(config, catalog_request)['status'] == 'available'
@@ -564,7 +566,7 @@ def test_generation_profiles_and_tool_inputs_follow_the_actual_adapter(service):
     for kind, protocol, refs, profile, inputs in [
         ('image', 'openai', [], 'text_to_image', {'text'}),
         ('image', 'openai', [ref('image')], 'image_to_image', {'text', 'image'}),
-        ('video', 'vllm_omni', [ref('video')], 'video_to_video', {'text', 'video'}),
+        ('video', 'vllm_omni', [ref('video')], 'video_to_video', {'text', 'video', 'reference_video'}),
         ('audio', 'vllm_omni_music', [], 'lyrics_to_music', {'text', 'instructions'}),
         ('audio', 'vllm_omni_music', [ref('audio')], 'lyrics_to_music', {'text', 'instructions'}),
     ]:
@@ -572,8 +574,8 @@ def test_generation_profiles_and_tool_inputs_follow_the_actual_adapter(service):
         request = generation_request({**base, 'kind': kind, 'protocol': protocol}, spec, refs)
         assert request.profile == profile and request.inputs == inputs
     video = {**base, 'kind': 'video', 'protocol': 'vllm_omni'}
-    assert tool_request(video, 'video.first_frame').inputs is None
-    assert tool_request(video, 'video.first_frame', actual=True).inputs == {'text', 'image'}
+    assert tool_request(video, 'video.first_frame').inputs == {'text', 'image', 'first_frame'}
+    assert tool_request(video, 'video.first_frame', actual=True).inputs == {'text', 'image', 'first_frame'}
 
 
 def test_refresh_two_slow_services_uses_one_total_wait_budget(tmp_path):

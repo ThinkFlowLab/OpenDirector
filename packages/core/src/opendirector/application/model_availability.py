@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.input_rules import input_rules
-from opendirector.domain.request_constraints import INPUT_ROLES, constraint_failure, input_details
+from opendirector.domain.request_constraints import INPUT_ROLES, constraint_failure, input_details, role_evidence
 from opendirector.domain.capability_messages import constraint_rejection
 from opendirector.domain.voices import effective_speech_voice
 from opendirector.domain.projects import ProjectError
@@ -117,7 +117,7 @@ def generation_request(config, spec, references, *, parameters=None):
     continuation = next((item for item in references if item.transmission == 'latent'), None)
     metadata = getattr(continuation, 'metadata', None)
     actual = generation_capability_parameters(config, spec.kind, parameters, has_images='image' in kinds,
-        video_mode=getattr(getattr(spec, 'parameters', None), 'videoMode', 'first_frame'), has_audio='audio' in kinds,
+        video_mode=mode if spec.kind == 'video' else 'first_frame', has_audio='audio' in kinds,
         continue_size=(metadata.width, metadata.height) if metadata is not None else None) if parameters is not None else {}
     if profile == 'text_to_speech':
         voice = effective_speech_voice(config, getattr(getattr(spec, 'parameters', None), 'voice', None))
@@ -139,7 +139,9 @@ def tool_request(config, capability, *, actual=False):
     roles = (frozenset({'first_frame'}) if capability == 'video.first_frame' else
              frozenset({'source_video', 'video_noise_mask', 'audio_noise_mask'}) if capability == 'video.edit' else frozenset())
     request = replace(request, required_roles=roles)
-    if not actual:
+    # These video tools always transmit the same input roles and counts, so
+    # their directory entries can check those facts before a task is selected.
+    if not actual and not roles:
         return request
     # These are the arguments of the existing tool adapters, not all source
     # assets: e.g. a video-to-video tool does not transmit an audio attachment.
@@ -317,6 +319,14 @@ class ModelAvailability:
                 failure = constraint_failure(contract, counts, dict(request.parameters))
                 if failure and result['status'] != 'unavailable':
                     result.update(status='unavailable', reasonCode=failure[0])
+            evidence = role_evidence(contract, request.required_roles)
+            if result['status'] != 'unavailable' and route is not None:
+                if evidence in {'input_unsupported', 'input_count_unsupported'}:
+                    result.update(status='unavailable', reasonCode=evidence)
+                elif result['status'] == 'available' and evidence:
+                    result.update(status='unknown', reasonCode=evidence)
+                elif result['status'] == 'available' and request.required_roles and route.exposure != 'enabled':
+                    result.update(status='unknown', reasonCode='declaration_incomplete')
         if exposed and exposed.exposure == 'disabled' and result['status'] != 'unavailable':
             result.update(status='unavailable', reasonCode='route_disabled')
         self._declaration(result)

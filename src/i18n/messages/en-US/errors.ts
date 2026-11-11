@@ -970,4 +970,13 @@ export const errors = {
   "errors.capability.label.frames": "Frame count",
   "errors.capability.label.generateAudio": "Audio generation setting",
   "errors.capability.label.parameter": "The selected parameter",
+  "errors.capability.label.referenceImage": "reference images",
+  "errors.capability.label.firstFrame": "a first-frame image",
+  "errors.capability.label.lastFrame": "a last-frame image",
+  "errors.capability.label.referenceVideo": "a reference video",
+  "errors.capability.label.sourceVideo": "a source video for editing",
+  "errors.capability.label.videoMask": "a video editing mask",
+  "errors.capability.label.audioMask": "an audio editing mask",
+  "errors.capability.label.videoTask": "Video task mode",
+  "errors.capability.label.aspectRatio": "Aspect ratio",
 } as const;

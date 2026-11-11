@@ -751,4 +751,13 @@ export const errors = {
   "errors.capability.label.frames": "帧数",
   "errors.capability.label.generateAudio": "音频生成选项",
   "errors.capability.label.parameter": "所选参数",
+  "errors.capability.label.referenceImage": "参考图片",
+  "errors.capability.label.firstFrame": "首帧图片",
+  "errors.capability.label.lastFrame": "尾帧图片",
+  "errors.capability.label.referenceVideo": "参考视频",
+  "errors.capability.label.sourceVideo": "编辑源视频",
+  "errors.capability.label.videoMask": "视频编辑蒙版",
+  "errors.capability.label.audioMask": "音频编辑蒙版",
+  "errors.capability.label.videoTask": "视频生成模式",
+  "errors.capability.label.aspectRatio": "画面比例",
 } as const;

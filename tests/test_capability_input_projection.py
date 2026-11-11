@@ -118,7 +118,7 @@ def test_continuation_does_not_claim_video_upload_but_honors_route_pause(service
     availability.prepare(config)
     request = generation_request(config, SimpleNamespace(kind='video'), [
         reference('video', 'latent'), reference('image', 'content')])
-    assert dict(request.input_counts) == {'text': 1, 'image': 1}
+    assert dict(request.input_counts) == {'text': 1, 'image': 1, 'reference_image': 1}
     result = availability.decision(config, request)
     assert result['declaration']['status'] == 'unknown'
     assert result['declaration']['reasonCode'] == 'profile_not_declared'

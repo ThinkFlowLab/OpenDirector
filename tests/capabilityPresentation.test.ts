@@ -183,6 +183,30 @@ test("tools and assistant retain concrete capability and selection failures in e
       "The selection and image dimensions must match.",
     ],
     ["请提供图片或音频。", "Provide images or audio."],
+    [
+      "该模型不支持首帧图片输入。",
+      "This model does not accept a first-frame image.",
+    ],
+    [
+      "该模型不支持参考视频输入。",
+      "This model does not accept a reference video.",
+    ],
+    [
+      "该模型不支持编辑源视频输入。",
+      "This model does not accept a source video for editing.",
+    ],
+    [
+      "该模型不支持视频编辑蒙版输入。",
+      "This model does not accept a video editing mask.",
+    ],
+    [
+      "该模型不支持音频编辑蒙版输入。",
+      "This model does not accept an audio editing mask.",
+    ],
+    [
+      "视频生成模式不符合服务要求。",
+      "Video task mode does not meet the service requirements.",
+    ],
   ];
   for (const [zh, en] of cases) {
     setActiveLocale("en-US");

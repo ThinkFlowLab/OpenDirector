@@ -6,7 +6,24 @@ from opendirector.domain.omni_capabilities import RequestConstraints
 
 INPUT_ROLES = frozenset({'text', 'image', 'video', 'audio', 'instructions', 'voice',
     'reference_audio', 'reference_text', 'reference_embedding', 'speaker_embedding', 'mask_image', 'reference_image',
-    'first_frame', 'last_frame'})
+    'first_frame', 'last_frame', 'reference_video', 'source_video', 'video_noise_mask', 'audio_noise_mask'})
+
+
+def role_evidence(contract, required):
+    """Required purposes must be established together on the selected route."""
+    if not required:
+        return None
+    inputs = contract.inputs if contract is not None else {}
+    for role in sorted(required):
+        constraint = inputs.get(role)
+        if constraint is not None:
+            if constraint.support == 'unsupported':
+                return 'input_unsupported'
+            if constraint.max_count == 0:
+                return 'input_count_unsupported'
+    if any(role not in inputs or inputs[role].support != 'supported' for role in required):
+        return 'input_contract_unknown'
+    return None
 
 
 def _enum_value(value, normalization):

@@ -28,6 +28,7 @@ from opendirector.media import processing as media
 from opendirector.media.filenames import with_extension
 from opendirector.media.async_work import blocking
 from .tool_task_lifecycle import ToolTaskLifecycle
+from .tool_video_inputs import video_execution
 
 ACTIVE = {'queued', 'running'}
 MAX_SOURCES = 20
@@ -320,7 +321,9 @@ class ToolTasks(ToolTaskLifecycle):
             models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
         if inspect:
             return models
-        image_policy, image_plan = None, None
+        from .creation_tool_drafts import freeze_inputs
+        frozen = freeze_inputs(self, project_id, value)
+        image_policy, image_plan, video_plan = None, None, None
         image_capability = next((name for name in ('image.edit', 'image.cutout', 'image.generate') if name in models), None)
         if image_capability is not None:
             image_policy = (image_input_policy(models[image_capability]) if image_capability == 'image.generate'
@@ -336,6 +339,11 @@ class ToolTasks(ToolTaskLifecycle):
             if request is None:
                 continue
             parameters_to_check = [{}]
+            if capability in {'video.first_frame', 'video.edit'}:
+                video_plan = video_execution(spec.id, parameters, records[source_ids[0]],
+                                             adapter=adapter_for(config), capability=capability)
+                if video_plan is not None:
+                    parameters_to_check = video_plan['requests']
             if capability == image_capability:
                 counts = {'text': 1, 'image': sum(role in {'image', 'annotation'} for role in image_plan['roles'])}
                 if image_plan['mode'] == 'native_mask':
@@ -360,8 +368,6 @@ class ToolTasks(ToolTaskLifecycle):
                         break
                 else:
                     self.availability.require(config, actual_request)
-        from .creation_tool_drafts import freeze_inputs
-        frozen = freeze_inputs(self, project_id, value)
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',
                 'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'annotationAssetId': annotation_id,
                 'boxes': value.get('boxes') or [], 'parameters': parameters,
@@ -377,6 +383,8 @@ class ToolTasks(ToolTaskLifecycle):
             task['backgroundCompletion'] = 'model' if 'image.edit' in models else 'transparent'
         if image_policy is not None and image_capability in models:
             task.update(imageExecutionPolicy=image_policy, imageExecution=image_plan)
+        if video_plan is not None:
+            task['videoExecution'] = video_plan
         self._write(directory, task)
         return task, directory, records
 
@@ -512,6 +520,7 @@ class ToolTasks(ToolTaskLifecycle):
                 context = ToolContext(sources=sources, mask=mask, boxes=task['boxes'], parameters=task['parameters'],
                                       image_model=image_model, video_model=video_model, progress=progress, cutout_model=cutout_model,
                                       edit_model=edit_model, edit_seconds=limits, chat_model=chat_model,
+                                      video_execution=task.get('videoExecution'),
                                       segment_model=segment_model, track_model=track_model, edit_keeps_layout=keeps_layout,
                                       annotation=annotation, edit_max_images=edit_max_images,
                                       native_mask=task.get('imageExecutionPolicy') is not None and task.get('imageExecution', {}).get('mode') == 'native_mask',

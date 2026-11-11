@@ -46,10 +46,14 @@ _OPERATIONS = {'文字回复': 'text replies', '图片回复': 'image replies', 
     '视频编辑': 'video editing', '语音合成': 'speech synthesis', '音乐生成': 'music generation', '此操作': 'this operation'}
 _INPUTS = {'图片': 'images', '音频': 'audio', '视频': 'video', '文字': 'text', '音色': 'a voice',
     '参考音频': 'reference audio', '风格说明': 'a style description', '参考文本': 'a reference transcript',
-    '选区': 'a selection', '标注参考图片': 'an annotation reference', '素材': 'inputs'}
+    '选区': 'a selection', '标注参考图片': 'an annotation reference', '素材': 'inputs',
+    '参考图片': 'reference images', '首帧图片': 'a first-frame image', '尾帧图片': 'a last-frame image',
+    '参考视频': 'a reference video', '编辑源视频': 'a source video for editing',
+    '视频编辑蒙版': 'a video editing mask', '音频编辑蒙版': 'an audio editing mask'}
 _PARAMETERS = {'图片尺寸': 'Image size', '图片宽度': 'Image width', '图片高度': 'Image height', '时长': 'Duration', '音色': 'Voice',
     '语速': 'Speech speed', '语言': 'Language', '帧率': 'Frame rate', '帧数': 'Frame count',
-    '音频生成选项': 'Audio generation setting', '所选参数': 'The selected parameter'}
+    '音频生成选项': 'Audio generation setting', '所选参数': 'The selected parameter',
+    '视频生成模式': 'Video task mode', '画面比例': 'Aspect ratio'}
 for _label, _english in _OPERATIONS.items():
     _MESSAGES[f'该模型不支持{_label}。'] = f'This model does not support {_english}.'
     _MESSAGES[f'服务未开放{_label}。'] = f'The service has not enabled {_english}.'
@@ -66,7 +70,9 @@ def constraint_rejection(reason, details):
     code = 'capability_unavailable'
     roles = {'image': '图片', 'audio': '音频', 'video': '视频', 'text': '文字',
              'voice': '音色', 'reference_audio': '参考音频', 'instructions': '风格说明',
-             'reference_text': '参考文本', 'mask_image': '选区', 'reference_image': '标注参考图片'}
+             'reference_text': '参考文本', 'mask_image': '选区', 'reference_image': '参考图片',
+             'first_frame': '首帧图片', 'last_frame': '尾帧图片', 'reference_video': '参考视频',
+             'source_video': '编辑源视频', 'video_noise_mask': '视频编辑蒙版', 'audio_noise_mask': '音频编辑蒙版'}
     name = roles.get(details.get('input'), '素材')
     if reason == 'input_count_exceeded':
         if details['input'] == 'image':
@@ -83,7 +89,8 @@ def constraint_rejection(reason, details):
     else:
         parameter = {'size': '图片尺寸', 'width': '图片宽度', 'height': '图片高度', 'duration': '时长', 'seconds': '时长',
                      'voice': '音色', 'speed': '语速', 'language': '语言', 'fps': '帧率',
-                     'num_frames': '帧数', 'generate_audio': '音频生成选项'}.get(details.get('parameter'), '所选参数')
+                     'num_frames': '帧数', 'generate_audio': '音频生成选项',
+                     'task': '视频生成模式', 'aspect_ratio': '画面比例'}.get(details.get('parameter'), '所选参数')
         message = f'{parameter}不符合服务要求。'
     return code, message
 

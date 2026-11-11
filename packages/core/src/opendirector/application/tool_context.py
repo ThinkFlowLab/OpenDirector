@@ -45,7 +45,7 @@ class ToolContext:
     def __init__(self, *, sources, mask, boxes, parameters, image_model, video_model, progress, video_submitted=None, cutout_model=None,
                  edit_model=None, edit_seconds=(4.0, 15.0), chat_model=None, segment_model=None, track_model=None,
                  edit_keeps_layout=True, annotation=None, edit_max_images=1, segment_available=False, depth_model=None,
-                 native_mask=False):
+                 native_mask=False, video_execution=None):
         self.sources: list[Source] = sources
         self.mask: bytes | None = mask
         self.annotation: bytes | None = annotation
@@ -61,6 +61,7 @@ class ToolContext:
         self.edit_keeps_layout = edit_keeps_layout
         # Shortest and longest clip one redraw accepts; longer sources are processed piecewise.
         self.edit_seconds = edit_seconds
+        self.video_execution = video_execution
         # Optional: a chat model only improves prompts; tools never require it.
         self._chat = chat_model
         self._progress, self._video_submitted = progress, video_submitted
