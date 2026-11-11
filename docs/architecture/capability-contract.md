@@ -51,7 +51,7 @@
 
 三条 schema 事实决定了这份表的形状：
 
-- 响应顶层只有 `object` / `schema_version` / `observed_at` / `models` / `stages` / `routes`（`protocol/capabilities.py:73-79`），端点是 `response_model=OmniCapabilitiesResponse`、`response_model_exclude_none=True`（`api_server.py:2193`）。顶层 `routes[]` 是**上游聚合 operation `exposure` 的来源**（`entrypoints/openai/serving_capabilities.py:383-387`：任一 `enabled` → `enabled`，否则任一 `unknown` → `unknown`，否则 `disabled`），而每个 profile 的 `routes[]` 就是这张表的拷贝、只对需要 video/audio 输入的 profile 在 `/v1/realtime/video` 上强制 `disabled`（`:339-343`）。所以一条顶层 `disabled` 意味着这个 operation 的 HTTP 端点已关闭，**profile 侧写 `enabled` 也重开不了**；想更窄地关，只能让顶层保持 `enabled`、把该 profile 的路由改 `disabled`。本模块读 operation 的 `exposure`（上游已经替调用方聚好），不再单独读顶层清单——这是"往顶层塞一条没有 operation 拥有的路径不会改变任何判定"的原因，**不是**因为那串路由"仅供展示"。
+- 响应顶层只有 `object` / `schema_version` / `observed_at` / `models` / `stages` / `routes`（`protocol/capabilities.py:73-79`），端点是 `response_model=OmniCapabilitiesResponse`、`response_model_exclude_none=True`（`api_server.py:2193`）。顶层 `routes[]` 是**上游聚合 operation `exposure` 的来源**（`entrypoints/openai/serving_capabilities.py:383-387`：任一 `enabled` → `enabled`，否则任一 `unknown` → `unknown`，否则 `disabled`），而每个 profile 的 `routes[]` 就是这张表的拷贝、只对需要 video/audio 输入的 profile 在 `/v1/realtime/video` 上强制 `disabled`（`:339-343`）。所以一条顶层 `disabled` 意味着这个 operation 的 HTTP 端点已关闭，**profile 侧写 `enabled` 也重开不了**。更窄的关法语义上只能落在 profile 路由上，但这层投影（`43ff7b9`）除 `/v1/realtime/video` 外不会单独改写 profile 路由，所以「顶层 `enabled` + 该 profile 的路由 `disabled`」今天**产不出来**，只能当消费侧的向前兼容分支，不是可用的控制手段。本模块读 operation 的 `exposure`（上游已经替调用方聚好），不再单独读顶层清单——这是"往顶层塞一条没有 operation 拥有的路径不会改变任何判定"的原因，**不是**因为那串路由"仅供展示"。
 - **`exclude_none` 只能省掉值为 `None` 的可选字段**，也就是 profile 的 `request`（`RequestConstraints | None = None`）。列表/字典字段是 `default_factory`，空的时候序列化成 `[]`/`{}`，**不会缺席**：`profiles: []` 而不是「没有 `profiles` 键」。`support` / `reason_code` 在 operation 与 profile 上都是必填，`exposure` 在 operation 与顶层路由上是必填（`protocol/capabilities.py:24-52`），永远不会缺席；少了它们就不是上游能发出的 body。**profile 自己没有 `exposure` 字段**（`:36-44`）：某个 profile 可达不可达，看的是它引用的各条路由的 `exposure` 聚合，而不是 profile 上的一个开关。
 - `models[].operations` **必须齐全 6 个**，少一个 pydantic 直接抛错（`protocol/capabilities.py:60-64`）；`models[].stage_ids` 是**数字字符串**，而且每个 model 拿到的都是同一份全量列表（`entrypoints/openai/serving_capabilities.py:400`）。
 
@@ -69,7 +69,7 @@
 | --- | --- | --- |
 | `unknown_route` | 路径不属于任何 operation（`/v1/videos/segmentations`，或已注册但无 operation 的 `/v1/images/segmentations`） | 表缺这个 operation，或声明写错了路径 |
 | `route_mismatch` | 路径属于**另一个** operation，或 method/transport 与该 operation 的路由不符（`text_to_video` 指向 `/v1/images/edits`、`DELETE /v1/chat/completions`） | 部署声明的配对写错了 |
-| `unmapped_stage` | 上游没有这个 operation（`asr`、`music`）。名字沿用上一版 stage-keyed 设计，含义是 operation 层缺口 | 上游词表缺口，不是本表漏行 |
+| `unmapped_stage` | 上游没有这个 operation（`asr`、`music`）。名字沿用早期 stage-keyed 设计，含义是 operation 层缺口 | 上游词表缺口，不是本表漏行 |
 | `unknown_profile` | operation 认识，profile id 上游未发布（`speech_to_speech`） | 上游新增 profile，本表待补 |
 | `operation_mismatch` | profile 认识，但挂在别的 operation 下（`lyrics_to_music` 挂在 `audio_generation`） | 声明写错了 operation，或本表把归属搞错了 |
 | `no_local_capability` | profile 支持，但本仓没有对应 capability id（`caption_to_audio`、`text_to_audio`、`image_response`、`audio_response`） | 词表待补 |
@@ -136,7 +136,7 @@
 
 上游词表里没有识别 operation，omni 的 router 也不注册 `/v1/audio/transcriptions`（`api_server.py` 全量路由里没有它），上游自己的 recipe 写明该端点「not currently available with `--omni`」。因此 body 里出现 `asr` 得到 `unmapped_stage`：这是**上游没发布这个 operation**，不是本表漏了一行。
 
-这不等于「本仓不认 `audio.score`」——恰恰相反，本仓 `VllmOmniScore` 适配器 POST 的正是 `/audio/transcriptions`（`integrations/model_adapters.py:547,556`），对端是上游的独立工具 `tools/sheetsage2_serve.py:124`。但 **capabilities body 从不会提到这条路径**，所以 `audio.score` 只能判 `unknown`（`no_upstream_operation`）：本表不从「我们知道某条路由」反推能力，那样会把部署策略、代理改写和表 bug 混成同一个结论。等上游发布识别 operation（或把该路径纳入词表）再谈映射。
+这不等于「本仓不认 `audio.score`」——恰恰相反，本仓 `VllmOmniScore` 适配器 POST 的正是 `/audio/transcriptions`（`integrations/model_adapters.py:605-628`，POST 在 `:620`），对端是上游的独立工具 `tools/sheetsage2_serve.py:124`。但 **capabilities body 从不会提到这条路径**，所以 `audio.score` 只能判 `unknown`（`no_upstream_operation`）：本表不从「我们知道某条路由」反推能力，那样会把部署策略、代理改写和表 bug 混成同一个结论。等上游发布识别 operation（或把该路径纳入词表）再谈映射。
 
 ### 与 V2 发现契约（#266）的关系
 
@@ -148,7 +148,7 @@
 
 ### 如何作为 `requests_for()` 的输入
 
-`application/model_availability.py` 现在按 `(kind, protocol)` 硬编码 profile 名。表驱动后，调用方只需要自己正在调用的 operation 与 profile：
+#266 引入的 `application/model_availability.py` 目前按 `(kind, protocol)` 硬编码 profile 名。表驱动后，调用方只需要自己正在调用的 operation 与 profile：
 
 ```python
 from opendirector.domain.capability_contract import capabilities_for
@@ -171,21 +171,21 @@ candidates_for('audio.separate')                        # ()：没有任何 prof
 `tests/fixtures/omni-capabilities/{full,partial,absent}.json` 是**求值样本**，按真实响应形状写：`stages[]` 是 `{id,type,depends_on}` 且 id 为数字字符串，`models[].operations` 六个齐全、每个含 `support`/`exposure`/`reason_code`/`profiles`/`execution`，每个 profile 都带 `support`、`reason_code` 与 `routes[]`（可以是 `[]`），`required_inputs`/`outputs` 逐条照上游 `STANDARD_PROFILES`（含顺序；`image_response`/`audio_response` 分别是 `["image"]`/`["audio"]`）。
 
 - `full`：全支持全启用，12 个 profile 齐全；`image_response`/`audio_response`/`caption_to_audio`/`text_to_audio` 报 `no_local_capability`（`text_to_audio` **不**授 `audio.music`，`audio.music` 由 `lyrics_to_music` 供货）。
-- `partial`：`support=unsupported`、operation `exposure=disabled`（`endpoint_disabled`）、`no_local_capability`，以及整个 body 都是 `unknown` 枚举的形态；`route_disabled` 只在 `malformed.json` 里出现——上游把「自有路由全 `disabled`」聚合成 operation `exposure=disabled`，样本档发不出这个组合。
+- `partial`：`support=unsupported`、operation `exposure=disabled`（`endpoint_disabled`）、`no_local_capability`，以及整个 body 都是 `unknown` 枚举的形态；`route_disabled` 只在 `malformed.json` 里出现——上游把「自有路由全 `disabled`」聚合成 operation `exposure=disabled`，所以样本里那个全 `disabled` 的 profile（`partial` 的 `text_to_image`）拿到的是 `endpoint_disabled`。
 - `absent`：没答（`absent`）、只答拓扑（`empty`）、六个 operation 都答了但 `profiles: []`（`present` 且全 `unknown`）。
 
 第四档 `malformed.json` **只用于防御输入**，不代表上游可能产出：里面的 body 是合法 pydantic（结构断言照样过），但上游投影发不出来（例如 profile 引用了别的 operation 的路由，或自有路由全 `disabled` 旁边挂着一条本表不认识的 `enabled` 路径）。代理、缓存、旧版本才可能把这种 body 交给我们，所以它只被防御性、结构性与 profile 行校验读取，不进样本 oracle，也不参与「fixture = 真实样本」这句话。
 
 **上游不可能发出的形状**（`asr` operation 键、profile 挂在错 operation、缺必填 `support`、`profiles` 整键缺席）**不进 fixture**，只在对应测试里内联构造 —— 它们是防御性输入的用例，混进样本会让「fixture = 真实样本」这句话变成假话。`test_fixtures_are_schema_valid` 只断言上游 schema 的**结构不变量**（六键、`observed_at` 可解析且带时区、`reason_code` 在 operation 与 profile 上都在、`execution` 为 `{state,scope,observed_at}`、枚举值域、`profiles` 是列表、route 的 `transport`/`method`/`path` 齐全、stages 形状与数字字符串 id），不把上游 pydantic 源码抄一份进本仓。
 
-防「假覆盖」的回归测试（`tests/test_capability_contract.py`）：
+回归测试一览（其中 5 条是正文所说的「防假覆盖」回归，见英文段）：
 
 | 测试 | 钉住的事实 |
 | --- | --- |
 | `test_real_shaped_body_resolves_non_empty_pairs` | 真实形状 body 解析出 12 个成对声明，不是空表 |
 | `test_route_alone_cannot_distinguish_speech_profiles` | 同一路径 3 个 profile 解析出 3 个不同答案 |
 | `test_stage_ids_do_not_collapse_capabilities` | 两个 model 的 `stage_ids` 相同，能力状态仍各自独立 |
-| `test_capabilities_without_an_upstream_profile_are_unknown_not_missing` | 8 个无上游 profile 的 id 恒 `unknown`，且 `reasons` 里不出现 |
+| `test_capabilities_without_an_upstream_profile_are_unknown_not_missing` | `UNROUTED` 的 6 个 id 恒 `unknown`，且 `reasons` 里不出现 |
 | `test_a_profile_without_support_is_unknown_even_when_its_operation_is_supported` | profile 级字段缺席是 `unknown`（不是 `supported`） |
 | `test_a_profile_that_declares_no_route_is_unknown` | `supported + routes: []` 不能判 `available` |
 | `test_a_profile_whose_only_route_is_disabled_is_missing` | profile 路由全 `disabled` → `missing` + `route_disabled` |
@@ -236,7 +236,7 @@ Four rows carry no id here (`image_response`, `audio_response`, `caption_to_audi
 
 **Operation → routes** (`:42-54`) as `(transport, method, path)`, because upstream's `RouteKey` is exactly that and the websocket method literal is `WEBSOCKET`: `chat` → `http POST /v1/chat/completions`; `image_generation` → `http POST /v1/images/generations`; `image_edit` → `http POST /v1/images/edits`; `video_generation` → `http POST /v1/videos`, `http POST /v1/videos/sync`, `websocket WEBSOCKET /v1/realtime/video`; `speech` → `http POST /v1/audio/speech`; `audio_generation` → `http POST /v1/audio/generate`. `DELETE /v1/chat/completions` would be a 405 and a `websocket` declaration on an http route is wrong, so both are `route_mismatch`. `transport` defaults to `http` upstream (`protocol/capabilities.py:16-21`) and an absent transport is not a mismatch; `method` has no default and an absent one cannot be confirmed.
 
-Three schema facts shape the table: the body has only `object`, `schema_version`, `observed_at`, `models`, `stages`, `routes` (`protocol/capabilities.py:73-79`) and is served with `response_model_exclude_none=True` (`api_server.py:2193`) — the top-level `routes[]` is **what upstream aggregates an operation's `exposure` from** (`entrypoints/openai/serving_capabilities.py:383-387`: any `enabled` → `enabled`, else any `unknown` → `unknown`, else `disabled`), and each profile's `routes[]` is a copy of that list, forced `disabled` only for profiles needing video/audio input on `/v1/realtime/video` (`:339-343`). A top-level `disabled` therefore means the operation's HTTP endpoint is closed and **no profile-level `enabled` reopens it**; to close something narrower, the top level must stay `enabled` and that profile's route must be the one set to `disabled`. This module reads the operation's `exposure` — upstream has already aggregated it — instead of re-reading the top-level list, which is why publishing an unowned path there changes no verdict, and **not** because those routes are "display only"; **`exclude_none` drops only `None`-valued optional fields** — in practice the profile's `request` — while `default_factory` lists serialize as `[]` (`profiles: []`, never a missing key), `support`/`reason_code` are required on every operation and profile, `exposure` is required on every operation and top-level route (`protocol/capabilities.py:24-52`), and a profile has **no `exposure` field of its own** (`:36-44`): its reachability is the aggregation of the exposures of the routes it references; and `models[].operations` **must list all six** or pydantic raises (`:60-64`), with `stage_ids` numeric strings, the *same* full list for every model (`entrypoints/openai/serving_capabilities.py:400`).
+Three schema facts shape the table: the body has only `object`, `schema_version`, `observed_at`, `models`, `stages`, `routes` (`protocol/capabilities.py:73-79`) and is served with `response_model_exclude_none=True` (`api_server.py:2193`) — the top-level `routes[]` is **what upstream aggregates an operation's `exposure` from** (`entrypoints/openai/serving_capabilities.py:383-387`: any `enabled` → `enabled`, else any `unknown` → `unknown`, else `disabled`), and each profile's `routes[]` is a copy of that list, forced `disabled` only for profiles needing video/audio input on `/v1/realtime/video` (`:339-343`). A top-level `disabled` therefore means the operation's HTTP endpoint is closed and **no profile-level `enabled` reopens it**; closing something narrower would semantically have to live on the profile route, but this projection (`43ff7b9`) never rewrites a profile route except for `/v1/realtime/video`, so "top level `enabled` with that profile's route `disabled`" is **not producible today** — it is a forward-compatible consumer branch, not an available control. This module reads the operation's `exposure` — upstream has already aggregated it — instead of re-reading the top-level list, which is why publishing an unowned path there changes no verdict, and **not** because those routes are "display only"; **`exclude_none` drops only `None`-valued optional fields** — in practice the profile's `request` — while `default_factory` lists serialize as `[]` (`profiles: []`, never a missing key), `support`/`reason_code` are required on every operation and profile, `exposure` is required on every operation and top-level route (`protocol/capabilities.py:24-52`), and a profile has **no `exposure` field of its own** (`:36-44`): its reachability is the aggregation of the exposures of the routes it references; and `models[].operations` **must list all six** or pydantic raises (`:60-64`), with `stage_ids` numeric strings, the *same* full list for every model (`entrypoints/openai/serving_capabilities.py:400`).
 
 ### The key is the pair (operation, profile)
 
@@ -284,7 +284,7 @@ Two boundaries to keep: one unrecognised route must not void a profile that answ
 
 ### ASR: an upstream gap, not a missing row
 
-Upstream publishes no recognition operation and omni's router never registers `/v1/audio/transcriptions` (absent from `api_server.py`; its own recipe says the endpoint is "not currently available with `--omni`"). A body naming `asr` gets `unmapped_stage` — the upstream vocabulary has no such operation, this table did not lose a row. That is not a claim that this repository ignores `audio.score`: the `VllmOmniScore` adapter does post to `/audio/transcriptions` (`integrations/model_adapters.py:547,556`), whose peer is the standalone `tools/sheetsage2_serve.py:124`. But a capabilities body never mentions that path, so `audio.score` can only be `unknown` (`no_upstream_operation`): a route we happen to know is not evidence of a published capability.
+Upstream publishes no recognition operation and omni's router never registers `/v1/audio/transcriptions` (absent from `api_server.py`; its own recipe says the endpoint is "not currently available with `--omni`"). A body naming `asr` gets `unmapped_stage` — the upstream vocabulary has no such operation, this table did not lose a row. That is not a claim that this repository ignores `audio.score`: the `VllmOmniScore` adapter does post to `/audio/transcriptions` (`integrations/model_adapters.py:605-628`，POST 在 `:620`), whose peer is the standalone `tools/sheetsage2_serve.py:124`. But a capabilities body never mentions that path, so `audio.score` can only be `unknown` (`no_upstream_operation`): a route we happen to know is not evidence of a published capability.
 
 ### Relationship to the V2 discovery contract (#266)
 
@@ -292,7 +292,7 @@ This table is an input to #266, not a replacement and not a second schema: `doma
 
 ### Feeding `requests_for()`
 
-`application/model_availability.py` currently hard-codes profile names per `(kind, protocol)`; with a table the caller needs only the operation and profile it is about to use:
+#266's `application/model_availability.py` currently hard-codes profile names per `(kind, protocol)`; with a table the caller needs only the operation and profile it is about to use:
 
 ```python
 from opendirector.domain.capability_contract import capabilities_for
