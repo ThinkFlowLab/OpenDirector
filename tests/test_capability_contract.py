@@ -46,6 +46,7 @@ CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / '
 # The published sample. `malformed` is deliberately not among them: defining it
 # as a fourth tier here is what keeps defensive bodies out of the oracle.
 TIERS = ('absent', 'full', 'partial')
+VIDEO_PATHS = {'/v1/videos', '/v1/videos/sync', '/v1/realtime/video'}
 DEFENSIVE_TIER = 'malformed'
 # Upstream bodies may name models; credentials and raw provider responses never
 # belong in a fixture, so their vocabulary is refused outright.
@@ -469,6 +470,15 @@ def test_a_video_profile_grants_a_narrower_id_only_when_its_route_declares_the_r
             'image_to_video', inputs=('text', 'image'), outputs=('video',),
             routes=[{**route('/v1/videos'), 'request': {'inputs': {'first_frame': declared}}}])])}))
         assert unresolved_shape['capabilities']['video.first_frame'] == UNKNOWN, declared
+
+    # A path this operation does not own cannot declare the role either.
+    foreign = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos/stream', {'first_frame': 'supported'}),
+                route('/v1/videos')])])}))
+    assert foreign['capabilities']['video.first_frame'] == UNKNOWN
+    assert {'operation': 'video_generation', 'profile': 'image_to_video',
+            'route': '/v1/videos/stream', 'reason': UNKNOWN_ROUTE} in foreign['unresolved']
 
     # Every role the tool transmits has to be declared, not just one of them.
     partial_roles = resolve(body({'video_generation': operation(profiles=[profile(
@@ -1027,6 +1037,18 @@ def schema_problems(payload):
                             problems.append(f'{operation_id}/{entry.get("id")} request {request!r}')
                     if set(reference) - legal:
                         problems.append(f'{operation_id}/{entry.get("id")} route keys {sorted(reference)}')
+                    if isinstance(request, dict) and reference.get('path') in VIDEO_PATHS:
+                        # `_route_request` writes these facts on every video path;
+                        # a request block without them is a shape upstream cannot
+                        # emit, so a fixture may not use one to prove the gate.
+                        inputs = request.get('inputs')
+                        parameters = request.get('parameters')
+                        last_frame = inputs.get('last_frame') if isinstance(inputs, dict) else None
+                        if not isinstance(last_frame, dict) or last_frame.get('support') != 'unsupported':
+                            problems.append(f'{operation_id}/{entry.get("id")} request without last_frame')
+                        if not isinstance(parameters, dict) or \
+                                not {'width', 'height', 'num_frames', 'fps'} <= set(parameters):
+                            problems.append(f'{operation_id}/{entry.get("id")} request parameters')
                     if reference.get('transport') not in {'http', 'websocket'}:
                         problems.append(f'{operation_id}/{entry.get("id")} transport {reference.get("transport")!r}')
                     if not (isinstance(reference.get('method'), str) and reference['method']):
@@ -1059,6 +1081,33 @@ def test_fixtures_are_schema_valid():
             seen_body += 1
             assert schema_problems(payload) == [], (document['tier'], case['id'])
     assert seen_body >= 5
+
+
+def test_the_fixture_guard_rejects_a_video_request_shape_upstream_cannot_emit():
+    """The video-route request facts are an invariant, so the guard has to bite.
+
+    `_route_request` writes `last_frame: unsupported` and the four transport
+    parameters on every video path. A fixture that omits them is a shape the
+    projection cannot emit, and proving a capability with it would be fake
+    coverage.
+    """
+    def payload_for(request):
+        entry = profile('image_to_video', inputs=('text', 'image'), outputs=('video',),
+                        routes=[{**route('/v1/videos'), 'request': request}])
+        operations = every_operation()
+        operations['video_generation'] = operation(profiles=[entry])
+        return body(operations)
+
+    broken = payload_for({'inputs': {'first_frame': {'support': 'supported'}},
+                          'parameters': {'width': {}, 'height': {}}})
+    problems = schema_problems(broken)
+    assert any('without last_frame' in problem for problem in problems), problems
+    assert any('request parameters' in problem for problem in problems), problems
+
+    complete = payload_for({
+        'inputs': {'first_frame': {'support': 'supported'}, 'last_frame': {'support': 'unsupported'}},
+        'parameters': {name: {'support': 'supported'} for name in ('width', 'height', 'num_frames', 'fps')}})
+    assert schema_problems(complete) == []
 
 
 def test_fixtures_obey_upstream_construction_invariants():

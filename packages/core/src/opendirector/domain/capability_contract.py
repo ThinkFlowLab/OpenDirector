@@ -332,6 +332,9 @@ def capabilities_for(operation, profile):
 # it accepts a video, not that it takes latent masks. Both ids stay `unknown`
 # until a route declares the role, and a document that never declares it keeps
 # them `unknown` — the only honest state.
+# `first_frame` names the slot, not the wire field: the adapter sends it as
+# `input_reference` with `task=fl2va`. The role name is what the document would
+# have to publish, so the two sides share one spelling.
 REQUIRED_ROLES: dict[str, tuple[str, ...]] = {
     'video.first_frame': ('first_frame',),
     'video.edit': ('source_video', 'video_noise_mask', 'audio_noise_mask'),
@@ -352,24 +355,37 @@ def required_roles_for(capability_id):
     return REQUIRED_ROLES.get(capability_id.strip(), ())
 
 
-def declared_roles(entry):
-    """Role names a profile declares as supported on its own *open* routes.
+def _supported_roles(request):
+    """Role names one `RequestConstraints` marks `support=supported`."""
+    inputs = request.get('inputs') if isinstance(request, dict) else None
+    if not isinstance(inputs, dict):
+        return set()
+    return {str(role).strip() for role, constraint in inputs.items()
+            if isinstance(constraint, dict) and constraint.get('support') == SUPPORTED}
 
-    Reads only `routes[*].request.inputs[*].support`, the one place upstream
-    names a request slot. A route contributes nothing when it declares no
-    `request`, when its `exposure` is not `enabled` (a closed route cannot serve
-    the request), or when the input is not `support=supported`: silence is not
-    evidence.
+
+def declared_roles(entry, operation):
+    """Role names a profile declares as supported on its own open routes.
+
+    Reads only `routes[*].request.inputs[*].support`. The route reference is
+    where upstream's projection lands the per-path facts, and it already carries
+    the profile-level constraints it copied (`_route_request` starts from
+    `dict(request.inputs)`), so reading the profile's own `request` as well would
+    only re-add what a route just narrowed.
+
+    A route contributes nothing when its `exposure` is not `enabled` (a closed
+    route cannot serve the request), when it is not one of the operation's own
+    routes, or when the input is not `support=supported`: silence is not
+    evidence, and neither is a path this table does not own.
     """
+    if not isinstance(entry, dict) or not isinstance(operation, str):
+        return set()
+    owned = set(OPERATION_ROUTES.get(operation, ()))
     roles = set()
     for value in _routes(entry):
-        request = value.get('request') if isinstance(value, dict) else None
-        inputs = request.get('inputs') if isinstance(request, dict) else None
-        if not isinstance(inputs, dict) or _route_exposure(value) != ENABLED:
+        if _route_exposure(value) != ENABLED or _route_key(value) not in owned:
             continue
-        for role, constraint in inputs.items():
-            if isinstance(constraint, dict) and constraint.get('support') == SUPPORTED:
-                roles.add(str(role).strip())
+        roles |= _supported_roles(value.get('request'))
     return roles
 
 
@@ -647,7 +663,7 @@ def resolve(payload):
                 if capabilities:
                     required = {role for capability in capabilities for role in required_roles_for(capability)}
                     if required and verdict == 'yes':
-                        missing = required - declared_roles(entry)
+                        missing = required - declared_roles(entry, key)
                         if missing:
                             # A broad profile (i2v / v2v) does not authorise a
                             # narrower tool: one of the profile's own open routes

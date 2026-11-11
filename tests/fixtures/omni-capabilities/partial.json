@@ -1088,6 +1088,32 @@
                               "support": "supported",
                               "min_count": 1,
                               "max_count": 1
+                            },
+                            "last_frame": {
+                              "support": "unsupported",
+                              "max_count": 0
+                            }
+                          },
+                          "parameters": {
+                            "width": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "num_frames": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "fps": {
+                              "support": "supported",
+                              "type": "number",
+                              "minimum": 1
                             }
                           }
                         }
@@ -1103,6 +1129,32 @@
                               "support": "supported",
                               "min_count": 1,
                               "max_count": 1
+                            },
+                            "last_frame": {
+                              "support": "unsupported",
+                              "max_count": 0
+                            }
+                          },
+                          "parameters": {
+                            "width": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "num_frames": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "fps": {
+                              "support": "supported",
+                              "type": "number",
+                              "minimum": 1
                             }
                           }
                         }
@@ -1118,13 +1170,48 @@
                               "support": "supported",
                               "min_count": 1,
                               "max_count": 1
+                            },
+                            "last_frame": {
+                              "support": "unsupported",
+                              "max_count": 0
+                            }
+                          },
+                          "parameters": {
+                            "width": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "num_frames": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "fps": {
+                              "support": "supported",
+                              "type": "number",
+                              "minimum": 1
                             }
                           }
                         }
                       }
                     ],
                     "reason_code": "model_declared",
-                    "constraints": {}
+                    "constraints": {},
+                    "request": {
+                      "inputs": {
+                        "image": {
+                          "support": "supported",
+                          "min_count": 1,
+                          "max_count": 1
+                        }
+                      }
+                    }
                   }
                 ],
                 "execution": {
@@ -1363,6 +1450,32 @@
                               "support": "supported",
                               "min_count": 1,
                               "max_count": 1
+                            },
+                            "last_frame": {
+                              "support": "unsupported",
+                              "max_count": 0
+                            }
+                          },
+                          "parameters": {
+                            "width": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "num_frames": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "fps": {
+                              "support": "supported",
+                              "type": "number",
+                              "minimum": 1
                             }
                           }
                         }
@@ -1378,6 +1491,32 @@
                               "support": "supported",
                               "min_count": 1,
                               "max_count": 1
+                            },
+                            "last_frame": {
+                              "support": "unsupported",
+                              "max_count": 0
+                            }
+                          },
+                          "parameters": {
+                            "width": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "num_frames": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "fps": {
+                              "support": "supported",
+                              "type": "number",
+                              "minimum": 1
                             }
                           }
                         }
@@ -1393,13 +1532,48 @@
                               "support": "supported",
                               "min_count": 1,
                               "max_count": 1
+                            },
+                            "last_frame": {
+                              "support": "unsupported",
+                              "max_count": 0
+                            }
+                          },
+                          "parameters": {
+                            "width": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "height": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "num_frames": {
+                              "support": "supported",
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "fps": {
+                              "support": "supported",
+                              "type": "number",
+                              "minimum": 1
                             }
                           }
                         }
                       }
                     ],
                     "reason_code": "model_declared",
-                    "constraints": {}
+                    "constraints": {},
+                    "request": {
+                      "inputs": {
+                        "video": {
+                          "support": "supported",
+                          "min_count": 1,
+                          "max_count": 1
+                        }
+                      }
+                    }
                   }
                 ],
                 "execution": {
