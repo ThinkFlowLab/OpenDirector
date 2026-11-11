@@ -15,6 +15,7 @@ from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations import vllm_omni_image
 from opendirector.integrations.providers import GenerationProviders
 
 ZIMAGE = {'kind': 'image', 'url': 'http://gpu-box:8200/v1', 'modelId': 'Tongyi-MAI/Z-Image-Turbo', 'apiKey': 'token'}
@@ -81,12 +82,63 @@ def test_generates_a_16_9_png_with_text_references_inlined(project):
     task, posts = run_image(project, reply, [note['id']])
     assert task['status'] == 'succeeded', (task['error'], task['errorDetails'])
     [payload] = posts
-    assert {key: payload[key] for key in ('model', 'size', 'response_format', 'output_format')} == {
-        'model': 'Tongyi-MAI/Z-Image-Turbo', 'size': '1344x768', 'response_format': 'b64_json', 'output_format': 'png'}
+    assert {key: payload[key] for key in ('model', 'size', 'response_format', 'output_format', 'num_inference_steps', 'guidance_scale')} == {
+        'model': 'Tongyi-MAI/Z-Image-Turbo', 'size': '1344x768', 'response_format': 'b64_json', 'output_format': 'png',
+        'num_inference_steps': 9, 'guidance_scale': 0.0}
+    # The sampling sent is the sampling the job fixed and recorded when it was accepted.
+    job = project[0].snapshot(value['id']).jobs[-1]
+    assert (job.execution.numInferenceSteps, job.execution.guidanceScale) == (9, 0.0)
+    assert {key: job.adapterParameters[key] for key in ('num_inference_steps', 'guidance_scale')} == {'num_inference_steps': 9, 'guidance_scale': 0.0}
     assert '樱花校门前的少女' in payload['prompt'] and '黑色长发，红色领结' in payload['prompt']
     assert 'image' not in payload and 'watermark' not in payload
     asset = project[3].record(project[3].assets.get(value['id'], task['assetId']))
     assert asset['kind'] == 'image' and (asset['width'], asset['height']) == (16, 12)
+
+
+@pytest.mark.parametrize('parameters', [
+    {'size': '1344x768', 'num_inference_steps': 9, 'guidance_scale': 0.0},
+    {'size': '1344x768', 'num_inference_steps': 4, 'guidance_scale': 0.0},
+    {'size': '1344x768'},
+])
+def test_sends_the_sampling_the_job_was_accepted_with(monkeypatch, parameters):
+    # Execution and recovery both rebuild the request from the job's parameters. A job accepted
+    # before sampling was fixed has none and keeps the service defaults instead of today's values.
+    monkeypatch.setattr(vllm_omni_image, 'generation_references', lambda store, task, config: {'prompt': '灯塔', 'images': []})
+    posts = []
+    reply = httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(png()).decode()}]})
+    generation = vllm_omni_image.VllmOmniImageGeneration(None, httpx.MockTransport(server(posts, reply)))
+    asyncio.run(generation.generate({**ZIMAGE, 'protocol': 'openai'}, {'parameters': parameters}, None))
+    [payload] = posts
+    assert {key: payload[key] for key in ('num_inference_steps', 'guidance_scale') if key in payload} == {
+        key: value for key, value in parameters.items() if key != 'size'}
+
+
+@pytest.mark.parametrize('accepted', [{'num_inference_steps': 9, 'guidance_scale': 0.0}, {}])
+def test_queued_job_recovery_sends_the_sampling_fixed_at_acceptance(tmp_path, monkeypatch, accepted):
+    project = new_project(tmp_path)
+    store, pid, session = project
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('image', ZIMAGE['url'], ZIMAGE['modelId'], 'token', protocol='openai')
+    monkeypatch.setattr(vllm_omni_image, 'SAMPLING', dict(accepted))  # {}: accepted before sampling was fixed
+    task, _, _ = prepared(CreationGeneration(store, configs), project, config, prompt='灯塔')
+    # A later release changes the values while the job is still queued.
+    monkeypatch.setattr(vllm_omni_image, 'SAMPLING', {'num_inference_steps': 4, 'guidance_scale': 1.5})
+    posts = []
+    reply = httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(png()).decode()}]})
+    async def run():
+        restarted = CreationGeneration(store, configs)
+        restarted.provider = GenerationProviders(restarted.store, httpx.MockTransport(server(posts, reply)), poll_interval=0)
+        try:
+            await restarted.recover(str(pid), task['id'])
+            await asyncio.gather(*(job.future for job in list(restarted.jobs.values())))
+        finally:
+            await restarted.close()
+    asyncio.run(run())
+    [payload] = posts
+    assert {key: payload[key] for key in ('num_inference_steps', 'guidance_scale') if key in payload} == accepted
+    job = store.snapshot(pid).jobs[-1]
+    assert job.status == 'succeeded', job.errorDetails
+    assert (job.execution.numInferenceSteps, job.execution.guidanceScale) == (accepted.get('num_inference_steps'), accepted.get('guidance_scale'))
 
 
 def test_reference_images_are_rejected_before_any_request(project):

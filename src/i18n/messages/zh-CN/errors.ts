@@ -1,16 +1,33 @@
 /** Shared validation and storage errors. */
 export const errors = {
   "errors.generationFailure.policy": "供应商因内容政策拒绝了提示词或参考图片，请调整输入后再生成。",
-  "errors.tools.error.submissionUnknown": "生成请求的提交结果不明。请先核对供应商是否已接收请求；不会自动重新提交。",
+  "errors.archive.identityConflict":
+    "同一时间线逻辑资源引用了冲突的文件或元数据。",
+  "errors.archive.textResourceMissing":
+    "时间线字体或文字来源“{title}”缺失，请恢复后再导出。",
+  "errors.archive.integrity": "归档素材完整性校验失败。",
+
+  "errors.export.textUnsupported":
+    "FCPXML 无法保留时间线文字，请使用原生可编辑包或 MP4。",
+  "errors.timeline.capabilityUnsupported": "此时间线需要当前版本不支持的能力。",
+
+  "errors.render.fontLoad": "无法加载字体“{title}”。",
+  "errors.render.fontMissing": "时间线字体“{fontId}”缺失。",
+  "errors.render.fontBudget": "时间线实际使用的字体总量不能超过 64 MiB。",
+  "errors.render.fontCoverage": "所选字体未覆盖全部文字字符。",
+  "errors.tools.error.submissionUnknown":
+    "生成请求的提交结果不明。请先核对供应商是否已接收请求；不会自动重新提交。",
   "errors.data.timelineShape": "时间线尺寸、帧率或轨道无效。",
   "errors.data.timelineAssets": "时间线素材库仅支持有效图片、视频或音频。",
   "errors.data.timelineTrack": "时间线轨道 ID、类型或片段列表无效。",
   "errors.data.timelineClip": "时间线片段、源入出点、速度或音量无效。",
   "errors.data.timelineOutPoint": "片段出点超出了素材已知时长。",
-  "errors.data.timelineVisualKind": "视觉轨仅支持图片或视频，时间位置由片段顺序决定。",
+  "errors.data.timelineVisualKind":
+    "视觉轨仅支持图片或视频，时间位置由片段顺序决定。",
   "errors.data.timelineStill": "静态图片使用展示时长，不使用源入点或变速。",
   "errors.data.timelineAudio": "音轨片段必须使用音频素材和非负时间线起点。",
-  "errors.data.timelineOverlap": "同一音轨内的片段不能重叠，请调整起点或使用另一音轨。",
+  "errors.data.timelineOverlap":
+    "同一音轨内的片段不能重叠，请调整起点或使用另一音轨。",
   "errors.data.timelineVisualTrack": "时间线必须恰有一条视觉轨。",
   "errors.data.subject": "主体描述或辅助素材无效，辅助图片最多 3 张。",
   "errors.data.subjectMain": "主体主素材必须是图片或视频。",
@@ -31,7 +48,8 @@ export const errors = {
   "errors.data.paletteName": "调色板名称无效。",
   "errors.data.paletteSource": "调色板来源必须是原始存储 URI，不是网页 URL。",
   "errors.data.externalType": "外部节点类型必须是 director-stage。",
-  "errors.data.externalVersion": "外部导演阶段的版本 ID 必须是 uint64 十进制字符串。",
+  "errors.data.externalVersion":
+    "外部导演阶段的版本 ID 必须是 uint64 十进制字符串。",
   "errors.data.node": "节点的标题、提示词、素材或设置无效。",
   "errors.data.contentReference": "结构化正文引用无效。",
   "errors.data.contentLimit": "结构化正文超过长度或参考数量限制。",
@@ -55,11 +73,14 @@ export const errors = {
   "errors.rules.videoReference": "当前模型不接收视频参考",
   "errors.rules.kindReference": "当前模型不接收{kind}参考",
   "errors.rules.mediaMissing": "素材尚未导入或已丢失",
-  "errors.rules.modelMissing": "所选模型配置已删除或尚未读取，请在设置中重新选择。",
+  "errors.rules.modelMissing":
+    "所选模型配置已删除或尚未读取，请在设置中重新选择。",
   "errors.rules.modelKind": "模型类型与节点不符，请重新选择模型。",
   "errors.rules.depthModel": "视频深度模型仅用于深度动作捕捉，请选择生成模型。",
-  "errors.rules.transcriptionModel": "扒谱模型仅用于参照音乐生成，请选择音乐生成模型。",
-  "errors.rules.segmentationModel": "视觉分割模型仅用于选区、分割和抠像，请选择生成模型。",
+  "errors.rules.transcriptionModel":
+    "扒谱模型仅用于参照音乐生成，请选择音乐生成模型。",
+  "errors.rules.segmentationModel":
+    "视觉分割模型仅用于选区、分割和抠像，请选择生成模型。",
   "errors.rules.promptRequired": "请输入生成要求。",
   "errors.rules.layoutReferences": "MOSS 布局 JSON 不支持附加文本参考，请将要求写入 JSON 或移除文本参考。",
   "errors.rules.promptTooLong": "当前模型的提示词最多 {limit} 个字符，请缩短后重试。",
@@ -70,7 +91,8 @@ export const errors = {
   "errors.rules.musicModel": "所选模型用于音乐生成，请重新选择模型。",
   "errors.rules.musicDuration": "音乐最长时长需在 {min}–{max} 秒之间。",
   "errors.rules.lyricsLimit": "歌词最多 5000 字。",
-  "errors.rules.referenceMusic": "所选音乐模型不支持参照音乐，请换用 YuE2 或断开参照。",
+  "errors.rules.referenceMusic":
+    "所选音乐模型不支持参照音乐，请换用 YuE2 或断开参照。",
   "errors.rules.transcriptionRequired":
     "参照音乐需要先扒谱，请在“模型接入”中添加扒谱模型（vLLM-Omni 扒谱接口）。",
   "errors.rules.speechOnly": "当前语音服务仅支持文本朗读。",
@@ -85,7 +107,8 @@ export const errors = {
   "errors.rules.lastFrame": "当前服务只支持首帧，请移除尾帧。",
   "errors.rules.lastFrameMissing": "尾帧素材未连接或已丢失，请重新选择。",
   "errors.rules.firstFrameMissing": "首帧素材未连接或已丢失，请重新选择。",
-  "errors.rules.continuationSource": "接续需要连接一段由当前 H3 服务生成的视频作为上一段。",
+  "errors.rules.continuationSource":
+    "接续需要连接一段由当前 H3 服务生成的视频作为上一段。",
   "errors.rules.referenceLimit": "参考{kind}超过当前模型上限（{limit} 个）。",
   "errors.rules.referenceFileSize": "参考文件超过当前模型的大小限制",
   "errors.rules.referenceBudget": "参考总大小超过当前模型的请求预算",
@@ -106,7 +129,8 @@ export const errors = {
   "errors.storage.duplicateNode": "节点 ID 重复：{id}",
   "errors.storage.nodeDetail": "节点 {id}：{reason}",
   "errors.storage.stackRoot": "堆叠必须位于画布根层级。",
-  "errors.storage.stackMembers": "堆叠成员必须是独立且未属于另一堆叠的可引用根节点。",
+  "errors.storage.stackMembers":
+    "堆叠成员必须是独立且未属于另一堆叠的可引用根节点。",
   "errors.storage.parentMissing": "节点 {id} 的父节点不存在或不是分组。",
   "errors.storage.parentCycle": "节点 {id} 的分组存在循环引用。",
   "errors.storage.edge": "连线格式无效或引用了不存在的节点。",
@@ -139,8 +163,10 @@ export const errors = {
   "errors.backend.mediaEmpty": "素材没有可读取的内容。",
   "errors.backend.mediaReadFailed": "素材读取失败。",
   "errors.backend.unsupportedGeneration": "该节点不支持生成配置。",
-  "errors.backend.assemblyMissing": "装配连线对应的主体素材或时间线片段已不存在。",
-  "errors.backend.toolSourceMissing": "工具来源尚未保存或已变化，请重新打开编辑器。",
+  "errors.backend.assemblyMissing":
+    "装配连线对应的主体素材或时间线片段已不存在。",
+  "errors.backend.toolSourceMissing":
+    "工具来源尚未保存或已变化，请重新打开编辑器。",
   "errors.backend.editorCommand": "此编辑器需要专属命令。",
   "errors.backend.openUnifiedProject": "请先打开统一工程。",
   "errors.backend.materialReference": "素材节点不能直接接受生成参考。",
@@ -153,7 +179,8 @@ export const errors = {
     "此前结果已保存；本次输出尚未提交，请核对后再次应用。",
   "errors.backend.blankReference": "空白文本不能作为参考。",
   "errors.backend.sourceChanged": "所选来源已变化，请重新选择。",
-  "errors.backend.projectNotOpen": "工程不在可打开的列表中，请检查工程文件后重试。",
+  "errors.backend.projectNotOpen":
+    "工程不在可打开的列表中，请检查工程文件后重试。",
   "errors.backend.untitled": "未命名画布",
   "errors.backend.untitledSuffix": "未命名画布 ({suffix})",
   "errors.backend.generationTask": "生成任务",
@@ -162,17 +189,21 @@ export const errors = {
   "errors.backend.toolSelectionFile": "工具选区.png",
   "errors.backend.paletteSourceTitle": "配色来源",
   "errors.backend.referenceFallback": "参考",
-  "errors.videoCapabilities.durationFormat": "时长请填写整数或范围，例如 4-10,15。",
-  "errors.videoCapabilities.durationRange": "时长须在 1–60 秒内，范围起点不能大于终点。",
+  "errors.videoCapabilities.durationFormat":
+    "时长请填写整数或范围，例如 4-10,15。",
+  "errors.videoCapabilities.durationRange":
+    "时长须在 1–60 秒内，范围起点不能大于终点。",
   "errors.videoCapabilities.outputCount": "请配置 1–20 个输出规格。",
-  "errors.videoCapabilities.resolutionName": "分辨率名称无效，例如 480P、720P、4K。",
+  "errors.videoCapabilities.resolutionName":
+    "分辨率名称无效，例如 480P、720P、4K。",
   "errors.videoCapabilities.pixelPair": "像素宽高须同时填写或留空。",
   "errors.videoCapabilities.pixelRequired":
     "该适配方式需要填写像素宽高（仅 H3 的 480P、768P 可按档位推算）。",
   "errors.videoCapabilities.pixelBounds":
     "横屏宽高须为 64–8192 的整数，宽不小于高，并符合像素对齐步长。",
   "errors.videoCapabilities.duplicateResolution": "分辨率不能重复。",
-  "errors.videoCapabilities.defaultOutput": "默认分辨率和时长必须属于已声明的输出规格。",
+  "errors.videoCapabilities.defaultOutput":
+    "默认分辨率和时长必须属于已声明的输出规格。",
   "errors.tools.saveBeforeSubmit": "请先保存工具编辑设置，再提交任务。",
   "errors.tools.taskCancelled": "任务已取消。",
   "errors.tools.taskIncomplete": "工具任务未完成。",
@@ -236,12 +267,14 @@ export const errors = {
     "接入图像分割模型后可自动识别选区；仍可手动画选区。",
   "errors.tools.taskMessage.stopping": "停止处理中，等待当前操作安全收尾。",
   "errors.tools.taskMessage.notApplicable": "尚未提交模型调用。",
-  "errors.tools.taskMessage.notRequired": "模型调用已结束；已有结果与执行记录已保留。",
+  "errors.tools.taskMessage.notRequired":
+    "模型调用已结束；已有结果与执行记录已保留。",
   "errors.tools.taskMessage.notRequested": "尚未向远端发送取消请求。",
   "errors.tools.taskMessage.requested": "取消请求已发送，等待远端确认。",
   "errors.tools.taskMessage.confirmed": "远端已确认取消。",
   "errors.tools.taskMessage.unsupported": "远端不支持取消，可能继续执行。",
-  "errors.tools.taskMessage.unknown": "远端取消结果未知，请核对原任务；不要直接重复生成。",
+  "errors.tools.taskMessage.unknown":
+    "远端取消结果未知，请核对原任务；不要直接重复生成。",
   "errors.tools.taskMessage.stopped": "已停止本地处理。{detail}",
   "errors.tools.taskMessage.cancelledHistory":
     "历史记录标记为取消，未提供远端取消确认依据。",
@@ -250,7 +283,8 @@ export const errors = {
   "errors.tools.taskMessage.interruptedRunning": "远端任务仍在运行。",
   "errors.tools.taskMessage.interruptedEnded":
     "模型调用已结束，执行记录及已登记结果已保留。",
-  "errors.tools.taskMessage.interrupted": "执行已中断。{detail}不会自动重新生成。",
+  "errors.tools.taskMessage.interrupted":
+    "执行已中断。{detail}不会自动重新生成。",
   "errors.backend.sourceMediaChanged": "来源素材已变化，请重新选择。",
   "errors.backend.editSaving": "编辑正在保存，请稍候。",
   "errors.backend.saveConflict":
@@ -263,21 +297,26 @@ export const errors = {
   "errors.backend.imageRead": "无法读取来源图片，请重新导入。",
   "errors.backend.readTimeout": "读取超时，请重试。",
   "errors.backend.timelineSourceMissing": "时间线来源不存在。",
-  "errors.backend.priorToolUnconfirmed": "上一次工具提交尚未确认，请先查询原任务。",
+  "errors.backend.priorToolUnconfirmed":
+    "上一次工具提交尚未确认，请先查询原任务。",
   "errors.results.projectChanged": "项目已切换，结果未写入画布。",
   "errors.results.sourceDeleted": "来源节点已被删除，结果未写入画布。",
   "errors.results.sourceTypeChanged": "来源节点类型已改变，结果未写入画布。",
-  "errors.results.sourceMediaChanged": "来源素材已改变或不可用，请重新打开工具。",
+  "errors.results.sourceMediaChanged":
+    "来源素材已改变或不可用，请重新打开工具。",
   "errors.results.sourceLocked": "来源节点已锁定，请先解锁节点。",
-  "errors.results.sourceLockedHistory": "来源节点已锁定，结果仍保存在生成历史中。",
+  "errors.results.sourceLockedHistory":
+    "来源节点已锁定，结果仍保存在生成历史中。",
   "errors.results.kindMismatch": "生成结果与节点的媒体类型不匹配。",
-  "errors.results.mediaChangedHistory": "节点素材已改变，结果仍保存在生成历史中。",
+  "errors.results.mediaChangedHistory":
+    "节点素材已改变，结果仍保存在生成历史中。",
   "errors.results.identityMismatch": "工具结果身份不匹配。",
   "errors.results.noMedia": "结果不包含有效媒体。",
   "errors.results.draftMismatch": "编辑草稿与来源节点不匹配。",
   "errors.results.identityExists": "结果节点身份已存在。",
   "errors.results.invalidResult": "工具结果身份或素材无效。",
-  "errors.results.nodeModifiedHistory": "结果节点已修改、锁定或移除，结果保留在历史中。",
+  "errors.results.nodeModifiedHistory":
+    "结果节点已修改、锁定或移除，结果保留在历史中。",
   "errors.results.nodeModified": "结果节点已修改，结果保留在历史中。",
   "errors.media.cancelled": "媒体处理已取消。",
   "errors.media.readFailed": "结果文件读取失败。",
@@ -286,7 +325,8 @@ export const errors = {
   "errors.media.noRecorder":
     "当前浏览器不支持本地视频重编码；需要 captureStream 与 MediaRecorder。",
   "errors.media.cropRange": "视频裁剪范围无效。",
-  "errors.media.noCaptureStream": "当前浏览器不支持视频画幅裁剪所需的 Canvas captureStream。",
+  "errors.media.noCaptureStream":
+    "当前浏览器不支持视频画幅裁剪所需的 Canvas captureStream。",
   "errors.media.noEncoder": "当前浏览器没有可用的 WebM 编码器。",
   "errors.media.noData": "视频编码没有产生数据。",
   "errors.media.stopFailed": "视频编码停止失败。",
@@ -350,18 +390,21 @@ export const errors = {
   "errors.nodeAction.extendPrompt":
     "请基于参考视频的结尾延长 5 秒，保持人物、场景和运动连贯。",
   "errors.nodeAction.extendTitle": "延长",
-  "errors.nodeAction.gridRange": "网格切分需要 1 至 7 行、1 至 7 列，且至少分为 2 张图片。",
+  "errors.nodeAction.gridRange":
+    "网格切分需要 1 至 7 行、1 至 7 列，且至少分为 2 张图片。",
   "errors.nodeAction.gridPixels": "行列数不能超过图片的像素尺寸。",
   "errors.nodeAction.gridImage": "网格切分需要一个可读取的图片节点。",
   "errors.nodeAction.gridCanvas": "浏览器无法创建图片切分画布。",
   "errors.nodeAction.gridEncode": "图片切分结果编码失败。",
   "errors.nodeAction.gridTitle": "网格切分 · 第 {row} 行第 {column} 列",
   "errors.export.range": "时间超出 FCPXML 导出范围。",
-  "errors.export.missingMedia": "素材「{title}」缺少媒体文件，无法导出完整素材包。",
+  "errors.export.missingMedia":
+    "素材「{title}」缺少媒体文件，无法导出完整素材包。",
   "errors.export.emptyTimeline": "请先向时间线加入片段。",
   "errors.export.fpsRange": "项目帧率超出 FCPXML 有理数范围。",
   "errors.export.frameRange": "时间线超出 FCPXML 帧数范围。",
-  "errors.export.clipShort": "片段「{title}」短于项目的一帧，无法导出剪辑工程。",
+  "errors.export.clipShort":
+    "片段「{title}」短于项目的一帧，无法导出剪辑工程。",
   "errors.export.zipEntries": "素材数量超过 ZIP32 上限。",
   "errors.export.zipName": "素材包文件名无效或重复。",
   "errors.export.zipSize": "素材包超过 ZIP32 的 4 GiB 上限，请拆分时间线。",
@@ -394,16 +437,20 @@ export const errors = {
   "errors.archive.readMedia": "无法读取画布素材，未导出不完整的副本。",
   "errors.archive.mediaFallback": "素材",
   "errors.archive.canvasFallback": "画布",
-  "errors.archive.transientMedia": "画布素材仍使用临时地址，未导出不完整的副本。",
-  "errors.archive.noManifest": "这不是 OpenDirector 画布压缩包：缺少 manifest.json。",
+  "errors.archive.transientMedia":
+    "画布素材仍使用临时地址，未导出不完整的副本。",
+  "errors.archive.noManifest":
+    "这不是 OpenDirector 画布压缩包：缺少 manifest.json。",
   "errors.archive.manifestInvalid": "画布压缩包的 manifest.json 无法解析。",
-  "errors.archive.notCanvas": "这不是 OpenDirector 画布压缩包，未导入任何内容。",
+  "errors.archive.notCanvas":
+    "这不是 OpenDirector 画布压缩包，未导入任何内容。",
   "errors.archive.versionInvalid": "画布压缩包的格式版本无效。",
   "errors.archive.versionNewer":
     "该画布由更新版本的 OpenDirector 导出（格式 v{version}），当前版本无法读取。",
   "errors.archive.missingDocument": "压缩包缺少画布文件：{path}",
   "errors.archive.documentInvalid": "画布 JSON 无法解析，未导入任何内容。",
-  "errors.archive.transientReference": "画布引用了临时素材地址，压缩包已损坏，未导入。",
+  "errors.archive.transientReference":
+    "画布引用了临时素材地址，压缩包已损坏，未导入。",
   "errors.archive.missingMedia": "画布引用的素材缺失：{entry}，未导入。",
   "errors.upload.kindImage": "图片",
   "errors.upload.kindVideo": "视频",
@@ -485,19 +532,22 @@ export const errors = {
   "errors.history.failed": "生成失败，请检查服务日志。",
   "errors.connection.endpointMissing": "节点已不存在",
   "errors.connection.sourceEmpty": "当前节点内容为空，请先上传或生成节点内容",
-  "errors.connection.targetMaterial": "素材节点不能接收生成参考，请连接生成节点",
+  "errors.connection.targetMaterial":
+    "素材节点不能接收生成参考，请连接生成节点",
   "errors.connection.locked": "请先解锁节点或所属分组",
   "errors.connection.self": "节点不能引用自身",
   "errors.connection.duplicate": "已经连接过",
   "errors.connection.sourceType": "目标节点不接收这类素材",
   "errors.connection.targetType": "该节点不接收参考",
   "errors.connection.capacity": "参考数量已达上限",
-  "errors.connection.frameCapacity": "首尾帧模式最多连接 2 个图片节点，请先断开多余连线。",
+  "errors.connection.frameCapacity":
+    "首尾帧模式最多连接 2 个图片节点，请先断开多余连线。",
   "errors.connection.subjectMode":
     "主体只能包含一份视频，或一张主图片及最多三张附加图片，请先移除冲突素材",
   "errors.connection.subjectCapacity": "主体最多包含一张主图片和三张附加图片",
   "errors.connection.subjectDuration": "主体视频不能超过 15 秒",
-  "errors.connection.sourceDuration": "请先读取视频或音频的实际时长，再添加到目标节点",
+  "errors.connection.sourceDuration":
+    "请先读取视频或音频的实际时长，再添加到目标节点",
   "errors.timeline.libraryKind": "时间线素材库只接受图片、视频或音频。",
   "errors.timeline.kind": "时间线只接受图片、视频或音频。",
   "errors.timeline.trackKind": "素材类型与目标轨道不一致。",
@@ -517,11 +567,13 @@ export const errors = {
   "errors.render.audioDecode": "无法解码「{title}」的声音。",
   "errors.render.noAudio": "「{title}」没有可读取的音轨。",
   "errors.render.noFrame": "「{title}」在 {time} 秒没有可用画面。",
-  "errors.render.layerLocalOnly": "仅支持本地图片；请先导入文件，不会请求外站图片。",
+  "errors.render.layerLocalOnly":
+    "仅支持本地图片；请先导入文件，不会请求外站图片。",
   "errors.render.layerDecode": "无法解码图层图片。请检查格式，或重新导入素材。",
   "errors.render.layerCanvas": "浏览器无法创建 Canvas 2D 图层画布。",
   "errors.render.layerNotLoaded": "图层「{name}」未加载完成，无法合成。",
-  "errors.render.layerNotPortable": "图片尚未加载完成，无法保存可移植的图层文件。",
+  "errors.render.layerNotPortable":
+    "图片尚未加载完成，无法保存可移植的图层文件。",
   "errors.render.mp4Invalid": "导出时长或帧率无效。",
   "errors.render.mp4Even": "MP4 的宽度与高度需要为偶数，请调整时间线尺寸。",
   "errors.render.mp4H264":
@@ -567,7 +619,8 @@ export const errors = {
   "errors.refs.fallbackTitle": "参考",
   "errors.imageAction.ink": "无法绘制改图标记。",
   "errors.imageAction.canvas": "无法创建改图参考图。",
-  "errors.imageAction.limit": "标记已达到保存上限；请先应用本地标记生成图片，再继续编辑。",
+  "errors.imageAction.limit":
+    "标记已达到保存上限；请先应用本地标记生成图片，再继续编辑。",
   "errors.import.readFailed": "读取失败",
   "errors.generation.targetMissing": "目标节点已不存在。",
   "errors.history.limit": "历史记录上限必须是正整数。",
@@ -596,13 +649,16 @@ export const errors = {
   "errors.tool.fieldFormat": "{label}格式不正确。",
   "errors.tool.fieldColor": "{label}必须为小写十六进制颜色。",
   "errors.tool.multiPreset": "预设画幅的输出尺寸必须与实测尺寸一致。",
-  "errors.tool.multiCustom": "自定义尺寸需要填写正整数宽度和高度；服务支持范围仍待确认。",
-  "errors.tool.videoDurationUnknown": "无法确认视频时长，请先读取来源素材的真实时长。",
+  "errors.tool.multiCustom":
+    "自定义尺寸需要填写正整数宽度和高度；服务支持范围仍待确认。",
+  "errors.tool.videoDurationUnknown":
+    "无法确认视频时长，请先读取来源素材的真实时长。",
   "errors.tool.videoDurationRange": "视频编辑仅支持 4–30 秒素材。",
   "errors.tool.videoPrompt": "请填写视频编辑提示词。",
   "errors.tool.splitPrompt": "按描述拆分需要填写拆分描述。",
   "errors.tool.outpaintDirection": "请至少扩展一个方向。",
-  "errors.tool.outpaintFixed": "扩图固定生成 1 张 2K 图片，长边必须与输出尺寸一致。",
+  "errors.tool.outpaintFixed":
+    "扩图固定生成 1 张 2K 图片，长边必须与输出尺寸一致。",
   "errors.tool.lightBrightness": "打光亮度必须是能力列表中的整数。",
   "errors.tool.layerFormat": "图层分解已知输入格式只支持 PNG / JPEG。",
   "errors.tool.layerPixels": "图层分解图片至少需要 262,144 像素。",
@@ -626,11 +682,14 @@ export const errors = {
   "errors.tool.maskInvalid": "选区蒙版无效。",
   "errors.tool.boxInvalid": "选区矩形数据无效。",
   "errors.tool.boxSize": "选区矩形尺寸无效。",
-  "errors.catalog.noteSmartEdit": "智能编辑模型；本地未接入画笔等智能编辑能力。",
+  "errors.catalog.noteSmartEdit":
+    "智能编辑模型；本地未接入画笔等智能编辑能力。",
   "errors.catalog.noteVip": "原站显示 VIP；本地选择不代表已取得模型服务。",
-  "errors.catalog.noteFirstLast": "仅首尾帧模式，可无参考做文生视频；目前只核实 5 秒参数。",
+  "errors.catalog.noteFirstLast":
+    "仅首尾帧模式，可无参考做文生视频；目前只核实 5 秒参数。",
   "errors.catalog.sampleName": "Seedance 2.5 样片",
-  "errors.catalog.sampleNote": "已观察 480P 样片入口；普通生成的时长范围尚未核实。",
+  "errors.catalog.sampleNote":
+    "已观察 480P 样片入口；普通生成的时长范围尚未核实。",
   "errors.catalog.noteVipParams": "原站显示 VIP；普通生成参数尚未核实。",
   "errors.catalog.noteEntryParams": "已观察模型入口；普通生成参数尚未核实。",
   "errors.catalog.context2K": "2K · 1 张",

@@ -11,6 +11,12 @@ from .bigmodel_image import BIGMODEL_IMAGE_OUTPUTS
 def image_outputs(config, profile):
     if profile == 'bigmodel-glm-image':
         return [dict(aspectRatio=ratio, size=size) for ratio, size in BIGMODEL_IMAGE_OUTPUTS]
+    if profile == 'minimax-h3-image':
+        return [dict(aspectRatio=ratio, size=size) for ratio, size in [
+            ('1:1', '2048x2048'), ('4:3', '2368x1760'), ('3:4', '1760x2368'),
+            ('16:9', '2720x1536'), ('9:16', '1536x2720'), ('3:2', '2496x1664'),
+            ('2:3', '1664x2496'), ('21:9', '3136x1344'), ('9:21', '1344x3136'),
+        ]]
     if config.get('protocol') == 'volcengine':
         # This adapter only declares the existing automatic 2K request. Do not
         # promise a ratio without an explicit output contract for that service.

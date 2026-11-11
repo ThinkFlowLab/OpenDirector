@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import shlex
+import base64
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +15,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
+from process_helpers import project_heartbeat
 
 from opendirector.agent import jiuwenswarm as swarm
 from opendirector_api.main import create_app
@@ -20,6 +23,10 @@ from opendirector.infrastructure.local_projects import LocalProjects
 
 
 pytestmark = pytest.mark.skipif(os.getenv('JIUWENSWARM_ENGINE_TEST') != '1', reason='requires installed JiuwenSwarm and FFmpeg')
+
+def native_shell_command(args):
+    return subprocess.list2cmdline(args) if os.name == 'nt' else shlex.join(args)
+
 
 SCRIPT = '''# MEDIA_SCRIPT_MARKER
 import json, subprocess, sys
@@ -40,6 +47,16 @@ def unpack(value):
         try:
             return unpack(json.loads(value))
         except ValueError:
+            # Current native CLI wraps stdout in an execution transcript.
+            # Only a complete, clean, successful transcript may yield a receipt.
+            pattern = (r'Command: [^\r\n]+\r?\n\s*Stdout: ([\s\S]*?)'
+                r'\r?\n\s*Stderr: \(empty\)\r?\n\s*Exit Code: 0\s*')
+            match = re.fullmatch(pattern, value)
+            if match:
+                try:
+                    return {'native_stdout': unpack(json.loads(match[1])), 'native_exit_code': 0}
+                except ValueError:
+                    pass
             return value
     if isinstance(value, list):
         return [unpack(item) for item in value]
@@ -128,7 +145,13 @@ def test_native_skill_media_publication_and_project_reopen(tmp_path, monkeypatch
             namespace, action = arguments['type'].split('.', 1)
             from opendirector.cli import kebab
             body = json.dumps(arguments)
-            name, arguments = 'bash', {'command': 'printf %s ' + shlex.quote(body) +
+            if os.name == 'nt':
+                encoded = base64.b64encode(body.encode()).decode()
+                stdin = native_shell_command([sys.executable, '-c',
+                    f"import base64,sys; sys.stdout.buffer.write(base64.b64decode('{encoded}'))"])
+            else:
+                stdin = 'printf %s ' + shlex.quote(body)
+            name, arguments = 'bash', {'command': stdin +
                 f' | opendirector {kebab(namespace)} {kebab(action)} --file -'}
         names = {tool['function']['name'] for tool in request['tools']}
         assert name in names, (name, names)
@@ -207,9 +230,9 @@ def test_native_skill_media_publication_and_project_reopen(tmp_path, monkeypatch
                 ('read_file', {'file_path':str(snapshot_skill / 'SKILL.md')}),
                 ('read_file', {'file_path':str(snapshot_skill / 'media.json')}),
                 ('read_file', {'file_path':str(snapshot_skill / 'process.py')}),
-                ('bash', {'command':shlex.join([sys.executable, '-c', 'from pathlib import Path; Path(' + repr(str(work / 'manifest.json')) + ').write_text(' + repr(json.dumps({'created_by':'native_bash'})) + ')'])}),
-                ('bash', {'command':'printf INTENTIONAL_MEDIA_FAILURE; exit 7'}),
-                ('bash', {'command':shlex.join([sys.executable, str(snapshot_skill / 'process.py'), str(source_path), str(work)])}),
+                ('bash', {'command':native_shell_command([sys.executable, '-c', 'from pathlib import Path; Path(' + repr(str(work / 'manifest.json')) + ').write_text(' + repr(json.dumps({'created_by':'native_bash'})) + ')'])}),
+                ('bash', {'command':'echo INTENTIONAL_MEDIA_FAILURE & exit /b 7' if os.name == 'nt' else 'printf INTENTIONAL_MEDIA_FAILURE; exit 7'}),
+                ('bash', {'command':native_shell_command([sys.executable, str(snapshot_skill / 'process.py'), str(source_path), str(work)])}),
                 ('command_schema', {'type':'artifact.publish'}),
                 ('execute_command', {'type':'artifact.publish', 'payload':{'path':'clip.mp4', 'name':'clip.mp4', 'expectedKind':'video', 'sources':[source_ref]}}),
                 ('execute_command', {'type':'artifact.publish', 'payload':{'path':'poster.png', 'name':'poster.png', 'expectedKind':'image', 'sources':[source_ref]}}),
@@ -222,8 +245,9 @@ def test_native_skill_media_publication_and_project_reopen(tmp_path, monkeypatch
                     'kind':'image', 'title':'Extracted frame', 'position':{'x':360, 'y':0},
                     'binding':{'role':'material', 'objectRef':published['poster.png']}}}}),
             ])
-            response = client.post(root + '/assistant/turns', json=dict(id=turn, runtime='jiuwenswarm',
-                runtimeModel='fixture-model#0', skills=['media-fixture'], assets=[source['id']], text='Use the media skill to process and publish the clip and extracted frame.'))
+            with project_heartbeat(client, pid, session):
+                response = client.post(root + '/assistant/turns', json=dict(id=turn, runtime='jiuwenswarm',
+                    runtimeModel='fixture-model#0', skills=['media-fixture'], assets=[source['id']], text='Use the media skill to process and publish the clip and extracted frame.'))
             events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
             assert not failures, failures
             assert events[-1]['error'] is None, events[-1]
@@ -247,7 +271,15 @@ def test_native_skill_media_publication_and_project_reopen(tmp_path, monkeypatch
             activities = events[-1]['conversation']['messages'][-1]['tools']
             assert {'read_file', 'bash'} <= {item['name'] for item in activities}
             assert any(item['name'] == 'bash' and item['status'] == 'failed' for item in activities)
-            assert sum(item['name'] in {'opendirector artifact publish', 'opendirector canvas show'} for item in activities) == 4
+            mutations = [item for item in activities
+                if (item.get('arguments') or {}).get('type') in {'artifact.publish', 'canvas.show'}]
+            assert [item['arguments']['type'] for item in mutations] == [
+                'artifact.publish', 'artifact.publish', 'canvas.show', 'canvas.show']
+            assert all(item['status'] == 'complete' for item in mutations)
+            lookups = [item for item in activities if (item.get('arguments') or {}).get('type') == 'object.get']
+            assert len(lookups) == 2
+            assert {item['arguments']['objectId'] for item in lookups} == {item['id'] for item in snapshot['canvasItems']}
+            assert all(item['arguments']['revision'] == 1 for item in lookups)
             assert client.delete('/api/creation/sessions/' + session).status_code == 200
         # New backend objects and a new edit session must recover persisted facts.
         with TestClient(create_app(LocalProjects(local.repository)), headers={**headers, 'X-OpenDirector-Session':str(uuid4())}) as reopened:
@@ -258,7 +290,7 @@ def test_native_skill_media_publication_and_project_reopen(tmp_path, monkeypatch
             for asset in outputs:
                 media = reopened.get(root + '/assets/' + asset['id'] + '/content')
                 assert media.status_code == 200 and media.content == (work / asset['name']).read_bytes()
-            trace = (directory / 'agent-runs' / turn / f'{turn}.jiuwenswarm.jsonl').read_text()
+            trace = (directory / 'agent-runs' / f'{turn}.jiuwenswarm.jsonl').read_text()
             assert 'media-fixture-key' not in trace
             assert 'MEDIA_PROCESSING_FINISHED' in trace
     finally:

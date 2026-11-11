@@ -289,3 +289,20 @@ def disconnect_turn(client, path, turn_id):
         await asyncio.wait_for(client.app(scope, receive, send_event), 5)
         assert disconnected.is_set()
     client.portal.call(disconnect)
+
+
+@pytest.mark.parametrize('runtime', ['default', 'opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek'])
+@pytest.mark.parametrize('language, text', [('zh-CN', '你好'), ('en-US', 'hello')])
+def test_plain_request_reaches_each_runtime_without_delivery_instructions(assistant, runtime, language, text):
+    client, path, contexts = assistant
+    conversation_id = client.get(path).json()['conversationId']
+    response = client.post(path + '/turns', headers={'Accept-Language': language}, json={
+        'id': str(uuid4()), 'runtime': runtime, 'conversationId': conversation_id, 'text': text,
+    })
+    assert frames(response)[-1]['error'] is None
+    # Shared behavioral guidance belongs in the system instructions, not in the
+    # user's request. A greeting must not acquire an invented delivery task.
+    assert contexts[-1] == [{'role': 'user', 'content': text}]
+    saved = client.get(path).json()['messages']
+    assert saved[0]['text'] == text
+    assert saved[-1]['status'] == 'complete'

@@ -98,6 +98,48 @@ test("MOSS provider labels follow the display language", () => {
   }
 });
 
+test("Zhipu BigModel preset offers agent chat models by kind", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu");
+  assert.ok(preset);
+  assert.equal(preset.url, "https://open.bigmodel.cn/api/paas/v4");
+  assert.equal(preset.protocol, "openai");
+  assert.equal(preset.connectionType, "api");
+  assert.equal(preset.authMode, "bearer");
+  assert.equal(preset.logoOrganization, "zai-org");
+  assert.deepEqual(preset.kinds, ["agent"]);
+  assert.deepEqual(preset.modelsByKind, {
+    agent: ["glm-5.3", "glm-5.3-flash", "glm-5.2"],
+  });
+  assert.ok(providerOptions("agent").some((item) => item.id === "zhipu"));
+  for (const kind of ["image", "video", "audio", "vision"] as const)
+    assert.ok(!providerOptions(kind).some((item) => item.id === "zhipu"));
+});
+
+test("Zhipu provider labels follow the display language", () => {
+  const previous = getActiveLocale();
+  try {
+    setActiveLocale("zh-CN");
+    assert.equal(providerOptions("agent").find((item) => item.id === "zhipu")?.name, "智谱 BigModel");
+    setActiveLocale("en-US");
+    assert.equal(providerOptions("agent").find((item) => item.id === "zhipu")?.name, "Zhipu BigModel");
+  } finally {
+    setActiveLocale(previous);
+  }
+});
+
+test("a saved Zhipu agent connection reopens with its provider identity", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu")!;
+  for (const modelId of preset.modelsByKind?.agent ?? []) {
+    const model: ModelConfig = {
+      ...preset, id: "saved-zhipu", kind: "agent", modelId,
+      url: `${preset.url}/`,
+      inputRules: { profile: "agent", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] },
+    };
+    assert.equal(providerPresetFor(model), "zhipu");
+    assert.equal(providerPresetFor({ ...model, url: "https://other.test/v1" }), "custom");
+  }
+});
+
 test("a saved MOSS image connection reopens with its provider identity", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "moss");
   assert.ok(preset);
@@ -142,4 +184,21 @@ test("Kling Flash descriptions distinguish first-frame capabilities in both lang
     assert.match(modelDescription(model)!, /720P.*首帧.*3–20/);
     assert.doesNotMatch(modelDescription(model)!, /尾帧/);
   } finally { setActiveLocale(previous); }
+});
+
+test("MiniMax H3 image preset exposes both models in both display languages", () => {
+  const previous = getActiveLocale();
+  try {
+    const preset = PROVIDER_PRESETS.find((item) => item.id === "minimax-image")!;
+    assert.equal(preset.url, "https://api.minimax.cn/v1");
+    assert.deepEqual(preset.modelsByKind?.image, ["MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"]);
+    for (const [locale, name] of [
+      ["zh-CN", "MiniMax 官方图片"], ["en-US", "MiniMax Official Images"],
+    ] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("image").find((item) => item.id === preset.id)?.name, name);
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
 });

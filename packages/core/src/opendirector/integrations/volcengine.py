@@ -178,8 +178,14 @@ class VolcengineGeneration:
                     external_id = task.get("externalTaskId")
                     if not external_id:
                         content = [{"type": "text", "text": prompt}]
-                        role = 'reference_image' if task.get('videoMode') == 'reference' else 'first_frame'
-                        content.extend({'type': 'image_url', 'image_url': {'url': image}, 'role': role} for image in refs)
+                        if task.get('videoMode') == 'reference':
+                            for image in refs:
+                                content.append({'type': 'image_url', 'image_url': {'url': image}, 'role': 'reference_image'})
+                        else:
+                            # Ark keys each keyframe slot by its role, so the
+                            # prepared role decides first_frame versus last_frame.
+                            for image, role in zip(refs, prepared['imageRoles']):
+                                content.append({'type': 'image_url', 'image_url': {'url': image}, 'role': role})
                         content.extend({'type': 'audio_url', 'audio_url': {'url': audio}, 'role': 'reference_audio'} for audio in prepared['audios'])
                         parameters = dict(task['parameters'])
                         # Ark accepts whole seconds only, while the editor stores

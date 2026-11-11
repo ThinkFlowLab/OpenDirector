@@ -85,9 +85,16 @@ async def test_full_hidden_reference_version_history_timeline_and_restart_loop(p
     await drain(runner)
     snapshot = store.snapshot(pid)
     b2 = snapshot.results[-1]
-    assert not snapshot.jobs[-1].inputSnapshot.references
-    assert all(part.type == 'text' for part in snapshot.jobs[-1].inputSnapshot.spec.promptContent)
-    assert snapshot.jobs[-1].inputSnapshot.spec.prompt == 'Draw using '
+    # Visibility is presentation only: the second job consumes the new A2
+    # bytes while the first job's accepted A1 snapshot remains immutable.
+    frozen = snapshot.jobs[-1].inputSnapshot
+    assert len(frozen.references) == 1
+    assert frozen.references[0].referenceId == reference_id
+    assert frozen.references[0].asset == asset_ref(a2)
+    assert frozen.spec.promptContent[-1].referenceId == reference_id
+    assert frozen.spec.prompt == 'Draw using @A'
+    assert provider.calls[-1]['referenceIds'] == [str(a2.id)]
+    assert snapshot.jobs[0].inputSnapshot.references[0].asset == asset_ref(a1)
     assert snapshot.jobs[-1].execution.size == '1024x1024'
     timeline_id, timeline_item = uuid4(), uuid4()
     timeline = dict(id=timeline_id, projectId=pid, kind='timeline', data=dict(fps=30, width=1920, height=1080,

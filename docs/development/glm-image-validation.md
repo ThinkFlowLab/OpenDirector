@@ -119,3 +119,9 @@ Agent orchestration were not exercised by this acceptance run.
 完整 Python 测试最初因沙箱限制本机端口和进程执行而失败，解除相应限制后全部
 通过。套件存在 Starlette/httpx 弃用警告。跳过的用例、Linux、Windows、其他浏览器
 内核及真实聊天 Agent 编排不在本次验收范围内。
+
+## Main-branch conflict resolution / 主分支冲突处理
+
+Merged upstream main `0bdc3a7b2a582cbb65a44e07a879775a9fc71fb1` into the feature branch after the review requested conflict resolution. The resolution keeps GLM-Image alongside the new MiniMax image profile, preserves the upstream execution fields and model routing, and regenerates the JSON/TypeScript contracts from their Python definitions. It also removes a duplicate provider-label key introduced by the automatic merge. OpenAI compatible remains first for image providers, and the watermark waiver note is retained.
+
+Checks on the combined branch: the full Python suite passed with 1,655 passed and 100 skipped; the frontend suite passed all 768 tests. Production build, bilingual UI keys (3,003; zero problems), browser-locale checks, generated-contract consistency, four import boundaries, dependency consistency and diff checks passed. The build retains its chunk-size warning and Python retains the Starlette/httpx deprecation warning. The skipped tests remain unverified. No additional paid provider calls were made for conflict resolution; the real-service evidence above was collected on the earlier revisions described there.

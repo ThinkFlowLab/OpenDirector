@@ -150,12 +150,14 @@ class MusicRequest:
     """A song or score from a style description; empty lyrics ask for an instrumental piece.
 
     With an ABC score the piece follows it: its melody only, or melody and chords.
+    A seed, when given, selects the take; without one the service picks.
     """
     style: str
     lyrics: str = ''
     max_seconds: float = 30
     score: str = ''
     score_mode: ScoreMode = 'melody'
+    seed: int | None = None
 
 
 @dataclass(frozen=True)

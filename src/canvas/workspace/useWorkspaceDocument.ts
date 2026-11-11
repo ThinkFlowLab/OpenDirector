@@ -1,7 +1,7 @@
 
 import { pinnedReferenceAssets } from "../pinnedReferenceAssets.ts";
 import { SaveQueue } from "../saveQueue.ts";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { errorMessage } from "../../backend/api.ts";
 import { creationClient, CreationCommandError, itemSpec } from "../../backend/creationClient.ts";
 import { fingerprint } from "../../backend/generation.ts";
@@ -79,6 +79,11 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     uploadTarget,
   } = rt;
 
+  const autosaveEpoch = useRef(0);
+  const invalidateScheduledAutosave = useCallback(() => {
+    autosaveEpoch.current++;
+  }, []);
+
   const generationReferenceControls = (
     target: CanvasNode,
   ): GenerationReferenceControls => ({
@@ -91,11 +96,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       const item = snapshot?.canvasItems.find((item) => item.id === target.id);
       const spec = item && itemSpec(snapshot, item);
       return snapshot && spec
-        ? pinnedReferenceAssets(
-            snapshot,
-            spec.id,
-            new Set(doc.nodes.map((node) => node.id)),
-          )
+        ? pinnedReferenceAssets(snapshot, spec.id)
         : [];
     })(),
     referenceId: (source) =>
@@ -484,7 +485,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     };
   }, [installDocument, notify]);
   useEffect(() => {
-    if (!ready || switching || projectRenaming || historyReplaying) return;
+    if (!ready || switching || projectRenaming || historyReplaying || editorSaving.current) return;
     // An open editing transaction (inline text, layer and other drag edits) must
     // not be flushed mid-gesture. Saving each keystroke rewrote the text asset,
     // moved the item's binding and re-rendered the field, which dropped the
@@ -492,9 +493,12 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     if (historyRef.current.transaction) return;
     const baseline = workspaceProjection(doc.id).baseline;
     const contentChanged = !baseline || !sameCanvasContent(doc, baseline);
+    const epoch = autosaveEpoch.current;
     if (contentChanged) setSaveStatus({ state: "saving" });
     const timeout = setTimeout(() => {
-      if (!switchPending.current && !editorSaving.current)
+      // An editor transaction explicitly flushes the current canvas draft.
+      // Its preceding timer must not save that old document after the receipt.
+      if (epoch === autosaveEpoch.current && !switchPending.current && !editorSaving.current)
         void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
@@ -539,9 +543,14 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
             update();
             return;
           }
+          // Editor commits and newer notifications may finish while read()
+          // hydrates resources. A late read must not roll their CAS basis back,
+          // including when its visible content happens to be unchanged.
           if (
             !active ||
             ticket !== token ||
+            editorSaving.current ||
+            client.snapshot !== snapshot ||
             historyRef.current.present !== current
           )
             return;
@@ -606,17 +615,21 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     };
   }, [doc.id, ready, notify]);
   useEffect(() => {
+    const epoch = autosaveEpoch.current;
+    const canPersist = !editorSaving.current;
     const flush = () => {
       setPageVisible(!document.hidden);
-      if (document.visibilityState === "hidden" && ready)
+      if (document.visibilityState === "hidden" && ready && canPersist &&
+        epoch === autosaveEpoch.current && !editorSaving.current)
         void persist(historyRef.current.present);
     };
     document.addEventListener("visibilitychange", flush);
     return () => document.removeEventListener("visibilitychange", flush);
-  }, [persist, ready]);
+  }, [doc, persist, ready]);
   rt.generationReferenceControls = generationReferenceControls;
   rt.command = command;
   rt.change = change;
+  rt.invalidateScheduledAutosave = invalidateScheduledAutosave;
   rt.begin = begin;
   rt.end = end;
   rt.persist = persist;

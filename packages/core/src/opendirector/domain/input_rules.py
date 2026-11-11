@@ -22,6 +22,12 @@ def _adapter_rules(config):
     if is_bigmodel_image(config):
         rules.update(profile='bigmodel-glm-image', allowedKinds=['text'], maxImages=0)
         return rules
+    if (kind == 'image' and config.get('protocol') == 'openai'
+            and url.scheme == 'https' and host == 'api.minimax.cn' and url.port in {None, 443}
+            and path == '/v1' and model in {'MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed'}):
+        rules.update(profile='minimax-h3-image', maxImages=16,
+                     imageBytes=64 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
+        return rules
     if is_moss_image(config):
         rules.update(profile='moss-image', allowedKinds=['text'], maxImages=0,
                      maxPromptCharacters=MOSS_IMAGE_PROMPT_CHARACTERS)
@@ -93,9 +99,13 @@ def _adapter_rules(config):
             # Omni reference takes up to 9 images, 3 videos and 3 audios; the
             # videos are capped at 15 s in total, which reference_inputs enforces.
             lite = seedance != 'full'
+            # Ark's first_frame mode takes a first and a last keyframe, each a
+            # single image, so both slots are declared here. Reference mode is
+            # the only way to feed more than two images.
             rules.update(profile='seedance-2.0', allowedKinds=['text', 'image', 'video', 'audio'], maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
                          videoBytes=200 * 1024 * 1024,
                          requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
+                         frameRoles=['first_frame', 'last_frame'],
                          outputResolutions=['480P', '720P'] if lite else ['480P', '720P', '1080P', '4K'],
                          referenceImageResolutions=['480P', '720P'] if lite else ['480P', '720P', '4K'])
     if kind == 'image' and model.rsplit('/', 1)[-1].lower() in {'qwen-image-2.1', 'qwen-image-2.1-turbo'}:

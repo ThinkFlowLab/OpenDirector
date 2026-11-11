@@ -391,7 +391,8 @@ test("a generation node keeps the provenance its picture was exported with", asy
   });
   const contents = await readCanvasArchive(archive.blob);
 
-  const generatedUrl = (contents.document.nodes[0]!.data as { src: string }).src;
+  const generatedUrl = (contents.document.nodes[0]!.data as { src: string })
+    .src;
   const uploadedUrl = (contents.document.nodes[1]!.data as { src: string }).src;
   assert.deepEqual(contents.provenance.get(generatedUrl), {
     source: "generated",
@@ -404,12 +405,16 @@ test("a generation node keeps the provenance its picture was exported with", asy
 test("a version 1 archive still imports, without inventing provenance", async () => {
   const document = createDocument("旧包");
   document.nodes = [
-    createNode("image", { x: 0, y: 0 }, {
-      src: "data:image/png;base64,aGVsbG8=",
-      mimeType: "image/png",
-      title: "旧图.png",
-      mediaRole: "generation",
-    }),
+    createNode(
+      "image",
+      { x: 0, y: 0 },
+      {
+        src: "data:image/png;base64,aGVsbG8=",
+        mimeType: "image/png",
+        title: "旧图.png",
+        mediaRole: "generation",
+      },
+    ),
   ];
   const archive = await buildCanvasArchive(document, {
     read: async (src) =>
@@ -427,7 +432,11 @@ test("a version 1 archive still imports, without inventing provenance", async ()
   for (const asset of manifest.assets) delete asset.provenance;
   const rebuilt = await createZip(
     [
-      { path: "manifest.json", data: new TextEncoder().encode(JSON.stringify(manifest)), compress: true },
+      {
+        path: "manifest.json",
+        data: new TextEncoder().encode(JSON.stringify(manifest)),
+        compress: true,
+      },
       { path: "canvas.json", data: files.get("canvas.json")! },
       ...[...files.entries()]
         .filter(([path]) => path.startsWith("assets/"))
@@ -522,6 +531,250 @@ test("zip reading verifies checksums and rejects damaged entries", async () => {
   const start = text.indexOf("assets/a.bin") + "assets/a.bin".length;
   bytes[start] = bytes[start]! ^ 0xff;
   await assert.rejects(readZip(bytes), /校验失败|已损坏/);
+});
+
+function textDocument() {
+  const document = createDocument("Text archive");
+  const node = createNode("timeline");
+  const asset = (id: string, kind: "file" | "text") => ({
+    assetId: id,
+    revision: 1,
+    fingerprint: `sha256:${"a".repeat(64)}`,
+    kind,
+  });
+  node.data.timeline!.fonts = [
+    {
+      id: "font-a",
+      title: "Font.otf",
+      src: "data:font/otf;base64,AQID",
+      mimeType: "font/otf",
+      asset: asset("00000000-0000-0000-0000-000000087601", "file"),
+    },
+    {
+      id: "font-b",
+      title: "Font.otf",
+      src: "data:font/otf;base64,AQID",
+      mimeType: "font/otf",
+      asset: asset("00000000-0000-0000-0000-000000087602", "file"),
+    },
+  ];
+  node.data.timeline!.overlays = ["a", "b"].map((id, index) => ({
+    id,
+    text: "中 English",
+    start: 0,
+    end: 1,
+    x: 0,
+    y: 0,
+    maxWidth: 1,
+    fontId: `font-${id}`,
+    style: {
+      fontSize: 24,
+      color: "#FFFFFF",
+      align: "left" as const,
+      lineHeight: 1,
+    },
+    source: {
+      title: "Source.txt",
+      src: "data:text/plain;base64,5Y6f5aeL5q2j5paH",
+      mimeType: "text/plain",
+      asset: asset(`00000000-0000-0000-0000-00000008760${index + 3}`, "text"),
+    },
+  }));
+  document.nodes = [node];
+  return document;
+}
+
+async function rebuildArchive(
+  blob: Blob,
+  change: (files: Map<string, Uint8Array>) => void,
+) {
+  const files = await readZip(blob);
+  change(files);
+  return createZip([...files].map(([path, data]) => ({ path, data })));
+}
+
+test("text canvas v3 preserves bytes, font slots and source identities while removing only restored foreign View refs", async () => {
+  const document = textDocument();
+  const sourceBlob = URL.createObjectURL(
+    new Blob(["原始正文"], { type: "text/plain" }),
+  );
+  const fontBlob = URL.createObjectURL(
+    new Blob([new Uint8Array([1, 2, 3])], { type: "font/otf" }),
+  );
+  document.nodes[0]!.data.timeline!.fonts![1]!.src = fontBlob;
+  document.nodes[0]!.data.timeline!.overlays![1]!.source!.src = sourceBlob;
+  try {
+    const archive = await buildCanvasArchive(document);
+    const files = await readZip(archive.blob);
+    const manifest = JSON.parse(
+      new TextDecoder().decode(files.get("manifest.json")),
+    );
+    assert.equal(manifest.formatVersion, 3);
+    assert.deepEqual(manifest.requiredCapabilities, ["timeline.text.v1"]);
+    assert.equal(archive.assets.length, 2, "same bytes share physical files");
+    const restored = (await readCanvasArchive(archive.blob)).document.nodes[0]!
+      .data.timeline!;
+    assert.deepEqual(
+      restored.fonts!.map((font) => font.id),
+      ["font-a", "font-b"],
+    );
+    for (const font of restored.fonts!) {
+      assert.equal(font.asset, undefined);
+      assert.deepEqual(
+        new Uint8Array(await (await fetch(font.src!)).arrayBuffer()),
+        new Uint8Array([1, 2, 3]),
+      );
+    }
+    for (const overlay of restored.overlays!) {
+      assert.equal(overlay.source!.asset, undefined);
+      assert.equal(
+        await (await fetch(overlay.source!.src!)).text(),
+        "原始正文",
+      );
+      assert.equal(overlay.text, "中 English");
+    }
+    assert.equal(
+      document.nodes[0]!.data.timeline!.fonts![0]!.asset!.assetId,
+      "00000000-0000-0000-0000-000000087601",
+    );
+  } finally {
+    URL.revokeObjectURL(sourceBlob);
+    URL.revokeObjectURL(fontBlob);
+  }
+});
+
+test("canvas rejects unsupported text capabilities before document parsing and rejects unmarked text", async () => {
+  const archive = await buildCanvasArchive(textDocument());
+  const editManifest = (patch: object, invalidDocument = false) =>
+    rebuildArchive(archive.blob, (files) => {
+      const manifest = JSON.parse(
+        new TextDecoder().decode(files.get("manifest.json")),
+      );
+      files.set(
+        "manifest.json",
+        new TextEncoder().encode(JSON.stringify({ ...manifest, ...patch })),
+      );
+      if (invalidDocument)
+        files.set("canvas.json", new TextEncoder().encode("invalid JSON"));
+    });
+  await assert.rejects(
+    readCanvasArchive(
+      await editManifest(
+        { requiredCapabilities: ["timeline.future.v9"] },
+        true,
+      ),
+    ),
+    /能力|capability/,
+  );
+  for (const patch of [
+    { requiredCapabilities: [] },
+    { requiredCapabilities: "timeline.text.v1" },
+    { formatVersion: 2, requiredCapabilities: undefined },
+  ])
+    await assert.rejects(readCanvasArchive(await editManifest(patch)));
+});
+
+test("canvas text resources must have bytes and fail on missing or damaged bundled files", async () => {
+  const document = textDocument();
+  delete document.nodes[0]!.data.timeline!.fonts![0]!.src;
+  await assert.rejects(buildCanvasArchive(document), /字体|font/);
+  const archive = await buildCanvasArchive(textDocument());
+  const missing = await rebuildArchive(archive.blob, (files) => {
+    files.delete(archive.assets[0]!);
+  });
+  await assert.rejects(readCanvasArchive(missing), /素材缺失|missing/);
+  const damaged = await rebuildArchive(archive.blob, (files) => {
+    files.set(archive.assets[0]!, new Uint8Array([9, 8, 7]));
+  });
+  await assert.rejects(readCanvasArchive(damaged), /校验|integrity/);
+});
+
+test("restored same-byte logical sources register distinct target identities and reuse them on repeated projection", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { CreationClient } = await import("../src/backend/creationClient.ts");
+  const { CreationProjection } =
+    await import("../src/backend/creationProjection.ts");
+  const source = textDocument();
+  // A third slot intentionally shares the first logical resource.
+  source.nodes[0]!.data.timeline!.fonts!.push({
+    ...source.nodes[0]!.data.timeline!.fonts![0]!,
+    id: "font-shared",
+  });
+  const restored = (
+    await readCanvasArchive((await buildCanvasArchive(source)).blob)
+  ).document;
+  const snapshot = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/creation-project.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const key of [
+    "assets",
+    "canvasItems",
+    "editorDocuments",
+    "generationSpecs",
+    "references",
+    "jobs",
+    "results",
+  ])
+    snapshot[key] = [];
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const projection = new CreationProjection(client);
+  const baseline = createDocument();
+  baseline.id = client.id;
+  projection.baseline = baseline;
+  projection.basis = snapshot;
+  restored.id = client.id;
+  const uploads: { id: string; body: Uint8Array; kind: string }[] = [];
+  let nextId = 1;
+  client.importBlob = async (blob, _name, kind) => {
+    const id = `00000000-0000-0000-0000-${String(nextId++).padStart(12, "0")}`;
+    const body = new Uint8Array(await blob.arrayBuffer());
+    uploads.push({ id, body, kind });
+    const fingerprint = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+    return { assetId: id, revision: 1, fingerprint, kind };
+  };
+  const first = await projection.prepare(restored);
+  const created = first.operations.find((op) => op.type === "editor.create")!;
+  assert.equal(created.type, "editor.create");
+  const timeline = created.payload.document;
+  assert.equal(timeline.kind, "timeline");
+  if (timeline.kind !== "timeline") throw new Error("Missing timeline");
+  const fonts = timeline.data.fonts!;
+  assert.notEqual(fonts[0]!.asset.assetId, fonts[1]!.asset.assetId);
+  assert.equal(fonts[0]!.asset.assetId, fonts[2]!.asset.assetId);
+  assert.notEqual(
+    timeline.data.overlays![0]!.sourceAsset!.assetId,
+    timeline.data.overlays![1]!.sourceAsset!.assetId,
+  );
+  assert.equal(uploads.length, 4);
+  assert.deepEqual(
+    uploads
+      .filter((entry) => entry.kind === "file")
+      .map((entry) => [...entry.body]),
+    [
+      [1, 2, 3],
+      [1, 2, 3],
+    ],
+  );
+  assert.doesNotMatch(JSON.stringify(timeline), /importIdentity|00000008760/);
+  await projection.prepare(restored);
+  assert.equal(
+    uploads.length,
+    4,
+    "repeated save preparation reuses registered target refs",
+  );
+  const conflict = structuredClone(restored);
+  conflict.nodes[0]!.data.timeline!.fonts![0]!.src =
+    "data:font/otf;base64,CQgH";
+  await assert.rejects(projection.prepare(conflict), /冲突|conflicting/);
+  assert.equal(
+    uploads.length,
+    4,
+    "conflicting immutable source input never registers another target",
+  );
 });
 
 test("imported media is byte-identical at every padding and chunk boundary", async () => {

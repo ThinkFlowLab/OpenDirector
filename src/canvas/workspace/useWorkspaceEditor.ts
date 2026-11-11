@@ -35,6 +35,7 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
     editorSession,
     focusSelection,
     historyRef,
+    invalidateScheduledAutosave,
     lockedIds,
     mediaPublications,
     notify,
@@ -120,6 +121,9 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
     if (!session || editorSaving.current)
       throw new Error(t("canvas.workspace.error.editorUnavailable"));
     const projectId = session.projection.client.id;
+    if (historyRef.current.present.id !== projectId)
+      throw new Error(t("canvas.workspace.error.editNotCommitted"));
+    invalidateScheduledAutosave();
     editorSaving.current = true;
     try {
       await saveQueue.current!.wait();
@@ -163,6 +167,9 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
     sourceTask?: CanvasToolTask,
   ) => {
     if (editorSaving.current) throw Error(t("canvas.workspace.error.editorSaving"));
+    if (historyRef.current.present.id !== source.documentId)
+      throw Error(t("canvas.workspace.error.resultNotCommitted"));
+    invalidateScheduledAutosave();
     editorSaving.current = true;
     try {
       await saveQueue.current!.wait();

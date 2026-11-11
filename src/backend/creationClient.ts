@@ -783,17 +783,6 @@ export function itemSpec(
         : undefined;
   return snapshot.generationSpecs.find((s) => s.id === id);
 }
-/** Current drafts use visible node sources and assets attached directly. */
-export function isCurrentCanvasReference(
-  reference: ProjectSnapshot["references"][number],
-  visible: ReadonlySet<string>,
-) {
-  const source =
-    reference.binding === "follow_current"
-      ? reference.source.id
-      : reference.sourceVersion?.id;
-  return reference.active && (!source || visible.has(source));
-}
 export function jobItem(snapshot: ProjectSnapshot, job: Job) {
   return snapshot.canvasItems.find((i) => i.id === job.originItemId);
 }

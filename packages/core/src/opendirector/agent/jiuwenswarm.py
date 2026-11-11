@@ -11,7 +11,8 @@ from uuid import uuid4
 
 from opendirector.agent.context import RunContext
 from opendirector.agent.gateway import ToolGateway
-from opendirector.agent.skill_snapshot import prepare_skills
+from opendirector.agent.skill_snapshot import prepare_skills, copy_skill_tree
+from opendirector.agent.directory_links import link_directory, unlink_directory
 from opendirector.agent.tools import SYSTEM
 from opendirector.agent import cli_transport
 from opendirector.agent.process import terminate
@@ -167,7 +168,7 @@ class JiuwenSwarmRuntime:
                 runtime_root = Path(temporary)
                 (state / 'agent').mkdir(parents=True, exist_ok=True)
                 if state != runtime_root:
-                    (runtime_root / 'agent').symlink_to(state / 'agent', target_is_directory=True)
+                    link_directory(runtime_root / 'agent', state / 'agent')
                 # Keep credentials out of published execution files and native traces.
                 home = Path(os.environ.get('JIUWENSWARM_HOME', Path.home()))
                 source = Path(os.environ.get('JIUWENSWARM_DATA_DIR', home / '.jiuwenswarm')) / 'config'
@@ -180,12 +181,11 @@ class JiuwenSwarmRuntime:
                 skill_root = Path(temporary) / 'skills'
                 skill_root.mkdir()
                 for root in gateway.roots:
-                    shutil.copytree(root, skill_root / root.name)
+                    copy_skill_tree(root, skill_root / root.name)
                 skill_link = state / 'agent/workspace/skills'
                 skill_link.parent.mkdir(parents=True, exist_ok=True)
-                if skill_link.is_symlink():
-                    skill_link.unlink()
-                skill_link.symlink_to(skill_root, target_is_directory=True)
+                unlink_directory(skill_link)
+                link_directory(skill_link, skill_root)
                 gateway.roots += list(skill_root.iterdir())
                 request = {'schema_version': '0.1', 'type': 'run', 'request_id': str(run.turn_id),
                     'input': (f'Execution directory: {work}\n'

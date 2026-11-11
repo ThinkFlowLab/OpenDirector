@@ -295,17 +295,34 @@ def test_missing_and_changed_files_never_return_empty_or_wrong_content(storage):
 
 
 def test_symlinked_content_and_asset_paths_are_rejected_without_external_writes(storage, tmp_path):
+    import os
+    from process_helpers import directory_link
     projects, project_id, session = storage
     info = upload(storage)
     staged = upload_directory(projects.state_dir, project_id, info.id) / 'content'
     outside = tmp_path / 'outside'
     outside.write_bytes(png())
     staged.unlink()
-    staged.symlink_to(outside)
+    if os.name == 'nt':
+        # A junction redirects the upload directory without requiring the
+        # optional Windows privilege for file symlinks.
+        redirected = tmp_path / 'outside-upload'
+        staged.parent.rename(redirected)
+        (redirected / 'content').write_bytes(outside.read_bytes())
+        directory_link(staged.parent, redirected)
+    else:
+        staged.symlink_to(outside)
     with pytest.raises(ProjectError):
         projects.execute(import_command(project_id, info), session=session)
     assert outside.read_bytes() == png()
-    assert (projects.intents / f'{project_id}.json').exists()
+    if os.name == 'nt':
+        assert (redirected / 'content').read_bytes() == png()
+        # A redirected ancestor is rejected during staging validation, before
+        # journaling. The POSIX final-file symlink fails during installation.
+        assert not (projects.intents / f'{project_id}.json').exists()
+        assert not projects.snapshot(project_id).assets
+    else:
+        assert (projects.intents / f'{project_id}.json').exists()
 
 
 @pytest.mark.skipif(not shutil.which('ffprobe'), reason='requires local FFmpeg')

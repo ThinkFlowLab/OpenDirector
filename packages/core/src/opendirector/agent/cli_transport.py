@@ -43,6 +43,8 @@ async def start_server(gateway, queue, endpoint, pending):
                     'status': 'running', 'arguments': arguments})
                 outcome = await gateway.call('cli:' + key, name, arguments)
                 response = {'value': outcome.value, 'error': outcome.error}
+                if outcome.error and isinstance(outcome.value, dict) and isinstance(outcome.value.get('code'), str):
+                    response['code'] = outcome.value['code']
                 detail = json.dumps(outcome.value, ensure_ascii=False, indent=2)
                 await queue.put({**outcome.event(display_name), 'id': 'cli:' + key,
                     'arguments': arguments, 'result': detail[:65536],
