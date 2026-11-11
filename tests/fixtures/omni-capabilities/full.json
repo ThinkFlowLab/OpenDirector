@@ -476,8 +476,8 @@
           "image.generate": "available",
           "image.edit": "available",
           "video.generate": "available",
-          "video.first_frame": "available",
-          "video.edit": "available",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
           "audio.speech": "available",
           "audio.music": "available",
           "image.segment": "unknown",
@@ -512,6 +512,18 @@
             "profile": "caption_to_audio",
             "route": null,
             "reason": "no_local_capability"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": null,
+            "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": null,
+            "reason": "role_not_declared"
           }
         ]
       }

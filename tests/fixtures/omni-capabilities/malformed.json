@@ -439,7 +439,7 @@
           "image.generate": "missing",
           "image.edit": "missing",
           "video.generate": "unknown",
-          "video.first_frame": "available",
+          "video.first_frame": "unknown",
           "video.edit": "missing",
           "audio.speech": "available",
           "audio.music": "missing",
@@ -468,6 +468,12 @@
             "profile": "caption_to_audio",
             "route": null,
             "reason": "no_local_capability"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": null,
+            "reason": "role_not_declared"
           },
           {
             "operation": "video_generation",
@@ -932,7 +938,7 @@
           "image.generate": "missing",
           "image.edit": "unknown",
           "video.generate": "available",
-          "video.first_frame": "available",
+          "video.first_frame": "unknown",
           "video.edit": "missing",
           "audio.speech": "available",
           "audio.music": "missing",
@@ -966,6 +972,12 @@
             "profile": "caption_to_audio",
             "route": null,
             "reason": "no_local_capability"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": null,
+            "reason": "role_not_declared"
           }
         ]
       }

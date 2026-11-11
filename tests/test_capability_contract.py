@@ -38,8 +38,8 @@ from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, BY_PAIR,
                                                      OPERATIONS, PRESENT, PROFILE_OPERATIONS, REASONS, ROUTED_PATHS,
                                                      ROUTE_MISMATCH, UNKNOWN, UNKNOWN_PROFILE, UNKNOWN_ROUTE,
                                                      UNMAPPED_STAGE, UNROUTED, UNROUTED_REASONS, capabilities_for,
-                                                     candidates_for, classified_capabilities, declarations, resolve,
-                                                     route_path)
+                                                     ROLE_NOT_DECLARED, candidates_for, classified_capabilities,
+                                                     declarations, required_roles_for, resolve, route_path)
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'omni-capabilities'
 CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / 'capability-contract.md'
@@ -137,6 +137,11 @@ def defensive_params():
 
 def route(path, exposure='enabled', method='POST', transport='http'):
     return {'transport': transport, 'method': method, 'path': path, 'exposure': exposure}
+
+
+def route_with_inputs(path, inputs):
+    """A route reference whose `request.inputs` declares roles, as upstream does."""
+    return {**route(path), 'request': {'inputs': {role: {'support': support} for role, support in inputs.items()}}}
 
 
 def table_routes(operation_id):
@@ -323,7 +328,9 @@ def test_real_shaped_body_resolves_non_empty_pairs():
     assert result['topology'] == [{'id': '7', 'type': 'llm', 'depends_on': []}]
     # `no_local_capability`: the chat profiles whose output is not text, and the
     # diffusion `text_to_audio`, carry no id here, so they are reported instead
-    # of being folded into `text.chat` or `audio.music`.
+    # of being folded into `text.chat` or `audio.music`. `role_not_declared`: the
+    # two video tools need an input role this document never names, so broad
+    # profile support does not grant them.
     assert result['unresolved'] == [{'operation': 'audio_generation', 'profile': 'text_to_audio', 'route': None,
                                      'reason': NO_LOCAL_CAPABILITY},
                                     {'operation': 'chat', 'profile': 'audio_response', 'route': None,
@@ -331,7 +338,13 @@ def test_real_shaped_body_resolves_non_empty_pairs():
                                     {'operation': 'chat', 'profile': 'image_response', 'route': None,
                                      'reason': NO_LOCAL_CAPABILITY},
                                     {'operation': 'speech', 'profile': 'caption_to_audio', 'route': None,
-                                     'reason': NO_LOCAL_CAPABILITY}]
+                                     'reason': NO_LOCAL_CAPABILITY},
+                                    {'operation': 'video_generation', 'profile': 'image_to_video', 'route': None,
+                                     'reason': ROLE_NOT_DECLARED},
+                                    {'operation': 'video_generation', 'profile': 'video_to_video', 'route': None,
+                                     'reason': ROLE_NOT_DECLARED}]
+    assert result['capabilities']['video.first_frame'] == UNKNOWN
+    assert result['capabilities']['video.edit'] == UNKNOWN
 
 
 def test_route_alone_cannot_distinguish_speech_profiles():
@@ -408,21 +421,62 @@ def test_the_reverse_lookup_is_the_same_table_read_backwards():
     assert candidates_for(None) == () and candidates_for(7) == ()
 
 
-def test_each_video_profile_grants_only_the_id_its_request_shape_supplies():
-    """`t2v` / `i2v` / `v2v` are three request shapes, not one umbrella.
+def test_a_video_profile_grants_a_narrower_id_only_when_its_route_declares_the_role():
+    """`i2v` and `v2v` are modality contracts, not tool contracts.
 
-    The adapter sends no reference for `t2v`, `input_reference` + `task=fl2va`
-    for `i2v`, and `source_video` + masks for `v2v`
-    (`integrations/model_adapters.py:405-540`); `application/tool_tasks.py:362`
-    already picks the capability the same way.
+    Upstream's route-level `request.inputs` names modality roles only
+    (`image`, `mask_image`, `reference_image`, `last_frame`, `video`, `audio`,
+    `voice`, `instructions`), so `image_to_video` proves "accepts an image" and
+    `video_to_video` proves "accepts a video". The tools here send
+    `first_frame`, or `source_video` plus two video/audio noise masks
+    (`integrations/model_adapters.py:405-540`), so the id stays `unknown` until
+    the document names that role: VACE treats the image as reference images, and
+    SeedVR2 declares V2V for video restoration without latent-mask editing.
     """
     assert capabilities_for('video_generation', 'text_to_video') == ('video.generate',)
     assert capabilities_for('video_generation', 'image_to_video') == ('video.first_frame',)
     assert capabilities_for('video_generation', 'video_to_video') == ('video.edit',)
-    first_frame_only = resolve(body({'video_generation': operation(profiles=[
-        profile('image_to_video', paths=table_paths('video_generation'), inputs=('text', 'image'))])}))
-    assert first_frame_only['capabilities']['video.first_frame'] == AVAILABLE
-    assert first_frame_only['capabilities']['video.generate'] == UNKNOWN
+    assert required_roles_for('video.generate') == ()
+    assert required_roles_for('video.first_frame') == ('first_frame',)
+    assert required_roles_for('video.edit') == ('source_video', 'video_noise_mask', 'audio_noise_mask')
+    assert required_roles_for('text.chat') == () and required_roles_for(None) == ()
+
+    modality_only = resolve(body({'video_generation': operation(profiles=[
+        profile('image_to_video', paths=table_paths('video_generation'), inputs=('text', 'image'),
+                outputs=('video',))])}))
+    assert modality_only['capabilities']['video.first_frame'] == UNKNOWN
+    assert modality_only['capabilities']['video.generate'] == UNKNOWN
+    assert {'operation': 'video_generation', 'profile': 'image_to_video', 'route': None,
+            'reason': ROLE_NOT_DECLARED} in modality_only['unresolved']
+
+    declared = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'supported'})])])}))
+    assert declared['capabilities']['video.first_frame'] == AVAILABLE
+    assert declared['unresolved'] == []
+
+    # A role on a closed route is not evidence: that route cannot serve.
+    closed = route_with_inputs('/v1/videos', {'first_frame': 'supported'})
+    closed['exposure'] = 'disabled'
+    disabled_only = resolve(body({'video_generation': operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[closed, route('/v1/videos/sync'), route('/v1/realtime/video')])])}))
+    assert disabled_only['capabilities']['video.first_frame'] == UNKNOWN
+
+    # `support=unsupported` or an absent `support` is not a declaration either.
+    for declared in ({'support': 'unsupported', 'max_count': 0}, {}):
+        unresolved_shape = resolve(body({'video_generation': operation(profiles=[profile(
+            'image_to_video', inputs=('text', 'image'), outputs=('video',),
+            routes=[{**route('/v1/videos'), 'request': {'inputs': {'first_frame': declared}}}])])}))
+        assert unresolved_shape['capabilities']['video.first_frame'] == UNKNOWN, declared
+
+    # Every role the tool transmits has to be declared, not just one of them.
+    partial_roles = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'source_video': 'supported'})])])}))
+    assert partial_roles['capabilities']['video.edit'] == UNKNOWN
+    assert {'operation': 'video_generation', 'profile': 'video_to_video', 'route': None,
+            'reason': ROLE_NOT_DECLARED} in partial_roles['unresolved']
 
 
 # --- states ---------------------------------------------------------------
@@ -751,14 +805,15 @@ def test_a_profile_declaring_another_operations_route_is_a_route_mismatch():
         profile('text_to_video', paths=['/v1/images/edits']),
         profile('image_to_video', paths=['/v1/videos'])])})
     result = resolve(payload)
-    # The coherent profile still counts; the broken one does not. Each video
-    # profile grants its own id, so a broken `text_to_video` leaves
-    # `video.generate` unknown while `image_to_video` still answers for the
-    # first-frame capability.
-    assert result['capabilities']['video.first_frame'] == AVAILABLE
+    # The broken profile grants nothing. The coherent one still cannot grant the
+    # first-frame tool: no route names the role.
+    assert result['capabilities']['video.first_frame'] == UNKNOWN
     assert result['capabilities']['video.generate'] == UNKNOWN
-    assert result['unresolved'] == [{'operation': 'video_generation', 'profile': 'text_to_video',
-                                     'route': '/v1/images/edits', 'reason': ROUTE_MISMATCH}]
+    assert result['unresolved'] == [
+        {'operation': 'video_generation', 'profile': 'image_to_video', 'route': None,
+         'reason': ROLE_NOT_DECLARED},
+        {'operation': 'video_generation', 'profile': 'text_to_video',
+         'route': '/v1/images/edits', 'reason': ROUTE_MISMATCH}]
     alone = resolve(body({'video_generation': operation(profiles=[profile('text_to_video',
                                                                          paths=['/v1/images/edits'])])}))
     assert alone['capabilities']['video.generate'] == UNKNOWN
@@ -960,7 +1015,17 @@ def schema_problems(payload):
                     problems.append(f'{operation_id}/{entry.get("id")} routes')
                     continue
                 for reference in entry['routes']:
-                    if set(reference) != {'transport', 'method', 'path', 'exposure'}:
+                    # `CapabilityRouteReference` carries an optional `request`
+                    # (`protocol/capabilities.py`); refusing it would reject bodies
+                    # upstream really emits.
+                    legal = {'transport', 'method', 'path', 'exposure'}
+                    request = reference.get('request')
+                    if request is not None:
+                        legal |= {'request'}
+                        if not isinstance(request, dict) or not set(request) <= {
+                                'inputs', 'required_any_of', 'parameters', 'mask', 'max_output_pixels'}:
+                            problems.append(f'{operation_id}/{entry.get("id")} request {request!r}')
+                    if set(reference) - legal:
                         problems.append(f'{operation_id}/{entry.get("id")} route keys {sorted(reference)}')
                     if reference.get('transport') not in {'http', 'websocket'}:
                         problems.append(f'{operation_id}/{entry.get("id")} transport {reference.get("transport")!r}')

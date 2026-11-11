@@ -80,7 +80,7 @@ registers `/v1/audio/transcriptions` (no `@router` decorator in `api_server.py`;
 currently available with `--omni`"). A body naming it is outside the vocabulary
 and is recorded as `unmapped_stage`. `audio.score` therefore cannot be judged
 from this endpoint: this repository's `VllmOmniScore` adapter does post to
-`/audio/transcriptions` (`integrations/model_adapters.py:547,556`), but a
+`/audio/transcriptions` (`integrations/model_adapters.py:605-628`, POST at `:620`), but a
 capabilities body never mentions that path, so the id stays `unknown` with
 `no_upstream_operation` instead of being derived from a route we happen to know.
 
@@ -206,8 +206,11 @@ OPERATION_MISMATCH = 'operation_mismatch'  # profile known under another operati
 NO_LOCAL_CAPABILITY = 'no_local_capability'  # upstream profile, no id here
 NO_ROUTE_DECLARED = 'no_route_declared'  # supported profile that declares no route at all
 MALFORMED_ROUTE = 'malformed_route'  # a route entry without a usable path
+# The profile is published and supported, but this id needs a request role the
+# document never declares (see `REQUIRED_ROLES`). Not a refusal: `unknown`.
+ROLE_NOT_DECLARED = 'role_not_declared'
 REASONS = frozenset({UNKNOWN_ROUTE, ROUTE_MISMATCH, UNMAPPED_STAGE, UNKNOWN_PROFILE, OPERATION_MISMATCH,
-                     NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED, MALFORMED_ROUTE})
+                     NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED, MALFORMED_ROUTE, ROLE_NOT_DECLARED})
 
 # Why a capability can never be decided from a declaration here.
 NO_UPSTREAM_PROFILE, NO_UPSTREAM_OPERATION = 'no_upstream_profile', 'no_upstream_operation'
@@ -317,6 +320,57 @@ def capabilities_for(operation, profile):
     if not isinstance(operation, str) or not isinstance(profile, str):
         return ()
     return BY_PAIR.get((operation.strip().lower(), profile.strip().lower()), ())
+
+
+# Request roles a capability needs before a declaration about its profile can
+# grant it. These are the fields this repository actually transmits for the
+# tool (see `integrations/model_adapters.py:405-540`), and the document does not
+# publish them: the route-level `request.inputs` names only modality-level roles
+# (`image`, `mask_image`, `reference_image`, `last_frame`, `video`, `audio`,
+# `voice`, `instructions`). A profile saying `image_to_video` therefore proves it
+# accepts an image, not that the image is a first frame; `video_to_video` proves
+# it accepts a video, not that it takes latent masks. Both ids stay `unknown`
+# until a route declares the role, and a document that never declares it keeps
+# them `unknown` — the only honest state.
+REQUIRED_ROLES: dict[str, tuple[str, ...]] = {
+    'video.first_frame': ('first_frame',),
+    'video.edit': ('source_video', 'video_noise_mask', 'audio_noise_mask'),
+}
+
+
+def required_roles_for(capability_id):
+    """The request roles one capability needs, or `()` when a declaration suffices.
+
+    `()` means the profile's own `required_inputs` are the whole story (modality
+    level). A non-empty tuple means every named role must appear in the
+    `request.inputs` of one of the profile's own open routes with
+    `support=supported` before this id can read `available`; a role the document
+    never declares leaves it `unknown`.
+    """
+    if not isinstance(capability_id, str):
+        return ()
+    return REQUIRED_ROLES.get(capability_id.strip(), ())
+
+
+def declared_roles(entry):
+    """Role names a profile declares as supported on its own *open* routes.
+
+    Reads only `routes[*].request.inputs[*].support`, the one place upstream
+    names a request slot. A route contributes nothing when it declares no
+    `request`, when its `exposure` is not `enabled` (a closed route cannot serve
+    the request), or when the input is not `support=supported`: silence is not
+    evidence.
+    """
+    roles = set()
+    for value in _routes(entry):
+        request = value.get('request') if isinstance(value, dict) else None
+        inputs = request.get('inputs') if isinstance(request, dict) else None
+        if not isinstance(inputs, dict) or _route_exposure(value) != ENABLED:
+            continue
+        for role, constraint in inputs.items():
+            if isinstance(constraint, dict) and constraint.get('support') == SUPPORTED:
+                roles.add(str(role).strip())
+    return roles
 
 
 def candidates_for(capability_id):
@@ -591,6 +645,15 @@ def resolve(payload):
                     _note(unresolved, key, profile_id, None, NO_ROUTE_DECLARED)
                 capabilities = BY_PAIR[(key, profile_id)]
                 if capabilities:
+                    required = {role for capability in capabilities for role in required_roles_for(capability)}
+                    if required and verdict == 'yes':
+                        missing = required - declared_roles(entry)
+                        if missing:
+                            # A broad profile (i2v / v2v) does not authorise a
+                            # narrower tool: one of the profile's own open routes
+                            # has to name the role, and silence is not evidence.
+                            verdict, reason = 'unknown', None
+                            _note(unresolved, key, profile_id, None, ROLE_NOT_DECLARED)
                     record(capabilities, verdict, reason)
                 elif verdict == 'yes':
                     _note(unresolved, key, profile_id, None, NO_LOCAL_CAPABILITY)
