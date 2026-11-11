@@ -76,7 +76,7 @@ test("upload picker accept follows node kind and subject slot", () => {
     generating: false,
     nodeType: "image",
   });
-  assert.deepEqual(image, { blocked: null, multiple: false, accept: "image/*" });
+  assert.deepEqual(image, { blocked: null, multiple: false, accept: "image/*,.heic,.heif" });
   assert.equal(
     uploadPickerPlan({
       hasTarget: true,
@@ -119,7 +119,7 @@ test("upload picker accept follows node kind and subject slot", () => {
         subjectSlot: "auxiliary",
       }) as { accept: string }
     ).accept,
-    "image/*",
+    "image/*,.heic,.heif",
   );
   assert.equal(
     (
@@ -131,7 +131,7 @@ test("upload picker accept follows node kind and subject slot", () => {
         subjectSlot: "main",
       }) as { accept: string }
     ).accept,
-    "image/*,video/*",
+    "image/*,.heic,.heif,video/*",
   );
 });
 

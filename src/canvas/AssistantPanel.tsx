@@ -794,7 +794,7 @@ export function AssistantPanel({
         className="sr-only"
         type="file"
         multiple
-        accept="image/*,video/*,audio/*,text/*,.md,.markdown,.txt"
+        accept="image/*,.heic,.heif,video/*,audio/*,text/*,.md,.markdown,.txt"
         aria-label={t("assistant.panel.selectFiles")}
         onChange={(event) => {
           if (event.target.files?.length) void upload([...event.target.files]);

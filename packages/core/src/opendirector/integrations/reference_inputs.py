@@ -10,6 +10,7 @@ from opendirector.domain.rule_facts import (
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.references import project_content
+from opendirector.media import heif_type
 
 
 def reference_text(data):
@@ -148,6 +149,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             entry['role'] = 'text'
         elif source_kind == 'image':
             mime = image_type(data)
+            if rules['profile'] == 'minimax-h3-image':
+                mime = mime or heif_type(data)
             if mime is None:
                 raise ProjectError(f'“{meta["name"]}”不是已支持的参考图片格式。')
             if len(data) > rules['imageBytes']:

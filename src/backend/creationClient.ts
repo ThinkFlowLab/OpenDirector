@@ -356,11 +356,20 @@ export class CreationClient {
       }
     })();
   }
-  async blob(assetId: string, options: ReadOptions = {}) {
+  async blob(
+    assetId: string,
+    options: ReadOptions & { browserImage?: boolean } = {},
+  ) {
+    const mime = this.snapshot?.assets.find((asset) => asset.id === assetId)
+      ?.metadata.mimeType;
+    const representation =
+      options.browserImage && (mime === "image/heic" || mime === "image/heif")
+        ? "browser-image"
+        : "content";
     return resilientRead(
       async (signal) => {
         const response = await fetch(
-          `/api${creationPath(this.id)}/assets/${assetId}/content`,
+          `/api${creationPath(this.id)}/assets/${assetId}/${representation}`,
           { headers, signal },
         );
         if (!response.ok) throw await responseError(response);
@@ -375,7 +384,11 @@ export class CreationClient {
     if (!pending) {
       // Cached reads have their own bounded lifetime. Cancelling one history
       // consumer must not abort the same media read used by the visible node.
-      pending = this.blob(assetId, { ...options, signal: undefined })
+      pending = this.blob(assetId, {
+        ...options,
+        signal: undefined,
+        browserImage: true,
+      })
         .then((blob) => {
           const url = URL.createObjectURL(blob);
           this.sourceAssets.set(url, assetId);
@@ -492,6 +505,8 @@ export class CreationClient {
   }
   /** Previews an asset from bytes the page already holds instead of reading them back. */
   adoptMedia(assetId: string, blob: Blob) {
+    if (blob.type === "image/heic" || blob.type === "image/heif")
+      return this.mediaUrl(assetId);
     let pending = this.media.get(assetId);
     if (!pending) {
       const url = URL.createObjectURL(blob);

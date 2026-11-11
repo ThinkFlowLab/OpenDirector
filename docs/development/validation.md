@@ -227,6 +227,24 @@ node tests/browser/first_last_frame_connections.mjs
 
 ### 提供商与模型设置
 
+HEIC/HEIF imports and MiniMax H3 image editing:
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python -m pytest tests/test_heif.py tests/test_minimax_image.py tests/test_creation_assets.py -q
+node tests/browser/heif_import.mjs
+```
+
+The browser script uses the isolated API and Vite above. It checks real HEVC-encoded
+HEIC/HEIF fixtures through upload and mixed-format drag and drop, oriented pixels,
+project reload, both display languages, corrupt/oversized upload rejection, original
+downloads and canvas archive round trips, cross-project paste with an unavailable source, and
+both MiniMax model submissions with fixture results. Python tests exercise Agent
+artifact import and preview, and run the real MiniMax adapter against mocked HTTP through UI
+and Agent command sources, checking original bytes, ordered frozen inputs, result
+adoption, rejection before submission and request-size limits. These tests do not
+call MiniMax, verify model quality, or exercise a live Agent conversation. Camera
+HDR profiles and platform wheel installation require separate validation.
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh

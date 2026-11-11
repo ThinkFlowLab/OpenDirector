@@ -68,6 +68,7 @@ The first launch creates an untitled canvas. Later launches can restore the most
 - Use the left toolbar or double-click empty canvas space to create text, image, video, audio, timeline, or subject nodes.
 - Right-click empty canvas space to create a node, paste, undo, or redo.
 - Click **Upload** on the left or drag files onto the canvas to add assets. Use **Asset library** to choose existing assets.
+- HEIC and HEIF photos are supported. OpenDirector retains the original file and creates an oriented, full-resolution PNG for browser display. Downloads and canvas archives retain the original. Files must decode successfully and contain at most 25 million pixels.
 - Double-click a node's name to rename it. Double-click its content to open the appropriate editor or preview.
 
 The canvas saves automatically. Before closing it or switching projects, check that the top-left status reads **Saved locally**. If saving fails, keep the page open and follow the error message.
@@ -82,6 +83,8 @@ The canvas saves automatically. Before closing it or switching projects, check t
 After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
 
 An empty node must first receive an upload, saved text, or generated content before it can serve as a valid reference for other nodes. When uploading a node's own content, the file type must match the node. To add references, use connections, `@`, or the reference controls in the generation panel.
+
+**MiniMax-H3-Image / MiniMax-H3-Image-Highspeed** can mix HEIC, HEIF, PNG, JPEG and WebP references in the selected order, through the canvas or Agent commands. Both use the original project assets. Each edge must be 128–8192 pixels, the long-to-short edge ratio at most 4:1, and there can be at most 16 images. The complete Base64-encoded request must fit within 64 MiB; oversized inputs are rejected without automatic compression. Other models retain their own format restrictions.
 
 For video generation, choose a mode supported by the model:
 

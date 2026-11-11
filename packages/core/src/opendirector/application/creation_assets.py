@@ -285,6 +285,15 @@ class CreationAssets:
             'preview': {'path': str(output.resolve()), 'mimeType': mime,
                 'scope': 'first_frame' if asset.kind == 'video' else 'first_30_seconds' if asset.kind == 'audio' else 'thumbnail'}}
 
+    def browser_image(self, project_id, asset_id):
+        """Full-resolution display bytes; the asset and its fingerprint stay original."""
+        from opendirector.media.processing import open_image, png
+        stream, asset = self.open_media(project_id, asset_id)
+        with stream:
+            if asset.metadata.mimeType not in {'image/heic', 'image/heif'}:
+                raise ProjectError('该素材类型不支持预览。', 422, code='asset_preview_unsupported')
+            return png(open_image(stream.read())), asset
+
     def thumbnail(self, project_id, asset_id):
         """A bounded, disposable image preview; always verify its source first."""
         from PIL import Image, ImageOps

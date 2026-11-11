@@ -316,6 +316,13 @@ def creation_routes(projects: CreationProjects, generation=None):
             'Cache-Control': 'private, no-cache', 'ETag': '"thumbnail-' + asset.fingerprint + '"',
             'X-Content-Type-Options': 'nosniff'})
 
+    @router.get('/projects/{project_id}/assets/{asset_id}/browser-image')
+    def browser_image(project_id: UUID, asset_id: UUID):
+        value, asset = assets.browser_image(project_id, asset_id)
+        return Response(value, media_type='image/png', headers={
+            'Cache-Control': 'private, no-cache', 'ETag': '"browser-image-' + asset.fingerprint + '"',
+            'X-Content-Type-Options': 'nosniff'})
+
     @router.get('/projects/{project_id}/assets/{asset_id}/content')
     def content(project_id: UUID, asset_id: UUID, range_header: str | None = Header(default=None, alias='Range'),
                 if_none_match: str | None = Header(default=None, alias='If-None-Match')):

@@ -35,12 +35,14 @@ export function uploadPickerPlan(input: {
       ? ".txt,.md,.markdown"
       : input.nodeType === "subject"
         ? input.subjectSlot === "auxiliary"
-          ? "image/*"
+          ? "image/*,.heic,.heif"
           : input.subjectSlot === "voice"
             ? "audio/*"
-            : "image/*,video/*"
+            : "image/*,.heic,.heif,video/*"
         : input.nodeType && ["image", "video", "audio"].includes(input.nodeType)
-          ? `${input.nodeType}/*`
+          ? input.nodeType === "image"
+            ? "image/*,.heic,.heif"
+            : `${input.nodeType}/*`
           : "";
   return { blocked: null, multiple: !input.hasTarget, accept };
 }

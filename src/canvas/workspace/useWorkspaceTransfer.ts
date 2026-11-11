@@ -19,7 +19,7 @@ import { downloadFile, downloadFilename } from "../assets";
 import { referenceIssueText, referenceIssue } from "../connectionPolicy";
 
 import { sameNodeData } from "../dataBoundary.ts";
-import { classifyImportFile, readEditorResource } from "../editorMedia";
+import { classifyImportFile } from "../editorMedia";
 import { lockedNodeIds } from "../hierarchy";
 import { readImportBatch } from "../importBatch";
 import {
@@ -440,6 +440,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     const projectId = historyRef.current.present.id;
     const client = creationClient(projectId);
     return captureClipboardMedia(projectId, fragment, {
+      read: (src) => readProjectMedia(src, projectId),
       resolve: (src, assetId) => {
         // A just-imported node may show its upload before it records the asset.
         const asset = assetId
@@ -561,11 +562,22 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     setSelected([]);
     setMenu(null);
   };
-  const downloadNode = (node: CanvasNode) => {
+  const readProjectMedia = async (src: string, projectId: string) => {
+    const client = creationClient(projectId);
+    const asset = client.assetForSource(src);
+    if (asset && ["image/heic", "image/heif"].includes(asset.metadata.mimeType))
+      return client.blob(asset.id);
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(t("errors.archive.readMedia"));
+    return response.blob();
+  };
+  const downloadNode = async (node: CanvasNode) => {
     try {
       if (node.data.src)
         downloadFile(
-          node.data.src,
+          ["image/heic", "image/heif"].includes(node.data.mimeType ?? "")
+            ? await readProjectMedia(node.data.src, historyRef.current.present.id)
+            : node.data.src,
           downloadFilename(node.data.title, node.data.mimeType),
         );
       else if (node.type === "text")
@@ -582,7 +594,10 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   };
   const exportDocument = async () => {
     try {
-      const archive = await buildCanvasArchive(historyRef.current.present);
+      const document = historyRef.current.present;
+      const archive = await buildCanvasArchive(document, {
+        read: (src) => readProjectMedia(src, document.id),
+      });
       downloadFile(archive.blob, archive.filename);
     } catch (error) {
       notify(errorMessage(error));
@@ -687,7 +702,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
               expected?.node.type,
             );
           validate(classifyImportFile(file).kind);
-          let resource = await readEditorResource(file, signal);
+          let resource = await workspaceProjection(importDocumentId).importFile(file, signal);
           validate(resource.kind);
           if (expected?.node.type === "subject") {
             // Validate the slot before registering, then retain the canonical
@@ -697,14 +712,13 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
               resource,
               expected.subjectSlot,
             );
-            {
+            if (!resource.assetId) {
               const ref = await creationClient(importDocumentId).importBlob(
                 file,
                 file.name,
                 resource.kind,
               );
-              resource =
-                await workspaceProjection(importDocumentId).resource(ref);
+              resource = await workspaceProjection(importDocumentId).resource(ref);
               subjectWithResource(
                 expected.node.data.subject,
                 resource,

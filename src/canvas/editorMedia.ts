@@ -13,6 +13,8 @@ const mediaExtensions: Readonly<Record<string, string>> = {
   jpeg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
   bmp: "image/bmp",
   gif: "image/gif",
   svg: "image/svg+xml",

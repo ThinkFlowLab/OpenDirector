@@ -24,6 +24,7 @@ from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthR
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.bigmodel_image import validate_bigmodel_image
 from opendirector.domain.minimax_image import validate_minimax_image_reference
+from opendirector.media import heif_type
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
 from opendirector.domain.projects import ProjectError
@@ -277,15 +278,17 @@ class MinimaxH3Images(ModelAdapter):
             raise ProjectError('MiniMax H3 图片编辑最多接受 16 张参考图。', 422, code='minimax_image_count')
         encoded = []
         for data in images:
-            mime = image_type(data)
+            if len(data) > 64 * 1024 * 1024:
+                raise ProjectError('MiniMax H3 图片参考请求超过 64 MiB。', 413, code='minimax_image_bytes')
+            mime = image_type(data) or heif_type(data)
             try:
                 with Image.open(io.BytesIO(data)) as image:
                     dimensions = image.size
-            except (OSError, ValueError, Image.DecompressionBombError):
+                    validate_minimax_image_reference(mime, *dimensions)
+                    image.load()
+            except (OSError, ValueError, EOFError, Image.DecompressionBombError):
                 dimensions = (None, None)
             validate_minimax_image_reference(mime, *dimensions)
-            if len(data) > 64 * 1024 * 1024:
-                raise ProjectError('MiniMax H3 图片参考请求超过 64 MiB。', 413, code='minimax_image_bytes')
             encoded.append(data_uri(data, mime))
         width, height = request.width, request.height
         ratio = min(3, max(1 / 3, width / height))
