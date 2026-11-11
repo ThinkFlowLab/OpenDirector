@@ -22,12 +22,14 @@
 | `image_generation` | `text_to_image` | `("text",)` → `("image",)` | `image.generate` |
 | `image_edit` | `image_to_image` | `("text","image")` → `("image",)` | `image.edit` |
 | `video_generation` | `text_to_video` | `("text",)` → `("video",)` | `video.generate` |
-| `video_generation` | `image_to_video` | `("text","image")` → `("video",)` | `video.generate` |
-| `video_generation` | `video_to_video` | `("video",)` → `("video",)` | `video.generate` |
+| `video_generation` | `image_to_video` | `("text","image")` → `("video",)` | `video.first_frame` |
+| `video_generation` | `video_to_video` | `("video",)` → `("video",)` | `video.edit` |
 | `speech` | `text_to_speech` | `("text",)` → `("audio",)` | `audio.speech` |
 | `speech` | `lyrics_to_music` | `("text","instructions")` → `("audio",)` | `audio.music` |
 | `speech` | `caption_to_audio` | `("text",)` → `("audio",)` | （无）音效/环境声，本仓无对应 id |
 | `audio_generation` | `text_to_audio` | `("text",)` → `("audio",)` | （无）扩散侧 `/v1/audio/generate` 契约，不是本仓 `audio.music` |
+
+`video_generation` 的三行必须**一对一**，不能都折进 `video.generate`。本仓适配器是按请求形状分开的（`VllmOmniVideo.video` / `.edit_video`，`integrations/model_adapters.py:467-590`）：`text_to_video` 不带参考图、`task=t2va`；`image_to_video` 带 `input_reference`、`task=fl2va`（首帧）；`video_to_video` 带 `source_video` 与画面/音频 mask。这与本仓把 capability 翻成请求时的既有配对完全一致（`application/model_availability.py:109-112`：`video.generate`↔`text_to_video`、`video.first_frame`↔`image_to_video`、`video.edit`↔`video_to_video`）。一个部署只声明 `image_to_video` 时，它服务得了「首帧生视频」，服务不了「文生视频」；三个 profile 合起来给一个 id，就是在 `video.generate` 上误放。
 
 本仓没有 id 的这四行（`image_response` / `audio_response` / `caption_to_audio` / `text_to_audio`）要一起读：
 
@@ -49,7 +51,7 @@
 
 三条 schema 事实决定了这份表的形状：
 
-- 响应顶层只有 `object` / `schema_version` / `observed_at` / `models` / `stages` / `routes`（`protocol/capabilities.py:73-79`），端点是 `response_model=OmniCapabilitiesResponse`、`response_model_exclude_none=True`（`api_server.py:2193`）。顶层 `routes[]` 只是**该进程注册了哪些路径的展示清单**：`resolve()` 从不读它，所以把一个没有 operation 的路径写进去不会改变任何能力判定。
+- 响应顶层只有 `object` / `schema_version` / `observed_at` / `models` / `stages` / `routes`（`protocol/capabilities.py:73-79`），端点是 `response_model=OmniCapabilitiesResponse`、`response_model_exclude_none=True`（`api_server.py:2193`）。顶层 `routes[]` 是**上游聚合 operation `exposure` 的来源**（`entrypoints/openai/serving_capabilities.py:383-387`：任一 `enabled` → `enabled`，否则任一 `unknown` → `unknown`，否则 `disabled`），而每个 profile 的 `routes[]` 就是这张表的拷贝、只对需要 video/audio 输入的 profile 在 `/v1/realtime/video` 上强制 `disabled`（`:339-343`）。所以一条顶层 `disabled` 意味着这个 operation 的 HTTP 端点已关闭，**profile 侧写 `enabled` 也重开不了**；想更窄地关，只能让顶层保持 `enabled`、把该 profile 的路由改 `disabled`。本模块读 operation 的 `exposure`（上游已经替调用方聚好），不再单独读顶层清单——这是"往顶层塞一条没有 operation 拥有的路径不会改变任何判定"的原因，**不是**因为那串路由"仅供展示"。
 - **`exclude_none` 只能省掉值为 `None` 的可选字段**，也就是 profile 的 `request`（`RequestConstraints | None = None`）。列表/字典字段是 `default_factory`，空的时候序列化成 `[]`/`{}`，**不会缺席**：`profiles: []` 而不是「没有 `profiles` 键」。`support` / `reason_code` 在 operation 与 profile 上都是必填，`exposure` 在 operation 与顶层路由上是必填（`protocol/capabilities.py:24-52`），永远不会缺席；少了它们就不是上游能发出的 body。**profile 自己没有 `exposure` 字段**（`:36-44`）：某个 profile 可达不可达，看的是它引用的各条路由的 `exposure` 聚合，而不是 profile 上的一个开关。
 - `models[].operations` **必须齐全 6 个**，少一个 pydantic 直接抛错（`protocol/capabilities.py:60-64`）；`models[].stage_ids` 是**数字字符串**，而且每个 model 拿到的都是同一份全量列表（`entrypoints/openai/serving_capabilities.py:400`）。
 
@@ -105,7 +107,7 @@
 | 上游有 profile，本仓没有 id（`caption_to_audio` 等） | `unknown` | `unresolved: no_local_capability` |
 | operation 认不出（`asr`）/ profile 认不出 / profile 挂错 operation | 该能力无证据 → `unknown` | `unresolved: unmapped_stage` / `unknown_profile` / `operation_mismatch` |
 | `support=supported` + `exposure=enabled` + 至少一条自己的路由 `enabled` | `available` | 无 |
-| 能力本身没有上游 profile（`image.segment` 等 8 项） | `unknown` | `UNROUTED[cid]`（`no_upstream_profile` / `no_upstream_operation` / `parameter_only` / `no_local_adapter`） |
+| 能力本身没有上游 profile（`image.segment` 等 6 项） | `unknown` | `UNROUTED[cid]`（`no_upstream_profile` / `no_upstream_operation` / `parameter_only` / `no_local_adapter`） |
 | body 没答（`None`、无 `models` 键、`models` 不是列表） | 全部 `unknown` | `endpoint = "absent"` |
 | 答了，但没有 model 声明任何 operation（含 `models: []`） | 全部 `unknown` | `endpoint = "empty"` |
 | operation 答了但 `profiles: []` | 该 operation 的能力 `unknown` | `endpoint = "present"` |
@@ -125,10 +127,10 @@
 | --- | --- | --- |
 | `image.segment` / `video.matting` / `video.motion_capture` | `no_upstream_profile` | 有路由，无 operation |
 | `audio.score` | `no_upstream_operation` | 上游没有识别 operation |
-| `video.first_frame` / `video.edit` / `image.cutout` | `parameter_only` | 是已发布 operation 的请求参数，不是 profile |
+| `image.cutout` | `parameter_only` | 是已发布 operation 的请求参数，不是 profile（`video.first_frame` / `video.edit` 各有自己的 profile，见上表） |
 | `audio.separate` | `no_local_adapter` | 上游没说法，本仓也没适配器 |
 
-这 8 个 id **不出现在** `OPERATION_PROFILES` 的值域里，所以它们永远收不到证据，`unknown` 是「没有证据」的自然结果，而不是 `resolve()` 里的一个特例分支（这条不变量由 `test_every_capability_id_is_routed_or_explained` 守着）。
+这 6 个 id **不出现在** `OPERATION_PROFILES` 的值域里，所以它们永远收不到证据，`unknown` 是「没有证据」的自然结果，而不是 `resolve()` 里的一个特例分支（这条不变量由 `test_every_capability_id_is_routed_or_explained` 守着）。
 
 ### ASR：上游未发布该 operation
 
@@ -154,9 +156,15 @@ from opendirector.domain.capability_contract import capabilities_for
 capabilities_for('speech', 'lyrics_to_music')   # ('audio.music',)
 capabilities_for('speech', 'text_to_speech')    # ('audio.speech',)
 capabilities_for('audio_generation', 'text_to_audio')  # ()：上游有 profile，本仓没有对应 id
+candidates_for('video.first_frame')                     # (('video_generation', 'image_to_video'),)
+candidates_for('audio.separate')                        # ()：没有任何 profile 提供它
 ```
 
+反查是同一张表的反向索引（`BY_CAPABILITY`，由 `OPERATION_PROFILES` 派生，不另抄一份词表）：从本地配置出发的调用方（`requests_for()` 就是这种）手里是 capability id，需要知道**哪些** `(operation, profile)` 可能供货。候选不是授权——实际路由、实际传输的输入与输出仍由配置选中的适配器决定，单次提交还必须再核一次「选中的这个 pair 就是被准入的那个」，另一条 profile 的 `available` 不能替它背书。
+
 `resolve(payload)` 返回逐能力状态（`capabilities`）、缺失原因（`reasons`）、`topology`（`stages[]`，仅供展示）与 `unresolved`；`classified_capabilities()` 按表顺序给出词表，展示层据此排列。是否接进 `requests_for()` 由 #266 一侧决定，本契约只保证查找是成对的、稳定的、可测的。
+
+`resolve()` 的结论是**目录级**的：它回答「这个部署声明了什么」，不授权任何一个具体请求。一个能力 `available` 只说明「至少有一条 profile 声明支持且其路由开着」，调用方仍要按自己的模型、输入、输出与路由逐个核对；`stages[]` 更是只描述流水线拓扑，提供不了任何准入证据。
 
 ### 三档 fixture（外加一档防御输入）与验证
 
@@ -215,8 +223,8 @@ Source: `vllm-project/vllm-omni` PR #10102 (issue #10007), head `d1104f8`; every
 | `image_generation` | `text_to_image` | `("text",)` → `("image",)` | `image.generate` |
 | `image_edit` | `image_to_image` | `("text","image")` → `("image",)` | `image.edit` |
 | `video_generation` | `text_to_video` | `("text",)` → `("video",)` | `video.generate` |
-| `video_generation` | `image_to_video` | `("text","image")` → `("video",)` | `video.generate` |
-| `video_generation` | `video_to_video` | `("video",)` → `("video",)` | `video.generate` |
+| `video_generation` | `image_to_video` | `("text","image")` → `("video",)` | `video.first_frame` |
+| `video_generation` | `video_to_video` | `("video",)` → `("video",)` | `video.edit` |
 | `speech` | `text_to_speech` | `("text",)` → `("audio",)` | `audio.speech` |
 | `speech` | `lyrics_to_music` | `("text","instructions")` → `("audio",)` | `audio.music` |
 | `speech` | `caption_to_audio` | `("text",)` → `("audio",)` | none — sound effect / ambience |
@@ -226,7 +234,7 @@ Four rows carry no id here (`image_response`, `audio_response`, `caption_to_audi
 
 **Operation → routes** (`:42-54`) as `(transport, method, path)`, because upstream's `RouteKey` is exactly that and the websocket method literal is `WEBSOCKET`: `chat` → `http POST /v1/chat/completions`; `image_generation` → `http POST /v1/images/generations`; `image_edit` → `http POST /v1/images/edits`; `video_generation` → `http POST /v1/videos`, `http POST /v1/videos/sync`, `websocket WEBSOCKET /v1/realtime/video`; `speech` → `http POST /v1/audio/speech`; `audio_generation` → `http POST /v1/audio/generate`. `DELETE /v1/chat/completions` would be a 405 and a `websocket` declaration on an http route is wrong, so both are `route_mismatch`. `transport` defaults to `http` upstream (`protocol/capabilities.py:16-21`) and an absent transport is not a mismatch; `method` has no default and an absent one cannot be confirmed.
 
-Three schema facts shape the table: the body has only `object`, `schema_version`, `observed_at`, `models`, `stages`, `routes` (`protocol/capabilities.py:73-79`) and is served with `response_model_exclude_none=True` (`api_server.py:2193`) — the top-level `routes[]` is a display list of what the process registered, and `resolve()` never reads it, so publishing an unowned path there changes no verdict; **`exclude_none` drops only `None`-valued optional fields** — in practice the profile's `request` — while `default_factory` lists serialize as `[]` (`profiles: []`, never a missing key), `support`/`reason_code` are required on every operation and profile, `exposure` is required on every operation and top-level route (`protocol/capabilities.py:24-52`), and a profile has **no `exposure` field of its own** (`:36-44`): its reachability is the aggregation of the exposures of the routes it references; and `models[].operations` **must list all six** or pydantic raises (`:60-64`), with `stage_ids` numeric strings, the *same* full list for every model (`entrypoints/openai/serving_capabilities.py:400`).
+Three schema facts shape the table: the body has only `object`, `schema_version`, `observed_at`, `models`, `stages`, `routes` (`protocol/capabilities.py:73-79`) and is served with `response_model_exclude_none=True` (`api_server.py:2193`) — the top-level `routes[]` is **what upstream aggregates an operation's `exposure` from** (`entrypoints/openai/serving_capabilities.py:383-387`: any `enabled` → `enabled`, else any `unknown` → `unknown`, else `disabled`), and each profile's `routes[]` is a copy of that list, forced `disabled` only for profiles needing video/audio input on `/v1/realtime/video` (`:339-343`). A top-level `disabled` therefore means the operation's HTTP endpoint is closed and **no profile-level `enabled` reopens it**; to close something narrower, the top level must stay `enabled` and that profile's route must be the one set to `disabled`. This module reads the operation's `exposure` — upstream has already aggregated it — instead of re-reading the top-level list, which is why publishing an unowned path there changes no verdict, and **not** because those routes are "display only"; **`exclude_none` drops only `None`-valued optional fields** — in practice the profile's `request` — while `default_factory` lists serialize as `[]` (`profiles: []`, never a missing key), `support`/`reason_code` are required on every operation and profile, `exposure` is required on every operation and top-level route (`protocol/capabilities.py:24-52`), and a profile has **no `exposure` field of its own** (`:36-44`): its reachability is the aggregation of the exposures of the routes it references; and `models[].operations` **must list all six** or pydantic raises (`:60-64`), with `stage_ids` numeric strings, the *same* full list for every model (`entrypoints/openai/serving_capabilities.py:400`).
 
 ### The key is the pair (operation, profile)
 
@@ -270,7 +278,7 @@ Two boundaries to keep: one unrecognised route must not void a profile that answ
 
 ### Routes without an operation
 
-`/v1/images/segmentations`, `/v1/videos/segmentations` and `/v1/videos/depth` are registered endpoints that no operation owns; upstream's docs state that "segmentation and depth estimation do not acquire one of these operations merely by being present in a registry" (`docs/serving/capabilities.md:41-43`). `image.segment`, `video.matting` and `video.motion_capture` therefore stay `unknown` with `no_upstream_profile` — the endpoint does not publish the ability, so it cannot be judged, and it must never read as `missing`. `audio.score` is `no_upstream_operation`; `video.first_frame`, `video.edit` and `image.cutout` are `parameter_only` (request fields of a published operation); `audio.separate` is `no_local_adapter`. None of these eight ids is a value of `OPERATION_PROFILES`, so `unknown` falls out of "no evidence" rather than a special case.
+`/v1/images/segmentations`, `/v1/videos/segmentations` and `/v1/videos/depth` are registered endpoints that no operation owns; upstream's docs state that "segmentation and depth estimation do not acquire one of these operations merely by being present in a registry" (`docs/serving/capabilities.md:41-43`). `image.segment`, `video.matting` and `video.motion_capture` therefore stay `unknown` with `no_upstream_profile` — the endpoint does not publish the ability, so it cannot be judged, and it must never read as `missing`. `audio.score` is `no_upstream_operation`; `image.cutout` is `parameter_only` (a request field of a published operation, granted per adapter rather than per profile); `audio.separate` is `no_local_adapter`. None of these six ids is a value of `OPERATION_PROFILES`, so `unknown` falls out of "no evidence" rather than a special case.
 
 ### ASR: an upstream gap, not a missing row
 
@@ -290,9 +298,15 @@ from opendirector.domain.capability_contract import capabilities_for
 capabilities_for('speech', 'lyrics_to_music')   # ('audio.music',)
 capabilities_for('speech', 'text_to_speech')    # ('audio.speech',)
 capabilities_for('audio_generation', 'text_to_audio')  # () — upstream publishes it, no id here
+candidates_for('video.first_frame')                     # (('video_generation', 'image_to_video'),)
+candidates_for('audio.separate')                        # () — no profile supplies it
 ```
 
+The reverse lookup is the same table read backwards (`BY_CAPABILITY`, derived from `OPERATION_PROFILES`, never a second vocabulary): a caller starting from local configuration — `requests_for()` does — holds a capability id and needs to know **which** `(operation, profile)` pairs could supply it. A candidate is not an authorisation: the adapter for the selected configuration still decides the route, the transmitted inputs and the output, and a submission must re-check that the pair it selected is the one admitted. Another profile being `available` does not vouch for it.
+
 `resolve(payload)` returns per-capability states, per-capability `reasons`, `topology` (display only) and `unresolved`; `classified_capabilities()` returns the vocabulary in table order. Whether to wire this into `requests_for()` is #266's decision; this contract only guarantees the lookup is paired, ordered and testable.
+
+`resolve()` is **catalogue-level**: it answers "what does this deployment declare", not "may this request go through". An `available` capability only says that at least one profile declares support with an open route; the caller must still check its own model, inputs, output and route, and `stages[]` describes pipeline topology only — it carries no admission evidence.
 
 ### Fixtures and checks
 

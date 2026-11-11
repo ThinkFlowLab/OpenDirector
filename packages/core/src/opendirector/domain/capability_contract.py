@@ -134,6 +134,16 @@ OPERATIONS: tuple[str, ...] = (
 # `caption_to_audio` onto `audio.speech`. Such a deployment reports
 # `no_local_capability`, and `audio.music` keeps whatever `lyrics_to_music`
 # says (no evidence -> `unknown`) rather than being granted by a neighbour.
+#
+# The three `video_generation` profiles are told apart the way the adapter tells
+# their requests apart (`VllmOmniVideo.video` / `.edit_video`,
+# `integrations/model_adapters.py:467-590`): `text_to_video` sends no reference
+# and `task=t2va`, `image_to_video` sends `input_reference` and `task=fl2va`
+# (first frame), `video_to_video` sends `source_video` plus the frame and audio
+# masks. That is the same pairing the application already uses when it turns a
+# capability into a request (`application/model_availability.py:109-112`), so one
+# profile grants exactly one id here: an image-to-video deployment is not a
+# text-to-video one, and a video-to-video deployment is not either.
 OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('chat', 'text_response', ('text.chat',)),
     ('chat', 'image_response', ()),
@@ -141,8 +151,8 @@ OPERATION_PROFILES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ('image_generation', 'text_to_image', ('image.generate',)),
     ('image_edit', 'image_to_image', ('image.edit',)),
     ('video_generation', 'text_to_video', ('video.generate',)),
-    ('video_generation', 'image_to_video', ('video.generate',)),
-    ('video_generation', 'video_to_video', ('video.generate',)),
+    ('video_generation', 'image_to_video', ('video.first_frame',)),
+    ('video_generation', 'video_to_video', ('video.edit',)),
     ('speech', 'text_to_speech', ('audio.speech',)),
     ('speech', 'lyrics_to_music', ('audio.music',)),
     ('speech', 'caption_to_audio', ()),
@@ -228,9 +238,7 @@ UNROUTED: dict[str, str] = {
     'video.motion_capture': NO_UPSTREAM_PROFILE,
     # Upstream publishes no transcription operation at all.
     'audio.score': NO_UPSTREAM_OPERATION,
-    # Request fields of an operation that does publish a profile.
-    'video.first_frame': PARAMETER_ONLY,
-    'video.edit': PARAMETER_ONLY,
+    # Request field of an operation that does publish a profile.
     'image.cutout': PARAMETER_ONLY,
     # No adapter here offers it; upstream says nothing either way.
     'audio.separate': NO_LOCAL_ADAPTER,
@@ -238,6 +246,18 @@ UNROUTED: dict[str, str] = {
 
 BY_PAIR: dict[tuple[str, str], tuple[str, ...]] = {(operation, profile): capabilities
                                                   for operation, profile, capabilities in OPERATION_PROFILES}
+
+
+def _reverse() -> dict[str, tuple[tuple[str, str], ...]]:
+    """Capability id -> every `(operation, profile)` pair that supplies it, in table order."""
+    reverse: dict[str, list[tuple[str, str]]] = {}
+    for operation, profile, capabilities in OPERATION_PROFILES:
+        for capability in capabilities:
+            reverse.setdefault(capability, []).append((operation, profile))
+    return {capability: tuple(pairs) for capability, pairs in reverse.items()}
+
+
+BY_CAPABILITY: dict[str, tuple[tuple[str, str], ...]] = _reverse()
 PROFILE_OPERATIONS: dict[str, str] = {profile: operation for operation, profile, _ in OPERATION_PROFILES}
 ROUTED_PATHS = frozenset(path for routes in OPERATION_ROUTES.values() for _, _, path in routes)
 
@@ -298,6 +318,22 @@ def capabilities_for(operation, profile):
     if not isinstance(operation, str) or not isinstance(profile, str):
         return ()
     return BY_PAIR.get((operation.strip().lower(), profile.strip().lower()), ())
+
+
+def candidates_for(capability_id):
+    """Every `(operation, profile)` pair that supplies one capability id, in table order.
+
+    The reverse of `capabilities_for`: callers that start from a local
+    configuration (`requests_for()`) need to know which pairs could serve the
+    capability they intend to use. `()` means no profile supplies the id — it is
+    one of the `UNROUTED` ids, whose reason says why. A candidate is a
+    *declaration* slot, not an authorisation: the adapter for the configured
+    model still decides the route, the transmitted inputs and the output, and a
+    per-request check must still confirm the selected pair is the one admitted.
+    """
+    if not isinstance(capability_id, str):
+        return ()
+    return BY_CAPABILITY.get(capability_id.strip(), ())
 
 
 def classified_capabilities():

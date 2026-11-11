@@ -438,21 +438,22 @@
           "text.chat": "available",
           "image.generate": "missing",
           "image.edit": "missing",
-          "video.generate": "available",
+          "video.generate": "unknown",
+          "video.first_frame": "available",
+          "video.edit": "missing",
           "audio.speech": "available",
           "audio.music": "missing",
           "image.segment": "unknown",
           "video.matting": "unknown",
           "video.motion_capture": "unknown",
           "audio.score": "unknown",
-          "video.first_frame": "unknown",
-          "video.edit": "unknown",
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
         "reasons": {
           "image.generate": "endpoint_disabled",
           "image.edit": "route_disabled",
+          "video.edit": "unsupported",
           "audio.music": "unsupported"
         },
         "unresolved": [
@@ -931,19 +932,20 @@
           "image.generate": "missing",
           "image.edit": "unknown",
           "video.generate": "available",
+          "video.first_frame": "available",
+          "video.edit": "missing",
           "audio.speech": "available",
           "audio.music": "missing",
           "image.segment": "unknown",
           "video.matting": "unknown",
           "video.motion_capture": "unknown",
           "audio.score": "unknown",
-          "video.first_frame": "unknown",
-          "video.edit": "unknown",
           "image.cutout": "unknown",
           "audio.separate": "unknown"
         },
         "reasons": {
           "image.generate": "endpoint_disabled",
+          "video.edit": "unsupported",
           "audio.music": "unsupported"
         },
         "unresolved": [

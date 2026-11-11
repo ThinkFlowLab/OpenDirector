@@ -32,13 +32,14 @@ from typing import get_args
 import pytest
 
 from opendirector.domain.capabilities import Capability
-from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, EMPTY, ENDPOINT, MALFORMED_ROUTE, MISSING,
-                                                     MISSING_REASONS, NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED,
+from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, BY_PAIR, EMPTY, ENDPOINT, MALFORMED_ROUTE,
+                                                     MISSING, MISSING_REASONS, NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED,
                                                      OPERATION_MISMATCH, OPERATION_PROFILES, OPERATION_ROUTES,
                                                      OPERATIONS, PRESENT, PROFILE_OPERATIONS, REASONS, ROUTED_PATHS,
                                                      ROUTE_MISMATCH, UNKNOWN, UNKNOWN_PROFILE, UNKNOWN_ROUTE,
                                                      UNMAPPED_STAGE, UNROUTED, UNROUTED_REASONS, capabilities_for,
-                                                     classified_capabilities, declarations, resolve, route_path)
+                                                     candidates_for, classified_capabilities, declarations, resolve,
+                                                     route_path)
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'omni-capabilities'
 CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / 'capability-contract.md'
@@ -56,9 +57,9 @@ EXECUTION = {'state': 'unpaused', 'scope': 'worker', 'observed_at': OBSERVED}
 # The vocabulary in contract order: routed ids in table order, then the unrouted
 # ids in declaration order. Written out instead of derived, so a reordering of
 # the tables is a visible decision rather than a silent presentation change.
-VOCABULARY_ORDER = ['text.chat', 'image.generate', 'image.edit', 'video.generate', 'audio.speech', 'audio.music',
-                    'image.segment', 'video.matting', 'video.motion_capture', 'audio.score', 'video.first_frame',
-                    'video.edit', 'image.cutout', 'audio.separate']
+VOCABULARY_ORDER = ['text.chat', 'image.generate', 'image.edit', 'video.generate', 'video.first_frame', 'video.edit',
+                    'audio.speech', 'audio.music', 'image.segment', 'video.matting', 'video.motion_capture',
+                    'audio.score', 'image.cutout', 'audio.separate']
 
 # Every capability id that no upstream profile can express, with its reason.
 UNROUTED_EXPECTED = {
@@ -66,8 +67,6 @@ UNROUTED_EXPECTED = {
     'video.matting': 'no_upstream_profile',
     'video.motion_capture': 'no_upstream_profile',
     'audio.score': 'no_upstream_operation',
-    'video.first_frame': 'parameter_only',
-    'video.edit': 'parameter_only',
     'image.cutout': 'parameter_only',
     'audio.separate': 'no_local_adapter',
 }
@@ -388,6 +387,42 @@ def test_capabilities_without_an_upstream_profile_are_unknown_not_missing():
     assert {capability: result['capabilities'][capability] for capability in UNROUTED} == {
         capability: UNKNOWN for capability in UNROUTED}
     assert not set(UNROUTED) & set(result['reasons'])
+
+
+def test_the_reverse_lookup_is_the_same_table_read_backwards():
+    """`candidates_for` is derived, never a second vocabulary."""
+    for operation, profile, capabilities in OPERATION_PROFILES:
+        for capability in capabilities:
+            assert (operation, profile) in candidates_for(capability)
+    for operation, profile in BY_PAIR:
+        assert set(capabilities_for(operation, profile)) == {
+            capability for capability in classified_capabilities()
+            if (operation, profile) in candidates_for(capability)}
+    assert candidates_for('text.chat') == (('chat', 'text_response'),)
+    assert candidates_for('audio.music') == (('speech', 'lyrics_to_music'),)
+    for capability in UNROUTED:
+        assert candidates_for(capability) == (), capability
+    # A stored id may carry padding; case is part of the local id, not a variant.
+    assert candidates_for(' video.first_frame ') == candidates_for('video.first_frame')
+    assert candidates_for('Video.First_Frame') == ()
+    assert candidates_for(None) == () and candidates_for(7) == ()
+
+
+def test_each_video_profile_grants_only_the_id_its_request_shape_supplies():
+    """`t2v` / `i2v` / `v2v` are three request shapes, not one umbrella.
+
+    The adapter sends no reference for `t2v`, `input_reference` + `task=fl2va`
+    for `i2v`, and `source_video` + masks for `v2v`
+    (`integrations/model_adapters.py:467-590`); `application/model_availability.py:109-112`
+    already pairs the ids the same way.
+    """
+    assert capabilities_for('video_generation', 'text_to_video') == ('video.generate',)
+    assert capabilities_for('video_generation', 'image_to_video') == ('video.first_frame',)
+    assert capabilities_for('video_generation', 'video_to_video') == ('video.edit',)
+    first_frame_only = resolve(body({'video_generation': operation(profiles=[
+        profile('image_to_video', paths=table_paths('video_generation'), inputs=('text', 'image'))])}))
+    assert first_frame_only['capabilities']['video.first_frame'] == AVAILABLE
+    assert first_frame_only['capabilities']['video.generate'] == UNKNOWN
 
 
 # --- states ---------------------------------------------------------------
@@ -716,8 +751,12 @@ def test_a_profile_declaring_another_operations_route_is_a_route_mismatch():
         profile('text_to_video', paths=['/v1/images/edits']),
         profile('image_to_video', paths=['/v1/videos'])])})
     result = resolve(payload)
-    # The coherent profile still counts; the broken one does not.
-    assert result['capabilities']['video.generate'] == AVAILABLE
+    # The coherent profile still counts; the broken one does not. Each video
+    # profile grants its own id, so a broken `text_to_video` leaves
+    # `video.generate` unknown while `image_to_video` still answers for the
+    # first-frame capability.
+    assert result['capabilities']['video.first_frame'] == AVAILABLE
+    assert result['capabilities']['video.generate'] == UNKNOWN
     assert result['unresolved'] == [{'operation': 'video_generation', 'profile': 'text_to_video',
                                      'route': '/v1/images/edits', 'reason': ROUTE_MISMATCH}]
     alone = resolve(body({'video_generation': operation(profiles=[profile('text_to_video',
