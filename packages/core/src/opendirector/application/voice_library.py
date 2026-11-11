@@ -204,6 +204,7 @@ class VoiceLibrary:
             after = cursor
 
     def list(self, model_config_id, *, page_size=None, after=None, connection_id=None):
+        # page_size bounds MOSS pages; MiniMax and vLLM return one complete native catalog.
         config, capabilities = self._config(model_config_id)
         if connection_id is not None and connection_id != capabilities['connectionId']:
             raise voice_error('voice_connection_changed', 409)

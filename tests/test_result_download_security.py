@@ -159,6 +159,24 @@ def test_compatible_generation_recovery_uses_the_same_public_host_policy(resolve
     assert calls == []
 
 
+@pytest.mark.parametrize('redirect', [False, True])
+def test_vllm_same_origin_result_without_credentials_never_follows_redirects(redirect):
+    config = dict(kind='video', url='http://127.0.0.1:9000/v1', modelId='custom-video',
+                  protocol='vllm_omni', connectionType='self_hosted', authMode='none', apiKey='')
+    calls = []
+    def handle(request):
+        calls.append(request)
+        if redirect: return httpx.Response(302, headers={'Location': '/result.mp4'})
+        return httpx.Response(200, content=b'video')
+    provider = GenerationProviders(None, httpx.MockTransport(handle))
+    if redirect:
+        with pytest.raises(GenerationError):
+            asyncio.run(provider.resume_result(config, 'mp4', config['url'] + '/content'))
+    else:
+        assert asyncio.run(provider.resume_result(config, 'mp4', config['url'] + '/content')) == ('mp4', b'video')
+    assert len(calls) == 1 and 'authorization' not in calls[0].headers
+
+
 @pytest.mark.parametrize('url', [
     'https://127.0.0.1:8443/private', 'https://[::1]/private',
     'https://localhost/private', 'https://169.254.169.254/private',

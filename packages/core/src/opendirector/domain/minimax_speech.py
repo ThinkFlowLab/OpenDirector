@@ -13,6 +13,7 @@ MINIMAX_SPEECH_TEXT_CHARACTERS = 9999
 
 
 def is_minimax_speech(config):
+    # Mainland preset only; international and other MiniMax hosts are outside this adapter's scope.
     url = urlsplit(config.get('url', ''))
     return (config.get('kind') == 'audio' and config.get('protocol') == 'openai'
             and config.get('connectionType', 'api') == 'api'

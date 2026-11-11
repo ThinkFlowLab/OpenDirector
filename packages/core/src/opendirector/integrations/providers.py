@@ -10,6 +10,7 @@ from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_heade
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.reference_inputs import generation_references, references, image_type
 from opendirector.integrations.volcengine import VolcengineGeneration, bounded, endpoint
@@ -84,6 +85,10 @@ class GenerationProviders(VolcengineGeneration):
             return json.loads(data)
 
     async def resume_result(self, config, suffix, url):
+        # Accepted results remain downloadable after a model leaves the catalog.
+        if config and is_minimax_speech(config):
+            result = await self.minimax_speech.download(config, url)
+            return result.suffix, result.data
         adapter = self._profile_adapter(config)
         if adapter:
             return await adapter.resume_result(config, suffix, url)
@@ -94,9 +99,6 @@ class GenerationProviders(VolcengineGeneration):
             return suffix, await self.moss_image.download(config, url)
         if config and input_rules(config)['profile'] == 'moss-speech':
             return suffix, await self.moss_speech.download(config, url)
-        if config and input_rules(config)['profile'] == 'minimax-speech':
-            result = await self.minimax_speech.download(config, url)
-            return result.suffix, result.data
         if not config or config.get('protocol') in {None, 'volcengine'}:
             return await super().resume_result(config, suffix, url)
         # Only send a service token back to that exact configured origin.

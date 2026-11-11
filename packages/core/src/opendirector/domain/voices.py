@@ -4,7 +4,7 @@ import json
 import re
 from urllib.parse import urlsplit, urlunsplit
 
-from .minimax_speech import is_minimax_speech
+from .minimax_speech import MINIMAX_SPEECH_MODELS, is_minimax_speech
 from .moss_speech import is_moss_speech
 from .projects import ProjectError
 
@@ -45,6 +45,8 @@ def voice_library_capabilities(config):
         return None
     name = config.get('modelId', '').rsplit('/', 1)[-1].lower().replace('_', '-')
     moss, minimax = is_moss_speech(config), is_minimax_speech(config)
+    if minimax and config.get('modelId') not in MINIMAX_SPEECH_MODELS:
+        return None
     cosyvoice = name.startswith(('cosyvoice3', 'fun-cosyvoice3'))
     fish_speech = name.startswith('fish-speech') or name in {'s2-pro', 'drama-3', 'drama-3-int4'}
     # Explicit served-model families; an arbitrary compatible endpoint is not

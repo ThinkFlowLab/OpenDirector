@@ -27,6 +27,7 @@ from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
@@ -109,6 +110,9 @@ class CreationGeneration(GenerationRuntime):
 
     def task(self, job):
         spec, model = job.inputSnapshot.spec, job.inputSnapshot.model
+        config = model.model_dump()
+        # Project accepted jobs without revalidating the current speech catalog.
+        profile = 'minimax-speech' if is_minimax_speech(config) else input_rules(config)['profile']
         assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
         reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only'))
         content = None
@@ -138,7 +142,7 @@ class CreationGeneration(GenerationRuntime):
             modelConfigId=str(model.modelConfigId), model=model.modelId, baseURL=model.url, protocol=model.protocol,
             title=spec.prompt[:80] or spec.kind, prompt=spec.prompt, promptContent=content, referenceIds=reference_ids,
             referenceRoles=[{'assetId': str(r.asset.assetId), 'role': r.role} for r in job.inputSnapshot.references if r.transmission != 'context_only'],
-            referenceInputs={'profile': input_rules({**model.model_dump(), 'kind': model.kind})['profile']},
+            referenceInputs={'profile': profile},
             videoMode=spec.parameters.videoMode if spec.kind == 'video' else 'first_frame', parameters=job.adapterParameters,
             externalTaskId=job.externalTaskId, assetId=str(job.asset.assetId) if job.asset else None,
             adopted=job.adopted, error=None, errorDetails=job.errorDetails.model_dump(mode='json') if job.errorDetails else None,

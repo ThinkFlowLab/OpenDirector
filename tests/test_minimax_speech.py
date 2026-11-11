@@ -21,6 +21,7 @@ from opendirector.domain.creation.models import ModelConfigPublic
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.voices import voice_library_capabilities
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
@@ -31,6 +32,7 @@ from opendirector_api.main import create_app
 from test_creation_canvas_service import project
 from test_creation_generation_service import anyio_backend
 from test_moss import mp3
+from test_voice_library import Configs
 
 URL = 'https://api.minimax.cn/v1'
 RESULT = 'https://93.184.215.14/speech.mp3?signature=fixture-result-signature'
@@ -99,6 +101,20 @@ def test_unknown_official_model_is_rejected(entry):
     assert failure.value.code == 'minimax_speech_model'
 
 
+def test_unknown_official_model_has_no_voice_library(context):
+    _, configs, saved = context
+    config = {**configs.resolve(saved['id'], 'audio'), 'modelId': 'speech-2.8-unknown'}
+    assert voice_library_capabilities(config) is None
+    library = VoiceLibrary(Configs(config), httpx.MockTransport(
+        lambda _: pytest.fail('unsupported model reached the voice provider')))
+    with pytest.raises(ProjectError) as failure:
+        library.list(saved['id'])
+    assert failure.value.code == 'voice_library_unsupported'
+    with pytest.raises(ProjectError) as failure:
+        library.validate_selection(config, VOICE, selection(saved)['voiceSelection'])
+    assert failure.value.code == 'voice_connection_changed'
+
+
 @pytest.mark.parametrize('batch', [False, True])
 @pytest.mark.parametrize('locale, message', [
     ('zh-CN', '不支持该 MiniMax 语音型号，请选择预设中的型号。'),
@@ -119,7 +135,8 @@ def test_unknown_model_save_is_localized_and_atomic(context, batch, locale, mess
     assert configs.path.read_bytes() == before
 
 
-def test_system_voices_preserve_ids_and_account_scope(context):
+@pytest.mark.parametrize('page_size', [None, 1])
+def test_system_voices_preserve_ids_and_account_scope(context, page_size):
     project, configs, saved = context
     calls = []
     def handle(request):
@@ -129,7 +146,7 @@ def test_system_voices_preserve_ids_and_account_scope(context):
         assert request.headers['authorization'] == 'Bearer ' + SECRET
         return httpx.Response(200, json=VOICES)
     library = VoiceLibrary(configs, httpx.MockTransport(handle))
-    listed = library.list(saved['id'])
+    listed = library.list(saved['id'], page_size=page_size)
     assert [voice['voiceId'] for voice in listed['voices']] == [VOICE, 'Santa_Claus ']
     assert listed['nextCursor'] is None
     assert all(voice['compatible'] and voice['source'] == 'builtin' and not voice['canDelete']
@@ -350,8 +367,8 @@ async def test_real_mp3_snapshot_adoption_replay_and_reopen(context, mp3, source
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize('configuration_change', ['deleted', 'changed'])
-async def test_failed_download_recovers_after_model_removal_without_resubmitting(context, mp3, configuration_change):
+@pytest.mark.parametrize('configuration_change', ['deleted', 'changed', 'retired'])
+async def test_failed_download_recovers_after_model_removal_without_resubmitting(context, mp3, monkeypatch, configuration_change):
     project, configs, saved = context
     store, pid, session = project
     calls, healthy = [], False
@@ -373,6 +390,9 @@ async def test_failed_download_recovers_after_model_removal_without_resubmitting
         await first.close()
     if configuration_change == 'deleted':
         configs.delete(saved['id'])
+    elif configuration_change == 'retired':
+        monkeypatch.setattr('opendirector.domain.input_rules.MINIMAX_SPEECH_MODELS', frozenset())
+        monkeypatch.setattr('opendirector.domain.voices.MINIMAX_SPEECH_MODELS', frozenset())
     else:
         configs.save('audio', 'https://changed.test/v1', 'tts-1', 'different-key', saved['id'], protocol='openai')
     healthy = True
@@ -390,7 +410,7 @@ async def test_failed_download_recovers_after_model_removal_without_resubmitting
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize('configuration_change', ['deleted', 'changed'])
+@pytest.mark.parametrize('configuration_change', ['deleted', 'changed', 'retired'])
 @pytest.mark.parametrize('destination', ['private', 'dns', 'redirect'])
 async def test_recovery_keeps_public_download_checks(context, mp3, monkeypatch, configuration_change, destination):
     project, configs, saved = context
@@ -420,6 +440,9 @@ async def test_recovery_keeps_public_download_checks(context, mp3, monkeypatch, 
         await first.close()
     if configuration_change == 'deleted':
         configs.delete(saved['id'])
+    elif configuration_change == 'retired':
+        monkeypatch.setattr('opendirector.domain.input_rules.MINIMAX_SPEECH_MODELS', frozenset())
+        monkeypatch.setattr('opendirector.domain.voices.MINIMAX_SPEECH_MODELS', frozenset())
     else:
         configs.save('audio', 'https://changed.test/v1', 'tts-1', 'different-key', saved['id'], protocol='openai')
     recovering = True
