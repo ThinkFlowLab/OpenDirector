@@ -435,6 +435,12 @@ def test_long_video_edit_runs_piecewise_and_subtitles_default_to_the_bottom_band
     assert task['status'] == 'succeeded', task['error']
     region = mask_part(bodies[0], 'video_noise_mask')
     assert len(bodies) == 2 and region[0][0] == 0.0 and region[0][-1] == 1.0 and mask_part(bodies[0], 'audio_noise_mask') == 0.0
+    assert len(task['videoExecution']['requests']) == len(task['videoExecution']['pieces']) == 2
+    for body, checked in zip(bodies, task['videoExecution']['requests'], strict=True):
+        assert mask_part(body, 'fps') == checked['fps']
+        assert mask_part(body, 'num_frames') == checked['num_frames']
+        assert mask_part_raw(body, 'size').decode() == checked['size']
+        assert mask_part(body, 'extra_params')['task'] == checked['task']
     assert abs(task['outputs'][0]['durationMs'] - 20000) < 500
     bodies.clear()
     clip = upload(store, project_id, session, 'clip.mp4', sound_mp4(5))

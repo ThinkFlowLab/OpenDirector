@@ -49,6 +49,21 @@ def test_reference_image_support_does_not_grant_first_frame(service):
     assert availability.decision(config, request)['status'] == 'available'
 
 
+@pytest.mark.parametrize('reference_support,source_support,reference_status,edit_status', [
+    ('supported', 'unsupported', 'available', 'unavailable'),
+    ('unsupported', 'supported', 'unavailable', 'available'),
+])
+def test_reference_and_edit_source_video_have_independent_support(
+        service, reference_support, source_support, reference_status, edit_status):
+    config, _, availability = configure_declaration(service, inputs={
+        'reference_video': {'support': reference_support}, 'source_video': {'support': source_support},
+        'video_noise_mask': {'support': 'supported'}, 'audio_noise_mask': {'support': 'supported'}})
+    availability.prepare(config)
+    request = generation_request(config, spec('reference'), [reference('video')])
+    assert availability.decision(config, request)['status'] == reference_status
+    assert availability.decision(config, tool_request(config, 'video.edit'))['status'] == edit_status
+
+
 def test_explicit_h3_profile_refusal_keeps_its_existing_meaning(service):
     config, entry, availability = configure_declaration(service)
     entry['support'] = 'unsupported'

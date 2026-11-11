@@ -108,6 +108,20 @@ Existing region-editing tools automatically use native masks when the declared r
 
 Ordinary edits and native selections both check the adapter's actual render dimensions and transmitted parameters before acceptance. Batch enhancement checks each image; presets use their own request geometry. Render dimensions may differ from the tool's final saved dimensions, and validation never changes the requested output size. The optional `imageExecutionPolicy.requestConstraints` stores validated `RequestConstraints` JSON for the exact route. Execution checks this accepted snapshot without querying current declarations. Existing records without the field acquire no additional limits.
 
+### Video input purposes / 视频输入用途
+
+`image_to_video` 和 `video_to_video` 只标识候选模式。首帧工具检查 `first_frame`；现有视频编辑工具检查 `source_video`、`video_noise_mask`、`audio_noise_mask`，默认值为 `0.0` 的蒙版仍计为发送。参考素材分别使用 `reference_image`、`reference_video`、`reference_audio`；首尾帧分别使用 `first_frame`、`last_frame`。这些用途计数保留原有媒体计数，不与媒体计数相加。
+
+工具目录与提交检查使用同一请求描述。只有所选模型、模式和实际开放路由共同提供所需用途的支持证据，才显示可用；缺少证据显示未知并继续已有适配器校验。不会从其他接口补齐所需输入。有效的操作、模式或输入否定仍拒绝新任务，包括旧服务中错误的 H3 `unsupported`；服务端修正该声明后才能消除该误拒绝。未知声明不增加适配器能力，例如当前 H3 节点仍不接受上传的参考视频。
+
+视频检查与实际发送共用参数准备函数，核对 `task`、帧率、帧数和尺寸。编辑工具在接受前检查每段请求，保存 `videoExecution` 中的分段及参数；媒体解码和转换仍在执行阶段进行。已有任务的重放与恢复使用原有记录，不重新查询当前能力。缺少 `videoExecution` 的旧任务继续原有分段流程。
+
+`image_to_video` and `video_to_video` identify candidate modes. First-frame tools require `first_frame`; existing video-editing tools require `source_video`, `video_noise_mask` and `audio_noise_mask`, including a transmitted default mask of `0.0`. Reference inputs use `reference_image`, `reference_video` and `reference_audio`; fixed frames use `first_frame` and `last_frame`. Purpose counts retain the existing media counts and are not added to them.
+
+The tool directory and task admission share the same request description. Required purposes must be supported together on the selected model, profile and actual enabled route. Missing evidence remains unknown and retains adapter validation; evidence from other routes cannot complete the request. Valid operation, profile or input denials still reject new tasks, including an incorrect legacy H3 `unsupported` declaration until the service fixes it. Discovery does not extend adapters: the current H3 generation node still rejects uploaded reference videos.
+
+Checks and transmission share video parameter preparation for `task`, frame rate, frame count and dimensions. Editing tools check every segment before acceptance and store its intervals and parameters in `videoExecution`; media decoding and conversion remain in execution. Accepted replay and recovery use existing records without checking current capabilities. Older tasks without `videoExecution` retain their original interval preparation.
+
 Declaration and execution observations have independent expiry fields. Expiring a pause restores the still-valid declaration. The interface displays a shared expiry or query failure once and does not repeat it for every operation.
 
 ```sh
@@ -119,6 +133,8 @@ Declaration and execution observations have independent expiry fields. Expiring 
 node --test tests/modelAvailability.test.ts
 # With the isolated API and Vite running as described in development validation:
 node tests/browser/capability_discovery.mjs
+node tests/browser/video_capability_roles.mjs
+.venv/bin/python -m pytest tests/test_video_request_projection.py tests/test_video_role_capabilities.py tests/test_video_capability_acceptance.py -q
 ```
 
 These tests use isolated configuration/project directories, model doubles and a local HTTP server. They cover identity changes, draft isolation, operation matching, TTL expiration, coalescing, errors, zero-job rejection, local tools and replay. They do not validate real model outputs. See [development validation](../development/validation.md) for browser, contracts and import-layer checks.

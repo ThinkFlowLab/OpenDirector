@@ -1,6 +1,11 @@
 {
   "scripts": [
     {
+      "file": "video_capability_roles.mjs",
+      "lanes": ["extendedFixture"],
+      "note": "Bilingual video-role declarations, tool directory decisions, preserved generation inputs and substitute video results through local HTTP discovery."
+    },
+    {
       "file": "kling_video.mjs",
       "lanes": ["extendedFixture"],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
