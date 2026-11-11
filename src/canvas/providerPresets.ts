@@ -132,6 +132,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     authMode: "bearer",
   },
   {
+    id: "atlascloud",
+    name: "Atlas Cloud",
+    kinds: ["agent"],
+    url: "https://api.atlascloud.ai/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+  },
+  {
     id: "zhipu",
     logoOrganization: "zai-org",
     name: "智谱 BigModel",
