@@ -33,12 +33,14 @@ import pytest
 
 from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, BY_PAIR, EMPTY, ENDPOINT, MALFORMED_ROUTE,
-                                                     MISSING, MISSING_REASONS, NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED,
+                                                     MALFORMED_MODEL, MISSING, MISSING_REASONS, NO_LOCAL_CAPABILITY,
+                                                     NO_ROUTE_DECLARED,
                                                      OPERATION_MISMATCH, OPERATION_PROFILES, OPERATION_ROUTES,
                                                      OPERATIONS, PRESENT, PROFILE_OPERATIONS, REASONS, ROUTED_PATHS,
                                                      ROUTE_MISMATCH, UNKNOWN, UNKNOWN_PROFILE, UNKNOWN_ROUTE,
-                                                     UNMAPPED_STAGE, UNROUTED, UNROUTED_REASONS, capabilities_for,
-                                                     ROLE_NOT_DECLARED, UNSUPPORTED_REASON, candidates_for,
+                                                     UNMAPPED_STAGE, UNREADABLE, UNROUTED, UNROUTED_REASONS,
+                                                     capabilities_for, ROLE_NOT_DECLARED, UNSUPPORTED_FORMAT,
+                                                     UNSUPPORTED_REASON, candidates_for,
                                                      classified_capabilities, declarations, required_roles_for,
                                                      resolve, role_verdict, route_path)
 
@@ -142,8 +144,14 @@ def route(path, exposure='enabled', method='POST', transport='http'):
 
 
 def route_with_inputs(path, inputs):
-    """A route reference whose `request.inputs` declares roles, as upstream does."""
-    return {**route(path), 'request': {'inputs': {role: {'support': support} for role, support in inputs.items()}}}
+    """A route reference whose `request.inputs` declares roles, as upstream does.
+
+    A value is either the `support` string or a whole constraint dict, so a case
+    can carry `max_count` beside the enum the way upstream publishes it.
+    """
+    constraints = {role: {'support': value} if isinstance(value, str) else dict(value)
+                   for role, value in inputs.items()}
+    return {**route(path), 'request': {'inputs': constraints}}
 
 
 def table_routes(operation_id):
@@ -394,6 +402,53 @@ def test_stage_ids_do_not_collapse_capabilities():
     assert resolve(body(models=[second]))['capabilities']['text.chat'] == MISSING
 
 
+def test_one_model_refusing_while_another_stays_silent_is_not_missing():
+    """`missing` needs positive evidence from every model that could serve it.
+
+    A deployment publishes several models and a capability is `available` when
+    any one grants it; the mirror image is that one model's refusal cannot decide
+    the capability while another model says nothing, because that model may
+    serve. Silence used to harden into a refusal here, which also assumed every
+    model lists all six operations — upstream's own model enforces that, so a
+    body omitting one is a shape this table did not review, not a refusal.
+    """
+    refused = operation(profiles=[profile(
+        'image_to_video', inputs=('text', 'image'), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'})])])
+    refusing = model({'video_generation': refused}, model_id='model-a')
+    speaking = model({'chat': operation(profiles=[profile('text_response', paths=table_paths('chat'))])},
+                     model_id='model-b')
+
+    silent = resolve(body(models=[refusing, speaking]))
+    assert silent['capabilities']['video.first_frame'] == UNKNOWN
+    assert silent['reasons'] == {}
+
+    # A model that lists no operation at all says nothing either.
+    blank = resolve(body(models=[refusing, model({}, model_id='model-b')]))
+    assert blank['capabilities']['video.first_frame'] == UNKNOWN
+    assert blank['reasons'] == {}
+
+    # An element that is not a model is reported, not dropped: it says nothing,
+    # so the refusal stays `unknown` — and the report names why the table is thin.
+    junk = resolve(body(models=[refusing, 'not-a-model']))
+    assert junk['capabilities']['video.first_frame'] == UNKNOWN
+    assert junk['unresolved'] == [{'operation': None, 'profile': None, 'route': None,
+                                   'reason': MALFORMED_MODEL}]
+    # A model with an operation key but no `operations` object is the same case.
+    broken = resolve(body(models=[refusing, {'id': 'model-b', 'operations': 'chat'}]))
+    assert broken['capabilities']['video.first_frame'] == UNKNOWN
+    assert broken['unresolved'] == [{'operation': None, 'profile': None, 'route': None,
+                                     'reason': MALFORMED_MODEL}]
+    # Nothing declared at all is `empty`, not a malformed body: the endpoint did
+    # answer, it just did not say anything about any operation.
+    assert resolve({'models': [{'id': 'model-b', 'stage_ids': ['7']}]})['unresolved'] == []
+
+    # Two refusals still decide it: every model said no.
+    both = resolve(body(models=[refusing, model({'video_generation': refused}, model_id='model-b')]))
+    assert both['capabilities']['video.first_frame'] == MISSING
+    assert both['reasons'] == {'video.first_frame': UNSUPPORTED_REASON}
+
+
 def test_capabilities_without_an_upstream_profile_are_unknown_not_missing():
     """An endpoint that no operation publishes cannot be judged, so it is never `missing`."""
     assert UNROUTED == UNROUTED_EXPECTED
@@ -608,6 +663,74 @@ def test_a_complete_request_needs_one_route_and_a_refusal_is_missing():
     # the focused cases live in `test_the_role_gate_answers_as_resolve_does`.
 
 
+def test_a_count_window_that_excludes_one_item_is_not_a_grant():
+    """The count window is part of the support answer, not decoration.
+
+    Upstream publishes optional inclusive bounds beside the enum
+    (`request_capabilities.InputConstraint`; `capabilities.md:92`) and the tool
+    always sends one item. Reading only `support=supported` granted the id on a
+    declaration that can never accept that item — `max_count: 0`, or
+    `min_count: 2` — so those are refusals now: `missing` with `unsupported`,
+    the same answer a refusing profile gets, because the same thing has to change
+    upstream. A bound that is not a whole number is unreadable, and an entry with
+    no `support` still decides nothing whatever its counts say.
+    """
+    for constraints, verdict, state in (
+            ({'support': 'supported', 'max_count': 0}, 'no', MISSING),
+            ({'support': 'supported', 'max_count': -1}, 'no', MISSING),
+            ({'support': 'supported', 'max_count': 1}, 'yes', AVAILABLE),
+            ({'support': 'supported', 'max_count': 3}, 'yes', AVAILABLE),
+            ({'support': 'supported'}, 'yes', AVAILABLE),
+            ({'support': 'supported', 'min_count': 1, 'max_count': 1}, 'yes', AVAILABLE),
+            ({'support': 'supported', 'min_count': 0, 'max_count': 0}, 'no', MISSING),
+            ({'support': 'supported', 'min_count': 2}, 'no', MISSING),
+            ({'support': 'unsupported', 'max_count': 0}, 'no', MISSING),
+            ({'support': 'supported', 'max_count': 'many'}, 'unknown', UNKNOWN),
+            ({'support': 'supported', 'max_count': True}, 'unknown', UNKNOWN),
+            ({'support': 'supported', 'max_count': 0.5}, 'unknown', UNKNOWN),
+            ({'support': 'supported', 'min_count': 1.5}, 'unknown', UNKNOWN),
+            ({'support': 'supported', 'min_count': 'one'}, 'unknown', UNKNOWN),
+            ({'max_count': 0}, 'unknown', UNKNOWN)):
+        entry = profile('image_to_video', inputs=('text', 'image'), outputs=('video',),
+                        routes=[route_with_inputs('/v1/videos', {'first_frame': constraints})])
+        result = resolve(body({'video_generation': operation(profiles=[entry])}))
+        assert role_verdict(entry, 'video_generation', ('first_frame',)) == verdict, constraints
+        assert result['capabilities']['video.first_frame'] == state, constraints
+        if state == MISSING:
+            assert result['reasons'] == {'video.first_frame': UNSUPPORTED_REASON}, constraints
+        if state == UNKNOWN:
+            assert {'operation': 'video_generation', 'profile': 'image_to_video', 'route': None,
+                    'reason': ROLE_NOT_DECLARED} in result['unresolved'], constraints
+
+
+def test_a_refusal_excludes_its_route_even_when_the_rest_is_silent():
+    """Two routes, each refusing a different role: the set is refused, not unknown.
+
+    A request needs the whole set on one route, so a route that refuses one role
+    is out of the running whatever it leaves unmentioned. Requiring every route
+    to decide every role before answering `no` left this shape `unknown`, which
+    claimed doubt that does not exist: neither route can carry the request.
+    """
+    partial = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'video_noise_mask': 'unsupported'}),
+                route_with_inputs('/v1/videos/sync', {'source_video': 'unsupported'})])])}))
+    assert partial['capabilities']['video.edit'] == MISSING
+    assert partial['reasons'] == {'video.edit': UNSUPPORTED_REASON}
+    assert partial['unresolved'] == []
+
+    # A refusal beside a route that refuses nothing is still a gap: that route
+    # may carry the set, so the document has not said no.
+    gap = resolve(body({'video_generation': operation(profiles=[profile(
+        'video_to_video', inputs=('video',), outputs=('video',),
+        routes=[route_with_inputs('/v1/videos', {'video_noise_mask': 'unsupported'}),
+                route_with_inputs('/v1/videos/sync', {'source_video': 'supported'})])])}))
+    assert gap['capabilities']['video.edit'] == UNKNOWN
+    assert gap['reasons'] == {}
+    assert {'operation': 'video_generation', 'profile': 'video_to_video', 'route': None,
+            'reason': ROLE_NOT_DECLARED} in gap['unresolved']
+
+
 ROLE_GATE_CASES = {
     'complete route': [route_with_inputs('/v1/videos', {'source_video': 'supported',
                                                        'video_noise_mask': 'supported',
@@ -624,6 +747,8 @@ ROLE_GATE_CASES = {
                                            route_with_inputs('/v1/videos/sync', {'source_video': 'unsupported',
                                                                                 'video_noise_mask': 'supported',
                                                                                 'audio_noise_mask': 'supported'})],
+    'partial complementary refusals': [route_with_inputs('/v1/videos', {'video_noise_mask': 'unsupported'}),
+                                       route_with_inputs('/v1/videos/sync', {'source_video': 'unsupported'})],
     'silent sibling': [route_with_inputs('/v1/videos', {'source_video': 'unsupported',
                                                         'video_noise_mask': 'unsupported',
                                                         'audio_noise_mask': 'unsupported'}),
@@ -642,6 +767,20 @@ ROLE_GATE_CASES = {
                                   {'method': 'POST', 'exposure': 'enabled'}],
 }
 ROLE_GATE_STATES = {'yes': AVAILABLE, 'no': MISSING, 'unknown': UNKNOWN}
+# The state each declaration must reach, written out: a consistency-only check
+# (gate == resolve) would move both sides together and green-light the revert it
+# is named for.
+ROLE_GATE_EXPECTED = {
+    'complete route': AVAILABLE,
+    'split across routes': UNKNOWN,
+    'refused on its only route': MISSING,
+    'two routes, complementary refusals': MISSING,
+    'partial complementary refusals': MISSING,
+    'silent sibling': UNKNOWN,
+    'sibling without exposure': UNKNOWN,
+    'unplaceable route left on': UNKNOWN,
+    'malformed route reference': MISSING,
+}
 
 
 def test_a_malformed_route_reference_is_not_a_channel():
@@ -669,12 +808,15 @@ def test_the_role_gate_answers_as_resolve_does(name):
     """One declaration, one role answer: `resolve()` asks this gate, never re-derives it.
 
     The profile's own verdict and its routes' reachability are decided before the
-    gate, so this compares the role question only.
+    gate, so this compares the role question only. Each side is checked against
+    the expected state as well as against the other: a rule change that moves
+    both sides together must not pass on self-consistency alone.
     """
     entry = profile('video_to_video', inputs=('video',), outputs=('video',), routes=ROLE_GATE_CASES[name])
     result = resolve(body({'video_generation': operation(profiles=[entry])}))
     verdict = role_verdict(entry, 'video_generation', required_roles_for('video.edit'))
-    assert result['capabilities']['video.edit'] == ROLE_GATE_STATES[verdict], name
+    assert result['capabilities']['video.edit'] == ROLE_GATE_EXPECTED[name], name
+    assert ROLE_GATE_STATES[verdict] == ROLE_GATE_EXPECTED[name], name
 
 
 def test_a_role_string_is_one_role_and_an_undecided_role_stays_unknown():
@@ -745,6 +887,55 @@ def test_an_endpoint_that_answered_without_declaring_is_empty():
         assert set(result['capabilities'].values()) == {UNKNOWN}
         assert result['unresolved'] == []
     assert resolve(None)['endpoint'] != resolve({'models': []})['endpoint']
+
+
+def test_a_body_from_another_contract_is_unreadable_instead_of_v1():
+    """`object` and `schema_version` are a version gate, not decoration.
+
+    Reading `models` out of a body that names another version is how a v2
+    declaration grants v1 ids nobody reviewed. The whole body is refused once,
+    with no capability read out of it — and a body that states no envelope at all
+    stays the defensive no-body case instead of being reclassified.
+    """
+    granting = body({'chat': operation(profiles=[profile('text_response', paths=table_paths('chat'))])})
+    assert resolve(granting)['capabilities']['text.chat'] == AVAILABLE
+
+    for mutation in ({'object': 'omni.capabilities.v2'}, {'object': None}, {'object': 2},
+                     {'schema_version': 2}, {'schema_version': '1'}, {'schema_version': True},
+                     {'schema_version': 1.0}, {'schema_version': None}):
+        result = resolve({**granting, **mutation})
+        assert result['endpoint'] == UNREADABLE, mutation
+        assert set(result['capabilities'].values()) == {UNKNOWN}, mutation
+        assert result['reasons'] == {}, mutation
+        assert result['unresolved'] == [{'operation': None, 'profile': None, 'route': None,
+                                         'reason': UNSUPPORTED_FORMAT}], mutation
+        # A body this table does not read hands back no topology either: `stages`
+        # of a foreign contract are the same unreviewed shape as its `models`.
+        assert result['topology'] == [], mutation
+
+    # The gate runs before `absent`/`empty`: a foreign envelope is `unreadable`
+    # even when it carries no models at all.
+    assert resolve({'models': [], 'schema_version': 2})['endpoint'] == UNREADABLE
+    assert resolve({'stages': [], 'object': 'omni.capabilities.v2'})['endpoint'] == UNREADABLE
+
+    # A body that names no envelope is read as v1, and that is a decision, not an
+    # accident: upstream always emits both keys, so an envelope that is missing
+    # (rather than different) cannot be told from a v1 body a proxy stripped, and
+    # refusing it would reclassify the defensive `absent`/`empty` shapes below.
+    envelope_less = {key: value for key, value in granting.items() if key not in ('object', 'schema_version')}
+    assert resolve(envelope_less)['capabilities']['text.chat'] == AVAILABLE
+    assert resolve(envelope_less)['endpoint'] == PRESENT
+
+    # The other reader applies the same gate: `declarations()` must not hand out
+    # pairs from a body `resolve()` refuses, or the two disagree about one body.
+    assert declarations({**granting, 'schema_version': 2}) is None
+    assert declarations(granting) == [('chat', 'text_response')]
+
+    # No envelope and nothing to declare: still `absent`/`empty`, a different
+    # answer from a refused contract.
+    assert resolve({'models': []})['endpoint'] == EMPTY
+    assert resolve({})['endpoint'] == ABSENT
+    assert resolve({'models': []})['unresolved'] == []
 
 
 def test_a_topology_only_body_grants_nothing():

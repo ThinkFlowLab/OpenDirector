@@ -16,7 +16,7 @@ Upstream publishes exactly six operations and twelve profiles
     speech            text_to_speech, lyrics_to_music, caption_to_audio
     audio_generation  text_to_audio
 
-Six rules keep the table honest.
+Eight rules keep the table honest.
 
 * The key is `(operation, profile)`, never the route, never the stage.
   `/v1/audio/speech` is the single route of one operation and carries three
@@ -79,15 +79,32 @@ Six rules keep the table honest.
   `/v1/videos` naming `source_video` beside `/v1/videos/sync` naming the two
   noise masks makes an edit request servable on neither. Silence, an absent
   `support` and `support=unknown` all keep the id `unknown`; when at least one
-  route is open and every open route has decided every required role while none
-  carries the whole set, the
+  route is open and every open route refuses at least one required role, the
   document has said no — including the case where two routes each refuse a
-  different role — and the id is `missing` with `unsupported`, because "the
-  deployment refuses that input" needs a different fix from "the document does
-  not say". One exception keeps that refusal from hardening: a declared route
+  different role and mention nothing else — and the id is `missing` with
+  `unsupported`, because "the deployment refuses that input" needs a different
+  fix from "the document does not say". The count bound published beside
+  `support` is part of that answer: a role declared supported with
+  `max_count: 0` cannot carry the one item the tool sends and is a refusal in
+  effect. One exception keeps that refusal from hardening: a declared route
   this table cannot place that is `enabled` or carries no `exposure`, or an own
   route whose `exposure` cannot be read, may still serve, and then the id stays
   `unknown`.
+
+* A capability is granted by one model and refused by all of them. Several
+  models are alternatives, so any one saying `supported` with an open route is
+  `available`; the mirror is that `missing` needs every model to say no. A model
+  that does not mention an operation — or lists no operation at all — says
+  nothing about it, so the id stays `unknown`: the deployment may still serve it
+  from that model.
+* A body is read only in the envelope it was reviewed in. `object` and
+  `schema_version` are upstream's version gate (`protocol/capabilities.py:73-79`),
+  so a body naming another object or version is `unreadable` with
+  `unsupported_format` and its `models` are never read: a newer shape read as v1
+  would grant ids from a declaration nobody reviewed. A body that names neither
+  key is read as v1: upstream's response model always emits both, so a missing
+  envelope cannot be told apart from a v1 body a proxy stripped, and refusing it
+  would reclassify the bodies the `absent` and `empty` states exist for.
 
 `asr` is not an omission on this side: upstream publishes no recognition
 operation at all (`OperationId` is a closed `Literal`) and the omni router never
@@ -103,12 +120,19 @@ capabilities body never mentions that path, so the id stays `unknown` with
 Not yet confirmed upstream (recorded here instead of assumed): the exact
 `observed_at` string format, whether `stages[].type` is ever the `"unknown"`
 fallback, and whether a multi-model deployment can differentiate `operations`
-per model. This module reads only what a body actually states, so those gaps
-stay `unknown` rather than becoming policy.
+per model. This module reads only what a body actually states, so the first two
+gaps stay `unknown` rather than becoming policy; for the third it reads each
+model's `operations` as that model's own declaration (see the rule above) and
+makes no claim about why two models would differ.
 """
 
 ENDPOINT = '/v1/omni/capabilities'
 API_PREFIX = '/v1'
+# The envelope this table reviewed: `object: "omni.capabilities"`,
+# `schema_version: 1` (`protocol/capabilities.py:73-79`). A body naming another
+# object or version is a different contract, not a newer copy of this one.
+ENVELOPE_OBJECT = 'omni.capabilities'
+ENVELOPE_VERSION = 1
 
 # Upstream's closed operation vocabulary, in its published order.
 # (`vllm_omni/serving_capabilities.py:15,19-26`)
@@ -201,6 +225,10 @@ AVAILABLE, MISSING, UNKNOWN = 'available', 'missing', 'unknown'
 # `empty`: it answered with a model list but no model declared an operation.
 # `present`: at least one model declared operations.
 ABSENT, EMPTY, PRESENT = 'absent', 'empty', 'present'
+# `unreadable`: the endpoint answered in an envelope this table does not read —
+# `object` or `schema_version` names another contract. Not `absent` (it did
+# answer) and not `present` (nothing in it could be read).
+UNREADABLE = 'unreadable'
 
 # Upstream's three-valued vocabulary, shared by `support` and `exposure`
 # (`serving_capabilities.py:16`, `protocol/capabilities.py:13`).
@@ -225,12 +253,23 @@ MALFORMED_ROUTE = 'malformed_route'  # a route entry without a usable path
 # The profile is published and supported, but this id needs a request role no
 # single open route declares as supported (see `REQUIRED_ROLES`): the role is
 # absent, split across routes, or refused on one route while another stays
-# silent. Not a refusal: `unknown`. A document that decides every role on every
-# open route and still offers no complete one is not reported here — that is a
-# `missing` verdict with `unsupported`, the same answer a refusing profile gets.
+# silent. Not a refusal: `unknown`. A document whose every open route refuses at
+# least one required role is not reported here — that is a `missing` verdict with
+# `unsupported`, the same answer a refusing profile gets.
 ROLE_NOT_DECLARED = 'role_not_declared'
+# The body answered in a different contract: `object` or `schema_version` is not
+# the one this table reviewed. Reading its `models` anyway would grant
+# capabilities from a shape nobody checked, so the whole body is refused once.
+UNSUPPORTED_FORMAT = 'unsupported_format'
+# A `models[]` element that is not a model: not an object, no `operations` object,
+# or an empty one. Upstream lists all six operations on every model, so such an
+# element is a shape this table does not read. Reported once, and its silence is
+# kept as `unknown` — a broken element must not let another model's refusal
+# harden into `missing`, and it must not vanish without a word either.
+MALFORMED_MODEL = 'malformed_model'
 REASONS = frozenset({UNKNOWN_ROUTE, ROUTE_MISMATCH, UNMAPPED_STAGE, UNKNOWN_PROFILE, OPERATION_MISMATCH,
-                     NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED, MALFORMED_ROUTE, ROLE_NOT_DECLARED})
+                     NO_LOCAL_CAPABILITY, NO_ROUTE_DECLARED, MALFORMED_ROUTE, ROLE_NOT_DECLARED,
+                     UNSUPPORTED_FORMAT, MALFORMED_MODEL})
 
 # Why a capability can never be decided from a declaration here.
 NO_UPSTREAM_PROFILE, NO_UPSTREAM_OPERATION = 'no_upstream_profile', 'no_upstream_operation'
@@ -351,9 +390,8 @@ def capabilities_for(operation, profile):
 # accepts an image, not that the image is a first frame; `video_to_video` proves
 # it accepts a video, not that it takes latent masks. Both ids stay `unknown`
 # until one of the profile's own open routes declares every role the id needs;
-# a document that never declares them keeps them `unknown`, while one that
-# decides every role on every open route and still carries none reports
-# `missing` with `unsupported`.
+# a document that never declares them keeps them `unknown`, while one whose every
+# open route refuses at least one of them reports `missing` with `unsupported`.
 # `first_frame` names the slot, not the wire field: the adapter sends it as
 # `input_reference` with `task=fl2va`. The role name is what the document would
 # have to publish, so the two sides share one spelling.
@@ -370,29 +408,90 @@ def required_roles_for(capability_id):
     level). A non-empty tuple means one of the profile's own open routes must
     declare every named role with `support=supported` before this id can read
     `available` — all of them on the same route, since a request leaves on one.
-    A role the document never declares leaves it `unknown`; a document that
-    decides every required role on every open route while none carries the set
-    leaves it `missing` with `unsupported` (`role_verdict()` applies the rule).
+    A role the document never declares leaves it `unknown`; a document whose
+    every open route refuses at least one required role leaves it `missing` with
+    `unsupported` (`role_verdict()` applies the rule).
     """
     if not isinstance(capability_id, str):
         return ()
     return REQUIRED_ROLES.get(capability_id.strip(), ())
 
 
+_UNREADABLE_COUNT = object()
+
+
+def _count(value):
+    """`min_count`/`max_count` as an int, None when absent, sentinel when unreadable.
+
+    Upstream publishes both bounds as optional inclusive counts
+    (`capabilities.md:92`, `request_capabilities.InputConstraint`). Absent means
+    no bound on that side; anything that is not a whole number is a value this
+    table does not read, and reading a bound out of it would turn an unreviewed
+    number into a verdict.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return _UNREADABLE_COUNT
+    if isinstance(value, float) and not value.is_integer():
+        return _UNREADABLE_COUNT
+    return int(value)
+
+
+def _carries_one(constraint):
+    """True/False/None: can this constraint carry the one item the tool sends?
+
+    The window `[min_count, max_count]` is part of the answer, not decoration: a
+    role capped at 0 cannot carry anything, and one demanding 2 items cannot be
+    satisfied by the single item the tool sends, however `support` reads. Absent
+    bounds are no bound. A bound this table cannot read leaves the entry
+    undecided rather than guessed.
+    """
+    low = _count(constraint.get('min_count'))
+    high = _count(constraint.get('max_count'))
+    if low is _UNREADABLE_COUNT or high is _UNREADABLE_COUNT:
+        return None
+    if high is not None and high < 1:
+        return False
+    if low is not None and low > 1:
+        return False
+    return True
+
+
+def _declared_support(constraint):
+    """`supported`, `unsupported`, or None when this entry decides nothing.
+
+    `supported` and `unsupported` are both answers; an absent or unrecognised
+    `support` is None, so a refusal stays distinguishable from silence and from
+    a value this table does not read. A `supported` role capped at zero items is
+    a refusal in effect — the request needs one — while `unsupported` stands on
+    its own whatever the capacity says.
+    """
+    if not isinstance(constraint, dict):
+        return None
+    value = constraint.get('support')
+    if value not in (SUPPORTED, UNSUPPORTED):
+        return None
+    if value == UNSUPPORTED:
+        return UNSUPPORTED
+    carries = _carries_one(constraint)
+    if carries is None:
+        return None
+    return SUPPORTED if carries else UNSUPPORTED
+
+
 def _role_support(request):
     """`{role: declared support}` of one `RequestConstraints`, membership kept.
 
-    `supported` and `unsupported` are both answers; an absent or unrecognised
-    `support` is stored as None, so a refusal stays distinguishable from silence
-    and from a value this table does not read.
+    One value per declared role: `supported`, `unsupported`, or None when the
+    entry decides nothing (see `_declared_support`).
     """
     inputs = request.get('inputs') if isinstance(request, dict) else None
     if not isinstance(inputs, dict):
         return {}
     support = {}
     for role, constraint in inputs.items():
-        value = constraint.get('support') if isinstance(constraint, dict) else None
-        support[str(role).strip()] = value if value in (SUPPORTED, UNSUPPORTED) else None
+        support[str(role).strip()] = _declared_support(constraint)
     return support
 
 
@@ -456,14 +555,18 @@ def role_verdict(entry, operation, required):
 
     `yes` — one open route declares all of them with `support=supported`.
     `no` — at least one route is open, no route carries the whole set, and every
-    open route has decided every role (each one either supported or refused), so
-    no request this deployment accepts can carry it. Two routes that each refuse
-    a different role are as final as one route refusing all of them.
-    `unknown` — anything else: no open route, a role nobody names, an absent or
-    unrecognised `support`, or an alternative this table cannot decide (an owned
-    route whose exposure is unreadable, or an unplaceable route left enabled or
-    without an `exposure`). That last case follows `_profile_verdict`: a channel
-    that may still serve keeps a refusal from hardening into `missing`.
+    open route refuses at least one of them, so no request this deployment
+    accepts can carry it. A route that refuses one role is out of the running
+    whatever the rest of that route says — the request needs the whole set on one
+    route — so two routes each refusing a different role are as final as one
+    route refusing all of them. A role the route leaves unmentioned only matters
+    when the route refuses nothing: that route is undecided, not excluded.
+    `unknown` — anything else: no open route, a role nobody names on any route
+    that refuses nothing, an absent or unrecognised `support`, or an alternative
+    this table cannot decide (an owned route whose exposure is unreadable, or an
+    unplaceable route left enabled or without an `exposure`). That last case
+    follows `_profile_verdict`: a channel that may still serve keeps a refusal
+    from hardening into `missing`.
     """
     if isinstance(required, str):
         required = (required,)
@@ -477,7 +580,7 @@ def role_verdict(entry, operation, required):
         return 'yes'
     if not routes or undecided or ENABLED in unplaceable or ROUTE_UNKNOWN in unplaceable:
         return 'unknown'
-    if all(roles.get(role) in (SUPPORTED, UNSUPPORTED) for roles in routes for role in required):
+    if all(any(roles.get(role) == UNSUPPORTED for role in required) for roles in routes):
         return 'no'
     return 'unknown'
 
@@ -541,9 +644,13 @@ def declarations(payload):
     "no evidence" rather than "nothing supported". (`resolve()` still reports
     `endpoint=present` for a body that carries operation entries without
     profiles: the service answered, it just did not say which profiles it
-    serves, and that is `unknown`, not `absent`.)
+    serves, and that is `unknown`, not `absent`.) A body naming another envelope
+    yields None for the same reason `resolve()` refuses it: the two readers must
+    not disagree about one body.
     """
     if not isinstance(payload, dict):
+        return None
+    if _envelope_unsupported(payload):
         return None
     models = payload.get('models')
     if not isinstance(models, list):
@@ -682,6 +789,33 @@ def _route_exposures(operation, profile, entry, unresolved):
     return exposures, unrecognised, declared_path
 
 
+def _envelope_unsupported(payload):
+    """True when the body names an envelope this table does not read.
+
+    `object` and `schema_version` are upstream's version gate
+    (`protocol/capabilities.py:73-79`), compared as published: `object` is the
+    string `omni.capabilities` and `schema_version` the integer `1`, so a string
+    `"1"` is a different shape, not the same version. A body that states either
+    one and disagrees is a different contract: reading its `models` would grant
+    capabilities from a shape nobody reviewed. What this gate rejects is a body
+    that *names* another contract. A body that names neither is read as v1:
+    upstream's response model always emits both, so a missing envelope cannot be
+    told apart from a v1 body a proxy stripped, and refusing it would also
+    reclassify the defensive bodies the `absent` and `empty` states exist for.
+    """
+    if not isinstance(payload, dict):
+        return False
+    if 'object' in payload and payload.get('object') != ENVELOPE_OBJECT:
+        return True
+    if 'schema_version' in payload:
+        version = payload.get('schema_version')
+        # The published field is the integer `1`; a float `1.0` is a different
+        # shape too, and Python would otherwise compare it equal.
+        if isinstance(version, bool) or not isinstance(version, int) or version != ENVELOPE_VERSION:
+            return True
+    return False
+
+
 def resolve(payload):
     """Per-capability availability, the declared topology, and untranslated claims.
 
@@ -689,23 +823,35 @@ def resolve(payload):
     (404, timeout, disabled endpoint). Model names and any other provider fields
     never reach the result.
 
-    `endpoint` separates "did not answer" from "answered without declaring":
-    `absent` when there is no body or no model list at all, `empty` when a model
-    list came back but no model declared an operation, `present` otherwise. In
-    the first two cases every capability is `unknown`, `reasons` is empty and
-    nothing is listed as unresolved.
+    `endpoint` separates "did not answer" from "answered without declaring"
+    from "answered in a contract this table does not read": `absent` when there
+    is no body or no model list at all, `empty` when a model list came back but
+    no model declared an operation, `present` when at least one did, and
+    `unreadable` when `object` or `schema_version` names another contract (see
+    `_envelope_unsupported`). Every capability is `unknown` in the first two
+    cases, with `reasons` empty and nothing listed as unresolved; the unreadable
+    case also reports the body once as `unsupported_format` and never reads its
+    `models`.
 
     A capability is `available` only when some model's profile says so, its
     operation is enabled and at least one of its own routes is enabled;
-    `missing` only when a profile, an operation or the role gate positively says
-    no, with the kind of refusal in `reasons` (`unsupported` — including a
-    required input role no open route carries, `endpoint_disabled`,
+    `missing` only when every model positively says no — a profile, an operation
+    or the role gate — with the kind of refusal in `reasons` (`unsupported`,
+    including a required input role no open route carries, `endpoint_disabled`,
     `route_disabled`); `unknown` otherwise — no body, an absent field, an unknown
-    enum, an unrouted capability, or a declaration this table could not
-    translate.
+    enum, an unrouted capability, a model that does not mention the operation
+    (the deployment may still serve it from that model), or a declaration this
+    table could not translate.
     """
     vocabulary = classified_capabilities()
     unresolved: list[dict] = []
+    if _envelope_unsupported(payload):
+        # Refuse the whole body once: its `models` and its `stages` are both a
+        # shape nobody reviewed, so not even the topology is handed back.
+        _note(unresolved, None, None, None, UNSUPPORTED_FORMAT)
+        return {'endpoint': UNREADABLE, 'topology': [],
+                'capabilities': {item: UNKNOWN for item in vocabulary}, 'reasons': {},
+                'unresolved': unresolved}
     topology = _topology(payload)
     evidence: dict[str, set[str]] = {}
     refusals: dict[str, set[str]] = {}
@@ -718,9 +864,22 @@ def resolve(payload):
 
     models = payload.get('models') if isinstance(payload, dict) else None
     declared = False
+    unreadable_models = False
     for model in models if isinstance(models, list) else []:
         operations = model.get('operations') if isinstance(model, dict) else None
-        if not isinstance(operations, dict) or not operations:
+        if not isinstance(operations, dict):
+            operations = {}
+        declared_operations = {operation_id.strip().lower() for operation_id in operations
+                               if isinstance(operation_id, str) and operation_id.strip()}
+        if not declared_operations:
+            # A model that lists no operation says nothing about any of them. Its
+            # silence must not let another model's refusal harden into `missing`:
+            # the silent model may still serve, so every row stays `unknown` —
+            # and the element is reported rather than dropped, because upstream
+            # lists all six operations on every model.
+            unreadable_models = True
+            for _, _, row_capabilities in OPERATION_PROFILES:
+                record(row_capabilities, 'unknown')
             continue
         declared = True
         for operation_id, operation in operations.items():
@@ -788,6 +947,14 @@ def resolve(payload):
                         record(row_capabilities, 'no', operation_reason)
                     else:
                         record(row_capabilities, 'unknown')
+        # Operations this model never mentions establish nothing either: upstream
+        # lists all six (`protocol/capabilities.py:60-64`), so an omission is a
+        # body this table did not review, and `missing` needs positive evidence
+        # from every model. One model refusing while another stays silent is
+        # `unknown`, because the silent one may serve.
+        for row_operation, _, row_capabilities in OPERATION_PROFILES:
+            if row_operation not in declared_operations:
+                record(row_capabilities, 'unknown')
 
     if not declared:
         # `models` being a list is the service answering; no operations at all
@@ -796,6 +963,10 @@ def resolve(payload):
         endpoint = EMPTY if isinstance(models, list) else ABSENT
         return {'endpoint': endpoint, 'topology': topology, 'capabilities': {item: UNKNOWN for item in vocabulary},
                 'reasons': {}, 'unresolved': []}
+    if unreadable_models:
+        # Reported only once something was declared: an endpoint that said
+        # nothing at all is the `empty` answer above, not a malformed one.
+        _note(unresolved, None, None, None, MALFORMED_MODEL)
     capabilities = {}
     reasons = {}
     for item in vocabulary:
