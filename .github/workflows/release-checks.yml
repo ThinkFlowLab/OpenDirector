@@ -93,13 +93,21 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         env:
           PYTEST_MARK_EXPRESSION: ${{ inputs.python-mark-expression }}
-        run: python -m pytest tests -q -ra -m "$PYTEST_MARK_EXPRESSION"
+        run: python -m pytest tests -q -ra -m "$PYTEST_MARK_EXPRESSION" --durations=50 --junitxml=test-results/python.xml --ci-profile=test-results/python.json
       - name: Bundled OpenCode model gateway regression
         if: always() && steps.install.outcome == 'success'
         timeout-minutes: 5
         env:
           OPENDIRECTOR_REAL_CLI: '1'
-        run: python -m pytest tests/test_native_runtime.py -k real_opencode -q -ra
+        run: python -m pytest tests/test_native_runtime.py -k real_opencode -q -ra --durations=50 --junitxml=test-results/bundled-opencode.xml --ci-profile=test-results/bundled-opencode.json
+      - name: Upload Python timing evidence / 上传 Python 耗时证据
+        if: always() && steps.install.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: python-test-evidence-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: warn
 
   frontend:
     needs: static

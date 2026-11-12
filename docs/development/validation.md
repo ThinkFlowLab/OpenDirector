@@ -83,6 +83,24 @@ The reusable workflow's `static-checks` defaults to false and is enabled by `ci.
 
 ## Python 分层与迁移 / Python layers and transition
 
+### 耗时证据 / Timing evidence
+
+Python CI 为全量套件和独立 bundled OpenCode 回归分别保存 JUnit XML、`--durations=50` 日志，以及 `--ci-profile` 生成的 JSON/Markdown；从运行的 `python-test-evidence-<attempt>` artifact 下载，保存 14 天。JSON 记录 SHA、系统、Python/pytest 版本、筛选条件、逐用例 setup/call/teardown 耗时、结果、显式层级与未标记默认归属，不记录 stdout、失败正文或局部变量。
+
+Python CI saves separate JUnit XML, `--durations=50` logs and opt-in `--ci-profile` JSON/Markdown for the main suite and bundled OpenCode regression. Download `python-test-evidence-<attempt>` from the run; retention is 14 days. JSON records SHA, OS, Python/pytest versions, selection, per-test setup/call/teardown timings, outcomes, explicit layers and transitional defaults. It excludes stdout, failure text and local variables.
+
+```sh
+python -m pytest tests -q -ra --durations=50 --junitxml=test-results/python.xml --ci-profile=test-results/python.json
+```
+
+先按关键能力确定 PR 必留代表用例，再审查最耗时模块的完整矩阵是否适合 merge；慢不是移走的充分理由，flake 也不是扩大 nightly 的充分理由。用例在模块级和函数级只能有一个有效 CI mark；冲突会在报告中显示为 `conflict`，不自动替调用方改标记或改变 pytest 筛选。
+
+First identify mandatory PR representatives for each critical capability, then review costly modules for broader merge coverage. Slowness alone does not justify moving a test, nor does flakiness justify removing essential regression coverage. Conflicting module/function layer marks appear as `conflict` in the report; profiling never rewrites marks or changes pytest selection.
+
+只用 `complete: true`、`exit_status: 0` 且平台、运行阶段和环境可比的样本分析正常耗时；保留失败和不完整样本作诊断，不把它们当成提速证据。全量和独立 CLI 回归分开分析，不能把同一用例的 skip 与另一次执行混为一条。安装耗时从 CI 步骤读取，不包含在 pytest 的模块累计时间里。被硬超时终止的运行可能只留下 `complete: false` 的初始清单，甚至来不及上传，不能按零耗时计算。
+
+Use complete, successful profiles with comparable platforms, phases and environments for normal timing analysis. Retain failed/incomplete samples for diagnosis, never as speedup evidence. Analyze the main suite and dedicated CLI run separately; do not conflate a skip in one with execution in the other. Installation time comes from CI steps, outside pytest module totals. Hard timeouts may leave only an incomplete inventory or prevent upload entirely; missing measurements are never zero-time results.
+
 CI 层 mark 在 `pyproject.toml` 注册为 `ready`、`merge`、`nightly`。它们与 `requires_ffmpeg`、`requires_posix` 能力门禁不同；目录名不是 mark，浏览器 lane 仍只由 manifest 定义。每个用例至多属于一个 CI 层；模块级 mark 与函数级 mark 会累加，不能用函数 mark 覆盖模块 mark。
 
 CI-layer marks are registered in `pyproject.toml`: `ready`, `merge`, `nightly`. They are separate from capability gates such as `requires_ffmpeg` and `requires_posix`. Directories are not marks; browser lanes remain owned by the manifest. Assign at most one CI layer per test: function marks accumulate with module marks rather than replacing them.
