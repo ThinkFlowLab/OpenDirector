@@ -1,6 +1,11 @@
 {
   "scripts": [
     {
+      "file": "image_quality_test.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"]
+    },
+    {
       "file": "kling_video.mjs",
       "lanes": ["extendedFixture"],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."

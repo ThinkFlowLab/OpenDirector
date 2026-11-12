@@ -1,6 +1,7 @@
 import {
   backendModel,
   serviceAudioSettings,
+  serviceImageSettings,
   type ModelConfig,
 } from "../backend/rules.ts";
 import { copyGenerationSettings } from "./dataBoundary.ts";
@@ -73,5 +74,7 @@ export function getNodeGenerationSettings(
     resolveGenerationModel(next, mode, models),
   );
   const config = backendModel(resolved, models);
-  return config ? serviceAudioSettings(resolved, config) : resolved;
+  return config
+    ? serviceImageSettings(serviceAudioSettings(resolved, config), config)
+    : resolved;
 }

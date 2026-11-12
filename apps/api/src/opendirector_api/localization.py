@@ -12,6 +12,7 @@ from opendirector.domain.timeline_errors import timeline_error_message
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
+    'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
     'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',

@@ -47,6 +47,12 @@ export const generation = {
 
   "generation.field.ratio": "Aspect ratio",
   "generation.field.resolution": "Resolution",
+  "generation.field.quality": "Quality",
+  "generation.field.qualityAria": "Image quality {value}",
+  "generation.quality.auto": "Auto",
+  "generation.quality.low": "Low",
+  "generation.quality.medium": "Medium",
+  "generation.quality.high": "High",
   "generation.field.count": "Count",
   "generation.field.audio": "Generate audio",
   "generation.field.audioPending": "Request audio (service support unconfirmed)",

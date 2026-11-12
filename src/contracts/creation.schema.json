@@ -3477,6 +3477,7 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -6116,6 +6117,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "description": "Effective image dimensions sent to the provider.",
             "title": "Size",
@@ -6498,6 +6511,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -6680,6 +6705,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -18656,6 +18703,7 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -21410,6 +21458,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "description": "Effective image dimensions sent to the provider.",
             "title": "Size",
@@ -21811,6 +21871,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -22000,6 +22072,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],

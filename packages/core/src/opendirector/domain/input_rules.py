@@ -118,7 +118,8 @@ def _adapter_rules(config):
         # documented text-to-image plus reference editing with at
         # most 16 images, each under 25 MB and under 50 MB for the whole request.
         rules.update(profile='openai-gpt-image', allowedKinds=['text', 'image'], maxImages=16,
-                     imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024)
+                     imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024,
+                     imageQualities=['auto', 'low', 'medium', 'high'])
     if kind == 'audio':
         # vLLM-Omni music models (MiniMax Music 3, YuE2) share /audio/speech with
         # TTS but read a style caption and lyrics, so the protocol names the role.

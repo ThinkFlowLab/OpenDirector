@@ -93,6 +93,10 @@ function HistoricalOptions({
   switch (spec.kind) {
     case "image":
       summary = `${auto(spec.parameters.aspectRatio)} · ${auto(spec.parameters.size)} · ${t("canvasNodes.versionComposer.oneImage")}`;
+      if (frozen.model.inputRules?.imageQualities?.length || spec.parameters.quality)
+        summary += ` · ${t("generation.field.qualityAria", {
+          value: t(`generation.quality.${spec.parameters.quality ?? "auto"}`),
+        })}`;
       mode =
         spec.parameters.preset === "product-views"
           ? t("canvasNodes.versionComposer.productViews")

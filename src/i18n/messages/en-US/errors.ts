@@ -1,4 +1,5 @@
 export const errors = {
+  "errors.rules.imageQualityUnsupported": "The selected model does not support this image quality. Choose Auto or another model.",
   "errors.generationFailure.policy": "The provider rejected the prompt or reference images under its content policy. Adjust the input before generating again.",
   "errors.archive.identityConflict":
     "One logical timeline resource refers to conflicting files or metadata.",

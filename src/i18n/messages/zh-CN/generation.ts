@@ -44,6 +44,12 @@ export const generation = {
 
   "generation.field.ratio": "比例",
   "generation.field.resolution": "分辨率",
+  "generation.field.quality": "质量",
+  "generation.field.qualityAria": "图片质量 {value}",
+  "generation.quality.auto": "自动",
+  "generation.quality.low": "低",
+  "generation.quality.medium": "中",
+  "generation.quality.high": "高",
   "generation.field.count": "数量",
   "generation.field.audio": "生成音频",
   "generation.field.audioPending": "请求包含音频（服务能力待确认）",

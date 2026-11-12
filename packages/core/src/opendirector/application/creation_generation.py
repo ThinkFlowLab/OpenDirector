@@ -159,6 +159,8 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
+            if input_rules(config)['profile'] == 'openai-gpt-image' and spec.parameters.quality != 'auto':
+                params['quality'] = spec.parameters.quality
             if input_rules(config)['profile'] == 'vllm-omni-image':
                 from opendirector.integrations.vllm_omni_image import SAMPLING
                 params.update(SAMPLING)
@@ -237,6 +239,7 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
+                quality=parameters.get('quality', 'auto'),
                 responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image'} else None,
                 outputFormat='png', watermark=parameters.get('watermark'),
                 numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))

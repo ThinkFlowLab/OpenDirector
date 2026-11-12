@@ -1,6 +1,7 @@
 import type { AssetRef, TimelineTextOverlay } from "../contracts/generated.ts";
 
 import type { VoiceSelection } from "../backend/voices.ts";
+import type { ImageParameters } from "../contracts/generated.ts";
 import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
@@ -74,6 +75,7 @@ export interface GenerationSettings {
   /** Music with a reference recording: cap the length at the recording's own (unset follows it). */
   durationFromReference?: boolean;
   imagePreset?: "none" | "product-views";
+  imageQuality?: ImageParameters["quality"];
   /** A model configured in the local API; catalog models leave it unset. */
   modelConfigId?: string;
 }
