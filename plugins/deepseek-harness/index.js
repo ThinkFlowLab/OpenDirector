@@ -182,7 +182,9 @@ export function apply(ctx, config) {
             const { signal } = request
             const value = params.has('job')
               ? await client.creationStatus(params.get('project'), params.get('job'), { signal })
-              : { models: await client.creationModels({ signal }) }
+              : params.has('reuse')
+                ? await client.creationTemplate(params.get('project'), params.get('reuse'), { signal })
+                : { models: await client.creationModels({ signal }) }
             return Response.json(value, { headers })
           } catch (error) {
             return new Response(null, { status: error instanceof InputError ? 400 : 502, headers })

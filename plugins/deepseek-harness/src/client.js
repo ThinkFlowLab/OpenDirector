@@ -47,6 +47,25 @@ function canRetryFailedJob(job) {
     && RETRYABLE_FAILURES.has(job.errorDetails?.category)
 }
 
+function creationSeed(snapshot, resultId, model) {
+  const result = snapshot.results.find(item => item.id === resultId)
+  const job = snapshot.jobs.find(item => item.id === result?.jobId)
+  const spec = job?.inputSnapshot?.spec
+  if (!spec || job.status !== 'succeeded' || !['image', 'audio'].includes(spec.kind)
+    || spec.kind !== model?.kind || spec.modelConfigId !== model.id
+    || job.inputSnapshot.model.modelId !== model.modelId
+    || job.inputSnapshot.model.protocol !== model.protocol) throw new InputError('creation.template_unavailable')
+  const references = job.inputSnapshot.references ?? []
+  if (spec.promptContent != null || references.some(ref => ref.role !== 'reference'
+    || ref.documentVersion || ref.subjectRole || (ref.transmission && ref.transmission !== 'content'))) {
+    throw new InputError('creation.template_complex')
+  }
+  if (spec.kind === 'image' && references.filter(ref => ref.asset.kind === 'image').length > model.maxImages) {
+    throw new InputError('creation.reference_limit')
+  }
+  return { spec, references }
+}
+
 function resultReference(input) {
   if (input.sourceResultId === undefined) return undefined
   const resultId = requireUuid(input.sourceResultId, 'sourceResultId')
@@ -336,14 +355,30 @@ export class OpenDirectorClient {
     return models.filter(model => (model.kind === 'image' && model.protocol !== 'vllm_omni_segmentation')
       || (model.kind === 'audio' && !['vllm_omni_music', 'vllm_omni_score'].includes(model.protocol))
       || (model.kind === 'video' && Object.keys(videoChoices(model.inputRules)).length > 0))
-      .map(({ id, kind, modelId, connectionType, inputRules }) => ({
-        id, kind, modelId, connectionType,
+      .map(({ id, kind, modelId, protocol, connectionType, inputRules }) => ({
+        id, kind, modelId, protocol, connectionType,
         imageOutputs: inputRules?.imageOutputs ?? [],
         maxImages: inputRules?.allowedKinds?.includes('image') ? (inputRules.maxImages ?? 0) : 0,
         voiceRequired: inputRules?.voiceRequired === true,
         maxPromptCharacters: inputRules?.maxPromptCharacters,
         ...(kind === 'video' && { videoChoices: videoChoices(inputRules) }),
       }))
+  }
+
+  async creationTemplate(projectId, resultId, { signal } = {}) {
+    const project = requireUuid(projectId, 'projectId')
+    const id = requireUuid(resultId, 'resultId')
+    const [snapshot, models] = await Promise.all([this.project(project, { signal }), this.creationModels({ signal })])
+    const jobId = snapshot.results.find(item => item.id === id)?.jobId
+    const spec = snapshot.jobs.find(job => job.id === jobId)?.inputSnapshot?.spec
+    const model = models.find(item => item.id === spec?.modelConfigId)
+    const seed = creationSeed(snapshot, id, model)
+    return {
+      kind: seed.spec.kind, modelConfigId: seed.spec.modelConfigId, prompt: seed.spec.prompt,
+      voice: seed.spec.parameters.voice ?? '',
+      originalOutput: [seed.spec.parameters.size, seed.spec.parameters.aspectRatio].filter(Boolean).join(' · '),
+      references: seed.references.map(({ asset, metadata }) => ({ assetId: asset.assetId, kind: asset.kind, details: mediaDetails(metadata) })),
+    }
   }
 
   async media(projectId, assetId, { kind, original, range, signal } = {}) {
@@ -500,6 +535,10 @@ export class OpenDirectorClient {
     if (!Array.isArray(values) || (input.sourceResultIds != null && input.sourceResultId != null)) {
       throw new InputError('creation.references')
     }
+    const reuseResultId = input.reuseResultId == null ? null : requireUuid(input.reuseResultId, 'reuseResultId')
+    if (reuseResultId && (values.length || input.projectName != null || model.kind === 'video')) {
+      throw new InputError('creation.template_unavailable')
+    }
     const isVideo = model.kind === 'video'
     const video = isVideo && Object.hasOwn(model.videoChoices, input.videoMode) && model.videoChoices[input.videoMode]
     if (isVideo && !video) throw new InputError('creation.video_mode')
@@ -513,7 +552,8 @@ export class OpenDirectorClient {
     const videoSource = isVideo && resultReference({
       kind: 'video', sourceResultId: sourceIds[0], parameters: { videoMode: input.videoMode },
     })
-    if (model.kind === 'image') {
+    if (reuseResultId && (model.kind === 'audio' || input.output == null)) parameters = {}
+    else if (model.kind === 'image') {
       const output = input.output == null ? model.imageOutputs[0]
         : model.imageOutputs.find(item => item.size === input.output.size && item.aspectRatio === input.output.aspectRatio)
       if (!output && (input.output != null || model.imageOutputs.length)) throw new InputError('creation.output')
@@ -544,13 +584,29 @@ export class OpenDirectorClient {
           ...(receipt.status === 'rejected' && { draftSaved: true }) }
           : { status: 'unknown', draftSaved: true }
       }
-      const references = sourceIds.map((id, order) => {
+      const seed = reuseResultId ? creationSeed(snapshot, reuseResultId, model) : null
+      let references = sourceIds.map((id, order) => {
         const source = snapshot.results.find(result => result.id === id)?.asset
         if (source?.kind !== (videoSource?.kind ?? 'image')) {
           throw new InputError(isVideo ? 'creation.video_source' : 'result.candidate_missing')
         }
         return { binding: 'pinned', role: videoSource?.role ?? 'reference', order, source }
       })
+      if (seed) {
+        if (model.kind === 'audio' && input.voice != null && input.voice !== (seed.spec.parameters.voice ?? '')) {
+          throw new InputError('creation.template_unavailable')
+        }
+        const inherited = { ...seed.spec.parameters }
+        if (model.kind === 'image' && input.output != null) {
+          delete inherited.size
+          delete inherited.aspectRatio
+        }
+        parameters = { ...inherited, ...parameters }
+        references = seed.references.map((ref, order) => ({
+          binding: 'pinned', role: ref.role, order, source: ref.asset,
+          ...(ref.sourceVersion && { sourceVersion: ref.sourceVersion }),
+        }))
+      }
       if (new Set(references.map(reference => reference.source.assetId)).size !== references.length) {
         throw new InputError('creation.references')
       }

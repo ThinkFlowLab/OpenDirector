@@ -26,6 +26,10 @@ window.__ModuleLoader__.load({
       tasks: 'Tasks', tasksEmpty: 'No generation tasks match these filters.', viewTask: 'View progress',
       taskProgress: 'Task progress', backgroundHint: 'Closing this dialog does not cancel the job. Find it under Resume project → Tasks.',
       cancelled: 'Cancelled', interrupted: 'Interrupted',
+      reuseSettings: 'Reuse settings', resetTemplate: 'Reset to this version', keepOriginalOutput: 'Keep original size',
+      reuseHint: 'Uses this version’s saved settings in a new node. Review the candidate before adopting.',
+      reuseReferences: 'References kept from this version', referenceMedia: 'Reference media',
+      reuseUnavailable: 'Could not reuse these settings. Open the canvas to check the model and references.',
       draftRestored: 'Unsubmitted draft restored.', clearDraft: 'Clear draft',
       modelUnavailable: 'The saved model is unavailable. Choose another model.',
       projectUnavailable: 'The saved project is unavailable. Choose another project.',
@@ -100,6 +104,10 @@ window.__ModuleLoader__.load({
       tasks: '任务', tasksEmpty: '没有符合筛选条件的生成任务。', viewTask: '查看进度',
       taskProgress: '任务进度', backgroundHint: '关闭弹窗不会取消任务，可从「继续工程 → 任务」找回。',
       cancelled: '已取消', interrupted: '已中断',
+      reuseSettings: '复用设置', resetTemplate: '恢复这版设置', keepOriginalOutput: '沿用原尺寸',
+      reuseHint: '沿用所选版本的设置，在同一工程的新节点中生成候选，审阅后再采用。',
+      reuseReferences: '沿用这版的参考素材', referenceMedia: '参考素材',
+      reuseUnavailable: '暂时无法复用这些设置，请在画布检查模型连接和参考素材。',
       draftRestored: '已恢复未提交的草稿。', clearDraft: '清空草稿',
       modelUnavailable: '草稿中的模型暂不可用，请重新选择。',
       projectUnavailable: '草稿中的工程暂不可用，请重新选择。',
@@ -171,6 +179,7 @@ window.__ModuleLoader__.load({
       ['result.candidate_missing', 'referencesChanged'],
       ['creation.video_mode', 'videoModeUnavailable'], ['creation.video_duration', 'durationUnavailable'],
       ['creation.video_source', 'videoSourceUnavailable'],
+      ['creation.template_unavailable', 'reuseUnavailable'], ['creation.template_complex', 'reuseUnavailable'],
     ])
     const generationMessages = new Map([
       ['quota', 'quota'], ['rate_limit', 'rateLimited'], ['authentication', 'credentialsRejected'],
@@ -435,14 +444,14 @@ window.__ModuleLoader__.load({
           page?.nextCursor && button(t('loadMore'), () => setAfter(page.nextCursor), { disabled: loading || full })))
     }
 
-    function GenerationDialog({ source, videoMode, existingJob, t, onClose }) {
+    function GenerationDialog({ source, videoMode, existingJob, templateOf, t, onClose }) {
       const dialog = useRef(null)
       const busy = useRef(false)
       const attempt = useRef(null)
       const [catalog, setCatalog] = useState(null)
-      const draftKey = source ? [videoMode ?? 'edit', source.projectId, source.resultId].join(':') : 'create'
+      const draftKey = templateOf ? ['reuse', templateOf.projectId, templateOf.resultId].join(':') : source ? [videoMode ?? 'edit', source.projectId, source.resultId].join(':') : 'create'
       const defaults = {
-        kind: videoMode ? 'video' : 'image', projectId: '', projectName: '', modelId: '',
+        kind: templateOf?.kind ?? (videoMode ? 'video' : 'image'), projectId: '', projectName: '', modelId: '',
         prompt: '', output: null, voice: '', durationSeconds: null,
       }
       const [saved] = useState(() => existingJob ? null : readMediaDraft(draftKey))
@@ -459,7 +468,7 @@ window.__ModuleLoader__.load({
           && typeof item.resultId === 'string' && typeof item.assetId === 'string' && item.resultId !== source.resultId) : [])] : [])
       const fromResult = Boolean(source)
       const continuation = videoMode === 'continuation'
-      const title = t(existingJob ? 'taskProgress' : continuation ? 'continue' : videoMode ? 'firstFrame' : fromResult ? 'edit' : 'create')
+      const title = t(existingJob ? 'taskProgress' : templateOf ? 'reuseSettings' : continuation ? 'continue' : videoMode ? 'firstFrame' : fromResult ? 'edit' : 'create')
       const choices = catalog?.models.filter(model => model.kind === form.kind
         && (videoMode ? model.videoChoices?.[videoMode] : !source || model.maxImages > 0))
       const model = choices?.find(item => item.id === form.modelId)
@@ -477,10 +486,12 @@ window.__ModuleLoader__.load({
       const projectId = result?.projectId
       const unknown = result?.status === 'unknown'
       const locked = submitting || unknown || Boolean(jobId) || result?.draftSaved === true
-      const dirty = form.kind !== defaults.kind || Boolean(form.projectId || form.projectName || form.modelId
-        || form.prompt || form.output || form.voice || form.durationSeconds !== null
-        || references.length > (source && !videoMode ? 1 : 0))
-      const projectUnavailable = !source && catalog && !catalog.error && form.projectId && form.projectId !== 'new'
+      const draftBase = catalog?.template ? { ...defaults, projectId: templateOf.projectId,
+        kind: catalog.template.kind, modelId: catalog.template.modelConfigId,
+        prompt: catalog.template.prompt, voice: catalog.template.voice } : defaults
+      const dirty = Object.keys(defaults).some(key => form[key] !== draftBase[key])
+        || references.length > (source && !videoMode ? 1 : 0)
+      const projectUnavailable = !source && !templateOf && catalog && !catalog.error && form.projectId && form.projectId !== 'new'
         && !catalog.projects.some(project => project.id === form.projectId)
       const modelUnavailable = catalog && !catalog.error && form.modelId && !model
       useEffect(() => {
@@ -488,7 +499,7 @@ window.__ModuleLoader__.load({
         saveMediaDraft(draftKey, !locked && dirty ? { form, references } : null)
       }, [draftKey, form, references, locked, existingJob, dirty])
       function clearDraft() {
-        setForm(defaults)
+        setForm(draftBase)
         setReferences(source && !videoMode ? [source] : [])
         setRestored(false)
         saveMediaDraft(draftKey, null)
@@ -505,18 +516,29 @@ window.__ModuleLoader__.load({
         if (existingJob) return
         const controller = new AbortController()
         Promise.all([
-          fromResult ? Promise.resolve({ projects: [] }) : readLibrary(null, controller.signal),
+          (fromResult || templateOf) ? Promise.resolve({ projects: [] }) : readLibrary(null, controller.signal),
           fetch('/api/opendirector/creation', { signal: controller.signal }).then(response => {
             if (!response.ok) throw new Error('Model catalog unavailable')
             return response.json()
           }),
-        ]).then(([projects, models]) => {
-          if (!controller.signal.aborted) setCatalog({ ...projects, ...models })
+          templateOf ? fetch('/api/opendirector/creation?' + new URLSearchParams({
+            project: templateOf.projectId, reuse: templateOf.resultId,
+          }), { signal: controller.signal }).then(response => {
+            if (!response.ok) throw new Error('Saved settings unavailable')
+            return response.json()
+          }) : Promise.resolve(null),
+        ]).then(([projects, models, template]) => {
+          if (controller.signal.aborted) return
+          setCatalog({ ...projects, ...models, ...(template && { template }) })
+          if (template) setForm(previous => ({ ...previous,
+            kind: template.kind, projectId: templateOf.projectId, modelId: template.modelConfigId,
+            ...(!saved && { prompt: template.prompt, voice: template.voice }),
+          }))
         }).catch(() => {
           if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
         })
         return () => controller.abort()
-      }, [fromResult, existingJob])
+      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId])
       useEffect(() => {
         if (!jobId) return
         const controller = new AbortController()
@@ -592,15 +614,16 @@ window.__ModuleLoader__.load({
         event.preventDefault()
         if (!unknown && (locked || outputUnavailable || durationUnavailable || projectUnavailable || modelUnavailable)) return
         send(() => {
-          const newProject = !source && form.projectId === 'new'
+          const newProject = !source && !templateOf && form.projectId === 'new'
           return {
-            projectId: source?.projectId ?? (newProject ? crypto.randomUUID() : form.projectId),
+            projectId: templateOf?.projectId ?? source?.projectId ?? (newProject ? crypto.randomUUID() : form.projectId),
             operationId: crypto.randomUUID(),
+            ...(templateOf && { reuseResultId: templateOf.resultId }),
             ...(videoMode ? { videoMode, sourceResultId: source.resultId, durationSeconds }
               : source && { sourceResultIds: references.map(item => item.resultId) }),
             ...(newProject && { projectName: form.projectName.trim() }),
             kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
-            output, voice: form.voice,
+            output: templateOf ? form.output : output, voice: form.voice,
           }
         })
       }
@@ -629,25 +652,25 @@ window.__ModuleLoader__.load({
         !existingJob && !catalog && h('p', { role: 'status' }, t('loading')),
         !existingJob && !locked && h('div', { style: row },
           restored && h('small', { role: 'status' }, t('draftRestored')),
-          dirty && button(t('clearDraft'), clearDraft)),
+          dirty && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
         projectUnavailable && h('p', { role: 'alert' }, t('projectUnavailable')),
         modelUnavailable && h('p', { role: 'alert' }, t('modelUnavailable')),
         existingJob && h('p', { style: { overflowWrap: 'anywhere' } }, existingJob.prompt),
-        catalog?.error && h('p', { role: 'alert' }, t('libraryError')),
+        catalog?.error && h('p', { role: 'alert' }, t(templateOf ? 'reuseUnavailable' : 'libraryError')),
         catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
-          !source && field('chooseProject', h('select', {
+          !source && !templateOf && field('chooseProject', h('select', {
             required: true, disabled: locked, value: form.projectId, onChange: event => update('projectId', event.target.value),
           }, h('option', { value: '' }, t('chooseProject')),
           ...catalog.projects.map(({ id, name }) => h('option', { key: id, value: id }, name)),
           h('option', { value: 'new' }, t('newProject')))),
-          !source && form.projectId === 'new' && field('projectName', h('input', {
+          !source && !templateOf && form.projectId === 'new' && field('projectName', h('input', {
             required: true, disabled: locked, value: form.projectName, onChange: event => update('projectName', event.target.value),
           })),
-          !source && field('mediaType', h('select', {
+          !source && !templateOf && field('mediaType', h('select', {
             disabled: locked, value: form.kind, onChange: event => update('kind', event.target.value),
           }, h('option', { value: 'image' }, t('picture')), h('option', { value: 'audio' }, t('speech')))),
           field('model', h('select', {
-            required: true, disabled: locked, value: form.modelId, onChange: event => update('modelId', event.target.value),
+            required: true, disabled: locked || Boolean(templateOf), value: form.modelId, onChange: event => update('modelId', event.target.value),
           }, h('option', { value: '' }, t('model')),
           ...choices.map(item => h('option', { key: item.id, value: item.id },
             `${item.modelId} · ${t(item.connectionType === 'self_hosted' ? 'local' : 'hosted')}`)))),
@@ -662,18 +685,26 @@ window.__ModuleLoader__.load({
           durationUnavailable && h('p', { role: 'alert' }, t('durationUnavailable')),
           durationUnavailable && video.durations.length === 0
             && button(t('useDefaultDuration'), () => update('durationSeconds', null), { disabled: locked }),
-          outputs.length > 0 && field('output', h('select', {
-            disabled: locked, value: outputUnavailable ? '' : outputIndex,
-            onChange: event => update('output', outputs[Number(event.target.value)]),
-          }, outputUnavailable && h('option', { value: '', disabled: true }, t('chooseOutput')),
+          (outputs.length > 0 || (templateOf && form.kind === 'image')) && field('output', h('select', {
+            disabled: locked, value: templateOf && form.output === null ? 'original' : outputUnavailable ? '' : outputIndex,
+            onChange: event => update('output', event.target.value === 'original' ? null : outputs[Number(event.target.value)]),
+          }, templateOf && h('option', { value: 'original' }, [t('keepOriginalOutput'), catalog.template.originalOutput].filter(Boolean).join(' · ')),
+          outputUnavailable && h('option', { value: '', disabled: true }, t('chooseOutput')),
           ...outputs.map(({ size, aspectRatio }, index) =>
             h('option', { key: index, value: index }, [size, aspectRatio].filter(Boolean).join(' · '))))),
           outputUnavailable && h('p', { role: 'alert' }, t('outputUnavailable').replace('{size}', form.output.size)),
-          outputUnavailable && outputs.length === 0 && button(t('useModelDefault'), () => update('output', null), { disabled: locked }),
+          outputUnavailable && outputs.length === 0 && button(t(templateOf ? 'keepOriginalOutput' : 'useModelDefault'), () => update('output', null), { disabled: locked }),
           form.kind === 'audio' && field('voice', h('input', {
-            required: model?.voiceRequired, disabled: locked, maxLength: 200, value: form.voice,
+            required: model?.voiceRequired, disabled: locked || Boolean(templateOf), maxLength: 200, value: form.voice,
             onChange: event => update('voice', event.target.value),
           })),
+          catalog.template && h('small', null, t('reuseHint')),
+          catalog.template?.references.length > 0 && h('section', { 'aria-label': t('reuseReferences') },
+            h('small', null, t('reuseReferences')),
+            h('div', { style: { display: 'grid', gap: '.5rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(10rem, 100%), 1fr))' } },
+              ...catalog.template.references.map((reference, index) => h(Preview, { ...reference,
+                key: index, projectId: templateOf.projectId, t, title: t('referenceMedia') + ' ' + (index + 1),
+              })))),
           candidates.length === 0 && sourcePreview,
           continuation && h('small', null, t('continuationHint')),
           source && !videoMode && h(ReferencePicker, { projectId: source.projectId, references, setReferences, limit: referenceLimit, locked, t }),
@@ -685,6 +716,7 @@ window.__ModuleLoader__.load({
           (!locked || submitting || unknown) && button(t(submitLabel),
             undefined, { type: 'submit', primary: true,
               disabled: submitting || (!unknown && (!model || projectUnavailable || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim())) })),
+        templateOf?.canvasUrl && catalog?.error && canvasLink(templateOf.canvasUrl, t),
         result?.status === 'rejected' && h('p', { role: 'alert' }, t(submissionMessages.get(result.code) ?? 'failedToSubmit')),
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
@@ -956,6 +988,7 @@ window.__ModuleLoader__.load({
       const adoptLabel = pending ? 'adopting' : selected ? 'selected'
         : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
       const actions = [
+        (image || audio) && { label: 'reuseSettings', run: () => setAction('reuse') },
         image && { label: 'edit', run: () => setAction('edit') },
         image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
         image && { label: 'firstFrame', run: () => setAction('first_frame') },
@@ -967,6 +1000,7 @@ window.__ModuleLoader__.load({
         { label: 'copyId', run: copyResult },
       ].filter(Boolean)
       return h('figure', {
+        'data-opendirector-result': resultId,
         onContextMenu: resultId ? contextMenu : undefined,
         style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' },
       },
@@ -977,6 +1011,7 @@ window.__ModuleLoader__.load({
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
+            (image || audio) && button(t('reuseSettings'), () => setAction('reuse'), { 'aria-haspopup': 'dialog' }),
             video && button(t('continue'), () => setAction('continuation'), { 'aria-haspopup': 'dialog' }),
             image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
             image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
@@ -994,7 +1029,9 @@ window.__ModuleLoader__.load({
           adoption.canvasUrl && !onAdopted && canvasLink(adoption.canvasUrl, t),
           status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)),
         action && h(GenerationDialog, {
-          source: { projectId, assetId, resultId, kind, details }, videoMode: action === 'edit' ? undefined : action,
+          source: action === 'reuse' ? undefined : { projectId, assetId, resultId, kind, details },
+          templateOf: action === 'reuse' ? { projectId, resultId, kind, canvasUrl } : undefined,
+          videoMode: ['edit', 'reuse'].includes(action) ? undefined : action,
           t, onClose: () => setAction(null),
         }),
         viewingOriginal && h(OriginalImageDialog, {
