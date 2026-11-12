@@ -94,6 +94,9 @@ jobs:
         env:
           PYTEST_MARK_EXPRESSION: ${{ inputs.python-mark-expression }}
         run: python -m pytest tests -q -ra -m "$PYTEST_MARK_EXPRESSION" --durations=50 --junitxml=test-results/python.xml --ci-profile=test-results/python.json
+      - name: Check full layer inventory / 核对完整分层清单
+        if: always() && steps.install.outcome == 'success' && inputs.python-mark-expression == ''
+        run: python scripts/ci/check_test_layers.py --profile test-results/python.json --require-executed
       - name: Bundled OpenCode model gateway regression
         if: always() && steps.install.outcome == 'success'
         timeout-minutes: 5

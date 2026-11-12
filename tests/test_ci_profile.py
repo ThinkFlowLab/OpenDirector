@@ -44,6 +44,7 @@ def test_records_failures_skips_durations_layers_and_identity(tmp_path):
     assert result.returncode == 1, result.stdout + result.stderr
     data = json.loads(path.read_text(encoding='utf-8'))
     assert data['complete'] is True and data['exit_status'] == 1
+    assert data['collection_complete'] is True and data['collected_count'] == 4
     assert data['metadata']['sha'] == 'a' * 40
     assert data['metadata']['platform']
     assert data['counts'] == {'passed': 2, 'failed': 1, 'skipped': 1}
@@ -66,6 +67,7 @@ def test_selection_is_preserved_and_unmarked_stays_in_ready(tmp_path):
     assert data['counts'] == {'passed': 2}
     assert data['unmarked'] == 1
     assert data['metadata']['selection'] == 'ready or (not merge and not nightly)'
+    assert data['deselected_count'] == 2
 
 
 def test_maxfail_does_not_claim_a_complete_measurement(tmp_path):
@@ -83,6 +85,7 @@ def test_collection_only_does_not_claim_execution(tmp_path):
     data = json.loads(path.read_text(encoding='utf-8'))
     assert data['complete'] is False
     assert data['counts'] == {'not_run': 4}
+    assert data['collection_complete'] is True and data['collected_count'] == 4
 
 
 def test_profile_is_opt_in_and_does_not_change_exit_status(tmp_path):

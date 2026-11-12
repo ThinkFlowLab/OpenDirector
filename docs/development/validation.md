@@ -97,6 +97,22 @@ python -m pytest tests -q -ra --durations=50 --junitxml=test-results/python.xml 
 
 First identify mandatory PR representatives for each critical capability, then review costly modules for broader merge coverage. Slowness alone does not justify moving a test, nor does flakiness justify removing essential regression coverage. Conflicting module/function layer marks appear as `conflict` in the report; profiling never rewrites marks or changes pytest selection.
 
+[`tests/ci_ready_contract.json`](../../tests/ci_ready_contract.json) 维护 PR 代表用例：命令重放与版本冲突、提交恢复、Agent 授权、素材范围、参考版本、生成采用、编辑锁、撤销重做、时间线发布、真实媒体校验和共享契约；浏览器另保留 MP4 导出 gate。这是最低保护清单，不等于其他未列出用例都可以移走，也不能代替完整 UI/Agent 或视频输出验收。
+
+[`tests/ci_ready_contract.json`](../../tests/ci_ready_contract.json) owns the minimum PR representatives for replay/conflicts, recovery, agent authorization, asset scope, reference versions, adoption, editing locks, undo/redo, timeline publication, actual media validation and shared contracts, plus browser MP4 export. It is a minimum floor, not permission to move every unlisted test or a substitute for complete UI/agent and output acceptance.
+
+```sh
+# Full collection only: verify selection accounting without claiming execution.
+python -m pytest tests --collect-only -qq --ci-profile=test-results/inventory.json
+python scripts/ci/check_test_layers.py --profile test-results/inventory.json
+# After a completed full run: also require all PR representatives to have passed.
+python scripts/ci/check_test_layers.py --profile test-results/python.json --require-executed
+```
+
+分层核对要求完整、无 `-m` / `-k` 的 `tests/` 清单，校验所有 ID 唯一、三层无重叠且未标记归 ready、每项代表仍存在且属于 ready，并核对导出脚本仍在浏览器 gate。只有要求执行证据时才把代表用例的 skip / 未执行判为失败。当前 CI 对默认全量调用运行该核对；后续切换子集时必须保留独立的完整收集核对，不能拿子集清单证明全量覆盖守恒。
+
+The audit requires a full tests/ inventory without `-m` or `-k`, rejects duplicate/missing IDs and overlapping marks, retains unmarked cases in ready, checks each representative and the export browser gate. Requiring execution evidence also rejects skipped/unexecuted representatives. CI audits the current full/default invocation; future subset activation must retain a separate full-collection audit rather than claim whole-suite conservation from a subset.
+
 只用 `complete: true`、`exit_status: 0` 且平台、运行阶段和环境可比的样本分析正常耗时；保留失败和不完整样本作诊断，不把它们当成提速证据。全量和独立 CLI 回归分开分析，不能把同一用例的 skip 与另一次执行混为一条。安装耗时从 CI 步骤读取，不包含在 pytest 的模块累计时间里。被硬超时终止的运行可能只留下 `complete: false` 的初始清单，甚至来不及上传，不能按零耗时计算。
 
 Use complete, successful profiles with comparable platforms, phases and environments for normal timing analysis. Retain failed/incomplete samples for diagnosis, never as speedup evidence. Analyze the main suite and dedicated CLI run separately; do not conflate a skip in one with execution in the other. Installation time comes from CI steps, outside pytest module totals. Hard timeouts may leave only an incomplete inventory or prevent upload entirely; missing measurements are never zero-time results.

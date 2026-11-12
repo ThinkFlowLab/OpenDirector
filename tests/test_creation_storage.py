@@ -443,6 +443,7 @@ def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Commit signature caching requires POSIX change time')
+@pytest.mark.merge
 def test_long_history_is_validated_from_disk_only_once(projects, monkeypatch):
     # Each read validates the whole chain; a cache smaller than the history
     # would reparse every record on every read of a long project.

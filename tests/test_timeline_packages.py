@@ -243,6 +243,7 @@ def test_api_cli_package_roundtrip(project, tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.merge
 async def test_live_agent_gateway_package_roundtrip_scopes_files_without_large_json(project, tmp_path):
     import asyncio
     from opendirector.agent.context import RunContext

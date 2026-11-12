@@ -28,6 +28,8 @@ class Profile:
         self.destination = destination
         self.started = time.monotonic()
         self.collected = False
+        self.collected_count = 0
+        self.deselected_count = 0
         self.cases = {}
         sha = os.environ.get('GITHUB_SHA')
         if not sha:
@@ -43,11 +45,14 @@ class Profile:
             'job': os.environ.get('GITHUB_JOB'), 'platform': platform.system(),
             'python': platform.python_version(), 'pytest': pytest.__version__,
             'selection': config.option.markexpr,
+            'keyword': config.option.keyword, 'paths': config.args,
+            'ignore': config.option.ignore, 'ignore_glob': config.option.ignore_glob,
             'started_at': datetime.now(timezone.utc).isoformat(),
         }
         self.write(complete=False, exit_status=None)
 
     def pytest_collection_finish(self, session):
+        self.collected_count = len(session.items)
         for item in session.items:
             layers = sorted({mark.name for mark in item.iter_markers() if mark.name in LAYERS})
             self.cases[item.nodeid] = {
@@ -65,6 +70,9 @@ class Profile:
         if case is not None:
             case['durations'][report.when] = report.duration
             case['outcomes'][report.when] = report.outcome
+
+    def pytest_deselected(self, items):
+        self.deselected_count += len(items)
 
     def pytest_sessionfinish(self, session, exitstatus):
         complete = self.collected and int(exitstatus) in (0, 1)
@@ -85,6 +93,8 @@ class Profile:
         complete = complete and all(case['outcome'] != 'not_run' for case in cases)
         data = {
             'schema_version': 1, 'metadata': self.metadata, 'complete': complete,
+            'collection_complete': self.collected, 'collected_count': self.collected_count,
+            'deselected_count': self.deselected_count,
             'exit_status': exit_status, 'wall_seconds': time.monotonic() - self.started,
             'counts': dict(Counter(case['outcome'] for case in cases)),
             'layers': dict(Counter(case['effective_layer'] for case in cases)),
