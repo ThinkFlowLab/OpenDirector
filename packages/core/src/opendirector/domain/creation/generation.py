@@ -252,6 +252,9 @@ class ImageExecution(Contract):
     responseFormat: Literal['url', 'b64_json'] | None = Field(default=None, description='Provider response representation.')
     outputFormat: Literal['png'] = Field(default='png', description='Generated image encoding.')
     watermark: bool | None = Field(default=None, description='Whether provider watermarking is enabled.')
+    # Set only when the profile fixes diffusion sampling at acceptance (Z-Image-Turbo).
+    numInferenceSteps: PositiveInt | None = Field(default=None, exclude_if=lambda value: value is None, description='Diffusion sampling step count.')
+    guidanceScale: NonNegative | None = Field(default=None, exclude_if=lambda value: value is None, description='Diffusion guidance scale.')
 
 
 class AudioExecution(Contract):
@@ -268,6 +271,7 @@ class AudioExecution(Contract):
         default=None, exclude_if=lambda value: value is None, description='Maximum generated audio duration in seconds.')
     # Set when the piece follows a reference recording's transcribed score.
     scoreMode: Literal['melody', 'full'] | None = Field(default=None, exclude_if=lambda value: value is None, description='Whether reference music supplies melody or full accompaniment.')
+    seed: int | None = Field(default=None, strict=True, exclude_if=lambda value: value is None, description='Random seed fixed when the job was accepted.')
 
 
 class TextExecution(TextParameters):

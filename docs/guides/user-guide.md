@@ -4,6 +4,8 @@
 
 ## Connect models
 
+For external agent harnesses (Codex, OpenCode, Claude Code, DeepSeek Harness and JiuwenSwarm), OpenDirector checks the backend's `PATH` first, then common CLI installation directories. These include user bins, npm/nvm, Bun, Volta, Windows Scoop and Python Scripts, and macOS Homebrew and user Python bins. It also checks Codex desktop installs, OpenCode's `.opencode/bin`, Claude's `.claude/local`, and configured npm, pipx and uv bin directories. It checks known directories without scanning the whole disk. Finding a CLI does not establish authentication or configuration readiness. For other locations, add the CLI directory to the backend's `PATH` and restart the backend. The Default agent continues to use the bundled OpenCode.
+
 Click the gear at the bottom left to open **Settings**, then open **Model connections**. Add models for chat, image, video, or audio generation as needed.
 
 For optional Kling 4.0 and Flash video generation, follow [Generate videos with Kling](kling-video.md). Both support text, first-frame, and image-reference generation. Standard Kling 4.0 also supports first-and-last frames. Adding the service preserves your existing model selection.
@@ -35,7 +37,7 @@ For detailed video settings, see [Video model capability configuration (Chinese)
 
 Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
 
-To generate music, add an audio model with the **vLLM-Omni music** protocol, for example `m-a-p/YuE2-3B` or `MiniMaxAI/MiniMax-Music3` served by `vllm serve <model> --omni`. An audio node that uses it takes a style description as its prompt, optional lyrics (leave them empty for an instrumental piece) and a maximum length of 8–360 seconds; the model may end the piece earlier. Speech models keep reading the prompt aloud.
+To generate music, add an audio model with the **vLLM-Omni music** protocol, for example `m-a-p/YuE2-3B` or `MiniMaxAI/MiniMax-Music3` served by `vllm serve <model> --omni`. An audio node that uses it takes a style description as its prompt, optional lyrics (leave them empty for an instrumental piece) and a maximum length of 8–360 seconds; the model may end the piece earlier. Each generation draws its own seed, so generating again gives another take; the seed is kept with the job, and a job resumed after a restart renders the take it was accepted with. Speech models keep reading the prompt aloud.
 
 To make music from a reference recording, connect an audio node to a YuE2 music node and also add an audio model with the **vLLM-Omni score** protocol: SheetSage2 served by vLLM-Omni's `tools/sheetsage2_serve.py` (see its SheetSage2 recipe). The recording is first transcribed into a score, then YuE2 renders that score in the new style, following its melody only (the default) or its melody and chords. Lyrics work as without a reference: write them to the reference's phrasing, or leave them empty for an instrumental piece. This keeps the tune, not the original voice or sound. Without a connected recording, music is generated from text alone.
 

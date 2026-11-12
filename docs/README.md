@@ -15,11 +15,13 @@ This directory is the entry point for the repository's shared documentation. The
 | [Issue #87 Windows handoff](development/issue-87-windows-handoff.md) ([中文](development/issue-87-windows-handoff.zh-CN.md)) | Native ACL repair and final text acceptance | The shared checkpoint or native validation scope changes |
 | [Development lessons](development/lessons.md) | Risks identified from recent fixes | New evidence emerges or a lesson no longer applies |
 | [CI failure patterns](development/ci-failures.md) | Known timing-sensitive CI failures and how to tell flakes from regressions | A pattern is fixed, newly observed, or the watchlist changes |
+| [Release tags and daily cuts](development/release.md) | Public SemVer tags and the daily patch cut | The tag scheme, daily cut gate, or version-field set changes |
 | [UI performance design](development/ui-performance.md) | Interaction design principles, latency budgets, and measurement | A UI performance principle, target, or measurement method changes |
 | [macOS installation validation](development/macos-install-validation.md) | Installation and usage scenarios verified on Apple Silicon | The corresponding acceptance checks are repeated |
 | [Bilingual interface](development/i18n.md) | Language selection, message organization, and checks | Language policy, message structure, or checks change |
 | [Python installation and packaging](development/packaging.md) | Installation, platform wheel builds, and isolated verification | Packaging, resource paths, or build process changes |
 | [Business CLI](guides/cli.md) | Querying, editing, and generating through a terminal or Agent Shell | Commands, authorization, or receipt semantics change |
+| [DeepSeek Harness plugin](../plugins/deepseek-harness/README.md) | Installing the DSH bundle and editing an OpenDirector project from DSH | Plugin setup, tools, or creation workflows change |
 | [Video model capabilities](guides/video-model-capabilities.md) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
 | [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
 | [Kling video](guides/kling-video.md) ([中文](guides/kling-video.zh-CN.md)) | Optional Kling 4.0 and Flash setup, model-specific inputs, and recovery limits | Kling inputs, model declarations, or recovery behavior change |

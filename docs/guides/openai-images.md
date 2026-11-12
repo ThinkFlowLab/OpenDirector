@@ -26,6 +26,7 @@ OpenDirector 把 OpenAI Images API 作为**可选**图像生成服务接入。�
 - **不发送 `strength`**：`gpt-image` 是指令式编辑，没有强度参数。
 - 图片生成节点支持 `quality: low / medium / high`，同时适用于文生图与带参考图生成。默认 `auto` 不发送该字段，保持原请求行为。质量保存在生成规格和任务执行快照中，重开项目与恢复任务时仍使用已记录的值。Agent 通过相同生成参数设置质量；独立图片工具保持服务默认值。
 - **多张参考图**按 OpenAI 的约定以重复 `image[]` 部件提交，最多 16 张。
+- **Z-Image-Turbo 文生图额外发送 `num_inference_steps: 9` 和 `guidance_scale: 0`**：这是 vLLM-Omni 为这个少步蒸馏模型推荐的设置；不发送时 vLLM-Omni 会按 50 步、CFG 1.0 运行，慢约十倍。这两个值在任务被接受时固定，记入任务的执行记录（`numInferenceSteps`、`guidanceScale`），执行和恢复都按记录发送；升级前已接受、尚未执行的任务没有这两个值，仍按服务默认运行。编辑（`/images/edits`）暂不发送这两个字段：`strength` 决定从第几步开始去噪，步数变少会改变原图保留的程度；编辑关闭 CFG 后对指令的遵循程度尚未验证，暂保持服务默认。
 
 ## 支持的能力与限制
 

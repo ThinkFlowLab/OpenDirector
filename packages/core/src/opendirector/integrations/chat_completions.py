@@ -1,4 +1,4 @@
-"""Chat Completions streaming, including DeepSeek's thinking parameters."""
+"""Chat Completions streaming, including provider-specific thinking parameters."""
 
 import json
 from urllib.parse import urlsplit
@@ -14,8 +14,14 @@ from opendirector.integrations.generation_errors import checked, provider_failur
 def chat_payload(config: dict, messages: list[dict], thinking: str) -> dict:
     value = {"model": config["modelId"], "messages": messages, "stream": True, "max_tokens": 8192}
     thinking_map = {"auto": "high", "low": "low", "medium": "high", "high": "max"}
-    if urlsplit(config["url"]).hostname == "api.deepseek.com":
+    hostname = urlsplit(config["url"]).hostname
+    if hostname == "api.deepseek.com":
         value.update(thinking={"type": "enabled"}, reasoning_effort=thinking_map.get(thinking, thinking_map["auto"]))
+    elif hostname == "open.bigmodel.cn":
+        # GLM reasoning_effort accepts only low, high and max. Omit the parameter for
+        # auto so the provider default applies, and fall back to high for unknown levels.
+        if thinking != "auto":
+            value["reasoning_effort"] = thinking_map.get(thinking, thinking_map["auto"])
     elif thinking != "auto":
         value["reasoning_effort"] = thinking
     if len(json.dumps(value, ensure_ascii=False).encode()) > 48 * 1024 * 1024:

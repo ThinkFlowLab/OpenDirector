@@ -14,6 +14,7 @@ from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
 from opendirector.agent import cli_transport, deepseek
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
@@ -37,7 +38,7 @@ def executable(runtime: str) -> str | None:
                 return str(path)
         path = BUNDLED / 'bin' / ('opencode.exe' if os.name == 'nt' else 'opencode')
         return str(path) if path.is_file() else None
-    return shutil.which('dsh' if runtime == 'deepseek' else runtime)
+    return cli_executable('dsh' if runtime == 'deepseek' else runtime)
 
 
 _CODEX_ISOLATION: dict[str, tuple[str, ...]] = {}
@@ -102,6 +103,9 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
                 'skill': {'*': 'deny', **{item['name']: 'allow' for item in catalog}}},
             'mcp': {}}
         if bundled:
+            # OpenDirector owns conversation titles. The native title is unused
+            # and would submit a second paid model request on a fresh greeting.
+            config['agent']['title'] = {'disable': True}
             config['provider'] = {'opendirector': {'npm': '@ai-sdk/openai-compatible', 'name': 'OpenDirector',
                 'options': {'baseURL': model_url, 'apiKey': '{env:OPENDIRECTOR_MODEL_KEY}'},
                 'models': {model: {'name': model, 'modalities': {'input': input_modalities or ['text'], 'output': ['text']}}}}}
@@ -123,7 +127,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     else:
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
-        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.2'}))
+        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.3'}))
         skill_root = work / '.agents/skills'
         skill_root.mkdir(parents=True, exist_ok=True)
         unlink_directory(plugin / 'skills')

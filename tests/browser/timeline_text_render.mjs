@@ -78,6 +78,8 @@ try {
   await until(async () => (await fetch(base)).ok);
   browser = await launchBrowser();
   const page = await browser.newPage({ locale: "en-US" });
+  // Extended lane: dismiss the welcome even though this page stays on a fixture document.
+  await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
   page.setDefaultTimeout(180000);
   await page.route(base + "/text-render-fixture", (route) =>
     route.fulfill({

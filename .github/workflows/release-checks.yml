@@ -70,6 +70,12 @@ jobs:
       - name: Python tests
         if: always() && steps.install.outcome == 'success'
         run: python -m pytest tests -q -ra
+      - name: Bundled OpenCode model gateway regression
+        if: always() && steps.install.outcome == 'success'
+        timeout-minutes: 5
+        env:
+          OPENDIRECTOR_REAL_CLI: '1'
+        run: python -m pytest tests/test_native_runtime.py -k real_opencode -q -ra
       - name: Production build
         if: always() && steps.install.outcome == 'success'
         run: npm run build

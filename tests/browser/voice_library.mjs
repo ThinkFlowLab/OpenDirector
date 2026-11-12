@@ -11,6 +11,17 @@ const headers = {
   "X-OpenDirector-Request": "1",
   "Content-Type": "application/json",
 };
+// Reopening includes cold module loading, project recovery and asset fetching.
+// Keep ordinary interaction waits short, but budget this whole path explicitly.
+const reopenTimeout = 45000;
+// Optional deterministic slow-CI probe for the reopened asset request.
+const reopenDelay = Number(process.env.VOICE_REOPEN_DELAY_MS ?? 0);
+assert.ok(
+  Number.isFinite(reopenDelay) && reopenDelay >= 0 && reopenDelay < reopenTimeout,
+);
+async function waitForSaved(page, label) {
+  await page.getByText(label, { exact: true }).waitFor({ timeout: reopenTimeout });
+}
 const readTimeout = 15000;
 async function call(path, body, origin = api) {
   const response = await fetch(origin + path, {
@@ -34,16 +45,17 @@ async function reopenAudio(page, assetPath, savedLabel) {
   let receive, timer;
   const received = new Promise((resolve) => { receive = resolve; });
   const observe = (response) => {
-    if (new URL(response.url()).pathname !== assetPath) return;
+    if (new URL(response.url()).pathname !== assetPath ||
+        response.request().method() !== "GET") return;
     statuses.push(response.status());
-    if (response.ok()) receive(response);
+    receive(response);
   };
   page.on("response", observe);
   try {
     // Observe early responses, but give navigation its own deadline. A cold
     // document has not started the project's media read yet.
-    await page.reload({ timeout: 30000 });
-    await page.getByText(savedLabel, { exact: true }).waitFor();
+    await page.reload({ waitUntil: "domcontentloaded", timeout: reopenTimeout });
+    await waitForSaved(page, savedLabel);
     console.log(JSON.stringify({
       event: "voice-reopen-ready", assetPath, elapsedMs: Date.now() - started,
     }));
@@ -51,8 +63,8 @@ async function reopenAudio(page, assetPath, savedLabel) {
       received,
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(
-          `No successful reopened audio response; statuses=${JSON.stringify(statuses)}`,
-        )), readTimeout);
+          `No reopened audio response; statuses=${JSON.stringify(statuses)}`,
+        )), reopenTimeout);
       }),
     ]);
   } finally {
@@ -253,6 +265,14 @@ try {
       page.getByRole("button", { name: L.library, exact: true }).click();
     const dialog = () =>
       page.getByRole("dialog", { name: L.library, exact: true });
+    const assertSelectedVoice = async (expectedName) => {
+      const choices = dialog().locator(".cw-voice-name");
+      await choices.first().waitFor();
+      const pressed = choices.and(dialog().getByRole("button", { pressed: true }));
+      const unpressed = dialog().locator('.cw-voice-name[aria-pressed="false"]');
+      assert.deepEqual(await pressed.allTextContents(), expectedName ? [expectedName] : []);
+      assert.equal(await unpressed.count(), await choices.count() - (expectedName ? 1 : 0));
+    };
     const selectModel = async (config) => {
       await page.getByRole("combobox", { name: L.model, exact: true }).click();
       await page
@@ -265,8 +285,11 @@ try {
       );
     };
     try {
-      await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`);
-      await page.getByText(L.saved, { exact: true }).waitFor();
+      await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`, {
+        waitUntil: "domcontentloaded",
+        timeout: reopenTimeout,
+      });
+      await waitForSaved(page, L.saved);
       await page
         .getByRole("toolbar", { name: L.tools })
         .getByRole("button", { name: L.add, exact: true })
@@ -304,6 +327,7 @@ try {
       await dialog()
         .getByRole("button", { name: "Sample voice", exact: true })
         .waitFor();
+      await assertSelectedVoice(null);
       assert.equal(await dialog().getByRole("tab").count(), 3);
       assert.equal(
         await dialog()
@@ -497,8 +521,8 @@ try {
           .voiceId,
         "sample",
       );
-      await page.reload();
-      await page.getByText(L.saved, { exact: true }).waitFor();
+      await page.reload({ waitUntil: "domcontentloaded", timeout: reopenTimeout });
+      await waitForSaved(page, L.saved);
       await page.locator(".react-flow__node").first().click();
       assert.match(
         await page
@@ -548,11 +572,16 @@ try {
       await page.keyboard.press("Escape");
       await selectModel(normal);
       await open();
+      await dialog().getByRole("button", { name: "Sample voice", exact: true }).click();
+      await until(async () => (await params()).voiceSelection?.voiceId === "sample");
+      await open();
+      await assertSelectedVoice("Sample voice");
       await dialog()
         .getByRole("button", { name: createdName, exact: true })
         .click();
       await until(async () => (await params()).voice === vllmVoiceId);
       await open();
+      await assertSelectedVoice(createdName);
       await dialog().getByRole("tab", { name: L.mine, exact: true }).click();
       const entry = dialog()
         .locator(".cw-voice-entry")
@@ -827,7 +856,17 @@ try {
       });
 
       const assetPath = `/api/creation/projects/${id}/assets/${asset.id}/content`;
+      if (reopenDelay) {
+        await page.route((url) => url.pathname === assetPath, async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, reopenDelay));
+          await route.continue();
+        });
+      }
       const reopenedAudio = await reopenAudio(page, assetPath, L.saved);
+      assert.ok(
+        reopenedAudio.ok(),
+        `Reopened audio GET ${assetPath}: HTTP ${reopenedAudio.status()}`,
+      );
       assert.match(reopenedAudio.headers()["content-type"], /^audio\//);
       await page.locator(".react-flow__node").first().click();
       assert.ok(

@@ -1188,6 +1188,19 @@
             "default": null,
             "description": "Whether reference music supplies melody or full accompaniment.",
             "title": "Scoremode"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Random seed fixed when the job was accepted.",
+            "title": "Seed"
           }
         },
         "required": [
@@ -3485,6 +3498,9 @@
               "moss_image_size",
               "moss_image_reference",
               "moss_layout_reference",
+              "minimax_image_reference",
+              "minimax_image_count",
+              "minimax_image_bytes",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -6154,6 +6170,34 @@
             "default": null,
             "description": "Whether provider watermarking is enabled.",
             "title": "Watermark"
+          },
+          "numInferenceSteps": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion sampling step count.",
+            "title": "Numinferencesteps"
+          },
+          "guidanceScale": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion guidance scale.",
+            "title": "Guidancescale"
           }
         },
         "required": [
@@ -16302,6 +16346,19 @@
             "default": null,
             "description": "Whether reference music supplies melody or full accompaniment.",
             "title": "Scoremode"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Random seed fixed when the job was accepted.",
+            "title": "Seed"
           }
         },
         "required": [
@@ -18667,6 +18724,9 @@
               "moss_image_size",
               "moss_image_reference",
               "moss_layout_reference",
+              "minimax_image_reference",
+              "minimax_image_count",
+              "minimax_image_bytes",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -21451,6 +21511,34 @@
             "default": null,
             "description": "Whether provider watermarking is enabled.",
             "title": "Watermark"
+          },
+          "numInferenceSteps": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion sampling step count.",
+            "title": "Numinferencesteps"
+          },
+          "guidanceScale": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion guidance scale.",
+            "title": "Guidancescale"
           }
         },
         "required": [
