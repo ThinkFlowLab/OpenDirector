@@ -65,17 +65,21 @@ The range command checks committed changes from the merge base to HEAD, excludin
 
 Checks cover YAML/JSON/TOML and Python syntax, conflict markers, Python debug statements, file endings, mixed line endings, trailing whitespace and GitHub Actions workflow syntax. Markdown hard line breaks are preserved. actionlint disables optional shellcheck/pyflakes integrations to avoid extra platform toolchains. GPU/CUDA, Buildkite, model-specific checks, commit sign-off rewriting and repository-wide typing/style migrations are excluded.
 
-本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。PR 与 main push 的 Release checks 会安装 `requirements-static.txt` 并执行同一 pre-commit 配置：PR 检查 base 到测试用合并提交的差异，push 检查 before 到 HEAD 的差异。静态失败直接使现有必需 job 失败，并跳过后续依赖安装和测试，不只让另一个必需 job 显示 skipped。环境成功安装后的测试步骤仍独立报告结果。
+本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。PR 与 main push 的 Release checks 在独立 static job 中安装 `requirements-static.txt` 并执行同一配置。PR 检查 base 到测试用合并提交的差异，push 检查 before 到 HEAD 的差异；只有需要范围比较的 static checkout 拉取完整历史，其他 job 保持浅克隆。手动或首次 push 的全仓审计无需完整历史。
 
-Local hooks can be absent or bypassed and cannot prevent every PR from being created on GitHub. Release checks on PRs and main pushes installs `requirements-static.txt` and runs the same pre-commit configuration: PR base to the tested merge commit, or push before to HEAD. Static failures fail the existing required job and prevent subsequent application dependency installation and tests, rather than only skipping another required job. After a successful environment install, test steps still report independently.
+Local hooks can be absent or bypassed. PR and main Release checks run the same configuration in a separate static job. PRs compare base to tested merge HEAD; pushes compare before to HEAD. Only the static checkout needing a range comparison fetches full history; other jobs use shallow checkouts. Manual/initial-push full-file audits do not need full history.
 
-可复用工作流的 `static-checks` 输入默认关闭，由 `ci.yml` 开启；nightly 调用不新增重复静态检查。Release checks 的手动触发或没有有效 before SHA 的首次 push 执行全仓静态审计。CI 不提交自动修复；hook 修改文件即视为失败，贡献者在本地修复后重提。
+静态通过后并行运行 Python（导入、契约、全量 pytest、bundled OpenCode 回归）、前端/构建/wheel 和浏览器检查。浏览器 isolated、voice、assistant 分为三个独立 matrix job，`fail-fast: false`，一条失败不取消其余旅程。每个 runner 独立安装依赖，复用现有 pip/npm 缓存；这会增加 runner 分钟数，墙钟耗时改善须以实际 CI 为准。
 
-The reusable workflow's `static-checks` input defaults to false and is enabled by `ci.yml`; nightly does not gain a duplicate static pass. Manual Release checks and initial pushes without a valid before SHA run a repository-wide static audit. CI never commits automatic fixes: modified files fail the check and must be fixed locally.
+After static success, Python (imports, contracts, full pytest and bundled OpenCode), frontend/build/wheel and browser checks run in parallel. Browser isolated, voice and assistant journeys use separate matrix jobs with fail-fast disabled. Each runner installs its own dependencies using existing pip/npm caches. This increases runner minutes; wall-clock improvements require actual CI measurements.
 
-PR 的整个 Release checks job 上限为 15 分钟，包含环境准备、静态检查和测试；main、手动运行及 nightly gate-parity 保持 30 分钟。若 PR 出现较多超时，先按步骤耗时分析安装、测试与浏览器瓶颈，再决定后续优化或预算调整。
+最终 `checks` 汇总 job 保留现有必需检查名称，并始终读取各检查线结果；任何失败、取消、意外跳过或缺失回执均失败。只有调用方显式关闭静态检查时，static 的 skipped 才允许通过。静态失败不会启动重测试，但最终汇总仍失败，不能把依赖跳过误判为通过。
 
-The entire PR Release checks job has a 15-minute timeout, including setup, static checks and tests. Main, manual runs and nightly gate parity retain 30 minutes. If PR timeouts become frequent, inspect per-step timings for installation, test and browser bottlenecks before changing the budget.
+The final `checks` aggregate preserves the existing required-check name and always evaluates all lane results. Failure, cancellation, unexpected skips or missing receipts fail closed. A skipped static job is allowed only when the caller explicitly disabled static checks. Static failure prevents heavy test jobs from starting and still fails the aggregate.
+
+可复用工作流的 `static-checks` 默认关闭，由 `ci.yml` 开启；nightly 不新增重复静态检查。CI 不提交自动修复：hook 修改文件视为失败，需在本地修复。当前静态 job 上限 10 分钟，Python、前端和每个浏览器 job 各 30 分钟，汇总 job 5 分钟；这是各 job 的限额，不是整个工作流的总上限。当前仍跑全量，暂不采用 PR ready 子集的 15 分钟目标；待子集切换或并行运行有足够耗时证据后再收紧。
+
+The reusable workflow's `static-checks` defaults to false and is enabled by `ci.yml`; nightly adds no duplicate static pass. CI never commits automatic fixes. Static has a 10-minute timeout; Python, frontend and each browser job have 30 minutes; the aggregate has 5 minutes. These are per-job limits, not a workflow-wide deadline. Full suites still run, so the 15-minute PR-ready target is deferred until subset activation or sufficient timing evidence from parallel runs.
 
 ## Python 分层与迁移 / Python layers and transition
 
@@ -166,7 +170,7 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 ## Nightly 检查
 
-[`nightly.yml`](../../.github/workflows/nightly.yml) 在 `main` HEAD 上按 `0 18 * * *` UTC（次日凌晨 02:00 Asia/Shanghai）运行，支持 `workflow_dispatch` 手动触发；发布前可对候选 SHA 手动重跑同一套。它与 PR 门禁共用可复用的 [`release-checks.yml`](../../.github/workflows/release-checks.yml)（Release checks 唯一实现，PR 与 nightly 不允许出现第二份漂移副本）；其中各检查步骤相互独立，一条检查失败不会掩盖其余检查的结果。
+[`nightly.yml`](../../.github/workflows/nightly.yml) 在 `main` HEAD 上按 `0 18 * * *` UTC（次日凌晨 02:00 Asia/Shanghai）运行，支持 `workflow_dispatch` 手动触发；发布前可对候选 SHA 手动重跑同一套。它与 PR 门禁共用可复用的 [`release-checks.yml`](../../.github/workflows/release-checks.yml)（Release checks 唯一实现，PR 与 nightly 不允许出现第二份漂移副本）；静态门禁通过（或调用方明确关闭）后，各测试线独立运行；汇总 job 统一判断，不因一条测试线失败而隐藏其他测试线结果。
 
 ### 五级测试体系
 
@@ -174,8 +178,8 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 | 级别 | 范围与重点 | 频率 | 预算 | 实现 |
 | --- | --- | --- | --- | --- |
-| L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | 整个 job：PR ≤15 min，main ≤30 min | Release checks 中浏览器阶段之前的各检查步骤 |
-| L2 浏览器 E2E（模型替身） | 隔离服务与模型替身下的核心旅程：画布、参考、导出、助手、时间线 | 每个 PR；push 到 main | 与 L1 同一 job | Release checks 浏览器阶段（含 Assistant auxiliary panels 独立 fixture 阶段） |
+| L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | static ≤10 min；Python / 前端各 ≤30 min | Release checks 的 static、python、frontend 检查线 |
+| L2 浏览器 E2E（模型替身） | 隔离服务与模型替身下的核心旅程：画布、参考、导出、助手、时间线 | 每个 PR；push 到 main | 每个浏览器 job ≤30 min | Release checks browser matrix：isolated、voice、assistant |
 | L3 main HEAD 复核与扩展覆盖 | 与 L1+L2 相同门槛在 main HEAD 重跑（gate parity）；Python 套件失败分类与已知时序敏感用例观测（flake triage）；PR 门禁未覆盖的全部浏览器脚本（extended） | 每晚定时；发布前可手动触发 | gate parity 与 L1+L2 相同；extended ≤60 min | nightly 的 gate-parity、pytest-flake-triage、browser-extended |
 | L4 生产构建、性能与输出 | 以生产构建（`vite preview` 服务 `dist`）运行核心旅程；MP4 落盘后 ffprobe 校验时长、流与帧数；帧延迟、长任务诊断采样与 CPU profile。同一次 nightly 之后另跑固定可对比基准（存储微基准 + 复用上述采样） | 每晚定时；发布前对候选 SHA 手动触发 | production ≤45 min；perf ≤30 min；daily benchmark ≤30 min | nightly 的 browser-production、perf-outputs、daily-benchmark |
 | L5 稳定性与恢复（规划中） | 进程中断重启、工程重开恢复、长时运行稳定性；需要新的场景编写 | 每周；发布前 | 待定 | 未建设，作为后续工作跟踪 |

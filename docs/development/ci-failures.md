@@ -6,7 +6,8 @@
 
 - 先确认失败是否可复现于同一 SHA：对比该 commit 在同一分支上的近期运行结果；一个失败随后在同 SHA 上转绿，属于偶发信号，不属于该 PR 的回归。
 - Python 套件失败时查看 nightly flake triage 的分类：`flaky`（失败子集重跑通过）与 `fail`（重跑仍失败）含义不同；watchlist 用例的 3 次连跑结果给出波动率。
-- Release checks 的各检查步骤相互独立运行：任何一步失败都不会掩盖其余步骤的结果，判别时逐个步骤读取结论，而不是只看 job 整体红绿。
+- Release checks 先运行静态门禁，再并行运行 Python、前端/打包和三个浏览器旅程；测试线失败不取消其余测试线。最终 checks 汇总必须全部成功，只有明确关闭的 static 可 skipped。静态失败造成的下游 skipped 不是通过，判别时同时查看 static、各测试线和最终汇总。
+- Release checks runs the static gate first, followed by independent Python, frontend/package and three browser journeys. The final checks aggregate rejects failures, cancellations and unexpected skips; only an explicitly disabled static lane may be skipped.
 
 ## 已知时序敏感模式（2026-11 观测）
 
