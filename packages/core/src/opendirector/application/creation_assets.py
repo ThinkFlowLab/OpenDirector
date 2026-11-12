@@ -314,7 +314,9 @@ class CreationAssets:
                     source.thumbnail((480, 480))
                     image = ImageOps.exif_transpose(source).convert('RGBA')
                     output = BytesIO()
-                    image.save(output, format='WEBP', quality=80)
+                    # A non-RGB source profile cannot describe the converted RGB pixels.
+                    image.save(output, format='WEBP', quality=80,
+                        icc_profile=source.info.get('icc_profile') if source.mode in {'RGB', 'RGBA', 'P', 'PA'} else None)
                     value = output.getvalue()
             except (OSError, ValueError, EOFError, Image.DecompressionBombError):
                 raise ProjectError('无法读取图片素材。', 422, code='image_decode') from None

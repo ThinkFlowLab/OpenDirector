@@ -11,3 +11,7 @@
 | Right / 右 | [Jensen Huang (cropped) (2024)](https://commons.wikimedia.org/wiki/File:Jensen_Huang_(cropped)_(2024).jpg), © European Union, photographer Peter Dasilva / 欧盟，摄影 Peter Dasilva | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 
 The source images already include their published crops. No endorsement is implied. / 原图沿用发布时的裁剪；使用不表示权利人背书。
+
+`local-p3-canvas.png`, `local-p3-asset-preview.png` and `local-p3-version-history.png` are unaltered local test screenshots of the canvas, hover asset preview and version history. The camera original and its EXIF are not included.
+
+`local-p3-canvas.png`、`local-p3-asset-preview.png` 和 `local-p3-version-history.png` 是本地画布、悬浮资产预览与版本历史的原始测试截图，不包含相机原件及其 EXIF。

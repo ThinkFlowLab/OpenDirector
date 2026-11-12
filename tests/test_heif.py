@@ -6,7 +6,7 @@ import sys
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageCms
 import pytest
 
 from opendirector.application.creation_assets import CreationAssets
@@ -61,6 +61,41 @@ def test_heif_original_preview_orientation_and_reopen(storage, suffix, name):
         assert_portrait(display.content)
 
 
+@pytest.mark.parametrize('profiled', [False, True])
+@pytest.mark.parametrize('suffix', ['heic', 'heif'])
+@pytest.mark.parametrize('mode', ['RGB', 'L'])
+def test_heif_preview_profiles_match_original(storage, tmp_path, profiled, suffix, mode):
+    projects, pid, _ = storage
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes() if profiled else None
+    output = BytesIO()
+    Image.new(mode, (640, 400), 'red').save(output, 'HEIF', icc_profile=profile)
+    data = output.getvalue()
+    if suffix == 'heif':
+        data = data[:8] + b'mif1' + data[12:]
+    asset, _, _ = import_asset(storage, f'profile.{suffix}', data)
+    service = CreationAssets(projects)
+    with Image.open(BytesIO(data)) as original:
+        assert original.info.get('icc_profile') == profile
+    # Deliberately mismatched RGB metadata on grayscale pixels must not propagate.
+    expected_profile = profile if mode == 'RGB' else None
+    with TestClient(create_app(projects.local)) as client:
+        for route, size in [('browser-image', (640, 400)), ('thumbnail', (480, 300))]:
+            response = client.get(f'/api/creation/projects/{pid}/assets/{asset.id}/{route}',
+                headers={'X-OpenDirector-Request': '1'})
+            assert response.status_code == 200
+            with Image.open(BytesIO(response.content)) as image:
+                assert image.size == size
+                assert image.info.get('icc_profile') == expected_profile, route
+    agent_preview = service.preview(pid, asset.id, tmp_path / 'agent-preview')
+    for rendered in [Path(agent_preview['preview']['path']).read_bytes(),
+                     preview(asset.fingerprint, data, 'image')]:
+        with Image.open(BytesIO(rendered)) as image:
+            assert image.size == (480, 300)
+            assert image.info.get('icc_profile') == expected_profile
+    with service.open_media(pid, asset.id)[0] as original:
+        assert original.read() == data
+
+
 @pytest.mark.parametrize('locale', ['zh-CN', 'en-US'])
 @pytest.mark.parametrize('invalid', ['corrupt', 'pixels', 'sequence', 'multiple_images'])
 def test_invalid_image_upload_is_localized_and_does_not_publish(storage, locale, invalid):
@@ -109,8 +144,10 @@ def test_browser_image_revalidation_skips_decode_but_checks_original(storage, mo
         headers = {'X-OpenDirector-Request': '1'}
         display = client.get(path, headers=headers)
         assert display.status_code == 200
-        changed = client.get(path, headers={**headers, 'If-None-Match': '"stale"'})
+        old_etag = f'"browser-image-{asset.fingerprint}"'
+        changed = client.get(path, headers={**headers, 'If-None-Match': old_etag})
         assert changed.status_code == 200 and changed.content == display.content
+        assert changed.headers['etag'] != old_etag
         def forbidden_decode(*args):
             raise AssertionError('An unchanged image must not be decoded again')
         monkeypatch.setattr('opendirector.application.creation_assets.open_image', forbidden_decode, raising=False)
@@ -130,7 +167,7 @@ def test_non_heif_browser_image_is_rejected_even_with_matching_validator(storage
     with TestClient(create_app(projects.local)) as client:
         response = client.get(f'/api/creation/projects/{pid}/assets/{asset.id}/browser-image', headers={
             'X-OpenDirector-Request': '1', 'Accept-Language': locale,
-            'If-None-Match': f'"browser-image-{asset.fingerprint}"'})
+            'If-None-Match': f'"browser-image-v2-{asset.fingerprint}"'})
     assert response.status_code == 422
     assert ('does not support' if locale == 'en-US' else '不支持预览') in response.json()['detail']
 

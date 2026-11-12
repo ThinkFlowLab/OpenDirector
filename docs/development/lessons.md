@@ -22,6 +22,8 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 
 - **Upload acknowledgement follow-up:** Investigating [PR #287's camera sample](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5868923062) reproduced a failed preview being swallowed into a successfully saved empty generation item. Require a usable preview before completing a HEIF import, and assert the failure leaves the original registered without creating an empty item. Slow uploads also crossed the first save acknowledgement: default expansion and model display labels were mistaken for user edits. Compare effective settings while retaining actual content, model, frame-selection and lock conflicts; exercise upload into a newly created node and its reference composer before the first save finishes.
 
+- **Color profile follow-up:** [PR #287's P3 review](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5870014881) found that a correct full-size PNG did not prove correct thumbnails: the library JPEG and the asset/history WebP used separate encoders that both omitted ICC. Check every displayed rendition and the actual embedded profile, not only dimensions or successful decoding. Preserve RGB profiles through resizing, but do not attach a non-RGB source profile after converting its channels to RGB. / **颜色配置补充：** 同一素材的全尺寸 PNG 正确，并不能证明素材库 JPEG 和资产／版本历史 WebP 正确。逐条检查显示路径的实际 ICC；缩放保留 RGB 配置，转换通道后不能继续附带非 RGB 源配置。
+
 ## Baseline failures still need tracking
 
 - **Trigger:** A relevant test fails and comparison shows that it also fails on the baseline.

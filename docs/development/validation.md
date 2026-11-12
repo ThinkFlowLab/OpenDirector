@@ -278,6 +278,28 @@ Additional local manual test: three HEIC images imported into one canvas remain 
 
 ![Local HEIC test after refresh / 本地 HEIC 测试刷新后](images/heif-282/local-heic-test.png)
 
+HEIF 色彩配置回归 / HEIF color-profile regression:
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python -m pytest tests/test_heif.py tests/test_creation_assets.py tests/test_tool_tasks.py -q
+```
+
+2026-11-12 按 [P3 review](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5870014881) 复核发现两条独立路径丢失 ICC：素材库 JPEG，以及资产预览、版本历史和 Agent 预览使用的 WebP。修复后，`IMG_8066.HEIC` 的 536 字节 Display P3 配置在浏览器 PNG、WebP 和 JPEG 中均与原件完全相同。PNG 保持 3024×4032（14,103,756 字节）；360×480 WebP 为 43,812 字节，JPEG 为 51,744 字节。原件下载字节不变；浏览器 PNG 的 ETag 升级，旧预览缓存会重新获取，新缓存继续支持 304。新增用例覆盖带／不带配置的 HEIC、通用 HEIF 和灰度转换；125 项相关测试通过。灰度等非 RGB 像素转换后不继续附带原通道配置，这不是通用色彩空间归一化。
+
+The P3 review above exposed two independent ICC omissions: library JPEGs and the WebP used by asset previews, version history and Agent previews. After the fix, the sample's 536-byte Display P3 profile is byte-identical in browser PNG, WebP and JPEG. PNG remains 3024×4032 (14,103,756 bytes); 360×480 WebP is 43,812 bytes and JPEG is 51,744 bytes. Original downloads are unchanged; the browser PNG ETag is versioned so old renditions are refreshed while current ones retain 304 support. New cases cover profiled/unprofiled HEIC, generic HEIF and grayscale conversion; 125 focused tests passed. Profiles for non-RGB channels are not retained after RGB conversion; this is not general color-space normalization.
+
+本地可见 Chrome 测试：通过系统文件选择器上传同一张 `IMG_8066.HEIC`，再用“替换素材”重新上传以产生两个真实上传版本；核对画布、悬浮资产预览和版本历史。未调用模型生成。
+
+Local visible-Chrome test: upload `IMG_8066.HEIC` through the system file picker, then upload it again with Replace asset to produce two actual upload versions. Inspect the canvas, hover asset preview and version history. No model generation is involved.
+
+![Local canvas test / 本地画布测试](images/heif-282/local-p3-canvas.png)
+![Local asset preview test / 本地资产预览测试](images/heif-282/local-p3-asset-preview.png)
+![Local version history test / 本地版本历史测试](images/heif-282/local-p3-version-history.png)
+
+`browser-image` 同时供裁剪、蒙版和图像编辑读取原始像素尺寸，因此本次没有直接将长边限制为 2048；单独的显示缩略版本需要与编辑输入区分。首次全尺寸 PNG 传输仍约 14 MB。没有复验其他平台、HDR 准确性或完整 Python 测试集。
+
+`browser-image` also supplies the pixel dimensions for cropping, masks and image editing, so this patch does not impose a 2048-pixel limit on that shared route. A bounded display rendition must be separate from editing inputs. The first full-resolution PNG transfer remains about 14 MB. Other platforms, HDR accuracy and the full Python suite were not revalidated.
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh

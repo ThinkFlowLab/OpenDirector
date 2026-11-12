@@ -61,7 +61,7 @@ def _render(data: bytes, kind: str) -> bytes | None:
             output = BytesIO()
             background = Image.new('RGB', image.size, 'white')
             background.paste(image, mask=image.getchannel('A'))
-            background.save(output, 'JPEG', quality=80)
+            background.save(output, 'JPEG', quality=80, icc_profile=image.info.get('icc_profile'))
             return output.getvalue()
         except ProjectError:
             return None
