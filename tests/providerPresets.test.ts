@@ -113,6 +113,44 @@ test("a saved Zhipu agent connection reopens with its provider identity", () => 
   }
 });
 
+test("Atlas Cloud preset offers agent chat through the OpenAI-compatible gateway", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "atlascloud");
+  assert.ok(preset);
+  assert.equal(preset.name, "Atlas Cloud");
+  assert.equal(preset.url, "https://api.atlascloud.ai/v1");
+  assert.equal(preset.protocol, "openai");
+  assert.equal(preset.connectionType, "api");
+  assert.equal(preset.authMode, "bearer");
+  assert.deepEqual(preset.kinds, ["agent"]);
+  assert.equal(preset.modelsByKind, undefined);
+  assert.ok(providerOptions("agent").some((item) => item.id === "atlascloud"));
+  for (const kind of ["image", "video", "audio", "vision"] as const)
+    assert.ok(!providerOptions(kind).some((item) => item.id === "atlascloud"));
+});
+
+test("Atlas Cloud provider label is the same in both display languages", () => {
+  const previous = getActiveLocale();
+  try {
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("agent").find((item) => item.id === "atlascloud")?.name, "Atlas Cloud");
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
+});
+
+test("a saved Atlas Cloud agent connection reopens with its provider identity", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "atlascloud")!;
+  const model: ModelConfig = {
+    ...preset, id: "saved-atlascloud", kind: "agent", modelId: "deepseek-ai/deepseek-v4-flash",
+    url: `${preset.url}/`,
+    inputRules: { profile: "agent", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] },
+  };
+  assert.equal(providerPresetFor(model), "atlascloud");
+  assert.equal(providerPresetFor({ ...model, url: "https://other.test/v1" }), "custom");
+});
+
 test("a saved MOSS image connection reopens with its provider identity", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "moss");
   assert.ok(preset);

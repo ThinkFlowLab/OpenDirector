@@ -299,6 +299,15 @@ The Python cases check how the shared thinking levels map to GLM reasoning_effor
 
 The browser case checks both display languages for the provider list and names, canonical URL prefill, GLM model preselection without remote discovery, manual addition of other model IDs, the saved connection reuse hint, save and reopen, key privacy in public model responses, and the assistant agent picker listing and keeping the selected Zhipu model. The browser never contacts open.bigmodel.cn and the API key is always a fixture value. Real streaming conversations, tool call execution and thinking level effects additionally require valid Zhipu credentials. Keep the conversation transcript, tool receipts and screenshots as evidence.
 
+Atlas Cloud chat access uses the following checks. The preset has no fixed model list: the provider form discovers models from the gateway's public `/v1/models` endpoint, like the DeepSeek preset.
+
+```sh
+.venv/bin/python -m pytest tests/test_atlascloud.py -q
+node --test tests/providerPresets.test.ts
+```
+
+The Python cases check that only the high thinking level sends reasoning_effort. The gateway serves several model families and some reject low and medium with a 400, so the other levels use the model default. The Node cases check the preset shape, the label in both display languages and the saved connection identity. Neither calls api.atlascloud.ai. Real streaming and model discovery additionally require network access, and chat requires an Atlas Cloud API key; keep the discovered model count, the reply and the status codes as evidence.
+
 ### Voice library / 音色库
 
 The voice browser workflow uses a separate isolated fixture. It runs the real shared voice service, media probing, project storage and generation acceptance with mocked provider HTTP; it does not contact MOSS or a GPU service.

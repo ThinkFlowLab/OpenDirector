@@ -22,6 +22,11 @@ def chat_payload(config: dict, messages: list[dict], thinking: str) -> dict:
         # auto so the provider default applies, and fall back to high for unknown levels.
         if thinking != "auto":
             value["reasoning_effort"] = thinking_map.get(thinking, thinking_map["auto"])
+    elif hostname == "api.atlascloud.ai":
+        # The gateway fronts many model families and some (Qwen) reject low and medium
+        # with a 400. Only high is accepted everywhere, so other levels use the model default.
+        if thinking == "high":
+            value["reasoning_effort"] = "high"
     elif thinking != "auto":
         value["reasoning_effort"] = thinking
     if len(json.dumps(value, ensure_ascii=False).encode()) > 48 * 1024 * 1024:
