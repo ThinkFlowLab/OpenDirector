@@ -257,6 +257,30 @@ def test_failed_clone_still_deletes_the_uploaded_sample(message, code, status):
     assert deleted == ['/api/paas/v4/files/in-2.wav']
 
 
+def test_cleanup_failure_is_logged_and_never_hides_the_created_voice(caplog):
+    # A sample the provider refuses to delete must not fail the clone, but it
+    # must leave a trace: the file stays in the account until its owner acts.
+    value = config()
+    def handle(request):
+        if request.url.path.endswith('/files') and request.method == 'POST':
+            return httpx.Response(200, json={'id': 'in-3.wav'})
+        if request.method == 'DELETE':
+            return httpx.Response(500, json={'error': {'code': '1234', 'message': '内部错误'}})
+        if request.url.path.endswith('/voice/clone'):
+            return httpx.Response(200, json={'voice': CLONED})
+        return listing((CLONED, 'Alice'))
+    with caplog.at_level('WARNING', logger='opendirector.application.voice_library'):
+        record = library(value, handle).create(value['id'], wav(), filename='sample.wav', name='Alice')
+    assert record['voiceId'] == CLONED and record['source'] == 'uploaded'
+    warnings = [r for r in caplog.records if r.levelname == 'WARNING']
+    assert len(warnings) == 1, caplog.text
+    assert '语音样本清理未完成' in warnings[0].getMessage()
+    # The operator needs the provider's own classification to act on it.
+    assert 'voice_provider_error' in warnings[0].getMessage()
+    assert warnings[0].exc_info is not None, 'the cause must stay attached for diagnosis'
+    assert value['apiKey'] not in caplog.text
+
+
 @pytest.mark.parametrize('data,filename,code', [
     (wav(1), 'sample.wav', 'voice_duration'), (wav(31), 'sample.wav', 'voice_duration'),
     (wav(), 'sample.m4a', 'voice_format'), (b'not audio', 'sample.wav', 'voice_audio_invalid'),

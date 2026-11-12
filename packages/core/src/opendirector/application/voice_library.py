@@ -1,5 +1,6 @@
 """Shared voice registry operations for HTTP, Agent and generation acceptance."""
 import json
+import logging
 from pathlib import Path
 import tempfile
 from time import monotonic
@@ -13,6 +14,8 @@ from opendirector.domain.zhipu_speech import ZHIPU_CLONE_MODEL, ZHIPU_CLONE_PREV
 from opendirector.integrations.http_settings import auth_headers, public_target_sync, trust_environment
 from opendirector.integrations.volcengine import endpoint
 from opendirector.media.probe import probe_file
+
+logger = logging.getLogger(__name__)
 
 
 # Trusted internal callers may omit the scope. Public adapters always pass the
@@ -308,8 +311,14 @@ class VoiceLibrary:
             if text: payload['text'] = text
             value = self._request(config, 'POST', path='/voice/clone', json=payload)
         finally:
-            try: self._request(config, 'DELETE', '/' + quote(file_id, safe=''), path='/files')
-            except ProjectError: pass
+            try:
+                self._request(config, 'DELETE', '/' + quote(file_id, safe=''), path='/files')
+            except ProjectError as cleanup:
+                # The clone owns the outcome, so a failed cleanup must not replace it.
+                # Record it instead: the sample outlives the request and only the
+                # account holder can remove what is left behind.
+                logger.warning('语音样本清理未完成，上传文件可能遗留在服务商账户：%s（%s）',
+                               cleanup.code, cleanup.status, exc_info=True)
         voice = value.get('voice')
         if not valid_voice_name(voice): raise voice_error('voice_provider_protocol', 502)
         # Read back the registered entry for its preview locator and stable fields.
