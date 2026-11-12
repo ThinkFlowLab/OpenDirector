@@ -18,6 +18,7 @@ import { ModelCapabilityCard } from "./ModelCapabilityCard";
 import {
   PROVIDER_PRESETS,
   matchingConnections,
+  isBigModelConnection,
   providerPresetFor,
 } from "./providerPresets";
 import { CanvasIcon } from "./CanvasIcon";
@@ -159,7 +160,7 @@ export function ModelServiceForm({
   const hasSavedKey = Boolean(
     connection &&
     connection.authMode === "bearer" &&
-    connection.url === value.url.trim(),
+    (connection.url === value.url.trim() || (isBigModelConnection(connection) && isBigModelConnection(value))),
   );
   const canFetch = Boolean(
     value.url.trim() &&
@@ -306,28 +307,31 @@ export function ModelServiceForm({
   };
   const reuseConnection = (model: ModelConfig) => {
     setConnection(model);
-    setValue({
-      kind,
-      url: model.url,
-      modelId: model.modelId,
-      connectionType: model.connectionType,
-      inputModalities: model.inputModalities,
-      videoAdapter: model.videoAdapter,
-      videoCapabilities: model.videoCapabilities,
-      protocol: model.protocol ?? PROTOCOLS[kind][0][0],
-      authMode: model.authMode ?? "bearer",
-      proxyMode: model.proxyMode ?? "system",
-      apiKey: "",
-    });
     const peers = catalog.models.filter(
       (item) =>
         item.kind === kind &&
-        (model.providerId
-          ? item.providerId === model.providerId
-          : item.id === model.id),
+        (model.providerId ? item.providerId === model.providerId : item.id === model.id),
     );
-    setSelectedModels(peers.map((item) => item.modelId));
-    setModelIds(peers.map((item) => item.modelId));
+    const target = peers[0];
+    setValue({
+      ...value,
+      url: model.url,
+      modelId: target?.modelId ?? "",
+      connectionType: model.connectionType,
+      inputModalities: target?.inputModalities,
+      videoAdapter: target?.videoAdapter ?? "auto",
+      videoCapabilities: target?.videoCapabilities,
+      protocol: target?.protocol ?? value.protocol,
+      authMode: model.authMode ?? "bearer",
+      proxyMode: target?.proxyMode ?? model.proxyMode ?? "system",
+      apiKey: "",
+    });
+    const available = PROVIDER_PRESETS.find((preset) => preset.id === presetId)?.modelsByKind?.[kind] ?? [];
+    const selected = target ? peers.map((item) => item.modelId) : [...available];
+    setSelectedModels(selected);
+    setModelIds([...new Set([...selected, ...available])]);
+    setLoaded(false);
+    setDiscoveryError("");
     setModelOptions({});
     setModelErrors({});
     setResults({});
@@ -338,6 +342,7 @@ export function ModelServiceForm({
     catalog.models.find(
       (model) =>
         model.modelId === id &&
+        (model.kind === kind || (model.kind === "vision" && model.id === existing?.id)) &&
         connection &&
         (connection.providerId
           ? model.providerId === connection.providerId
@@ -399,6 +404,7 @@ export function ModelServiceForm({
                 {t("models.service.reuseConnection", {
                   model: model.modelId,
                 })}
+                {isBigModelConnection(model) && ` · ${(model.providerId ?? model.id).slice(0, 8)}`}
               </button>
             ))}
             <small>{t("models.service.reuseHint")}</small>
@@ -515,6 +521,13 @@ export function ModelServiceForm({
               {showKey ? t("models.service.hide") : t("models.service.show")}
             </button>
           </div>
+          {connection && isBigModelConnection(connection) && isBigModelConnection(value) && (
+            <p className="cw-model-note">
+              {t("models.service.sharedBigModelAccount", {
+                id: (connection.providerId ?? connection.id).slice(0, 8),
+              })}
+            </p>
+          )}
         </fieldset>
         {["minimax_video_v2", "kling_video"].includes(value.protocol) && (
           <p className="cw-model-note">{t("models.service.minimaxNote")}</p>

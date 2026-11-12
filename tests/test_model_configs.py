@@ -458,3 +458,102 @@ def test_batch_video_cards_keep_distinct_adapter_and_output_settings(api):
     first, second = response.json()
     assert first['videoCapabilities']['outputs'][0]['resolution'] == '540P'
     assert second['videoCapabilities'] is None and second['inputRules']['profile'] == 'vllm-omni-h3'
+
+
+def test_bigmodel_shared_account_keeps_categories_and_accounts_separate(api):
+    client, store = api
+    url = 'https://open.bigmodel.cn/api/paas/v4'
+    def batch(kind, models, key='', anchor=None, **opts):
+        return client.post('/api/model-configs/batch', json=payload(
+            kind, url=url, protocol='openai', authMode='bearer', connectionType='api',
+            modelIds=models, apiKey=key, configId=anchor, **opts))
+
+    # An older single-model account and an independent account on the same URL.
+    chat = client.post('/api/model-configs', json=payload(
+        'agent', url=url + '/', modelId='shared-name', apiKey='fixture-first', protocol='openai')).json()
+    other = batch('agent', ['shared-name'], 'fixture-second').json()[0]
+    response = batch('image', ['shared-name', 'image-two'], anchor=chat['id'])
+    assert response.status_code == 200, response.text
+    image, second_image = response.json()
+    assert image['id'] != chat['id']
+    assert image['providerId'] == second_image['providerId'] == chat['id']
+    audio = batch('audio', ['voice'], anchor=image['id']).json()[0]
+    other_image = batch('image', ['shared-name'], anchor=other['id']).json()[0]
+    path = store.state_dir / 'models.json'
+    assert path.read_text().count('fixture-first') == path.read_text().count('fixture-second') == 1
+    configs = ModelConfigs(store.repository)
+    assert configs.resolve(chat['id'], 'agent')['providerId'] == audio['providerId']
+    assert configs.resolve(audio['id'], 'audio')['apiKey'] == 'fixture-first'
+    assert configs.resolve(other_image['id'], 'image')['apiKey'] == 'fixture-second'
+
+    # Saving through a different category's anchor must reuse the destination ID.
+    edited = batch('image', ['image-two'], anchor=audio['id']).json()[0]
+    assert edited['id'] == second_image['id']
+    assert batch('audio', ['new-voice'], 'fixture-rotated', anchor=audio['id']).json()[0]['id'] == audio['id']
+    assert configs.resolve(chat['id'], 'agent')['apiKey'] == 'fixture-rotated'
+    assert configs.resolve(other['id'], 'agent')['apiKey'] == 'fixture-second'
+    assert client.delete('/api/model-services/' + edited['id']).status_code == 204
+    assert {item['id'] for item in configs.list()} == {chat['id'], audio['id'], other['id'], other_image['id']}
+    assert 'fixture-' not in client.get('/api/model-configs').text
+
+    before = path.read_bytes()
+    bad = client.post('/api/model-configs/batch', json=payload('image',
+        url='https://other.test/v4', protocol='openai', modelIds=['wrong'], configId=chat['id'], apiKey=''))
+    assert bad.status_code == 400
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('edit', ['batch', 'single'])
+def test_changing_shared_bigmodel_endpoint_moves_only_the_edited_category(api, edit):
+    client, store = api
+    url = 'https://open.bigmodel.cn/api/paas/v4'
+    chat = client.post('/api/model-configs/batch', json=payload(
+        'agent', url=url, protocol='openai', modelIds=['chat'])).json()[0]
+    images = client.post('/api/model-configs/batch', json=payload(
+        'image', url=url, protocol='openai', configId=chat['id'], apiKey='',
+        modelIds=['one', 'two'])).json()
+    configs = ModelConfigs(store.repository)
+    data = payload('image', url='https://another.example/v1', modelId='one', protocol='openai', apiKey='')
+    def update():
+        if edit == 'batch':
+            return client.post('/api/model-configs/batch', json={
+                **data, 'modelIds': ['one', 'two'], 'configId': images[0]['id']})
+        return client.patch('/api/model-configs/' + images[0]['id'], json=data)
+    before = configs.path.read_bytes()
+    assert update().status_code == 400
+    assert configs.path.read_bytes() == before
+    data['apiKey'] = 'fixture-new-endpoint'
+    assert update().status_code == 200
+    for row in images:
+        saved = configs.resolve(row['id'], 'image')
+        assert saved['url'] == data['url'] and saved['apiKey'] == 'fixture-new-endpoint'
+        assert saved['providerId'] != chat['providerId']
+    assert configs.resolve(chat['id'], 'agent')['apiKey'] == 'test-secret'
+    assert configs.resolve(chat['id'], 'agent')['url'] == url
+
+
+def test_bigmodel_batch_with_another_category_anchor_preserves_destination_proxy(api):
+    client, store = api
+    url = 'https://open.bigmodel.cn/api/paas/v4'
+    def batch(kind, models, **options):
+        response = client.post('/api/model-configs/batch', json=payload(
+            kind, url=url, protocol='openai', modelIds=models, **options))
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    anchor = batch('agent', ['chat'], proxyMode='system')[0]['id']
+    first = batch('image', ['one', 'two'], configId=anchor, apiKey='', proxyMode='direct')
+    updated = batch('image', ['one', 'two', 'three'], configId=anchor, apiKey='')
+    assert [item['id'] for item in updated[:2]] == [item['id'] for item in first]
+    assert [item['proxyMode'] for item in updated] == ['direct'] * 3
+    configs = ModelConfigs(store.repository)
+    assert configs.resolve(anchor, 'agent')['proxyMode'] == 'system'
+    assert [configs.resolve(item['id'], 'image')['proxyMode'] for item in updated] == ['direct'] * 3
+    # Version-1 files store proxyMode on each row, even when credentials are shared.
+    stored = json.loads(configs.path.read_text())
+    next(item for item in stored['models'] if item['id'] == first[1]['id'])['proxyMode'] = 'system'
+    configs.path.write_text(json.dumps(stored))
+    mixed = batch('image', ['one', 'two', 'three'], configId=anchor, apiKey='')
+    assert [item['proxyMode'] for item in mixed] == ['direct', 'system', 'direct']
+    assert [item['proxyMode'] for item in batch('image', ['one', 'two'], configId=anchor, apiKey='',
+                                              proxyMode='system')] == ['system', 'system']

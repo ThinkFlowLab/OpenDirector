@@ -1,6 +1,6 @@
 import { ModelSetup, modelSetupMissing, type SetupKind } from "./ModelSetup";
 import { ModelLogo } from "./ModelLogo";
-import { providerLabel } from "./providerPresets";
+import { isBigModelConnection, providerLabel } from "./providerPresets";
 import { useState } from "react";
 import { errorMessage } from "../backend/api.ts";
 import { MODEL_KINDS, type BackendModels } from "../backend/models.ts";
@@ -187,7 +187,8 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
                     </div>
                     <div className="cw-model-service-bottom">
                       <span>
-                        {providerLabel(model)}{" "}
+                        {providerLabel(model)}
+                        {isBigModelConnection(model) && ` · ${(model.providerId ?? model.id).slice(0, 8)}`}{" "}
                         ·{" "}
                         {model.authMode === "none"
                           ? t("models.service.noKey")

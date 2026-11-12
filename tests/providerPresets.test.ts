@@ -175,3 +175,16 @@ test("MiniMax H3 image preset exposes both models in both display languages", ()
     setActiveLocale(previous);
   }
 });
+
+test("BigModel connections are offered per account across categories", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu")!;
+  const account: ModelConfig = { ...preset, kind: "agent", modelId: "shared-model", id: "old-chat",
+    inputRules: { profile: "agent", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
+  const target = { ...preset, modelId: "image", kind: "image" as const, apiKey: "", url: preset.url + "/" };
+  const records: ModelConfig[] = [account, { ...account, id: "two", providerId: "other" },
+    { ...account, kind: "audio", providerId: "other", id: "speech" },
+    { ...account, id: "without-key", authMode: "none" },
+    { ...account, id: "custom", url: preset.url + "/other" }];
+  assert.deepEqual(matchingConnections(records, "image", target).map(item => item.id), ["old-chat", "two"]);
+  assert.deepEqual(matchingConnections(records, "image", { ...target, url: "https://models.example/v1" }), []);
+});

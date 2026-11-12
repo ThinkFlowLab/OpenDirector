@@ -122,6 +122,7 @@ export const models = {
   "models.service.existingConnections":
     "Connections with the same address",
   "models.service.reuseConnection": "Reuse saved connection · {model}",
+  "models.service.sharedBigModelAccount": "BigModel connection {id}. A replacement key applies to every category using this account.",
   "models.service.reuseHint":
     "Otherwise this will be saved as a separate connection.",
   "models.service.loadSupportedModels": "Load supported models",

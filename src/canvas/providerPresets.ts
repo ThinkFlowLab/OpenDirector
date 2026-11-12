@@ -64,6 +64,8 @@ export interface ProviderPreset {
   modelsByKind?: Partial<Record<ModelKind, readonly string[]>>;
 }
 
+const BIGMODEL_URL = "https://open.bigmodel.cn/api/paas/v4";
+
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "custom",
@@ -136,7 +138,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     logoOrganization: "zai-org",
     name: "智谱 BigModel",
     kinds: ["agent"],
-    url: "https://open.bigmodel.cn/api/paas/v4",
+    url: BIGMODEL_URL,
     protocol: "openai",
     connectionType: "api",
     authMode: "bearer",
@@ -264,17 +266,30 @@ export function providerLabel(model: ModelConfig) {
   );
 }
 
+export function isBigModelConnection(
+  model: Pick<ModelConfig, "kind" | "url" | "protocol" | "connectionType" | "authMode">,
+): boolean {
+  return (
+    model.url.replace(/\/+$/, "") === BIGMODEL_URL &&
+    model.connectionType === "api" && model.authMode === "bearer" &&
+    model.kind !== "vision" && model.protocol === (model.kind === "video" ? "bigmodel_video" : "openai")
+  );
+}
+
 export function matchingConnections(
   models: ModelConfig[],
   kind: ModelKind,
   value: ModelConfigInput,
 ): ModelConfig[] {
   const seen = new Set<string>();
+  const bigModel = isBigModelConnection(value);
   return models.filter((model) => {
     const id = model.providerId ?? model.id;
+    const compatible = bigModel
+      ? isBigModelConnection(model)
+      : model.kind === kind && model.protocol === value.protocol;
     if (
-      model.kind !== kind ||
-      model.protocol !== value.protocol ||
+      !compatible ||
       model.url.replace(/\/+$/, "") !== value.url.replace(/\/+$/, "") ||
       seen.has(id)
     )

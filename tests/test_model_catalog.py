@@ -17,7 +17,7 @@ class Store:
         self.existing = existing
         self.calls = []
 
-    def resolve(self, config_id, kind):
+    def resolve(self, config_id, kind, *, connection=None):
         self.calls.append((config_id, kind))
         if isinstance(self.existing, Exception):
             raise self.existing
@@ -216,3 +216,25 @@ def test_preferences_round_trip_through_the_settings_store(tmp_path):
     assert service.get() == {'removeWatermark': True}
     assert service.update({'removeWatermark': False}) == {'removeWatermark': False}
     assert Preferences(tmp_path).get() == {'removeWatermark': False}
+
+
+def test_bigmodel_probes_reuse_only_the_selected_saved_account(tmp_path, monkeypatch):
+    configs = ModelConfigs(tmp_path)
+    url = 'https://open.bigmodel.cn/api/paas/v4'
+    first, second = [configs.save_many('image', url + '/', ['image'], key, protocol='openai')[0]
+                     for key in ['fixture-first', 'fixture-second']]
+    calls, read = _reader([{'id': 'glm-test'}])
+    monkeypatch.setattr('opendirector.application.model_catalog.read_service_models', read)
+    tester = Scripted([{'type': 'delta', 'text': 'OK'}])
+    catalog = ModelCatalog(configs, tester)
+    before = configs.path.read_bytes()
+    assert asyncio.run(catalog.discover('audio', url, '', '', second['id'], protocol='openai')) == ['glm-test']
+    asyncio.run(catalog.test_agent(url, 'glm-test', '', first['id'], protocol='openai'))
+    assert calls[0]['apiKey'] == 'fixture-second'
+    assert tester.calls[0][0]['apiKey'] == 'fixture-first'
+    with pytest.raises(ProjectError):
+        asyncio.run(catalog.discover('audio', url + '/elsewhere', '', '', second['id'], protocol='openai'))
+    with pytest.raises(ProjectError):
+        configs.resolve(first['id'], 'agent')
+    assert len(calls) == 1
+    assert configs.path.read_bytes() == before

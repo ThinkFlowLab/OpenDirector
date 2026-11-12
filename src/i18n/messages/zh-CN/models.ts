@@ -100,6 +100,7 @@ export const models = {
   "models.service.advancedConnection": "高级连接设置",
   "models.service.existingConnections": "已有相同地址的连接",
   "models.service.reuseConnection": "复用已保存连接 · {model}",
+  "models.service.sharedBigModelAccount": "智谱 BigModel 连接 {id}。更换密钥会更新使用此账号的所有类别。",
   "models.service.reuseHint": "不复用则保存为独立连接。",
   "models.service.loadSupportedModels": "载入支持的模型",
   "models.service.minimaxNote":

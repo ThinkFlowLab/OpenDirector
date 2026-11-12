@@ -13,6 +13,8 @@ For optional Kling 4.0 and Flash video generation, follow [Generate videos with 
 3. For video models, check the adapter, supported modes, resolutions, and durations.
 4. Save the model, then select it in the generation panel or chat.
 
+For the mainland Zhipu BigModel endpoint, select **Reuse saved connection** when adding a supported model in another category. Match the short connection ID shown on its service card to choose the account. To add a separate account at the same address, enter its key as a new connection. Changing the selected models or removing the service affects only the current category. Replacing a shared key updates the categories using that account.
+
 Use the following guide to check the configuration fields:
 
 | Field | What to enter |
