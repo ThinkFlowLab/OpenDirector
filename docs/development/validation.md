@@ -125,6 +125,10 @@ node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选�
 
 等待异步保存时，不要用会改名的按钮判断编辑器是否关闭：保存中的按钮会变成 `Processing…` 或 `Applying…`，locator 匹配不到元素时 `waitFor({ state: "hidden" })` 立即满足，测试会在确认回执到达前继续，随后 reload 恢复未确认的草稿。改为等编辑器对话框 detach 或服务端回执出现；图层编辑器的这一等待封装在 [tests/browser/layerApply.mjs](../../tests/browser/layerApply.mjs)。
 
+保存标签可能仍属于上一次编辑；读取结果前应等待本次操作对应的服务端绑定、版本或字段值。运行 `node tests/browser/canvas_selection_history.mjs` 验证四类节点的选择、复制、删除与撤销，并检查文本 `AB` 的实际资产内容、自动保存合并和 `storage_busy` 使用相同命令重试。
+
+A saved label can still describe the preceding edit. Wait for the current operation's persisted binding, version or field value before reading its result. `node tests/browser/canvas_selection_history.mjs` checks selection, copy, deletion and undo for all four media kinds, the actual `AB` text asset, autosave coalescing and reuse of the same command when retrying `storage_busy`.
+
 AI 多会话检查使用同一隔离 API，但启动 `creation_server.py` 时额外传入 `--assistant-fixture`，再运行 `node tests/browser/assistant_sessions.mjs`。该检查通过真实 UI、接口与项目文件验证新建、历史搜索、切换、草稿和附件恢复、刷新、失败重试及输入撤销隔离；仅模型回复使用可暂停的替身，不调用真实模型。同一环境下运行 `node tests/browser/assistant_run_navigation.mjs`，验证回复进行中切换项目只断开当前视图：Agent 继续运行，返回后重新接入并收到完整回复，全程不调用停止接口；切走再返回后显式停止仍然有效。
 
 聊天与辅助面板共存检查运行 `node tests/browser/assistant_auxiliary_panels.mjs`，同样需要 `--assistant-fixture`。它通过真实界面切换中英文，在宽窄窗口和助手调整宽度后检查资产列表、生成历史的可操作性与聊天展开状态，并验证草稿、对话和执行中的回复／生成任务保持。可设置 `CREATION_SCREENSHOTS` 保存代表性截图。此检查会控制隔离服务的模型替身 gate，应与其他使用同一 gate 的浏览器用例顺序运行。
