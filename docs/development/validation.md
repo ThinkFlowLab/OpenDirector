@@ -65,9 +65,42 @@ The range command checks committed changes from the merge base to HEAD, excludin
 
 Checks cover YAML/JSON/TOML and Python syntax, conflict markers, Python debug statements, file endings, mixed line endings, trailing whitespace and GitHub Actions workflow syntax. Markdown hard line breaks are preserved. actionlint disables optional shellcheck/pyflakes integrations to avoid extra platform toolchains. GPU/CUDA, Buildkite, model-specific checks, commit sign-off rewriting and repository-wide typing/style migrations are excluded.
 
-本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。这是提前反馈入口，不替代现有 CI 或按风险选择的测试；本次只提供本地配置与使用约定，服务端复核、PR ready 分层与合并队列由 #273 后续任务接入。
+本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。PR 与 main push 的 Release checks 会安装 `requirements-static.txt` 并执行同一 pre-commit 配置：PR 检查 base 到测试用合并提交的差异，push 检查 before 到 HEAD 的差异。静态失败直接使现有必需 job 失败，并跳过后续依赖安装和测试，不只让另一个必需 job 显示 skipped。环境成功安装后的测试步骤仍独立报告结果。
 
-Local hooks can be absent or bypassed and cannot prevent every PR from being created on GitHub. They provide early feedback and do not replace existing CI or risk-based testing. This change supplies local configuration and instructions; server-side verification, PR ready selection and merge queue integration remain follow-up work under #273.
+Local hooks can be absent or bypassed and cannot prevent every PR from being created on GitHub. Release checks on PRs and main pushes installs `requirements-static.txt` and runs the same pre-commit configuration: PR base to the tested merge commit, or push before to HEAD. Static failures fail the existing required job and prevent subsequent application dependency installation and tests, rather than only skipping another required job. After a successful environment install, test steps still report independently.
+
+可复用工作流的 `static-checks` 输入默认关闭，由 `ci.yml` 开启；nightly 调用不新增重复静态检查。Release checks 的手动触发或没有有效 before SHA 的首次 push 执行全仓静态审计。CI 不提交自动修复；hook 修改文件即视为失败，贡献者在本地修复后重提。
+
+The reusable workflow's `static-checks` input defaults to false and is enabled by `ci.yml`; nightly does not gain a duplicate static pass. Manual Release checks and initial pushes without a valid before SHA run a repository-wide static audit. CI never commits automatic fixes: modified files fail the check and must be fixed locally.
+
+PR 的整个 Release checks job 上限为 15 分钟，包含环境准备、静态检查和测试；main、手动运行及 nightly gate-parity 保持 30 分钟。若 PR 出现较多超时，先按步骤耗时分析安装、测试与浏览器瓶颈，再决定后续优化或预算调整。
+
+The entire PR Release checks job has a 15-minute timeout, including setup, static checks and tests. Main, manual runs and nightly gate parity retain 30 minutes. If PR timeouts become frequent, inspect per-step timings for installation, test and browser bottlenecks before changing the budget.
+
+## Python 分层与迁移 / Python layers and transition
+
+CI 层 mark 在 `pyproject.toml` 注册为 `ready`、`merge`、`nightly`。它们与 `requires_ffmpeg`、`requires_posix` 能力门禁不同；目录名不是 mark，浏览器 lane 仍只由 manifest 定义。每个用例至多属于一个 CI 层；模块级 mark 与函数级 mark 会累加，不能用函数 mark 覆盖模块 mark。
+
+CI-layer marks are registered in `pyproject.toml`: `ready`, `merge`, `nightly`. They are separate from capability gates such as `requires_ffmpeg` and `requires_posix`. Directories are not marks; browser lanes remain owned by the manifest. Assign at most one CI layer per test: function marks accumulate with module marks rather than replacing them.
+
+`release-checks.yml` 接受 `python-mark-expression` 字符串，通过环境变量作为单个 `-m` 参数传给 pytest，不作为 shell 代码执行。默认空值保留全量；本阶段 PR、main 和 nightly 的调用均保持默认，尚未减少任何现有测试。后续必须在合并队列完整门禁可用后，才切换 PR 子集并移除 main 重跑。
+
+`release-checks.yml` accepts a `python-mark-expression` string, passed through an environment variable as a single pytest `-m` argument, never evaluated as shell code. Empty selects all tests; PR, main and nightly callers currently keep that default. No existing test coverage is removed. Switching PRs to a subset and removing main reruns requires a functioning full merge-queue gate first.
+
+```sh
+# Current default / 当前默认：full collection, existing skip gates still apply
+python -m pytest tests -q -ra -m ""
+# Future PR selection / 后续 PR 筛选：unmarked tests remain ready during migration
+python -m pytest tests -q -ra -m "ready or (not merge and not nightly)"
+# Future full pre-merge gate / 后续合并前完整门禁
+python -m pytest tests -q -ra -m "not nightly"
+# Future nightly-only selection / 后续 nightly 专属筛选
+python -m pytest tests -q -ra -m nightly
+```
+
+初始分类：CLI 安装发现的确定性测试为 ready；native runtime 子进程/网关集成为 merge；显式安装的 DeepSeek/JiuwenSwarm 引擎和媒体验收为 nightly，原有环境变量 skip 保留。bundled OpenCode 使用本地模拟模型的独立回归步骤继续运行，不因 mark 改变。其他未标记用例留在迁移 ready 子集中；watchlist 原样保留，不能从一个示例模块推断整个套件已完成分类。
+
+Initial classification: deterministic CLI discovery is ready; native-runtime subprocess/gateway integration is merge; opt-in installed DeepSeek/JiuwenSwarm engine and media acceptance is nightly, retaining existing environment skips. The dedicated bundled OpenCode regression against a local mock model remains unchanged regardless of marks. Unmarked cases stay in the transitional ready subset and the flake watchlist is unchanged; these initial modules do not establish completed suite-wide classification.
 
 ## 按风险选择验证
 
@@ -141,7 +174,7 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 | 级别 | 范围与重点 | 频率 | 预算 | 实现 |
 | --- | --- | --- | --- | --- |
-| L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | 整个 job ≤30 min | Release checks 中浏览器阶段之前的各检查步骤 |
+| L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | 整个 job：PR ≤15 min，main ≤30 min | Release checks 中浏览器阶段之前的各检查步骤 |
 | L2 浏览器 E2E（模型替身） | 隔离服务与模型替身下的核心旅程：画布、参考、导出、助手、时间线 | 每个 PR；push 到 main | 与 L1 同一 job | Release checks 浏览器阶段（含 Assistant auxiliary panels 独立 fixture 阶段） |
 | L3 main HEAD 复核与扩展覆盖 | 与 L1+L2 相同门槛在 main HEAD 重跑（gate parity）；Python 套件失败分类与已知时序敏感用例观测（flake triage）；PR 门禁未覆盖的全部浏览器脚本（extended） | 每晚定时；发布前可手动触发 | gate parity 与 L1+L2 相同；extended ≤60 min | nightly 的 gate-parity、pytest-flake-triage、browser-extended |
 | L4 生产构建、性能与输出 | 以生产构建（`vite preview` 服务 `dist`）运行核心旅程；MP4 落盘后 ffprobe 校验时长、流与帧数；帧延迟、长任务诊断采样与 CPU profile。同一次 nightly 之后另跑固定可对比基准（存储微基准 + 复用上述采样） | 每晚定时；发布前对候选 SHA 手动触发 | production ≤45 min；perf ≤30 min；daily benchmark ≤30 min | nightly 的 browser-production、perf-outputs、daily-benchmark |
