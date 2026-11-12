@@ -49,6 +49,8 @@ Default 将模型配置中的输入模态传入 bundled OpenCode。外部 harnes
 
 ## 运行生命周期
 
+Search citations keep their native markers in the original reply and trace. Completed Codex MCP web-search results supply validated source IDs, HTTP(S) URLs and titles through `sources` events; the conversation retains this metadata with the reply. The UI splits tool activities using raw text offsets before formatting prose citations as source links, and uses the same formatting for copying. Code examples remain literal. Missing sources and incomplete final markers have a localized fallback. For saved Codex replies without source metadata, queries derive it from the matching turn's project-local trace without rewriting the conversation; a bounded metadata cache is invalidated by trace modification time and size. Reading a trace never requests a model call.
+
 同一工程同时只接受一个回复运行。运行事件转换为回复正文和工具活动，保存到对应会话；原生事件与业务工具事件追加到 `agent-runs/<turn-id>.<runtime>.jsonl`。Default 使用 `opencode` 作为轨迹文件的 runtime 名称。
 
 Default 的模型网关在 `agent-runs/<turn-id>.model.jsonl` 记录实际转发的请求体，包括生效的系统消息、会话上下文、工具 Schema 与模型参数。请求 ID 关联上游 HTTP 状态、响应头等待耗时和传输错误。该文件仅供本地调试，创建权限为 `0600`，不记录 HTTP 鉴权头。回复片段、工具结果和 token 用量仍见原生轨迹。

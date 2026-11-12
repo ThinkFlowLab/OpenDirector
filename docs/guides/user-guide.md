@@ -110,6 +110,10 @@ Open **Generation history** at the top right to view task progress, results, and
 
 ## Chat with AI
 
+Codex web search citations appear as numbered source links when the search result supplies a matching source. Copying a reply keeps those links in Markdown. Saved replies can recover sources from their corresponding local run traces without changing the original text; if the trace or source is unavailable, the reply shows **Source unavailable**. Incomplete citations remain hidden while a reply is streaming and show that message if the reply ends without a complete citation. Literal examples inside code remain unchanged.
+
+Click a source number to view its full URL in a bordered information card, then choose **Copy link** or **Open link**. Close the card with the button at its top right, by pressing `Esc`, or by clicking outside it.
+
 Click **Chat with AI** at the bottom right, select a chat model, and describe what you want to create. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
 Use **New conversation** at the top of the panel to start a separate chat. **Conversation history** lets you search and switch between this canvas's conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices; the active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.

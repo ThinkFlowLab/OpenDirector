@@ -16,6 +16,7 @@ from opendirector.agent.model_gateway import ModelGateway
 from opendirector.agent import cli_transport, deepseek
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
+from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
 from opendirector.agent.tools import ROOT, SYSTEM
@@ -154,6 +155,8 @@ def text_events(runtime: str, raw: dict) -> list[dict]:
         return [{'type': 'delta', 'text': raw['part']['text']}]
     if runtime == 'codex' and raw['type'] == 'item.completed' and raw['item']['type'] == 'agent_message':
         return [{'type': 'delta', 'text': raw['item']['text']}]
+    if runtime == 'codex' and (sources := search_sources(raw)):
+        return [{'type': 'sources', 'sources': sources}]
     if runtime == 'claude' and raw['type'] == 'assistant':
         return [{'type': 'delta', 'text': part['text']} for part in raw['message']['content'] if part['type'] == 'text']
     return []

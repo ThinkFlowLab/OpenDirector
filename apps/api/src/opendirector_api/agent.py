@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
 from opendirector.agent.context import RunContext, RuntimeId
+from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
 from opendirector.domain.projects import ProjectError
@@ -103,7 +104,8 @@ class Conversations:
                 changed = True
             if changed:
                 durable_json(file, value)
-            return {key: item for key, item in value.items() if key != 'archivedConversations'}
+            result = {key: item for key, item in value.items() if key != 'archivedConversations'}
+        return with_trace_sources(result, directory)
 
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
@@ -132,7 +134,7 @@ class Conversations:
             current['conversationId'] = current.get('conversationId') or str(uuid5(project_id, 'assistant'))
             archives = current.pop('archivedConversations', [])
             if current['conversationId'] == str(conversation_id):
-                return current
+                return with_trace_sources(current, directory)
             target = next((item for item in archives if item['conversationId'] == str(conversation_id)), None)
             if target is None:
                 if not create:
@@ -144,7 +146,7 @@ class Conversations:
                           'conversationId': str(conversation_id)}
             archives = [item for item in archives if item['conversationId'] != str(conversation_id)]
             durable_json(file, {**target, 'archivedConversations': [current, *archives]})
-            return target
+        return with_trace_sources(target, directory)
 
 
 class ConversationCreate(BaseModel):
@@ -321,6 +323,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
+                sources = {}
+                previous_sources = {}
                 plan = None
                 try:
                     user = {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
@@ -333,6 +337,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                     saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user, conversation_id=value.conversationId)
                     accepted = True
                     events.put({'type': 'start', 'conversation': saved})
+                    previous_sources = {source['id']: source for message in saved['messages'][:-2]
+                                        for source in message.get('sources', [])}
                     context = []
                     for message in saved['messages'][:-1]:
                         content = message['text'] or '(empty reply)'
@@ -358,6 +364,15 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                         async for event in stream:
                             if event['type'] == 'delta':
                                 text += event['text']
+                                inherited = ([source for source in referenced_sources(text, previous_sources)
+                                              if source['id'] not in sources]
+                                             if previous_sources and '\ue201' in event['text'] else [])
+                                if inherited:
+                                    sources.update({source['id']: source for source in inherited})
+                                    events.put({'type': 'sources', 'sources': inherited})
+                            if event['type'] == 'sources':
+                                for source in event['sources']:
+                                    sources.setdefault(source['id'], source)
                             if event['type'] == 'plan':
                                 plan = event['entries']
                             if event['type'] == 'tool':
@@ -395,6 +410,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                             'id': str(uuid5(value.id, 'assistant')), 'role': 'assistant', 'text': text, 'status': status,
                             'model': model,
                             'runtime': value.runtime, 'thinking': value.thinking, 'tools': activities,
+                            'sources': list(sources.values()),
                             **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId)
                     else:
                         saved = None
