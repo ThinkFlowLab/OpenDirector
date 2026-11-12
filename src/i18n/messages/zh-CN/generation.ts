@@ -1,5 +1,7 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.bigmodel.watermarkWaiver":
+    "BigModel 去水印需先签署免责声明，请前往个人中心 → 安全管理 → 去水印管理完成签署，否则生成结果仍可能带有水印。",
   "generation.model.unconfigured":
     "尚未配置可用的生成模型，请到“设置 → 模型接入”添加。",
   "generation.model.unavailable": "所选模型配置不可用",

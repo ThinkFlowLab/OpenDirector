@@ -5,6 +5,33 @@ import type { ModelConfig } from "../src/backend/rules.ts";
 import { modelDescription } from "../src/canvas/modelDescriptions.ts";
 import { getActiveLocale, setActiveLocale } from "../src/i18n/messages.ts";
 
+test("OpenAI compatible remains first in the image provider dropdown", () => {
+  assert.equal(providerOptions("image")[0]?.id, "custom");
+});
+
+test("BigModel offers GLM-Image with a localized label and a persistent provider identity", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "bigmodel")!;
+  assert.equal(preset.url, "https://open.bigmodel.cn/api/paas/v4");
+  assert.equal(preset.protocol, "openai");
+  assert.equal(preset.authMode, "bearer");
+  assert.deepEqual(preset.modelsByKind, { image: ["glm-image"] });
+  const previous = getActiveLocale();
+  try {
+    for (const [locale, name] of [["zh-CN", "智谱 BigModel"], ["en-US", "Zhipu BigModel"]] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("image").find((item) => item.id === "bigmodel")?.name, name);
+      assert.ok(!providerOptions("agent").some((item) => item.id === "bigmodel"));
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
+  const model: ModelConfig = { ...preset, id: "saved-bigmodel", kind: "image", modelId: "glm-image",
+    url: `${preset.url}/`, inputRules: { profile: "bigmodel-glm-image", allowedKinds: ["text"],
+      maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
+  assert.equal(providerPresetFor(model), "bigmodel");
+  assert.equal(providerPresetFor({ ...model, url: "https://other.test/v1" }), "custom");
+});
+
 test("provider presets separate official protocol from self-hosted model names", () => {
   const official = PROVIDER_PRESETS.find((item) => item.id === "minimax-video")!;
   assert.equal(official.url, "https://api.minimax.cn/v2");

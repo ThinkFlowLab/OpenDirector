@@ -23,6 +23,15 @@
   overflow: visible;
 }
 
+.cw-composer-provider-note {
+  flex: 0 0 auto;
+  margin: 6px 0;
+  color: var(--chat-text);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .cw-composer-body {
   display: flex;
   flex: 1 1 auto;

@@ -230,6 +230,8 @@ class CreationGeneration(GenerationRuntime):
             params['watermark'] = not self.settings.get()['removeWatermark']
         if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
             params.update(prompt_enhance=False, watermark=not self.settings.get()['removeWatermark'])
+        if spec.kind == 'image' and input_rules(config)['profile'] == 'bigmodel-glm-image':
+            params = dict(size=params['size'], watermark_enabled=not self.settings.get()['removeWatermark'])
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
             params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'minimax-speech':
@@ -243,8 +245,8 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image'} else None,
-                outputFormat='png', watermark=parameters.get('watermark'),
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image', 'bigmodel-glm-image'} else None,
+                outputFormat='png', watermark=parameters.get('watermark_enabled', parameters.get('watermark')),
                 numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],

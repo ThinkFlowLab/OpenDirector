@@ -55,7 +55,13 @@ export interface ChatPlanEntry {
   content: string;
   status: "pending" | "in_progress" | "completed";
 }
+export interface ChatSource {
+  id: string;
+  url: string;
+  title: string;
+}
 export interface ChatMessage {
+  sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;
   tools?: ChatTool[];
@@ -106,6 +112,7 @@ export type ChatEvent =
   | { type: "plan"; entries: ChatPlanEntry[] }
   | ({ type: "tool" } & ChatTool)
   | { type: "delta"; text: string }
+  | { type: "sources"; sources: ChatSource[] }
   | { type: "end"; conversation: Conversation | null; error: string | null };
 
 export interface ChatRequest {

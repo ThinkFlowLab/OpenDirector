@@ -1,5 +1,7 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.bigmodel.watermarkWaiver":
+    "BigModel requires a signed waiver to remove watermarks. Complete it in Personal Center → Security Management → Watermark Removal Management; otherwise outputs may still contain watermarks.",
   "generation.model.unconfigured":
     "No generation model is configured yet. Add one in Settings → Model services.",
   "generation.model.unavailable": "The selected model is unavailable",

@@ -535,6 +535,16 @@ export function useAssistantChat(
                   : message,
               ),
             }));
+          } else if (event.type === "sources") {
+            setValue((previous) => ({
+              ...previous,
+              messages: previous.messages.map((message) => message.id === assistantId
+                ? { ...message, sources: Array.from(new Map([
+                    ...event.sources.map((source) => [source.id, source] as const),
+                    ...(message.sources ?? []).map((source) => [source.id, source] as const),
+                  ]).values()) }
+                : message),
+            }));
           } else if (event.type === "thinking") setThinkingNow(true);
           else if (event.type === "plan") {
             setValue((previous) => ({

@@ -11,16 +11,18 @@ import io
 import json
 import math
 import re
+from io import BytesIO
 from urllib.parse import quote, urlsplit
 
 import httpx
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthRequest, EditMask, ImageRequest, MediaResult, MusicRequest,
                                           ScoreRequest, Segment, SegmentRequest, SpeechRequest, TrackRequest, Tracks, VideoEditRequest,
                                           VideoRequest)
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.bigmodel_image import validate_bigmodel_image
 from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.minimax_speech import validate_minimax_speech_input
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
@@ -146,6 +148,58 @@ class ModelAdapter:
 
     async def depth(self, config, request: DepthRequest) -> MediaResult:
         raise ProjectError('所选模型不支持深度动作捕捉。', 409)
+
+
+class BigModelImages(ModelAdapter):
+    """BigModel's synchronous GLM-Image API, with a recoverable result locator."""
+
+    capabilities = frozenset({'image.generate'})
+
+    async def image(self, config, request: ImageRequest, *, result_ready=None, watermark=True) -> MediaResult:
+        validate_bigmodel_image(request.prompt, request.width, request.height,
+                                has_images=request.image is not None or bool(request.references))
+        payload = dict(model=config['modelId'], prompt=request.prompt, size=f'{request.width}x{request.height}',
+                       watermark_enabled=watermark)
+
+        async def submit():
+            secrets = (config.get('apiKey', ''),)
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/images/generations'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets))
+            if value.get('error'):
+                raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
+            if not isinstance(value['data'], list) or len(value['data']) != 1:
+                raise protocol_failure('submit')
+            return _result_url(value['data'][0]['url'], 'submit')
+
+        # A timed-out paid submission is never retried automatically.
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('png', url)
+        return MediaResult(await self.download(config, url), 'png')
+
+    async def download(self, config, url):
+        # Pin public destinations and recheck redirects; never send the API key to a CDN.
+        _, data = await VolcengineGeneration(None, self.transport).resume_result(config, 'png', url, public_only=True)
+        return await blocking(self._png, data)
+
+    @staticmethod
+    def _png(data):
+        try:
+            with Image.open(BytesIO(data)) as image:
+                if image.format not in {'PNG', 'JPEG', 'WEBP'} or image.width * image.height > 2 ** 22:
+                    raise protocol_failure('download')
+                image.verify()
+            with Image.open(BytesIO(data)) as image:
+                output = BytesIO()
+                image.convert('RGBA' if image.mode in {'RGBA', 'LA', 'P'} else 'RGB').save(output, format='PNG')
+                data = output.getvalue()
+            if len(data) > MAX_ASSET_BYTES:
+                raise protocol_failure('download')
+            return data
+        except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
+            raise protocol_failure('download') from None
 
 
 class MossImages(ModelAdapter):
@@ -781,6 +835,8 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return VllmOmniScore(transport, poll_interval)
     if kind == 'agent':
         return OpenAIChat(transport, poll_interval)
+    if profile == 'bigmodel-glm-image':
+        return BigModelImages(transport, poll_interval)
     if profile == 'minimax-h3-image':
         return MinimaxH3Images(transport, poll_interval)
     if profile == 'moss-image':

@@ -61,6 +61,7 @@ export interface NodeComposerProps {
   running?: boolean;
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
+  removeWatermark?: boolean;
   referenceControls?: GenerationReferenceControls;
 }
 
@@ -85,6 +86,7 @@ export function NodeComposer({
   onPickReference,
   running = false,
   backendModels = [],
+  removeWatermark = false,
   referenceControls,
 }: NodeComposerProps) {
   const { t } = useI18n();
@@ -452,6 +454,12 @@ export function NodeComposer({
         )}
       </div>
 
+      {removeWatermark &&
+        ["bigmodel-glm-image", "bigmodel-cogvideox-3"].includes(config?.inputRules.profile ?? "") && (
+          <p className="cw-composer-provider-note" role="note">
+            {t("generation.bigmodel.watermarkWaiver")}
+          </p>
+        )}
       <div className="cw-composer-footer">
         <div className="cw-composer-options">
           <SearchableSelect

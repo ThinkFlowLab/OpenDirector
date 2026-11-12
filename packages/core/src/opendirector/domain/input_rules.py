@@ -8,6 +8,7 @@ from .moss_speech import is_moss_speech
 from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTERS, is_minimax_speech
 from .projects import ProjectError
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
+from .bigmodel_image import is_bigmodel_image
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -20,6 +21,9 @@ def _adapter_rules(config):
              'maxAudios': 0, 'imageBytes': 8 * 1024 * 1024, 'requestBytes': 48 * 1024 * 1024,
              'videoModes': ['first_frame'] if kind == 'video' else []}
     rules.update(maxVideos=0, videoBytes=DEFAULT_VIDEO_BYTES)
+    if is_bigmodel_image(config):
+        rules.update(profile='bigmodel-glm-image', allowedKinds=['text'], maxImages=0)
+        return rules
     if (kind == 'image' and config.get('protocol') == 'openai'
             and url.scheme == 'https' and host == 'api.minimax.cn' and url.port in {None, 443}
             and path == '/v1' and model in {'MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed'}):
