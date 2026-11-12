@@ -26,6 +26,9 @@ window.__ModuleLoader__.load({
       tasks: 'Tasks', tasksEmpty: 'No generation tasks match these filters.', viewTask: 'View progress',
       taskProgress: 'Task progress', backgroundHint: 'Closing this dialog does not cancel the job. Find it under Resume project → Tasks.',
       cancelled: 'Cancelled', interrupted: 'Interrupted',
+      draftRestored: 'Unsubmitted draft restored.', clearDraft: 'Clear draft',
+      modelUnavailable: 'The saved model is unavailable. Choose another model.',
+      projectUnavailable: 'The saved project is unavailable. Choose another project.',
       stopGeneration: 'Request stop', stoppingGeneration: 'Requesting stop…', checkStop: 'Check stop request',
       stopRequested: 'Stop requested.', stopUnknown: 'The stop request has not been confirmed. Check the same request.',
       stopFinished: 'The task has already finished.', stopFailed: 'Could not request a stop. Check progress before trying again.',
@@ -97,6 +100,9 @@ window.__ModuleLoader__.load({
       tasks: '任务', tasksEmpty: '没有符合筛选条件的生成任务。', viewTask: '查看进度',
       taskProgress: '任务进度', backgroundHint: '关闭弹窗不会取消任务，可从「继续工程 → 任务」找回。',
       cancelled: '已取消', interrupted: '已中断',
+      draftRestored: '已恢复未提交的草稿。', clearDraft: '清空草稿',
+      modelUnavailable: '草稿中的模型暂不可用，请重新选择。',
+      projectUnavailable: '草稿中的工程暂不可用，请重新选择。',
       stopGeneration: '请求停止', stoppingGeneration: '正在请求停止…', checkStop: '查询停止请求',
       stopRequested: '已请求停止。', stopUnknown: '尚未确认停止请求，请查询原操作。',
       stopFinished: '任务已结束。', stopFailed: '暂时无法请求停止，请先查询任务进度。',
@@ -182,6 +188,39 @@ window.__ModuleLoader__.load({
 
     function mediaHref(project, asset, kind) {
       return '/api/opendirector/media?' + new URLSearchParams({ project, asset, kind })
+    }
+
+    const mediaDraftKey = '@opendirector/dsh-plugin:media-drafts:v1'
+    let mediaDrafts = new Map()
+    let draftsLoaded = false
+    let draftTimer
+    function readMediaDraft(key) {
+      if (!draftsLoaded) {
+        draftsLoaded = true
+        try {
+          const entries = JSON.parse(window.sessionStorage.getItem(mediaDraftKey) ?? '[]')
+          if (Array.isArray(entries)) {
+            mediaDrafts = new Map(entries.filter(entry => Array.isArray(entry) && entry.length === 2
+              && typeof entry[0] === 'string' && entry[1]?.form && typeof entry[1].form.prompt === 'string'))
+          }
+        } catch {}
+      }
+      return mediaDrafts.get(key)
+    }
+    function flushMediaDrafts() {
+      if (!draftsLoaded) return
+      clearTimeout(draftTimer)
+      try {
+        if (mediaDrafts.size) window.sessionStorage.setItem(mediaDraftKey, JSON.stringify([...mediaDrafts]))
+        else window.sessionStorage.removeItem(mediaDraftKey)
+      } catch {}
+    }
+    function saveMediaDraft(key, value) {
+      readMediaDraft(key)
+      mediaDrafts.delete(key)
+      if (value) mediaDrafts.set(key, value)
+      clearTimeout(draftTimer)
+      draftTimer = setTimeout(flushMediaDrafts, 250)
     }
 
     function CreateMedia({ t }) {
@@ -401,17 +440,23 @@ window.__ModuleLoader__.load({
       const busy = useRef(false)
       const attempt = useRef(null)
       const [catalog, setCatalog] = useState(null)
-      const [form, setForm] = useState({
+      const draftKey = source ? [videoMode ?? 'edit', source.projectId, source.resultId].join(':') : 'create'
+      const defaults = {
         kind: videoMode ? 'video' : 'image', projectId: '', projectName: '', modelId: '',
         prompt: '', output: null, voice: '', durationSeconds: null,
-      })
+      }
+      const [saved] = useState(() => existingJob ? null : readMediaDraft(draftKey))
+      const [restored, setRestored] = useState(Boolean(saved))
+      const [form, setForm] = useState(() => ({ ...defaults, ...saved?.form }))
       const [result, setResult] = useState(existingJob ?? null)
       const [progress, setProgress] = useState(null)
       const [repeatStatus, setRepeatStatus] = useState(null)
       const [submitting, setSubmitting] = useState(false)
       const [pollError, setPollError] = useState(false)
       const [pollRun, setPollRun] = useState(0)
-      const [references, setReferences] = useState(() => source && !videoMode ? [source] : [])
+      const [references, setReferences] = useState(() => source && !videoMode
+        ? [source, ...(Array.isArray(saved?.references) ? saved.references.filter(item => item?.kind === 'image'
+          && typeof item.resultId === 'string' && typeof item.assetId === 'string' && item.resultId !== source.resultId) : [])] : [])
       const fromResult = Boolean(source)
       const continuation = videoMode === 'continuation'
       const title = t(existingJob ? 'taskProgress' : continuation ? 'continue' : videoMode ? 'firstFrame' : fromResult ? 'edit' : 'create')
@@ -432,6 +477,23 @@ window.__ModuleLoader__.load({
       const projectId = result?.projectId
       const unknown = result?.status === 'unknown'
       const locked = submitting || unknown || Boolean(jobId) || result?.draftSaved === true
+      const dirty = form.kind !== defaults.kind || Boolean(form.projectId || form.projectName || form.modelId
+        || form.prompt || form.output || form.voice || form.durationSeconds !== null
+        || references.length > (source && !videoMode ? 1 : 0))
+      const projectUnavailable = !source && catalog && !catalog.error && form.projectId && form.projectId !== 'new'
+        && !catalog.projects.some(project => project.id === form.projectId)
+      const modelUnavailable = catalog && !catalog.error && form.modelId && !model
+      useEffect(() => {
+        if (existingJob) return
+        saveMediaDraft(draftKey, !locked && dirty ? { form, references } : null)
+      }, [draftKey, form, references, locked, existingJob, dirty])
+      function clearDraft() {
+        setForm(defaults)
+        setReferences(source && !videoMode ? [source] : [])
+        setRestored(false)
+        saveMediaDraft(draftKey, null)
+        flushMediaDrafts()
+      }
       const update = (key, value) => setForm(previous => ({ ...previous, [key]: value,
         ...(key === 'kind' && { modelId: '', output: null }),
         ...((key === 'kind' || key === 'modelId') && { voice: '' }),
@@ -478,6 +540,11 @@ window.__ModuleLoader__.load({
       }, [jobId, projectId, pollRun])
       async function send(makeAttempt) {
         if (busy.current) return
+        // Accepted and uncertain submissions belong in task recovery, never in a new-input draft.
+        if (!existingJob) {
+          saveMediaDraft(draftKey, null)
+          flushMediaDrafts()
+        }
         busy.current = true
         setSubmitting(true)
         function receive(value) {
@@ -523,7 +590,7 @@ window.__ModuleLoader__.load({
       }
       function submit(event) {
         event.preventDefault()
-        if (!unknown && (locked || outputUnavailable || durationUnavailable)) return
+        if (!unknown && (locked || outputUnavailable || durationUnavailable || projectUnavailable || modelUnavailable)) return
         send(() => {
           const newProject = !source && form.projectId === 'new'
           return {
@@ -554,12 +621,17 @@ window.__ModuleLoader__.load({
         title: t(continuation ? 'sourceClip' : videoMode ? 'firstFrameSource' : 'original'),
       })
       return h('dialog', {
-        ref: dialog, onClose: event => { if (event.target === event.currentTarget) onClose() },
+        ref: dialog, onClose: event => { if (event.target === event.currentTarget) { flushMediaDrafts(); onClose() } },
         'aria-label': title, style: dialogStyle,
       },
         h('header', { style: { ...row, justifyContent: 'space-between' } },
           h('strong', null, title), button(t('close'), () => dialog.current.close())),
         !existingJob && !catalog && h('p', { role: 'status' }, t('loading')),
+        !existingJob && !locked && h('div', { style: row },
+          restored && h('small', { role: 'status' }, t('draftRestored')),
+          dirty && button(t('clearDraft'), clearDraft)),
+        projectUnavailable && h('p', { role: 'alert' }, t('projectUnavailable')),
+        modelUnavailable && h('p', { role: 'alert' }, t('modelUnavailable')),
         existingJob && h('p', { style: { overflowWrap: 'anywhere' } }, existingJob.prompt),
         catalog?.error && h('p', { role: 'alert' }, t('libraryError')),
         catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
@@ -612,7 +684,7 @@ window.__ModuleLoader__.load({
           })),
           (!locked || submitting || unknown) && button(t(submitLabel),
             undefined, { type: 'submit', primary: true,
-              disabled: submitting || !model || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim() })),
+              disabled: submitting || (!unknown && (!model || projectUnavailable || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim())) })),
         result?.status === 'rejected' && h('p', { role: 'alert' }, t(submissionMessages.get(result.code) ?? 'failedToSubmit')),
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
@@ -983,6 +1055,10 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
+        ctx.effect(() => {
+          window.addEventListener('pagehide', flushMediaDrafts)
+          return () => { flushMediaDrafts(); window.removeEventListener('pagehide', flushMediaDrafts) }
+        })
         ctx.effect(() => ctx.locale.register(namespace, { en, zh }))
         ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
           name: 'conversation.chat.turnTail', id: '@opendirector/dsh-plugin', locale: namespace,

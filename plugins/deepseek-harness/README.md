@@ -38,6 +38,8 @@ In OpenDirector, configure an image model under **Settings → Model connections
 
 In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
 
+Unsubmitted input stays in the current browser tab. Close the dialog or reload DSH, then return to the same creation or edit action to continue. This includes the chosen model, image size and ordered references. Use **Clear draft** to start over. Submitted jobs stay in **Resume project → Tasks**; reopening a draft does not submit it.
+
 If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
 
 Choose **Generate another candidate** to run the same canvas node again with its saved settings. Compare the results in the dialog and choose **Adopt** on the one you want to use.
