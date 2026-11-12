@@ -252,6 +252,32 @@ full-resolution display at the 25-million-pixel limit. Timeline package tests pr
 HEIF bytes and extensions through export/import; the browser check covers FCPXML
 media ZIP output and refuses an orphaned preview download in both languages.
 
+HEIC 上传恢复与相机样本 / HEIC upload recovery and camera sample:
+
+```sh
+node tests/browser/heif_upload_recovery.mjs
+# Optional: download and unpack the review attachment locally first.
+HEIF_REVIEW_FILE=/absolute/path/IMG_8066.HEIC node tests/browser/heif_upload_recovery.mjs
+```
+
+该脚本可连接上文的隔离 API 和 Vite，也可通过 `CREATION_WEB_URL` 指向 `npm run build` 后的 `npm run preview`（使用相同 `OPENDIRECTOR_API_URL`）。它在中英界面验证普通上传、拖拽、刚创建图片节点的替换上传、图片和视频节点的参考图上传、保存后重开及原始字节。用受控延迟让首次保存回执落在上传期间；注入预览 404 时，必须显示错误、保留已注册原件，且不能创建空白生成节点或误报成功。
+
+This script supports the isolated API and Vite above, or `npm run preview` after a build via `CREATION_WEB_URL` (with the same `OPENDIRECTOR_API_URL`). In both languages it checks upload, drop, replacement in a fresh image node, image/video reference uploads, reopening and original bytes. Controlled delays put the first save acknowledgement inside the upload. An injected preview 404 must report failure and retain the registered original without creating an empty generation item or claiming success.
+
+2026-11-12 使用 [reviewer 提供的 IMG_8066.HEIC](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5868923062) 在 macOS 27.2、Chrome 157.0.8103.52 的正式构建上验证：显示尺寸为 3024×4032，保存后重开正常，原件字节不变。另通过可见 Chrome 的系统文件选择器手动导入并刷新验证。原始相机文件和 EXIF 不纳入仓库。受控故障证明了错误处理路径，不能证明 reviewer 当时预览请求失败的具体原因；其他平台及 HDR 色彩准确性仍需单独验收。
+
+On 2026-11-12, the reviewer's linked `IMG_8066.HEIC` was checked in the production build on macOS 27.2 / Chrome 157.0.8103.52: 3024×4032 decoded pixels, successful reopening and unchanged original bytes. Import through the visible Chrome system file picker and refresh were also verified. The original camera file and EXIF are not committed. The injected failure proves the error path, not the cause of the reviewer's preview request failure. Other platforms and HDR color accuracy require separate acceptance.
+
+同日补测 pillow-heif 的两张实拍样本：[小米 `xiaomi.heic`](https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_special/xiaomi.heic)（2592×1944）和 [三星 `aux_YCbCr.heic`](https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_special/aux_YCbCr.heic)（4000×1848）。两张均通过上述六种模式的中英文检查，显示尺寸与已保存媒体信息一致，原件字节不变；可见 Chrome 中将三张一起导入同一画布并刷新，均正常显示。
+
+Two additional camera samples from pillow-heif passed the same six modes in both languages that day: Xiaomi `xiaomi.heic` (2592×1944) and Samsung `aux_YCbCr.heic` (4000×1848), linked above. Display dimensions matched persisted media facts and original bytes were unchanged. All three photos were also imported into one canvas through visible Chrome and remained visible after refresh.
+
+本地补充手动测试：三张 HEIC 图片导入同一画布，保存并刷新后正常显示。
+
+Additional local manual test: three HEIC images imported into one canvas remain visible after saving and refreshing.
+
+![Local HEIC test after refresh / 本地 HEIC 测试刷新后](images/heif-282/local-heic-test.png)
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh

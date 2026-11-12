@@ -18,7 +18,6 @@ import { importWorkspaceDocument, workspaceProjection } from "../../backend/work
 import { downloadFile, downloadFilename } from "../assets";
 import { referenceIssueText, referenceIssue } from "../connectionPolicy";
 
-import { sameNodeData } from "../dataBoundary.ts";
 import { classifyImportFile } from "../editorMedia";
 import { lockedNodeIds } from "../hierarchy";
 import { readImportBatch } from "../importBatch";
@@ -48,7 +47,7 @@ import {
   subjectTargetIdentity,
 } from "../subjectLibraryImport.ts";
 import { subjectWithResource, type SubjectMediaSlot } from "../subjectMedia.ts";
-import { importedNodeIds, uploadPickerPlan } from "./entryPoints.ts";
+import { importedNodeIds, uploadPickerPlan, uploadTargetUnchanged } from "./entryPoints.ts";
 
 import { assertUpload } from "../uploadPolicy.ts";
 import { prefetchLibrary } from "../library/libraryPrefetch";
@@ -768,8 +767,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
         );
         if (
           !latest ||
-          latest.type !== expected.node.type ||
-          !sameNodeData(latest.data, expected.node.data) ||
+          !uploadTargetUnchanged(latest, expected.node) ||
           lockedNodeIds(historyRef.current.present.nodes).has(target)
         )
           throw new Error(t("canvas.workspace.error.uploadNodeChanged"));

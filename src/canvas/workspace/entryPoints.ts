@@ -1,4 +1,16 @@
 import type { SubjectMediaSlot } from "../subjectMedia.ts";
+import type { CanvasNode } from "../model.ts";
+import { sameNodeData } from "../dataBoundary.ts";
+import { generationEditSettings } from "../generationSettings.ts";
+
+export function uploadTargetUnchanged(current: CanvasNode, expected: CanvasNode) {
+  const data = (node: CanvasNode) => ({
+    ...node.data,
+    promptContent: node.data.promptContent ?? [],
+    settings: generationEditSettings(node),
+  });
+  return current.type === expected.type && sameNodeData(data(current), data(expected));
+}
 
 /** Why a file picker must not open. The workspace maps these to existing toasts. */
 export type UploadBlockReason = "locked" | "generation-output" | "generating";

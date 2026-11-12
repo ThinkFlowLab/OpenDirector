@@ -1,6 +1,12 @@
 {
   "scripts": [
     {
+      "file": "heif_upload_recovery.mjs",
+      "lanes": ["extended", "production"],
+      "previewSafe": true,
+      "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
+    },
+    {
       "file": "heif_import.mjs",
       "lanes": ["extended"],
       "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."

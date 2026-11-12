@@ -1,3 +1,4 @@
+import { generationEditIdentity } from "../src/canvas/generationSettings.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fingerprint } from "../src/backend/generation.ts";
@@ -14,7 +15,6 @@ import {
   classifyImportFile,
   readEditorResource,
 } from "../src/canvas/editorMedia.ts";
-import { generationEditIdentity } from "../src/canvas/generationReferenceContent.ts";
 import { referenceContentCommand } from "../src/canvas/generationReferenceEdit.ts";
 import { createDocument, createNode } from "../src/canvas/model.ts";
 import {

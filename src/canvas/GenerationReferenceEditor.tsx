@@ -1,3 +1,4 @@
+import { generationEditIdentity } from "./generationSettings.ts";
 import { creationClient } from "../backend/creationClient.ts";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -15,7 +16,6 @@ import {
 import {
   generationContent,
   generationContentPatch,
-  generationEditIdentity,
   nodeReferenceAsset,
 } from "./generationReferenceContent.ts";
 import { type MentionOption } from "./referenceMentions.ts";

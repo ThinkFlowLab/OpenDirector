@@ -87,6 +87,8 @@ export class CreationProjection {
     signal?.throwIfAborted();
     const ref = await this.client.importBlob(file, file.name, "image");
     signal?.throwIfAborted();
+    // Failed previews must not be saved as empty generation nodes.
+    await this.client.mediaUrl(ref.assetId, { signal });
     return this.resource(ref);
   }
 
