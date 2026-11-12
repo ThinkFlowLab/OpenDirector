@@ -521,9 +521,45 @@
           },
           {
             "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
             "profile": "video_to_video",
             "route": null,
             "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
           }
         ]
       }

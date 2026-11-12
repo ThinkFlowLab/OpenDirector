@@ -478,6 +478,12 @@
           {
             "operation": "video_generation",
             "profile": "text_to_video",
+            "route": null,
+            "reason": "no_route_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
             "route": "/v1/images/edits",
             "reason": "route_mismatch"
           }
@@ -485,8 +491,8 @@
       }
     },
     {
-      "id": "unrecognised-route-beside-a-disabled-route",
-      "note": "`image_to_image` turns its only owned route off but declares an `enabled` path this table does not know: reachability cannot be confirmed, so `image.edit` is `unknown`, not `missing`.",
+      "id": "unrecognised-route-cannot-reopen-a-disabled-route",
+      "note": "`image_to_image` turns its only owned route off and declares an `enabled` path this table does not know: the closed route stays a refusal, so `image.edit` is `missing` with `route_disabled`, and the unrecognised path is one `unknown_route` note beside it — a route this tool cannot post to is not a channel and cannot soften the no.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -936,7 +942,7 @@
         "capabilities": {
           "text.chat": "available",
           "image.generate": "missing",
-          "image.edit": "unknown",
+          "image.edit": "missing",
           "video.generate": "available",
           "video.first_frame": "unknown",
           "video.edit": "missing",
@@ -951,6 +957,7 @@
         },
         "reasons": {
           "image.generate": "endpoint_disabled",
+          "image.edit": "route_disabled",
           "video.edit": "unsupported",
           "audio.music": "unsupported"
         },
@@ -978,6 +985,18 @@
             "profile": "image_to_video",
             "route": null,
             "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
           }
         ]
       }

@@ -509,13 +509,49 @@
             "profile": "image_to_video",
             "route": null,
             "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
           }
         ]
       }
     },
     {
       "id": "unknown-enums",
-      "note": "Every operation and profile states `unknown`: the third upstream value is a real answer, so nothing is claimed and nothing is refused.",
+      "note": "Every operation and profile states `unknown`: the third upstream value is a real answer, so nothing is claimed and nothing is refused — and nothing is attributed either, because a profile that says `unknown` is its own explanation.",
       "payload": {
         "object": "omni.capabilities",
         "schema_version": 1,
@@ -997,7 +1033,44 @@
           "audio.separate": "unknown"
         },
         "reasons": {},
-        "unresolved": []
+        "unresolved": [
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          }
+        ]
       }
     },
     {
@@ -1359,6 +1432,18 @@
             "profile": "image_to_video",
             "route": null,
             "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
           }
         ]
       }
@@ -1721,6 +1806,18 @@
             "profile": "video_to_video",
             "route": null,
             "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
           }
         ]
       }
