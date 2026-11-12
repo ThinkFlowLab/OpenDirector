@@ -388,9 +388,11 @@ export class OpenDirectorClient {
     const job = await this.#request('POST', `${creationPath(project)}/queries`, {
       body: { type: 'job.get', projectId: project, queryId: randomUUID(), objectId: id }, signal,
     })
+    const cancellation = job.cancelRequested
+      ? { cancelRequested: true, remoteCancellation: job.remoteCancellation } : {}
     if (job.status !== 'succeeded') {
       return {
-        status: job.status,
+        status: job.status, ...cancellation,
         category: job.errorDetails?.category,
         ...(canRetryFailedJob(job) && { canRetry: true }),
         ...(job.resumeAllowed && ['failed', 'interrupted'].includes(job.status) && { canResume: true }),
@@ -401,7 +403,7 @@ export class OpenDirectorClient {
     const selected = snapshot.generationSpecs.find(spec => spec.id === specId)?.currentResultId
     const metadata = assetMetadata(snapshot)
     return {
-      status: job.status,
+      status: job.status, ...cancellation,
       results: snapshot.results.filter(result => result.specId === specId).map(({ id, asset }) => {
         const details = mediaDetails(metadata.get(asset.assetId))
         return { resultId: id, assetId: asset.assetId, kind: asset.kind, selected: id === selected,
@@ -626,6 +628,24 @@ export class OpenDirectorClient {
       const command = buildResultSelectCommand({
         projectId: project, operationId: commandId, specId: spec.id, resultId: result,
         expectedSpecRevision: spec.revision, expectedCanvasVersions,
+      })
+      return this.#command({ projectId: project, operationId: commandId, command, session, signal })
+    })
+  }
+
+  async cancelCreation({ projectId, jobId, operationId, check, signal }) {
+    const project = requireUuid(projectId, 'projectId')
+    const job = requireUuid(jobId, 'jobId')
+    const commandId = uuid5(requireUuid(operationId, 'operationId'), 'job.cancel:' + project + ':' + job)
+    if (check) return this.receipt(project, commandId, { signal })
+    return this.#withLease(project, signal, async (session, snapshot) => {
+      const existing = await this.#submissionReceipt(project, commandId, signal)
+      if (existing) return existing
+      const current = snapshot.jobs.find(item => item.id === job)
+      if (!current) throw new InputError('job.missing', { projectId: project, jobId: job })
+      if (current.cancelRequested || !['accepted', 'queued', 'running'].includes(current.status)) return { status: 'noop' }
+      const command = buildJobCancelCommand({
+        projectId: project, jobId: job, operationId: commandId, expectedJobRevision: current.revision,
       })
       return this.#command({ projectId: project, operationId: commandId, command, session, signal })
     })

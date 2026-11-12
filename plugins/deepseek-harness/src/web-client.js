@@ -24,8 +24,15 @@ window.__ModuleLoader__.load({
       loading: 'Loading…', refresh: 'Refresh results', libraryError: 'Could not load OpenDirector. Try refreshing.',
       recent: 'Saved results', selected: 'Current result', adopting: 'Adopting…', checkAdoption: 'Check adoption',
       tasks: 'Tasks', tasksEmpty: 'No generation tasks match these filters.', viewTask: 'View progress',
-      taskProgress: 'Task progress', backgroundHint: 'You can close this dialog and find the task under Resume project → Tasks.',
+      taskProgress: 'Task progress', backgroundHint: 'Closing this dialog does not cancel the job. Find it under Resume project → Tasks.',
       cancelled: 'Cancelled', interrupted: 'Interrupted',
+      stopGeneration: 'Request stop', stoppingGeneration: 'Requesting stop…', checkStop: 'Check stop request',
+      stopRequested: 'Stop requested.', stopUnknown: 'The stop request has not been confirmed. Check the same request.',
+      stopFinished: 'The task has already finished.', stopFailed: 'Could not request a stop. Check progress before trying again.',
+      stopChanged: 'The task changed. Check progress and try again.', localStopped: 'Local processing has stopped.',
+      remoteStopUnconfirmed: 'Provider cancellation has not been confirmed. Check the original task with the provider.',
+      remoteStopped: 'The provider confirmed cancellation.',
+
       adoptUnknown: 'Adoption has not been confirmed yet. Check its status.',
       adoptBusy: 'Save and close the open OpenDirector canvas, then try again.',
       adoptConflict: 'This result or canvas has changed. Refresh the project before trying again.',
@@ -88,8 +95,15 @@ window.__ModuleLoader__.load({
       loading: '加载中…', refresh: '刷新结果', libraryError: '暂时无法读取 OpenDirector，请刷新重试。',
       recent: '已保存的结果', selected: '当前结果', adopting: '正在采用…', checkAdoption: '查询采用状态',
       tasks: '任务', tasksEmpty: '没有符合筛选条件的生成任务。', viewTask: '查看进度',
-      taskProgress: '任务进度', backgroundHint: '关闭弹窗后，可以从「继续工程 → 任务」找回。',
+      taskProgress: '任务进度', backgroundHint: '关闭弹窗不会取消任务，可从「继续工程 → 任务」找回。',
       cancelled: '已取消', interrupted: '已中断',
+      stopGeneration: '请求停止', stoppingGeneration: '正在请求停止…', checkStop: '查询停止请求',
+      stopRequested: '已请求停止。', stopUnknown: '尚未确认停止请求，请查询原操作。',
+      stopFinished: '任务已结束。', stopFailed: '暂时无法请求停止，请先查询任务进度。',
+      stopChanged: '任务状态已变化，请查询进度后重试。', localStopped: '本地处理已停止。',
+      remoteStopUnconfirmed: '服务商取消尚未确认，请到服务商核对原任务。',
+      remoteStopped: '服务商已确认取消。',
+
       adoptUnknown: '尚未确认是否采用，请查询状态。',
       adoptBusy: '请保存并关闭已打开的 OpenDirector 画布，然后重试。',
       adoptConflict: '结果或画布状态已变，请刷新工程后再试。',
@@ -604,6 +618,8 @@ window.__ModuleLoader__.load({
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
         jobId && h('p', { role: status === 'failed' || providerUnknown ? 'alert' : 'status' }, t(outcome ?? 'waiting')),
         jobId && h('small', null, t('backgroundHint')),
+        jobId && h(JobCancellation, { key: jobId, projectId, jobId, progress: progress?.jobId === jobId ? progress : null, t,
+          onChange: () => setPollRun(value => value + 1) }),
         continuation && status === 'failed' && progress.category === 'reference' && h('p', null, t('continuationUnavailable')),
         status && progress.canResume && h('p', null, t('recoverOnCanvas')),
         pollError && h('p', { role: 'alert' }, t('progressUnavailable')),
@@ -625,6 +641,63 @@ window.__ModuleLoader__.load({
             () => send(() => ({ projectId, operationId: crypto.randomUUID(), repeatJobId: jobId })), { disabled: submitting }),
           h('small', { style: { color: muted } }, t('repeatHint'))),
         repeatStatus && h('p', { role: repeatStatus === 'generationUnknown' ? 'status' : 'alert' }, t(repeatStatus)))
+    }
+
+    function JobCancellation({ projectId, jobId, progress, t, onChange }) {
+      const operation = useRef(null)
+      const busy = useRef(false)
+      const [state, setState] = useState(null)
+      const requested = progress?.cancelRequested || state === 'stopRequested'
+      const active = ['accepted', 'queued', 'running'].includes(progress?.status)
+      const unknown = state === 'stopUnknown'
+      async function stop() {
+        if (busy.current) return
+        busy.current = true
+        const check = operation.current !== null
+        operation.current ??= crypto.randomUUID()
+        setState('stoppingGeneration')
+        try {
+          const response = await fetch('/api/opendirector/cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
+            body: JSON.stringify({ projectId, jobId, operationId: operation.current, check }),
+          })
+          if (response.status === 400 || response.status === 403) {
+            operation.current = null
+            setState('stopFailed')
+            return
+          }
+          if (!response.ok) throw new Error('Stop response unavailable')
+          const receipt = await response.json()
+          if (receipt.status === 'unknown') {
+            setState('stopUnknown')
+            return
+          }
+          operation.current = null
+          setState(receipt.status === 'applied' ? 'stopRequested' : receipt.status === 'noop' ? 'stopFinished'
+            : receipt.code === 'storage_busy' ? 'adoptBusy'
+              : receipt.code === 'revision_conflict' ? 'stopChanged' : 'stopFailed')
+          onChange()
+        } catch {
+          setState('stopUnknown')
+        } finally {
+          busy.current = false
+        }
+      }
+      let message = state
+      if (progress?.cancelRequested) {
+        message = progress.status === 'succeeded' ? 'stopFinished'
+          : progress.status === 'cancelled'
+            ? progress.remoteCancellation === 'confirmed' ? 'remoteStopped'
+              : ['requested', 'unknown'].includes(progress.remoteCancellation) ? 'remoteStopUnconfirmed' : 'localStopped'
+            : 'stopRequested'
+      }
+      if (!active && !message) return null
+      return h('div', { style: { display: 'grid', gap: '.4rem' } },
+        ((active && !requested) || unknown) && button(t(state === 'stoppingGeneration' ? state : unknown ? 'checkStop' : 'stopGeneration'),
+          stop, { disabled: state === 'stoppingGeneration' }),
+        message === 'remoteStopUnconfirmed' && button(t('checkProgress'), onChange),
+        message && h('p', { role: ['stopFailed', 'stopUnknown', 'stopChanged', 'adoptBusy', 'remoteStopUnconfirmed'].includes(message) ? 'alert' : 'status' }, t(message)))
     }
 
     function useAdoption({ projectId, resultId, onAdopted }) {

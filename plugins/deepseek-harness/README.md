@@ -69,6 +69,8 @@ Choose **Tasks** to find running, completed, and failed generations, including w
 
 Right-click a result card or choose **More actions** on it. The menu shows the actions for that media type, including downloading the original file. Use the arrow keys to move between actions, and press Escape to return to the card.
 
+In task progress, choose **Request stop** to ask OpenDirector to stop the job. Closing the dialog leaves the job running. If the response is lost, **Check stop request** reads the original operation. The dialog distinguishes stopped local processing from confirmed provider cancellation.
+
 ### Animate an image or continue a clip
 
 Choose **Animate** on a saved image. The form shows that image as the first frame and lists the video models that support it. Pick a model, choose a duration from its available options, and describe the motion. Generate one candidate and play it in DSH before adopting it.

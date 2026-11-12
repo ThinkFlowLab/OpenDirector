@@ -148,6 +148,30 @@ export function apply(ctx, config) {
     }), 'OpenDirector result adoption')
 
     scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/cancel',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        if (!isBrowserAction(request)) return new Response(null, { status: 403, headers })
+        let input
+        try {
+          input = await actionInput(request)
+        } catch {
+          return new Response(null, { status: 400, headers })
+        }
+        try {
+          const receipt = await client.cancelCreation({ ...input, signal: request.signal })
+          return Response.json({ status: receipt?.status ?? 'unknown', code: receipt?.issues?.[0]?.code }, { headers })
+        } catch (error) {
+          if (error instanceof UnknownOperationError || (input.check === true && !(error instanceof InputError))) {
+            return Response.json({ status: 'unknown' }, { headers })
+          }
+          return Response.json({ status: 'rejected', code: errorCode(error) }, { headers })
+        }
+      },
+    }), 'OpenDirector job cancellation')
+
+    scope.effect(() => scope.connection.fetch.register({
       path: '/api/opendirector/creation',
       methods: ['GET', 'POST'],
       requestBody: 'buffered',
