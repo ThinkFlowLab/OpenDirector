@@ -281,10 +281,12 @@ def test_cleanup_failure_is_logged_and_never_hides_the_created_voice(caplog):
     assert value['apiKey'] not in caplog.text
 
 
+# Name the cases explicitly: a generated id would carry the whole sample into
+# PYTEST_CURRENT_TEST, and an id past MAX_ARG_STRLEN breaks every ffprobe call.
 @pytest.mark.parametrize('data,filename,code', [
     (wav(1), 'sample.wav', 'voice_duration'), (wav(31), 'sample.wav', 'voice_duration'),
     (wav(), 'sample.m4a', 'voice_format'), (b'not audio', 'sample.wav', 'voice_audio_invalid'),
-])
+], ids=['too-short', 'too-long', 'wrong-container', 'not-audio'])
 def test_invalid_recording_never_reaches_the_provider(data, filename, code):
     value = config()
     service = library(value, lambda _: pytest.fail('invalid upload reached provider'))
