@@ -4,6 +4,8 @@ import {
   json,
   request,
   sessionId,
+  sessionReleaseHeaders,
+  setSessionHidden,
   storageRequest,
 } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
@@ -16,30 +18,65 @@ const UUID =
 
 export function backendProjectId(documentId: string) {
   if (UUID.test(documentId)) return documentId.toLowerCase();
-  throw new ApiError(tNow("errors.backend.projectRequired"), 409, "invalid_project");
+  throw new ApiError(
+    tNow("errors.backend.projectRequired"),
+    409,
+    "invalid_project",
+  );
 }
 
 let active: string | null = null;
 let opening: Promise<unknown> | null = null;
 let heartbeat: number | undefined;
+let hidden = false;
 
 function keepAlive() {
   if (heartbeat !== undefined) return;
   heartbeat = window.setInterval(() => {
-    if (active && !opening) {
+    if (active && !opening && !hidden) {
       const projectId = active;
       // A pending renewal must finish before an explicit close or project switch.
-      void serializeSessionChange(() =>
-        storageRequest(
-          `/creation/sessions/${sessionId}`,
-          json("PUT", { projectId }),
-        ),
-      ).catch(() => {});
+      void serializeSessionChange(async () => {
+        if (hidden || active !== projectId) return;
+        try {
+          await storageRequest(
+            `/creation/sessions/${sessionId}`,
+            json("PUT", { projectId }),
+          );
+        } catch (error) {
+          // A server restart can discard an expired row. Only an absent lease
+          // permits recovery; a fenced old document must never reacquire.
+          if (
+            !(error instanceof ApiError) ||
+            error.code !== "session_not_open" ||
+            hidden
+          )
+            throw error;
+          await request(`/creation/projects/${projectId}/open`, {
+            method: "POST",
+          });
+        }
+      }).catch(() => {});
     }
   }, 15000);
   window.addEventListener("pagehide", () => {
-    if (!active) return;
+    hidden = true;
+    setSessionHidden(true);
     void closeProjectSession(true).catch(() => {});
+  });
+  window.addEventListener("pageshow", (event) => {
+    hidden = false;
+    setSessionHidden(false);
+    // BFCache restores the same document after pagehide released its lease.
+    if (event?.persisted && active) {
+      const projectId = active;
+      void serializeSessionChange(async () => {
+        if (!hidden && active === projectId)
+          await request(`/creation/projects/${projectId}/open`, {
+            method: "POST",
+          });
+      }).catch(() => {});
+    }
   });
 }
 
@@ -47,6 +84,7 @@ function closeProjectSession(keepalive = false) {
   return request(`/creation/sessions/${sessionId}`, {
     method: "DELETE",
     keepalive,
+    headers: sessionReleaseHeaders(),
   });
 }
 
@@ -68,7 +106,10 @@ export function requireActiveBackendProject(
   return serializeSessionChange(async () => {
     signal.throwIfAborted();
     if (active !== id)
-      throw new DOMException(tNow("errors.backend.selectionAborted"), "AbortError");
+      throw new DOMException(
+        tNow("errors.backend.selectionAborted"),
+        "AbortError",
+      );
     return id;
   });
 }
@@ -79,6 +120,7 @@ function activateBackendProject<T>(
   activate: () => Promise<T>,
 ) {
   const id = backendProjectId(documentId);
+  keepAlive();
   return serializeSessionChange(async () => {
     const previous = active;
     const switching = previous && previous !== id;
@@ -145,6 +187,7 @@ export function openBackendProjectCanvas<T>(
   read: () => Promise<T>,
 ) {
   const id = backendProjectId(documentId);
+  keepAlive();
   return serializeSessionChange(async () => {
     const previous = active;
     const startedAt = Date.now();
@@ -156,7 +199,10 @@ export function openBackendProjectCanvas<T>(
         // the lease alive when it outlived the 60 s grant; if another window has
         // taken over the expired lease the server rejects this renewal and the
         // open fails instead of adopting a session we no longer own.
-        await request(`/creation/sessions/${sessionId}`, json("PUT", { projectId: id }));
+        await request(
+          `/creation/sessions/${sessionId}`,
+          json("PUT", { projectId: id }),
+        );
     } catch (failure) {
       // read() moves this window's session before it finishes the view. A
       // failure after that acceptance would leave the lease on `id` while

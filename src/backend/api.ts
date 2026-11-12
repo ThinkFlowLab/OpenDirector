@@ -2,8 +2,20 @@
 import { detectLocale } from "../i18n/locale.ts";
 import type { Locale } from "../i18n/types.ts";
 import { tNow } from "../i18n/messages.ts";
+import { browserSessionIdentity } from "./sessionIdentity.ts";
 
-export const sessionId = crypto.randomUUID();
+const session = browserSessionIdentity();
+let sessionHidden = false;
+export function setSessionHidden(hidden: boolean) {
+  sessionHidden = hidden;
+}
+export const sessionId = session.id;
+export const SESSION_GENERATION = "X-OpenDirector-Session-Generation";
+
+/** Include pending acquisitions when fencing work at page exit. */
+export function sessionReleaseHeaders() {
+  return { [SESSION_GENERATION]: String(session.issued) };
+}
 
 export class ApiError extends Error {
   status: number | null;
@@ -18,6 +30,7 @@ export class ApiError extends Error {
 export const headers: Record<string, string> = {
   "X-OpenDirector-Request": "1",
   "X-OpenDirector-Session": sessionId,
+  [SESSION_GENERATION]: "0",
   "Accept-Language": detectLocale(),
 };
 
@@ -41,17 +54,47 @@ export async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const acquisition =
+    options.method === "POST" &&
+    /^\/creation\/projects\/[^/]+\/open(?:-canvas)?$/.test(path);
+  if (acquisition && sessionHidden)
+    throw new DOMException(
+      tNow("errors.backend.selectionAborted"),
+      "AbortError",
+    );
+  let generation: number | undefined;
+  if (acquisition) {
+    try {
+      generation = session.issue();
+    } catch {
+      throw new ApiError(
+        tNow("api.unknownError"),
+        409,
+        "session_generation_invalid",
+      );
+    }
+  }
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
       ...options,
-      headers: { ...headers, ...options.headers },
+      headers: {
+        ...headers,
+        ...options.headers,
+        ...(generation === undefined
+          ? {}
+          : { [SESSION_GENERATION]: String(generation) }),
+      },
     });
   } catch (failure) {
     if (options.signal?.aborted) throw failure;
     throw new ApiError(tNow("api.networkError"), null, "network_error");
   }
   if (!response.ok) throw await responseError(response);
+  if (generation !== undefined) {
+    session.accept(generation);
+    headers[SESSION_GENERATION] = String(session.accepted);
+  }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

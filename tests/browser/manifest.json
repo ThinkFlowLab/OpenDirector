@@ -1,6 +1,11 @@
 {
   "scripts": [
     {
+      "file": "session_reload.mjs",
+      "lanes": ["gate"],
+      "note": "Bilingual reload handoff with dropped cleanup, stale lifecycle packets, independent popup ownership and a persisted edit."
+    },
+    {
       "file": "kling_video.mjs",
       "lanes": ["extendedFixture"],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."

@@ -276,9 +276,9 @@ def test_open_canvas_returns_one_snapshot_with_authoritative_reference_edges(api
     # serves the canvas and its edges, with no extra snapshot() call.
     opens, snapshots = [], []
     original_open, original_snapshot = CreationProjects.open, CreationProjects.snapshot
-    def counting_open(self, project_id_value, session):
+    def counting_open(self, project_id_value, session, generation=0):
         opens.append(str(project_id_value))
-        return original_open(self, project_id_value, session)
+        return original_open(self, project_id_value, session, generation)
     def counting_snapshot(self, project_id_value):
         snapshots.append(str(project_id_value))
         return original_snapshot(self, project_id_value)

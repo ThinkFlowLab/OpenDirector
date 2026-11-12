@@ -11,6 +11,7 @@ import time
 
 from filelock import FileLock
 from opendirector.domain.projects import ProjectError, identifier
+from opendirector.domain.session_errors import session_error
 
 def child(directory: Path, name: str) -> Path:
     path = directory / name
@@ -86,6 +87,9 @@ class LocalProjects:
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL, expires REAL NOT NULL,
                     path TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS session_fences (
+                    id TEXT PRIMARY KEY, generation INTEGER NOT NULL, released INTEGER NOT NULL
+                );
             """)
             db.execute("DELETE FROM sessions WHERE expires<=?", (time.time(),))
 
@@ -119,17 +123,46 @@ class LocalProjects:
                 raise ProjectError("该位置已有同名文件或文件夹，请使用其他名称。", 409)
 
 
-    def _open(self, db, project: dict, session: str):
+    @staticmethod
+    def _generation(generation):
+        if type(generation) is not int or not 0 <= generation < 2 ** 31:
+            raise session_error('session_generation_invalid')
+
+
+    def _open(self, db, project: dict, session: str, generation=0, *, renewal=False):
         identifier(session)
+        self._generation(generation)
         project_id = project["id"]
+        fence = db.execute("SELECT generation,released FROM session_fences WHERE id=?", (session,)).fetchone()
+        current = db.execute("SELECT project_id FROM sessions WHERE id=?", (session,)).fetchone()
+        if fence and (generation < fence['generation'] or
+                      generation == fence['generation'] and fence['released']):
+            raise session_error('session_stale')
+        if renewal:
+            if fence and generation != fence['generation']:
+                raise session_error('session_stale')
+            if not current or current['project_id'] != project_id:
+                raise session_error('session_not_open')
+        elif generation and fence and generation == fence['generation'] and (
+                not current or current['project_id'] != project_id):
+            raise session_error('session_stale')
         if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND expires>?", (project_id, session, time.time())).fetchone():
             raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="storage_busy")
         lease = db.execute("SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, time.time())).fetchone()
         if lease and lease["path"] != project["path"]:
             raise ProjectError("项目目录已在应用外改名或移动，请复制未保存内容并刷新页面。", 409)
         db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,expires=excluded.expires,path=excluded.path", (session, project_id, time.time() + self.LEASE_SECONDS, project["path"]))
+        if generation:
+            db.execute("INSERT INTO session_fences(id,generation,released) VALUES (?,?,0) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,released=0", (session, generation))
 
 
-    def release(self, session: str):
+    def release(self, session: str, generation=0):
+        identifier(session)
+        self._generation(generation)
         with self.transaction() as db:
+            fence = db.execute("SELECT generation FROM session_fences WHERE id=?", (session,)).fetchone()
+            if fence and generation < fence['generation']:
+                return
+            if generation:
+                db.execute("INSERT INTO session_fences(id,generation,released) VALUES (?,?,1) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,released=1", (session, generation))
             db.execute("DELETE FROM sessions WHERE id=?", (session,))

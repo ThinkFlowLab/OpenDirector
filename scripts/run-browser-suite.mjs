@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 
 const workflows = [
+  { name: "session reload", script: "tests/browser/session_reload.mjs" },
   { name: "locale", script: "tests/browser/locale.mjs" },
   { name: "creation closure", script: "scripts/verify_creation_browser.mjs" },
   { name: "assistant activity", script: "tests/browser/assistant_activity.mjs" },

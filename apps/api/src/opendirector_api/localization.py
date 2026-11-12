@@ -8,10 +8,12 @@ from fastapi import Request
 
 
 from opendirector.domain.timeline_errors import timeline_error_message
+from opendirector.domain.session_errors import SESSION_MESSAGES
 
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
+    **{code: messages[1] for code, messages in SESSION_MESSAGES.items()},
     'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',

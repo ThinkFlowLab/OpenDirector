@@ -100,26 +100,28 @@ def creation_routes(projects: CreationProjects, generation=None):
         return projects.snapshot(project_id)
 
     @router.post('/projects/{project_id}/open', response_model=ProjectSnapshot)
-    def open_project(project_id: UUID, x_opendirector_session: UUID = Header()):
-        return projects.open(project_id, str(x_opendirector_session))
+    def open_project(project_id: UUID, x_opendirector_session: UUID = Header(),
+                     x_opendirector_session_generation: int = Header(default=0)):
+        return projects.open(project_id, str(x_opendirector_session), x_opendirector_session_generation)
 
     @router.post('/projects/{project_id}/open-canvas')
-    def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header()):
+    def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header(),
+                            x_opendirector_session_generation: int = Header(default=0)):
         # The canvas needs its reference edges on first render too. Reuse the
         # single snapshot this open read already published instead of making the
         # page read the same project again through GET /canvas. The no-flag
         # route above still returns a bare ProjectSnapshot.
-        snapshot = projects.open(project_id, str(x_opendirector_session))
+        snapshot = projects.open(project_id, str(x_opendirector_session), x_opendirector_session_generation)
         return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot)}
 
     @router.put('/sessions/{session_id}')
-    def heartbeat(session_id: UUID, value: Session):
-        projects.heartbeat(str(session_id), value.projectId)
+    def heartbeat(session_id: UUID, value: Session, x_opendirector_session_generation: int = Header(default=0)):
+        projects.heartbeat(str(session_id), value.projectId, x_opendirector_session_generation)
         return {'ok': True}
 
     @router.delete('/sessions/{session_id}')
-    def release(session_id: UUID):
-        projects.local.release(str(session_id))
+    def release(session_id: UUID, x_opendirector_session_generation: int = Header(default=0)):
+        projects.local.release(str(session_id), x_opendirector_session_generation)
         return {'ok': True}
 
     @router.post('/projects/{project_id}/commands', response_model=CommandReceipt)

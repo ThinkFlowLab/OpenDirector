@@ -12,7 +12,7 @@ import {
   requireActiveBackendProject,
 } from "../src/backend/projects.ts";
 
-const listeners = new Map<string, () => void>();
+const listeners = new Map<string, (event?: { persisted?: boolean }) => void>();
 let heartbeat: () => void;
 const draft = (text: string): Conversation => ({
   messages: [],
@@ -23,6 +23,7 @@ const draft = (text: string): Conversation => ({
 });
 
 function fixture(t: TestContext, unified = true) {
+  listeners.get("pageshow")?.();
   const beforeFetch = globalThis.fetch;
   const beforeWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", {
@@ -43,6 +44,7 @@ function fixture(t: TestContext, unified = true) {
     method: string;
     value: Record<string, unknown>;
     keepalive?: boolean;
+    headers?: HeadersInit;
   }[] = [];
   let lease: string | null = null;
   let saved: Conversation | undefined;
@@ -53,7 +55,13 @@ function fixture(t: TestContext, unified = true) {
     const path = String(url),
       method = options.method ?? "GET";
     const value = options.body ? JSON.parse(String(options.body)) : {};
-    calls.push({ path, method, value, keepalive: options.keepalive });
+    calls.push({
+      path,
+      method,
+      value,
+      keepalive: options.keepalive,
+      headers: options.headers,
+    });
     const response = await intercept?.(path, options);
     if (response) return response;
     if (path.endsWith("/open")) {
@@ -130,6 +138,66 @@ test("page exit releases the unified session with keepalive and tolerates a repe
   assert.equal(f.saved(), undefined);
   assert.equal(currentChat(id)?.draft, "late stale draft");
   assert.equal(f.calls.filter((call) => call.path.endsWith("/open")).length, 1);
+});
+
+test("pagehide fences an unacknowledged open and BFCache restoration reacquires", async (t) => {
+  const f = fixture(t),
+    id = crypto.randomUUID();
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  f.intercept(async (path) => {
+    if (path.endsWith("/open")) await pending;
+    return undefined;
+  });
+  const opening = openBackendProject(id, "A");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const issued = new Headers(
+    f.calls.find((call) => call.path.endsWith("/open"))!.headers,
+  ).get("X-OpenDirector-Session-Generation");
+  listeners.get("pagehide")!();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const release = f.calls.find((call) => call.method === "DELETE")!;
+  assert.equal(
+    new Headers(release.headers).get("X-OpenDirector-Session-Generation"),
+    issued,
+  );
+  finish();
+  await opening;
+  const before = f.calls.length;
+  heartbeat();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.length, before);
+  listeners.get("pageshow")!({ persisted: true });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const reacquired = f.calls
+    .filter((call) => call.path.endsWith("/open"))
+    .at(-1)!;
+  assert.ok(
+    Number(
+      new Headers(reacquired.headers).get("X-OpenDirector-Session-Generation"),
+    ) > Number(issued),
+  );
+});
+
+test("heartbeat recovers an absent row but never reopens a fenced page", async (t) => {
+  const f = fixture(t),
+    id = crypto.randomUUID();
+  await openBackendProject(id, "A");
+  let code = "session_not_open";
+  f.intercept(async (_path, options) =>
+    options.method === "PUT"
+      ? Response.json({ code, detail: code }, { status: 409 })
+      : undefined,
+  );
+  heartbeat();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.filter((call) => call.path.endsWith("/open")).length, 2);
+  code = "session_stale";
+  heartbeat();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.filter((call) => call.path.endsWith("/open")).length, 2);
 });
 
 test("release errors prevent release or switching and preserve the active draft", async (t) => {

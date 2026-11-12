@@ -119,11 +119,11 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
                 return ViewState.model_validate(read_json(file))
             return None if missing_ok else ViewState(projectId=project_id, clientId=client_id)
 
-    def open(self, project_id, session):
+    def open(self, project_id, session, generation=0, *, renewal=False):
         with self.local.transaction() as db:
             self._recover()
             path, manifest = self._find(db, project_id)
-            self.local._open(db, dict(id=str(project_id), path=str(path)), session)
+            self.local._open(db, dict(id=str(project_id), path=str(path)), session, generation, renewal=renewal)
             record, validated = self._current_record(db, project_id, path, manifest)
             if not validated:
                 # The canvas is open now; prove the ancestry in the background
@@ -131,8 +131,8 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
                 self._schedule_warm(path, manifest)
             return record.snapshot.model_copy(deep=True)
 
-    def heartbeat(self, session, project_id):
-        self.open(project_id, session)
+    def heartbeat(self, session, project_id, generation=0):
+        self.open(project_id, session, generation, renewal=True)
 
     def execute(self, command: Command, *, session=None, source='ui', imported_from=None):
         return command_dispatcher().execute(
