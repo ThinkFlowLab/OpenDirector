@@ -33,6 +33,42 @@ macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统�
 
 Consult the [development lessons](lessons.md) when selecting relevant scenarios, and verify against the current code and tests. For model capability or parameter changes, trace representative input from the entry point through backend validation to the provider request, and check that rejected input does not create a job. For imports, references, navigation, or asynchronous tasks, inspect persisted identities and actual execution inputs after conversion or recovery.
 
+## PR 前轻量静态检查 / Lightweight checks before a PR
+
+静态工具独立安装，不需要安装应用、模型、ffmpeg 或浏览器。使用 Python 3.11+；Windows 可将下方 `python` 替换为 `.venv/Scripts/python.exe`。在仓库根目录执行：
+
+Install the static tools separately with Python 3.11+; no application, model, media or browser dependencies are needed. On Windows, use `.venv/Scripts/python.exe` as appropriate. Run from the repository root:
+
+```sh
+python -m pip install -r requirements-static.txt
+python -m pre_commit install
+```
+
+安装 hook 后，正常 `git commit` 会对暂存文件运行 [统一配置](../../.pre-commit-config.yaml)。失败会阻止提交；空白、换行和文件结尾检查可能自动修改文件，需审阅修改并重新暂存、提交。首次运行需要联网安装隔离的 hook 环境；actionlint 的 Go 工具链由 pre-commit 管理，首次初始化不代表后续检查耗时。不会运行单元测试、构建、ready 或真实服务调用。
+
+Once installed, the hook checks staged files on normal `git commit`. Failures block the commit. Whitespace and line-ending hooks may fix files; review and stage the fixes before committing again. The first run needs network access to initialize isolated hook environments, including pre-commit's managed Go toolchain for actionlint. Initialization time is separate from warm check time. These hooks do not run tests, builds, ready suites or real services.
+
+提出 PR 前，先提交全部拟交付的修改，再更新目标分支引用并检查整个 PR 差异，避免只检查最后一次提交。以下以本仓库的 `upstream/main` 为例；如果目标远端名为 `origin`，相应替换远端与引用。用户和 agent 使用相同命令，检查失败或自动修改文件时先修复、重新提交并重跑：
+
+Before opening a PR, commit all intended changes, fetch the target branch and check the entire PR diff rather than only the last commit. Replace `upstream` with `origin` if that is your target remote. Users and agents use the same command; fix failures or automatic edits, commit again, and rerun:
+
+```sh
+git fetch upstream main
+python -m pre_commit run --from-ref upstream/main --to-ref HEAD
+```
+
+该范围命令检查 merge-base 到 HEAD 的已提交差异，不包含未提交文件。提交前可用 `python -m pre_commit run --files path/to/file` 提前检查；`python -m pre_commit run --all-files` 用于显式全仓审计，不要求本 PR 批量重排历史文件。配置变更后建议执行全仓审计，记录既有失败，不能把仅检查配置文件通过解释为已有代码全部合规。
+
+The range command checks committed changes from the merge base to HEAD, excluding uncommitted files. Use `python -m pre_commit run --files path/to/file` for an early check or `python -m pre_commit run --all-files` for an explicit repository audit. Configuration changes should be audited against all files, recording existing failures; a passing config-only check does not establish repository-wide compliance. This change does not require bulk reformatting historical files.
+
+检查包括 YAML/JSON/TOML 与 Python 语法、合并冲突标记、Python 调试语句、文件结尾与混合换行、尾随空格，以及 GitHub Actions workflow 语法。Markdown 保留双空格硬换行。actionlint 不调用可选 shellcheck/pyflakes，避免额外平台工具依赖。未引入 GPU/CUDA、Buildkite、模型专用检查、提交签名改写或全仓类型/风格迁移。
+
+Checks cover YAML/JSON/TOML and Python syntax, conflict markers, Python debug statements, file endings, mixed line endings, trailing whitespace and GitHub Actions workflow syntax. Markdown hard line breaks are preserved. actionlint disables optional shellcheck/pyflakes integrations to avoid extra platform toolchains. GPU/CUDA, Buildkite, model-specific checks, commit sign-off rewriting and repository-wide typing/style migrations are excluded.
+
+本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。这是提前反馈入口，不替代现有 CI 或按风险选择的测试；本次只提供本地配置与使用约定，服务端复核、PR ready 分层与合并队列由 #273 后续任务接入。
+
+Local hooks can be absent or bypassed and cannot prevent every PR from being created on GitHub. They provide early feedback and do not replace existing CI or risk-based testing. This change supplies local configuration and instructions; server-side verification, PR ready selection and merge queue integration remain follow-up work under #273.
+
 ## 按风险选择验证
 
 | 修改范围 | 应核对的重点 |

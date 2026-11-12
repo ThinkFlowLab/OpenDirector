@@ -2,6 +2,12 @@
 
 Thanks for helping with OpenDirector. This file covers the issue/PR labels and the checklist we ask for before a change is reviewed. Architecture rules live in [AGENTS.md](AGENTS.md); reproducible checks and evidence requirements live in [docs/development/validation.md](docs/development/validation.md). Tag and daily release practice lives in [docs/development/release.md](docs/development/release.md).
 
+## Before opening a PR / 提出 PR 前
+
+Install the lightweight static hooks and run the full PR-diff check described in the [validation guide](docs/development/validation.md#pr-前轻量静态检查--lightweight-checks-before-a-pr). Fix failures before opening the PR. Local checks supplement the existing CI and relevant tests.
+
+提出 PR 前，按[验证指南](docs/development/validation.md#pr-前轻量静态检查--lightweight-checks-before-a-pr)安装轻量静态 hook 并检查整个 PR 差异，修复失败后再提出 PR。本地检查与现有 CI、相关测试配合使用。
+
 ## Label taxonomy
 
 Labels are short, English and prefixed by dimension, so issues and PRs can be filtered without reading every title.

@@ -9,11 +9,11 @@ Harness 指承担模型调用、工具执行和上下文管理的 Agent 执行�
 | Runtime | 执行程序 | 模型与认证来源 |
 | --- | --- | --- |
 | Default | 固定版本的 bundled OpenCode | OpenDirector 模型配置，经本地模型代理访问服务 |
-| OpenCode CLI | PATH 中的 opencode | CLI 原生配置与模型目录 |
-| Codex | PATH 中的 codex | 原生认证与模型目录；隔离启动前解析所选模型或默认模型 |
-| Claude Code | PATH 中的 claude | 原生认证、环境变量与初始化模型目录 |
-| JiuwenSwarm | PATH 中的 jiuwenswarm-process，通过 stdin/stdout JSONL 直接调用 | 本机 Jiuwen 模型目录、配置与环境变量 |
-| DeepSeek Harness | PATH 中的 dsh，以 acp profile 运行标准 JSON-RPC | CLI 原生 profile、模型目录与认证 |
+| OpenCode CLI | opencode，优先 PATH，再查找常见 CLI 安装目录 | CLI 原生配置与模型目录 |
+| Codex | 优先 PATH 中的 codex，再查找常见桌面版与 CLI 安装目录 | 原生认证与模型目录；隔离启动前解析所选模型或默认模型 |
+| Claude Code | claude，优先 PATH，再查找常见 CLI 安装目录 | 原生认证、环境变量与初始化模型目录 |
+| JiuwenSwarm | jiuwenswarm-process，优先 PATH，再查找常见 CLI 安装目录，通过 stdin/stdout JSONL 直接调用 | 本机 Jiuwen 模型目录、配置与环境变量 |
+| DeepSeek Harness | dsh，优先 PATH，再查找常见 CLI 安装目录，以 acp profile 运行标准 JSON-RPC | CLI 原生 profile、模型目录与认证 |
 
 Default 与 OpenCode CLI 分别配置。外部 CLI 不读取 OpenDirector 保存的模型凭证。进程继承服务端环境，包括 PATH 和第三方 API 配置。
 

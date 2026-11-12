@@ -4,6 +4,8 @@
 
 ## 接入模型
 
+选择外部 Agent harness（Codex、OpenCode、Claude Code、DeepSeek Harness 和 JiuwenSwarm）时，OpenDirector 优先检查后端的 `PATH`，再查找常见 CLI 安装目录，包括用户命令目录、npm/nvm、Bun、Volta、Windows Scoop 与 Python Scripts，以及 macOS Homebrew 和用户 Python 命令目录。同时检查 Codex 桌面版、OpenCode 的 `.opencode/bin`、Claude 的 `.claude/local`，以及配置的 npm、pipx 和 uv 命令目录。检测仅访问已知目录，不扫描整个磁盘；找到 CLI 后仍需检查认证与配置是否就绪。其他安装位置可加入后端的 `PATH`，然后重启后端。Default Agent 仍使用应用内置的 OpenCode。
+
 点击左下角齿轮进入“设置”，打开“模型接入”，按用途添加对话、图片、视频或音频模型。
 
 需要接入可灵 4.0 或 Flash 时，参阅[使用可灵生成视频](kling-video.zh-CN.md)。两个型号均支持文生、首帧和图片参考，标准版 4.0 额外支持首尾帧。添加后保留已有模型选择。
