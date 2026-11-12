@@ -1,19 +1,21 @@
 const config = require('../../.github/auto-labels.json');
 const allowed = name => /^(type:(bug|feat|docs|refactor|ci|meta)|area:[\w-]+|modality:[\w-]+|provider:[\w-]+)$/.test(name);
-function validate(content, catalog, existing) {
+function validate(content, catalog, existing, permitted = allowed) {
   const result = JSON.parse(content);
   if (!Array.isArray(result.labels) || result.labels.length > 12) throw new Error('Invalid label response');
   const known = new Set(catalog.map(label => label.name));
   const selected = [];
   for (const item of result.labels) {
-    if (!item || typeof item.name !== 'string' || !known.has(item.name) || !allowed(item.name) ||
+    if (!item || typeof item.name !== 'string' || !known.has(item.name) || !permitted(item.name) ||
         typeof item.confidence !== 'number' || !Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1)
       throw new Error('Invalid label response');
     if (item.confidence >= config.minimumConfidence) selected.push(item.name);
   }
   const types = [...new Set(selected.filter(name => name.startsWith('type:')))];
   if (types.length > 1) throw new Error('Multiple type labels');
+  if (new Set(selected.filter(name => name.startsWith('priority:'))).size > 1) throw new Error('Multiple priorities');
   return [...new Set(selected)].filter(name => !existing.includes(name) &&
+    !(name.startsWith('priority:') && existing.some(label => label.startsWith('priority:'))) &&
     !(name.startsWith('type:') && existing.some(label => label.startsWith('type:'))));
 }
 function fallback(files, catalog, existing) {
