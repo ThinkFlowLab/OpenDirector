@@ -55,7 +55,15 @@ Search citations keep their native markers in the original reply and trace. Comp
 
 Default 的模型网关在 `agent-runs/<turn-id>.model.jsonl` 记录实际转发的请求体，包括生效的系统消息、会话上下文、工具 Schema 与模型参数。请求 ID 关联上游 HTTP 状态、响应头等待耗时和传输错误。该文件仅供本地调试，创建权限为 `0600`，不记录 HTTP 鉴权头。回复片段、工具结果和 token 用量仍见原生轨迹。
 
-停止或流连接断开时，适配层终止进程组，Gateway 关闭新调用入口并等待已接受操作结束；API 保存部分回复并释放运行占用。业务操作以各自回执确认，远端生成任务仍通过任务取消命令处理。
+切换项目或断开回复流只分离当前视图，已接受的运行继续执行。每轮运行从发起窗口的有效编辑会话取得独立、限定于原项目的租约，由后端续租；窗口切换项目或释放自己的会话不会撤销该租约。同一窗口可返回原项目继续编辑，其他窗口仍受项目排他锁约束。所有写入继续执行版本、锁和目录一致性校验。续租失败会中断运行；运行完成、停止或异常结束后释放租约，进程异常退出时由租期过期恢复。
+
+Switching projects or disconnecting the reply stream only detaches the view. An accepted run retains its own project-scoped editing lease, authorized by the originating window and renewed by the backend. Navigating or releasing the window's session leaves that lease intact. The same window can return and edit; unrelated windows remain excluded. Writes retain version, lock and directory checks. Renewal failure interrupts the run. Completion, stopping and errors release the lease; process failure is bounded by lease expiry.
+
+刷新页面时，前端先通过 Web Locks 确认旧页面已退出，再将原页面名下的运行关联到新页面会话；普通释放只关闭界面会话，不取消运行。复制仍存活的标签页不进行该移交。
+
+On reload, the client first uses Web Locks to confirm that its previous page has exited, then hands that page's run ownership to the replacement session. Ordinary release only closes the UI lease. Duplicating a live tab does not perform this handoff.
+
+显式停止或运行结束时，适配层终止进程组，Gateway 关闭新调用入口并等待已接受操作结束；API 保存部分回复并释放运行占用。业务操作以各自回执确认，远端生成任务仍通过任务取消命令处理。
 
 ## 原生工具权限
 

@@ -134,6 +134,25 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
     def heartbeat(self, session, project_id):
         self.open(project_id, session)
 
+    def retain_agent_session(self, project_id, owner, session):
+        """Retain only a project the originating window is authorized to edit."""
+        with self.local.transaction() as db:
+            self._recover()
+            path, _ = self._find(db, project_id)
+            self._lease(db, project_id, path, owner)
+            db.execute('INSERT INTO agent_sessions(id,owner) VALUES (?,?)', (session, owner))
+            self.local._open(db, dict(id=str(project_id), path=str(path)), session)
+
+    def renew_agent_session(self, project_id, session):
+        with self.local.transaction() as db:
+            self._recover()
+            path, _ = self._find(db, project_id)
+            # A failed/expired lease cannot silently reacquire another owner's
+            # project or accept a directory moved while the run was active.
+            self._lease(db, project_id, path, session)
+            db.execute('UPDATE sessions SET expires=? WHERE id=?',
+                       (time.time() + self.local.LEASE_SECONDS, session))
+
     def execute(self, command: Command, *, session=None, source='ui', imported_from=None):
         return command_dispatcher().execute(
             self, command, session=session, source=source, imported_from=imported_from)

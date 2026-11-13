@@ -1,11 +1,11 @@
 """Project-scoped assistant persistence and native runtime streaming."""
 import asyncio
-from contextlib import aclosing, suppress
+from contextlib import aclosing, asynccontextmanager, suppress
 import json
 import logging
 from pathlib import Path
 from typing import Annotated, Literal
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 from anyio import CancelScope
 from fastapi import APIRouter, Header
@@ -232,6 +232,38 @@ class RunEvents:
             await self.changed.wait()
 
 
+@asynccontextmanager
+async def agent_session(projects, project_id, owner):
+    session = str(uuid4())
+    acquisition = asyncio.create_task(asyncio.to_thread(
+        projects.retain_agent_session, project_id, owner, session))
+
+    async def renew():
+        while True:
+            await asyncio.sleep(projects.local.LEASE_SECONDS / 3)
+            await asyncio.to_thread(projects.renew_agent_session, project_id, session)
+
+    try:
+        await asyncio.shield(acquisition)
+        try:
+            async with asyncio.TaskGroup() as tasks:
+                heartbeat = tasks.create_task(renew())
+                try:
+                    yield session
+                finally:
+                    heartbeat.cancel()
+        except ExceptionGroup as failure:
+            # Preserve the ordinary ProjectError diagnostic when renewal or
+            # the body fails; TaskGroup has already stopped the other task.
+            if len(failure.exceptions) == 1:
+                raise failure.exceptions[0] from None
+            raise
+    finally:
+        # Cancellation must not release before the acquisition worker commits.
+        await asyncio.gather(acquisition, return_exceptions=True)
+        await asyncio.to_thread(projects.local.release, session)
+
+
 def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
     router = APIRouter(prefix='/api/creation/projects/{project_id}/assistant')
     conversations = Conversations(projects)
@@ -377,64 +409,65 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                 previous_sources = {}
                 plan = None
                 try:
-                    user = {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
-                        'assets': [{'id': str(asset.id), 'name': asset.name, 'type': asset.metadata.mimeType,
-                            'size': asset.metadata.size, 'fingerprint': asset.fingerprint}
-                            for asset in (assets[str(key)] for key in value.assets)],
-                        'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
-                        'modelSelections': dict(value.modelSelections),
-                        'model': model, 'status': 'complete'}
-                    saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user, conversation_id=value.conversationId)
-                    accepted = True
-                    events.put({'type': 'start', 'conversation': saved})
-                    previous_sources = {source['id']: source for message in saved['messages'][:-2]
-                                        for source in message.get('sources', [])}
-                    context = []
-                    for message in saved['messages'][:-1]:
-                        content = message['text'] or '(empty reply)'
-                        references = []
-                        for attachment in message.get('assets', []):
-                            asset = assets.get(attachment['id'])
-                            if asset is not None:
-                                references.append({'id': str(asset.id), 'name': attachment['name'],
-                                    'kind': asset.kind, 'path': str((directory / asset.path).resolve()),
-                                    'metadata': asset.metadata.model_dump(mode='json', exclude_none=True)})
-                        if references:
-                            content += '\nReferenced project assets: ' + json.dumps(references, ensure_ascii=False)
-                            content += '\nThese are asset references, not visual observations. Inspect media with available tools before describing its contents.'
-                        context.append({'role': message['role'], 'content': content})
-                    if preferences:
-                        context[-1]['content'] += '\nUser model preferences for this turn: ' + json.dumps(preferences, ensure_ascii=False)
-                        context[-1]['content'] += '\nUse these models for new generation unless the user explicitly requests another. If unavailable or unsuitable, explain and ask before substituting. Keep existing nodes on their configured models unless the user requests a change.'
-                    run = RunContext(runtime=value.runtime, project_id=project_id, turn_id=value.id,
-                        session=session, directory=directory, config=config, messages=context,
-                        selected_skills=value.skills, thinking=value.thinking, model_selections=model_selections,
-                        runtime_model=value.runtimeModel, skills=available, conversation_id=UUID(saved['conversationId']))
-                    async with aclosing(runtimes.stream(run)) as stream:
-                        async for event in stream:
-                            if event['type'] == 'delta':
-                                text += event['text']
-                                inherited = ([source for source in referenced_sources(text, previous_sources)
-                                              if source['id'] not in sources]
-                                             if previous_sources and '\ue201' in event['text'] else [])
-                                if inherited:
-                                    sources.update({source['id']: source for source in inherited})
-                                    events.put({'type': 'sources', 'sources': inherited})
-                            if event['type'] == 'sources':
-                                for source in event['sources']:
-                                    sources.setdefault(source['id'], source)
-                            if event['type'] == 'plan':
-                                plan = event['entries']
-                            if event['type'] == 'tool':
-                                previous = next((item for item in activities if item['id'] == event['id']), None)
-                                activity = {**{key: item for key, item in event.items() if key != 'type'},
-                                            'textOffset': previous['textOffset'] if previous else len(text)}
-                                if previous is None:
-                                    activities.append(activity)
-                                else:
-                                    activities[activities.index(previous)] = activity
-                                event = {'type': 'tool', **activity}
-                            events.put(event)
+                    async with agent_session(projects, project_id, session) as run_session:
+                        user = {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
+                            'assets': [{'id': str(asset.id), 'name': asset.name, 'type': asset.metadata.mimeType,
+                                'size': asset.metadata.size, 'fingerprint': asset.fingerprint}
+                                for asset in (assets[str(key)] for key in value.assets)],
+                            'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
+                            'modelSelections': dict(value.modelSelections),
+                            'model': model, 'status': 'complete'}
+                        saved = await asyncio.to_thread(conversations.update, project_id, run_session, begin=user, conversation_id=value.conversationId)
+                        accepted = True
+                        events.put({'type': 'start', 'conversation': saved})
+                        previous_sources = {source['id']: source for message in saved['messages'][:-2]
+                                            for source in message.get('sources', [])}
+                        context = []
+                        for message in saved['messages'][:-1]:
+                            content = message['text'] or '(empty reply)'
+                            references = []
+                            for attachment in message.get('assets', []):
+                                asset = assets.get(attachment['id'])
+                                if asset is not None:
+                                    references.append({'id': str(asset.id), 'name': attachment['name'],
+                                        'kind': asset.kind, 'path': str((directory / asset.path).resolve()),
+                                        'metadata': asset.metadata.model_dump(mode='json', exclude_none=True)})
+                            if references:
+                                content += '\nReferenced project assets: ' + json.dumps(references, ensure_ascii=False)
+                                content += '\nThese are asset references, not visual observations. Inspect media with available tools before describing its contents.'
+                            context.append({'role': message['role'], 'content': content})
+                        if preferences:
+                            context[-1]['content'] += '\nUser model preferences for this turn: ' + json.dumps(preferences, ensure_ascii=False)
+                            context[-1]['content'] += '\nUse these models for new generation unless the user explicitly requests another. If unavailable or unsuitable, explain and ask before substituting. Keep existing nodes on their configured models unless the user requests a change.'
+                        run = RunContext(runtime=value.runtime, project_id=project_id, turn_id=value.id,
+                            session=run_session, directory=directory, config=config, messages=context,
+                            selected_skills=value.skills, thinking=value.thinking, model_selections=model_selections,
+                            runtime_model=value.runtimeModel, skills=available, conversation_id=UUID(saved['conversationId']))
+                        async with aclosing(runtimes.stream(run)) as stream:
+                            async for event in stream:
+                                if event['type'] == 'delta':
+                                    text += event['text']
+                                    inherited = ([source for source in referenced_sources(text, previous_sources)
+                                                  if source['id'] not in sources]
+                                                 if previous_sources and '\ue201' in event['text'] else [])
+                                    if inherited:
+                                        sources.update({source['id']: source for source in inherited})
+                                        events.put({'type': 'sources', 'sources': inherited})
+                                if event['type'] == 'sources':
+                                    for source in event['sources']:
+                                        sources.setdefault(source['id'], source)
+                                if event['type'] == 'plan':
+                                    plan = event['entries']
+                                if event['type'] == 'tool':
+                                    previous = next((item for item in activities if item['id'] == event['id']), None)
+                                    activity = {**{key: item for key, item in event.items() if key != 'type'},
+                                                'textOffset': previous['textOffset'] if previous else len(text)}
+                                    if previous is None:
+                                        activities.append(activity)
+                                    else:
+                                        activities[activities.index(previous)] = activity
+                                    event = {'type': 'tool', **activity}
+                                events.put(event)
                 except asyncio.CancelledError:
                     status = 'stopped'
                     raise
