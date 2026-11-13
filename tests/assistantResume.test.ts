@@ -19,6 +19,7 @@ test("returning to a project replays the running turn from its start", async (t)
     assert.ok(url.endsWith("/assistant/turns/turn-1/events"));
     return sse([
       { type: "start", conversation: saved },
+      { type: "sources", sources: [{ id: "turn1search0", url: "https://example.test/source", title: "Source" }] },
       { type: "delta", text: "继续" },
       { type: "end", conversation: saved, error: null },
     ]);
@@ -29,8 +30,9 @@ test("returning to a project replays the running turn from its start", async (t)
   );
   assert.deepEqual(
     events.map((event) => event.type),
-    ["start", "delta", "end"],
+    ["start", "sources", "delta", "end"],
   );
+  assert.deepEqual(events[1], { type: "sources", sources: [{ id: "turn1search0", url: "https://example.test/source", title: "Source" }] });
   assert.equal(fetch.mock.calls[0]!.arguments[1]?.method, undefined);
 });
 

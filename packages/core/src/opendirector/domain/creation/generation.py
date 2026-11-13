@@ -373,6 +373,10 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         from opendirector.domain.moss_speech import validate_moss_speech_input
         text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
         validate_moss_speech_input(text, spec.parameters.voice)
+    elif rules.profile == 'zhipu-speech':
+        from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
+        text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
+        validate_zhipu_speech_input(text, spec.parameters.voice)
     elif spec.kind == 'audio' and rules.voiceRequired and not spec.parameters.voice:
         raise ValueError('请填写服务音色 ID。')
     if len(references) > MAX_REFERENCES:

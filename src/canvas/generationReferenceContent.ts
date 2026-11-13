@@ -16,42 +16,6 @@ export function generationPrompt(node: CanvasNode) {
     : node.data.prompt;
 }
 
-/** Server acknowledgements canonicalize labels/assets without changing intent. */
-export function generationEditIdentity(
-  node: CanvasNode,
-  content: ReferenceContent,
-) {
-  const { prompt: _projection, ...settings } = node.data.settings ?? {};
-  return JSON.stringify({
-    kind: node.type,
-    title: node.data.title,
-    src: node.data.src,
-    text: node.data.text,
-    settings: Object.fromEntries(
-      Object.entries(settings).sort(([a], [b]) => a.localeCompare(b)),
-    ),
-    agentSettings: node.data.agentSettings
-      ? Object.fromEntries(
-          Object.entries(node.data.agentSettings).sort(([a], [b]) =>
-            a.localeCompare(b),
-          ),
-        )
-      : undefined,
-    content: content.map((part) =>
-      part.type !== "reference"
-        ? part
-        : part.binding === "asset"
-          ? {
-              binding: "asset",
-              assetId: part.assetId,
-              fingerprint: part.fingerprint,
-              referenceId: part.referenceId,
-            }
-          : { nodeId: part.nodeId, referenceId: part.referenceId },
-    ),
-  });
-}
-
 /** Match provider numbering to first inline occurrence, then relationship order. */
 export function incomingReferenceNodes(
   document: CanvasDocument,

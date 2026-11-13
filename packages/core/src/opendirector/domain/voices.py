@@ -5,6 +5,7 @@ import re
 from urllib.parse import urlsplit, urlunsplit
 
 from .moss_speech import is_moss_speech
+from .zhipu_speech import is_zhipu_speech
 from .projects import ProjectError
 
 # Character limits and the corresponding error for each upload metadata field.
@@ -32,6 +33,8 @@ VOICE_MESSAGES = {
     'voice_provider_protocol': '音色服务返回格式无效或分页未结束，请检查服务版本和接口。',
     'voice_provider_error': '音色服务请求失败，请检查服务配置和账户权限。',
     'voice_provider_timeout': '音色服务请求超时，请检查服务状态后重试。',
+    'voice_name_taken': '该账户已有同名音色，请换一个名称。',
+    'voice_provider_quota': '音色服务账户余额或资源包不足，请充值后重试。',
 }
 
 
@@ -43,6 +46,11 @@ def voice_library_capabilities(config):
     if config.get('kind') != 'audio' or config.get('protocol') != 'openai':
         return None
     name = config.get('modelId', '').rsplit('/', 1)[-1].lower().replace('_', '-')
+    if is_zhipu_speech(config):
+        return _scoped(config, 'zhipu', dict(
+            requiresTranscript=False, acceptsTranscript=True, requiresReferenceAudio=False, supportsUploadedVoices=True,
+            referenceEmbeddingDimension=None, canDelete=True, maxBytes=10 * 1024 * 1024,
+            formats=['wav', 'mp3'], minSeconds=3, maxSeconds=30))
     moss = is_moss_speech(config)
     cosyvoice = name.startswith(('cosyvoice3', 'fun-cosyvoice3'))
     fish_speech = name.startswith('fish-speech') or name in {'s2-pro', 'drama-3', 'drama-3-int4'}
@@ -53,15 +61,6 @@ def voice_library_capabilities(config):
     if not moss and not (config.get('connectionType') == 'self_hosted' and known):
         return None
     provider = 'moss' if moss else 'vllm_omni'
-    parsed = urlsplit(config['url'])
-    host = parsed.hostname.lower()
-    if ':' in host: host = '[' + host + ']'
-    port = parsed.port
-    if port and (parsed.scheme, port) not in {('https', 443), ('http', 80)}: host += ':' + str(port)
-    endpoint = urlunsplit((parsed.scheme.lower(), host, parsed.path.rstrip('/'), '', ''))
-    account = hashlib.sha256((config.get('apiKey', '') if config.get('authMode') != 'none' else '').encode()).hexdigest()
-    identity = [provider, config.get('providerId') or config.get('id'), endpoint, config.get('authMode', 'none'), account]
-    connection = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
     # Upstream vllm_omni/entrypoints/openai/tts_adapters/moss_tts.py:
     # validate() requires reference audio for standard/realtime/local/Nano.
     # Local-Transformer ref_text is optional continuation conditioning; Drama3
@@ -80,11 +79,25 @@ def voice_library_capabilities(config):
     qwen_base = name.startswith('qwen3-tts') and name.endswith('-base')
     dimension = (1024 if '0.6b' in name else 2048 if '1.7b' in name else None) if qwen_base else None
     reference = reference or qwen_base
-    return dict(provider=provider, connectionId=connection, requiresTranscript=transcript,
+    # vLLM registrations carry ref_text whenever the caller has one.
+    return _scoped(config, provider, dict(requiresTranscript=transcript, acceptsTranscript=not moss,
                 requiresReferenceAudio=reference, supportsUploadedVoices=uploaded,
                 referenceEmbeddingDimension=dimension, canDelete=not moss, maxBytes=10 * 1024 * 1024,
                 formats=['wav', 'mp3', 'm4a', 'flac'] if moss else ['wav', 'mp3', 'flac', 'ogg', 'aac', 'webm', 'm4a', 'mp4'],
-                minSeconds=None if moss else 1, maxSeconds=30)
+                minSeconds=None if moss else 1, maxSeconds=30))
+
+
+def _scoped(config, provider, capabilities):
+    parsed = urlsplit(config['url'])
+    host = parsed.hostname.lower()
+    if ':' in host: host = '[' + host + ']'
+    port = parsed.port
+    if port and (parsed.scheme, port) not in {('https', 443), ('http', 80)}: host += ':' + str(port)
+    endpoint = urlunsplit((parsed.scheme.lower(), host, parsed.path.rstrip('/'), '', ''))
+    account = hashlib.sha256((config.get('apiKey', '') if config.get('authMode') != 'none' else '').encode()).hexdigest()
+    identity = [provider, config.get('providerId') or config.get('id'), endpoint, config.get('authMode', 'none'), account]
+    connection = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
+    return dict(provider=provider, connectionId=connection, **capabilities)
 
 
 def valid_voice_name(value):

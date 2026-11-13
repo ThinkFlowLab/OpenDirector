@@ -139,7 +139,7 @@ export const errors = {
     "Enter a voice id supported by the service (letters, numbers, dots, underscores, or hyphens).",
   "errors.rules.voiceRequired": "Enter a valid Voice ID from the service's voice library before generating.",
   "errors.rules.referencesUnsupported": "This model does not support references. Disconnect the references before generating.",
-  "errors.generationFailure.voiceNotFound": "The voice was not found or is unavailable to this account. Check the Voice ID in the MOSS voice library.",
+  "errors.generationFailure.voiceNotFound": "The voice was not found or is unavailable to this account. Select an available voice in the voice library.",
   "errors.rules.audioDisable":
     "The video adapter does not support disabling generated audio.",
   "errors.rules.duration":

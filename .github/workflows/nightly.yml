@@ -384,12 +384,15 @@ jobs:
           done
           curl --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/creation-test-health"
           curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
+          # One artifact directory: the report sits at its root, where
+          # daily-benchmark reads nightly-perf/nightly-perf.json (#299).
+          mkdir -p nightly-perf/profiles
           node tests/browser/mp4_render_probe.mjs > /tmp/render-probe.json
           PROFILE_LABEL="nightly-${GITHUB_SHA::7}" node tests/browser/reference_drag_performance.mjs > /tmp/drag-perf.json
           jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
             --argjson render "$(cat /tmp/render-probe.json)" \
             --argjson drag "$(cat /tmp/drag-perf.json)" \
-            '{sha: $sha, runId: ($run | tonumber), render: $render, drag: $drag}' > nightly-perf.json
+            '{sha: $sha, runId: ($run | tonumber), render: $render, drag: $drag}' > nightly-perf/nightly-perf.json
           {
             echo "## Render output verification"
             echo ""
@@ -409,14 +412,22 @@ jobs:
           for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log"; do
             if [ -f "$log" ]; then tail -n 150 "$log"; fi
           done
+      - name: Stage drag profiles beside the report
+        # upload-artifact roots the archive at the common ancestor of its
+        # paths; mixing the workspace report with /tmp profiles made that `/`
+        # and buried the report under home/runner/... (#299).
+        if: always()
+        run: |
+          mkdir -p nightly-perf/profiles
+          for profile in /tmp/opendirector-drag-nightly-*.cpuprofile; do
+            if [ -f "$profile" ]; then cp "$profile" nightly-perf/profiles/; fi
+          done
       - name: Upload perf and output report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nightly-perf
-          path: |
-            nightly-perf.json
-            /tmp/opendirector-drag-nightly-*.cpuprofile
+          path: nightly-perf/
           if-no-files-found: ignore
 
   # Lane 6: fixed comparable benchmark, after this run's perf sample exists.

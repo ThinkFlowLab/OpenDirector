@@ -1,0 +1,2 @@
+# Local static tooling; independent of application/runtime dependencies.
+pre-commit==4.5.1

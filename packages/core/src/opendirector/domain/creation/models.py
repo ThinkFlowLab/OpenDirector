@@ -9,6 +9,7 @@ from opendirector.domain.capabilities import agent_input_modalities
 from opendirector.domain.video_capabilities import VideoCapabilities as ExistingVideoCapabilities
 from opendirector.domain.video_capabilities import VideoAdapter, check_video_config
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import SERVICE_VOICE_PATTERN
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
@@ -29,9 +30,10 @@ class ImageOutput(Contract):
 
 
 class VoiceLibraryCapabilities(Contract):
-    provider: Literal['vllm_omni', 'moss'] = Field(description='Voice registry protocol.')
+    provider: Literal['vllm_omni', 'moss', 'zhipu'] = Field(description='Voice registry protocol.')
     connectionId: str = Field(min_length=1, max_length=200, description='Opaque service, endpoint and account identity.')
     requiresTranscript: bool = Field(description='Registered voice must have a reference transcript.')
+    acceptsTranscript: bool = Field(default=False, description='Registry stores an optional reference transcript when one is supplied.')
     requiresReferenceAudio: bool = Field(description='Registered voice must have actual reference audio.')
     supportsUploadedVoices: bool = Field(default=True, description='Selected model checkpoint accepts uploaded registry voices.')
     referenceEmbeddingDimension: int | None = Field(default=None, ge=1, le=65536,
@@ -51,6 +53,8 @@ class InputRules(Contract):
         default=None, exclude_if=lambda value: value is None, description='Maximum characters in the final prompt including text references.')
     voiceRequired: bool | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Whether speech generation requires an explicit service voice ID.')
+    defaultVoice: str | None = Field(default=None, exclude_if=lambda value: value is None,
+        pattern=SERVICE_VOICE_PATTERN, description='Service voice ID applied when a required selection is still empty.')
     referencesAllowed: bool | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Whether references may be attached, including context-only references.')
     allowedKinds: tuple[Literal['text', 'image', 'video', 'audio'], ...] = Field(description='Accepted reference media kinds.')

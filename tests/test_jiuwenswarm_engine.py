@@ -13,6 +13,8 @@ from opendirector.agent import jiuwenswarm as swarm
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
+pytestmark = pytest.mark.nightly
+
 
 @pytest.mark.skipif(os.getenv('JIUWENSWARM_ENGINE_TEST') != '1', reason='requires installed JiuwenSwarm Process CLI')
 def test_real_engine_shared_business_loop(tmp_path, monkeypatch):

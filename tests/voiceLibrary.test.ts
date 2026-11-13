@@ -60,6 +60,7 @@ const config: ModelConfig = {
       provider: "vllm_omni",
       connectionId: "service-a",
       requiresTranscript: false,
+      acceptsTranscript: true,
       requiresReferenceAudio: false,
       canDelete: true,
       supportsUploadedVoices: true,

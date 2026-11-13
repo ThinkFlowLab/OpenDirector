@@ -9,6 +9,21 @@ import {
 import { createNode } from "../src/canvas/model.ts";
 import type { CanvasFragment } from "../src/canvas/operations.ts";
 
+test("clipboard reads carry the original MIME type instead of the preview's type", async () => {
+  const node = createNode("image", undefined, { src: "blob:preview", mimeType: "image/heic" });
+  const fragment: CanvasFragment = { nodes: [node], edges: [] };
+  const media = captureClipboardMedia("project", fragment, {
+    read: async (src, mimeType) => {
+      assert.equal(src, "blob:preview");
+      assert.equal(mimeType, "image/heic");
+      throw Error("original unavailable");
+    },
+  });
+  await assert.rejects(transferClipboardMedia(fragment, media, "target", async () => {
+    assert.fail("a preview must not be registered as the original");
+  }), /original unavailable/);
+});
+
 function fixture() {
   const image = URL.createObjectURL(new Blob(["png"], { type: "image/png" }));
   const video = URL.createObjectURL(new Blob(["mp4"], { type: "video/mp4" }));

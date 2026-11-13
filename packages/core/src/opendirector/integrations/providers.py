@@ -19,7 +19,7 @@ from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.bigmodel_video import BigModelVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import MinimaxH3Images, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore
+from opendirector.integrations.model_adapters import BigModelImages, MinimaxH3Images, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore, ZhipuSpeech
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
 from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
@@ -38,7 +38,9 @@ class GenerationProviders(VolcengineGeneration):
         self.vllm_omni_image = VllmOmniImageGeneration(store, transport, poll_interval)
         self.minimax_image = MinimaxH3Images(transport, poll_interval)
         self.moss_image = MossImages(transport, poll_interval)
+        self.bigmodel_image = BigModelImages(transport, poll_interval)
         self.moss_speech = MossSpeech(transport, poll_interval)
+        self.zhipu_speech = ZhipuSpeech(transport, poll_interval)
 
     def _profile_adapter(self, config):
         if config and config.get('protocol') == 'bigmodel_video':
@@ -87,6 +89,8 @@ class GenerationProviders(VolcengineGeneration):
             return json.loads(data)
 
     async def resume_result(self, config, suffix, url):
+        if config and input_rules(config)['profile'] == 'bigmodel-glm-image':
+            return 'png', await self.bigmodel_image.download(config, url)
         adapter = self._profile_adapter(config)
         if adapter:
             return await adapter.resume_result(config, suffix, url)
@@ -116,6 +120,12 @@ class GenerationProviders(VolcengineGeneration):
             raise protocol_failure('download') from None
 
     async def generate(self, config, task, submitted, *, result_ready=None):
+        if input_rules(config)['profile'] == 'bigmodel-glm-image':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            width, height = map(int, task['parameters']['size'].split('x'))
+            result = await self.bigmodel_image.image(config, ImageRequest(prepared['prompt'], width, height),
+                result_ready=result_ready, watermark=task['parameters'].get('watermark_enabled', True))
+            return result.suffix, result.data
         adapter = self._profile_adapter(config)
         if adapter and task['kind'] != 'text':
             return await adapter.generate(config, task, submitted, result_ready=result_ready)
@@ -134,6 +144,11 @@ class GenerationProviders(VolcengineGeneration):
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
             result = await self.moss_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
                 result_ready=result_ready)
+            return result.suffix, result.data
+        if input_rules(config)['profile'] == 'zhipu-speech':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            result = await self.zhipu_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
+                watermark=task['parameters'].get('watermark_enabled', True))
             return result.suffix, result.data
         if config.get('protocol') in {None, 'volcengine'} or task['kind'] == 'text':
             return await super().generate(config, task, submitted, result_ready=result_ready)

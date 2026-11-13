@@ -10,6 +10,7 @@ from opendirector.domain.rule_facts import (
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.references import project_content
+from opendirector.media import heif_type
 
 
 def reference_text(data):
@@ -108,6 +109,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         return result
     if kind == 'audio':
         if rules.get('referencesAllowed') is False and task['referenceIds']:
+            if rules['profile'] == 'zhipu-speech':
+                raise ProjectError('GLM-TTS 不支持参考素材，请直接填写朗读文本并选择音色。', 422, code='zhipu_speech_reference')
             raise ProjectError('MOSS 语音生成不支持参考素材，请直接填写朗读文本和音色 ID。', 422, code='moss_speech_reference')
         # Historical context remains recorded; it is never appended to speech.
         result['manifest'] = [{'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'context_only'}
@@ -148,6 +151,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             entry['role'] = 'text'
         elif source_kind == 'image':
             mime = image_type(data)
+            if rules['profile'] == 'minimax-h3-image':
+                mime = mime or heif_type(data)
             if mime is None:
                 raise ProjectError(f'“{meta["name"]}”不是已支持的参考图片格式。')
             if len(data) > rules['imageBytes']:

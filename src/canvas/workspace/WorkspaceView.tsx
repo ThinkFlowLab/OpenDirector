@@ -13,6 +13,7 @@ import { MediaPublication } from "../../backend/mediaPublication";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
 import { captureEditorSource } from "../linkedResults";
 import { TimelinePackageImport, exportTimelinePackage as exportNativeTimelinePackage } from "../../backend/timelinePackages";
+import { readLocalResource } from "../timelineExport.ts";
 import { timelinePublication } from "../../backend/timelinePublication";
 import { acknowledgeToolPlacement, cancelToolTask } from "../../backend/tools.ts";
 import { createWorkspaceProject, listWorkspaceProjects, openExampleWorkspaceProject, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
@@ -2369,6 +2370,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               },
             };
           }}
+          onReadMediaResource={(resource, signal) =>
+            ["image/heic", "image/heif"].includes(resource.mimeType ?? "")
+              ? creationClient(doc.id).originalMedia(resource.src ?? "", resource.mimeType, signal)
+              : readLocalResource(resource, signal)
+          }
           onApply={(timeline) => commitEditorData({ timeline })}
           onExportEditablePackage={async (timeline) => {
             await commitEditorData({ timeline });

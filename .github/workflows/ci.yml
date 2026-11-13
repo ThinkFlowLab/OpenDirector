@@ -12,3 +12,5 @@ permissions:
 jobs:
   checks:
     uses: ./.github/workflows/release-checks.yml
+    with:
+      static-checks: true

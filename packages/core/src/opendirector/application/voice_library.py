@@ -1,5 +1,6 @@
 """Shared voice registry operations for HTTP, Agent and generation acceptance."""
 import json
+import logging
 from pathlib import Path
 import tempfile
 from time import monotonic
@@ -9,9 +10,12 @@ import httpx
 
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.voices import VOICE_CREATE_TEXT_LIMITS, voice_error, voice_library_capabilities, valid_voice_name, voice_incompatibility
-from opendirector.integrations.http_settings import auth_headers, trust_environment
+from opendirector.domain.zhipu_speech import ZHIPU_CLONE_MODEL, ZHIPU_CLONE_PREVIEW_TEXT, ZHIPU_PRESET_VOICES
+from opendirector.integrations.http_settings import auth_headers, public_target_sync, trust_environment
 from opendirector.integrations.volcengine import endpoint
 from opendirector.media.probe import probe_file
+
+logger = logging.getLogger(__name__)
 
 
 # Trusted internal callers may omit the scope. Public adapters always pass the
@@ -19,9 +23,15 @@ from opendirector.media.probe import probe_file
 _CURRENT_CONNECTION = object()
 
 
+def _public_https(url):
+    """Pin an account listing's CDN preview to a checked public HTTPS address, keeping TLS identity."""
+    failure = lambda: voice_error('voice_provider_error', 502)
+    return public_target_sync(url, unsafe=failure, unresolved=failure, schemes=('https',))
+
+
 class VoiceLibrary:
-    def __init__(self, configs, transport=None):
-        self.configs, self.transport = configs, transport
+    def __init__(self, configs, transport=None, resolve_public=_public_https):
+        self.configs, self.transport, self.resolve_public = configs, transport, resolve_public
 
     def _config(self, model_config_id):
         config = dict(self.configs.resolve(str(model_config_id), 'audio'))
@@ -29,26 +39,23 @@ class VoiceLibrary:
         if capabilities is None: raise voice_error('voice_library_unsupported', 409)
         return config, capabilities
 
-    def _request(self, config, method, suffix='', **kwargs):
+    def _request(self, config, method, suffix='', *, path='/audio/voices', **kwargs):
         try:
             # Sync service runs in worker threads, including job preparation.
             with httpx.Client(transport=self.transport, trust_env=trust_environment(config['url'], config=config),
                               timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
-                with client.stream(method, endpoint(config['url'], '/audio/voices') + suffix,
+                with client.stream(method, endpoint(config['url'], path) + suffix,
                                    headers=auth_headers(config), **kwargs) as response:
                     data = bytearray()
                     for chunk in response.iter_bytes():
                         data.extend(chunk)
                         if len(data) > 2 * 1024 * 1024: raise voice_error('voice_provider_protocol', 502)
                     if not response.is_success:
-                        # Retain useful upstream detail; redact the configured credential
-                        # before it reaches either the HTTP or Agent presentation boundary.
-                        detail = self._provider_detail(data, config)
-                        error = voice_error('voice_provider_error', response.status_code if 400 <= response.status_code < 500 else 502)
-                        if detail: error.args = (str(error) + ' ' + detail,)
-                        raise error
+                        raise self._provider_failure(data, config, response.status_code)
                     value = json.loads(data) if data else {}
                     if not isinstance(value, dict): raise voice_error('voice_provider_protocol', 502)
+                    # Zhipu reports some failures, such as an unsupported method, with HTTP 200.
+                    if isinstance(value.get('error'), dict): raise self._provider_failure(data, config, 502)
                     return value
         except httpx.TimeoutException:
             raise voice_error('voice_provider_timeout', 504) from None
@@ -56,6 +63,20 @@ class VoiceLibrary:
             raise voice_error('voice_provider_error', 502) from None
         except (ValueError, TypeError):
             raise voice_error('voice_provider_protocol', 502) from None
+
+    def _provider_failure(self, data, config, status):
+        # Retain useful upstream detail; redact the configured credential
+        # before it reaches either the HTTP or Agent presentation boundary.
+        detail = self._provider_detail(data, config)
+        try: error = json.loads(data).get('error') or {}
+        except (ValueError, AttributeError): error = {}
+        code = str(error.get('code', '')) if isinstance(error, dict) else ''
+        if code == '1113': return voice_error('voice_provider_quota', 402)
+        if code == '1214' and detail == '音色名称已存在': return voice_error('voice_name_taken', 409)
+        if code == '1214' and detail.startswith('音色不存在'): return voice_error('voice_not_found', 404)
+        error = voice_error('voice_provider_error', status if 400 <= status < 500 else 502)
+        if detail: error.args = (str(error) + ' ' + detail,)
+        return error
 
     @staticmethod
     def _provider_detail(data, config):
@@ -153,6 +174,22 @@ class VoiceLibrary:
             raise voice_error('voice_provider_protocol', 502)
         return [self._record(item, capabilities, source='uploaded', config=config) for item in items], cursor if more else None
 
+    def _zhipu_page(self, config, capabilities):
+        # The documented system voices are always available; the account's
+        # OFFICIAL listing includes entries synthesis rejects, so it is not read.
+        records = [self._record({'id': voice}, capabilities, source='builtin', has_audio=False, config=config)
+                   for voice in ZHIPU_PRESET_VOICES]
+        value = self._request(config, 'GET', path='/voice/list', params={'voiceType': 'PRIVATE'})
+        items = value.get('voice_list')
+        if not isinstance(items, list) or len(items) > 10000: raise voice_error('voice_provider_protocol', 502)
+        for item in items:
+            if not isinstance(item, dict) or item.get('voice_type') != 'PRIVATE':
+                raise voice_error('voice_provider_protocol', 502)
+            records.append(self._record({'id': item.get('voice'), 'name': item.get('voice_name'),
+                                         'preview_url': item.get('download_url'), 'created_at': item.get('create_time')},
+                                        capabilities, source='uploaded', has_audio=True, config=config))
+        return records, None
+
     def _assert_current(self, config, capabilities):
         current, rules = self._config(config['id'])
         if rules != capabilities or current['modelId'] != config['modelId']:
@@ -169,6 +206,8 @@ class VoiceLibrary:
             self._assert_current(config, capabilities)
             if capabilities['provider'] == 'moss':
                 records, cursor = self._moss_page(config, capabilities, limit, after)
+            elif capabilities['provider'] == 'zhipu':
+                records, cursor = self._zhipu_page(config, capabilities)
             else:
                 records, cursor = self._vllm_page(config, capabilities)
             for record, _ in records:
@@ -244,6 +283,8 @@ class VoiceLibrary:
         seconds = media['durationSeconds']
         if (capabilities['minSeconds'] is not None and seconds < capabilities['minSeconds']) or (capabilities['maxSeconds'] is not None and seconds > capabilities['maxSeconds']): raise voice_error('voice_duration')
         fields = {'name': name}
+        if capabilities['provider'] == 'zhipu':
+            return self._zhipu_create(config, capabilities, data, extension, name, text)
         if capabilities['provider'] == 'vllm_omni':
             fields['consent'] = consent.strip()
             if text: fields['ref_text'] = text
@@ -256,6 +297,36 @@ class VoiceLibrary:
         record, _ = self._record(item, capabilities, source='uploaded', has_audio=True, config=config)
         return record
 
+    def _zhipu_create(self, config, capabilities, data, extension, name, text):
+        # Upload the sample, register the clone, then delete the uploaded sample.
+        # The registered voice keeps working without it; the generated preview
+        # file remains because the listing's download URL serves it.
+        mime = {'wav': 'audio/wav', 'mp3': 'audio/mpeg'}[extension]
+        uploaded = self._request(config, 'POST', path='/files', data={'purpose': 'voice-clone-input'},
+                                 files={'file': ('sample.' + extension, data, mime)})
+        file_id = uploaded.get('id')
+        if not isinstance(file_id, str) or not 0 < len(file_id) <= 512: raise voice_error('voice_provider_protocol', 502)
+        try:
+            payload = dict(model=ZHIPU_CLONE_MODEL, voice_name=name, input=ZHIPU_CLONE_PREVIEW_TEXT, file_id=file_id)
+            if text: payload['text'] = text
+            value = self._request(config, 'POST', path='/voice/clone', json=payload)
+        finally:
+            try:
+                self._request(config, 'DELETE', '/' + quote(file_id, safe=''), path='/files')
+            except ProjectError as cleanup:
+                # The clone owns the outcome, so a failed cleanup must not replace it.
+                # Record it instead: the sample outlives the request and only the
+                # account holder can remove what is left behind.
+                logger.warning('语音样本清理未完成，上传文件可能遗留在服务商账户：%s（%s）',
+                               cleanup.code, cleanup.status, exc_info=True)
+        voice = value.get('voice')
+        if not valid_voice_name(voice): raise voice_error('voice_provider_protocol', 502)
+        # Read back the registered entry for its preview locator and stable fields.
+        record, _ = self._find(config, capabilities, voice)
+        if record is None:
+            record, _ = self._record({'id': voice, 'name': name}, capabilities, source='uploaded', has_audio=True, config=config)
+        return record
+
     def preview(self, model_config_id, voice_id, connection_id):
         config, capabilities = self._config(model_config_id)
         if connection_id != capabilities['connectionId']: raise voice_error('voice_connection_changed', 409)
@@ -264,15 +335,24 @@ class VoiceLibrary:
         parsed, configured = urlsplit(url), urlsplit(config['url'])
         def origin(value): return value.scheme, value.hostname, value.port or (443 if value.scheme == 'https' else 80)
         headers = auth_headers(config) if origin(parsed) == origin(configured) else {}
+        target, extensions = url, {}
+        if capabilities['provider'] == 'zhipu':
+            # The listing hands out a third-party CDN URL: no credentials, public addresses only.
+            target, headers, extensions = self.resolve_public(url)
         try:
             with httpx.Client(transport=self.transport, trust_env=trust_environment(url, config=config), timeout=30, follow_redirects=False) as client:
-                with client.stream('GET', url, headers=headers) as response:
+                with client.stream('GET', target, headers=headers, extensions=extensions) as response:
                     mime = response.headers.get('content-type', '').split(';')[0].lower()
-                    if not response.is_success or not mime.startswith('audio/'): raise voice_error('voice_provider_error', 502)
+                    # Zhipu's CDN labels WAV previews application/octet-stream; check the bytes instead.
+                    sniff = capabilities['provider'] == 'zhipu'
+                    if not response.is_success or not (mime.startswith('audio/') or sniff): raise voice_error('voice_provider_error', 502)
                     data = bytearray()
                     for chunk in response.iter_bytes():
                         data.extend(chunk)
                         if len(data) > 10 * 1024 * 1024: raise voice_error('voice_size', 413)
+                    if sniff:
+                        if not (data[:4] == b'RIFF' and data[8:12] == b'WAVE'): raise voice_error('voice_provider_error', 502)
+                        mime = 'audio/wav'
                     self._assert_current(config, capabilities)
                     return bytes(data), mime
         except httpx.TimeoutException: raise voice_error('voice_provider_timeout', 504) from None
@@ -288,6 +368,10 @@ class VoiceLibrary:
         if not record['canDelete']: raise voice_error('voice_delete_unsupported', 409)
         config, current = self._config(model_config_id)
         if current['connectionId'] != connection_id: raise voice_error('voice_connection_changed', 409)
+        if current['provider'] == 'zhipu':
+            value = self._request(config, 'POST', path='/voice/delete', json={'voice': voice_id})
+            if value.get('voice') != voice_id: raise voice_error('voice_provider_protocol', 502)
+            return
         value = self._request(config, 'DELETE', '/' + quote(voice_id, safe=''))
         if value.get('success') is not True: raise voice_error('voice_provider_protocol', 502)
 

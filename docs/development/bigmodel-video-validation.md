@@ -83,3 +83,15 @@ Post-merge validation:
 - Full Python suite: 1,655 passed, 100 skipped, **one failed** in `tests/test_native_runtime.py::test_native_events_real_cli_and_shared_write[True-codex]`. Its fixture CLI exited after a write was rejected because the project edit session had expired. The cause of that expiry was not established. The native runtime implementation and test are unchanged relative to main.
 - The failing case passed alone (one passed), and the entire native-runtime module then passed (25 passed, five skipped). No source changes were made between these runs. These reruns do not turn the original full-suite failure into a clean full-suite pass; the occurrence remains recorded here.
 - Build output retains its chunk-size warning and Python retains the Starlette/httpx deprecation warning. Skipped cases remain unverified. Original real-provider evidence above applies to its earlier revisions; this conflict update used automated and local checks only.
+
+## Main sync after the November 13 review
+
+Merged main `53a2cfc9d094eb49568b1cad47c3b05e3fb94cfe` after the renewed conflict request. The documentation index now includes both BigModel image and video guides. Provider-preset tests retain both integrations and upstream GLM-TTS coverage. TypeScript contracts were regenerated from the combined Python definitions, preserving upstream image, speech and voice-management error codes alongside the video codes. The shared watermark note remains unchanged from main and covers both BigModel profiles.
+
+Validation on the merged tree:
+
+- Full Python suite: 1,899 passed, 100 skipped. The new upstream HEIF dependency was installed from the lockfile before this run.
+- Frontend: all 795 tests passed. Production build, i18n (3,012 keys; zero problems), browser-locale and browser-manifest checks passed. The sandboxed frontend attempt could not inspect process memory; the complete rerun with process access passed.
+- Generated-contract consistency, all four import boundaries, dependency consistency and diff checks passed. Bundled OpenCode reports 1.19.5.
+- The shared pre-commit configuration passed for the entire PR diff; hooks without matching files were skipped. Its initial actionlint installation hit a timeout at the default Go module proxy; retrying with an accessible module proxy completed successfully.
+- The existing build chunk-size and Starlette/httpx deprecation warnings remain. Skipped tests and browser journeys were not newly validated. No paid generation request was submitted; the earlier live evidence retains its original scope.

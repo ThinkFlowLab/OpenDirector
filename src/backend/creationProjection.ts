@@ -44,6 +44,7 @@ import {
   type CreationOperation,
 } from "./creationClient.ts";
 import { sameJsonValue } from "./sameJsonValue.ts";
+import { classifyImportFile, readEditorResource } from "../canvas/editorMedia.ts";
 
 /** Every comparison here is over a document that carries its media inline, so
  * it reads the values instead of serializing both sides to compare strings. */
@@ -77,6 +78,18 @@ export class CreationProjection {
   readonly client: CreationClient;
   constructor(client: CreationClient) {
     this.client = client;
+  }
+
+  async importFile(file: File, signal?: AbortSignal): Promise<CanvasResource> {
+    const { mimeType } = classifyImportFile(file);
+    if (mimeType !== "image/heic" && mimeType !== "image/heif")
+      return readEditorResource(file, signal);
+    signal?.throwIfAborted();
+    const ref = await this.client.importBlob(file, file.name, "image");
+    signal?.throwIfAborted();
+    // Failed previews must not be saved as empty generation nodes.
+    await this.client.mediaUrl(ref.assetId, { signal });
+    return this.resource(ref);
   }
 
   async resource(ref: AssetRef, title?: string): Promise<CanvasResource> {
@@ -134,10 +147,14 @@ export class CreationProjection {
             resource.previous,
           );
         if (!resource.src) throw new Error(tNow("errors.backend.mediaEmpty"));
-        const response = await fetch(resource.src);
-        if (!response.ok)
-          throw new Error(tNow("errors.backend.mediaReadFailed"));
-        const blob = await response.blob();
+        let blob: Blob;
+        if (existing) blob = await this.client.blob(existing.id);
+        else {
+          const response = await fetch(resource.src);
+          if (!response.ok)
+            throw new Error(tNow("errors.backend.mediaReadFailed"));
+          blob = await response.blob();
+        }
         const suffix = extension[blob.type] ?? blob.type.split("/")[1] ?? "bin";
         const name = /\.[\w]+$/.test(resource.title)
           ? resource.title
