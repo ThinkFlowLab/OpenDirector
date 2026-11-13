@@ -111,7 +111,7 @@ try {
 
   // Hold the fixture reply after its first sentence.
   await api("/creation-test-assistant-gate", { open: false });
-  await editor.fill("海边短片");
+  await editor.fill("导航后保存文字素材");
   await panel.getByRole("button", { name: "发送消息", exact: true }).click();
   await panel.getByText("已收到创作要求。", { exact: false }).waitFor();
   assert.equal((await api(path)).messages.at(-1).status, "streaming");
@@ -131,24 +131,31 @@ try {
   assert.equal(away.messages.at(-1).status, "streaming", "reply after leaving");
   assert.ok(away.activeTurnId, "the run continues while away");
 
-  // Returning re-attaches: the reply is still running, not stopped.
-  await switchTo(nameA);
-  await show();
-  await panel.getByText("已收到创作要求。", { exact: false }).waitFor();
-  await panel.getByRole("button", { name: "停止回复", exact: true }).waitFor();
-  assert.equal(await panel.getByText("已停止回复").count(), 0);
-
-  // The re-attached view receives the rest of the reply.
+  // The run must commit actual content while its originating view stays on B.
   await api("/creation-test-assistant-gate", { open: true });
-  await panel
-    .getByText("已收到创作要求。这是隔离测试回复。", { exact: true })
-    .waitFor();
   const done = await until(
     () => api(path),
     (value) => value.messages.at(-1).status === "complete",
-    "Reply must complete",
+    "Reply and business writes must complete while viewing B",
   );
   assert.equal(done.activeTurnId, undefined);
+  const saved = await api(`/creation/projects/${projectA}`);
+  assert.equal(saved.assets.length, 1);
+  assert.equal(saved.canvasItems.length, 1);
+  assert.equal(saved.canvasItems[0].binding.objectRef.assetId, saved.assets[0].id);
+  const preview = await api(`/creation/projects/${projectA}/queries`, {
+    type: "asset.preview", projectId: projectA, queryId: crypto.randomUUID(),
+    objectId: saved.assets[0].id,
+  });
+  assert.equal(preview.text, "Saved while viewing another project.");
+
+  // Returning shows the persisted reply and the content written while away.
+  await switchTo(nameA);
+  await show();
+  await panel
+    .getByText("已收到创作要求。这是隔离测试回复。", { exact: true })
+    .waitFor();
+  await page.getByText("Navigation saved", { exact: true }).waitFor();
   assert.deepEqual(stops, [], "navigation must not call stop");
 
   // An explicit stop after leaving and returning still stops the run.
@@ -165,6 +172,9 @@ try {
   await switchTo(nameB);
   await page.waitForTimeout(800);
   await switchTo(nameA);
+  // A reload gets a new UI session; the stale-page handoff must retain access
+  // to this tab's active run without granting it to a different live window.
+  await page.reload();
   await show();
   const stop = panel.getByRole("button", { name: "停止回复", exact: true });
   await until(() => stop.isEnabled(), Boolean, "Stop must be available");

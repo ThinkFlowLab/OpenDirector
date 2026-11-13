@@ -235,6 +235,10 @@ A saved label can still describe the preceding edit. Wait for the current operat
 
 AI 多会话检查使用同一隔离 API，但启动 `creation_server.py` 时额外传入 `--assistant-fixture`，再运行 `node tests/browser/assistant_sessions.mjs`。该检查通过真实 UI、接口与项目文件验证新建、历史搜索、切换、草稿和附件恢复、刷新、失败重试及输入撤销隔离；仅模型回复使用可暂停的替身，不调用真实模型。同一环境下运行 `node tests/browser/assistant_run_navigation.mjs`，验证回复进行中切换项目只断开当前视图：Agent 继续运行，返回后重新接入并收到完整回复，全程不调用停止接口；切走再返回后显式停止仍然有效。
 
+导航验收还需在界面停留于 B 时，确认 A 的 Agent 已实际提交文字素材和画布绑定，读回正文后再返回 A 检查展示。后端回归覆盖另存版本的原素材、来源关系与实际文件，以及界面会话释放、后台续租、其他窗口排他访问、完成／异常／停止和租约取得期间取消后的清理。模型回复替身与真实业务写入分别记录，不以回复继续或 SSE 成功代替保存成功。
+
+Navigation acceptance must verify that A commits an asset and canvas binding while the view stays on B, read back the content, then return to A to inspect it. Backend regressions cover immutable originals and provenance, actual version files, UI-session release, background renewal, other-window exclusion and cleanup on completion, failure, stop and cancellation during acquisition. Distinguish simulated model replies from real business writes; continued replies or successful SSE transport do not establish a saved result.
+
 聊天与辅助面板共存检查运行 `node tests/browser/assistant_auxiliary_panels.mjs`，同样需要 `--assistant-fixture`。它通过真实界面切换中英文，在宽窄窗口和助手调整宽度后检查资产列表、生成历史的可操作性与聊天展开状态，并验证草稿、对话和执行中的回复／生成任务保持。可设置 `CREATION_SCREENSHOTS` 保存代表性截图。此检查会控制隔离服务的模型替身 gate，应与其他使用同一 gate 的浏览器用例顺序运行。
 
 Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，使用独立的隔离 API 与前端端口；失败时输出对应服务日志。

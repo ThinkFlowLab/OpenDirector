@@ -131,6 +131,26 @@ if args.assistant_fixture:
         assistant_contexts.append(run.messages)
         yield {'type': 'delta', 'text': '已收到创作要求。'}
         await assistant_gate.wait()
+        if run.messages[-1]['content'].startswith('导航后保存文字素材'):
+            from uuid import uuid4
+            from opendirector.agent.gateway import ToolGateway
+            from opendirector.application.creation_canvas import asset_ref
+            gateway = ToolGateway(self.business, run)
+            try:
+                written = await gateway.call('navigation-write', 'execute_command', {
+                    'type': 'asset.writeText', 'payload': {'name': 'navigation.md',
+                        'text': 'Saved while viewing another project.'}})
+                if written.error:
+                    raise ProjectError(written.error, 409)
+                asset = self.business.assets.get(run.project_id, written.value['changed'][0]['id'])
+                shown = await gateway.call('navigation-show', 'execute_command', {'type': 'canvas.show',
+                    'payload': {'item': {'id': str(uuid4()), 'projectId': str(run.project_id),
+                        'kind': 'text', 'title': 'Navigation saved',
+                        'binding': {'role': 'material', 'objectRef': asset_ref(asset).model_dump(mode='json')}}}})
+                if shown.error:
+                    raise ProjectError(shown.error, 409)
+            finally:
+                await gateway.close()
         yield {'type': 'delta', 'text': '这是隔离测试回复。'}
 
     agent.AgentRuntimes.stream = fixture_agent
