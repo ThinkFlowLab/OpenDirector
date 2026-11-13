@@ -33,6 +33,39 @@ macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统�
 
 Consult the [development lessons](lessons.md) when selecting relevant scenarios, and verify against the current code and tests. For model capability or parameter changes, trace representative input from the entry point through backend validation to the provider request, and check that rejected input does not create a job. For imports, references, navigation, or asynchronous tasks, inspect persisted identities and actual execution inputs after conversion or recovery.
 
+## CI 阶段契约 / CI stage contract
+
+以下是 [#273](https://github.com/ThinkFlowLab/OpenDirector/issues/273) 的目标契约。文档发布不等于工作流、筛选或仓库规则已启用；切换前遵守下方过渡约束。L1–L5 表示覆盖范围，以下阶段表示运行时机，两者分别判断。默认自动化使用模型替身，不调用付费服务或真实 GPU；现有明确启用的 bundled CLI 回归仍使用本地模型替身。
+
+This is the target contract for [#273](https://github.com/ThinkFlowLab/OpenDirector/issues/273). Publishing it does not activate workflows, selection or repository rules; retain the transition safeguards below. L1–L5 describes coverage, while the stages below describe execution timing. Default automation uses model stubs, with no paid-provider or real-GPU calls. The explicitly enabled bundled CLI regression continues to use local model stubs.
+
+| Stage / 阶段 | Trigger / 触发 | Responsibility / 职责 | Target budget / 目标预算 |
+| --- | --- | --- | --- |
+| Local / 本地 | Before commit and PR creation / 提交及提出 PR 前 | One `.pre-commit-config.yaml` for staged-file hooks and an explicit whole-PR diff check, shared by users and agents. No ready tests. / 同一配置用于暂存文件 hook 和覆盖整个 PR 差异的显式检查，用户与 agent 共用；不跑 ready。 | Fast static feedback; measure warm runs separately from setup / 快速静态反馈，暖运行与初始化分别计时 |
+| PR | Open, reopen and update, including drafts / 提出、重开及更新，包含 draft | CI repeats the same static configuration before ready: frontend units, Python ready, i18n, browser locale/manifest, imports, generated contracts, production build, wheel verification and browser gate including voice and assistant auxiliary panels. Every PR also runs security scanning. / 静态复核通过后跑 ready：前端单元、Python ready、国际化、浏览器语言与清单、分层导入、生成契约、构建、wheel 和包含语音及助手辅助面板的浏览器 gate；每个 PR 另跑安全扫描。 | Entire PR gate ≤15 min / 整个 PR 门禁 ≤15 分钟 |
+| Merge queue / 合并队列 | `merge_group: checks_requested`, before main changes / main 更新前 | Test latest main plus preceding queued PRs and this PR. Repeat PR checks and add Python merge; all required checks must succeed before merging. / 验证最新 main、前序排队 PR 与当前 PR 的组合；复跑 PR 检查并增加 Python merge，必需检查全部成功后才能合入。 | Entire queue gate ≤30 min / 整个队列门禁 ≤30 分钟 |
+| main | Push after successful queue merge / 队列成功合并后的 push | Collect merged SHA, successful queue checks and artifacts; prove they correspond to merged content. No routine full-suite rerun. Missing or unprovable evidence blocks release and requires checks on the exact main SHA. / 归集合并 SHA、成功队列检查与产物，证明其对应合并内容；常规不重跑完整套件。证据缺失或无法对应时阻止发布，对准确 main SHA 补跑。 | Evidence collection / 证据归集 |
+| Nightly / 夜间 | `0 18 * * *` UTC, next day 02:00 Asia/Shanghai; manual dispatch / 定时或手动 | Python nightly, flake watchlist, browser extended/extendedFixture, production, perf and daily benchmark. Advisory failures are tracked; no automatic tags. Do not repeat PR/queue suites except intentional watchlist reruns. / 运行 Python nightly、flake watchlist、浏览器扩展与独立 fixture、生产、性能及每日基准；advisory 失败须跟踪，不自动打 tag；除明确的 watchlist 重跑外，不重复 PR/队列套件。 | Extended ≤60; production ≤45; perf and benchmark each ≤30 min / 扩展 ≤60、生产 ≤45、性能与基准各 ≤30 分钟 |
+
+预算针对相应阶段的墙钟耗时，不是并行 job 上限之和，也不是允许降低覆盖的理由。L1+L2 只由 [`release-checks.yml`](../../.github/workflows/release-checks.yml) 实现；调用方传递 Python 筛选参数，不复制命令清单。Python 层级、迁移表达式和命令见下方「Python 分层与迁移」；目标机型轴落地后，PR 选择 `cpu and ready`，队列选择 `cpu and (not nightly)`，nightly 选择 `cpu and nightly`，迁移期的未标记用例仍须保留。
+
+Budgets measure stage wall time, not the sum of parallel job limits, and never justify losing coverage. [`release-checks.yml`](../../.github/workflows/release-checks.yml) remains the sole L1+L2 implementation; callers supply Python selection rather than duplicating command lists. See “Python layers and transition” below for commands and migration expressions. After hardware tagging lands, the target selections are `cpu and ready` for PRs, `cpu and (not nightly)` for the queue and `cpu and nightly` for nightly; transitional unmarked cases must remain included.
+
+### 过渡与必需检查 / Transition and required checks
+
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁，Python 仍跑全量；[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，但机型轴、安全扫描、docs-only 重任务跳过、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；15/30 分钟是目标阶段预算，不代表当前已强制执行。
+
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes while Python still runs in full. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered; hardware tagging, security scanning, docs-only heavy-job skipping, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; the 15/30-minute stage budgets are targets, not existing enforcement.
+
+- 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
+- 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
+- 所有必需工作流，包括静态、安全和按路径运行的插件检查，先支持 `merge_group` 并返回有效结果，再通过仓库保护规则强制合并队列和必需检查，禁止常规直接 push 或绕过。先确认平台支持和管理权限。/ All required workflows, including static, security and path-filtered plugin checks, must support `merge_group` and return a valid result before repository rules enforce the queue and required statuses, preventing routine direct pushes or bypasses. Confirm platform support and administrative access first.
+- 在并发 PR 组合、失败阻止合入及纯文档组合都验证通过、且规则已强制生效之前，保留 main 的完整门槛和 nightly gate-parity；之后才启用 PR ready 子集、main 证据归集及 nightly 去重。无法启用队列时保留当前门槛并记录阻塞，不静默退回合并后测试。/ Retain the full main bar and nightly gate parity until concurrent PR combinations, failed-merge prevention and documentation-only groups are validated and enforcement is active. Only then activate PR ready selection, main evidence collection and nightly deduplication. If the queue cannot be enabled, keep the existing bar and record the blocker rather than silently accepting post-merge testing.
+
+浏览器 lane 只由 [`tests/browser/manifest.json`](../../tests/browser/manifest.json) 管理，插件保持按路径运行。真实引擎、服务及 GPU 车道属于后续计划；人工 UX smoke、质量样例和 manual 浏览器检查不进入默认 CI。L5 仍是每周或发布前的后续稳定性工作。
+
+Browser lanes are owned only by [`tests/browser/manifest.json`](../../tests/browser/manifest.json); plugin checks remain path-filtered. Real-engine, provider and GPU lanes are follow-up plans. Human UX smoke, quality samples and manual browser checks stay outside default CI. L5 remains follow-up stability work for weekly or pre-release execution.
+
 ## PR 前轻量静态检查 / Lightweight checks before a PR
 
 静态工具独立安装，不需要安装应用、模型、ffmpeg 或浏览器。使用 Python 3.11+；Windows 可将下方 `python` 替换为 `.venv/Scripts/python.exe`。在仓库根目录执行：
@@ -208,7 +241,9 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 ### 五级测试体系
 
-自动化检查按级别分层：每个级别明确范围与重点、触发频率、时间预算和实现位置。新增检查先选择级别再进入对应工作流；超出预算时先调整级别或拆分，而不是让某个级别无限增长。
+以下表格记录切换前的当前执行，包含尚未移除的 main 重跑和 nightly gate-parity，不覆盖上方目标阶段契约。新增检查先选择覆盖级别，再按目标阶段安排；只有过渡约束满足后才改变运行门槛。
+
+The table records current execution before cutover, including main reruns and nightly gate parity. It does not supersede the target stage contract above. Select a coverage level and target stage for new checks; change the active bar only after the transition safeguards are satisfied.
 
 | 级别 | 范围与重点 | 频率 | 预算 | 实现 |
 | --- | --- | --- | --- | --- |
@@ -222,7 +257,7 @@ L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭
 
 ### 发布决策与 lane 政策
 
-- Gate parity 绿色是候选 `v0.1.x` 的发布门槛；nightly 不自动打 tag，也不以任何结果自动触发发布动作。
+- 切换前，候选 `v0.1.x` 仍须通过当前 gate-parity 发布门槛。队列完成验证并强制生效后，发布依据切换为与准确 main 内容对应的成功队列证据；nightly 不作为替代门槛，也不自动打 tag 或触发发布。/ Before cutover, candidate `v0.1.x` releases retain the current gate-parity bar. After queue validation and enforcement, release decisions use successful queue evidence proven to match exact main content; nightly is not a substitute gate and never automatically tags or publishes.
 - Extended、production、perf 与 daily benchmark lane 当前为建议性（advisory）：失败需登记跟进，但不单独阻断发布。某条 lane 连续两周稳定绿色后，由发布协调人决定是否升级为阻断项。
 - 每次运行产出 `nightly-summary`（各 lane 结果 + SHA + 基准一行摘要）与 `nightly-perf`（渲染探针与拖拽采样）artifact；发布看板与失败通知按 summary artifact 对接，通知通道由发布协调人约定。`lanes.dailyBenchmark.notify` 只在超阈回归、基准套件本身失败或必填测量缺失（样本解析成功但缺少 `--ui-required` 时应有的帧采样，或 storage 样本缺少必填字段）时为 true，改善和阈值内波动不通知。
 - `flaky-watchlist.txt` 一行一个 pytest node id，`#` 为注释；用例稳定后应删除条目，而不是长期静默重试。triage 结论写入 `flake-report` artifact 与 Actions summary。
