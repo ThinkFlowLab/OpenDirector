@@ -12,6 +12,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Test contracts](architecture/test-contracts.md) | Test/production boundaries, how to avoid stale assertions and environment-dependent red runs | Test infrastructure, capability gates, or contract ownership change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
+| [CI layer assessment](development/ci-layer-assessment.md) | Timing evidence, critical PR representatives and staged Python classification | Measured evidence or classification decisions change |
 | [Issue #87 Windows handoff](development/issue-87-windows-handoff.md) ([中文](development/issue-87-windows-handoff.zh-CN.md)) | Native ACL repair and final text acceptance | The shared checkpoint or native validation scope changes |
 | [Development lessons](development/lessons.md) | Risks identified from recent fixes | New evidence emerges or a lesson no longer applies |
 | [CI failure patterns](development/ci-failures.md) | Known timing-sensitive CI failures and how to tell flakes from regressions | A pattern is fixed, newly observed, or the watchlist changes |
@@ -26,6 +27,8 @@ This directory is the entry point for the repository's shared documentation. The
 | [Model availability / 模型可用状态](guides/model-availability.md) | Optional runtime declarations, automatic checks, shared admission and API/CLI/Agent queries | Capability protocol, refresh, or acceptance rules change |
 | [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
 | [Kling video](guides/kling-video.md) ([中文](guides/kling-video.zh-CN.md)) | Optional Kling 4.0 and Flash setup, model-specific inputs, and recovery limits | Kling inputs, model declarations, or recovery behavior change |
+| [BigModel GLM-Image](guides/bigmodel-image.md) ([中文](guides/bigmodel-image.zh-CN.md)) | Account setup, text-to-image generation, adoption and recovery | BigModel integration fields or behavior change |
+| [GLM-Image validation](development/glm-image-validation.md) | Real provider workflow screenshots and automated checks | GLM-Image acceptance is repeated |
 | [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture | Runtime architecture changes |
 
 The root [README](../README.md) introduces the product and examples and links to quick-start and documentation. See [installation and updates](guides/installation.md) ([中文](guides/installation.zh-CN.md)) for installation, and the [user guide](guides/user-guide.md) ([中文](guides/user-guide.zh-CN.md)) for configuration, creation, and troubleshooting. The README does not contain the full manual, implementation architecture, development tests, research sources, or iteration history. Source code and generated contracts describe the implementation; architecture and roadmap documents describe goals and do not establish that a capability is already available.

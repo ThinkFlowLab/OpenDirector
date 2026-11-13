@@ -13,6 +13,7 @@ import { capabilityErrorText } from "./capabilityErrorText.ts";
 const BY_MESSAGE: Record<string, MessageKey> = {
   "供应商判定提示词或参考图片违反内容政策，已拒绝生成。": "errors.generationFailure.policy",
   "生成服务拒绝了输入内容或参数。": "errors.generationFailure.input",
+  "所选音色不存在或不可用。": "errors.generationFailure.voiceNotFound",
   "生成服务拒绝了参考素材。": "errors.generationFailure.reference",
   "生成服务鉴权失败。": "errors.generationFailure.authentication",
   "当前账户没有调用该模型的权限。": "errors.generationFailure.permission",
@@ -37,6 +38,7 @@ const BY_MESSAGE: Record<string, MessageKey> = {
   "生成接口或模型不存在。": "errors.generationFailure.notFoundEndpoint",
   "生成结果下载失败。": "errors.generationFailure.download",
   "生成结果地址解析为非公网地址，下载已停止。": "errors.generationFailure.downloadAddress",
+  "生成结果地址无效或指向非公网地址，下载已停止。": "errors.generationFailure.downloadAddress",
   "生成服务任务已失败。": "errors.generationFailure.failed",
   "生成请求的提交结果不明。": "errors.generationFailure.submissionUnknown",
   "生成服务连接超时或中断。": "errors.generationFailure.temporary",

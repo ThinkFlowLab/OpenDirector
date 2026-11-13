@@ -3769,9 +3769,15 @@
               "moss_image_size",
               "moss_image_reference",
               "moss_layout_reference",
+              "bigmodel_image_size",
+              "bigmodel_image_reference",
+              "bigmodel_image_prompt",
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "zhipu_speech_text",
+              "zhipu_speech_voice",
+              "zhipu_speech_reference",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -3789,7 +3795,9 @@
               "voice_provider_protocol",
               "voice_provider_error",
               "voice_provider_timeout",
-              "voice_model_unsupported"
+              "voice_model_unsupported",
+              "voice_name_taken",
+              "voice_provider_quota"
             ],
             "title": "Code",
             "type": "string"
@@ -6867,6 +6875,20 @@
             "default": null,
             "description": "Whether speech generation requires an explicit service voice ID.",
             "title": "Voicerequired"
+          },
+          "defaultVoice": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service voice ID applied when a required selection is still empty.",
+            "title": "Defaultvoice"
           },
           "referencesAllowed": {
             "anyOf": [
@@ -14924,7 +14946,8 @@
             "description": "Voice registry protocol.",
             "enum": [
               "vllm_omni",
-              "moss"
+              "moss",
+              "zhipu"
             ],
             "title": "Provider",
             "type": "string"
@@ -14939,6 +14962,12 @@
           "requiresTranscript": {
             "description": "Registered voice must have a reference transcript.",
             "title": "Requirestranscript",
+            "type": "boolean"
+          },
+          "acceptsTranscript": {
+            "default": false,
+            "description": "Registry stores an optional reference transcript when one is supplied.",
+            "title": "Acceptstranscript",
             "type": "boolean"
           },
           "requiresReferenceAudio": {
@@ -19479,9 +19508,15 @@
               "moss_image_size",
               "moss_image_reference",
               "moss_layout_reference",
+              "bigmodel_image_size",
+              "bigmodel_image_reference",
+              "bigmodel_image_prompt",
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "zhipu_speech_text",
+              "zhipu_speech_voice",
+              "zhipu_speech_reference",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -19499,7 +19534,9 @@
               "voice_provider_protocol",
               "voice_provider_error",
               "voice_provider_timeout",
-              "voice_model_unsupported"
+              "voice_model_unsupported",
+              "voice_name_taken",
+              "voice_provider_quota"
             ],
             "title": "Code",
             "type": "string"
@@ -22718,6 +22755,20 @@
             "default": null,
             "description": "Whether speech generation requires an explicit service voice ID.",
             "title": "Voicerequired"
+          },
+          "defaultVoice": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service voice ID applied when a required selection is still empty.",
+            "title": "Defaultvoice"
           },
           "referencesAllowed": {
             "anyOf": [
@@ -31089,7 +31140,8 @@
             "description": "Voice registry protocol.",
             "enum": [
               "vllm_omni",
-              "moss"
+              "moss",
+              "zhipu"
             ],
             "title": "Provider",
             "type": "string"
@@ -31104,6 +31156,12 @@
           "requiresTranscript": {
             "description": "Registered voice must have a reference transcript.",
             "title": "Requirestranscript",
+            "type": "boolean"
+          },
+          "acceptsTranscript": {
+            "default": false,
+            "description": "Registry stores an optional reference transcript when one is supplied.",
+            "title": "Acceptstranscript",
             "type": "boolean"
           },
           "requiresReferenceAudio": {
@@ -31180,6 +31238,7 @@
           "provider",
           "connectionId",
           "requiresTranscript",
+          "acceptsTranscript",
           "requiresReferenceAudio",
           "supportsUploadedVoices",
           "referenceEmbeddingDimension",

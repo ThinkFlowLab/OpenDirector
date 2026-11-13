@@ -9,11 +9,11 @@ Harness 指承担模型调用、工具执行和上下文管理的 Agent 执行�
 | Runtime | 执行程序 | 模型与认证来源 |
 | --- | --- | --- |
 | Default | 固定版本的 bundled OpenCode | OpenDirector 模型配置，经本地模型代理访问服务 |
-| OpenCode CLI | PATH 中的 opencode | CLI 原生配置与模型目录 |
-| Codex | PATH 中的 codex | 原生认证与模型目录；隔离启动前解析所选模型或默认模型 |
-| Claude Code | PATH 中的 claude | 原生认证、环境变量与初始化模型目录 |
-| JiuwenSwarm | PATH 中的 jiuwenswarm-process，通过 stdin/stdout JSONL 直接调用 | 本机 Jiuwen 模型目录、配置与环境变量 |
-| DeepSeek Harness | PATH 中的 dsh，以 acp profile 运行标准 JSON-RPC | CLI 原生 profile、模型目录与认证 |
+| OpenCode CLI | opencode，优先 PATH，再查找常见 CLI 安装目录 | CLI 原生配置与模型目录 |
+| Codex | 优先 PATH 中的 codex，再查找常见桌面版与 CLI 安装目录 | 原生认证与模型目录；隔离启动前解析所选模型或默认模型 |
+| Claude Code | claude，优先 PATH，再查找常见 CLI 安装目录 | 原生认证、环境变量与初始化模型目录 |
+| JiuwenSwarm | jiuwenswarm-process，优先 PATH，再查找常见 CLI 安装目录，通过 stdin/stdout JSONL 直接调用 | 本机 Jiuwen 模型目录、配置与环境变量 |
+| DeepSeek Harness | dsh，优先 PATH，再查找常见 CLI 安装目录，以 acp profile 运行标准 JSON-RPC | CLI 原生 profile、模型目录与认证 |
 
 Default 与 OpenCode CLI 分别配置。外部 CLI 不读取 OpenDirector 保存的模型凭证。进程继承服务端环境，包括 PATH 和第三方 API 配置。
 
@@ -48,6 +48,8 @@ Default 与 OpenCode CLI 分别配置。外部 CLI 不读取 OpenDirector 保存
 Default 将模型配置中的输入模态传入 bundled OpenCode。外部 harness 使用自身的模型能力配置。媒体引用和前端预览不直接构成模型视觉输入，实际观察能力取决于模型/API 以及原生工具传入的内容。
 
 ## 运行生命周期
+
+Search citations keep their native markers in the original reply and trace. Completed Codex MCP web-search results supply validated source IDs, HTTP(S) URLs and titles through `sources` events; the conversation retains this metadata with the reply. The UI splits tool activities using raw text offsets before formatting prose citations as source links, and uses the same formatting for copying. Code examples remain literal. Missing sources and incomplete final markers have a localized fallback. For saved Codex replies without source metadata, queries derive it from the matching turn's project-local trace without rewriting the conversation; a bounded metadata cache is invalidated by trace modification time and size. Reading a trace never requests a model call.
 
 同一工程同时只接受一个回复运行。运行事件转换为回复正文和工具活动，保存到对应会话；原生事件与业务工具事件追加到 `agent-runs/<turn-id>.<runtime>.jsonl`。Default 使用 `opencode` 作为轨迹文件的 runtime 名称。
 

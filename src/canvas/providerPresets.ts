@@ -75,6 +75,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     connectionType: "api",
     authMode: "bearer",
   },
+  {
+    id: "bigmodel",
+    name: "智谱 BigModel",
+    logoOrganization: "zai-org",
+    kinds: ["image"],
+    url: "https://open.bigmodel.cn/api/paas/v4",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: { image: ["glm-image"] },
+  },
 
   {
     id: "minimax-agent",
@@ -135,13 +146,14 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "zhipu",
     logoOrganization: "zai-org",
     name: "智谱 BigModel",
-    kinds: ["agent"],
+    kinds: ["agent", "audio"],
     url: "https://open.bigmodel.cn/api/paas/v4",
     protocol: "openai",
     connectionType: "api",
     authMode: "bearer",
     modelsByKind: {
       agent: ["glm-5.3", "glm-5.3-flash", "glm-5.2"],
+      audio: ["glm-tts"],
     },
   },
   {

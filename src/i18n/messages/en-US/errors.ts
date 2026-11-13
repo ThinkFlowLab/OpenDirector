@@ -139,7 +139,7 @@ export const errors = {
     "Enter a voice id supported by the service (letters, numbers, dots, underscores, or hyphens).",
   "errors.rules.voiceRequired": "Enter a valid Voice ID from the service's voice library before generating.",
   "errors.rules.referencesUnsupported": "This model does not support references. Disconnect the references before generating.",
-  "errors.generationFailure.voiceNotFound": "The voice was not found or is unavailable to this account. Check the Voice ID in the MOSS voice library.",
+  "errors.generationFailure.voiceNotFound": "The voice was not found or is unavailable to this account. Select an available voice in the voice library.",
   "errors.rules.audioDisable":
     "The video adapter does not support disabling generated audio.",
   "errors.rules.duration":
@@ -689,7 +689,7 @@ export const errors = {
   "errors.generationFailure.download":
     "The generated result could not be downloaded.",
   "errors.generationFailure.downloadAddress":
-    "The result URL resolves to a non-public address, so the download stopped. Check the service's result URL or your DNS settings, then resume the original download.",
+    "The result URL is invalid or resolves to a non-public address, so the download stopped. Check the service's result URL or your DNS settings, then resume the original download.",
   "errors.generationFailure.notFoundTask":
     "The provider could not find this task.",
   "errors.generationFailure.notFoundEndpoint":

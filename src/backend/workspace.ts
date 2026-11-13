@@ -133,7 +133,8 @@ async function populateWorkspaceProject(
   await openWorkspaceProject(project);
   const imported = { ...document, id: project.id, title: project.name };
   await saveWorkspaceDocument(imported);
-  return imported;
+  // Render registered assets through their project previews after importing originals.
+  return readWorkspaceDocument(project);
 }
 
 /** JSON imports become independent filesystem projects. */

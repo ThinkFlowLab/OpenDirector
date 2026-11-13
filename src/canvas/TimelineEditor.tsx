@@ -72,6 +72,7 @@ export interface TimelineEditorProps {
     timeline: TimelineData,
   ) => Promise<(result: LinkedMediaResult) => Promise<boolean>>;
   onExportEditablePackage?: (timeline: TimelineData) => Promise<Blob>;
+  onReadMediaResource?: (resource: CanvasResource, signal: AbortSignal) => Promise<Blob>;
   onPreparePackageImport?: (
     file: File,
     replace: boolean,
@@ -110,6 +111,7 @@ export function TimelineEditor({
   onClose,
   onReadTextResource,
   onExportEditablePackage,
+  onReadMediaResource,
   onPreparePackageImport,
   latestNode,
   onRefreshFromProject,
@@ -844,6 +846,7 @@ export function TimelineEditor({
         (value) => {
           if (ownsLoad(controller)) setPackageProgress(value);
         },
+        onReadMediaResource,
       );
       if (ownsLoad(controller))
         downloadFile(blob, `${node.data.title || "timeline"}.fcpxml.zip`);

@@ -19,6 +19,7 @@ from opendirector.infrastructure.creation_projects import directory, durable_jso
 from opendirector.infrastructure.local_projects import child, read_json
 from opendirector.infrastructure.rename import rename_path
 from opendirector.media.probe import probe_file
+from opendirector.media import heif_type
 from opendirector.media.fonts import FONT_SIGNATURES, inspect_font
 
 
@@ -70,17 +71,19 @@ def inspect_file(path: Path, name: str, *, expected_kind=None):
     with path.open('rb') as stream:
         prefix = stream.read(16)
     image_bytes = (prefix.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff', b'GIF87a', b'GIF89a'))
-                   or prefix.startswith(b'RIFF') and prefix[8:12] == b'WEBP')
-    if suffix in {'.png', '.jpg', '.jpeg', '.gif', '.webp'} or image_bytes or expected_kind == 'image':
+                   or prefix.startswith(b'RIFF') and prefix[8:12] == b'WEBP' or heif_type(prefix))
+    if suffix in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'} or image_bytes or expected_kind == 'image':
         try:
-            with Image.open(path, formats=['PNG', 'JPEG', 'GIF', 'WEBP']) as image:
+            with Image.open(path, formats=['PNG', 'JPEG', 'GIF', 'WEBP', 'HEIF']) as image:
+                if image.format == 'HEIF' and (not heif_type(prefix) or image.n_frames != 1):
+                    raise ValueError('Unsupported HEIF subtype or frame count')
                 if image.width * image.height > 25_000_000:
-                    raise ProjectError('图片像素总数应不超过 2500 万。', 413)
-                metadata = MediaMetadata(size=size, mimeType=Image.MIME[image.format], width=image.width, height=image.height)
+                    raise ProjectError('图片像素总数应不超过 2500 万。', 413, code='image_pixel_limit')
                 image.load()
+                metadata = MediaMetadata(size=size, mimeType=image.get_format_mimetype(), width=image.width, height=image.height)
             return 'image', metadata
-        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
-            raise ProjectError('无法读取图片，请检查实际格式及完整性。') from None
+        except (UnidentifiedImageError, OSError, ValueError, EOFError, Image.DecompressionBombError):
+            raise ProjectError('无法读取图片，请检查实际格式及完整性。', code='image_decode') from None
     kind = ('video' if suffix in {'.mp4', '.mov', '.webm'} else
             'audio' if suffix in {'.mp3', '.wav', '.m4a', '.ogg', '.flac'} else
             expected_kind if expected_kind in {'video', 'audio'} else None)

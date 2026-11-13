@@ -98,6 +98,20 @@ try {
     (value) => !!value.modelSelections.agent,
     "Default model must be saved",
   );
+  // #246: repeated New on an empty or whitespace-only composer must not
+  // accumulate sessions. The current browser editor normalizes blank input
+  // to an empty draft; also click New while the composer still shows spaces.
+  const historyCount = async () => (await api(path + "/conversations")).items.length;
+  await create.click();
+  await create.click();
+  assert.equal(await historyCount(), 1, "New on an empty session must be reused");
+  assert.equal((await api(path)).conversationId, first.conversationId);
+  await editor.fill("   \n  ");
+  await create.click();
+  assert.equal(await historyCount(), 1, "Whitespace-only input must not open a second session");
+  assert.equal((await api(path)).conversationId, first.conversationId);
+  await editor.fill("");
+  await until(editorText, (value) => value === "", "Composer must be cleared before the first send");
   await editor.fill("海边短片");
   await panel.getByRole("button", { name: "发送消息", exact: true }).click();
   await until(

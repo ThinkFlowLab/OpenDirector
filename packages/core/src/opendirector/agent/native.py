@@ -14,7 +14,9 @@ from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
 from opendirector.agent import cli_transport, deepseek
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
+from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
 from opendirector.agent.tools import ROOT, SYSTEM
@@ -37,7 +39,7 @@ def executable(runtime: str) -> str | None:
                 return str(path)
         path = BUNDLED / 'bin' / ('opencode.exe' if os.name == 'nt' else 'opencode')
         return str(path) if path.is_file() else None
-    return shutil.which('dsh' if runtime == 'deepseek' else runtime)
+    return cli_executable('dsh' if runtime == 'deepseek' else runtime)
 
 
 _CODEX_ISOLATION: dict[str, tuple[str, ...]] = {}
@@ -126,7 +128,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     else:
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
-        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.2'}))
+        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.3'}))
         skill_root = work / '.agents/skills'
         skill_root.mkdir(parents=True, exist_ok=True)
         unlink_directory(plugin / 'skills')
@@ -153,6 +155,8 @@ def text_events(runtime: str, raw: dict) -> list[dict]:
         return [{'type': 'delta', 'text': raw['part']['text']}]
     if runtime == 'codex' and raw['type'] == 'item.completed' and raw['item']['type'] == 'agent_message':
         return [{'type': 'delta', 'text': raw['item']['text']}]
+    if runtime == 'codex' and (sources := search_sources(raw)):
+        return [{'type': 'sources', 'sources': sources}]
     if runtime == 'claude' and raw['type'] == 'assistant':
         return [{'type': 'delta', 'text': part['text']} for part in raw['message']['content'] if part['type'] == 'text']
     return []

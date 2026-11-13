@@ -19,6 +19,8 @@ test("imports fall back only for missing or generic MIME and preserve explicit t
   for (const type of ["", "application/octet-stream"]) {
     for (const [name, kind, mimeType] of [
       ["portrait.JPG", "image", "image/jpeg"],
+      ["portrait.HEIC", "image", "image/heic"],
+      ["portrait.heif", "image", "image/heif"],
       ["clip.MOV", "video", "video/quicktime"],
       ["voice.wav", "audio", "audio/wav"],
     ])

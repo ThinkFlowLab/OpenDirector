@@ -229,8 +229,13 @@ class CreationGeneration(GenerationRuntime):
             params['watermark'] = not self.settings.get()['removeWatermark']
         if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
             params.update(prompt_enhance=False, watermark=not self.settings.get()['removeWatermark'])
+        if spec.kind == 'image' and input_rules(config)['profile'] == 'bigmodel-glm-image':
+            params = dict(size=params['size'], watermark_enabled=not self.settings.get()['removeWatermark'])
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
             params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'zhipu-speech':
+            params = dict(voice=intent['voice'], response_format='wav', stream=False,
+                          watermark_enabled=not self.settings.get()['removeWatermark'])
         return params
 
     @staticmethod
@@ -240,8 +245,8 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image'} else None,
-                outputFormat='png', watermark=parameters.get('watermark'),
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image', 'bigmodel-glm-image'} else None,
+                outputFormat='png', watermark=parameters.get('watermark_enabled', parameters.get('watermark')),
                 numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
@@ -249,6 +254,8 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'audio':
             if input_rules(config)['profile'] == 'moss-speech':
                 return dict(kind=kind, voice=parameters['voice'], format='mp3')
+            if input_rules(config)['profile'] == 'zhipu-speech':
+                return dict(kind=kind, voice=parameters['voice'], format='wav', sampleRate=24000)
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
                 speaker=parameters.get('speaker') if config['protocol'] != 'openai' else None,
                 format='mp3', sampleRate=24000 if config['protocol'] != 'openai' else None)

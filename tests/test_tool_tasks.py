@@ -407,6 +407,7 @@ def test_h3_edit_masks_follow_its_frame_and_audio_grids():
     assert VllmOmniVideo.picture_mask(None, frames) == 0.0 and VllmOmniVideo.picture_mask(EditMask(0.7), frames) == 0.7
 
 
+@pytest.mark.merge
 def test_partial_reshoot_redraws_only_its_window(project):
     store, project_id, session = project
     configs = configure(store, H3)
@@ -421,6 +422,7 @@ def test_partial_reshoot_redraws_only_its_window(project):
     assert picture[0] == [[0.0]] and any(frame == [[1.0]] for frame in picture) and 0 < sum(sound) < len(sound)
 
 
+@pytest.mark.merge
 def test_long_video_edit_runs_piecewise_and_subtitles_default_to_the_bottom_band(project):
     store, project_id, session = project
     configs = configure(store, H3)
