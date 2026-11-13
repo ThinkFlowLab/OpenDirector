@@ -1,6 +1,7 @@
 """Project-scoped assistant persistence and native runtime streaming."""
 import asyncio
 from contextlib import aclosing, suppress
+from dataclasses import replace
 import json
 import logging
 from pathlib import Path
@@ -22,12 +23,19 @@ from opendirector.application.model_availability import requests_for
 from opendirector.domain.rule_facts import MAX_REFERENCES, PROMPT_MAX_LENGTH
 from opendirector.infrastructure.creation_projects import durable_json
 from opendirector.infrastructure.local_projects import child, read_json
+from opendirector.integrations.chat_completions import CHAT_MAX_TOKENS
 from opendirector_api.localization import localized_error_for_language
 
 logger = logging.getLogger(__name__)
 
 
 Runtime = RuntimeId
+
+
+def _assistant_request(config):
+    """Admission uses the same output ceiling as the configured model gateway."""
+    return replace(requests_for(config, inputs={'text'})[0],
+                   parameters=(('max_tokens', CHAT_MAX_TOKENS),))
 
 
 class Draft(BaseModel):
@@ -363,7 +371,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             if config is not None:
                 prepared = await asyncio.to_thread(generation.availability.prepare, config)
                 current = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent')
-                generation.availability.require(current, requests_for(current, inputs={'text'})[0], prepared)
+                generation.availability.require(current, _assistant_request(current), prepared)
                 config = current
             available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
             if set(value.skills) - {item['name'] for item in available}:
@@ -382,7 +390,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             def validate_connection():
                 if config is not None:
                     current = configs.resolve(str(value.modelId), 'agent')
-                    generation.availability.require(current, requests_for(current, inputs={'text'})[0], prepared)
+                    generation.availability.require(current, _assistant_request(current), prepared)
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
