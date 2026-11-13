@@ -527,6 +527,7 @@ export function backendBlocker(
   const transmitted = backendReferences(settings, incoming, config);
   const profile = settings.mode === "audio" ? (isMusicModel(config) ? "lyrics_to_music" : "text_to_speech")
     : settings.mode === "image" ? (transmitted.some((ref) => ref.node.data.kind === "image") ? "image_to_image" : "text_to_image")
+    : transmitted.some((ref) => ref.role === "continuation") ? "video_continuation"
     : transmitted.some((ref) => ref.node.data.kind === "video") ? "video_to_video"
     : transmitted.some((ref) => ref.node.data.kind === "image") ? "image_to_video" : "text_to_video";
   const capabilityIssue = availabilityBlocker(config, profile);

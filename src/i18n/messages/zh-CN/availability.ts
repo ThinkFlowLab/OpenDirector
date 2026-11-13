@@ -83,6 +83,7 @@ export const availability = {
   "availability.profile.text_to_video": "文字生成视频",
   "availability.profile.image_to_video": "图片生成视频",
   "availability.profile.video_to_video": "视频变换",
+  "availability.profile.video_continuation": "视频续写",
   "availability.profile.text_to_speech": "语音朗读",
   "availability.profile.lyrics_to_music": "歌词与风格生成音乐",
   "availability.profile.text_to_audio": "通用音频生成",

@@ -43,7 +43,8 @@ _MESSAGES = {
 }
 _OPERATIONS = {'文字回复': 'text replies', '图片回复': 'image replies', '图片生成': 'image generation',
     '图片编辑': 'image editing', '文字生成视频': 'text-to-video generation', '图片生成视频': 'image-to-video generation',
-    '视频编辑': 'video editing', '语音合成': 'speech synthesis', '音乐生成': 'music generation', '此操作': 'this operation'}
+    '视频编辑': 'video editing', '视频续写': 'video continuation',
+    '语音合成': 'speech synthesis', '音乐生成': 'music generation', '此操作': 'this operation'}
 _INPUTS = {'图片': 'images', '音频': 'audio', '视频': 'video', '文字': 'text', '音色': 'a voice',
     '参考音频': 'reference audio', '风格说明': 'a style description', '参考文本': 'a reference transcript',
     '选区': 'a selection', '标注参考图片': 'an annotation reference', '素材': 'inputs',

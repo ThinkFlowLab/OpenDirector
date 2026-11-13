@@ -726,6 +726,7 @@ export const errors = {
   "errors.capability.label.textVideo": "文字生成视频",
   "errors.capability.label.imageVideo": "图片生成视频",
   "errors.capability.label.videoEditing": "视频编辑",
+  "errors.capability.label.videoContinuation": "视频续写",
   "errors.capability.label.speech": "语音合成",
   "errors.capability.label.music": "音乐生成",
   "errors.capability.label.operation": "此操作",

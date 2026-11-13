@@ -92,6 +92,7 @@ export const availability = {
   "availability.profile.text_to_video": "Text to video",
   "availability.profile.image_to_video": "Image to video",
   "availability.profile.video_to_video": "Video transformation",
+  "availability.profile.video_continuation": "Video continuation",
   "availability.profile.text_to_speech": "Speech synthesis",
   "availability.profile.lyrics_to_music": "Music from lyrics and style",
   "availability.profile.text_to_audio": "General audio generation",

@@ -945,6 +945,7 @@ export const errors = {
   "errors.capability.label.textVideo": "text-to-video generation",
   "errors.capability.label.imageVideo": "image-to-video generation",
   "errors.capability.label.videoEditing": "video editing",
+  "errors.capability.label.videoContinuation": "video continuation",
   "errors.capability.label.speech": "speech synthesis",
   "errors.capability.label.music": "music generation",
   "errors.capability.label.operation": "this operation",

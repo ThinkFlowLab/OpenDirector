@@ -55,8 +55,13 @@ def requests_for(config, *, inputs=None):
         return [request('image_generation', 'text_to_image', '/images/generations', 'image'),
                 request('image_edit', 'image_to_image', '/images/edits', 'image')]
     if kind == 'video' and protocol == 'vllm_omni':
+        profiles = ['text_to_video', 'image_to_video', 'video_to_video']
+        # Continuation uses a cached job, not a video upload. Publish its own
+        # decision so the UI retains endpoint closure and pause observations.
+        if 'continuation' in input_rules(config)['videoModes']:
+            profiles.append('video_continuation')
         return [request('video_generation', profile, '/videos', 'video')
-                for profile in ('text_to_video', 'image_to_video', 'video_to_video')]
+                for profile in profiles]
     if kind == 'audio' and protocol in {'openai', 'vllm_omni_music'}:
         return [request('speech', 'lyrics_to_music' if protocol == 'vllm_omni_music' else 'text_to_speech', '/audio/speech', 'audio')]
     # Ark/Minimax and specialized segmentation, depth, score protocols have
@@ -353,7 +358,8 @@ class ModelAvailability:
             code = 'capability_paused' if decision['reasonCode'] == 'execution_paused' else 'capability_unavailable'
             labels = {'text_response': '文字回复', 'image_response': '图片回复', 'text_to_image': '图片生成',
                       'image_to_image': '图片编辑', 'text_to_video': '文字生成视频', 'image_to_video': '图片生成视频',
-                      'video_to_video': '视频编辑', 'text_to_speech': '语音合成', 'lyrics_to_music': '音乐生成'}
+                      'video_to_video': '视频编辑', 'video_continuation': '视频续写',
+                      'text_to_speech': '语音合成', 'lyrics_to_music': '音乐生成'}
             label = labels.get(request.profile, '此操作')
             message = ('服务已暂停，请恢复后重试。' if code == 'capability_paused'
                        else f'服务未开放{label}。' if decision['reasonCode'] in {'route_disabled', 'operation_disabled'}

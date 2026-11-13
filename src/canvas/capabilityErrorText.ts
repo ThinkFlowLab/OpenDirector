@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   文字生成视频: "textVideo",
   图片生成视频: "imageVideo",
   视频编辑: "videoEditing",
+  视频续写: "videoContinuation",
   语音合成: "speech",
   音乐生成: "music",
   此操作: "operation",
