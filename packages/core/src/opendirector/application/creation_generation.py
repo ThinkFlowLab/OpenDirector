@@ -151,6 +151,9 @@ class CreationGeneration(GenerationRuntime):
             'video': {'duration': 5, 'ratio': 'adaptive', 'generate_audio': True},
             'audio': {'speaker': 'zh_female_vv_uranus_bigtts', 'audio_params': {'format': 'mp3', 'sample_rate': 24000}}}[spec.kind]
         intent = spec.parameters.model_dump(exclude_none=True)
+        if spec.kind == 'video' and config['protocol'] == 'bigmodel_video':
+            from opendirector.domain.bigmodel_video import cogvideo_parameters
+            return {**cogvideo_parameters(config, intent), 'watermark': not self.settings.get()['removeWatermark']}
         if spec.kind == 'video' and config['protocol'] == 'kling_video':
             from opendirector.domain.kling_models import kling_parameters
             return kling_parameters(config, intent, any(records[key]['kind'] == 'image' for key in node['referenceIds']))

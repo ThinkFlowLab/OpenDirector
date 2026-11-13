@@ -388,7 +388,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -827,7 +827,7 @@ export interface ModelConnectionInput extends ContractInput {
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
@@ -840,7 +840,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
@@ -1963,7 +1963,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2401,7 +2401,7 @@ export interface ModelConnection extends Contract {
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
@@ -2414,7 +2414,7 @@ export interface ModelSnapshot extends Contract {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;

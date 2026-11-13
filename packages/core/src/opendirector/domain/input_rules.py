@@ -55,6 +55,13 @@ def _adapter_rules(config):
         # a score for music generation and never generates audio itself.
         rules.update(profile='vllm-omni-score', allowedKinds=[], maxImages=0)
         return rules
+    if kind == 'video' and config.get('protocol') == 'bigmodel_video':
+        from .bigmodel_video import cogvideo_capabilities
+        cogvideo_capabilities(model)
+        rules.update(profile='bigmodel-cogvideox-3', allowedKinds=['text', 'image'], maxImages=2,
+                     imageBytes=5 * 1024 * 1024, requestBytes=16 * 1024 * 1024, maxPromptCharacters=512,
+                     videoModes=['first_frame'], frameRoles=['first_frame', 'last_frame'], aspectRatios=[])
+        return rules
     if kind == 'video' and config.get('protocol') == 'kling_video':
         kling_capabilities(model)
         rules.update(profile='kling-official', allowedKinds=['text', 'image'], maxImages=10,
@@ -148,7 +155,7 @@ def input_rules(config):
         if library is not None:
             rules['voiceLibrary'] = library
     if config['kind'] == 'video':
-        rules['generateAudioOptions'] = [True, False] if config.get('protocol') == 'volcengine' else [True]
+        rules['generateAudioOptions'] = [True, False] if config.get('protocol') in {'volcengine', 'bigmodel_video'} else [True]
     if config['kind'] == 'image' and rules['profile'] != 'vllm-omni-segmentation':
         from .image_output import image_outputs
         rules['imageOutputs'] = image_outputs(config, rules['profile'])

@@ -26,6 +26,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Video model capabilities](guides/video-model-capabilities.md) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
 | [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
 | [Kling video](guides/kling-video.md) ([中文](guides/kling-video.zh-CN.md)) | Optional Kling 4.0 and Flash setup, model-specific inputs, and recovery limits | Kling inputs, model declarations, or recovery behavior change |
+| [BigModel video](guides/bigmodel-video.md) ([中文](guides/bigmodel-video.zh-CN.md)) | CogVideoX-3 text, single-image and first/last-frame generation, task recovery and adoption | BigModel protocol, inputs, output sizes or recovery behavior change |
 | [BigModel GLM-Image](guides/bigmodel-image.md) ([中文](guides/bigmodel-image.zh-CN.md)) | Account setup, text-to-image generation, adoption and recovery | BigModel integration fields or behavior change |
 | [GLM-Image validation](development/glm-image-validation.md) | Real provider workflow screenshots and automated checks | GLM-Image acceptance is repeated |
 | [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture | Runtime architecture changes |
