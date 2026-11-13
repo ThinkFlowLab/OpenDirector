@@ -25,6 +25,7 @@ import { portPoint, useCanvasReferences } from "../useCanvasReferences";
 
 import { useCanvasWheelBoundary } from "../useCanvasWheelBoundary";
 import { useSelectionPresentation } from "../useSelectionPresentation";
+import { displayNodeTitle } from "../nodeTitle.ts";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { nodeKindKeys } from "./workspaceChrome.tsx";
 import type { FlowNode } from "./workspaceChrome.tsx";
@@ -68,6 +69,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     interacting,
     jobs,
     lockedIds,
+    locale,
     measurements,
     menu,
     notify,
@@ -646,7 +648,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: t("canvas.workspace.aria.nodeLabel", {
           kind: t(nodeKindKeys[n.type]),
-          title: n.data.title,
+          title: displayNodeTitle(n.type, n.data.title, locale),
         }),
       })),
     [
@@ -656,6 +658,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       measurements,
       lockedIds,
       activeAction?.nodeId,
+      t,
+      locale,
     ],
   );
   const flowEdges: Edge[] = useMemo(
@@ -699,7 +703,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
           },
           ariaLabel: t("canvas.workspace.aria.referenceEdge"),
         })),
-    [doc.edges, doc.nodes, jobs, selectedEdges, showEdges],
+    [doc.edges, doc.nodes, jobs, selectedEdges, showEdges, t],
   );
 
   const projected = useMemo(() => {

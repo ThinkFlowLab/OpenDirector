@@ -1,5 +1,6 @@
 """CLI entry points against the real API and persistent project store."""
 import json
+import io
 import re
 from pathlib import Path
 import shlex
@@ -20,6 +21,19 @@ from opendirector.application.voice_library import VoiceLibrary
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
+
+
+@pytest.mark.parametrize('bom', ['', '\ufeff'])
+@pytest.mark.parametrize('stdin', [False, True])
+def test_json_input_preserves_unicode_and_accepts_utf8_bom(tmp_path, monkeypatch, bom, stdin):
+    value = {'payload': {'name': '暖阳窗边的小橘猫.md', 'text': '镜头一\n镜头二 🐈𠮷'}}
+    text = bom + json.dumps(value, ensure_ascii=False)
+    path = tmp_path / '输入.json'
+    path.write_text(text, encoding='utf-8')
+    if stdin:
+        monkeypatch.setattr(sys, 'stdin', io.StringIO(text))
+        path = Path('-')
+    assert cli.read_file(path) == value
 
 
 def test_cli_preserves_the_font_error_code_and_english_diagnostic(tmp_path, monkeypatch):
