@@ -97,9 +97,11 @@ Nine rules keep the table honest.
   route at all — no routes, no usable path, only sync, only a socket, only some
   other operation's path — is `unknown` with `no_route_declared`, never
   `missing`: nothing this tool can post to was closed, because nothing this tool
-  posts to was declared. Those three fields — `transport`, `method`, `path` —
-  are *reported* when absent or unreadable, not folded into a verdict; `support`
-  and `exposure` are the fields that fold, and the next rule says how.
+  posts to was declared. `method` and `path` are *reported* when absent or
+  unreadable, `transport` only when it is present but unreadable — an absent
+  `transport` takes upstream's `http` default instead — so none of the three
+  is folded into a verdict; `support` and `exposure` are the fields that fold,
+  and the next rule says how.
 * `support` and `exposure` each have three ways of saying "not confirmed", and
   this table folds them into one answer: the field absent, an enum value it does
   not recognise, and the literal `unknown` all read as `unknown`
@@ -816,8 +818,8 @@ def _role_routes(entry, operation):
     `(transport, method, path)` key, exactly the test `resolve()` uses, so a
     socket spelling the http path is not that route and cannot lend it roles.
     An open postable route is the only channel a role can come from, and one
-    whose `exposure` is absent or unreadable may still serve, so it is
-    `undecided` rather than either a grant or a refusal.
+    whose `exposure` is absent, unreadable or the literal `unknown` may still
+    serve, so it is `undecided` rather than either a grant or a refusal.
     """
     if not isinstance(entry, dict) or not isinstance(operation, str):
         return [], False
@@ -863,7 +865,8 @@ def role_verdict(entry, operation, required):
     nothing: that route is undecided, not excluded.
     `unknown` — anything else: no postable route, a role nobody names on the
     postable route, an absent or unrecognised `support`, or a postable route
-    whose `exposure` is absent or unreadable, which may still serve.
+    whose `exposure` is absent, unreadable or the literal `unknown`, which may
+    still serve — the enum and the shape errors fold into the same doubt.
 
     `operation` is normalized the way `capabilities_for()` normalizes its
     arguments and `resolve()` normalizes the operation keys it reads: a string is

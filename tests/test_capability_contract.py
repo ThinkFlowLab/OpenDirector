@@ -50,6 +50,17 @@ from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, BY_PAIR,
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'omni-capabilities'
 CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / 'capability-contract.md'
+CONTRACT_RULE = FIXTURES / 'contract-rule.txt'
+# The two sections of the contract document that state this module's rules, from
+# their headings to the next one. Pinned whole so prose and resolver cannot drift
+# apart: adding, deleting or re-wording a sentence anywhere inside them turns the
+# contract test red, and the golden has to be updated in the same change.
+CONTRACT_SECTIONS = ('## Three capability states, and `missing` needs positive evidence',
+                     '## Status and reason mapping (the contract)')
+# The role-gate paragraph sits in the upstream-vocabulary section, so it is pinned
+# as a paragraph of its own: it is the prose that states REQUIRED_ROLES, and a
+# reviewer showed a one-word change there was otherwise invisible to the suite.
+CONTRACT_PARAGRAPH = 'So `video.first_frame` and `video.edit` carry `REQUIRED_ROLES`'
 # The published sample. `malformed` is deliberately not among them: defining it
 # as a fourth tier here is what keeps defensive bodies out of the oracle.
 TIERS = ('absent', 'full', 'partial')
@@ -2762,6 +2773,99 @@ def test_a_route_that_no_operation_owns_is_an_unknown_route():
         assert result['capabilities']['image.segment'] == UNKNOWN
 
 
+def test_the_documented_all_disabled_case_is_missing_beside_an_unplaceable_route():
+    """The status table's defensive row, resolved exactly as the table reads it.
+
+    `wuzhf9`'s review of `ca10941a` reproduced this case: a supported/enabled
+    `text_to_video` profile whose postable `/v1/videos` is `disabled`, beside an
+    unrecognised `/v1/videos/stream` that is `enabled`. The resolver answered
+    `missing` / `route_disabled` while two paragraphs and the status table still
+    prescribed `unknown` — the code had moved to `POSTABLE_ROUTES`, the prose had
+    not. Both halves are pinned here: the row describing this shape must keep
+    saying `missing`, and the resolver must keep producing it, so the contract
+    text and the resolver expectations cannot drift apart again.
+    """
+    stream = {'transport': 'http', 'method': 'POST', 'path': '/v1/videos/stream',
+              'exposure': 'enabled'}
+    documented = resolve(body({'video_generation': operation(profiles=[
+        profile('text_to_video', routes=[route('/v1/videos', exposure='disabled'), stream])])}))
+    assert documented['capabilities']['video.generate'] == MISSING
+    assert documented['reasons'] == {'video.generate': 'route_disabled'}
+    assert documented['unresolved'] == [{'operation': 'video_generation', 'profile': 'text_to_video',
+                                         'route': '/v1/videos/stream', 'reason': UNKNOWN_ROUTE}]
+
+    # The same shape with the sync variant and with the socket — the socket under
+    # every spelling of its own `exposure`, because a channel this tool never
+    # opens cannot depend on it: the diagnostic changes (`route_mismatch`, not
+    # `unknown_route`), the verdict does not.
+    for unplaceable in (route('/v1/videos/sync'), socket_route(), socket_route('disabled'),
+                        socket_route(None)):
+        beside = resolve(body({'video_generation': operation(profiles=[
+            profile('text_to_video', routes=[route('/v1/videos', exposure='disabled'), unplaceable])])}))
+        assert beside['capabilities']['video.generate'] == MISSING, unplaceable
+        assert beside['reasons'] == {'video.generate': 'route_disabled'}, unplaceable
+        assert [note['reason'] for note in beside['unresolved']] == [ROUTE_MISMATCH], unplaceable
+
+    # Control: beside an *open* postable route the unplaceable declaration is a
+    # diagnostic in that direction too — it neither grants nor withholds.
+    granted = resolve(body({'video_generation': operation(profiles=[
+        profile('text_to_video', routes=[route('/v1/videos'), stream])])}))
+    assert granted['capabilities']['video.generate'] == AVAILABLE
+    assert granted['reasons'] == {}
+    assert granted['unresolved'] == [{'operation': 'video_generation', 'profile': 'text_to_video',
+                                      'route': '/v1/videos/stream', 'reason': UNKNOWN_ROUTE}]
+
+    # The boundary that does survive is the postable one: an absent `exposure`
+    # on the route this tool posts to keeps the row undecided.
+    undecided = resolve(body({'video_generation': operation(profiles=[
+        profile('text_to_video', routes=[{'transport': 'http', 'method': 'POST', 'path': '/v1/videos'},
+                                         stream])])}))
+    assert undecided['capabilities']['video.generate'] == UNKNOWN
+    assert undecided['reasons'] == {}
+    assert [note['reason'] for note in undecided['unresolved']] == [EXPOSURE_UNKNOWN, UNKNOWN_ROUTE]
+
+    # Role-gated neighbours: the refusal is the postable route's, and an
+    # unplaceable route naming every required role neither lends a grant nor
+    # rescues the refusal.
+    edit_roles = {'source_video': 'supported', 'video_noise_mask': 'supported',
+                  'audio_noise_mask': 'supported'}
+    gated = resolve(body({'video_generation': operation(profiles=[
+        profile('video_to_video', inputs=('video',), outputs=('video',),
+                routes=[route('/v1/videos', exposure='disabled'),
+                        route_with_inputs('/v1/videos/stream', edit_roles)])])}))
+    assert gated['capabilities']['video.edit'] == MISSING
+    assert gated['reasons'] == {'video.edit': 'route_disabled'}
+
+    rescued = resolve(body({'video_generation': operation(profiles=[
+        profile('image_to_video', inputs=('text', 'image'), outputs=('video',),
+                routes=[route_with_inputs('/v1/videos', {'first_frame': 'unsupported'}),
+                        route_with_inputs('/v1/videos/stream', {'first_frame': 'supported'})])])}))
+    assert rescued['capabilities']['video.first_frame'] == MISSING
+    assert rescued['reasons'] == {'video.first_frame': 'unsupported'}
+    assert [note['reason'] for note in rescued['unresolved']] == [UNKNOWN_ROUTE]
+
+    # A profile with no capability id here carries its note only while its route
+    # is open: the row says `no_local_capability`, and a closed or undecided
+    # route is silent, exactly like any other profile.
+    no_id_open = resolve(body({'audio_generation': operation(profiles=[
+        profile('text_to_audio', inputs=('text',), outputs=('audio',),
+                routes=[route('/v1/audio/generate')])])}))
+    assert no_id_open['capabilities']['audio.music'] == UNKNOWN
+    assert [note['reason'] for note in no_id_open['unresolved']] == [NO_LOCAL_CAPABILITY]
+    no_id_closed = resolve(body({'audio_generation': operation(profiles=[
+        profile('text_to_audio', inputs=('text',), outputs=('audio',),
+                routes=[route('/v1/audio/generate', exposure='disabled')])])}))
+    assert no_id_closed['capabilities']['audio.music'] == UNKNOWN
+    assert no_id_closed['unresolved'] == []
+
+    # The doc half: the three blocks of prose that state this contract are pinned
+    # whole against a golden file, so no sentence can be edited, added or
+    # re-worded back to the old rule without turning this red. Round 3 showed a
+    # substring pin lets a contradicting sentence sit beside it; a whole-block
+    # comparison is the smallest guard that does not.
+    assert contract_rule_text() == CONTRACT_RULE.read_text(encoding='utf-8').strip()
+
+
 def test_a_profile_filed_under_the_wrong_operation_is_an_operation_mismatch():
     result = resolve(body({'audio_generation': operation(profiles=[
         profile('lyrics_to_music', paths=table_paths('speech'))])}))
@@ -3385,6 +3489,30 @@ def documented_profiles():
             continue
         cells.append((profile_id, parts[3].replace('`', '').replace(' ', '')))
     return cells
+
+
+def contract_rule_text():
+    """The doc's two rule sections, in reading order, as one comparable string.
+
+    `contract-rule.txt` holds the same text and is compared whole: a change on
+    either side has to be a deliberate edit, because the table and the resolver
+    are one contract rather than two documents that happen to agree today. The
+    section boundaries are the headings, so a paragraph inserted under one of them
+    is inside the comparison too.
+    """
+    prose = CONTRACT_DOC.read_text(encoding='utf-8')
+    sections = []
+    for index, heading in enumerate(CONTRACT_SECTIONS):
+        following = CONTRACT_SECTIONS[index + 1] if index + 1 < len(CONTRACT_SECTIONS) else None
+        body = prose.split(heading)[1]
+        if following is not None:
+            body = body.split(following)[0]
+        else:
+            body = body.split('\n## ')[0]
+        sections.append(heading + body)
+    paragraph = CONTRACT_PARAGRAPH + prose.split(CONTRACT_PARAGRAPH)[1].split('\n\n')[0]
+    sections.append(paragraph)
+    return '\n\n'.join(part.strip() for part in sections)
 
 
 def test_documented_required_inputs_match_fixtures():
