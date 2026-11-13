@@ -13,6 +13,7 @@ from opendirector.domain.creation.assets import Asset, AssetProvenance
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.projects import ProjectError
+from opendirector.media.processing import open_image, png
 from opendirector.ports.files import (
     AssetFileWrite, CHUNK_BYTES, MAX_CREATION_TEXT_BYTES, stream_identity,
 )
@@ -285,6 +286,16 @@ class CreationAssets:
             'preview': {'path': str(output.resolve()), 'mimeType': mime,
                 'scope': 'first_frame' if asset.kind == 'video' else 'first_30_seconds' if asset.kind == 'audio' else 'thumbnail'}}
 
+    def browser_image(self, project_id, asset_id, *, known_fingerprint=None):
+        """Original-sized display bytes, or None when the verified source is unchanged."""
+        stream, asset = self.open_media(project_id, asset_id)
+        with stream:
+            if asset.metadata.mimeType not in {'image/heic', 'image/heif'}:
+                raise ProjectError('该素材类型不支持预览。', 422, code='asset_preview_unsupported')
+            if asset.fingerprint == known_fingerprint:
+                return None, asset
+            return png(open_image(stream.read())), asset
+
     def thumbnail(self, project_id, asset_id):
         """A bounded, disposable image preview; always verify its source first."""
         from PIL import Image, ImageOps
@@ -298,12 +309,17 @@ class CreationAssets:
                 if cached is not None:
                     self._thumbnails.move_to_end(key)
                     return cached, asset
-            with Image.open(stream) as source:
-                source.thumbnail((480, 480))
-                image = ImageOps.exif_transpose(source).convert('RGBA')
-                output = BytesIO()
-                image.save(output, format='WEBP', quality=80)
-                value = output.getvalue()
+            try:
+                with Image.open(stream) as source:
+                    source.thumbnail((480, 480))
+                    image = ImageOps.exif_transpose(source).convert('RGBA')
+                    output = BytesIO()
+                    # A non-RGB source profile cannot describe the converted RGB pixels.
+                    image.save(output, format='WEBP', quality=80,
+                        icc_profile=source.info.get('icc_profile') if source.mode in {'RGB', 'RGBA', 'P', 'PA'} else None)
+                    value = output.getvalue()
+            except (OSError, ValueError, EOFError, Image.DecompressionBombError):
+                raise ProjectError('无法读取图片素材。', 422, code='image_decode') from None
             with self._verification_lock:
                 self._thumbnails[key] = value
                 while len(self._thumbnails) > 64:

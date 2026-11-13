@@ -3,10 +3,10 @@ import { errorMessage } from "../../backend/api.ts";
 import { creationClient } from "../../backend/creationClient.ts";
 import { type GenerationRequest } from "../../backend/generation.ts";
 import { modelLabel } from "../../backend/rules.ts";
+import { workspaceProjection } from "../../backend/workspace.ts";
 
 import { deliverTool, pendingToolDelivery } from "../../backend/toolDeliveries";
 import { acknowledgeToolPlacement, cancelToolTask, submitToolTask, ToolSubmissionError } from "../../backend/tools.ts";
-import { readEditorResource } from "../editorMedia";
 
 import { expectedDuration, recordDuration } from "../generationDurations";
 import { type GenerationJob as Job } from "../generationHistory";
@@ -640,7 +640,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     try {
       const outputs: LinkedMediaResult[] = [];
       for (const file of files) {
-        const resource = await readEditorResource(file, controller.signal);
+        const resource = await workspaceProjection(origin.documentId).importFile(file, controller.signal);
         if (resource.kind === "file" || resource.kind === "text")
           throw new Error(t("canvas.workspace.error.resultNotMedia"));
         outputs.push({

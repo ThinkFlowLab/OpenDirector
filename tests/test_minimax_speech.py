@@ -147,6 +147,7 @@ def test_system_voices_preserve_ids_and_account_scope(context, page_size):
         return httpx.Response(200, json=VOICES)
     library = VoiceLibrary(configs, httpx.MockTransport(handle))
     listed = library.list(saved['id'], page_size=page_size)
+    assert listed['capabilities']['acceptsTranscript'] is False
     assert [voice['voiceId'] for voice in listed['voices']] == [VOICE, 'Santa_Claus ']
     assert listed['nextCursor'] is None
     assert all(voice['compatible'] and voice['source'] == 'builtin' and not voice['canDelete']

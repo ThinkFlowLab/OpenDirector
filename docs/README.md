@@ -12,6 +12,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Test contracts](architecture/test-contracts.md) | Test/production boundaries, how to avoid stale assertions and environment-dependent red runs | Test infrastructure, capability gates, or contract ownership change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
+| [CI layer assessment](development/ci-layer-assessment.md) | Timing evidence, critical PR representatives and staged Python classification | Measured evidence or classification decisions change |
 | [Issue #87 Windows handoff](development/issue-87-windows-handoff.md) ([中文](development/issue-87-windows-handoff.zh-CN.md)) | Native ACL repair and final text acceptance | The shared checkpoint or native validation scope changes |
 | [Development lessons](development/lessons.md) | Risks identified from recent fixes | New evidence emerges or a lesson no longer applies |
 | [CI failure patterns](development/ci-failures.md) | Known timing-sensitive CI failures and how to tell flakes from regressions | A pattern is fixed, newly observed, or the watchlist changes |

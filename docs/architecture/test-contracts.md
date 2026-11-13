@@ -2,6 +2,27 @@
 
 本文说明测试与生产代码之间的边界。它不是风格建议：同一语义存在两份实现时，改动任意一侧都会让另一侧过期，而这种过期往往在 CI 里表现为"红着没人看见"或"改一处红一片"。
 
+## 测试布局与 CI 层 / Test layout and CI layers
+
+增量采用以下布局，新测试按业务领域归类；现有根目录用例和 helper 暂留原位，移动时同步修改测试发现命令、导入、watchlist 与脚本路径，不一次性重排整棵目录。
+
+Adopt this target layout incrementally, grouping tests by business area. Existing root-level tests and helpers stay in place until a move updates discovery commands, imports, watchlists and script paths together; avoid a whole-tree rewrite. Until discovery supports a new directory, add tests beside their existing peers. In particular, the current frontend command only discovers root-level `tests/*.test.ts`.
+
+该表是增量迁移的目标布局。测试发现尚未支持新目录时，新用例继续放在现有同类用例旁；尤其当前前端命令只发现根目录 `tests/*.test.ts`，首次迁入 `tests/frontend/` 必须同时修改该命令。
+
+| Location / 位置 | Responsibility / 职责 |
+| --- | --- |
+| `tests/frontend/<area>/*.test.ts` | Frontend unit checks / 前端单元检查 |
+| `tests/python/<area>/test_*.py` | Python business and integration checks / Python 业务与集成检查 |
+| `tests/python/helpers/` | Shared Python fixtures and helpers / Python 共享夹具与辅助函数 |
+| `tests/browser/` | Browser journeys; lanes in `manifest.json` / 浏览器旅程，manifest 管理 lane |
+| `tests/fixtures/` | Shared test data / 共享测试数据 |
+| `plugins/deepseek-harness/test/` | Plugin-local, path-filtered checks / 插件独立、按路径运行的检查 |
+
+L1 包含单元、静态与构建；L2 是模型替身浏览器 E2E；L3 为 main HEAD 复核、flake 分诊与扩展覆盖；L4 为生产构建、性能与输出。Python ready/merge/nightly 只决定运行时机，不代表测试目录或完整验收层级。具体命令和迁移筛选只维护在[验证指南](../development/validation.md#python-分层与迁移--python-layers-and-transition)。
+
+L1 includes unit/static/build checks; L2 is browser E2E with model stubs; L3 covers main HEAD parity, flake triage and extended journeys; L4 covers production, performance and output verification. Python ready/merge/nightly selects execution timing, not directories or complete acceptance levels. Commands and transitional selection have one owner: the [validation guide](../development/validation.md#python-分层与迁移--python-layers-and-transition).
+
 ## 四条规则
 
 ### 1. 一个语义只有一个所有者

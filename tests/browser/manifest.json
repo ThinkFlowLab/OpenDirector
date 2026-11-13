@@ -1,6 +1,17 @@
 {
   "scripts": [
     {
+      "file": "heif_upload_recovery.mjs",
+      "lanes": ["extended", "production"],
+      "previewSafe": true,
+      "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
+    },
+    {
+      "file": "heif_import.mjs",
+      "lanes": ["extended"],
+      "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."
+    },
+    {
       "file": "kling_video.mjs",
       "lanes": ["extendedFixture"],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
@@ -474,6 +485,11 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "zhipu_real.mjs",
+      "helper": true,
+      "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
     }
   ]
 }

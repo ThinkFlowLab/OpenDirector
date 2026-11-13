@@ -41,6 +41,7 @@ export interface InputRules {
   requestBytes?: number;
   maxPromptCharacters?: number | null;
   voiceRequired?: boolean | null;
+  defaultVoice?: string | null;
   voiceLibrary?: VoiceCapabilities | null;
   referencesAllowed?: boolean | null;
   maxVideos: number;
@@ -456,6 +457,10 @@ export function serviceGenerationSettings(
       !next.voiceName
     )
       next.voiceName = "2890a3a4-0012-4997-a545-8b045fe83bbe";
+    // A published default keeps a required selection non-empty; the library
+    // still owns which voices exist.
+    if (next.mode === "audio" && !next.voiceName && config.inputRules.defaultVoice)
+      next.voiceName = config.inputRules.defaultVoice;
     if (
       !generateAudioOptions({
         published: config.inputRules.generateAudioOptions ?? null,

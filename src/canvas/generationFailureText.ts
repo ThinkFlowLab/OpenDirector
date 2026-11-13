@@ -12,6 +12,7 @@ import { defaultTranslate } from "./assistantTranslate.ts";
 const BY_MESSAGE: Record<string, MessageKey> = {
   "供应商判定提示词或参考图片违反内容政策，已拒绝生成。": "errors.generationFailure.policy",
   "生成服务拒绝了输入内容或参数。": "errors.generationFailure.input",
+  "所选音色不存在或不可用。": "errors.generationFailure.voiceNotFound",
   "生成服务拒绝了参考素材。": "errors.generationFailure.reference",
   "生成服务鉴权失败。": "errors.generationFailure.authentication",
   "当前账户没有调用该模型的权限。": "errors.generationFailure.permission",
@@ -39,7 +40,6 @@ const BY_MESSAGE: Record<string, MessageKey> = {
   "生成服务连接超时或中断。": "errors.generationFailure.temporary",
   "生成服务返回了无法识别或不完整的结果。":
     "errors.generationFailure.protocol",
-  "所选音色不存在或不可用。": "errors.generationFailure.voiceNotFound",
 };
 
 const BY_CATEGORY: Record<string, MessageKey> = {

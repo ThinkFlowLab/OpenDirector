@@ -9,6 +9,7 @@ from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTER
 from .projects import ProjectError
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 from .bigmodel_image import is_bigmodel_image
+from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -43,6 +44,11 @@ def _adapter_rules(config):
             raise ProjectError('不支持该 MiniMax 语音型号，请选择预设中的型号。', 422, code='minimax_speech_model')
         rules.update(profile='minimax-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
                      referencesAllowed=False, maxPromptCharacters=MINIMAX_SPEECH_TEXT_CHARACTERS)
+        return rules
+    if is_zhipu_speech(config):
+        rules.update(profile='zhipu-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
+                     referencesAllowed=False, maxPromptCharacters=ZHIPU_SPEECH_CHARACTERS,
+              defaultVoice=ZHIPU_DEFAULT_VOICE)
         return rules
     if kind == 'vision' or config.get('protocol') == 'vllm_omni_segmentation':
         # Shared image segmentation / video tracking service, never a generator.

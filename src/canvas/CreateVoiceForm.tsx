@@ -178,7 +178,7 @@ export function CreateVoiceForm({
         disabled={busy}
         onChange={(event) => setName(event.target.value)}
       />
-      {isVllm && (
+      {(capabilities.requiresTranscript || capabilities.acceptsTranscript) && (
         <>
           <label htmlFor={`${prefix}-transcript`}>
             {t(
@@ -199,6 +199,10 @@ export function CreateVoiceForm({
           {capabilities.requiresTranscript && (
             <p>{t("voiceLibrary.transcriptRequired")}</p>
           )}
+        </>
+      )}
+      {isVllm && (
+        <>
           <label htmlFor={`${prefix}-description`}>
             {t("voiceLibrary.description")}
           </label>

@@ -8,10 +8,13 @@ import {
   undo,
 } from "../src/canvas/history.ts";
 import { createNode } from "../src/canvas/model.ts";
+import { generationDefaults } from "../src/canvas/generationCatalog.ts";
+import { generationEditIdentity } from "../src/canvas/generationSettings.ts";
 import {
   generationPrepareBlock,
   importedNodeIds,
   uploadPickerPlan,
+  uploadTargetUnchanged,
 } from "../src/canvas/workspace/entryPoints.ts";
 import {
   createWorkspaceState,
@@ -19,6 +22,49 @@ import {
 } from "../src/canvas/workspace/state.ts";
 
 setActiveLocale("zh-CN");
+
+test("upload guards accept saved defaults but reject edits to content and settings", () => {
+  const draft = createNode("image", undefined, {
+    settings: { ...generationDefaults("image"), model: "Configured image model", modelConfigId: "image-model", resolution: "auto", voiceName: undefined },
+  });
+  const saved = {
+    ...draft,
+    data: { ...draft.data, promptContent: [], promptMentions: [], settings: {
+      mode: "image" as const, model: "本地交互演示", modelConfigId: "image-model",
+      aspectRatio: "1:1", durationSeconds: 5, resolution: "auto", prompt: "", count: 1, imagePreset: "none" as const,
+    } },
+  };
+  assert.equal(uploadTargetUnchanged(saved, draft), true);
+  assert.equal(generationEditIdentity(saved, []), generationEditIdentity(draft, []));
+  for (const patch of [
+    { title: "Renamed" }, { src: "blob:other" }, { prompt: "Changed prompt" },
+    { settings: { ...saved.data.settings, modelConfigId: "other-model" } },
+    { settings: { ...saved.data.settings, resolution: "2K" } },
+    { settings: { ...saved.data.settings, aspectRatio: "16:9" } },
+  ]) {
+    const edited = { ...saved, data: { ...saved.data, ...patch } };
+    assert.equal(uploadTargetUnchanged(edited, draft), false, JSON.stringify(patch));
+  }
+  for (const patch of [
+    { modelConfigId: "other-model" }, { resolution: "2K" }, { aspectRatio: "16:9" },
+  ]) assert.notEqual(generationEditIdentity({ ...saved, data: { ...saved.data,
+    settings: { ...saved.data.settings, ...patch } } }, []), generationEditIdentity(draft, []));
+});
+
+test("video references ignore irrelevant slot initialization but retain explicit frame choices", () => {
+  const draft = createNode("video", undefined, { settings: generationDefaults("video") });
+  const saved = { ...draft, data: { ...draft.data,
+    settings: { ...draft.data.settings!, frameSlotsInitialized: true } } };
+  assert.equal(uploadTargetUnchanged(saved, draft), true);
+  assert.equal(generationEditIdentity(saved, []), generationEditIdentity(draft, []));
+  const changed = { ...saved, data: { ...saved.data,
+    settings: { ...saved.data.settings, firstFrameNodeId: "source" } } };
+  assert.equal(uploadTargetUnchanged(changed, draft), false);
+  const firstLast = { ...draft, data: { ...draft.data,
+    settings: { ...draft.data.settings!, videoMode: "first-last" as const } } };
+  assert.equal(uploadTargetUnchanged({ ...firstLast, data: { ...firstLast.data,
+    settings: { ...firstLast.data.settings, frameSlotsInitialized: true } } }, firstLast), false);
+});
 
 test("upload picker blocks locked, generation output, and running nodes", () => {
   assert.deepEqual(
@@ -76,7 +122,7 @@ test("upload picker accept follows node kind and subject slot", () => {
     generating: false,
     nodeType: "image",
   });
-  assert.deepEqual(image, { blocked: null, multiple: false, accept: "image/*" });
+  assert.deepEqual(image, { blocked: null, multiple: false, accept: "image/*,.heic,.heif" });
   assert.equal(
     uploadPickerPlan({
       hasTarget: true,
@@ -119,7 +165,7 @@ test("upload picker accept follows node kind and subject slot", () => {
         subjectSlot: "auxiliary",
       }) as { accept: string }
     ).accept,
-    "image/*",
+    "image/*,.heic,.heif",
   );
   assert.equal(
     (
@@ -131,7 +177,7 @@ test("upload picker accept follows node kind and subject slot", () => {
         subjectSlot: "main",
       }) as { accept: string }
     ).accept,
-    "image/*,video/*",
+    "image/*,.heic,.heif,video/*",
   );
 });
 

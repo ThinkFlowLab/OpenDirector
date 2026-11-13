@@ -45,9 +45,11 @@ Labels are short, English and prefixed by dimension, so issues and PRs can be fi
 `modality:image`, `modality:video`, `modality:audio` describe what the work produces.
 `provider:minimax`, `provider:moss`, `provider:openai`, `provider:flux`, `provider:kling`, `provider:runway`, `provider:google` name the external service. Use `provider:openai` for OpenAI and any OpenAI-compatible service only when OpenAI itself is the subject.
 
-### `priority:` — maintainers only
+### `priority:` — automatic initial triage, maintainer authority / 自动初判，维护者裁定
 
-`priority:p0` blocks the agreed release scope, `priority:p1` is scheduled next, `priority:p2` is accepted but unscheduled. Contributors do not need to pick one; a maintainer applies it after triage.
+`priority:p0` blocks the agreed release scope, `priority:p1` is scheduled next, `priority:p2` is accepted but unscheduled. Contributors do not need to pick one. Issue automation may add an initial priority when supported by evidence; maintainers retain authority and existing priorities are never overwritten automatically.
+
+`priority:p0` 表示阻塞已约定的发布范围，`priority:p1` 表示下一步已排期，`priority:p2` 表示已接受但未排期。Issue 自动分类可根据证据补充初始优先级，维护者保留最终决定权；已有优先级不自动替换，新报告不默认视为已接受或已排期。
 
 ### Process labels
 
@@ -89,11 +91,25 @@ The privileged workflow only checks out the PR base commit, never the contributo
 6. Run the checks from [docs/development/validation.md](docs/development/validation.md) locally, or make it explicit which ones you could not run.
 7. For a user-visible change, attach screenshots or a short demo in the pull request, or mark N/A with a reason, as asked in the evidence section of the [pull request template](.github/pull_request_template.md).
 
+## Model-assisted issue labels / Issue 自动领域与优先级
+
+The `Issue labels` workflow classifies open issues on `opened`, `edited` and `reopened`, using the same model configuration and repository-managed credentials as PR labeling. It sends only the bounded title (1000 characters), body (12000 characters), existing labels and allowed catalog. Issue text is untrusted evidence, never instructions; do not include credentials in issues. Only existing `area:*` and `priority:p0/p1/p2` labels can be added, at the configured confidence threshold (currently 0.8). At most one priority is selected, and an existing priority is preserved. Missing acceptance, scheduling or release-blocking evidence leaves priority unset; urgency alone is insufficient.
+
+`Issue labels` 工作流在 Issue 新建、编辑或重开时分类，与 PR 共用模型配置及仓库管理的凭据。仅发送限长标题（1000字符）、正文（12000字符）、现有标签及允许的目录；Issue 内容只作不可信证据，不作指令，不应包含凭据。仅按配置的置信度阈值（当前为0.8）添加仓库已有的 `area:*` 和 `priority:p0/p1/p2`，最多一个优先级，保留人工设置。缺少接受、排期或发布阻塞证据时不设置优先级，仅声称紧急不足以定级。
+
+Each run makes at most one model request (60 seconds, 1500 output tokens), without automatic retries. Missing credentials, invalid output and provider failures use conservative bilingual keyword rules for areas only; they do not assign a fallback priority. No labels are created or removed, and no type/process labels or issue assignees are changed. Manual label changes do not trigger classification. Before adding labels, the workflow rechecks title, body, state, update time and labels; changed or closed issues skip stale results. API write failures fail the job. Raw responses, issue text and provider errors are not logged. The workflow runs trusted default-branch code and becomes active after merge; existing issues require an edit or reopening and are not bulk relabeled.
+
+每次运行最多一次模型请求（60秒、1500输出token），不自动重试。缺少凭据、无效响应或服务失败时只按保守中英关键词补领域，不兜底猜测优先级。不创建或删除标签，不修改类型、流程标签或负责人；手动标签变动不触发分类。写入前复查标题、正文、状态、更新时间和标签，内容变化或关闭时跳过过期结果；写入API失败使任务失败。不记录原始响应、Issue正文或服务错误详情。工作流只运行可信默认分支代码，合入后生效；已有Issue需编辑或重开，不批量追溯打标。
+
+Validate with `node --test tests/issueLabels.test.ts tests/autoLabels.test.ts tests/reviewerRouting.test.ts`, `npm run check:i18n` and `npm run build`. Tests use model/API doubles and do not establish live model-service availability or real repository mutation behavior.
+
+使用上述测试、双语检查及构建命令验证；测试使用模型/API替身，不代表已验证真实模型服务或真实仓库写入。
+
 ## Model-assisted PR labels / 大模型自动标签
 
-The reviewer workflow classifies open, non-draft PRs on opened, synchronize and ready-for-review events before requesting reviewers. Title, body, filenames and bounded patches are sent to DeepSeek; familiar sensitive-file patterns omit patches, but this is not a guarantee of secret detection. Do not include credentials in PRs.
+The reviewer workflow classifies open, non-draft PRs on opened, synchronize and ready-for-review events before requesting reviewers. Title, body, filenames and bounded patches are sent to the configured model service; familiar sensitive-file patterns omit patches, but this is not a guarantee of secret detection. Do not include credentials in PRs.
 
-审查工作流在PR创建、新提交和转为可审查时，先分类再邀请审查人，跳过草稿。标题、正文、文件名和限量diff会发送给DeepSeek；常见敏感文件名不发送patch，但不保证自动识别所有秘密，PR中不得包含凭据。
+审查工作流在PR创建、新提交和转为可审查时，先分类再邀请审查人，跳过草稿。标题、正文、文件名和限量diff会发送给配置的模型服务；常见敏感文件名不发送patch，但不保证自动识别所有秘密，PR中不得包含凭据。
 
 Only existing `type:*`, `area:*`, `modality:*` and `provider:*` labels from the allowed catalog may be added. The classifier cannot set priority, ready or process-status labels, create labels, remove manual labels or replace an existing type. Invalid responses, missing credentials and provider failures use conservative path rules; unmatched changes retain normal fallback reviewer routing. New commits may add labels but do not remove earlier labels or reviewer requests. Manual label changes do not call the model or immediately re-add removed labels.
 
