@@ -272,15 +272,20 @@ class ModelAvailability:
         document = observation.document
         if document is None:
             return self._declaration(result)
+        exposed = next((item for item in document.routes if item.transport == 'http'
+                        and item.method == request.method and item.path == request.path), None)
         model = next((item for item in document.models if item.id == config['modelId']), None)
         operation = model.operations.get(request.operation) if model else None
         if operation is None:
-            result['reasonCode'] = 'model_not_declared' if model is None else 'operation_not_declared'
+            # Endpoint closure is independent of whether the selected model
+            # supplied support facts. Never borrow another model's execution.
+            if exposed and exposed.exposure == 'disabled':
+                result.update(status='unavailable', reasonCode='route_disabled')
+            else:
+                result['reasonCode'] = 'model_not_declared' if model is None else 'operation_not_declared'
             return self._declaration(result)
         profile = next((item for item in operation.profiles if item.id == request.profile), None)
         route = None
-        exposed = next((item for item in document.routes if item.transport == 'http'
-                        and item.method == request.method and item.path == request.path), None)
         if operation.support == 'unsupported':
             result.update(status='unavailable', reasonCode='operation_unsupported')
         elif operation.exposure == 'disabled':
