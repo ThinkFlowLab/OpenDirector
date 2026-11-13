@@ -2866,6 +2866,69 @@ def test_the_documented_all_disabled_case_is_missing_beside_an_unplaceable_route
     assert contract_rule_text() == CONTRACT_RULE.read_text(encoding='utf-8').strip()
 
 
+def test_the_12d834c2_role_declarations_decide_as_the_document_says():
+    """The representative responses published at `vllm-omni` `12d834c2`.
+
+    Each shape is read off the upstream tree, not off prose: Wan I2V requires
+    `image` with `min_count: 1` and publishes `first_frame` supported `0..1`
+    (`tests/entrypoints/openai_api/test_request_capabilities.py:94-100`); VACE
+    publishes `first_frame` `unsupported` with `max_count: 0` on every profile it
+    declares (`:103-111`); the three editing roles are supported `0..1` where the
+    handler takes latent masks and `unsupported` `max_count: 0` where it does not
+    (`:114-132`); and `t2va` / `fl2va` keep an `unknown` profile with those three
+    roles as optional supported inputs. Nothing in the module changed for these —
+    the gate reads the declaration — so these statuses are the check that the
+    document's new paragraph is literally true.
+    """
+    first_frame_supported = {'support': 'supported', 'min_count': 0, 'max_count': 1}
+    editing_roles = ('source_video', 'video_noise_mask', 'audio_noise_mask')
+
+    # Wan I2V: the first-frame slot is declared beside the required image, and
+    # the two counts are not additive — each role's own window admits one item.
+    wan = resolve(body({'video_generation': operation(profiles=[
+        profile('image_to_video', inputs=('text', 'image'), outputs=('video',),
+                routes=[route_with_inputs('/v1/videos', {
+                    'text': {'support': 'supported', 'min_count': 1},
+                    'image': {'support': 'supported', 'min_count': 1, 'max_count': 1},
+                    'first_frame': first_frame_supported})])])}))
+    assert wan['capabilities']['video.first_frame'] == AVAILABLE
+    assert wan['reasons'] == {}
+    assert wan['unresolved'] == []
+    # The pair table grants the first-frame id from this profile, not text-to-video.
+    assert wan['capabilities']['video.generate'] == UNKNOWN
+
+    # VACE: an explicit refusal is `missing`, not "the document does not say".
+    vace = resolve(body({'video_generation': operation(profiles=[
+        profile('image_to_video', inputs=('text', 'image'), outputs=('video',),
+                routes=[route_with_inputs('/v1/videos', {
+                    'image': {'support': 'supported', 'min_count': 1},
+                    'first_frame': {'support': 'unsupported', 'max_count': 0}})])])}))
+    assert vace['capabilities']['video.first_frame'] == MISSING
+    assert vace['reasons'] == {'video.first_frame': UNSUPPORTED_REASON}
+
+    # SeedVR2: the editing tool's three roles are refused, so `video.edit` is a
+    # refusal even though ordinary V2V support is unchanged.
+    seedvr = resolve(body({'video_generation': operation(profiles=[
+        profile('video_to_video', inputs=('video',), outputs=('video',),
+                routes=[route_with_inputs('/v1/videos', {
+                    'video': {'support': 'supported', 'min_count': 1},
+                    **{role: {'support': 'unsupported', 'max_count': 0} for role in editing_roles}})])])}))
+    assert seedvr['capabilities']['video.edit'] == MISSING
+    assert seedvr['reasons'] == {'video.edit': UNSUPPORTED_REASON}
+
+    # H3 `t2va` / `fl2va`: the roles are declared, the profile's own support is
+    # not, so the answer stays `unknown` with no note — a declaration of optional
+    # inputs never upgrades an unknown profile into a grant.
+    h3 = resolve(body({'video_generation': operation(profiles=[
+        profile('video_to_video', support='unknown', inputs=('video',), outputs=('video',),
+                routes=[route_with_inputs('/v1/videos', {
+                    'video': {'support': 'supported', 'min_count': 1},
+                    **{role: dict(first_frame_supported) for role in editing_roles}})])])}))
+    assert h3['capabilities']['video.edit'] == UNKNOWN
+    assert h3['reasons'] == {}
+    assert h3['unresolved'] == []
+
+
 def test_a_profile_filed_under_the_wrong_operation_is_an_operation_mismatch():
     result = resolve(body({'audio_generation': operation(profiles=[
         profile('lyrics_to_music', paths=table_paths('speech'))])}))

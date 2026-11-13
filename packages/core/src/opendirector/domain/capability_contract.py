@@ -633,18 +633,19 @@ def capabilities_for(operation, profile):
 
 # Request roles a capability needs before a declaration about its profile can
 # grant it. These are the fields this repository actually transmits for the
-# tool (see `integrations/model_adapters.py:405-540`), and the document does not
-# publish them: the route-level `request.inputs` names only modality-level roles
+# tool (see `integrations/model_adapters.py:405-540`). When this table was
+# written the route-level `request.inputs` named only modality-level roles
 # (`image`, `mask_image`, `reference_image`, `last_frame`, `video`, `audio`,
-# `voice`, `instructions`). A profile saying `image_to_video` therefore proves it
-# accepts an image, not that the image is a first frame; `video_to_video` proves
-# it accepts a video, not that it takes latent masks. Both ids stay `unknown`
-# until the profile's own postable route declares every role the id needs;
-# a document that never declares them keeps them `unknown`, while one whose
-# postable route refuses at least one of them reports `missing` with `unsupported`.
+# `voice`, `instructions`), so a profile saying `image_to_video` proved it
+# accepts an image, not that the image is a first frame, and `video_to_video`
+# proved it accepts a video, not that it takes latent masks. Upstream now
+# publishes the four names used below (`vllm-omni` `b934b642`, head `12d834c2`),
+# and nothing here changes: a postable route that declares every role the id
+# needs grants it, one that refuses at least one reports `missing` with
+# `unsupported`, and a body that still names only modalities leaves it `unknown`.
 # `first_frame` names the slot, not the wire field: the adapter sends it as
-# `input_reference` with `task=fl2va`. The role name is what the document would
-# have to publish, so the two sides share one spelling.
+# `input_reference` with `task=fl2va`. The role name is what the document has to
+# publish, so the two sides share one spelling.
 REQUIRED_ROLES: dict[str, tuple[str, ...]] = {
     'video.first_frame': ('first_frame',),
     'video.edit': ('source_video', 'video_noise_mask', 'audio_noise_mask'),
