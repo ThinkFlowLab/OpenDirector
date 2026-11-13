@@ -35,7 +35,8 @@ def assistant(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
     monkeypatch.setattr(agent, 'skills', empty_skills)
     from opendirector.infrastructure.model_configs import ModelConfigs
-    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model'})
+    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model',
+        'url': 'http://model.test/v1', 'protocol': 'openai', 'connectionType': 'self_hosted'})
     with TestClient(create_app(LocalProjects(tmp_path)), headers={
         'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
         pid = str(uuid4())
@@ -447,6 +448,151 @@ def test_stop_releases_project_after_saving_partial_reply(assistant, monkeypatch
     monkeypatch.setattr(agent.AgentRuntimes, 'stream', finished)
     reply = send(client, path, client.get(path).json()['conversationId'], '继续')
     assert frames(reply)[-1]['conversation']['messages'][-1]['text'] == '新回复'
+
+
+@pytest.mark.parametrize('leave', ['switch', 'release', 'reload'])
+def test_run_writes_its_project_after_the_view_leaves(assistant, monkeypatch, tmp_path, leave):
+    from opendirector.agent.gateway import ToolGateway
+    from opendirector.application.creation_canvas import asset_ref
+
+    client, path, _ = assistant
+    base = path.removesuffix('/assistant')
+    pid, other = base.rsplit('/', 1)[-1], str(uuid4())
+    other_base = f'/api/creation/projects/{other}'
+    assert client.post(other_base + '/commands', json={'type': 'project.create',
+        'projectId': other, 'commandId': str(uuid4()), 'payload': {'name': 'Other project'}}).status_code == 200
+    original = client.post(base + '/commands', json={'type': 'asset.writeText',
+        'projectId': pid, 'commandId': str(uuid4()), 'payload': {'name': 'original.md', 'text': 'Original'}})
+    assert original.status_code == 200, original.text
+    old = client.get(base).json()['assets'][0]
+    previous = {'assetId': old['id'], 'revision': old['revision'],
+        'fingerprint': old['fingerprint'], 'kind': 'text'}
+    started, release = threading.Event(), threading.Event()
+    receipts = []
+    async def stream(self, run):
+        gateway = ToolGateway(self.business, run)
+        try:
+            started.set()
+            assert await asyncio.to_thread(release.wait, 10)
+            written = await gateway.call('new-version', 'execute_command', {'type': 'asset.writeText',
+                'payload': {'name': 'weekend.md', 'text': 'Weekend', 'previousAsset': previous},
+                'expectedVersions': [{'objectType': 'asset', 'id': old['id'], 'revision': old['revision']}]})
+            receipts.append(written)
+            if written.error is None:
+                asset = self.business.assets.get(run.project_id, written.value['changed'][0]['id'])
+                receipts.append(await gateway.call('show-version', 'execute_command', {'type': 'canvas.show',
+                    'payload': {'item': {'id': str(uuid4()), 'projectId': pid, 'kind': 'text',
+                        'title': 'Weekend', 'binding': {'role': 'material',
+                            'objectRef': asset_ref(asset).model_dump(mode='json')}}}}))
+            yield {'type': 'delta', 'text': 'Finished'}
+        finally:
+            await gateway.close()
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    session = client.headers['X-OpenDirector-Session']
+    foreign = {'X-OpenDirector-Session': str(uuid4())}
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(send, client, path, None, 'Save a new version')
+        try:
+            assert started.wait(5)
+            # The owning window can return while its run is still active.
+            assert client.post(base + '/open').status_code == 200
+            assert client.post(other_base + '/open').status_code == 200
+            if leave == 'release':
+                assert client.delete('/api/creation/sessions/' + session).status_code == 200
+            if leave == 'reload':
+                successor = str(uuid4())
+                assert client.delete('/api/creation/sessions/' + session,
+                    params={'replacement': successor}).status_code == 200
+                client.headers['X-OpenDirector-Session'] = successor
+                # A repeated stale release cannot hand the same runs off twice.
+                assert client.delete('/api/creation/sessions/' + session,
+                    params={'replacement': foreign['X-OpenDirector-Session']}).status_code == 200
+                assert client.post(base + '/open').status_code == 200
+                assert client.post(other_base + '/open').status_code == 200
+            assert client.post(base + '/open', headers=foreign).status_code == 409
+            assert client.get(path).json().get('activeTurnId')
+        finally:
+            release.set()
+        result = frames(pending.result(timeout=10))[-1]
+    assert result['error'] is None
+    assert len(receipts) == 2 and all(value.error is None for value in receipts), receipts
+    snapshot = client.get(base).json()
+    assert len(snapshot['assets']) == 2
+    assert len(snapshot['canvasItems']) == 1
+    assert snapshot['canvasItems'][0]['binding']['objectRef']['assetId'] == snapshot['assets'][1]['id']
+    assert snapshot['assets'][1]['provenance']['sources'] == [previous]
+    directory = tmp_path / 'projects' / snapshot['project']['name']
+    assert (directory / snapshot['assets'][0]['path']).read_text(encoding='utf-8') == 'Original'
+    assert (directory / snapshot['assets'][1]['path']).read_text(encoding='utf-8') == 'Weekend'
+    assert client.get(other_base).json()['assets'] == []
+    assert client.post(base + '/open', headers=foreign).status_code == 200
+
+
+@pytest.mark.parametrize('outcome', ['complete', 'failure', 'stop'])
+def test_run_session_cleanup_preserves_the_ui_session(assistant, monkeypatch, tmp_path, outcome):
+    import sqlite3
+    client, path, _ = assistant
+    started = threading.Event()
+    sessions = []
+    async def stream(self, run):
+        sessions.append(run.session)
+        started.set()
+        if outcome == 'failure':
+            raise RuntimeError('Injected runtime failure')
+        if outcome == 'stop':
+            await asyncio.Event().wait()
+        yield {'type': 'delta', 'text': 'Done'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    turn = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.post, path + '/turns', json={
+            'id': turn, 'runtime': 'default', 'text': 'Run'})
+        assert started.wait(5)
+        if outcome == 'stop':
+            assert client.post(path + f'/turns/{turn}/stop').status_code == 200
+        last = frames(pending.result(timeout=10))[-1]
+    assert last['conversation']['messages'][-1]['status'] == {
+        'complete': 'complete', 'failure': 'interrupted', 'stop': 'stopped'}[outcome]
+    assert sessions[0] != client.headers['X-OpenDirector-Session']
+    with sqlite3.connect(tmp_path / '.opendirector/catalog.sqlite3') as db:
+        assert db.execute('SELECT id FROM agent_sessions').fetchall() == []
+        assert db.execute('SELECT id FROM sessions').fetchall() == [(client.headers['X-OpenDirector-Session'],)]
+    assert client.post(path.removesuffix('/assistant') + '/open').status_code == 200
+
+
+def test_detached_run_renews_its_lease_and_stops_if_renewal_fails(assistant, monkeypatch, tmp_path):
+    import sqlite3
+    from opendirector.infrastructure.creation_projects import CreationProjects
+    from opendirector.domain.projects import ProjectError
+    client, path, _ = assistant
+    started, renewed = threading.Event(), threading.Event()
+    renew = CreationProjects.renew_agent_session
+    monkeypatch.setattr(LocalProjects, 'LEASE_SECONDS', 1.5)
+    renewals = []
+    def observe(self, project, session):
+        renew(self, project, session)
+        renewals.append(session)
+        if len(renewals) >= 4:
+            renewed.set()
+            raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409)
+    monkeypatch.setattr(CreationProjects, 'renew_agent_session', observe)
+    async def stream(self, run):
+        started.set()
+        yield {'type': 'delta', 'text': 'Waiting'}
+        await asyncio.Event().wait()
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(send, client, path, None, 'Wait')
+        assert started.wait(5)
+        assert client.delete('/api/creation/sessions/' + client.headers['X-OpenDirector-Session']).status_code == 200
+        assert renewed.wait(5), 'A detached run must keep its lease beyond the original TTL'
+        last = frames(pending.result(timeout=10))[-1]
+    assert last['error']
+    assert last['conversation']['messages'][-1]['status'] == 'interrupted'
+    assert last['conversation']['messages'][-1]['text'] == 'Waiting'
+    with sqlite3.connect(tmp_path / '.opendirector/catalog.sqlite3') as db:
+        assert db.execute('SELECT id FROM sessions').fetchall() == []
+        assert db.execute('SELECT id FROM agent_sessions').fetchall() == []
 
 
 def test_sse_disconnect_keeps_the_run_and_a_new_stream_resumes_it(assistant, monkeypatch):
