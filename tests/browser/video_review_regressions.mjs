@@ -101,6 +101,9 @@ function declaration() {
             profiles: [
               profile("text_to_video", "supported"),
               profile("video_to_video", "unsupported"),
+              profile("video_continuation", "supported", {
+                video: { support: "supported", min_count: 0, max_count: 0 },
+              }),
               profile(
                 "image_to_video",
                 "supported",

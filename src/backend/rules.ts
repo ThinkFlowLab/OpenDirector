@@ -665,7 +665,7 @@ export function backendBlocker(
     ).length;
   for (const kind of ["image", "video", "audio"] as const) {
     const limit = availabilityInputLimit(config, profile, kind);
-    const current = references.filter((item) => item.node.data.kind === kind).length;
+    const current = count(kind);
     if (limit !== null && current > limit)
       return tNow(kind === "image" ? "errors.capability.imageCount" : "errors.rules.serviceInputLimit", {
         kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"), limit, current,
