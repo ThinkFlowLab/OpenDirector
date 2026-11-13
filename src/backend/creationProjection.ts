@@ -6,6 +6,8 @@ import type {
   CanvasItem,
   EditorDocument,
   EditorDocumentInput,
+  EditorInputConnection,
+  EditorInputConnectionInput,
   GenerationSpec,
   GenerationSpecInput,
   ObjectVersion,
@@ -30,7 +32,7 @@ import {
 } from "../canvas/stageDocument.ts";
 import { mediaBlobDataUrl } from "../canvas/localMediaRuntime.ts";
 import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
-import { assemblyResource } from "../canvas/editorAssembly.ts";
+import { assemblyResource, staleAssembly } from "../canvas/editorAssembly.ts";
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 import { canvasReferenceRole, MUSIC_SECONDS } from "./rules.ts";
 import {
@@ -49,6 +51,22 @@ import { classifyImportFile, readEditorResource } from "../canvas/editorMedia.ts
 /** Every comparison here is over a document that carries its media inline, so
  * it reads the values instead of serializing both sides to compare strings. */
 const same = sameJsonValue;
+
+/** Retained links are compared field by field: the snapshot keeps the original
+ * relation, and the server skips a connection whose value did not change. */
+function sameConnection(
+  previous: EditorInputConnection,
+  next: EditorInputConnectionInput,
+) {
+  return (
+    previous.slotId === next.slotId &&
+    previous.sourceId === next.sourceId &&
+    previous.asset.assetId === next.asset.assetId &&
+    previous.asset.revision === next.asset.revision &&
+    previous.asset.fingerprint === next.asset.fingerprint &&
+    previous.asset.kind === next.asset.kind
+  );
+}
 const presentationFields = [
   "title",
   "width",
@@ -1013,32 +1031,41 @@ export class CreationProjection {
     edges: CanvasDocument["edges"] = [],
     nodes: readonly CanvasNode[] = [],
   ): Promise<EditorDocumentInput> {
+    // A link the domain already recorded is retained: the source may have moved
+    // on since, and the snapshot deliberately keeps the original relation.
+    const retained = new Map(
+      (current?.inputConnections ?? []).map((value) => [value.id, value]),
+    );
+    const inputConnections: EditorInputConnectionInput[] = [];
+    for (const edge of edges) {
+      if (edge.target !== node.id || edge.intent !== "assembly_input") continue;
+      const resource = assemblyResource(node, edge.assemblySlotId);
+      if (!resource) throw new Error(tNow("errors.backend.assemblyMissing"));
+      const asset = await this.importResource(resource);
+      const connection = {
+        id: edge.id,
+        sourceId: edge.source,
+        asset,
+        slotId:
+          node.type === "subject" && edge.assemblySlotId !== "main"
+            ? asset.assetId
+            : edge.assemblySlotId!,
+      };
+      const previous = retained.get(edge.id);
+      if (!(previous && sameConnection(previous, connection))) {
+        // Fresh links must name the source's current media. An archive can hold
+        // one that does not, because the clip kept the media it was assembled
+        // with; the clip is still valid on its own, so only the link is dropped.
+        const source = nodes.find((item) => item.id === edge.source);
+        if (staleAssembly(source, resource)) continue;
+      }
+      inputConnections.push(connection);
+    }
     const common = {
       id: current?.id ?? crypto.randomUUID(),
       projectId: this.client.id,
       revision: current?.revision ?? 1,
-      inputConnections: await Promise.all(
-        edges
-          .filter(
-            (edge) =>
-              edge.target === node.id && edge.intent === "assembly_input",
-          )
-          .map(async (edge) => {
-            const resource = assemblyResource(node, edge.assemblySlotId);
-            if (!resource)
-              throw new Error(tNow("errors.backend.assemblyMissing"));
-            const asset = await this.importResource(resource);
-            return {
-              id: edge.id,
-              sourceId: edge.source,
-              asset,
-              slotId:
-                node.type === "subject" && edge.assemblySlotId !== "main"
-                  ? asset.assetId
-                  : edge.assemblySlotId!,
-            };
-          }),
-      ),
+      inputConnections,
     };
     const ref = (resource: CanvasResource) => this.importResource(resource);
     switch (kind) {
@@ -1503,6 +1530,7 @@ export class CreationProjection {
           kind as EditorDocument["kind"],
           current,
           document.edges,
+          [...document.nodes, ...(document.hiddenNodes ?? [])],
         );
         if (!current)
           operations.push({
@@ -1515,6 +1543,7 @@ export class CreationProjection {
             kind as EditorDocument["kind"],
             current,
             this.baseline.edges,
+            [...this.baseline.nodes, ...(this.baseline.hiddenNodes ?? [])],
           );
           if (!same(doc, previous)) {
             expect("editor_document", current);
