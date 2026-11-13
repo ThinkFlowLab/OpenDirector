@@ -200,6 +200,9 @@ try {
     return itemId;
   }, { projectId, assets: originals });
   await page.reload();
+  await page.locator(`.react-flow__node[data-id="${timelineId}"]`).waitFor();
+  await page.locator(".cw-workspace").focus();
+  await page.keyboard.press("Shift+1");
   await page.locator(`.react-flow__node[data-id="${timelineId}"]`).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Open editor", exact: true }).click();
   await page.locator(".cw-timeline-dialog").waitFor();

@@ -476,3 +476,19 @@ For a slow-response regression, set `VOICE_REOPEN_DELAY_MS=17000` for the browse
 慢响应回归：在浏览器命令的环境变量中设置 `VOICE_REOPEN_DELAY_MS=17000`，让重开后的资源请求超过普通交互的 15 秒等待。冷启动导航、保存状态和重开媒体分别有明确的 45 秒上限；HTTP 错误仍立即报告状态并失败，不重试生成。
 
 The bilingual browser workflow covers opening/outside click/Escape, keyboard tabs, four-column and narrow layouts, real previews and unavailable previews, metadata filters, scoped favorites, loading/error/retry, invalid and valid local audio, creation, selection, Drama3 transcript and Nano reference requirements, supported deletion and failure feedback, model/service switching, project reopening and persisted job input. `moss_speech.mjs` is retained as an alias for this integrated workflow. The pagination regression includes a 15,001-voice catalog. With a configured MOSS account, open the library, go to the next page, and return to the first. Verify the page counts and that returning to the first page restores its entries using read-only requests. Python tests verify provider fields, pagination, credentials, account boundaries, actual audio/container/duration validation, and equivalent Agent operations. Actual provider synthesis still requires a configured service, account permission and a recording authorized for use.
+
+## 视频能力审查回归
+
+`tests/test_continuation_availability.py` 与 `tests/continuationAvailability.test.ts` 检查续写和普通视频输入分别判断；`tests/test_endpoint_closure.py` 检查缺少模型或操作时准确接口关闭仍然有效。`tests/test_video_capability_acceptance.py` 使用实际适配器、本地 HTTP 和可解码媒体检查动态海报的 124 帧 / 24 fps、编辑蒙版、拒绝前零任务及已接受任务重放。`tests/test_omni_exported_video_capabilities.py` 消费固定版本的 Omni 完整响应，并固定原始观察时间，避免过期状态掩盖能力判断。
+
+The continuation tests keep cached-job continuation separate from uploaded video. Endpoint tests cover exact closures with absent model or operation declarations. Video acceptance tests use real adapters, loopback HTTP and decodable media to check the poster's 124-frame / 24-fps request, editing masks, rejection before acceptance, and accepted-task replay. Exported Omni response tests freeze the original observation time so expiry cannot conceal a support decision.
+
+独立启动以下测试 API，再使用上述 Vite 环境运行浏览器用例。该选项通过真实生成适配器访问回环地址，模型输出由浏览器测试内的 HTTP 服务提供。用例覆盖中英文续写、接口关闭、暂停到期、重新打开项目，以及动态海报拒绝后恢复草稿和生成。其他使用通用替代生成器的浏览器用例继续使用原启动命令。
+
+Start a separate fixture API with the option below, then run the browser check against Vite using the environment described above. This exercises real generation adapters against loopback HTTP; the test server supplies substitute model output. Both languages cover continuation, endpoint closure, pause expiry, reopening the project, and restoring a rejected poster draft before successful generation. Other fixture workflows retain their original startup command.
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src python tests/browser/creation_server.py --port 8019 --http-generation-fixture
+# In another terminal, with CREATION_WEB_URL / CREATION_API_URL set:
+node tests/browser/video_review_regressions.mjs
+```

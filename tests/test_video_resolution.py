@@ -132,7 +132,7 @@ def test_unsupported_h3_resolutions_are_rejected_before_task_acceptance(tmp_path
 
 def test_native_h3_explicit_resolution_reaches_form_and_continuation_stays_automatic(tmp_path):
     _, task, config = prepare(tmp_path, resolution='768P', model='MiniMaxAI/MiniMax-H3')
-    prepared = {'prompt': '山间日出', 'images': [], 'audios': []}
+    prepared = {'prompt': '山间日出', 'images': [], 'audios': [], 'continueSize': None}
     fields, _ = VllmOmniGeneration(None).form(config, task, prepared)
     assert fields['size'] == '1344x768'
     with pytest.raises(ProjectError, match='接续沿用'):

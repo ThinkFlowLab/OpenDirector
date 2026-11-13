@@ -1,24 +1,40 @@
 {
   "scripts": [
     {
+      "file": "video_review_regressions.mjs",
+      "lanes": [
+        "extendedFixture"
+      ],
+      "note": "Requires creation_server.py --http-generation-fixture. Bilingual latent continuation, endpoint closure, pause expiry and dynamic-poster admission through real adapters and loopback HTTP."
+    },
+    {
       "file": "video_capability_roles.mjs",
-      "lanes": ["extendedFixture"],
+      "lanes": [
+        "extendedFixture"
+      ],
       "note": "Bilingual video-role declarations, tool directory decisions, preserved generation inputs and substitute video results through local HTTP discovery."
     },
     {
       "file": "heif_upload_recovery.mjs",
-      "lanes": ["extended", "production"],
+      "lanes": [
+        "extended",
+        "production"
+      ],
       "previewSafe": true,
       "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
     },
     {
       "file": "heif_import.mjs",
-      "lanes": ["extended"],
+      "lanes": [
+        "extended"
+      ],
       "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."
     },
     {
       "file": "kling_video.mjs",
-      "lanes": ["extendedFixture"],
+      "lanes": [
+        "extendedFixture"
+      ],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
     },
     {

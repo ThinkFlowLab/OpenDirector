@@ -20,7 +20,7 @@ from opendirector.integrations.capability_probe import CapabilityProbe
 from opendirector_api.main import create_app
 from test_model_availability import document
 from test_tool_native_mask import multipart
-from test_tool_tasks import project, sound_mp4, upload
+from test_tool_tasks import png, project, sound_mp4, upload
 from test_creation_canvas_service import project as generation_project
 
 
@@ -53,6 +53,12 @@ def video_service(clip, mode):
             route['request']['parameters']['task'] = {'type': 'string', 'enum': ['ref2va']}
         if state['mode'] == 'frames_denied':
             route['request']['parameters']['num_frames'] = {'type': 'integer', 'maximum': 100}
+        if state['mode'].startswith('poster_'):
+            profile.update(id='image_to_video', required_inputs=['text', 'image'])
+            route['request'] = {'inputs': {
+                'image': {'support': 'supported', 'min_count': 1, 'max_count': 1},
+                'first_frame': {'support': 'supported', 'max_count': 1},
+            }, 'parameters': {'num_frames': {'type': 'integer', 'maximum': int(state['mode'].split('_')[1])}}}
         return value
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -87,6 +93,66 @@ def video_service(clip, mode):
         server.shutdown()
         server.server_close()
         worker.join()
+
+
+@pytest.mark.parametrize('maximum', [10, 124])
+def test_dynamic_poster_checks_124_frames_before_acceptance_and_preserves_execution(project, clip, maximum):
+    store, pid, session = project
+    with video_service(clip, f'poster_{maximum}') as (url, state):
+        configs = ModelConfigs(store.local.repository)
+        config = configs.save('video', url, 'MiniMaxAI/MiniMax-H3', '', connection_type='self_hosted',
+                              protocol='vllm_omni', auth_mode='none')
+        picture = png((64, 48))
+        source = upload(store, pid, session, 'poster.png', picture)
+        value = {'id': str(uuid4()), 'tool': 'dynamic-poster', 'sourceAssetIds': [source],
+                 'parameters': {'prompt': 'Animate the light'}, 'modelConfigIds': {'video.first_frame': config['id']}}
+        before = store.snapshot(pid)
+        probe = CapabilityProbe(transport=httpx.HTTPTransport())
+        try:
+            with TestClient(create_app(store.local, capability_probe=probe), headers={'X-OpenDirector-Request': '1',
+                            'X-OpenDirector-Session': session, 'Accept-Language': 'en-US'}) as client:
+                path = f'/api/creation/projects/{pid}/tool-tasks'
+                response = client.post(path, json=value)
+                if maximum == 10:
+                    assert response.status_code == 409, response.text
+                    assert response.json() == {'detail': 'Frame count does not meet the service requirements.',
+                                               'code': 'capability_unavailable'}
+                    assert client.get(path).json()['tasks'] == [] and state['posts'] == []
+                    after = store.snapshot(pid)
+                    assert after.jobs == before.jobs and after.assets == before.assets
+                    return
+                assert response.status_code == 202, response.text
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    task = client.get(path + '/' + value['id']).json()
+                    if task['status'] in {'succeeded', 'failed'}:
+                        break
+                    time.sleep(.02)
+                assert task['status'] == 'succeeded', task
+                assert len(state['posts']) == 1
+                fields, uploads = state['posts'][0]
+                checked = task['videoExecution']['requests'][0]
+                assert checked['num_frames'] == 124 and checked['fps'] == 24
+                sent = {**fields, **json.loads(fields['extra_params'])}
+                for key, expected in checked.items():
+                    assert str(sent[key]) == str(expected), key
+                assert [key for key, _ in uploads] == ['input_reference']
+                assert task['parameters']['prompt'] == 'Animate the light'
+                assert task['sourceAssetIds'] == [source]
+                assert task['modelConfigIds']['video.first_frame'] == config['id']
+                assert CreationToolAssets(store).read_bytes(pid, source) == picture
+                assert task['outputs'][0]['kind'] == 'video' and task['outputs'][0]['durationMs'] > 0
+                assert CreationToolAssets(store).read_bytes(pid, task['outputs'][0]['id'])
+                state['mode'] = 'poster_10'
+                probe.query(config, manual=True)
+                queries = state['queries']
+                replay = client.post(path, json=value)
+                assert replay.status_code == 202 and replay.json()['id'] == task['id']
+                assert replay.json()['videoExecution'] == task['videoExecution']
+                assert state['queries'] == queries and len(state['posts']) == 1
+                assert len(client.get(path).json()['tasks']) == 1
+        finally:
+            probe.close()
 
 
 @pytest.mark.parametrize('entry', ['service', 'http'])
