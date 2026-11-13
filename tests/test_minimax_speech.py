@@ -75,7 +75,7 @@ def test_official_models_have_read_only_voice_library_and_shared_rules(model):
     assert isinstance(adapter_for(config), MinimaxSpeech)
     assert rules['profile'] == 'minimax-speech'
     assert rules['voiceRequired'] and rules['referencesAllowed'] is False
-    assert rules['maxPromptCharacters'] == 9999 and rules['allowedKinds'] == []
+    assert rules['maxPromptCharacters'] == 3000 and rules['allowedKinds'] == []
     library = rules['voiceLibrary']
     assert library['provider'] == 'minimax'
     assert not library['supportsUploadedVoices'] and not library['canDelete']
@@ -204,14 +204,14 @@ async def test_exact_wire_request_checkpoint_and_credential_free_download(mp3, v
         if request.method == 'POST':
             assert str(request.url) == URL + '/t2a_v2'
             assert request.headers['authorization'] == 'Bearer ' + SECRET
-            assert json.loads(request.content) == dict(model='speech-2.8-hd', text='🎙' * 9999,
+            assert json.loads(request.content) == dict(model='speech-2.8-hd', text='🎙' * 3000,
                 stream=False, voice_setting={'voice_id': voice}, audio_setting={'format': 'mp3'}, output_format='url')
             return httpx.Response(200, json=SUCCESS)
         assert checkpoints == [('mp3', RESULT)]
         assert str(request.url) == RESULT and 'authorization' not in request.headers
         return httpx.Response(200, content=mp3)
     adapter = adapter_for(CONFIG, httpx.MockTransport(handle))
-    result = await adapter.speech(CONFIG, SpeechRequest('🎙' * 9999, voice), result_ready=ready)
+    result = await adapter.speech(CONFIG, SpeechRequest('🎙' * 3000, voice), result_ready=ready)
     assert result.data == mp3 and result.suffix == 'mp3'
     assert [call.method for call in calls] == ['POST', 'GET']
 
@@ -263,7 +263,7 @@ async def test_submission_timeout_never_reposts():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(('text', 'voice'), [('', VOICE), (' \n', VOICE), ('Read this', None),
-    ('Read this', 'bad\nvoice'), ('Read this', ' '), ('x' * 10000, VOICE)],
+    ('Read this', 'bad\nvoice'), ('Read this', ' '), ('x' * 3001, VOICE)],
     ids=['empty', 'blank', 'missing-voice', 'control-character', 'blank-voice', 'text-limit'])
 async def test_direct_adapter_rejects_invalid_inputs_without_http(text, voice):
     adapter = MinimaxSpeech(httpx.MockTransport(lambda _: pytest.fail('invalid input reached HTTP')))
@@ -282,7 +282,7 @@ async def test_result_download_rejects_private_addresses(url):
 
 @pytest.mark.parametrize('source', ['ui', 'agent'])
 @pytest.mark.parametrize(('prompt', 'voice', 'code'), [('Read this', None, 'minimax_speech_voice'),
-    ('🎙' * 10000, VOICE, 'minimax_speech_text')], ids=['missing-voice', 'text-limit'])
+    ('🎙' * 3001, VOICE, 'minimax_speech_text')], ids=['missing-voice', 'text-limit'])
 def test_preflight_rejects_input_before_http_or_job(context, source, prompt, voice, code):
     project, _, saved = context
     runner = runner_for(context, lambda _: pytest.fail('invalid input reached HTTP'))
@@ -313,22 +313,30 @@ def test_reference_boundaries_reject_even_context_only_inputs(context, transmiss
     assert failure.value.code == 'minimax_speech_reference' and not store.snapshot(pid).jobs
 
 
-def test_http_receipt_replay_switches_language_without_changing_storage(context):
+@pytest.mark.parametrize(('prompt', 'voice', 'code', 'english', 'chinese'), [
+    ('Read this', None, 'minimax_speech_voice',
+     'Choose a voice available to your MiniMax account from the voice library.',
+     '请从音色库选择 MiniMax 账户可用的音色。'),
+    ('🎙' * 3001, VOICE, 'minimax_speech_text',
+     'Enter the text to read aloud, up to 3,000 characters.',
+     '请填写需要朗读的文本，且不超过 3,000 个字符。'),
+], ids=['missing-voice', 'text-limit'])
+def test_http_receipt_replay_switches_language_without_changing_storage(context, prompt, voice, code, english, chinese):
     project, _, saved = context
     store, pid, session = project
-    request = command(project, saved, prompt='Read this')
+    request = command(project, saved, prompt=prompt, parameters=selection(saved, voice) if voice else {})
     headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     path = f'/api/creation/projects/{pid}'
     with TestClient(create_app(store.local), headers=headers) as client:
         response = client.post(path + '/commands', json=request.model_dump(mode='json'), headers={'Accept-Language': 'en-US'})
         assert response.status_code == 200
         receipt = response.json()
-        assert receipt['issues'][0]['code'] == 'minimax_speech_voice'
-        assert receipt['issues'][0]['message'] == 'Choose a voice available to your MiniMax account from the voice library.'
+        assert receipt['issues'][0]['code'] == code
+        assert receipt['issues'][0]['message'] == english
         assert client.get(path + f'/receipts/{request.commandId}', headers={'Accept-Language': 'en-US'}).json() == receipt
-        chinese = client.get(path + f'/receipts/{request.commandId}', headers={'Accept-Language': 'zh-CN'}).json()
-        assert '音色' in chinese['issues'][0]['message']
-        assert chinese == store.receipt(pid, request.commandId).model_dump(mode='json')
+        localized = client.get(path + f'/receipts/{request.commandId}', headers={'Accept-Language': 'zh-CN'}).json()
+        assert localized['issues'][0]['message'] == chinese
+        assert localized == store.receipt(pid, request.commandId).model_dump(mode='json')
         assert not store.snapshot(pid).jobs
 
 

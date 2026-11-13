@@ -58,7 +58,7 @@ ENGLISH_BY_CODE = {
     "minimax_image_reference": "MiniMax H3 references must be PNG, JPEG, WebP, HEIC, or HEIF, with edges of 128–8192 pixels and a long-to-short edge ratio of at most 4:1.",
     "minimax_image_count": "MiniMax H3 image editing accepts up to 16 reference images.",
     "minimax_image_bytes": "MiniMax H3 image reference requests cannot exceed 64 MiB.",
-    "minimax_speech_text": "Enter the text to read aloud, up to 9,999 characters.",
+    "minimax_speech_text": "Enter the text to read aloud, up to 3,000 characters.",
     "minimax_speech_model": "Unsupported MiniMax speech model. Choose a model from the preset.",
     "minimax_speech_voice": "Choose a voice available to your MiniMax account from the voice library.",
     "minimax_speech_reference": "MiniMax speech synthesis does not accept references. Enter the text to read aloud and choose a voice.",

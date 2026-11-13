@@ -156,6 +156,7 @@ const copy = {
     add: "Add Audio",
     model: "Generation model",
     prompt: "Text to read",
+    textLimit: "This model accepts up to 3000 prompt characters. Shorten the prompt and try again.",
     library: "Voice library",
     all: "All voices",
     mine: "My voices",
@@ -195,6 +196,7 @@ const copy = {
     add: "添加音频",
     model: "生成模型",
     prompt: "朗读文本",
+    textLimit: "当前模型的提示词最多 3000 个字符，请缩短后重试。",
     library: "音色库",
     all: "全部音色",
     mine: "我的音色",
@@ -989,8 +991,13 @@ try {
       await until(async () => (await params()).voice === "Santa_Claus ");
       await selectModel(minimax[1]);
       assert.equal((await params()).voiceSelection.voiceId, "Santa_Claus ");
-      await page.getByRole("textbox", { name: L.prompt, exact: true }).fill("🎙".repeat(10000));
+      await page.getByRole("textbox", { name: L.prompt, exact: true }).fill("🎙".repeat(3000));
+      assert.equal(await page.getByRole("button", { name: L.generate, exact: true }).isDisabled(), false);
+      await page.getByRole("textbox", { name: L.prompt, exact: true }).fill("🎙".repeat(3001));
       assert.equal(await page.getByRole("button", { name: L.generate, exact: true }).isDisabled(), true);
+      await page.getByRole("button", { name: L.generate, exact: true }).hover();
+      await page.getByRole("tooltip").filter({ hasText: L.textLimit }).waitFor();
+      await page.screenshot({ path: `${output}/${locale}-minimax-text-limit.png`, fullPage: true });
       await page.getByRole("textbox", { name: L.prompt, exact: true }).fill("Hello from MiniMax speech.");
       const beforeMinimax = (await state()).jobs.map(job => job.id);
       await page.getByRole("button", { name: L.generate, exact: true }).click();
