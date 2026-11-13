@@ -19,29 +19,32 @@ from opendirector.integrations.generation_capability_parameters import generatio
 from opendirector_api.main import create_app
 from generation_helpers import command as generation_command, settled
 from test_creation_canvas_service import project
-from test_model_availability import document
+from test_model_availability import document, NOW
 from test_tool_native_mask import multipart
 from test_tool_tasks import png, upload
 from test_voice_library import wav
 
 
 def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True, sampling_maximum=None,
-                  observation_age=0, pause_age=None, support='supported'):
+                  observation_age=0, pause_age=None, support='supported', minimum=None):
     store, _, _ = project
     configs = ModelConfigs(store.local.repository)
     config = configs.save('image', 'http://images.test/v1', model, '',
         connection_type='self_hosted', protocol='openai', auth_mode='none')
     operation, profile_id, path = (('image_edit', 'image_to_image', '/v1/images/edits') if editing
                                    else ('image_generation', 'text_to_image', '/v1/images/generations'))
+    # Uploading/probing test media must not move a future timestamp inside the
+    # allowed skew or age a fresh declaration before the acceptance under test.
+    now = NOW
     declaration = document(operation, profile_id, path, 'image',
-                           model=declared_model or model, now=time.time() - observation_age, support=support)
+                           model=declared_model or model, now=now - observation_age, support=support)
     if pause_age is not None:
-        execution = document(now=time.time() - pause_age)['models'][0]['operations']['chat']['execution']
+        execution = document(now=now - pause_age)['models'][0]['operations']['chat']['execution']
         declaration['models'][0]['operations'][operation]['execution'] = {**execution, 'state': 'paused'}
     profile = declaration['models'][0]['operations'][operation]['profiles'][0]
     profile['required_inputs'] = ['text', 'image'] if editing else ['text']
     profile['routes'][0]['request'] = {'inputs': {'image': {
-        'support': 'supported', 'min_count': int(editing), 'max_count': maximum}},
+        'support': 'supported', 'min_count': int(editing) if minimum is None else minimum, 'max_count': maximum}},
         'parameters': {'response_format': {'support': 'supported', 'enum': ['b64_json']}}}
     if sampling_maximum is not None:
         profile['routes'][0]['request']['parameters']['num_inference_steps'] = {
@@ -55,7 +58,7 @@ def image_runtime(project, maximum, model='served-image-alias', *, declared_mode
         assert request.method == 'POST' and request.url.path == path
         posts.append(multipart(request) if editing else (json.loads(request.read()), []))
         return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(png()).decode()}]})
-    probe = CapabilityProbe(transport=httpx.MockTransport(discover))
+    probe = CapabilityProbe(transport=httpx.MockTransport(discover), clock=lambda: now, wall_clock=lambda: now)
     runner = CreationGeneration(store, configs, availability=ModelAvailability(configs, probe))
     runner.provider = GenerationProviders(runner.store, httpx.MockTransport(generate), poll_interval=0)
     return runner, config, probe, queries, posts
@@ -91,6 +94,33 @@ def test_only_fresh_evidence_rejects_real_image_submission(project, entry, age, 
             assert len(posts[0][1]) == 2  # Both source images reached the actual multipart request.
             assert len(after.assets) == len(before.assets) + 1
             assert after.jobs[0].technicalCheck.status == 'passed'
+        else:
+            assert not after.jobs and not posts
+            assert after.generationSpecs == before.generationSpecs and after.assets == before.assets
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('entry', ['service', 'http', 'agent'])
+@pytest.mark.parametrize('count', [1, 2, 3])
+def test_two_image_requirement_matches_catalogue_and_actual_uploads(project, entry, count):
+    store, pid, session = project
+    runner, config, probe, _, posts = image_runtime(project, 2, minimum=2)
+    sources = [upload(store, str(pid), session, f'source-{index}.png', png()) for index in range(count)]
+    command = generation_command(project, config, references=sources)
+    before = store.snapshot(pid)
+    try:
+        runner.availability.prepare(config)
+        operations = {item['profile']: item for item in runner.availability.model(config)['operations']}
+        assert operations['image_to_image']['status'] == 'unavailable'
+        assert operations['images_to_image']['status'] == 'available'
+        receipt = submit(entry, project, runner, probe, command)
+        after = store.snapshot(pid)
+        assert receipt['status'] == ('accepted' if count == 2 else 'rejected'), receipt
+        if count == 2:
+            assert len(after.jobs) == len(posts) == 1
+            assert len(posts[0][1]) == len(after.jobs[0].inputSnapshot.references) == 2
+            assert after.jobs[0].status == 'succeeded' and after.jobs[0].technicalCheck.status == 'passed'
         else:
             assert not after.jobs and not posts
             assert after.generationSpecs == before.generationSpecs and after.assets == before.assets

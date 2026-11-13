@@ -1,6 +1,12 @@
 {
   "scripts": [
     {
+      "file": "input_admission_review.mjs",
+      "fixture": true,
+      "lanes": ["extendedFixture"],
+      "note": "Requires creation_server.py --http-generation-fixture --assistant-fixture. Bilingual image-count admission through real HTTP requests and assistant parameter rejection with preserved drafts."
+    },
+    {
       "file": "video_review_regressions.mjs",
       "lanes": [
         "extendedFixture"

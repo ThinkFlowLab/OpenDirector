@@ -140,6 +140,16 @@ python -m pytest tests -q -ra -m nightly
 
 Initial classification: deterministic CLI discovery is ready; native-runtime subprocess/gateway integration is merge; opt-in installed DeepSeek/JiuwenSwarm engine and media acceptance is nightly, retaining existing environment skips. The dedicated bundled OpenCode regression against a local mock model remains unchanged regardless of marks. Unmarked cases stay in the transitional ready subset and the flake watchlist is unchanged; these initial modules do not establish completed suite-wide classification.
 
+## 输入数量与助手参数 / Input counts and assistant parameters
+
+`tests/continuationAvailability.test.ts` 与 `tests/imageAvailability.test.ts` 检查页面使用实际发送的素材数量：续写来源不计作视频上传，多图请求读取多图能力与数量限制。`tests/test_assistant_capability_parameters.py` 通过助手 HTTP 接口和真实回环网关检查接受前的两次校验，覆盖固定回答上限、连接变化、声明刷新与过期。`tests/test_request_capability_acceptance.py` 检查图片要求在业务服务、HTTP 和 Agent 入口一致，核对上传文件与保存记录。
+
+The frontend tests distinguish cached continuation from video uploads and use the multi-image entry for transmitted multi-image inputs. The assistant test checks both admission points against the gateway's output ceiling, including changed connections, refreshed limits and expired declarations. Image acceptance tests compare the service, HTTP and Agent entry points with serialized uploads and saved execution inputs.
+
+启动隔离 API 时同时传入 `--http-generation-fixture --assistant-fixture`，配合 Vite 运行 `node tests/browser/input_admission_review.mjs`；它检查中英文单图拒绝、双图生成、超量拒绝和助手草稿保留。`video_review_regressions.mjs` 使用 `--http-generation-fixture`，检查零视频上传限制下的续写以及接口关闭、暂停到期。环境变量沿用下方隔离浏览器说明。所有生成结果使用测试媒体；助手浏览器回复使用替身，网关请求参数由 Python 测试单独验证。
+
+Start the isolated API with both `--http-generation-fixture --assistant-fixture`, use Vite and run `node tests/browser/input_admission_review.mjs` for bilingual image-count admission and preserved assistant drafts. Run `video_review_regressions.mjs` with `--http-generation-fixture` for continuation under a zero-upload limit, route closure and pause expiry. Use the environment variables documented below. Generated media and browser assistant replies are fixtures; the Python test separately exercises the real gateway's request parameters.
+
 ## 按风险选择验证
 
 能力与提示修改还需检查实际页面和发送内容：共同失败原因只呈现一次，提示说明用户能够采取的操作，调研记录和测试配置不进入产品文案。分别查看中英文页面的正常、未知、过期、暂停和失败状态。按最终请求统计素材，确认超量输入零新增任务、零生成请求；默认参数与服务允许范围、工具来源与模型输入分别核对。

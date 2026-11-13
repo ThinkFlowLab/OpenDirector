@@ -17,6 +17,7 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** Creating a generation node, configuring model capabilities, or constructing a provider request.
 - **Lesson:** Defaults, reference slots, and request parameters can fail at different layers. Commit `f623fedd` corrected node defaults that did not match the adapter; `f9e358cf` filled the last-frame slot for models that support it; `1bafbbd6` corrected an integer duration sent to Ark as a float.
 - **Check:** Trace representative input from the relevant UI or Agent entry point through backend validation to the provider request. Check that unsupported input does not create a job. Distinguish protocol mocks from real service evidence.
+- **Admission follow-up:** [PR #266 review](https://github.com/ThinkFlowLab/OpenDirector/pull/266#pullrequestreview-5888173714) found that source-node counts, single-image catalogue decisions and omitted assistant parameters could disagree with the transmitted request. Check cached continuation separately from uploads, select the catalogue entry by transmitted image count, and compare admission parameters with the actual gateway payload. / **接受检查补充：** 续写来源不计作上传视频；按实际发送图片数量选择目录条目；助手接受检查与网关使用相同参数，并核对拒绝时没有新增任务或对话轮次。
 
 ## Operations across boundaries can lose identity or context
 
