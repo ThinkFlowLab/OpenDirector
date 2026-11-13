@@ -1,6 +1,7 @@
 """Turn-scoped transport and executable environment for the business CLI."""
 import asyncio
 from contextlib import asynccontextmanager
+import io
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,26 @@ import sys
 from opendirector.domain.projects import ProjectError
 
 
+# Serializing argv also avoids Windows PowerShell's legacy native quoting rules
+# (embedded JSON quotes and empty arguments). The Python side runs the same CLI.
+# PowerShell 5.1's native pipeline reads the global encoding even when a script
+# sets a local value. Restore both caller settings after the child exits.
+POWERSHELL_LAUNCHER = r"""$previousEncoding = [Console]::OutputEncoding
+$previousOutputEncoding = $global:OutputEncoding
+try {
+    $global:OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    [Console]::OutputEncoding = $global:OutputEncoding
+    $invocation = @{arguments = @([string[]]$args); input = (@($input) -join "`n")}
+    $invocation | ConvertTo-Json -Depth 4 -Compress | & '__PYTHON__' -X utf8 -m opendirector.agent.cli_transport
+    $code = $LASTEXITCODE
+} finally {
+    [Console]::OutputEncoding = $previousEncoding
+    $global:OutputEncoding = $previousOutputEncoding
+}
+exit $code
+"""
+
+
 def environment(work, socket, bridge_env=None):
     env = dict(os.environ)
     env['PWD'] = str(work)
@@ -17,7 +38,17 @@ def environment(work, socket, bridge_env=None):
     cli_bin = work / '.opendirector-bin'
     cli_bin.mkdir(exist_ok=True)
     if os.name == 'nt':
-        (cli_bin / 'opendirector.cmd').write_text(f'@"{sys.executable}" -m opendirector.cli %*\n')
+        from distlib.scripts import ScriptMaker
+        # A native launcher preserves argv without cmd.exe parsing multiline
+        # arguments. PowerShell needs its own Unicode pipeline entry point.
+        maker = ScriptMaker(None, str(cli_bin))
+        maker.executable = sys.executable
+        maker.variants = {''}
+        maker.make('opendirector = opendirector.cli:main')
+        (cli_bin / 'opendirector.cmd').unlink(missing_ok=True)
+        (cli_bin / 'opendirector.ps1').write_text(
+            POWERSHELL_LAUNCHER.replace('__PYTHON__', sys.executable.replace("'", "''")), encoding='utf-8-sig')
+        env.update(PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
     else:
         launcher = cli_bin / 'opendirector'
         launcher.write_text('#!/bin/sh\nexec ' + shlex.join([sys.executable, '-m', 'opendirector.cli']) + ' "$@"\n')
@@ -79,3 +110,11 @@ async def turn_environment(work, gateway, queue, temporary):
         server.close()
         await server.wait_closed()
         await asyncio.gather(*calls, return_exceptions=True)
+
+
+if __name__ == '__main__':
+    from opendirector.cli import main
+    invocation = json.load(sys.stdin)
+    sys.argv[1:] = invocation['arguments']
+    sys.stdin = io.StringIO(invocation['input'])
+    main()

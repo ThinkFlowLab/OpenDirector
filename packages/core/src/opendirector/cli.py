@@ -528,7 +528,7 @@ def query(ctx: typer.Context, kind: str,
 
 
 def read_file(path):
-    value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
+    value = json.loads(sys.stdin.read().removeprefix('\ufeff') if str(path) == "-" else path.read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
         raise ValueError("Expected a JSON object.")
     return value
