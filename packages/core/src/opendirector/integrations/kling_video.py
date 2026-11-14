@@ -93,7 +93,8 @@ class KlingVideoGeneration:
             prompt = ''.join(parts)
         else:
             prompt = task['prompt']
-        prompt += ''.join('\n' + text for text in text_context)
+        # A blank prompt is implicitly the connected text reference itself.
+        prompt = (prompt + ''.join('\n' + text for text in text_context)) if prompt.strip() else '\n'.join(text_context)
         if complete:
             validate_kling_prompt(prompt)
         if operation == 'frames':
