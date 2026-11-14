@@ -10,6 +10,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Contributing](../CONTRIBUTING.md) | Label taxonomy, how to pick labels, and what a PR must satisfy | Process, labels, or submission requirements change |
 | [Unified project architecture](architecture/unified-project.md) | Business objects, shared entry points, and interaction rules | Object responsibilities, commands, persistence, or interaction rules change |
 | [Test contracts](architecture/test-contracts.md) | Test/production boundaries, how to avoid stale assertions and environment-dependent red runs | Test infrastructure, capability gates, or contract ownership change |
+| [Capability mapping contract](architecture/capability-contract.md) | Evidenced upstream vocabulary, the `(operation, profile) → capability` table, the untranslatable declarations, and how it feeds discovery | Upstream vocabulary, capability ids, or discovery matching change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
 | [CI layer assessment](development/ci-layer-assessment.md) | Timing evidence, critical PR representatives and staged Python classification | Measured evidence or classification decisions change |
