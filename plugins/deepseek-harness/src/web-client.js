@@ -448,7 +448,7 @@ window.__ModuleLoader__.load({
       if (next.length !== previous.length) writePendingSubmissions(next)
     }
 
-    function PendingSubmissions({ context, onRecovered, t }) {
+    function PendingSubmissions({ context, onRecovered, disabled = false, t }) {
       const saved = useSyncExternalStore(subscribePending, readPendingSubmissions)
       const items = context === 'packs' ? saved.filter(item => item.packAction) : context ? saved.filter(item => item.context === context) : saved
       const [page, setPage] = useState({})
@@ -505,8 +505,8 @@ window.__ModuleLoader__.load({
             h('span', { style: { overflowWrap: 'anywhere' } }, item.projectName || item.label || item.projectId),
             item.projectName && item.label && h('small', null, item.label),
             h('div', { style: row },
-              button(t('checkGeneration'), () => check(item), { disabled: busy.current.has(key) }),
-              button(t('hidePending'), () => forgetSubmission(item), { title: t('hidePendingHint'), disabled: busy.current.has(key) }),
+              button(t('checkGeneration'), () => check(item), { disabled: disabled || busy.current.has(key) }),
+              button(t('hidePending'), () => forgetSubmission(item), { title: t('hidePendingHint'), disabled: disabled || busy.current.has(key) }),
               value?.canvasUrl && canvasLink(value.canvasUrl, t)),
             value?.message && h('small', { role: 'status' }, t(value.message)))
         }),
@@ -1113,7 +1113,7 @@ window.__ModuleLoader__.load({
         sourceImage && h('div', { className: 'od-pack-reference' },
           h('img', { src: mediaHref(projectId, sourceImage.assetId, 'image'), alt: t('packReference') }),
           h('span', null, t('packReference'))),
-        h(PendingSubmissions, { context: packId ? 'pack:' + packId : draftKey, onRecovered: recovered, t }),
+        h(PendingSubmissions, { context: packId ? 'pack:' + packId : draftKey, onRecovered: recovered, disabled: submitting, t }),
         feedback && h('p', { role: 'status' }, t(feedback)),
         pendingItem?.packAction === 'generate' && button(t('packContinue'),
           () => generate(pendingItem.packItemIds, pendingItem.packRedo, pendingItem), { disabled: submitting }),
