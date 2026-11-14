@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PROVIDER_PRESETS, matchingConnections, providerOptions, providerPresetFor } from "../src/canvas/providerPresets.ts";
+import { LOCAL_OMNI_PRESET_ID, PROVIDER_PRESETS, matchingConnections, presetProtocol, providerOptions, providerPresetFor } from "../src/canvas/providerPresets.ts";
 import type { ModelConfig } from "../src/backend/rules.ts";
 import { modelDescription } from "../src/canvas/modelDescriptions.ts";
 import { getActiveLocale, setActiveLocale } from "../src/i18n/messages.ts";
@@ -40,7 +40,7 @@ test("provider presets separate official protocol from self-hosted model names",
   assert.deepEqual(official.modelsByKind?.video, ["MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite", "MiniMax-H3-Max"]);
   const model: ModelConfig = { ...official, id: "one", kind: "video", modelId: "MiniMax-H3", inputRules: { profile: "", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
   assert.equal(providerPresetFor(model), "minimax-video");
-  assert.equal(providerPresetFor({ ...model, connectionType: "self_hosted", protocol: "vllm_omni" }), "vllm-omni-video");
+  assert.equal(providerPresetFor({ ...model, connectionType: "self_hosted", protocol: "vllm_omni" }), "vllm-omni-local");
   assert.deepEqual(matchingConnections([{ ...model, providerId: "shared" }, { ...model, id: "two", providerId: "shared" }, { ...model, id: "three", providerId: "other" }], "video", { ...model, protocol: "minimax_video_v2", authMode: "bearer", apiKey: "" }).map((item) => item.id), ["one", "three"]);
 });
 
@@ -272,4 +272,72 @@ test("a saved Zhipu GLM-TTS connection reopens with its provider identity", () =
     inputRules: { profile: "zhipu-speech", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
   assert.equal(providerPresetFor(model), "zhipu");
   assert.equal(providerPresetFor({ ...model, url: "https://other.test/v1" }), "custom");
+});
+
+test("vLLM-Omni is one local service with an endpoint per stage", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === LOCAL_OMNI_PRESET_ID)!;
+  assert.equal(preset.url, "http://127.0.0.1:8000/v1");
+  assert.equal(preset.connectionType, "self_hosted");
+  assert.equal(preset.authMode, "none");
+  assert.deepEqual(preset.kinds, ["agent", "image", "video", "audio", "vision"]);
+  assert.deepEqual(preset.stages, {
+    agent: { paths: ["/chat/completions"], protocol: "openai" },
+    image: { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
+    video: { paths: ["/videos"], protocol: "vllm_omni" },
+    audio: { paths: ["/audio/speech", "/audio/transcriptions"], protocol: "openai" },
+    vision: {
+      paths: ["/images/segmentations", "/videos/segmentations"],
+      protocol: "vllm_omni_segmentation",
+    },
+  });
+  for (const kind of ["agent", "image", "video", "audio", "vision"] as const) {
+    assert.equal(presetProtocol(preset, kind), preset.stages![kind]!.protocol);
+  }
+  // The retired per-stage presets leave exactly one entry per kind behind.
+  for (const kind of ["agent", "image", "video", "audio", "vision"] as const) {
+    const omni = providerOptions(kind).filter((item) => item.id.startsWith("vllm-omni"));
+    assert.deepEqual(omni.map((item) => item.id), [LOCAL_OMNI_PRESET_ID]);
+    assert.equal(omni[0]?.group, getActiveLocale() === "en-US" ? "vLLM-Omni compatible" : "vLLM-Omni 兼容");
+  }
+});
+
+test("saved self-hosted vLLM-Omni connections resolve to the local service", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === LOCAL_OMNI_PRESET_ID)!;
+  const saved = (protocol: ModelConfig["protocol"], kind: ModelConfig["kind"]): ModelConfig => ({
+    ...preset, id: `saved-${protocol}`, kind, protocol, modelId: "m",
+    inputRules: { profile: "", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] },
+  });
+  // Every protocol the retired per-stage presets wrote must keep its name.
+  for (const [protocol, kind] of [
+    ["vllm_omni", "video"],
+    ["vllm_omni_music", "audio"],
+    ["vllm_omni_score", "audio"],
+    ["vllm_omni_depth", "video"],
+    ["vllm_omni_segmentation", "vision"],
+  ] as const) {
+    assert.equal(providerPresetFor(saved(protocol, kind)), LOCAL_OMNI_PRESET_ID);
+  }
+  // A hosted connection with another URL keeps reading as custom; the same
+  // localhost URL still resolves to the local service.
+  assert.equal(providerPresetFor({ ...saved("vllm_omni", "video"), connectionType: "api", url: "https://elsewhere.test/v1" }), "custom");
+  assert.equal(providerPresetFor({ ...saved("vllm_omni", "video"), connectionType: "api" }), LOCAL_OMNI_PRESET_ID);
+  assert.equal(providerPresetFor(saved("openai", "audio")), "custom");
+});
+
+test("the local vLLM-Omni service reads in both languages", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === LOCAL_OMNI_PRESET_ID)!;
+  const previous = getActiveLocale();
+  try {
+    for (const [locale, name, label] of [
+      ["zh-CN", "vLLM-Omni 本地服务", "本地服务"],
+      ["en-US", "vLLM-Omni local service", "Local service"],
+    ] as const) {
+      setActiveLocale(locale);
+      const option = providerOptions("video").find((item) => item.id === preset.id);
+      assert.equal(option?.name, name);
+      assert.equal(option?.optionLabel, label);
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
 });
