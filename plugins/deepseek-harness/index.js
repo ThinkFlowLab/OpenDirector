@@ -1,4 +1,6 @@
 import Schema from '@deepseek-ai/schemastery'
+import packageInfo from './package.json' with { type: 'json' }
+import { connectionStatus } from './src/connection.js'
 import { Readable } from 'node:stream'
 import { zipEntries } from './src/archive.js'
 import { OpenDirectorClient } from './src/client.js'
@@ -83,6 +85,20 @@ export function apply(ctx, config) {
     }), 'OpenDirector media previews')
 
     const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/connection',
+      methods: ['GET'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        const diagnosticClient = new OpenDirectorClient({
+          ...resolved, requestTimeoutMs: Math.min(resolved.requestTimeoutMs, 5000),
+        })
+        return Response.json(await connectionStatus(diagnosticClient, resolved, packageInfo.version,
+          { signal: request.signal }), { headers })
+      },
+    }), 'OpenDirector connection check')
+
     scope.effect(() => scope.connection.fetch.register({
       path: '/api/opendirector/library',
       methods: ['GET'],

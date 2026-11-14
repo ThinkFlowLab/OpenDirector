@@ -5,6 +5,26 @@ window.__ModuleLoader__.load({
     const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
+      connection: 'Connection check', connectionHint: 'Check your OpenDirector service and available model connections.',
+      connectionChecking: 'Checking connection…', connectionReady: 'Connected',
+      connectionPartial: 'Some checks need attention', connectionFailed: 'Could not reach OpenDirector',
+      connectionApi: 'OpenDirector API', connectionCanvas: 'OpenDirector canvas', connectionProjects: 'Saved projects',
+      connectionModels: 'Model connections', connectionCount: '{count} available',
+      connectionNoModels: 'Add a model in OpenDirector → Settings → Model connections, then check again.',
+      connectionConfigured: 'Listed models are configured in OpenDirector. A generation is needed to test provider access and output.',
+      connectionNetwork: 'Start OpenDirector and check the API address. localhost refers to the computer running DSH.',
+      connectionTimeout: 'OpenDirector did not respond in time. Check that the service has finished starting.',
+      connectionAccess: 'The service refused access. Check the OpenDirector address and its local access settings.',
+      connectionAddress: 'The API was not found at this address. Check baseUrl in the plugin configuration.',
+      connectionService: 'OpenDirector returned an error. Check the service, then try again.',
+      connectionResponse: 'The service returned an unexpected response. Check the API address and OpenDirector version.',
+      connectionHost: 'The DSH connection is unavailable. Reconnect DSH, then try again.',
+      connectionSetup: 'Set baseUrl and canvasBaseUrl in this profile’s opendirector row. The README shows the configuration.',
+      connectionImage: 'Image generation', connectionEdit: 'Image references', connectionVideo: 'Image to video',
+      connectionContinue: 'Video continuation', connectionVoice: 'Voiceover', connectionCheck: 'Check again',
+      connectionCopy: 'Copy diagnostics', connectionCopied: 'Diagnostics copied.', connectionCopyFailed: 'Copy failed. Select and copy the diagnostic text below.',
+      connectionGuide: 'Setup guide', connectionOpen: 'Open OpenDirector', connectionPlugin: 'Manage plugin',
+      connectionDiagnostic: 'Diagnostic text', connectionReadOnly: 'This check reads project and model counts. It does not generate media.',
       packRevise: 'Adjust action', packEditPrompt: 'Action description', packSaveGenerate: 'Generate with this description',
       packCancelEdit: 'Cancel changes', packRevised: 'Description saved. Review it, then generate a candidate when ready.',
       packActive: 'Wait for this action’s task to finish before changing its description.',
@@ -127,6 +147,26 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      connection: '连接检查', connectionHint: '查看 OpenDirector 服务和可用的模型连接。',
+      connectionChecking: '正在检查连接…', connectionReady: '连接正常',
+      connectionPartial: '部分检查需要处理', connectionFailed: '未能连接 OpenDirector',
+      connectionApi: 'OpenDirector 接口', connectionCanvas: 'OpenDirector 画布', connectionProjects: '已保存工程',
+      connectionModels: '模型连接', connectionCount: '{count} 个可用',
+      connectionNoModels: '请在 OpenDirector → 设置 → 模型连接中添加模型，再检查一次。',
+      connectionConfigured: '这里列出 OpenDirector 已配置的模型。服务商权限和生成效果需要实际生成后确认。',
+      connectionNetwork: '请启动 OpenDirector，并检查接口地址。localhost 指的是运行 DSH 的那台电脑。',
+      connectionTimeout: 'OpenDirector 未及时响应，请确认服务已经启动完成。',
+      connectionAccess: '服务拒绝了访问，请检查 OpenDirector 地址和本地访问设置。',
+      connectionAddress: '这个地址没有找到接口，请检查插件配置中的 baseUrl。',
+      connectionService: 'OpenDirector 返回了错误，请检查服务后重试。',
+      connectionResponse: '服务返回的内容不符合预期，请检查接口地址和 OpenDirector 版本。',
+      connectionHost: 'DSH 连接暂时不可用，请重新连接 DSH 后重试。',
+      connectionSetup: '在当前配置的 opendirector 行中设置 baseUrl 和 canvasBaseUrl，README 中有配置示例。',
+      connectionImage: '生成图片', connectionEdit: '图片参考', connectionVideo: '图片转视频',
+      connectionContinue: '视频续写', connectionVoice: '配音', connectionCheck: '重新检查',
+      connectionCopy: '复制诊断信息', connectionCopied: '诊断信息已复制。', connectionCopyFailed: '复制失败，请选中下方诊断文本手动复制。',
+      connectionGuide: '安装配置说明', connectionOpen: '打开 OpenDirector', connectionPlugin: '管理插件',
+      connectionDiagnostic: '诊断文本', connectionReadOnly: '检查只读取工程和模型数量，不生成素材。',
       packRevise: '调整动作', packEditPrompt: '动作描述', packSaveGenerate: '按这份描述生成',
       packCancelEdit: '取消修改', packRevised: '描述已保存。确认后可以再生成一版候选。',
       packActive: '请等待这个动作的任务结束，再修改描述。',
@@ -324,6 +364,7 @@ window.__ModuleLoader__.load({
         create: 'm12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z',
         library: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
         check: 'm5 12 4 4L19 6',
+        connection: 'M8 3v4M16 3v4M6 7h12v3a6 6 0 0 1-12 0ZM12 16v5',
       }
       return h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none',
         stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round',
@@ -515,15 +556,97 @@ window.__ModuleLoader__.load({
           nextCursor: items.length > start + 12 ? pendingIdentity(visible.at(-1)) : null, onPage: setPage, t }))
     }
 
-    function CreateMedia({ t }) {
+    function CreateMedia({ t, openPlugin }) {
       const [open, setOpen] = useState(null)
       return h('div', { className: 'od-media-ui', style: row },
         button(t('create'), () => setOpen('creation'), { primary: true, symbol: 'create', title: 'OpenDirector', 'aria-haspopup': 'dialog' }),
         button(t('resume'), () => setOpen('library'), { symbol: 'library', 'aria-haspopup': 'dialog' }),
         button(t('actionPacks'), () => setOpen('packs'), { 'aria-haspopup': 'dialog' }),
+        button(icon('connection'), () => setOpen('connection'), { 'aria-label': t('connection'), title: t('connection'), 'aria-haspopup': 'dialog' }),
+        open === 'connection' && h(ConnectionDialog, { t, openPlugin, onClose: () => setOpen(null) }),
         open === 'packs' && h(ActionPackLibrary, { t, onClose: () => setOpen(null) }),
         open === 'library' && h(ProjectLibrary, { t, onClose: () => setOpen(null) }),
         open === 'creation' && h(GenerationDialog, { t, onClose: () => setOpen(null) }))
+    }
+
+    function ConnectionDialog({ t, openPlugin, onClose }) {
+      const dialog = useRef(null)
+      const [value, setValue] = useState(null)
+      const [failed, setFailed] = useState(false)
+      const [checking, setChecking] = useState(true)
+      const [revision, setRevision] = useState(0)
+      const [copyState, setCopyState] = useState('')
+      useEffect(() => { dialog.current.showModal() }, [])
+      useEffect(() => {
+        const controller = new AbortController()
+        setChecking(true)
+        setValue(null)
+        setFailed(false)
+        setCopyState('')
+        fetch('/api/opendirector/connection', { signal: controller.signal }).then(async response => {
+          if (!response.ok) throw new Error('Connection check unavailable')
+          const report = await response.json()
+          if (!controller.signal.aborted) setValue(report)
+        }).catch(() => { if (!controller.signal.aborted) setFailed(true) })
+          .finally(() => { if (!controller.signal.aborted) setChecking(false) })
+        return () => controller.abort()
+      }, [revision])
+      const statuses = value ? [value.projects.status, value.models.status] : []
+      const problem = statuses.find(status => status !== 'ok')
+      const heading = checking ? 'connectionChecking' : failed ? 'connectionFailed'
+        : !problem ? 'connectionReady' : statuses.includes('ok') ? 'connectionPartial' : 'connectionFailed'
+      const errors = {
+        network: 'connectionNetwork', timeout: 'connectionTimeout', access: 'connectionAccess',
+        address: 'connectionAddress', service: 'connectionService', response: 'connectionResponse',
+      }
+      const diagnostic = value ? [
+        'OpenDirector DSH plugin ' + value.version,
+        'API: ' + value.apiUrl, 'Canvas: ' + value.canvasUrl,
+        'Projects: ' + value.projects.status + (value.projects.status === 'ok' ? ' (' + value.projects.count + ')' : ''),
+        'Models: ' + value.models.status + (value.models.status === 'ok' ? ' (' + value.models.count + ')' : ''),
+        ...(value.models.status === 'ok' ? Object.entries(value.models.capabilities).map(([kind, count]) => kind + ': ' + count) : []),
+      ].join('\n') : ''
+      async function copy() {
+        try { await navigator.clipboard.writeText(diagnostic); setCopyState('connectionCopied') }
+        catch { setCopyState('connectionCopyFailed') }
+      }
+      const capabilityNames = { image: 'connectionImage', imageEdit: 'connectionEdit',
+        imageToVideo: 'connectionVideo', videoContinuation: 'connectionContinue', voiceover: 'connectionVoice' }
+      return h('dialog', { ref: dialog, className: 'od-media-ui', 'aria-label': t('connection'), style: dialogStyle,
+        onCancel: onClose },
+        dialogHeader(t('connection'), onClose, t, t('connectionHint')),
+        h('p', { role: 'status', style: { fontWeight: 600 } }, t(heading)),
+        failed && h('p', { role: 'alert' }, t('connectionHost')),
+        value && h('div', { style: { display: 'grid', gap: '.8rem' } },
+          h('dl', { style: { margin: 0, display: 'grid', gap: '.35rem', overflowWrap: 'anywhere' } },
+            h('dt', null, t('connectionApi')), h('dd', { style: { margin: 0 } }, h('code', null, value.apiUrl)),
+            h('dt', null, t('connectionCanvas')), h('dd', { style: { margin: 0 } }, h('code', null, value.canvasUrl)),
+            h('dt', null, t('connectionProjects')), h('dd', { style: { margin: 0 } },
+              value.projects.status === 'ok' ? String(value.projects.count) : t(errors[value.projects.status])),
+            h('dt', null, t('connectionModels')), h('dd', { style: { margin: 0 } },
+              value.models.status === 'ok' ? t('connectionCount').replace('{count}', value.models.count) : t(errors[value.models.status]))),
+          problem && h('p', { role: 'alert' }, t(errors[problem])),
+          value.models.status === 'ok' && (value.models.count === 0
+            ? h('p', null, t('connectionNoModels'))
+            : h('div', null,
+              h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(9rem, 1fr))', gap: '.5rem' } },
+                ...Object.entries(value.models.capabilities).map(([kind, count]) => h('div', {
+                  key: kind, style: { border, borderRadius: '.65rem', padding: '.7rem' },
+                }, h('small', { style: { color: muted } }, t(capabilityNames[kind])), h('div', { style: { fontSize: '1.3em' } }, count)))),
+              h('small', { className: 'od-hint' }, t('connectionConfigured')))),
+          h('div', { style: row }, h('a', { href: value.canvasUrl, className: 'od-button', style: buttonStyle,
+            target: '_blank', rel: 'noopener noreferrer' }, t('connectionOpen'))),
+          h('details', null, h('summary', null, t('connectionDiagnostic')),
+            h('pre', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '.8em' } }, diagnostic))),
+        h('p', { className: 'od-hint' }, t('connectionSetup')),
+        h('div', { style: row },
+          button(t('connectionCheck'), () => setRevision(v => v + 1), { disabled: checking }),
+          value && button(t('connectionCopy'), copy, { disabled: checking }),
+          openPlugin && button(t('connectionPlugin'), () => { onClose(); openPlugin() }),
+          h('a', { href: 'https://github.com/ThinkFlowLab/OpenDirector/tree/main/plugins/deepseek-harness#configuration',
+            target: '_blank', rel: 'noopener noreferrer', className: 'od-button', style: buttonStyle }, t('connectionGuide'))),
+        copyState && h('p', { role: 'status' }, t(copyState)),
+        h('small', { className: 'od-hint' }, t('connectionReadOnly')))
     }
 
     function PageControls({ cursor, nextCursor, disabled, onPage, t }) {
@@ -2003,7 +2126,10 @@ window.__ModuleLoader__.load({
         }, MediaResultsTail))
         ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
           name: 'conversation.input.left', id: '@opendirector/dsh-plugin:create', locale: namespace,
-        }, CreateMedia))
+        }, props => h(CreateMedia, { ...props,
+          openPlugin: typeof ctx.get('pluginNavigation')?.openBundle === 'function'
+            ? () => ctx.get('pluginNavigation')?.openBundle('@opendirector/dsh-plugin') : undefined,
+        })))
       },
     }
   },

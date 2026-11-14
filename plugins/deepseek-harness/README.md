@@ -36,6 +36,19 @@ In DSH rc.3, **Plugins → Experimental plugins → Custom plugin indexes** adds
 
 Use the same installation source to update a local tarball or linked checkout. Registry-installed bundles can use DSH’s compatible-version update controls after publication; the plugin leaves installation and updates to DSH.
 
+
+### Desktop installation
+
+For Desktop, open **Plugins → Add plugin**, enter a local tarball such as `file:E:/Downloads/opendirector-dsh-plugin-0.1.0.tgz`, and enable OpenDirector. For the default address, run OpenDirector on the computer running DSH.
+
+Beyond npm and an index, a versioned GitHub Release can carry the tarball and checksum as a stable download. Workflow artifacts are useful for trying a PR; release assets are better for a documented version. Link the setup guide and a short generation-to-adoption demo from the project README and any community listing.
+
+### Check the connection
+
+Choose the plug icon (**Connection check**) next to **Action packs**. The dialog shows the configured API and canvas addresses, project count, and model connections for images, references, image-to-video, continuation and voiceover. It checks once when opened; use **Check again** after changing the service.
+
+An empty model catalog links you to OpenDirector to configure one. Connection errors explain whether to check the address, start the service, or fix access. **Copy diagnostics** copies the plugin version, addresses, status and counts; it omits project names, model credentials and provider responses. Listed models have not been tested by a generation. This check makes no model calls.
+
 ## Platform coverage
 
 The interactive workflow has been verified in DSH Web with the host running in WSL Ubuntu. Native Windows checks cover plugin loading, tool execution and HTTP routes. The plugin workflow includes Linux, Windows and macOS jobs. DSH Desktop still needs an end-to-end installation and media check.
