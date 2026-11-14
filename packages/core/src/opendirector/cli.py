@@ -134,6 +134,9 @@ class Client:
         self.command = "opendirector"
         self.session = str(session or uuid4())
         self.operation_id = operation_id
+        # Groups related gateway calls (each poll of one job wait) into one
+        # assistant activity instead of one activity per call.
+        self.activity = None
         self.gateway = dict(os.environ)
         self.live = bool(self.gateway.get("OPENDIRECTOR_AGENT_SOCKET") or self.gateway.get("OPENDIRECTOR_AGENT_HOST"))
         self.opened = False
@@ -176,6 +179,7 @@ class Client:
                 connection.connect(self.gateway["OPENDIRECTOR_AGENT_SOCKET"])
             connection.sendall((json.dumps({
                 "id": str(identity or uuid4()), "cliCommand": self.command, "projectId": str(self.project) if self.project else None, "name": name, "arguments": arguments,
+                **({"activity": self.activity} if self.activity else {}),
             }) + "\n").encode())
             with connection.makefile("rb") as reader:
                 response = json.loads(reader.readline(64 * 1024 * 1024))
@@ -498,6 +502,7 @@ def job_wait(ctx: typer.Context, job_id: UUID,
              timeout: Annotated[float, typer.Option(min=0, help="Maximum wait in seconds.")] = 300):
     import time
     ctx.obj.command = ctx.command_path
+    ctx.obj.activity = {"id": str(uuid4()), "kind": "job.wait"}
     deadline = time.monotonic() + timeout
     while True:
         result = ctx.obj.query("job.get", objectId=str(job_id))

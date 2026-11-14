@@ -272,6 +272,13 @@ export const assistant = {
   "assistant.activity.thinking": "Thinking…",
   "assistant.activity.plan": "Running plan: {step}",
   "assistant.activity.replying": "Thinking…",
+  // Job-wait receipts stored by the agent transport. `{message}` is provider text.
+  "assistant.activity.jobWaitFailed": "Job failed.",
+  "assistant.activity.jobWaitFailedDetail": "Job failed: {message}",
+  "assistant.activity.jobWaitCancelled": "Job cancelled.",
+  "assistant.activity.jobWaitCancelledDetail": "Job cancelled: {message}",
+  "assistant.activity.jobWaitInterrupted": "Job interrupted.",
+  "assistant.activity.jobWaitInterruptedDetail": "Job interrupted: {message}",
 
   // Agent tool names, kept separate from tool arguments and results.
   "assistant.tool.query": "Query the project",
