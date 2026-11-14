@@ -185,7 +185,9 @@ export function apply(ctx, config) {
           try {
             const params = new URL(request.url, 'http://localhost').searchParams
             const { signal } = request
-            const value = params.has('job')
+            const value = params.has('group')
+              ? await client.creationGroupStatus(params.get('project'), params.get('group'), { signal })
+              : params.has('job')
               ? await client.creationStatus(params.get('project'), params.get('job'), { signal })
               : params.has('reuse')
                 ? await client.creationTemplate(params.get('project'), params.get('reuse'), { signal })

@@ -38,6 +38,10 @@ In OpenDirector, configure an image model under **Settings → Model connections
 
 In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
 
+Choose **Number of candidates** (1–4) to create a group in one action. Each candidate is a separate generation task on the same node. The group shows saved progress and completed media together; select two images to compare, then adopt the version you prefer. Groups also work with voiceover and video forms. A failed member keeps its error while successful siblings remain available.
+
+When a group submission is unconfirmed, check its original receipts. **Continue the original group** explicitly submits any remaining members with their original operation IDs. It keeps accepted jobs and stops if the source node’s settings have changed. Saved task history reopens the whole group after reloading DSH.
+
 After a submission is accepted, **Generation settings** folds away so the candidates stay in view. Expand it to inspect the submitted settings. The plugin follows DSH’s light and dark themes, with distinct generation, adoption and current-result controls.
 
 Unsubmitted input stays in the current browser tab. Close the dialog or reload DSH, then return to the same creation or edit action to continue. This includes the chosen model, image size and ordered references. Use **Clear draft** to start over. Submitted jobs stay in **Resume project → Tasks**; reopening a draft does not submit it.

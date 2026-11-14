@@ -13,6 +13,13 @@ window.__ModuleLoader__.load({
       createHint: 'Create an image or voiceover, then choose the version you want to keep.',
       libraryHint: 'Find your work, compare versions and pick up where you left off.',
       generationSettings: 'Generation settings',
+      moreCandidateCount: 'Additional candidates', groupStopped: 'The remaining planned candidates were not submitted.',
+      candidateCount: 'Number of candidates', generateGroup: 'Generate {count} candidates',
+      groupHint: 'Sends {count} separate generation tasks. Results stay as candidates.',
+      groupSummary: '{done}/{total} ready · {failed} failed', groupTask: 'Candidate {number}',
+      groupUnsubmitted: '{count} planned candidates have not been confirmed.',
+      continueGroup: 'Continue the original group', groupCompare: 'Compare selected images',
+      candidateCountInvalid: 'Choose between 1 and 4 candidates.',
       create: 'Create media', brief: 'Describe what to change', copyId: 'Copy result ID', copied: 'Result ID copied.',
       firstFrameSource: 'First frame', motion: 'Describe the motion', shot: 'Describe the next shot',
       videoDuration: 'Video duration', chooseDuration: 'Choose a duration', modelDuration: 'This model uses its default duration.',
@@ -109,6 +116,13 @@ window.__ModuleLoader__.load({
       createHint: '生成图片或配音，比较候选后再选用。',
       libraryHint: '找回作品、对比版本，继续上次的创作。',
       generationSettings: '生成设置',
+      moreCandidateCount: '新增候选数量', groupStopped: '其余计划候选未提交。',
+      candidateCount: '候选数量', generateGroup: '生成 {count} 个候选',
+      groupHint: '会提交 {count} 个独立生成任务，结果先保留为候选。',
+      groupSummary: '已完成 {done}/{total} · 失败 {failed}', groupTask: '候选 {number}',
+      groupUnsubmitted: '还有 {count} 个计划候选尚未确认提交。',
+      continueGroup: '继续提交原候选组', groupCompare: '对比所选图片',
+      candidateCountInvalid: '请选择 1 至 4 个候选。',
       create: '创作素材', brief: '描述你想改什么', copyId: '复制结果 ID', copied: '已复制结果 ID。',
       firstFrameSource: '首帧', motion: '描述画面怎么动', shot: '描述接下来的镜头',
       videoDuration: '视频时长', chooseDuration: '选择时长', modelDuration: '此模型使用默认时长。',
@@ -252,6 +266,7 @@ window.__ModuleLoader__.load({
     `
     const libraryDefaults = { kind: 'all', selection: 'all', order: 'newest', status: 'all' }
     const submissionMessages = new Map([
+      ['creation.candidate_count', 'candidateCountInvalid'],
       ['storage_busy', 'adoptBusy'], ['creation.unavailable', 'connectionUnavailable'],
       ['creation.repeat_unavailable', 'repeatUnavailable'], ['revision_conflict', 'adoptConflict'],
       ['creation.references', 'referencesChanged'], ['creation.reference_limit', 'referencesChanged'],
@@ -348,6 +363,8 @@ window.__ModuleLoader__.load({
             label: typeof item.label === 'string' ? item.label.slice(0, 160) : '',
             ...(typeof item.projectName === 'string' && { projectName: item.projectName.slice(0, 255) }),
             ...(item.repeatJobId && { repeatJobId: item.repeatJobId }),
+            ...(Number.isInteger(item.candidateCount) && item.candidateCount >= 2 && item.candidateCount <= 4
+              && { candidateCount: item.candidateCount }),
           })) : []
         pendingSubmissions = [...new Map(entries.map(item => [pendingIdentity(item), item])).values()]
       } catch {
@@ -374,6 +391,7 @@ window.__ModuleLoader__.load({
         projectId: input.projectId, operationId: input.operationId, context, label: label.slice(0, 160),
         ...(input.projectName != null && { projectName: input.projectName.slice(0, 255) }),
         ...(input.repeatJobId && { repeatJobId: input.repeatJobId }),
+        ...(input.candidateCount > 1 && { candidateCount: input.candidateCount }),
       }
       writePendingSubmissions([...readPendingSubmissions().filter(value => pendingIdentity(value) !== pendingIdentity(item)), item])
     }
@@ -401,16 +419,17 @@ window.__ModuleLoader__.load({
         busy.current.add(key)
         setFeedback(previous => ({ ...previous, [key]: { message: 'submitting' } }))
         try {
-          const { projectId, operationId, repeatJobId, projectName } = item
+          const { projectId, operationId, repeatJobId, projectName, candidateCount } = item
           const response = await fetch('/api/opendirector/creation', {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
             body: JSON.stringify({ projectId, operationId, ...(repeatJobId && { repeatJobId }),
-              ...(projectName != null && { projectName }), check: true }),
+              ...(projectName != null && { projectName }), ...(candidateCount && { candidateCount }), check: true }),
           })
           if (!response.ok) throw new Error('Receipt unavailable')
           const value = await response.json()
-          if (value.jobId && ['accepted', 'applied', 'noop'].includes(value.status)) {
-            onRecovered({ projectId, jobId: value.jobId, prompt: item.label, canvasUrl: value.canvasUrl, recovery: item })
+          if (value.jobId && (value.groupId || ['accepted', 'applied', 'noop'].includes(value.status))) {
+            onRecovered({ ...value, projectId, prompt: item.label, recovery: item,
+              ...(value.groupId && { requestedCount: candidateCount }) })
           } else {
             setFeedback(previous => ({ ...previous, [key]: {
               message: value.status === 'unknown' ? 'generationUnknown'
@@ -767,7 +786,7 @@ window.__ModuleLoader__.load({
       const restoringPending = !startFresh && !attempt.current && pending.some(item => item.context === draftKey)
       const defaults = {
         kind: templateOf?.kind ?? (videoMode ? 'video' : 'image'), projectId: '', projectName: '', modelId: '',
-        prompt: '', output: null, voice: '', durationSeconds: null,
+        prompt: '', output: null, voice: '', durationSeconds: null, candidateCount: 1,
       }
       const [saved] = useState(() => existingJob ? null : readMediaDraft(draftKey))
       const [restored, setRestored] = useState(Boolean(saved))
@@ -775,6 +794,9 @@ window.__ModuleLoader__.load({
       const [result, setResult] = useState(existingJob ?? null)
       const [progress, setProgress] = useState(null)
       const [repeatStatus, setRepeatStatus] = useState(null)
+      const [repeatCount, setRepeatCount] = useState(1)
+      const [comparison, setComparison] = useState([])
+      const [comparing, setComparing] = useState(false)
       const [submitting, setSubmitting] = useState(false)
       const [pollError, setPollError] = useState(false)
       const [updatesPaused, setUpdatesPaused] = useState(false)
@@ -800,6 +822,7 @@ window.__ModuleLoader__.load({
       const tooManyReferences = Boolean(model) && references.length > referenceLimit
       const jobId = result?.jobId
       const projectId = result?.projectId
+      const groupId = result?.groupId
       const unknown = result?.status === 'unknown'
       const locked = submitting || unknown || Boolean(jobId) || result?.draftSaved === true
       const draftBase = catalog?.template ? { ...defaults, projectId: templateOf.projectId,
@@ -856,7 +879,7 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId, restoringPending, recoveredJob])
       useEffect(() => {
-        if (existingJob?.recovery) forgetSubmission(existingJob.recovery)
+        if (existingJob?.recovery && (!existingJob.groupId || existingJob.groupComplete)) forgetSubmission(existingJob.recovery)
       }, [existingJob?.recovery])
       useEffect(() => {
         if (!jobId || recoveredJob) return
@@ -869,7 +892,7 @@ window.__ModuleLoader__.load({
           if (controller.signal.aborted || inFlight || !available()) return
           inFlight = true
           try {
-            const params = new URLSearchParams({ project: projectId, job: jobId })
+            const params = new URLSearchParams({ project: projectId, ...(groupId ? { group: groupId } : { job: jobId }) })
             const response = await fetch('/api/opendirector/creation?' + params, { signal: controller.signal })
             if (!response.ok) throw new Error('Job status unavailable')
             const value = await response.json()
@@ -900,7 +923,20 @@ window.__ModuleLoader__.load({
           window.removeEventListener('online', wake)
           window.removeEventListener('offline', wake)
         }
-      }, [jobId, projectId, pollRun, recoveredJob])
+      }, [jobId, projectId, groupId, pollRun, recoveredJob])
+      useEffect(() => {
+        // Saved group members also prove acceptance when a reply was lost.
+        // This only reconciles the display; it never submits remaining work.
+        if (!groupId || !result.requestedCount || !progress?.totalCount
+          || progress.totalCount <= (result.acceptedCount ?? 0)) return
+        const complete = progress.totalCount >= result.requestedCount
+        setResult(previous => ({ ...previous, acceptedCount: progress.totalCount,
+          ...(complete && { status: 'accepted', groupComplete: true, canContinueGroup: false }) }))
+        if (complete) {
+          forgetSubmission({ projectId, operationId: groupId })
+          if (!busy.current) attempt.current = null
+        }
+      }, [groupId, projectId, result?.requestedCount, result?.acceptedCount, progress?.totalCount])
       async function send(makeAttempt) {
         if (busy.current) return
         // Accepted and uncertain submissions belong in task recovery, never in a new-input draft.
@@ -910,8 +946,9 @@ window.__ModuleLoader__.load({
         }
         busy.current = true
         setSubmitting(true)
+        let current
         function receive(value) {
-          const current = attempt.current
+          if (value.groupId && value.jobId) setPollRun(value => value + 1)
           if (value.projectCreated && current?.projectName) {
             const project = { id: current.projectId, name: current.projectName }
             setCatalog(previous => previous.projects.some(item => item.id === project.id) ? previous
@@ -922,20 +959,28 @@ window.__ModuleLoader__.load({
             setRepeatStatus(value.status === 'unknown' ? 'generationUnknown'
               : submissionMessages.get(value.code) ?? 'failedToSubmit')
           } else {
-            setResult(previous => ({ ...value, projectId: current?.projectId,
-              ...(value.status === 'unknown' && previous?.draftSaved
-                && { draftSaved: true, canvasUrl: value.canvasUrl ?? previous.canvasUrl }),
-            }))
+            setResult(previous => {
+              if (current?.candidateCount > 1 && previous?.groupId === current.operationId) {
+                const acceptedCount = Math.max(previous.acceptedCount ?? 0, value.acceptedCount ?? 0)
+                const complete = acceptedCount >= (value.requestedCount ?? previous.requestedCount)
+                return { ...previous, ...value, projectId: current.projectId, acceptedCount,
+                  ...(complete && { status: 'accepted', groupComplete: true, canContinueGroup: false }) }
+              }
+              return { ...value, projectId: current?.projectId,
+                ...(value.status === 'unknown' && previous?.draftSaved
+                  && { draftSaved: true, canvasUrl: value.canvasUrl ?? previous.canvasUrl }) }
+            })
             setRepeatStatus(null)
           }
-          if (value.status !== 'unknown') {
-            forgetSubmission(current)
+          if (value.status !== 'unknown' || value.groupComplete) {
+            if (!value.groupId || value.groupComplete) forgetSubmission(current)
             attempt.current = null
           }
         }
         try {
           const check = attempt.current !== null
           attempt.current ??= makeAttempt()
+          current = attempt.current
           if (!check) rememberSubmission(attempt.current, attempt.current.repeatJobId
             ? ['repeat', attempt.current.projectId, attempt.current.repeatJobId].join(':') : draftKey,
           form.prompt || existingJob?.prompt || '')
@@ -970,7 +1015,7 @@ window.__ModuleLoader__.load({
               : source && { sourceResultIds: references.map(item => item.resultId) }),
             ...(newProject && { projectName: form.projectName.trim() }),
             kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
-            output: templateOf ? form.output : output, voice: form.voice,
+            output: templateOf ? form.output : output, voice: form.voice, candidateCount: form.candidateCount,
           }
         })
       }
@@ -986,6 +1031,21 @@ window.__ModuleLoader__.load({
           : ['cancelled', 'interrupted'].includes(status) ? 'stopped' : status === 'accepted' ? 'queued' : status
       const submitLabel = submitting ? 'submitting' : unknown ? 'checkGeneration'
         : result?.status === 'rejected' ? 'retrySubmission' : 'generate'
+      const generateLabel = submitLabel === 'generate' && form.candidateCount > 1
+        ? t('generateGroup').replace('{count}', form.candidateCount) : t(submitLabel)
+      function toggleComparison(candidate) {
+        setComparison(previous => previous.includes(candidate.resultId) ? previous.filter(id => id !== candidate.resultId)
+          : previous.length < 2 ? [...previous, candidate.resultId] : previous)
+      }
+      function checkGroup() {
+        attempt.current ??= { projectId, operationId: groupId, candidateCount: result.requestedCount }
+        return send(() => ({}))
+      }
+      async function continueGroup() {
+        const identity = { projectId, operationId: groupId, candidateCount: result.requestedCount }
+        attempt.current = null
+        await send(() => ({ ...identity, continueGroup: true }))
+      }
       const sourcePreview = source && h(Preview, {
         projectId: source.projectId, assetId: source.assetId, kind: source.kind, details: source.details, t,
         title: t(continuation ? 'sourceClip' : videoMode ? 'firstFrameSource' : 'original'),
@@ -1068,7 +1128,11 @@ window.__ModuleLoader__.load({
             required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
             value: form.prompt, onChange: event => update('prompt', event.target.value),
           })),
-          (!locked || submitting || unknown) && button(t(submitLabel),
+          field('candidateCount', h('select', { value: form.candidateCount, disabled: locked,
+            onChange: event => update('candidateCount', Number(event.target.value)) },
+            ...[1, 2, 3, 4].map(count => h('option', { key: count, value: count }, count)))),
+          form.candidateCount > 1 && h('small', null, t('groupHint').replace('{count}', form.candidateCount)),
+          (!locked || submitting || unknown) && button(generateLabel,
             undefined, { type: 'submit', primary: true,
               disabled: submitting || (!unknown && (!model || projectUnavailable || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim())) }))),
         templateOf?.canvasUrl && catalog?.error && canvasLink(templateOf.canvasUrl, t),
@@ -1077,7 +1141,21 @@ window.__ModuleLoader__.load({
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
         jobId && h('p', { role: status === 'failed' || providerUnknown ? 'alert' : 'status' }, t(outcome ?? 'waiting')),
         jobId && h('small', null, t('backgroundHint')),
-        jobId && h(JobCancellation, { key: jobId, projectId, jobId, progress: progress?.jobId === jobId ? progress : null, t,
+        groupId && progress?.jobs && h('section', { 'aria-label': t('candidateCount'), style: { display: 'grid', gap: '.4rem' } },
+          h('strong', null, t('groupSummary').replace('{done}', progress.completedCount)
+            .replace('{total}', progress.totalCount).replace('{failed}', progress.failedCount)),
+          ...progress.jobs.map((job, index) => h('div', { key: job.jobId, style: row },
+            h('span', null, t('groupTask').replace('{number}', index + 1) + ' · ' + t(
+              ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? job.status : 'waiting')),
+            job.category && h('small', null, t(generationMessages.get(job.category) ?? 'failed')),
+            h(JobCancellation, { projectId, jobId: job.jobId, progress: job, t,
+              onChange: () => setPollRun(value => value + 1) })))),
+        groupId && result.requestedCount > result.acceptedCount && h('div', null,
+          h('p', { role: 'status' }, result.groupComplete ? t('groupStopped')
+            : t('groupUnsubmitted').replace('{count}', result.requestedCount - result.acceptedCount)),
+          !result.groupComplete && button(t('checkGeneration'), checkGroup, { disabled: submitting }),
+          result.canContinueGroup && button(t('continueGroup'), continueGroup, { disabled: submitting })),
+        jobId && !groupId && h(JobCancellation, { key: jobId, projectId, jobId, progress: progress?.jobId === jobId ? progress : null, t,
           onChange: () => setPollRun(value => value + 1) }),
         continuation && status === 'failed' && progress.category === 'reference' && h('p', null, t('continuationUnavailable')),
         status && progress.canResume && h('p', null, t('recoverOnCanvas')),
@@ -1092,14 +1170,27 @@ window.__ModuleLoader__.load({
         }, sourcePreview, ...candidates.map((candidate, index) => h(Preview, {
           ...candidate, projectId, key: candidate.resultId, t, canvasUrl: result.canvasUrl,
           title: candidates.length === 1 ? t('candidate') : `${t('candidate')} ${index + 1}`,
+          onCompare: groupId && candidate.kind === 'image' ? () => toggleComparison(candidate) : undefined,
+          compareSelected: comparison.includes(candidate.resultId),
+          compareDisabled: comparison.length === 2 && !comparison.includes(candidate.resultId),
           onAdopted: () => setProgress(previous => ({ ...previous,
             results: previous.results.map(item => ({ ...item, selected: item.resultId === candidate.resultId })),
           })),
         }))),
-        !restoringPending && ((status === 'succeeded' && candidates.length > 0) || canRetry) && h('div', { style: row },
-          button(t(submitting ? 'submitting' : repeatStatus === 'generationUnknown' ? 'checkGeneration'
+        groupId && candidates.some(candidate => candidate.kind === 'image') && button(t('groupCompare') + ' (' + comparison.length + '/2)',
+          () => setComparing(true), { disabled: comparison.length !== 2 }),
+        comparing && h(ImageComparisonDialog, { projectId, resultIds: comparison, t,
+          onAdopted: () => setPollRun(value => value + 1), onClose: () => setComparing(false) }),
+        !restoringPending && !groupId && ((status === 'succeeded' && candidates.length > 0) || canRetry) && h('div', { style: row },
+          h('label', { style: row }, t('moreCandidateCount'), h('select', { value: repeatCount,
+            'aria-label': t('moreCandidateCount'), disabled: submitting,
+            onChange: event => setRepeatCount(Number(event.target.value)) },
+            ...[1, 2, 3, 4].map(count => h('option', { key: count, value: count }, count)))),
+          button(repeatCount > 1 && !submitting && repeatStatus !== 'generationUnknown'
+            ? t('generateGroup').replace('{count}', repeatCount)
+            : t(submitting ? 'submitting' : repeatStatus === 'generationUnknown' ? 'checkGeneration'
             : canRetry ? 'retryGeneration' : 'repeatGeneration'),
-            () => send(() => ({ projectId, operationId: crypto.randomUUID(), repeatJobId: jobId })), { disabled: submitting }),
+            () => send(() => ({ projectId, operationId: crypto.randomUUID(), repeatJobId: jobId, candidateCount: repeatCount })), { disabled: submitting }),
           h('small', { style: { color: muted } }, t('repeatHint'))),
         repeatStatus && h('p', { role: repeatStatus === 'generationUnknown' ? 'status' : 'alert' }, t(repeatStatus)))
     }

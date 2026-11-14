@@ -19,6 +19,12 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Check:** As relevant to the change, inspect persisted object identities, references, and execution inputs after conversion or recovery. Reopen the project or reconnect to the run when needed, and verify the actual result.
 - **Async projection follow-up:** PR #193's structured-editor CI failure prompted a real-browser delayed-read regression. An older background projection could finish after an acknowledged editor save and restore an obsolete CAS basis, making the next save/publication fail. Recheck the editor transaction and captured snapshot at completion before installing either changed or apparently identical content. Keep publication versions fixed, test the actual save/retry/provenance path with a deterministic interleaving, and retain the original CI failure rather than treating a longer timeout or a rerun as its explanation.
 
+## Cancellation can race with a worker checkpoint
+
+- **Trigger:** A worker reads a running job, then cancellation advances its revision before the worker saves the next phase.
+- **Lesson:** Commit 3635393 reconciles only the checkpoint on revision conflict. The old path converted this race into a provider failure even though cancellation was saved. A stale checkpoint could also lose a saved remote task identity.
+- **Check:** Inject cancellation between the snapshot read and commit. Preserve stop intent, terminal cancellation and the accepted remote identity; do not repeat provider submission. Keep unrelated rejections as errors. The deterministic regressions in [test_creation_generation_service.py](../../tests/test_creation_generation_service.py) cover the interleaving, no provider call, terminal states and remote identity preservation.
+
 ## Baseline failures still need tracking
 
 - **Trigger:** A relevant test fails and comparison shows that it also fails on the baseline.

@@ -425,6 +425,7 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
       expectedSpecRevision: required(integer(t('param.expectedSpecRevision'))),
       originItemId: string(t('param.originItemId')),
       expectedItemRevision: integer(t('param.expectedItemRevision')),
+      batchId: string(t('param.batchId')),
     },
     schema: outputSchema({
       projectId: string('Project ID.'),
@@ -441,6 +442,7 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
         expectedSpecRevision: args.expectedSpecRevision,
         originItemId: args.originItemId,
         expectedItemRevision: args.expectedItemRevision,
+        batchId: args.batchId,
         signal: exec.signal,
       })
       return {

@@ -373,6 +373,7 @@ export class OpenDirectorClient {
       if (!search.matches(spec.prompt, title, job.inputSnapshot.model.modelId, job.id, spec.id)) continue
       jobs.push({
         jobId: job.id, kind: spec.kind, status: job.status, prompt: spec.prompt.slice(0, 160),
+        ...(job.batchId && { groupId: job.batchId }),
         ...(title && { title }),
         modelId: job.inputSnapshot.model.modelId,
       })
@@ -505,6 +506,76 @@ export class OpenDirectorClient {
     }
   }
 
+  async creationGroupStatus(projectId, groupId, { signal } = {}) {
+    const project = requireUuid(projectId, 'projectId')
+    const group = requireUuid(groupId, 'groupId')
+    const snapshot = await this.project(project, { signal })
+    const jobs = snapshot.jobs.filter(job => job.batchId === group)
+    if (!jobs.length) throw new InputError('job.missing', { projectId: project, jobId: group })
+    const active = jobs.some(job => ['queued', 'running'].includes(job.status))
+    const done = jobs.filter(job => job.status === 'succeeded').length
+    const failed = jobs.filter(job => ['failed', 'interrupted'].includes(job.status)).length
+    const status = active ? 'running' : done ? 'succeeded'
+      : jobs.every(job => job.status === 'cancelled') ? 'cancelled' : 'failed'
+    const ids = new Set(jobs.map(job => job.id))
+    const selected = new Set(snapshot.generationSpecs.map(spec => spec.currentResultId))
+    const metadata = assetMetadata(snapshot)
+    return {
+      groupId: group, status, completedCount: done, failedCount: failed, totalCount: jobs.length,
+      jobs: jobs.map(job => ({ jobId: job.id, status: job.status, cancelRequested: job.cancelRequested,
+        remoteCancellation: job.remoteCancellation, category: job.errorDetails?.category })),
+      results: snapshot.results.filter(result => ids.has(result.jobId)).map(({ id, asset }) => ({
+        resultId: id, assetId: asset.assetId, kind: asset.kind, selected: selected.has(id),
+        ...(metadata.has(asset.assetId) && { details: mediaDetails(metadata.get(asset.assetId)) }),
+      })),
+    }
+  }
+
+  async #startCandidateGroup(input, signal) {
+    const projectId = requireUuid(input.projectId, 'projectId')
+    const groupId = requireUuid(input.operationId, 'operationId')
+    const count = input.candidateCount
+    const accepted = []
+    let blocked
+    for (let index = 0; index < count; index++) {
+      const child = uuid5(groupId, 'candidate.' + index)
+      let reply = await this.receipt(projectId, uuid5(child, 'creation.submit'), { signal })
+      if (!reply && !input.check) {
+        try {
+          if (index === 0 && input.continueGroup) break
+          const { candidateCount, continueGroup, check, ...base } = input
+          reply = await this.startCreation(index === 0
+            ? { ...base, operationId: child, batchId: groupId }
+            : { projectId, operationId: child, repeatJobId: accepted[0], batchId: groupId }, { signal })
+        } catch (error) {
+          if (error instanceof UnknownOperationError || error instanceof NetworkError || error instanceof RequestTimeoutError
+            || error instanceof RequestAbortedError) break
+          blocked = error instanceof InputError ? error.key : error instanceof HttpError ? error.code : 'unavailable'
+          break
+        }
+      }
+      const jobId = reply?.jobId ?? reply?.jobIds?.[0]
+      if (jobId && ['accepted', 'applied', 'noop'].includes(reply.status)) {
+        accepted.push(jobId)
+      } else if (reply?.status === 'rejected') {
+        blocked = reply.code ?? reply.issues?.[0]?.code ?? 'unavailable'
+        break
+      } else break
+    }
+    const complete = accepted.length === count || blocked != null
+    const firstDraft = input.check && !accepted.length
+      ? await this.receipt(projectId, uuid5(uuid5(groupId, 'candidate.0'), 'creation.draft'), { signal }) : null
+    return {
+      status: blocked ? 'rejected' : complete ? 'accepted' : 'unknown',
+      groupId, requestedCount: count, acceptedCount: accepted.length,
+      jobId: accepted[0], jobIds: accepted, groupComplete: complete,
+      ...(firstDraft?.status === 'applied' && { draftSaved: true }),
+      ...(input.projectName != null && { projectCreated: true }),
+      ...(blocked && { code: blocked }),
+      ...(!complete && accepted.length > 0 && { canContinueGroup: true }),
+    }
+  }
+
   async receipt(projectId, operationId, { signal } = {}) {
     const id = requireUuid(projectId, 'projectId')
     const command = requireUuid(operationId, 'operationId')
@@ -564,6 +635,10 @@ export class OpenDirectorClient {
   }
 
   async startCreation(input, { signal } = {}) {
+    const count = input.candidateCount ?? 1
+    if (!Number.isInteger(count) || count < 1 || count > 4) throw new InputError('creation.candidate_count')
+    if (count > 1) return this.#startCandidateGroup(input, signal)
+    if (input.batchId != null) requireUuid(input.batchId, 'batchId')
     const projectId = requireUuid(input.projectId, 'projectId')
     const intent = requireUuid(input.operationId, 'operationId')
     const createId = uuid5(intent, 'creation.draft')
@@ -580,7 +655,7 @@ export class OpenDirectorClient {
         : { status: 'unknown', draftSaved: draft?.status === 'applied' }
     }
     if (input.repeatJobId != null) {
-      return this.#repeatCreation(projectId, submitId, requireUuid(input.repeatJobId, 'repeatJobId'), signal)
+      return this.#repeatCreation(projectId, submitId, requireUuid(input.repeatJobId, 'repeatJobId'), signal, input.batchId)
     }
     const prompt = requireString(input.prompt, 'prompt').trim()
     const modelConfigId = requireUuid(input.modelConfigId, 'modelConfigId')
@@ -681,6 +756,7 @@ export class OpenDirectorClient {
         projectId, operationId: submitId, specId, originItemId: itemId,
         expectedSpecRevision: draft.changed.find(item => item.id === specId)?.revision,
         expectedItemRevision: draft.changed.find(item => item.id === itemId)?.revision,
+        batchId: input.batchId,
       })
       try {
         const accepted = await this.#command({ projectId, operationId: submitId, command: submit, session, signal })
@@ -699,19 +775,22 @@ export class OpenDirectorClient {
     return input.projectName == null ? started : { ...started, projectCreated: true }
   }
 
-  async #repeatCreation(projectId, submitId, jobId, signal) {
+  async #repeatCreation(projectId, submitId, jobId, signal, batchId) {
     return this.#withLease(projectId, signal, async (session, snapshot) => {
       const existing = await this.#submissionReceipt(projectId, submitId, signal)
       if (existing) return { status: existing.status, jobId: existing.jobIds?.[0], code: existing.issues?.[0]?.code }
       const job = snapshot.jobs.find(item => item.id === jobId)
       const spec = snapshot.generationSpecs.find(item => item.id === job?.inputSnapshot?.spec?.id)
       const item = snapshot.canvasItems.find(item => item.id === job?.originItemId)
-      if ((job?.status !== 'succeeded' && !canRetryFailedJob(job)) || !spec || !Object.hasOwn(MEDIA_TYPES, spec.kind)
+      const ownGroup = batchId != null && job?.batchId === batchId
+      if ((job?.status !== 'succeeded' && !canRetryFailedJob(job) && !(ownGroup && ['queued', 'running'].includes(job?.status)))
+        || !spec || !Object.hasOwn(MEDIA_TYPES, spec.kind)
         || item?.binding?.objectRef?.id !== spec.id) {
         throw new InputError('creation.repeat_unavailable')
       }
+      if (ownGroup && spec.revision !== job.inputSnapshot.spec.revision) throw new InputError('revision_conflict')
       const command = buildSubmitCommand({
-        projectId, operationId: submitId, specId: spec.id, originItemId: item.id,
+        projectId, operationId: submitId, specId: spec.id, originItemId: item.id, batchId,
         expectedSpecRevision: spec.revision, expectedItemRevision: item.revision,
         ...(job.status === 'failed' && { previousJobId: job.id }),
       })
