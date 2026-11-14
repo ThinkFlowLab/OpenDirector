@@ -80,7 +80,8 @@ window.__ModuleLoader__.load({
       activeTasks: 'Queued or running',
       libraryType: 'Filter by media', librarySelection: 'Filter by selection', libraryOrder: 'Sort results',
       allMedia: 'All media', video: 'Video', audio: 'Audio', allSelections: 'All results', other: 'Other results',
-      newest: 'Newest first', oldest: 'Oldest first', loadMore: 'Load more', noMatches: 'No results match these filters.',
+      previousPage: 'Previous page', nextPage: 'Next page', pageNumber: 'Page {number}',
+      newest: 'Newest first', oldest: 'Oldest first', noMatches: 'No results match these filters.',
       actions: 'More actions', play: 'Play', pause: 'Pause', playbackFailed: 'Could not start playback.',
       references: 'Reference images', chooseReferences: 'Add reference images', hideReferences: 'Hide image picker',
       addReference: 'Add reference', removeReference: 'Remove reference', referenceImage: 'Reference image',
@@ -166,7 +167,8 @@ window.__ModuleLoader__.load({
       activeTasks: '排队或生成中',
       libraryType: '按素材类型筛选', librarySelection: '按采用状态筛选', libraryOrder: '排序',
       allMedia: '全部素材', video: '视频', audio: '音频', allSelections: '全部结果', other: '其他结果',
-      newest: '最新优先', oldest: '最早优先', loadMore: '加载更多', noMatches: '没有符合筛选条件的结果。',
+      previousPage: '上一页', nextPage: '下一页', pageNumber: '第 {number} 页',
+      newest: '最新优先', oldest: '最早优先', noMatches: '没有符合筛选条件的结果。',
       actions: '更多操作', play: '播放', pause: '暂停', playbackFailed: '暂时无法播放。',
       references: '参考图', chooseReferences: '添加参考图', hideReferences: '收起选图',
       addReference: '加入参考图', removeReference: '移除参考图', referenceImage: '参考图',
@@ -257,6 +259,17 @@ window.__ModuleLoader__.load({
         open === 'creation' && h(GenerationDialog, { t, onClose: () => setOpen(null) }))
     }
 
+    function PageControls({ cursor, nextCursor, disabled, onPage, t }) {
+      const before = cursor.before ?? []
+      if (!before.length && !nextCursor) return null
+      return h('div', { style: { ...row, marginTop: '.7rem' } },
+        button(t('previousPage'), () => onPage({ after: before.at(-1), before: before.slice(0, -1) }),
+          { disabled: disabled || !before.length }),
+        h('span', null, t('pageNumber').replace('{number}', before.length + 1)),
+        button(t('nextPage'), () => onPage({ after: nextCursor, before: [...before, cursor.after ?? null] }),
+          { disabled: disabled || !nextCursor }))
+    }
+
     async function readLibrary(projectId, signal, filters = {}, after = null) {
       const query = projectId ? '?' + new URLSearchParams({
         project: projectId, ...filters, ...(after && { after }),
@@ -294,13 +307,7 @@ window.__ModuleLoader__.load({
         setError(false)
         readLibrary(projectId, controller.signal, { ...filters, view, q: query }, page.after).then(value => {
           if (controller.signal.aborted) return
-          if (projectId) setLibrary(previous => {
-            if (!page.after || previous?.projectId !== projectId) return value
-            const items = previous[view]
-            const itemId = item => taskView ? item.jobId : item.resultId
-            const known = new Set(items.map(itemId))
-            return { ...value, [view]: [...items, ...value[view].filter(item => !known.has(itemId(item)))] }
-          })
+          if (projectId) setLibrary(value)
           else setProjects(value.projects)
           setPending(false)
         }).catch(() => {
@@ -408,7 +415,7 @@ window.__ModuleLoader__.load({
         taskView ? (current.jobs.length === 0 ? h('p', null, t('tasksEmpty'))
           : h('div', { style: { display: 'grid', gap: '.65rem' } },
             ...current.jobs.map(job => h('article', {
-              key: job.jobId, style: { display: 'grid', gap: '.4rem', padding: '.65rem', border, borderRadius: '.55rem' },
+              key: job.jobId, 'data-opendirector-job': job.jobId, style: { display: 'grid', gap: '.4rem', padding: '.65rem', border, borderRadius: '.55rem' },
             },
             h('strong', null, t(['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.status)
               ? job.status : 'waiting')),
@@ -427,8 +434,7 @@ window.__ModuleLoader__.load({
               onCompare: compareMode && kind === 'image'
                 ? () => toggleComparison({ resultId, title: title || resultId.slice(0, 8) }) : undefined,
             }))),
-        current.nextCursor && h('div', { style: { marginTop: '.7rem' } },
-          button(t('loadMore'), () => setPage({ after: current.nextCursor }), { disabled: pending }))),
+        h(PageControls, { cursor: page, nextCursor: current.nextCursor, disabled: pending, onPage: setPage, t })),
       comparing && h(ImageComparisonDialog, {
         projectId, resultIds: comparison.map(item => item.resultId), t, onAdopted: refresh,
         onClose: () => setComparing(false),
@@ -477,7 +483,7 @@ window.__ModuleLoader__.load({
 
     function ReferencePicker({ projectId, references, setReferences, limit, locked, t }) {
       const [open, setOpen] = useState(false)
-      const [after, setAfter] = useState(null)
+      const [cursor, setCursor] = useState({})
       const [page, setPage] = useState(null)
       const [loading, setLoading] = useState(false)
       const [error, setError] = useState(false)
@@ -488,13 +494,9 @@ window.__ModuleLoader__.load({
         const controller = new AbortController()
         setLoading(true)
         setError(false)
-        readLibrary(projectId, controller.signal, { kind: 'image' }, after).then(value => {
+        readLibrary(projectId, controller.signal, { kind: 'image' }, cursor.after).then(value => {
           if (controller.signal.aborted) return
-          setPage(previous => {
-            if (!after || !previous) return value
-            const known = new Set(previous.results.map(item => item.resultId))
-            return { ...value, results: [...previous.results, ...value.results.filter(item => !known.has(item.resultId))] }
-          })
+          setPage(value)
           setLoading(false)
         }).catch(() => {
           if (controller.signal.aborted) return
@@ -502,10 +504,10 @@ window.__ModuleLoader__.load({
           setLoading(false)
         })
         return () => controller.abort()
-      }, [pickerOpen, after, projectId])
+      }, [pickerOpen, cursor, projectId])
       function toggle() {
         if (!open) {
-          setAfter(null)
+          setCursor({})
           setPage(null)
         }
         setOpen(value => !value)
@@ -554,7 +556,7 @@ window.__ModuleLoader__.load({
             button(h('img', { src: mediaHref(projectId, item.assetId, 'image'), alt: '', loading: 'lazy', style: thumb }),
               () => add(item), { key: item.resultId, disabled: full, title: item.prompt || t('addReference'),
                 'aria-label': `${t('addReference')} ${index + 1}` }))),
-          page?.nextCursor && button(t('loadMore'), () => setAfter(page.nextCursor), { disabled: loading || full })))
+          page && h(PageControls, { cursor, nextCursor: page.nextCursor, disabled: loading || full, onPage: setCursor, t })))
     }
 
     function GenerationDialog({ source, videoMode, existingJob, templateOf, t, onClose }) {

@@ -42,7 +42,7 @@ Unsubmitted input stays in the current browser tab. Close the dialog or reload D
 
 If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
 
-In **Resume project**, search descriptions, canvas node names, models or copied IDs across the whole project. Search checks the full recorded description, including text beyond the card preview. Combine it with media and adoption filters, or filter tasks by their current status. **Clear search and filters** returns to the full list.
+In **Resume project**, search descriptions, canvas node names, models or copied IDs across the whole project. Search checks the full recorded description, including text beyond the card preview. Results, tasks and reference choices show one page at a time; use Previous page and Next page to browse without keeping every card mounted. Selected comparison images and references stay selected when you change pages. Combine it with media and adoption filters, or filter tasks by their current status. **Clear search and filters** returns to the full list.
 
 Choose **Compare images** in **Resume project**, select two saved images, and open the comparison. Selections can come from different filtered pages of the same project. Original images load only when you open the comparison. You can inspect them at a larger size and adopt either result; each node keeps its own current-result selection.
 
