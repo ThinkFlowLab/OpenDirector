@@ -38,6 +38,8 @@ In OpenDirector, configure an image model under **Settings → Model connections
 
 In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
 
+After a submission is accepted, **Generation settings** folds away so the candidates stay in view. Expand it to inspect the submitted settings. The plugin follows DSH’s light and dark themes, with distinct generation, adoption and current-result controls.
+
 Unsubmitted input stays in the current browser tab. Close the dialog or reload DSH, then return to the same creation or edit action to continue. This includes the chosen model, image size and ordered references. Use **Clear draft** to start over. Submitted jobs stay in **Resume project → Tasks**; reopening a draft does not submit it.
 
 If a submission is unconfirmed, reopen the action or choose **Resume project → Submissions to check** after closing or reloading DSH. Checking uses the original submission ID and opens the accepted task without generating again; it does not require the model catalog. **Start a separate creation** opens a new form and keeps the original submission available to check. **Hide reminder** only removes the local reminder. Recovery information stays in the current browser tab. If browser storage is unavailable, keep the page open and check before reloading.

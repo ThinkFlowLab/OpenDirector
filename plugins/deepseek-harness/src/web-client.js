@@ -10,6 +10,9 @@ window.__ModuleLoader__.load({
       originalUnavailable: 'Could not load the original image.', duration: '{seconds} s',
       candidate: 'Candidate', unavailable: 'Preview unavailable. Open the canvas to view this result.',
       canvas: 'Open canvas', edit: 'Edit', firstFrame: 'Animate', continue: 'Continue', adopt: 'Adopt', adopted: 'Result adopted',
+      createHint: 'Create an image or voiceover, then choose the version you want to keep.',
+      libraryHint: 'Find your work, compare versions and pick up where you left off.',
+      generationSettings: 'Generation settings',
       create: 'Create media', brief: 'Describe what to change', copyId: 'Copy result ID', copied: 'Result ID copied.',
       firstFrameSource: 'First frame', motion: 'Describe the motion', shot: 'Describe the next shot',
       videoDuration: 'Video duration', chooseDuration: 'Choose a duration', modelDuration: 'This model uses its default duration.',
@@ -103,6 +106,9 @@ window.__ModuleLoader__.load({
       originalUnavailable: '暂时无法加载原图。', duration: '{seconds} 秒',
       candidate: '候选', unavailable: '暂时无法预览。可在画布查看。',
       canvas: '打开画布', edit: '改图', firstFrame: '转成视频', continue: '续写', adopt: '采用', adopted: '已采用结果',
+      createHint: '生成图片或配音，比较候选后再选用。',
+      libraryHint: '找回作品、对比版本，继续上次的创作。',
+      generationSettings: '生成设置',
       create: '创作素材', brief: '描述你想改什么', copyId: '复制结果 ID', copied: '已复制结果 ID。',
       firstFrameSource: '首帧', motion: '描述画面怎么动', shot: '描述接下来的镜头',
       videoDuration: '视频时长', chooseDuration: '选择时长', modelDuration: '此模型使用默认时长。',
@@ -197,10 +203,53 @@ window.__ModuleLoader__.load({
     const row = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.4rem' }
     const buttonStyle = {
       font: 'inherit', fontSize: '.82em', padding: '.3rem .65rem', borderRadius: '.45rem',
-      border, background: 'transparent', color: 'inherit', cursor: 'pointer',
+      border, cursor: 'pointer',
     }
-    const dialogStyle = { width: 'min(46rem, calc(100vw - 2rem))', maxHeight: '80vh', boxSizing: 'border-box',
-      color: 'inherit', background: surface, border, borderRadius: '.85rem', padding: '1rem' }
+    const dialogStyle = { width: 'min(52rem, calc(100vw - 2rem))', maxHeight: '86vh', boxSizing: 'border-box',
+      color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border,
+      borderRadius: '1rem', padding: '1.25rem', boxShadow: '0 18px 60px #0003' }
+    const clientStyles = `
+      .od-media-ui { color: var(--dsw-alias-label-primary); line-height: 1.5; }
+      .od-media-ui::backdrop { background: rgb(0 0 0 / .42); }
+      .od-media-ui .od-button { display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
+        min-height: 2.15rem; background: transparent; color: inherit; text-decoration: none; transition: background 120ms, border-color 120ms; }
+      .od-media-ui .od-button:not(:disabled):hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .od-media-ui .od-button.od-primary { background: var(--dsw-alias-button-primary-fill);
+        color: var(--dsw-alias-label-primary-foreground); border-color: transparent; }
+      .od-media-ui .od-button.od-primary:not(:disabled):hover { background: var(--dsw-alias-button-primary-hover); }
+      .od-media-ui .od-button:disabled { opacity: .5; cursor: default; }
+      .od-media-ui .od-button[data-current] { opacity: 1; color: var(--dsw-alias-brand-text);
+        background: var(--dsw-alias-interactive-bg-active); border-color: transparent; }
+      .od-media-ui :is(button, a, input, select, textarea, summary):focus-visible {
+        outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
+      .od-media-ui :is(select, textarea, input:not([type=checkbox])) { box-sizing: border-box; max-width: 100%;
+        padding: .5rem .65rem; border: 1px solid var(--dsw-alias-border-l1); border-radius: .55rem;
+        background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; }
+      .od-media-ui form :is(input:not([type=checkbox]), select, textarea) { width: 100%; }
+      .od-media-ui form :is(input, select, textarea):disabled { opacity: .7; }
+      .od-media-ui form label { font-size: .85em; }
+      .od-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+        margin-bottom: 1rem; padding-bottom: .9rem; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+      .od-dialog-header h2 { margin: .15rem 0; font-size: 1.15em; font-weight: 650; letter-spacing: -.02em; }
+      .od-eyebrow { color: var(--dsw-alias-label-secondary); font-size: .72em; letter-spacing: .04em; }
+      .od-hint { display: block; margin-top: .25rem; color: var(--dsw-alias-label-secondary); font-size: .8em; }
+      .od-media-ui .od-preview { --od-preview-height: clamp(8rem, 23vw, 15rem); padding: .7rem; border: 1px solid var(--dsw-alias-border-l1); border-radius: .85rem;
+        background: var(--dsw-alias-bg-layer-1); overflow: hidden; }
+      .od-media-ui .od-preview:only-child { --od-preview-height: clamp(14rem, 36vh, 23rem); }
+      .od-media-ui .od-preview[data-selected] { border-color: var(--dsw-alias-brand-primary); }
+      .od-preview figcaption { justify-content: space-between; padding: .1rem 0 .35rem; }
+      .od-media-ui .od-settings { padding: .6rem .75rem; margin-block: .7rem;
+        border: 1px solid var(--dsw-alias-border-l1); border-radius: .65rem; }
+      .od-settings > summary { color: var(--dsw-alias-label-secondary); font-size: .8em; cursor: pointer; }
+      .od-media-ui [role=status] { font-size: .88em; }
+      .od-media-ui [role=alert] { padding: .65rem .75rem; border: 1px solid var(--dsw-alias-border-l2);
+        border-radius: .6rem; font-size: .85em; }
+      @media (prefers-reduced-motion: reduce) { .od-media-ui .od-button { transition: none; } }
+      @media (max-width: 480px) {
+        dialog.od-media-ui { padding: .85rem !important; }
+        .od-media-ui .od-preview { padding: .55rem; }
+      }
+    `
     const libraryDefaults = { kind: 'all', selection: 'all', order: 'newest', status: 'all' }
     const submissionMessages = new Map([
       ['storage_busy', 'adoptBusy'], ['creation.unavailable', 'connectionUnavailable'],
@@ -217,12 +266,32 @@ window.__ModuleLoader__.load({
       ['submission_unknown', 'providerUnknown'],
     ])
 
+    function icon(name) {
+      const paths = {
+        create: 'm12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z',
+        library: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+        check: 'm5 12 4 4L19 6',
+      }
+      return h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': true, focusable: false, style: { flexShrink: 0 } }, h('path', { d: paths[name] }))
+    }
+
     function button(label, onClick, options = {}) {
-      const { primary, ...attrs } = options
+      const { primary, current, symbol, className, ...attrs } = options
       return h('button', {
         type: 'button', onClick, ...attrs,
-        style: { ...buttonStyle, ...(primary && { background: surface, fontWeight: 600 }) },
-      }, label)
+        className: ['od-button', primary && 'od-primary', className].filter(Boolean).join(' '),
+        'data-current': current || undefined,
+        style: { ...buttonStyle, ...((primary || current) && { fontWeight: 600 }) },
+      }, symbol && icon(symbol), label)
+    }
+
+    function dialogHeader(title, close, t, hint) {
+      return h('header', { className: 'od-dialog-header' },
+        h('div', null, h('span', { className: 'od-eyebrow' }, 'OpenDirector'),
+          h('h2', null, title), hint && h('small', { className: 'od-hint' }, hint)),
+        button(t('close'), close))
     }
 
     function mediaHref(project, asset, kind) {
@@ -379,9 +448,9 @@ window.__ModuleLoader__.load({
 
     function CreateMedia({ t }) {
       const [open, setOpen] = useState(null)
-      return h('div', { style: row },
-        button(t('create'), () => setOpen('creation'), { title: 'OpenDirector', 'aria-haspopup': 'dialog' }),
-        button(t('resume'), () => setOpen('library'), { 'aria-haspopup': 'dialog' }),
+      return h('div', { className: 'od-media-ui', style: row },
+        button(t('create'), () => setOpen('creation'), { primary: true, symbol: 'create', title: 'OpenDirector', 'aria-haspopup': 'dialog' }),
+        button(t('resume'), () => setOpen('library'), { symbol: 'library', 'aria-haspopup': 'dialog' }),
         open === 'library' && h(ProjectLibrary, { t, onClose: () => setOpen(null) }),
         open === 'creation' && h(GenerationDialog, { t, onClose: () => setOpen(null) }))
     }
@@ -493,13 +562,12 @@ window.__ModuleLoader__.load({
         }, ...options.map(([value, text]) => h('option', { key: value, value }, t(text))))
       }
       return h('dialog', {
+        className: 'od-media-ui',
         ref: dialog, onClose: event => { if (event.target === event.currentTarget) onClose() },
         'aria-label': t('resume'),
         style: dialogStyle,
       },
-      h('header', { style: { ...row, justifyContent: 'space-between' } },
-        h('strong', null, t('resume')),
-        button(t('close'), () => dialog.current.close())),
+      dialogHeader(t('resume'), () => dialog.current.close(), t, t('libraryHint')),
       h(PendingSubmissions, { t, onRecovered: setTask }),
       h('div', { style: { ...row, marginBlock: '.7rem' } },
         projects?.length > 0 && h('select', {
@@ -591,12 +659,12 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [projectId, pair, revision])
       return h('dialog', {
+        className: 'od-media-ui',
         ref: dialog, 'aria-label': t('compareImages'),
         onClose: event => { if (event.target === event.currentTarget) onClose() },
         style: { ...dialogStyle, width: 'min(80rem, calc(100vw - 2rem))' },
       },
-        h('header', { style: { ...row, justifyContent: 'space-between', marginBottom: '.7rem' } },
-          h('strong', null, t('compareImages')), button(t('close'), () => dialog.current.close(), { autoFocus: true })),
+        dialogHeader(t('compareImages'), () => dialog.current.close(), t),
         !value && !failed && h('p', { role: 'status' }, t('loading')),
         failed && h('div', null, h('p', { role: 'alert' }, t('comparisonUnavailable')),
           button(t('refresh'), () => setRevision(previous => previous + 1))),
@@ -924,11 +992,12 @@ window.__ModuleLoader__.load({
       })
       if (recoveredJob) return h(GenerationDialog, { existingJob: recoveredJob, t, onClose })
       return h('dialog', {
+        className: 'od-media-ui',
         ref: dialog, onClose: event => { if (event.target === event.currentTarget) { flushMediaDrafts(); onClose() } },
         'aria-label': title, style: dialogStyle,
       },
-        h('header', { style: { ...row, justifyContent: 'space-between' } },
-          h('strong', null, title), button(t('close'), () => dialog.current.close())),
+        dialogHeader(title, () => dialog.current.close(), t,
+          !existingJob && !source && !templateOf && !jobId ? t('createHint') : undefined),
         !existingJob && !restoringPending && !catalog && h('p', { role: 'status' }, t('loading')),
         !existingJob && !restoringPending && !locked && h('div', { style: row },
           restored && h('small', { role: 'status' }, t('draftRestored')),
@@ -940,7 +1009,10 @@ window.__ModuleLoader__.load({
         restoringPending && h(PendingSubmissions, { context: draftKey, t, onRecovered: setRecoveredJob }),
         restoringPending && !existingJob && button(t('startSeparateCreation'), () => setStartFresh(true)),
         !restoringPending && pending.length > 0 && !pendingDurable && h('p', { role: 'alert' }, t('pendingStorageUnavailable')),
-        !restoringPending && catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
+        !restoringPending && catalog && !catalog.error && h(jobId ? 'details' : 'div',
+          { className: jobId ? 'od-settings' : undefined },
+          jobId && h('summary', null, t('generationSettings')),
+          h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
           !source && !templateOf && field('chooseProject', h('select', {
             required: true, disabled: locked, value: form.projectId, onChange: event => update('projectId', event.target.value),
           }, h('option', { value: '' }, t('chooseProject')),
@@ -998,7 +1070,7 @@ window.__ModuleLoader__.load({
           })),
           (!locked || submitting || unknown) && button(t(submitLabel),
             undefined, { type: 'submit', primary: true,
-              disabled: submitting || (!unknown && (!model || projectUnavailable || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim())) })),
+              disabled: submitting || (!unknown && (!model || projectUnavailable || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim())) }))),
         templateOf?.canvasUrl && catalog?.error && canvasLink(templateOf.canvasUrl, t),
         result?.status === 'rejected' && h('p', { role: 'alert' }, t(submissionMessages.get(result.code) ?? 'failedToSubmit')),
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
@@ -1196,6 +1268,7 @@ window.__ModuleLoader__.load({
       const [status, setStatus] = useState('loading')
       useEffect(() => { dialog.current.showModal() }, [])
       return h('dialog', {
+        className: 'od-media-ui',
         ref: dialog, 'aria-label': t('viewOriginal'),
         onClose: event => { if (event.target === event.currentTarget) onClose() },
         onContextMenu: event => event.stopPropagation(),
@@ -1238,7 +1311,7 @@ window.__ModuleLoader__.load({
         (video || audio) && details?.durationSeconds
           && t('duration').replace('{seconds}', Number(details.durationSeconds.toFixed(2))),
       ].filter(Boolean)
-      const mediaStyle = { width: '100%', height: expanded ? 'clamp(14rem, 50vh, 36rem)' : 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
+      const mediaStyle = { width: '100%', height: expanded ? 'clamp(14rem, 50vh, 36rem)' : 'var(--od-preview-height)', display: 'block', objectFit: 'contain',
         borderRadius: '.55rem', background: surface }
       const onError = () => { setBuffering(false); setFailed(true) }
       const playbackEvents = {
@@ -1292,6 +1365,7 @@ window.__ModuleLoader__.load({
         { label: 'copyId', run: copyResult },
       ].filter(Boolean)
       return h('figure', {
+        className: 'od-media-ui od-preview', 'data-selected': selected || undefined,
         'data-opendirector-result': resultId,
         onContextMenu: resultId ? contextMenu : undefined,
         style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' },
@@ -1311,7 +1385,7 @@ window.__ModuleLoader__.load({
             video && button(t('continue'), () => setAction('continuation'), { 'aria-haspopup': 'dialog' }),
             !expanded && image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
             !expanded && image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
-            button(t(adoptLabel), adoption.adopt, { primary: true, disabled: pending || selected }),
+            button(t(adoptLabel), adoption.adopt, { primary: !selected, current: selected, symbol: selected ? 'check' : undefined, disabled: pending || selected }),
             button('···', event => {
               if (menu) closeMenu()
               else {
@@ -1337,7 +1411,7 @@ window.__ModuleLoader__.load({
 
     function canvasLink(url, t) {
       return h('a', { href: url, target: '_blank', rel: 'noopener noreferrer',
-        style: { ...buttonStyle, textDecoration: 'none', whiteSpace: 'nowrap' } }, `${t('canvas')} ↗`)
+        className: 'od-button', style: { ...buttonStyle, textDecoration: 'none', whiteSpace: 'nowrap' } }, `${t('canvas')} ↗`)
     }
 
     function MediaResults({ meta, t }) {
@@ -1345,7 +1419,7 @@ window.__ModuleLoader__.load({
       const kind = preview.kind ?? 'image'
       const heading = t(kind === 'video' ? 'videos' : kind === 'audio' ? 'audios' : 'images')
       const sourceKind = preview.sourceKind ?? kind
-      return h('section', { 'aria-label': heading, [`data-opendirector-${kind}-results`]: '',
+      return h('section', { className: 'od-media-ui', 'aria-label': heading, [`data-opendirector-${kind}-results`]: '',
         style: { display: 'grid', gap: '.75rem', padding: '.85rem 1rem', border, borderRadius: '.9rem' } },
         h('header', { style: { ...row, justifyContent: 'space-between' } },
           h('div', { style: { display: 'grid', gap: '.1rem' } },
@@ -1377,7 +1451,7 @@ window.__ModuleLoader__.load({
         }
       }
       if (!previews.size && !adoptions.size) return null
-      return h('div', { style: { display: 'grid', gap: '.65rem' } },
+      return h('div', { className: 'od-media-ui', style: { display: 'grid', gap: '.65rem' } },
         ...Array.from(previews, ([key, meta]) => h(MediaResults, { key, meta, t })),
         ...Array.from(adoptions, ([key, url]) => h('div', {
           key, 'data-opendirector-adoption': '', style: { ...row, justifyContent: 'space-between',
@@ -1388,6 +1462,12 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
+        ctx.effect(() => {
+          const style = document.createElement('style')
+          style.textContent = clientStyles
+          document.head.append(style)
+          return () => style.remove()
+        })
         ctx.effect(() => {
           window.addEventListener('pagehide', flushMediaDrafts)
           return () => { flushMediaDrafts(); window.removeEventListener('pagehide', flushMediaDrafts) }
