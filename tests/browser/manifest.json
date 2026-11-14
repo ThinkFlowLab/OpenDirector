@@ -227,6 +227,15 @@
       ]
     },
     {
+      "file": "pinned_frame_slots.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended",
+        "production"
+      ],
+      "note": "Fixed (pinned) image assets without canvas nodes in first/last frame slots: display, swap, clear, mode round trip and reload."
+    },
+    {
       "file": "generation_feedback.mjs",
       "previewSafe": true,
       "lanes": [

@@ -331,9 +331,10 @@ python -m pytest tests/test_minimax_video.py tests/test_vllm_omni_h3.py tests/te
 node --test tests/creationParameters.test.ts
 node tests/browser/minimax_h3.mjs
 node tests/browser/first_last_frame_connections.mjs
+node tests/browser/pinned_frame_slots.mjs
 ```
 
-浏览器用例沿用本文的隔离 API／Vite 环境，只验证模型配置、真实图片、首尾帧引用、槽位修改及重载，不调用官方服务。`first_last_frame_connections.mjs` 不操作首尾帧选择器，只在画布上依次拖线连接两张图片，核对声明尾帧的模型自动填入首帧与尾帧、项目保存对应的引用角色，并在重载后保持。Python 用例使用真实素材和 HTTP 替身验证协议、冻结输入、恢复不重复提交、错误回执和无鉴权 CDN 下载，不能代替真实账户生成验证。
+浏览器用例沿用本文的隔离 API／Vite 环境，只验证模型配置、真实图片、首尾帧引用、槽位修改及重载，不调用官方服务。`first_last_frame_connections.mjs` 不操作首尾帧选择器，只在画布上依次拖线连接两张图片，核对声明尾帧的模型自动填入首帧与尾帧、项目保存对应的引用角色，并在重载后保持。`pinned_frame_slots.mjs` 用两张未上画布、仅登记为素材的图片作为固定首尾帧，核对槽位显示与缩略图、互换、清空与重选、参考模式往返及重载后保存的引用角色一致（#121）。Python 用例使用真实素材和 HTTP 替身验证协议、冻结输入、恢复不重复提交、错误回执和无鉴权 CDN 下载，不能代替真实账户生成验证。
 
 ### 提供商与模型设置
 

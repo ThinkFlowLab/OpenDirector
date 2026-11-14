@@ -133,6 +133,7 @@ export const generation = {
   "generation.frame.noUse": "No {label}",
   "generation.frame.missingOriginal":
     "The original media is not connected. Choose it again.",
+  "generation.frame.pinnedTag": " (fixed asset)",
   "generation.frame.unavailableTag": " (media unavailable)",
   "generation.frame.addImage": "Add image reference…",
   "generation.reference.add": "Add reference",

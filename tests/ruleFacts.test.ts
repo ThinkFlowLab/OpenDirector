@@ -112,13 +112,55 @@ test("one function assigns persisted reference roles from canvas slots", () => {
     }),
     "first_frame",
   );
+  // A fixed asset takes a frame role only from the slot that names it; its
+  // stored role alone no longer keeps it there after the slot was cleared.
+  const pinned = {
+    id: "pinned-ref",
+    binding: "pinned",
+    role: "last_frame",
+    source: { assetId: "asset" },
+  };
   assert.equal(
     canvasReferenceRole(
-      { videoMode: "first-last" },
+      { videoMode: "first-last", lastFrameReferenceId: "pinned-ref" },
       "image",
-      { binding: "pinned", role: "last_frame", source: { assetId: "asset" } },
+      pinned,
     ),
     "last_frame",
+  );
+  assert.equal(
+    canvasReferenceRole({ videoMode: "first-last" }, "image", pinned),
+    "reference",
+  );
+  assert.equal(
+    canvasReferenceRole(
+      { videoMode: "first-last", firstFrameReferenceId: "pinned-ref" },
+      "image",
+      pinned,
+    ),
+    "first_frame",
+  );
+  assert.equal(
+    canvasReferenceRole(
+      {
+        videoMode: "first-last",
+        firstFrameNodeId: "first",
+        firstFrameReferenceId: "pinned-ref",
+      },
+      "image",
+      pinned,
+    ),
+    "reference",
+    "a node in the same slot takes precedence",
+  );
+  assert.equal(
+    canvasReferenceRole(
+      { videoMode: "reference", firstFrameReferenceId: "pinned-ref" },
+      "image",
+      pinned,
+    ),
+    "reference",
+    "outside first-last mode a frame is an ordinary reference",
   );
   assert.equal(
     canvasReferenceRole(settings, "text", {

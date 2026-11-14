@@ -124,6 +124,7 @@ export const generation = {
   "generation.frame.limitTwo": "{label}（最多 2 张图片，请先断开多余连线）",
   "generation.frame.noUse": "不使用{label}",
   "generation.frame.missingOriginal": "原素材未连接，请重选",
+  "generation.frame.pinnedTag": "（固定素材）",
   "generation.frame.unavailableTag": "（素材不可用）",
   "generation.frame.addImage": "添加图片参考…",
   "generation.reference.add": "添加参考素材",

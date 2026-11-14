@@ -308,11 +308,16 @@ export function canvasReferenceRole(
   settings:
     | Pick<
         GenerationSettings,
-        "videoMode" | "firstFrameNodeId" | "lastFrameNodeId"
+        | "videoMode"
+        | "firstFrameNodeId"
+        | "lastFrameNodeId"
+        | "firstFrameReferenceId"
+        | "lastFrameReferenceId"
       >
     | undefined,
   sourceKind: string | undefined,
   ref: {
+    id?: string;
     binding: string;
     role?: string | null;
     source: { id?: string } | { assetId: string };
@@ -322,25 +327,23 @@ export function canvasReferenceRole(
   if (settings?.videoMode === "continuation" && sourceKind === "video") {
     return "continuation";
   }
-  if (
-    settings?.videoMode === "first-last" &&
-    ((ref.binding === "follow_current" &&
-      sourceId === settings.firstFrameNodeId) ||
-      (ref.binding === "pinned" &&
-        ref.role === "first_frame" &&
-        !settings.firstFrameNodeId))
-  ) {
-    return "first_frame";
-  }
-  if (
-    settings?.videoMode === "first-last" &&
-    ((ref.binding === "follow_current" &&
-      sourceId === settings.lastFrameNodeId) ||
-      (ref.binding === "pinned" &&
-        ref.role === "last_frame" &&
-        !settings.lastFrameNodeId))
-  ) {
-    return "last_frame";
+  if (settings?.videoMode !== "first-last") return "reference";
+  // Each slot names its frame: a canvas node for a following reference, or the
+  // reference itself for a fixed asset. The stored role does not decide, so a
+  // cleared or swapped slot changes the persisted role as well.
+  for (const [role, node, reference] of [
+    ["first_frame", settings.firstFrameNodeId, settings.firstFrameReferenceId],
+    ["last_frame", settings.lastFrameNodeId, settings.lastFrameReferenceId],
+  ] as const) {
+    if (
+      ref.binding === "follow_current"
+        ? sourceId !== undefined && sourceId === node
+        : ref.binding === "pinned" &&
+          ref.id !== undefined &&
+          ref.id === reference &&
+          !node
+    )
+      return role;
   }
   return "reference";
 }
@@ -650,7 +653,10 @@ export function backendBlocker(
     )
       return tNow("errors.rules.videoMode");
     if (settings.videoMode === "first-last") {
-      if (settings.lastFrameNodeId && !rules.frameRoles?.includes("last_frame"))
+      if (
+        (settings.lastFrameNodeId || settings.lastFrameReferenceId) &&
+        !rules.frameRoles?.includes("last_frame")
+      )
         return tNow("errors.rules.lastFrame");
       if (
         settings.lastFrameNodeId &&

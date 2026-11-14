@@ -307,7 +307,13 @@ export function generationBlocker(
     )
       return t("generation.issue.videoMode");
     if (settings.videoMode === "first-last") {
-      if (settings.lastFrameNodeId && !settings.firstFrameNodeId)
+      const hasFirst = Boolean(
+        settings.firstFrameNodeId || settings.firstFrameReferenceId,
+      );
+      if (
+        (settings.lastFrameNodeId || settings.lastFrameReferenceId) &&
+        !hasFirst
+      )
         return t("generation.issue.lastNeedsFirst");
       for (const [id, label] of [
         [settings.firstFrameNodeId, t("generation.frame.first")],
@@ -323,7 +329,7 @@ export function generationBlocker(
         )
           return t("generation.issue.frameMissing", { label });
       }
-      if (!settings.prompt.trim() && !settings.firstFrameNodeId)
+      if (!settings.prompt.trim() && !hasFirst)
         return t("generation.issue.promptOrFirst");
       return null;
     }

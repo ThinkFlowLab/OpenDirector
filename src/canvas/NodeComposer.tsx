@@ -50,7 +50,16 @@ import "./nodes.css";
 import {
   frameImageLimitIssue,
   frameImageLimitMessage,
+  fillConnectedFrames,
+  fillPinnedFrames,
+  frameSlotPatch,
+  frameSlotValue,
+  modelFrameCapabilities,
+  PINNED_FRAME_PREFIX,
+  pinnedFrameCandidates,
+  swapFramePatch,
 } from "./frameReferences.ts";
+import { creationClient } from "../backend/creationClient.ts";
 
 export interface NodeComposerProps {
   selectedNode: CanvasNode | null;
@@ -102,6 +111,40 @@ export function NodeComposer({
   useEffect(() => {
     setPanel(null);
   }, [selectedNode?.id, running]);
+  // Fixed images have no canvas node to borrow a thumbnail from.
+  const pinnedFrames = pinnedFrameCandidates(selectedNode?.data.promptContent, [
+    ...(referenceControls?.pinned ?? []),
+    ...(referenceControls?.assets ?? []),
+  ]);
+  const pinnedFrameKey = JSON.stringify(
+    [...new Set(pinnedFrames.map((frame) => frame.assetId))].sort(),
+  );
+  const projectId = referenceControls?.projectId;
+  const [pinnedPreviews, setPinnedPreviews] = useState<Record<string, string>>(
+    {},
+  );
+  useEffect(() => {
+    let active = true;
+    if (!projectId) return;
+    const client = creationClient(projectId);
+    void Promise.all(
+      (JSON.parse(pinnedFrameKey) as string[]).map(async (id) => {
+        try {
+          return [id, await client.mediaUrl(id)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((values) => {
+      if (active)
+        setPinnedPreviews(
+          Object.fromEntries(values.filter((value) => value !== null)),
+        );
+    });
+    return () => {
+      active = false;
+    };
+  }, [projectId, pinnedFrameKey]);
 
   if (
     !selectedNode ||
@@ -235,7 +278,20 @@ export function NodeComposer({
     updateSettings(selected);
   };
   const updateSettings = (patch: Partial<ComposerSettings>) => {
-    const next = changeGenerationSettings(settings, patch);
+    let next = changeGenerationSettings(settings, patch);
+    if (
+      mode === "video" &&
+      next.videoMode === "first-last" &&
+      settings.videoMode !== "first-last"
+    ) {
+      // Connected images keep their priority; fixed images fill what is left.
+      const capabilities = modelFrameCapabilities(backendModels);
+      next = fillPinnedFrames(
+        fillConnectedFrames(next, frameCandidates, capabilities),
+        pinnedFrames,
+        capabilities,
+      );
+    }
     const target = backendModel(next, backendModels);
     onUpdate({
       settings: target
@@ -268,36 +324,54 @@ export function NodeComposer({
           <div className="cw-frame-slots" aria-label={t("generation.frame.title")}>
             {(
               [
-                ["firstFrameNodeId", t("generation.frame.first")],
-                ["lastFrameNodeId", t("generation.frame.last")],
+                ["first", t("generation.frame.first")],
+                ["last", t("generation.frame.last")],
               ] as const
-            ).map(([field, label], index) => {
-              const id = settings[field];
-              const node = frameCandidates.find((item) => item.id === id);
+            ).map(([slot, label], index) => {
+              const value = frameSlotValue(settings, slot);
+              const pinned = value.startsWith(PINNED_FRAME_PREFIX)
+                ? pinnedFrames.find(
+                    (frame) =>
+                      PINNED_FRAME_PREFIX + frame.referenceId === value,
+                  )
+                : undefined;
+              const node = pinned
+                ? undefined
+                : frameCandidates.find((item) => item.id === value);
+              const src = pinned
+                ? pinnedPreviews[pinned.assetId]
+                : node?.data.assetState !== "missing"
+                  ? node?.data.src
+                  : undefined;
+              const title = pinned?.name ?? node?.data.title;
               const blocked =
                 backend &&
-                field === "lastFrameNodeId" &&
+                slot === "last" &&
                 !config?.inputRules.frameRoles?.includes("last_frame");
               const unavailable = Boolean(
-                id && (!node?.data.src || node.data.assetState === "missing"),
+                value &&
+                  (pinned
+                    ? false
+                    : !node?.data.src || node.data.assetState === "missing"),
               );
               const offCanvas =
-                !!id &&
+                !!value &&
+                !pinned &&
                 !!referenceControls &&
                 !referenceControls.visibleNodes.some(
-                  (source) => source.id === id,
+                  (source) => source.id === value,
                 );
               return (
                 <div
-                  key={field}
-                  className={`cw-frame-slot${index === 1 ? " cw-frame-last" : ""}${unavailable ? " cw-frame-unavailable" : ""}${blocked && !id ? " cw-frame-disabled" : ""}${offCanvas ? " is-off-canvas" : ""}`}
+                  key={slot}
+                  className={`cw-frame-slot${index === 1 ? " cw-frame-last" : ""}${unavailable ? " cw-frame-unavailable" : ""}${blocked && !value ? " cw-frame-disabled" : ""}${offCanvas ? " is-off-canvas" : ""}`}
                   title={offCanvas ? t("generation.frame.offCanvas") : undefined}
                 >
                   <span className="cw-frame-thumbnail">
-                    {node?.data.src && node.data.assetState !== "missing" ? (
+                    {src ? (
                       <img
-                        src={node.data.src}
-                        alt={`${label}：${node.data.title}`}
+                        src={src}
+                        alt={`${label}：${title}`}
                         draggable={false}
                       />
                     ) : (
@@ -306,31 +380,31 @@ export function NodeComposer({
                   </span>
                   <select
                     aria-label={t("generation.frame.select", { label })}
-                    value={id ?? ""}
-                    disabled={running || (blocked && !id)}
+                    value={value}
+                    disabled={running || (blocked && !value)}
                     title={
                       blocked
                         ? t("generation.frame.onlyFirst")
                         : unavailable
                           ? t("generation.frame.sourceUnavailable", { label })
-                          : node
+                          : title
                             ? t("generation.frame.chooseImageTitle", {
                                 label,
-                                title: node.data.title,
+                                title,
                               })
                             : t("generation.frame.chooseImage", { label })
                     }
                     onChange={(event) =>
                       event.target.value === "__add_reference__"
                         ? onPickReference()
-                        : updateSettings({
-                            [field]: event.target.value || undefined,
-                          })
+                        : updateSettings(
+                            frameSlotPatch(slot, event.target.value),
+                          )
                     }
                   >
                     <option value="">{t("generation.frame.noUse")}</option>
-                    {id && !node && (
-                      <option value={id}>{t("generation.frame.missingOriginal")}</option>
+                    {value && !node && !pinned && (
+                      <option value={value}>{t("generation.frame.missingOriginal")}</option>
                     )}
                     {frameCandidates.map((item) => (
                       <option
@@ -348,6 +422,16 @@ export function NodeComposer({
                           : ""}
                       </option>
                     ))}
+                    {pinnedFrames.map((frame) => (
+                      <option
+                        key={frame.referenceId}
+                        value={PINNED_FRAME_PREFIX + frame.referenceId}
+                        disabled={blocked}
+                      >
+                        {frame.name}
+                        {t("generation.frame.pinnedTag")}
+                      </option>
+                    ))}
                     <option value="__add_reference__" disabled={blocked}>
                       {t("generation.frame.addImage")}
                     </option>
@@ -362,24 +446,22 @@ export function NodeComposer({
               label={t("generation.frame.swapHint")}
               disabled={
                 running ||
-                !settings.firstFrameNodeId ||
-                !settings.lastFrameNodeId ||
-                [settings.firstFrameNodeId, settings.lastFrameNodeId].some(
-                  (id) =>
-                    !frameCandidates.some(
-                      (node) =>
-                        node.id === id &&
-                        node.data.src &&
-                        node.data.assetState !== "missing",
-                    ),
-                )
-              }
-              onClick={() =>
-                updateSettings({
-                  firstFrameNodeId: settings.lastFrameNodeId,
-                  lastFrameNodeId: settings.firstFrameNodeId,
+                (["first", "last"] as const).some((slot) => {
+                  const value = frameSlotValue(settings, slot);
+                  return value.startsWith(PINNED_FRAME_PREFIX)
+                    ? !pinnedFrames.some(
+                        (frame) =>
+                          PINNED_FRAME_PREFIX + frame.referenceId === value,
+                      )
+                    : !frameCandidates.some(
+                        (node) =>
+                          node.id === value &&
+                          node.data.src &&
+                          node.data.assetState !== "missing",
+                      );
                 })
               }
+              onClick={() => updateSettings(swapFramePatch(settings))}
             >
               <CanvasIcon name="swapHorizontal" size={16} />
             </TooltipButton>

@@ -807,8 +807,7 @@ export class CreationProjection {
             const frames = currentReferences.filter(
               (ref) =>
                 ref.targetSpecId === spec.id &&
-                (ref.role === "first_frame" || ref.role === "last_frame") &&
-                ref.binding === "follow_current",
+                (ref.role === "first_frame" || ref.role === "last_frame"),
             );
             for (const frame of frames)
               if (frame.binding === "follow_current")
@@ -817,6 +816,20 @@ export class CreationProjection {
                     ? "lastFrameNodeId"
                     : "firstFrameNodeId"
                 ] = frame.source.id;
+            // A fixed asset fills its slot by reference ID; a following node
+            // in the same slot takes precedence, as when the role is saved.
+            for (const frame of frames) {
+              const [nodeField, referenceField] =
+                frame.role === "last_frame"
+                  ? (["lastFrameNodeId", "lastFrameReferenceId"] as const)
+                  : (["firstFrameNodeId", "firstFrameReferenceId"] as const);
+              if (
+                frame.binding === "pinned" &&
+                !node.data.settings[nodeField] &&
+                !node.data.settings[referenceField]
+              )
+                node.data.settings[referenceField] = frame.id;
+            }
           }
           const selected = snapshot.results.find(
             (r) => r.id === spec.currentResultId,

@@ -46,6 +46,8 @@ const SETTINGS_KEYS = [
   "videoMode",
   "firstFrameNodeId",
   "lastFrameNodeId",
+  "firstFrameReferenceId",
+  "lastFrameReferenceId",
   "frameSlotsInitialized",
   "audioCreationType",
   "audioMode",
@@ -112,6 +114,10 @@ export function isGenerationSettings(
     (value.firstFrameNodeId === undefined ||
       nonempty(value.firstFrameNodeId)) &&
     (value.lastFrameNodeId === undefined || nonempty(value.lastFrameNodeId)) &&
+    (value.firstFrameReferenceId === undefined ||
+      nonempty(value.firstFrameReferenceId)) &&
+    (value.lastFrameReferenceId === undefined ||
+      nonempty(value.lastFrameReferenceId)) &&
     (value.frameSlotsInitialized === undefined ||
       typeof value.frameSlotsInitialized === "boolean") &&
     (value.audioCreationType === undefined ||

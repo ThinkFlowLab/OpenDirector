@@ -62,6 +62,10 @@ export interface GenerationSettings {
   videoMode?: "reference" | "first-last" | "continuation";
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
+  /** A slot may instead hold a fixed (pinned) asset reference, by reference ID.
+   * A slot holds either a node or a reference, never both. */
+  firstFrameReferenceId?: string;
+  lastFrameReferenceId?: string;
   frameSlotsInitialized?: boolean;
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
@@ -816,9 +820,12 @@ function applyCanvasCommand(
         if (
           command.patch.data?.settings &&
           (Object.hasOwn(command.patch.data.settings, "firstFrameNodeId") ||
-            Object.hasOwn(command.patch.data.settings, "lastFrameNodeId"))
+            Object.hasOwn(command.patch.data.settings, "lastFrameNodeId") ||
+            Object.hasOwn(command.patch.data.settings, "firstFrameReferenceId") ||
+            Object.hasOwn(command.patch.data.settings, "lastFrameReferenceId"))
         )
           settings = { ...settings, frameSlotsInitialized: true };
+        settings = pruneFrameReferences(settings, data.promptContent);
         const sources = new Set(
           document.edges
             .filter(
@@ -1181,6 +1188,31 @@ function applyCanvasCommand(
         : { ...node, data: { ...node.data, settings } };
     }),
   };
+}
+
+/** A fixed-asset frame slot names a pinned reference in the prompt. Removing
+ * that reference from the prompt removes it from the slot as well, so the slot
+ * never shows a frame the save would no longer send. */
+export function pruneFrameReferences(
+  settings: GenerationSettings,
+  content: CanvasNodeData["promptContent"],
+): GenerationSettings {
+  if (!content) return settings;
+  const pinned = new Set(
+    content.flatMap((part) =>
+      part.type === "reference" && part.binding === "asset" && part.referenceId
+        ? [part.referenceId]
+        : [],
+    ),
+  );
+  let next = settings;
+  for (const key of ["firstFrameReferenceId", "lastFrameReferenceId"] as const) {
+    const id = settings[key];
+    if (id === undefined || pinned.has(id)) continue;
+    if (next === settings) next = { ...settings };
+    delete next[key];
+  }
+  return next;
 }
 
 /** Node references are identities, unlike retained timeline/subject source snapshots. */

@@ -5,6 +5,7 @@ import type {
 } from "./model.ts";
 import { tNow } from "../i18n/messages.ts";
 import type { ModelConfig } from "../backend/rules.ts";
+import { assetKind, type ReferenceAsset } from "./chatReferenceContent.ts";
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 
 export const FRAME_IMAGE_LIMIT = RULE_FACTS.frameImageLimit;
@@ -86,6 +87,15 @@ export function fillConnectedFrames(
     )
       continue;
     if (next[field]) continue;
+    // A slot already holding a fixed asset keeps it.
+    if (
+      next[
+        field === "firstFrameNodeId"
+          ? "firstFrameReferenceId"
+          : "lastFrameReferenceId"
+      ]
+    )
+      continue;
     const image = images.find(
       (node) =>
         node.id !== next.firstFrameNodeId && node.id !== next.lastFrameNodeId,
@@ -129,4 +139,99 @@ export function initializeConnectedFrames(
     return { ...node, data: { ...node.data, settings: initialized } };
   });
   return changed ? { ...document, nodes } : document;
+}
+
+export type FrameSlot = "first" | "last";
+const SLOT_FIELDS = {
+  first: ["firstFrameNodeId", "firstFrameReferenceId"],
+  last: ["lastFrameNodeId", "lastFrameReferenceId"],
+} as const;
+/** Select value prefix for a fixed asset; node IDs never take this form. */
+export const PINNED_FRAME_PREFIX = "pinned:";
+
+/** A fixed image in the prompt that a frame slot can use. */
+export interface PinnedFrameCandidate {
+  referenceId: string;
+  assetId: string;
+  name: string;
+}
+
+/** Fixed image references in a generation prompt, in prompt order. */
+export function pinnedFrameCandidates(
+  content: CanvasNode["data"]["promptContent"],
+  assets: readonly ReferenceAsset[] = [],
+): PinnedFrameCandidate[] {
+  const seen = new Set<string>();
+  return (content ?? []).flatMap((part) => {
+    if (
+      part.type !== "reference" ||
+      part.binding !== "asset" ||
+      !part.referenceId ||
+      seen.has(part.referenceId)
+    )
+      return [];
+    const asset =
+      assets.find((item) => item.referenceId === part.referenceId) ??
+      assets.find((item) => item.id === part.assetId);
+    if (!asset || assetKind(asset) !== "image") return [];
+    seen.add(part.referenceId);
+    return [
+      { referenceId: part.referenceId, assetId: part.assetId, name: part.name },
+    ];
+  });
+}
+
+/** The select value a slot currently shows: a node ID or a prefixed reference. */
+export function frameSlotValue(settings: GenerationSettings, slot: FrameSlot) {
+  const [node, reference] = SLOT_FIELDS[slot];
+  return (
+    settings[node] ??
+    (settings[reference] ? PINNED_FRAME_PREFIX + settings[reference] : "")
+  );
+}
+
+/** Settings patch for choosing a slot value; a slot holds one kind of frame. */
+export function frameSlotPatch(
+  slot: FrameSlot,
+  value: string,
+): Partial<GenerationSettings> {
+  const [node, reference] = SLOT_FIELDS[slot];
+  return value.startsWith(PINNED_FRAME_PREFIX)
+    ? { [node]: undefined, [reference]: value.slice(PINNED_FRAME_PREFIX.length) }
+    : { [node]: value || undefined, [reference]: undefined };
+}
+
+/** Exchange the first and last frame, whichever kind each slot holds. */
+export function swapFramePatch(
+  settings: GenerationSettings,
+): Partial<GenerationSettings> {
+  return {
+    firstFrameNodeId: settings.lastFrameNodeId,
+    lastFrameNodeId: settings.firstFrameNodeId,
+    firstFrameReferenceId: settings.lastFrameReferenceId,
+    lastFrameReferenceId: settings.firstFrameReferenceId,
+  };
+}
+
+/** Mode-change default for fixed images, after connected nodes had their turn:
+ * entering first-last fills each still-empty slot with the next fixed image in
+ * prompt order, as connected images do. Rendering never calls this, so a slot
+ * the user cleared stays empty until the mode changes again. */
+export function fillPinnedFrames(
+  settings: GenerationSettings,
+  candidates: readonly PinnedFrameCandidate[],
+  capabilities?: FrameCapabilities,
+): GenerationSettings {
+  if (settings.mode !== "video" || settings.videoMode !== "first-last")
+    return settings;
+  let next = settings;
+  for (const slot of ["first", "last"] as const) {
+    const [node, reference] = SLOT_FIELDS[slot];
+    if (slot === "last" && !supportsLastFrame(settings, capabilities)) continue;
+    if (next[node] || next[reference]) continue;
+    const used = new Set([next.firstFrameReferenceId, next.lastFrameReferenceId]);
+    const candidate = candidates.find((item) => !used.has(item.referenceId));
+    if (candidate) next = { ...next, [reference]: candidate.referenceId };
+  }
+  return next;
 }
