@@ -525,13 +525,13 @@ export function backendBlocker(
     return tNow("errors.rules.transcriptionModel");
   if (!isGenerationModel(config))
     return tNow("errors.rules.segmentationModel");
-  const transmitted = backendReferences(settings, incoming, config);
-  const imageCount = transmitted.filter((ref) => ref.node.data.kind === "image").length;
+  const references = backendReferences(settings, [...incoming, ...pinned], config);
+  const imageCount = references.filter((ref) => ref.node.data.kind === "image").length;
   const profile = settings.mode === "audio" ? (isMusicModel(config) ? "lyrics_to_music" : "text_to_speech")
     : settings.mode === "image" ? (imageCount > 1 ? "images_to_image" : imageCount === 1 ? "image_to_image" : "text_to_image")
-    : transmitted.some((ref) => ref.role === "continuation") ? "video_continuation"
-    : transmitted.some((ref) => ref.node.data.kind === "video") ? "video_to_video"
-    : transmitted.some((ref) => ref.node.data.kind === "image") ? "image_to_video" : "text_to_video";
+    : references.some((ref) => ref.role === "continuation") ? "video_continuation"
+    : references.some((ref) => ref.node.data.kind === "video") ? "video_to_video"
+    : references.some((ref) => ref.node.data.kind === "image") ? "image_to_video" : "text_to_video";
   const capabilityIssue = availabilityBlocker(config, profile);
   if (capabilityIssue) return capabilityIssue;
   if (!settings.prompt.trim())
@@ -625,7 +625,6 @@ export function backendBlocker(
     }).includes(false)
   )
     return tNow("errors.rules.audioDisable");
-  const references = backendReferences(settings, [...incoming, ...pinned], config);
   if (settings.mode === "video") {
     const durations = backendDurations(config);
     if (durations.length && !durations.includes(settings.durationSeconds))

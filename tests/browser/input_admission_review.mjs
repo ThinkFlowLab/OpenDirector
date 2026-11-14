@@ -67,7 +67,10 @@ const service = createServer(async (request, response) => {
     const fields = {}, files = [];
     for (const [name, value] of form) {
       if (typeof value === "string") fields[name] = value;
-      else files.push({ name, size: value.size });
+      else {
+        const data = Buffer.from(await value.arrayBuffer());
+        files.push({ name, size: value.size, sourceIndex: pictures.findIndex((picture) => picture.equals(data)) });
+      }
     }
     posts.push({ fields, files });
     response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
@@ -120,10 +123,16 @@ try {
       await until(() => call(path), (s) => s.canvasItems.length === index + 1, "uploaded image");
       await saved.waitFor();
     }
-    const sources = (await call(path)).canvasItems.map((item) => item.id);
+    const uploaded = await call(path);
+    const sources = uploaded.canvasItems.map((item) => item.id);
+    const sourceAssets = sources.map((id) => uploaded.assets.find((asset) =>
+      asset.id === uploaded.canvasItems.find((item) => item.id === id).binding.objectRef.assetId));
+    assert.ok(sourceAssets.every(Boolean));
+    const cases = [{ count: 1, binding: "pinned" }, { count: 3, binding: "pinned" },
+      { count: 2, binding: "pinned" }, { count: 2, binding: "mixed" }, { count: 2, binding: "follow" }];
     const nodes = [];
-    for (const count of [1, 2, 3]) {
-      nodes.push(await page.evaluate(async ({ projectId, configId, sources, count }) => {
+    for (const [index, scenario] of cases.entries()) {
+      nodes.push(await page.evaluate(async ({ projectId, configId, sources, sourceAssets, index, scenario }) => {
         const { creationClient } = await import("/src/backend/creationClient.ts");
         const client = creationClient(projectId);
         await client.refresh();
@@ -131,41 +140,74 @@ try {
         const receipt = await client.command("canvas.createGeneration", {
           spec: { id: specId, projectId, kind: "image", purpose: "generation", modelConfigId: configId,
             prompt: "Combine these images", parameters: {} },
-          item: { id: itemId, projectId, kind: "image", position: { x: count * 320, y: 500 },
+          item: { id: itemId, projectId, kind: "image", position: { x: index * 320, y: 500 },
             binding: { role: "generation", objectRef: { id: specId } } },
-          references: sources.slice(0, count).map((sourceId, order) => ({ id: crypto.randomUUID(), projectId,
-            targetSpecId: specId, binding: "follow_current", source: { id: sourceId }, role: "reference", order })),
+          references: sources.slice(0, scenario.count).map((sourceId, order) => {
+            const follow = scenario.binding === "follow" || (scenario.binding === "mixed" && order === 0);
+            const asset = sourceAssets[order];
+            return { id: crypto.randomUUID(), projectId, targetSpecId: specId, role: "reference", order,
+              binding: follow ? "follow_current" : "pinned",
+              source: follow ? { id: sourceId } : {
+                assetId: asset.id, revision: asset.revision, fingerprint: asset.fingerprint, kind: "image" } };
+          }),
         });
         if (receipt.status !== "applied") throw Error(JSON.stringify(receipt));
         return { specId, itemId };
-      }, { projectId, configId: configs[0].id, sources, count }));
+      }, { projectId, configId: configs[0].id, sources, sourceAssets, index, scenario }));
     }
+    // Reopening must retain pinned assets and their capability precheck.
+    await page.reload();
+    await saved.waitFor();
     const observed = await call("/api/model-configs/availability", { configIds: configs.map((c) => c.id), manual: true });
     const imageOperations = observed.models.find((m) => m.configId === configs[0].id).operations;
     assert.equal(imageOperations.find((o) => o.profile === "image_to_image").status, "unavailable");
     assert.equal(imageOperations.find((o) => o.profile === "images_to_image").status, "available");
     const composer = page.locator(".cw-generation-composer");
     const postsBefore = posts.length;
-    for (const index of [0, 2, 1]) {
+    let acceptedImages = 0;
+    for (const [index, scenario] of cases.entries()) {
       await page.locator(".cw-workspace").focus();
       await page.keyboard.press("Shift+1");
       await page.locator(`.react-flow__node[data-id="${nodes[index].itemId}"]`).click();
       await composer.waitFor();
       const run = composer.locator("button.cw-run-button");
-      await until(() => run.isEnabled(), (enabled) => enabled === (index === 1), "image count admission");
+      await until(() => run.isEnabled(), (enabled) => enabled === (scenario.count === 2),
+        `${scenario.binding} ${scenario.count}-image admission`);
       assert.match(await composer.innerText(), /Combine these images/);
-      if (index !== 1) {
+      if (scenario.count !== 2) {
+        await run.hover();
+        const tooltip = page.getByRole("tooltip");
+        await tooltip.waitFor();
+        assert.match(await tooltip.innerText(), scenario.count === 1
+          ? (en ? /Add the required inputs/ : /请补充必要输入/)
+          : (en ? /Up to 2 images; 3 added/ : /最多支持 2 张图片，当前为 3 张/));
         assert.equal((await call(path)).jobs.length, 0);
         assert.equal(posts.length, postsBefore);
-      } else await run.click();
+      } else {
+        await run.click();
+        const result = await until(() => call(path), (s) => s.jobs.some((j) =>
+          j.inputSnapshot.spec.id === nodes[index].specId && j.status === "succeeded"), "image result");
+        acceptedImages++;
+        assert.equal(posts.length, postsBefore + acceptedImages);
+        assert.deepEqual(posts.at(-1).files.map((file) => file.sourceIndex), [0, 1]);
+        const job = result.jobs.find((j) => j.inputSnapshot.spec.id === nodes[index].specId);
+        assert.deepEqual(job.inputSnapshot.references.map((ref) => ref.asset.assetId), sourceAssets.slice(0, 2).map((a) => a.id));
+        assert.equal(job.inputSnapshot.model.modelId, "review-images");
+        assert.equal(job.technicalCheck.status, "passed");
+      }
+      if (process.env.CREATION_SCREENSHOTS && [0, 2].includes(index)) {
+        await mkdir(process.env.CREATION_SCREENSHOTS, { recursive: true });
+        await page.screenshot({ path: join(process.env.CREATION_SCREENSHOTS,
+          `pinned-${scenario.count}-${locale}.png`) });
+      }
     }
-    const snapshot = await until(() => call(path), (s) => s.jobs.some((j) => j.status === "succeeded"), "image result");
-    assert.equal(posts.length, postsBefore + 1);
-    assert.equal(posts.at(-1).files.length, 2);
-    assert.equal(snapshot.jobs.length, 1);
-    assert.equal(snapshot.jobs[0].inputSnapshot.references.length, 2);
-    assert.equal(snapshot.jobs[0].inputSnapshot.model.modelId, "review-images");
-    assert.equal(snapshot.jobs[0].technicalCheck.status, "passed");
+    await page.reload();
+    await saved.waitFor();
+    const snapshot = await call(path);
+    assert.equal(snapshot.jobs.length, acceptedImages);
+    assert.equal(posts.length, postsBefore + acceptedImages);
+    assert.equal(snapshot.generationSpecs.filter((spec) => spec.prompt === "Combine these images" &&
+      spec.modelConfigId === configs[0].id).length, cases.length);
     const panel = page.getByRole("complementary", { name: en ? "AI chat" : "AI 对话", exact: true });
     if (!(await panel.isVisible()))
       await page.getByRole("button", { name: en ? "Chat with AI" : "与 AI 对话", exact: true }).click();
@@ -197,7 +239,8 @@ try {
     assert.equal(accepted.messages[0].text, before.draft);
     assert.equal((await call("/api/creation-test-health")).assistantContexts.length, contexts + 1);
     assert.deepEqual(errors, []);
-    evidence.push({ locale, imageJobs: 1, uploadedImages: 2, rejectedAssistantTurns: 0, acceptedAssistantTurns: 1 });
+    evidence.push({ locale, cases, imageJobs: acceptedImages, uploadedImagesPerJob: 2,
+      reopenedJobs: snapshot.jobs.length, rejectedAssistantTurns: 0, acceptedAssistantTurns: 1 });
     await page.close();
   }
   console.log(JSON.stringify({ passed: true, evidence, posts }));

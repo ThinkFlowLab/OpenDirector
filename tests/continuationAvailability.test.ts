@@ -46,10 +46,14 @@ for (const locale of ["en-US", "zh-CN"] as const) {
       const image = createNode("image", undefined, { src: "data:image/png;base64,AA==", assetState: "ready" });
       assert.notEqual(backendBlocker(settings, [clip, image], [config]), null,
         "continuation still checks actual uploaded images");
+      assert.notEqual(backendBlocker(settings, [clip], [config], [image]), null,
+        "a pinned image is still uploaded alongside the cached continuation");
       const uploadConfig = { ...config, inputRules: { ...config.inputRules, maxVideos: 1 },
         availability: { ...config.availability!, operations: [{ ...supported, profile: "video_to_video" }] } };
       assert.notEqual(backendBlocker({ ...settings, videoMode: "reference" }, [clip], [uploadConfig]), null,
         "a real video upload still exceeds the service's zero limit");
+      assert.notEqual(backendBlocker({ ...settings, videoMode: "reference" }, [], [uploadConfig], [clip]), null,
+        "a pinned reference video is an upload, not a cached continuation");
       for (const reasonCode of ["route_disabled", "operation_unsupported", "execution_paused"]) {
         publish({ ...continuation, status: "unavailable", reasonCode });
         assert.notEqual(backendBlocker(settings, [clip], [config]), null, reasonCode);

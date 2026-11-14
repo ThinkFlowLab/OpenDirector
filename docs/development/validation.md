@@ -183,6 +183,10 @@ The frontend tests distinguish cached continuation from video uploads and use th
 
 Start the isolated API with both `--http-generation-fixture --assistant-fixture`, use Vite and run `node tests/browser/input_admission_review.mjs` for bilingual image-count admission and preserved assistant drafts. Run `video_review_regressions.mjs` with `--http-generation-fixture` for continuation under a zero-upload limit, route closure and pause expiry. Use the environment variables documented below. Generated media and browser assistant replies are fixtures; the Python test separately exercises the real gateway's request parameters.
 
+图片浏览器流程覆盖固定素材、跟随素材及混合输入：要求恰好两张时，一张和三张拒绝，核对零新增任务及零生成请求；两张接受时，核对实际上传字节、顺序和任务保存的素材标识。项目重开后检查素材、模型、提示词和结果仍然保留。前端测试还覆盖固定素材与跟随素材指向同一资产时不重复计数。
+
+The image browser workflow covers pinned, followed and mixed references. With an exact two-image requirement, one and three images are rejected with no new jobs or generation requests; accepted pairs are checked against uploaded bytes, order and persisted asset IDs. Reopening retains the references, model, prompt and results. Frontend tests also check that a pin and a followed reference to the same asset are counted only once.
+
 ## 按风险选择验证
 
 能力与提示修改还需检查实际页面和发送内容：共同失败原因只呈现一次，提示说明用户能够采取的操作，调研记录和测试配置不进入产品文案。分别查看中英文页面的正常、未知、过期、暂停和失败状态。按最终请求统计素材，确认超量输入零新增任务、零生成请求；默认参数与服务允许范围、工具来源与模型输入分别核对。

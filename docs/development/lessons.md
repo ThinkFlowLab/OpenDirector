@@ -19,6 +19,8 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Check:** Trace representative input from the relevant UI or Agent entry point through backend validation to the provider request. Check that unsupported input does not create a job. Distinguish protocol mocks from real service evidence.
 - **Admission follow-up:** [PR #266 review](https://github.com/ThinkFlowLab/OpenDirector/pull/266#pullrequestreview-5888173714) found that source-node counts, single-image catalogue decisions and omitted assistant parameters could disagree with the transmitted request. Check cached continuation separately from uploads, select the catalogue entry by transmitted image count, and compare admission parameters with the actual gateway payload. / **接受检查补充：** 续写来源不计作上传视频；按实际发送图片数量选择目录条目；助手接受检查与网关使用相同参数，并核对拒绝时没有新增任务或对话轮次。
 
+- **Reference merge follow-up:** Combining [#308](https://github.com/ThinkFlowLab/OpenDirector/pull/308) with #266 could merge cleanly while selecting capabilities from followed references and counting limits from followed plus pinned references. Use the same prepared reference list for both checks; verify pinned-only, mixed and duplicate-asset inputs after reopening. / **参考素材整合补充：** 能力选择和数量限制共用一次计算的请求素材，检查重开后的固定素材、混合素材及相同资产的去重；Git 自动合并成功不能证明两处使用相同输入。
+
 ## Operations across boundaries can lose identity or context
 
 - **Trigger:** Importing a project, referencing assets across conversation turns, or switching projects during a run.
