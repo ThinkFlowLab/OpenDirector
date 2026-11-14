@@ -503,6 +503,24 @@ export function serviceVideoSettings(
   return next;
 }
 
+/**
+ * A connected text reference implicitly supplies an image or video prompt;
+ * the backend appends its body to the provider prompt. Speech and music never
+ * read text references.
+ */
+export function hasImplicitTextPrompt(
+  settings: GenerationSettings,
+  sources: readonly CanvasNode[],
+  config: ModelConfig,
+) {
+  return (
+    (settings.mode === "image" || settings.mode === "video") &&
+    backendReferences(settings, sources, config).some(
+      (item) => item.node.data.kind === "text",
+    )
+  );
+}
+
 export function backendBlocker(
   settings: GenerationSettings,
   incoming: readonly CanvasNode[],
@@ -521,7 +539,10 @@ export function backendBlocker(
     return tNow("errors.rules.transcriptionModel");
   if (!isGenerationModel(config))
     return tNow("errors.rules.segmentationModel");
-  if (!settings.prompt.trim())
+  if (
+    !settings.prompt.trim() &&
+    !hasImplicitTextPrompt(settings, [...incoming, ...pinned], config)
+  )
     return settings.mode !== "audio"
       ? tNow("errors.rules.promptRequired")
       : isMusicModel(config)

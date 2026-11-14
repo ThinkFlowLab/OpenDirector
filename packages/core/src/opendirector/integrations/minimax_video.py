@@ -91,7 +91,7 @@ class MinimaxVideoGeneration:
             raise ProjectError('MiniMax-H3 参考数量或总时长超过限制。')
         if complete and not prompt.strip():
             raise ProjectError('MiniMax-H3 需要非空提示词。')
-        content.insert(0, {'type': 'text', 'text': prompt})
+        content.insert(0, {'type': 'text', 'text': prompt.lstrip()})
         request_size({'content': content}, rules['requestBytes'] - 4096)
         return {'profile': rules['profile'], 'references': manifest, 'content': content}
 

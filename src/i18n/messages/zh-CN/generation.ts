@@ -91,6 +91,8 @@ export const generation = {
     "输入生成要求，或 @ 引用素材，让 Agent 帮你创作文本",
   "generation.prompt.reading": "朗读文本",
   "generation.prompt.music": "音乐风格",
+  "generation.prompt.implicitTextPlaceholder":
+    "留空则直接使用已连接的文本参考作为提示词，也可以继续补充",
   "generation.prompt.imagePlaceholder":
     "上传参考图、输入文字或 @ 主体，描述你想要生成的图片",
   "generation.prompt.videoPlaceholder":

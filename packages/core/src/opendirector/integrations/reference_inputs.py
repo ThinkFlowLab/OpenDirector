@@ -231,6 +231,9 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     if rules['profile'] == 'fasth3-omni':
         from opendirector.integrations.fasth3 import native_prompt
         result['prompt'] = native_prompt(task, source_metadata) + ''.join(text_context)
+    if not prompt.strip():
+        # A blank prompt is implicitly the connected text reference itself.
+        result['prompt'] = result['prompt'].lstrip()
     if rules['profile'] == 'moss-image':
         from opendirector.domain.moss_image import validate_moss_image_prompt
         validate_moss_image_prompt(result['prompt'])
