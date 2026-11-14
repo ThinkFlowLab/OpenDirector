@@ -26,6 +26,12 @@ window.__ModuleLoader__.load({
       tasks: 'Tasks', tasksEmpty: 'No generation tasks match these filters.', viewTask: 'View progress',
       taskProgress: 'Task progress', backgroundHint: 'Closing this dialog does not cancel the job. Find it under Resume project → Tasks.',
       cancelled: 'Cancelled', interrupted: 'Interrupted',
+      pendingSubmissions: 'Submissions to check', pendingHint: 'Check the original submission without generating again.',
+      startSeparateCreation: 'Start a separate creation',
+      hidePending: 'Hide reminder', hidePendingHint: 'Hiding a reminder does not cancel a submitted job.',
+      pendingStorageUnavailable: 'Recovery is available on this page, but cannot be saved. Check before reloading.',
+      pendingCheckFailed: 'Could not check this submission. Try again when OpenDirector is available.',
+      pendingNotAccepted: 'The original submission was not accepted.', pendingConfirmed: 'The original operation was confirmed. Open the canvas to continue.',
       reuseSettings: 'Reuse settings', resetTemplate: 'Reset to this version', keepOriginalOutput: 'Keep original size',
       reuseHint: 'Uses this version’s saved settings in a new node. Review the candidate before adopting.',
       reuseReferences: 'References kept from this version', referenceMedia: 'Reference media',
@@ -55,7 +61,7 @@ window.__ModuleLoader__.load({
       repeatUnavailable: 'The generation node is unavailable. Open the canvas to check it.',
       noModels: 'Configure a compatible model in OpenDirector first.',
       failedToSubmit: 'Could not submit generation. Check your project and model settings.',
-      generationUnknown: 'Submission has not been confirmed. Check the original operation.',
+      generationUnknown: 'Submission has not been confirmed. Check it here or under Resume project → Submissions to check.',
       retrySubmission: 'Try submitting again', retryGeneration: 'Retry generation',
       connectionUnavailable: 'Could not reach OpenDirector. Reconnect, then try submitting again.',
       progressUnavailable: 'Could not check progress. Once connected, check the same job again.',
@@ -113,6 +119,12 @@ window.__ModuleLoader__.load({
       tasks: '任务', tasksEmpty: '没有符合筛选条件的生成任务。', viewTask: '查看进度',
       taskProgress: '任务进度', backgroundHint: '关闭弹窗不会取消任务，可从「继续工程 → 任务」找回。',
       cancelled: '已取消', interrupted: '已中断',
+      pendingSubmissions: '待确认的提交', pendingHint: '查询原来的提交，不会重新生成。',
+      startSeparateCreation: '开始另一项创作',
+      hidePending: '隐藏提示', hidePendingHint: '隐藏提示不会取消已提交的任务。',
+      pendingStorageUnavailable: '本页仍可恢复，但无法保存恢复入口。请先查询再刷新。',
+      pendingCheckFailed: '暂时无法查询这次提交，请在 OpenDirector 恢复连接后重试。',
+      pendingNotAccepted: '原提交未被接受。', pendingConfirmed: '原操作已确认，可打开画布继续。',
       reuseSettings: '复用设置', resetTemplate: '恢复这版设置', keepOriginalOutput: '沿用原尺寸',
       reuseHint: '沿用所选版本的设置，在同一工程的新节点中生成候选，审阅后再采用。',
       reuseReferences: '沿用这版的参考素材', referenceMedia: '参考素材',
@@ -142,7 +154,7 @@ window.__ModuleLoader__.load({
       repeatUnavailable: '暂时无法使用该生成节点，请打开画布查看。',
       noModels: '请先在 OpenDirector 配置支持此操作的模型。',
       failedToSubmit: '暂时无法提交生成，请检查工程和模型设置。',
-      generationUnknown: '尚未确认任务是否提交，请查询原操作。',
+      generationUnknown: '尚未确认提交结果，可在这里或「继续工程 → 待确认的提交」查询。',
       retrySubmission: '重新提交', retryGeneration: '重试生成',
       connectionUnavailable: '暂时连不上 OpenDirector。恢复连接后可以重新提交。',
       progressUnavailable: '暂时查不到进度。恢复连接后，可以继续查询原任务。',
@@ -248,6 +260,121 @@ window.__ModuleLoader__.load({
       if (value) mediaDrafts.set(key, value)
       clearTimeout(draftTimer)
       draftTimer = setTimeout(flushMediaDrafts, 250)
+    }
+
+    const pendingSubmissionsKey = '@opendirector/dsh-plugin:pending-submissions:v1'
+    const pendingListeners = new Set()
+    let pendingSubmissions
+    let pendingDurable = true
+    const pendingIdentity = item => item.projectId + ':' + item.operationId
+    function readPendingSubmissions() {
+      if (pendingSubmissions) return pendingSubmissions
+      try {
+        const values = JSON.parse(window.sessionStorage.getItem(pendingSubmissionsKey) ?? '[]')
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        const entries = Array.isArray(values) ? values.filter(item => item && uuid.test(item.projectId)
+          && uuid.test(item.operationId) && typeof item.context === 'string' && item.context.length <= 160
+          && (item.repeatJobId == null || uuid.test(item.repeatJobId))).map(item => ({
+            projectId: item.projectId, operationId: item.operationId, context: item.context,
+            label: typeof item.label === 'string' ? item.label.slice(0, 160) : '',
+            ...(typeof item.projectName === 'string' && { projectName: item.projectName.slice(0, 255) }),
+            ...(item.repeatJobId && { repeatJobId: item.repeatJobId }),
+          })) : []
+        pendingSubmissions = [...new Map(entries.map(item => [pendingIdentity(item), item])).values()]
+      } catch {
+        pendingSubmissions = []
+        pendingDurable = false
+      }
+      return pendingSubmissions
+    }
+    function subscribePending(listener) {
+      pendingListeners.add(listener)
+      return () => pendingListeners.delete(listener)
+    }
+    function writePendingSubmissions(items) {
+      pendingSubmissions = items
+      try {
+        if (items.length) window.sessionStorage.setItem(pendingSubmissionsKey, JSON.stringify(items))
+        else window.sessionStorage.removeItem(pendingSubmissionsKey)
+        pendingDurable = true
+      } catch { pendingDurable = false }
+      for (const listener of pendingListeners) listener()
+    }
+    function rememberSubmission(input, context, label) {
+      const item = {
+        projectId: input.projectId, operationId: input.operationId, context, label: label.slice(0, 160),
+        ...(input.projectName != null && { projectName: input.projectName.slice(0, 255) }),
+        ...(input.repeatJobId && { repeatJobId: input.repeatJobId }),
+      }
+      writePendingSubmissions([...readPendingSubmissions().filter(value => pendingIdentity(value) !== pendingIdentity(item)), item])
+    }
+    function forgetSubmission(item) {
+      if (!item) return
+      const previous = readPendingSubmissions()
+      const next = previous.filter(value => pendingIdentity(value) !== pendingIdentity(item))
+      if (next.length !== previous.length) writePendingSubmissions(next)
+    }
+
+    function PendingSubmissions({ context, onRecovered, t }) {
+      const saved = useSyncExternalStore(subscribePending, readPendingSubmissions)
+      const items = context ? saved.filter(item => item.context === context) : saved
+      const [page, setPage] = useState({})
+      const [feedback, setFeedback] = useState({})
+      const busy = useRef(new Set())
+      const start = page.after ? items.findIndex(item => pendingIdentity(item) === page.after) + 1 : 0
+      const visible = items.slice(start, start + 12)
+      useEffect(() => {
+        if (page.after && !items.some(item => pendingIdentity(item) === page.after)) setPage({})
+      }, [saved, page, context])
+      async function check(item) {
+        const key = pendingIdentity(item)
+        if (busy.current.has(key)) return
+        busy.current.add(key)
+        setFeedback(previous => ({ ...previous, [key]: { message: 'submitting' } }))
+        try {
+          const { projectId, operationId, repeatJobId, projectName } = item
+          const response = await fetch('/api/opendirector/creation', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
+            body: JSON.stringify({ projectId, operationId, ...(repeatJobId && { repeatJobId }),
+              ...(projectName != null && { projectName }), check: true }),
+          })
+          if (!response.ok) throw new Error('Receipt unavailable')
+          const value = await response.json()
+          if (value.jobId && ['accepted', 'applied', 'noop'].includes(value.status)) {
+            onRecovered({ projectId, jobId: value.jobId, prompt: item.label, canvasUrl: value.canvasUrl, recovery: item })
+          } else {
+            setFeedback(previous => ({ ...previous, [key]: {
+              message: value.status === 'unknown' ? 'generationUnknown'
+                : value.status === 'rejected' ? 'pendingNotAccepted' : 'pendingConfirmed',
+              canvasUrl: value.draftSaved || value.projectCreated ? value.canvasUrl : undefined,
+            } }))
+          }
+        } catch {
+          setFeedback(previous => ({ ...previous, [key]: { message: 'pendingCheckFailed' } }))
+        } finally {
+          busy.current.delete(key)
+          setFeedback(previous => ({ ...previous, [key]: { ...previous[key] } }))
+        }
+      }
+      if (!items.length) return null
+      return h('section', { 'aria-label': t('pendingSubmissions'), style: { display: 'grid', gap: '.5rem', marginBlock: '.7rem' } },
+        h('strong', null, t('pendingSubmissions')), h('small', null, t('pendingHint')),
+        !pendingDurable && h('p', { role: 'alert' }, t('pendingStorageUnavailable')),
+        ...visible.map(item => {
+          const key = pendingIdentity(item)
+          const value = feedback[key]
+          return h('article', { key, style: { display: 'grid', gap: '.4rem', border, padding: '.6rem', borderRadius: '.55rem' } },
+            h('span', { style: { overflowWrap: 'anywhere' } }, item.projectName || item.label || item.projectId),
+            item.projectName && item.label && h('small', null, item.label),
+            h('div', { style: row },
+              button(t('checkGeneration'), () => check(item), { disabled: busy.current.has(key) }),
+              button(t('hidePending'), () => forgetSubmission(item), { title: t('hidePendingHint'), disabled: busy.current.has(key) }),
+              value?.canvasUrl && canvasLink(value.canvasUrl, t)),
+            value?.message && h('small', { role: 'status' }, t(value.message)))
+        }),
+        h('small', null, t('hidePendingHint')),
+        h(PageControls, { cursor: page,
+          nextCursor: items.length > start + 12 ? pendingIdentity(visible.at(-1)) : null, onPage: setPage, t }))
     }
 
     function CreateMedia({ t }) {
@@ -373,6 +500,7 @@ window.__ModuleLoader__.load({
       h('header', { style: { ...row, justifyContent: 'space-between' } },
         h('strong', null, t('resume')),
         button(t('close'), () => dialog.current.close())),
+      h(PendingSubmissions, { t, onRecovered: setTask }),
       h('div', { style: { ...row, marginBlock: '.7rem' } },
         projects?.length > 0 && h('select', {
           value: projectId, onChange: event => changeProject(event.target.value), 'aria-label': t('chooseProject'),
@@ -564,7 +692,11 @@ window.__ModuleLoader__.load({
       const busy = useRef(false)
       const attempt = useRef(null)
       const [catalog, setCatalog] = useState(null)
-      const draftKey = templateOf ? ['reuse', templateOf.projectId, templateOf.resultId].join(':') : source ? [videoMode ?? 'edit', source.projectId, source.resultId].join(':') : 'create'
+      const draftKey = existingJob ? ['repeat', existingJob.projectId, existingJob.jobId].join(':') : templateOf ? ['reuse', templateOf.projectId, templateOf.resultId].join(':') : source ? [videoMode ?? 'edit', source.projectId, source.resultId].join(':') : 'create'
+      const pending = useSyncExternalStore(subscribePending, readPendingSubmissions)
+      const [recoveredJob, setRecoveredJob] = useState(null)
+      const [startFresh, setStartFresh] = useState(false)
+      const restoringPending = !startFresh && !attempt.current && pending.some(item => item.context === draftKey)
       const defaults = {
         kind: templateOf?.kind ?? (videoMode ? 'video' : 'image'), projectId: '', projectName: '', modelId: '',
         prompt: '', output: null, voice: '', durationSeconds: null,
@@ -611,9 +743,9 @@ window.__ModuleLoader__.load({
         && !catalog.projects.some(project => project.id === form.projectId)
       const modelUnavailable = catalog && !catalog.error && form.modelId && !model
       useEffect(() => {
-        if (existingJob) return
+        if (existingJob || restoringPending || recoveredJob) return
         saveMediaDraft(draftKey, !locked && dirty ? { form, references } : null)
-      }, [draftKey, form, references, locked, existingJob, dirty])
+      }, [draftKey, form, references, locked, existingJob, dirty, restoringPending, recoveredJob])
       function clearDraft() {
         setForm(draftBase)
         setReferences(source && !videoMode ? [source] : [])
@@ -629,7 +761,7 @@ window.__ModuleLoader__.load({
         dialog.current.showModal()
       }, [])
       useEffect(() => {
-        if (existingJob) return
+        if (existingJob || restoringPending || recoveredJob) return
         const controller = new AbortController()
         Promise.all([
           (fromResult || templateOf) ? Promise.resolve({ projects: [] }) : readLibrary(null, controller.signal),
@@ -654,9 +786,12 @@ window.__ModuleLoader__.load({
           if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
         })
         return () => controller.abort()
-      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId])
+      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId, restoringPending, recoveredJob])
       useEffect(() => {
-        if (!jobId) return
+        if (existingJob?.recovery) forgetSubmission(existingJob.recovery)
+      }, [existingJob?.recovery])
+      useEffect(() => {
+        if (!jobId || recoveredJob) return
         const controller = new AbortController()
         let timer
         let inFlight = false
@@ -697,7 +832,7 @@ window.__ModuleLoader__.load({
           window.removeEventListener('online', wake)
           window.removeEventListener('offline', wake)
         }
-      }, [jobId, projectId, pollRun])
+      }, [jobId, projectId, pollRun, recoveredJob])
       async function send(makeAttempt) {
         if (busy.current) return
         // Accepted and uncertain submissions belong in task recovery, never in a new-input draft.
@@ -725,18 +860,24 @@ window.__ModuleLoader__.load({
             }))
             setRepeatStatus(null)
           }
-          if (value.status !== 'unknown') attempt.current = null
+          if (value.status !== 'unknown') {
+            forgetSubmission(current)
+            attempt.current = null
+          }
         }
         try {
           const check = attempt.current !== null
           attempt.current ??= makeAttempt()
+          if (!check) rememberSubmission(attempt.current, attempt.current.repeatJobId
+            ? ['repeat', attempt.current.projectId, attempt.current.repeatJobId].join(':') : draftKey,
+          form.prompt || existingJob?.prompt || '')
           const response = await fetch('/api/opendirector/creation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
             body: JSON.stringify({ ...attempt.current, check }),
           })
           if (response.status === 400 || response.status === 403) {
-            receive({ status: 'rejected' })
+            receive({ status: check ? 'unknown' : 'rejected' })
             return
           }
           if (!response.ok) throw new Error('Submission unavailable')
@@ -781,21 +922,25 @@ window.__ModuleLoader__.load({
         projectId: source.projectId, assetId: source.assetId, kind: source.kind, details: source.details, t,
         title: t(continuation ? 'sourceClip' : videoMode ? 'firstFrameSource' : 'original'),
       })
+      if (recoveredJob) return h(GenerationDialog, { existingJob: recoveredJob, t, onClose })
       return h('dialog', {
         ref: dialog, onClose: event => { if (event.target === event.currentTarget) { flushMediaDrafts(); onClose() } },
         'aria-label': title, style: dialogStyle,
       },
         h('header', { style: { ...row, justifyContent: 'space-between' } },
           h('strong', null, title), button(t('close'), () => dialog.current.close())),
-        !existingJob && !catalog && h('p', { role: 'status' }, t('loading')),
-        !existingJob && !locked && h('div', { style: row },
+        !existingJob && !restoringPending && !catalog && h('p', { role: 'status' }, t('loading')),
+        !existingJob && !restoringPending && !locked && h('div', { style: row },
           restored && h('small', { role: 'status' }, t('draftRestored')),
           dirty && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
         projectUnavailable && h('p', { role: 'alert' }, t('projectUnavailable')),
         modelUnavailable && h('p', { role: 'alert' }, t('modelUnavailable')),
         existingJob && h('p', { style: { overflowWrap: 'anywhere' } }, existingJob.prompt),
         catalog?.error && h('p', { role: 'alert' }, t(templateOf ? 'reuseUnavailable' : 'libraryError')),
-        catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
+        restoringPending && h(PendingSubmissions, { context: draftKey, t, onRecovered: setRecoveredJob }),
+        restoringPending && !existingJob && button(t('startSeparateCreation'), () => setStartFresh(true)),
+        !restoringPending && pending.length > 0 && !pendingDurable && h('p', { role: 'alert' }, t('pendingStorageUnavailable')),
+        !restoringPending && catalog && !catalog.error && h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
           !source && !templateOf && field('chooseProject', h('select', {
             required: true, disabled: locked, value: form.projectId, onChange: event => update('projectId', event.target.value),
           }, h('option', { value: '' }, t('chooseProject')),
@@ -879,7 +1024,7 @@ window.__ModuleLoader__.load({
             results: previous.results.map(item => ({ ...item, selected: item.resultId === candidate.resultId })),
           })),
         }))),
-        ((status === 'succeeded' && candidates.length > 0) || canRetry) && h('div', { style: row },
+        !restoringPending && ((status === 'succeeded' && candidates.length > 0) || canRetry) && h('div', { style: row },
           button(t(submitting ? 'submitting' : repeatStatus === 'generationUnknown' ? 'checkGeneration'
             : canRetry ? 'retryGeneration' : 'repeatGeneration'),
             () => send(() => ({ projectId, operationId: crypto.randomUUID(), repeatJobId: jobId })), { disabled: submitting }),

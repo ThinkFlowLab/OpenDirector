@@ -40,6 +40,8 @@ In DSH Web, choose **Create media** next to the composer. Select an existing pro
 
 Unsubmitted input stays in the current browser tab. Close the dialog or reload DSH, then return to the same creation or edit action to continue. This includes the chosen model, image size and ordered references. Use **Clear draft** to start over. Submitted jobs stay in **Resume project → Tasks**; reopening a draft does not submit it.
 
+If a submission is unconfirmed, reopen the action or choose **Resume project → Submissions to check** after closing or reloading DSH. Checking uses the original submission ID and opens the accepted task without generating again; it does not require the model catalog. **Start a separate creation** opens a new form and keeps the original submission available to check. **Hide reminder** only removes the local reminder. Recovery information stays in the current browser tab. If browser storage is unavailable, keep the page open and check before reloading.
+
 If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
 
 In **Resume project**, search descriptions, canvas node names, models or copied IDs across the whole project. Search checks the full recorded description, including text beyond the card preview. Results, tasks and reference choices show one page at a time; use Previous page and Next page to browse without keeping every card mounted. Selected comparison images and references stay selected when you change pages. Combine it with media and adoption filters, or filter tasks by their current status. **Clear search and filters** returns to the full list.

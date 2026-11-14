@@ -8,6 +8,7 @@ test('a direct edit pins saved assets in order and recovers the original submiss
   const [projectId, operationId, sourceResultId, assetId, modelConfigId, jobId, priorItemId, extraResult, extraAsset] =
     Array.from({ length: 9 }, () => randomUUID())
   const commands = []
+  const requests = []
   const receipts = new Map()
   const snapshot = {
     project: { id: projectId },
@@ -21,6 +22,7 @@ test('a direct edit pins saved assets in order and recovers the original submiss
   const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
     async fetchImpl(url, request) {
       const path = new URL(url).pathname
+      requests.push(path)
       if (path === '/api/model-configs') {
         return Response.json([{
           id: modelConfigId, kind: 'image', protocol: 'openai', modelId: 'fixture',
@@ -67,7 +69,11 @@ test('a direct edit pins saved assets in order and recovers the original submiss
   assert.equal(draft.payload.item.position.x, 440)
   assert.equal(submit.payload.adoptionPolicy, 'candidate_only')
   assert.equal(submit.commandId, uuid5(operationId, 'creation.submit'))
-  assert.deepEqual(await client.startCreation({ ...input, check: true }), { status: 'accepted', jobId, code: undefined })
+  const beforeCheck = requests.length
+  assert.deepEqual(await client.startCreation({ projectId, operationId, check: true }),
+    { status: 'accepted', jobId, code: undefined })
+  assert.deepEqual(requests.slice(beforeCheck),
+    ['/api/creation/projects/' + projectId + '/receipts/' + submit.commandId])
   assert.deepEqual(await client.startCreation(input), { status: 'accepted', jobId, code: undefined })
   assert.equal(commands.length, 2)
 })
