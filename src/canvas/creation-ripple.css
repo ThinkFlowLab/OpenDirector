@@ -1,0 +1,12 @@
+/* Canvas of lit dots around a newly created node; sized in canvas units. */
+.cw-creation-ripple {
+  position: absolute;
+  /* The portal is not a stacking context: stay under nodes and edges, above the background. */
+  z-index: -1;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-creation-ripple {
+    display: none;
+  }
+}

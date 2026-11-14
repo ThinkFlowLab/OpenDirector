@@ -154,6 +154,12 @@
       ]
     },
     {
+      "file": "creation_ripple.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
       "file": "creation_asset_list.mjs",
       "lanes": [
         "extended"
