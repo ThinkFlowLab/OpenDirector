@@ -9,19 +9,24 @@ import subprocess
 from uuid import uuid4
 
 import httpx
+from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_tool_assets import CreationToolAssets
-from generation_helpers import new_project, prepared as prepare_command, tasks
+from opendirector.application.model_availability import ModelAvailability
+from generation_helpers import new_project, command as generation_command, prepared as prepare_command, tasks
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
+from opendirector.integrations.capability_probe import CapabilityProbe
 from opendirector.integrations.vllm_omni import VllmOmniGeneration, h3_frames
 from opendirector.integrations.volcengine import VolcengineGeneration
+from test_model_availability import document
+from opendirector_api.main import create_app
 
 H3 = {'protocol': 'vllm_omni', 'kind': 'video', 'url': 'http://gpu-box:8000/v1', 'modelId': 'MiniMaxAI/MiniMax-H3', 'apiKey': 'token'}
 
@@ -140,6 +145,11 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
     server = FakeOmni(clip.read_bytes())
     configs = ModelConfigs(store.local.repository)
     config = configs.save('video', H3['url'], H3['modelId'], 'token', connection_type='self_hosted', protocol='vllm_omni', auth_mode='bearer')
+    declaration = document('video_generation', 'text_to_video', '/v1/videos', 'video', model=H3['modelId'])
+    operation = declaration['models'][0]['operations']['video_generation']
+    operation['profiles'].append({'id': 'video_to_video', 'support': 'unsupported'})
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    availability = ModelAvailability(configs, probe)
 
     async def generate(inputs):
         parameters = dict(videoMode=inputs['videoMode'])
@@ -151,11 +161,39 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
 
     async def run():
         nonlocal manager
-        manager = CreationGeneration(store, configs)
+        manager = CreationGeneration(store, configs, availability=availability)
         manager.provider = GenerationProviders(manager.store, httpx.MockTransport(server), poll_interval=0)
         first = await generate({'prompt': '灯塔在黄昏亮起', 'referenceIds': [], 'videoMode': 'first_frame'})
         assert first['status'] == 'succeeded' and first['externalTaskId'] == 'video_gen_1', (first['error'], first['errorDetails'])
         assert json.loads(server.posts[0][0]['extra_params']) == {'task': 't2va', 'aspect_ratio': '16:9'}
+
+        # The public command API cannot accept a cached continuation on a
+        # globally disabled endpoint, even without a declared input profile.
+        declaration['routes'][0]['exposure'] = 'disabled'
+        command = generation_command((store, value['id'], session), config,
+            prompt='关闭接口时接续', parameters={'videoMode': 'continuation'}, references=[first['assetId']])
+        api_probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+        try:
+            app = create_app(store.local, generation_provider=manager.provider, capability_probe=api_probe)
+            with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
+                response = client.post(f"/api/creation/projects/{value['id']}/commands", json=command.model_dump(mode='json'))
+                assert response.status_code == 200, response.text
+                receipt = response.json()
+                assert receipt['status'] == 'rejected', receipt
+                assert receipt['issues'][0]['code'] == 'capability_unavailable'
+            assert len(store.snapshot(value['id']).jobs) == len(server.posts) == 1
+        finally:
+            api_probe.close()
+        declaration['routes'][0]['exposure'] = 'enabled'
+
+        # A fresh deployment pause still prevents a continuation on /videos.
+        operation['execution']['state'] = 'paused'
+        availability.refresh([config['id']], manual=True)
+        with pytest.raises(ProjectError, match='服务已暂停'):
+            await generate({'prompt': '暂停期间接续', 'referenceIds': [first['assetId']], 'videoMode': 'continuation'})
+        assert len(store.snapshot(value['id']).jobs) == len(server.posts) == 1
+        operation['execution']['state'] = 'unpaused'
+        availability.refresh([config['id']], manual=True)
 
         second = await generate({'prompt': '光束扫过海面', 'referenceIds': [first['assetId']], 'videoMode': 'continuation'})
         assert second['status'] == 'succeeded' and second['videoMode'] == 'continuation', (second['error'], second['errorDetails'])
@@ -179,7 +217,10 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
         await manager.close()
 
     manager = None
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
 
 
 def test_other_models_keep_rejecting_video_references(project):

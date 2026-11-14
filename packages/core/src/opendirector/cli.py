@@ -349,6 +349,26 @@ def select_model(models, selector):
     return matches[0]
 
 
+@group('model').command('availability', help='Read model operation availability; optionally refresh declarations without running models.')
+def model_availability(ctx: typer.Context,
+                       refresh: Annotated[bool, typer.Option(help='Query configured services using automatic-check preferences.')] = False,
+                       model: Annotated[list[UUID] | None, typer.Option(help='Restrict to saved model configuration UUIDs.')] = None,
+                       manual: Annotated[bool, typer.Option(help='Explicitly check selected models even when automatic checks are disabled. Requires --refresh and --model.')] = False):
+    client = ctx.obj
+    client.command = ctx.command_path
+    if manual and (not refresh or not model):
+        raise typer.BadParameter('--manual requires --refresh and --model')
+    arguments = {'manual': manual}
+    if model:
+        arguments['configIds'] = [str(item) for item in model]
+    if client.live:
+        emit(client.call('model_availability', {**arguments, 'refresh': refresh}))
+    elif refresh:
+        emit(client.request('POST', '/api/model-configs/availability', json=arguments))
+    else:
+        emit(client.request('GET', '/api/model-configs/availability'))
+
+
 @group("model").command("list", help="Find model configurations by media kind or model name.")
 def model_list(ctx: typer.Context,
                kind: Annotated[Literal["agent", "image", "video", "audio", "vision"] | None,

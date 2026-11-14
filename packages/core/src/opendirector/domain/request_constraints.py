@@ -1,0 +1,94 @@
+"""Check explicit constraints against transmitted roles and parameters."""
+from math import isclose
+
+from opendirector.domain.omni_capabilities import RequestConstraints
+
+
+INPUT_ROLES = frozenset({'text', 'image', 'video', 'audio', 'instructions', 'voice',
+    'reference_audio', 'reference_text', 'reference_embedding', 'speaker_embedding', 'mask_image', 'reference_image',
+    'first_frame', 'last_frame', 'reference_video', 'source_video', 'video_noise_mask', 'audio_noise_mask'})
+
+
+def role_evidence(contract, required):
+    """Required purposes must be established together on the selected route."""
+    if not required:
+        return None
+    inputs = contract.inputs if contract is not None else {}
+    for role in sorted(required):
+        constraint = inputs.get(role)
+        if constraint is not None:
+            if constraint.support == 'unsupported':
+                return 'input_unsupported'
+            if constraint.max_count == 0:
+                return 'input_count_unsupported'
+    if any(role not in inputs or inputs[role].support != 'supported' for role in required):
+        return 'input_contract_unknown'
+    return None
+
+
+def _enum_value(value, normalization):
+    if not isinstance(value, str) or normalization is None:
+        return value
+    if normalization == 'strip_lower':
+        return value.strip().lower()
+    return value.lower() if normalization == 'lower' else value.title()
+
+
+def constraint_failure(contract: RequestConstraints, counts: dict[str, int] | None, parameters: dict):
+    """Return a localizable cause and arguments. Missing facts impose no limit."""
+    if counts is not None:
+        for role, constraint in contract.inputs.items():
+            if role not in INPUT_ROLES:
+                continue
+            count = counts.get(role, 0)
+            if count and constraint.support == 'unsupported':
+                return 'input_unsupported', {'input': role}
+            if constraint.min_count is not None and count < constraint.min_count:
+                return 'required_inputs_missing', {'input': role, 'minimum': constraint.min_count, 'actual': count}
+            if constraint.max_count is not None and count > constraint.max_count:
+                return 'input_count_exceeded', {'input': role, 'maximum': constraint.max_count, 'actual': count}
+        for group in contract.required_any_of:
+            if set(group) <= INPUT_ROLES and not any(counts.get(role, 0) for role in group):
+                return 'required_inputs_missing', {'inputs': group}
+    width, height = parameters.get('width'), parameters.get('height')
+    if (contract.max_output_pixels is not None and type(width) is int and type(height) is int
+            and width * height > contract.max_output_pixels):
+        return 'parameter_value_unsupported', {'parameter': 'size'}
+    for name, value in parameters.items():
+        constraint = contract.parameters.get(name)
+        if constraint is None or value is None:
+            continue
+        if constraint.support == 'unsupported':
+            return 'parameter_unsupported', {'parameter': name}
+        if constraint.enum is not None and not any(
+                isinstance(value, bool) == isinstance(option, bool)
+                and _enum_value(value, constraint.enum_normalization) == _enum_value(option, constraint.enum_normalization)
+                for option in constraint.enum):
+            return 'parameter_value_unsupported', {'parameter': name}
+        numeric = type(value) in {int, float}
+        if ((constraint.type == 'integer' and type(value) is not int)
+                or (constraint.type == 'number' and not numeric)
+                or (constraint.type == 'boolean' and type(value) is not bool)
+                or (constraint.type == 'string' and not isinstance(value, str))):
+            return 'parameter_value_unsupported', {'parameter': name}
+        if numeric:
+            if ((constraint.minimum is not None and value < constraint.minimum)
+                    or (constraint.maximum is not None and value > constraint.maximum)
+                    or (constraint.step is not None and not isclose(value / constraint.step, round(value / constraint.step), abs_tol=1e-8))):
+                return 'parameter_value_unsupported', {'parameter': name}
+    return None
+
+
+def input_details(contract):
+    if contract is None:
+        return []
+    details = [dict(name=name, support=value.support, source='service', minCount=value.min_count,
+                    maxCount=value.max_count) for name, value in contract.inputs.items()]
+    details.extend(dict(name=name, support=value.support, source='service',
+                        values=([option for option in value.enum if option != '']
+                                if name == 'voice' and value.enum is not None else value.enum),
+                        min=value.minimum, max=value.maximum, multipleOf=value.step)
+                   for name, value in contract.parameters.items())
+    if contract.max_output_pixels is not None:
+        details.append(dict(name='output_pixels', support='supported', source='service', max=contract.max_output_pixels))
+    return details

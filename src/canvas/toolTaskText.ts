@@ -4,6 +4,7 @@ import type { MessageKey, MessageParams } from "../i18n/types.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
 import { getActiveLocale } from "../i18n/messages.ts";
 import { translateToolText } from "./toolText.ts";
+import { capabilityErrorText } from "./capabilityErrorText.ts";
 
 const CJK = /[\u3400-\u9fff]/;
 
@@ -125,6 +126,8 @@ export function toolTaskError(
   t: Translate = defaultTranslate,
   failure?: ToolTaskFailure,
 ): string | undefined {
+  const capability = text && capabilityErrorText(text, t);
+  if (capability) return capability;
   const key = failure && CODE[failure.code];
   if (key) return t(key, failure?.params);
   if (!text) return undefined;

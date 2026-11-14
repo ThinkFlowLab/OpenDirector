@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue, model_validator
 
 from opendirector.domain.minimax_models import MINIMAX_MODELS
+from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationFailure, ResultCheck
 from opendirector.domain.rule_facts import (
     FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
@@ -408,6 +409,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         count = sum(ref.asset.kind == kind for ref in transmitted)
         if count > limit:
             label = {'image': '图片', 'video': '视频', 'audio': '音频'}[kind]
+            if kind == 'image':
+                raise ProjectError(f'最多支持 {limit} 张图片，当前为 {count} 张。', code='image_input_count')
             raise ValueError(f'{label}参考素材数量超过上限。')
     if spec.kind == 'image':
         from opendirector.domain.image_output import resolve_image_output

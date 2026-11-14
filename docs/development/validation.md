@@ -173,7 +173,23 @@ python -m pytest tests -q -ra -m nightly
 
 Initial classification: deterministic CLI discovery is ready; native-runtime subprocess/gateway integration is merge; opt-in installed DeepSeek/JiuwenSwarm engine and media acceptance is nightly, retaining existing environment skips. The dedicated bundled OpenCode regression against a local mock model remains unchanged regardless of marks. Unmarked cases stay in the transitional ready subset and the flake watchlist is unchanged; these initial modules do not establish completed suite-wide classification.
 
+## 输入数量与助手参数 / Input counts and assistant parameters
+
+`tests/continuationAvailability.test.ts` 与 `tests/imageAvailability.test.ts` 检查页面使用实际发送的素材数量：续写来源不计作视频上传，多图请求读取多图能力与数量限制。`tests/test_assistant_capability_parameters.py` 通过助手 HTTP 接口和真实回环网关检查接受前的两次校验，覆盖固定回答上限、连接变化、声明刷新与过期。`tests/test_request_capability_acceptance.py` 检查图片要求在业务服务、HTTP 和 Agent 入口一致，核对上传文件与保存记录。
+
+The frontend tests distinguish cached continuation from video uploads and use the multi-image entry for transmitted multi-image inputs. The assistant test checks both admission points against the gateway's output ceiling, including changed connections, refreshed limits and expired declarations. Image acceptance tests compare the service, HTTP and Agent entry points with serialized uploads and saved execution inputs.
+
+启动隔离 API 时同时传入 `--http-generation-fixture --assistant-fixture`，配合 Vite 运行 `node tests/browser/input_admission_review.mjs`；它检查中英文单图拒绝、双图生成、超量拒绝和助手草稿保留。`video_review_regressions.mjs` 使用 `--http-generation-fixture`，检查零视频上传限制下的续写以及接口关闭、暂停到期。环境变量沿用下方隔离浏览器说明。所有生成结果使用测试媒体；助手浏览器回复使用替身，网关请求参数由 Python 测试单独验证。
+
+Start the isolated API with both `--http-generation-fixture --assistant-fixture`, use Vite and run `node tests/browser/input_admission_review.mjs` for bilingual image-count admission and preserved assistant drafts. Run `video_review_regressions.mjs` with `--http-generation-fixture` for continuation under a zero-upload limit, route closure and pause expiry. Use the environment variables documented below. Generated media and browser assistant replies are fixtures; the Python test separately exercises the real gateway's request parameters.
+
+图片浏览器流程覆盖固定素材、跟随素材及混合输入：要求恰好两张时，一张和三张拒绝，核对零新增任务及零生成请求；两张接受时，核对实际上传字节、顺序和任务保存的素材标识。项目重开后检查素材、模型、提示词和结果仍然保留。前端测试还覆盖固定素材与跟随素材指向同一资产时不重复计数。
+
+The image browser workflow covers pinned, followed and mixed references. With an exact two-image requirement, one and three images are rejected with no new jobs or generation requests; accepted pairs are checked against uploaded bytes, order and persisted asset IDs. Reopening retains the references, model, prompt and results. Frontend tests also check that a pin and a followed reference to the same asset are counted only once.
+
 ## 按风险选择验证
+
+能力与提示修改还需检查实际页面和发送内容：共同失败原因只呈现一次，提示说明用户能够采取的操作，调研记录和测试配置不进入产品文案。分别查看中英文页面的正常、未知、过期、暂停和失败状态。按最终请求统计素材，确认超量输入零新增任务、零生成请求；默认参数与服务允许范围、工具来源与模型输入分别核对。
 
 | 修改范围 | 应核对的重点 |
 | --- | --- |
@@ -518,3 +534,19 @@ The audio-reopen check waits for the saved indicator and acknowledges the page's
 The bilingual browser workflow covers opening/outside click/Escape, keyboard tabs, four-column and narrow layouts, real previews and unavailable previews, metadata filters, scoped favorites, loading/error/retry, invalid and valid local audio, creation, selection, Drama3 transcript and Nano reference requirements, supported deletion and failure feedback, model/service switching, project reopening and persisted job input. `moss_speech.mjs` is retained as an alias for this integrated workflow. The pagination regression includes a 15,001-voice catalog. With a configured MOSS account, open the library, go to the next page, and return to the first. Verify the page counts and that returning to the first page restores its entries using read-only requests. Python tests verify provider fields, pagination, credentials, account boundaries, actual audio/container/duration validation, and equivalent Agent operations. Actual provider synthesis still requires a configured service, account permission and a recording authorized for use.
 
 The same browser workflow also covers MiniMax's mainland speech preset in both languages, localized rejection of unsupported model IDs, saved credentials remaining private, read-only system voices, IDs containing spaces, selection retention between HD and Turbo, the 3,000-character precheck (3,000 accepted and 3,001 rejected), and generation/reopen/playback. Its generated audio is a local WAV fixture, not MiniMax output. `test_minimax_speech.py` uses mocked HTTP with real MP3 bytes to check `/t2a_v2` and `/get_voice`, HTTP-200 error envelopes, invalid or incomplete responses, public result downloads without credentials, UI/Agent acceptance and receipts, actual media probing, and recovery after model removal, replacement or whitelist retirement without another synthesis call. Recovery must still reject private destinations, DNS changes to private addresses, and redirects into private networks. `test_generation_recovery.py` also checks that self-hosted downloads retain the accepted origin without credentials after configuration changes; `test_result_download_security.py` pins the same-origin vLLM behavior, including rejection of redirects. Live MiniMax synthesis and perceptual voice quality remain separate real-account checks.
+
+## 视频能力审查回归
+
+`tests/test_continuation_availability.py` 与 `tests/continuationAvailability.test.ts` 检查续写和普通视频输入分别判断；`tests/test_endpoint_closure.py` 检查缺少模型或操作时准确接口关闭仍然有效。`tests/test_video_capability_acceptance.py` 使用实际适配器、本地 HTTP 和可解码媒体检查动态海报的 124 帧 / 24 fps、编辑蒙版、拒绝前零任务及已接受任务重放。`tests/test_omni_exported_video_capabilities.py` 消费固定版本的 Omni 完整响应，并固定原始观察时间，避免过期状态掩盖能力判断。
+
+The continuation tests keep cached-job continuation separate from uploaded video. Endpoint tests cover exact closures with absent model or operation declarations. Video acceptance tests use real adapters, loopback HTTP and decodable media to check the poster's 124-frame / 24-fps request, editing masks, rejection before acceptance, and accepted-task replay. Exported Omni response tests freeze the original observation time so expiry cannot conceal a support decision.
+
+独立启动以下测试 API，再使用上述 Vite 环境运行浏览器用例。该选项通过真实生成适配器访问回环地址，模型输出由浏览器测试内的 HTTP 服务提供。用例覆盖中英文续写、接口关闭、暂停到期、重新打开项目，以及动态海报拒绝后恢复草稿和生成。其他使用通用替代生成器的浏览器用例继续使用原启动命令。
+
+Start a separate fixture API with the option below, then run the browser check against Vite using the environment described above. This exercises real generation adapters against loopback HTTP; the test server supplies substitute model output. Both languages cover continuation, endpoint closure, pause expiry, reopening the project, and restoring a rejected poster draft before successful generation. Other fixture workflows retain their original startup command.
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src python tests/browser/creation_server.py --port 8019 --http-generation-fixture
+# In another terminal, with CREATION_WEB_URL / CREATION_API_URL set:
+node tests/browser/video_review_regressions.mjs
+```

@@ -15,6 +15,35 @@ def _source_video(ctx: ToolContext) -> Source:
         raise ProjectError('请提供视频素材。', 422)
     return ctx.sources[0]
 
+
+def redraw_intervals(duration, low, high, window=None):
+    """Plan every model call before acceptance; execution uses the same intervals."""
+    if duration < low:
+        raise ProjectError(f'视频至少需要 {low:g} 秒。', 422)
+    if window:
+        start, end = window
+        if end - start > high:
+            raise ProjectError(f'一次最多重绘 {high:g} 秒，请缩短区间。', 422)
+        length = min(duration, max(low, min(high, end - start + 2)))
+        first = min(max(0.0, (start + end - length) / 2), duration - length)
+        return [(first, first + length)]
+    count = math.ceil(duration / high)
+    return [(duration * index / count, duration * (index + 1) / count) for index in range(count)]
+
+
+def reshoot_window(parameters):
+    values = []
+    for key in ('startMs', 'endMs'):
+        value = parameters.get(key, 0)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ProjectError(f'参数 {key} 无效。', 422)
+        if value < 0:
+            raise ProjectError(f'参数 {key} 超出范围。', 422)
+        values.append(value / 1000)
+    if values[1] - values[0] < 0.5:
+        raise ProjectError('重拍区间至少 0.5 秒。', 422)
+    return tuple(values)
+
 async def _redraw_pieces(ctx: ToolContext, source: Source, prompt: str, picture, sound, *, window=None):
     """Redraw a clip within the model's per-request length: the whole clip in even pieces, or only
     the stretch around `window` (seconds), spliced back. Output keeps the source size and rate."""
@@ -23,18 +52,8 @@ async def _redraw_pieces(ctx: ToolContext, source: Source, prompt: str, picture,
         path = work.write('source.mp4', source.data)
         info = await blocking(media.video_info, path)
         duration = info['duration']
-        if duration < low:
-            raise ProjectError(f'视频至少需要 {low:g} 秒。', 422)
-        if window:
-            start, end = window
-            if end - start > high:
-                raise ProjectError(f'一次最多重绘 {high:g} 秒，请缩短区间。', 422)
-            length = min(duration, max(low, min(high, end - start + 2)))
-            first = min(max(0.0, (start + end - length) / 2), duration - length)
-            pieces = [(first, first + length)]
-        else:
-            count = math.ceil(duration / high)
-            pieces = [(duration * index / count, duration * (index + 1) / count) for index in range(count)]
+        pieces = (ctx.video_execution['pieces'] if ctx.video_execution is not None
+                  else redraw_intervals(duration, low, high, window))
         done = []
         for index, (first, last) in enumerate(pieces):
             await ctx.progress(f'正在重绘（{index + 1}/{len(pieces)}）' if len(pieces) > 1 else '正在重绘')
@@ -74,10 +93,7 @@ async def partial_reshoot(ctx: ToolContext):
     prompt = ctx.text('prompt')
     if not prompt:
         raise ProjectError('请描述重拍片段的内容。', 422)
-    start = ctx.number('startMs', 0, 0) / 1000
-    end = ctx.number('endMs', 0, 0) / 1000
-    if end - start < 0.5:
-        raise ProjectError('重拍区间至少 0.5 秒。', 422)
+    start, end = reshoot_window(ctx.parameters)
     # Only the chosen stretch is redrawn, picture and sound; the rest of the clip stays the source.
     window = EditMask(1.0, None, start, end)
     prompt = await ctx.video_prompt(prompt, 'Keep the people, setting, lighting and camera continuous with the surrounding footage.')

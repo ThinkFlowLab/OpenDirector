@@ -17,6 +17,8 @@ import type { CanvasToolTask } from "./toolCatalog.ts";
 
 export interface GenerationJob {
   id: string;
+  /** Authoritative execution revision, when supplied by the service ledger. */
+  revision?: number;
   nodeId: string;
   title: string;
   status:

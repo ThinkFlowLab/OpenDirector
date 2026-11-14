@@ -27,15 +27,16 @@ async def _extend(ctx: ToolContext, image: Image.Image, pads, prompt: str) -> Im
     Instruction editors ignore strength and recompose a padded canvas instead of
     filling it, so they are asked to pull the camera back over the original.
     """
-    if not ctx.edit_keeps_layout:
+    if not ctx.edit_keeps_layout and not ctx.native_mask:
         await ctx.progress('正在扩展画面')
         width, height = image.width + pads[0] + pads[2], image.height + pads[1] + pads[3]
         return await ctx.reframe(image, width, height, _with(prompt, (
             f'镜头拉远，扩展画面：{_placement(pads, image.width, image.height)}。保持原图中的人物、物体、服饰、场景、色调与光线完全一致，'
             '延续原有的透视与风格，画面完整自然，不要边框、白边或拼接痕迹')))
-    canvas, _ = media.extend_canvas(image, *pads)
+    canvas, region = media.extend_canvas(image, *pads)
     await ctx.progress('正在扩展画面')
-    drawn = await ctx.edit(canvas, _with(prompt, '自然延展画面四周，与原图内容、风格、透视和光线保持一致，无边框无拼接痕迹'), 0.9)
+    drawn = await ctx.edit(canvas, _with(prompt, '自然延展画面四周，与原图内容、风格、透视和光线保持一致，无边框无拼接痕迹'), 0.9,
+                           mask=region)
     # The redraw shifts tone slightly; a wide ramp inside the original hides the seam.
     inset = max(8, min(image.size) // 8)
     left, top, right, bottom = pads
@@ -62,12 +63,15 @@ async def smart_edit(ctx: ToolContext):
     if not instruction:
         raise ProjectError('请描述要如何修改图片。', 422)
     await ctx.progress('正在按描述改图')
-    input_image, references = image, ()
+    input_image, references, reference = image, (), None
     if mode != 'selection' and ctx.annotation:
         marked = media.open_image(ctx.annotation)
         if marked.size != image.size:
             raise ProjectError('标注图片尺寸必须与原图一致。', 422)
-        if ctx.edit_max_images > 1:
+        if ctx.native_mask:
+            reference = media.rgb_png(marked)
+            instruction += '。参考图是原图上的编辑标记，请根据标记理解位置与意图'
+        elif ctx.edit_max_images > 1:
             references = (media.rgb_png(marked),)
             instruction += '。第二张图是第一张图上的编辑标记，请根据标记理解位置与意图'
         else:
@@ -76,10 +80,12 @@ async def smart_edit(ctx: ToolContext):
         instruction += '，完成修改后移除这些辅助标记'
     if mode != 'annotation' and ctx.mask:
         instruction += '。这是原图上的局部修改，请严格保持原图构图、镜头、主体位置、大小和姿势，使编辑结果与原图逐像素对齐'
-    edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78, references=references)
+    region = media.mask_from(ctx.mask, image.size) if mode != 'annotation' and ctx.mask else None
+    edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78,
+                            references=references, mask=region, reference=reference)
     if mode != 'annotation' and ctx.mask:
         # A selection is an exact editing boundary: pixels outside it stay original.
-        edited = media.blend(image, edited, media.mask_from(ctx.mask, image.size))
+        edited = media.blend(image, edited, region)
     return [image_output(edited, '智能改图')]
 
 async def outpaint(ctx: ToolContext):
@@ -117,7 +123,8 @@ async def inpainting_remove(ctx: ToolContext):
         raise ProjectError('请先涂抹需要消除的区域。', 422)
     mask = media.mask_from(ctx.mask, image.size)
     await ctx.progress('正在消除并填补')
-    drawn = await ctx.edit(media.soften_region(image, mask), '移除涂抹区域中的物体与文字，用周围环境自然填补，画面干净完整', 0.8)
+    drawn = await ctx.edit(image if ctx.native_mask else media.soften_region(image, mask),
+                           '移除涂抹区域中的物体与文字，用周围环境自然填补，画面干净完整', 0.8, mask=mask)
     return [image_output(media.blend(image, drawn, media.feather(mask, max(3, min(image.size) / 120))), '消除笔')]
 
 def _yaw_text(yaw):
@@ -242,9 +249,10 @@ async def product_replacement(ctx: ToolContext):
     placed = scene.copy()
     placed.paste(layer, (x, y), layer)
     await ctx.progress('正在融合商品与场景')
-    drawn = await ctx.edit(placed, _with(ctx.text('prompt'), '商品自然融入场景，光影、透视和色调一致，保留商品外观和文字'), 0.42)
     region = Image.new('L', scene.size, 0)
     region.paste(255, (x, y, x + width, y + height))
+    drawn = await ctx.edit(placed, _with(ctx.text('prompt'), '商品自然融入场景，光影、透视和色调一致，保留商品外观和文字'), 0.42,
+                           mask=region)
     result = media.blend(scene, drawn, media.feather(region, max(4, min(width, height) / 12)))
     edge = {'4K': 4096, '2K': 2048}.get(ctx.parameters.get('resolution'))
     if edge and max(result.size) < edge:

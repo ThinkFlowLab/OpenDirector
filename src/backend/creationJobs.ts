@@ -44,6 +44,7 @@ export function creationJobs(
       : undefined;
     return {
       id: job.id,
+      revision: job.revision,
       nodeId: job.originItemId ?? spec.id,
       title: spec.prompt.slice(0, 60) || tNow("errors.backend.generationTask"),
       taskId: job.id,

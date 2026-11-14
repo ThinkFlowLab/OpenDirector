@@ -20,6 +20,7 @@ export function TextNodeComposer({
   node,
   incoming,
   models,
+  onCheckModels,
   onUpdate,
   onRun,
   onCancel,
@@ -30,6 +31,7 @@ export function TextNodeComposer({
   node: CanvasNode;
   incoming: CanvasNode[];
   models: readonly ModelConfig[];
+  onCheckModels?: (ids: readonly string[]) => Promise<void>;
   onUpdate: (data: Partial<CanvasNodeData>) => void;
   onRun: () => void;
   onCancel: () => void;
@@ -38,6 +40,8 @@ export function TextNodeComposer({
   referenceControls?: GenerationReferenceControls;
 }) {
   const t = useT();
+  const agentIds = models.filter((model) => model.kind === "agent").map((model) => model.id).join(",");
+  useEffect(() => { if (agentIds) void onCheckModels?.(agentIds.split(",")); }, [node.id, agentIds, onCheckModels]);
   const root = useRef<HTMLDivElement>(null),
     anchor = useRef<HTMLElement | null>(null);
   const [openPanel, setPanel] = useState<"parameters" | null>(null);

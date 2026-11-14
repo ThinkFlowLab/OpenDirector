@@ -7,7 +7,7 @@ import pytest
 from capabilities import requires_posix
 
 from opendirector.agent.context import RunContext
-from opendirector.agent.gateway import ToolGateway
+from opendirector.agent.gateway import ToolGateway, ToolResult
 from opendirector.agent.tools import AgentTools
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
@@ -18,6 +18,24 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
+
+
+def test_tool_events_preserve_concrete_capability_error_codes():
+    text = '最多支持 4 张图片，当前为 5 张。'
+    result = ToolResult(value={'error': text, 'code': 'image_input_count'}, error=text)
+    assert result.event('image.edit')['code'] == 'image_input_count'
+    receipt = ToolResult(value={'status': 'rejected', 'issues': [
+        {'code': 'capability_unavailable', 'message': '该模型不支持文字回复。'}]}, error='该模型不支持文字回复。')
+    assert receipt.event('generation.submit')['code'] == 'capability_unavailable'
+    assert receipt.event('generation.submit')['error'] == '该模型不支持文字回复。'
+
+
+def test_tool_event_preserves_nested_import_receipt_issue():
+    result = ToolResult(value={'status': 'rejected', 'receipt': {'issues': [
+        {'code': 'timeline_font_coverage', 'message': 'Missing glyphs'}]}}, error='Missing glyphs')
+    assert result.event('timeline.import_package')['code'] == 'timeline_font_coverage'
+    result.value['receipt']['issues'].append({'code': 'timeline_asset_missing', 'message': 'Missing asset'})
+    assert 'code' not in result.event('timeline.import_package')
 
 
 @pytest.fixture

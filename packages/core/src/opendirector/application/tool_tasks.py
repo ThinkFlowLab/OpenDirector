@@ -7,13 +7,18 @@ Results are stored as project assets; the canvas places them as linked nodes.
 
 import asyncio
 import base64
+from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import UUID, uuid5
 
 from PIL import Image
 
 from opendirector.application.tool_operations import TOOLS, Source, ToolContext, select_image_objects
+from opendirector.application.model_availability import ModelAvailability, tool_request
+from opendirector.application.tool_image_inputs import image_execution, image_request_parameters, local_image_resize, validate_image_sources
 from opendirector.domain.capabilities import LABELS
+from opendirector.domain.capability_messages import MissingToolModelError
+from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.ports.gateway import gateway
@@ -23,6 +28,7 @@ from opendirector.media import processing as media
 from opendirector.media.filenames import with_extension
 from opendirector.media.async_work import blocking
 from .tool_task_lifecycle import ToolTaskLifecycle
+from .tool_video_inputs import video_execution
 
 ACTIVE = {'queued', 'running'}
 MAX_SOURCES = 20
@@ -47,12 +53,13 @@ def output_item_id(task, index, kind):
 
 
 class ToolTasks(ToolTaskLifecycle):
-    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects):
+    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects, availability=None):
         self.store, self.configs, self.assets = store, configs, assets
         self.transport, self.poll_interval = transport, poll_interval
         self.jobs: dict[tuple[str, str], asyncio.Task] = {}
         self.limit = asyncio.Semaphore(concurrency)
         self.projects = projects
+        self.availability = availability or ModelAvailability(configs)
         self.accepting = set()
         self._init_lifecycle()
 
@@ -72,24 +79,43 @@ class ToolTasks(ToolTaskLifecycle):
         for spec in TOOLS.values():
             needs = spec.requires({})
             missing = [item for item in needs if item not in served]
+            # The panel must open before its chosen dimensions determine
+            # whether multi-size needs an image editor or only local resizing.
+            local_path = spec.id == 'multi-size'
             entry = {'id': spec.id, 'requires': [{'capability': item, 'label': LABELS[item]} for item in needs],
-                     'available': spec.recipe is not None and not missing, 'parametersConfirmed': spec.recipe is not None,
+                     'available': spec.recipe is not None and (local_path or not missing), 'parametersConfirmed': spec.recipe is not None,
                      'fields': list(spec.fields), 'note': spec.note,
                      'models': {item: [{'id': config['id'], 'label': _model_label(config)} for config in served.get(item, [])] for item in needs}}
-            if spec.recipe is None or missing:
+            for capability, choices in entry['models'].items():
+                for choice in choices:
+                    config = next(item for item in served[capability] if item['id'] == choice['id'])
+                    private = self.configs.resolve(config['id'], config['kind'])
+                    request = tool_request(private, capability)
+                    if request:
+                        choice['availability'] = self.availability.decision(private, request)
+                if not local_path and choices and all(item.get('availability', {}).get('status') == 'unavailable' for item in choices):
+                    selected = next(item for item in served[capability] if item['id'] == choices[0]['id'])
+                    private = self.configs.resolve(selected['id'], selected['kind'])
+                    try:
+                        self.availability.require(private, tool_request(private, capability))
+                    except ProjectError as error:
+                        entry.update(available=False, reason=str(error), reasonCode=choices[0]['availability']['reasonCode'])
+            if spec.recipe is None or (missing and not local_path):
                 entry['reason'] = f"需要接入具备「{'、'.join(LABELS[item] for item in missing or needs)}」能力的模型。"
+                entry.pop('reasonCode', None)
             tools.append(entry)
         selection = {'available': 'image.segment' in served}
         if not selection['available']:
             selection['reason'] = '接入图像分割模型后可自动识别选区；仍可手动画选区。'
         return {'capabilities': {item: [{'id': config['id'], 'label': _model_label(config)} for config in configs]
-                                 for item, configs in served.items()}, 'tools': tools, 'selectionPreview': selection}
+                                 for item, configs in served.items()}, 'tools': tools, 'selectionPreview': selection,
+                'availabilityRevision': self.availability.list()['revision']}
 
     def _model(self, capability, chosen):
         candidates = self.providers().get(capability, [])
         public = next((item for item in candidates if item['id'] == chosen), None) if chosen else (candidates[0] if candidates else None)
         if public is None:
-            raise ProjectError(f'没有可用的「{LABELS[capability]}」模型，请在“模型接入”中添加。', 409)
+            raise MissingToolModelError(capability)
         config = self.configs.resolve(public['id'], public['kind'])
         return config, adapter_for(config, self.transport, self.poll_interval)
 
@@ -117,6 +143,9 @@ class ToolTasks(ToolTaskLifecycle):
         if self.providers().get('text.chat'):
             async def chat(request):
                 chat_config, chat_adapter = self._model('text.chat', None)
+                prepared = await asyncio.to_thread(self.availability.prepare, chat_config)
+                current, _ = self._model('text.chat', chat_config['id'])
+                self.availability.require(current, tool_request(current, 'text.chat', actual=True), prepared)
                 return await chat_adapter.chat(chat_config, request)
 
         context = ToolContext(sources=[], mask=None, boxes=[], parameters={}, image_model=None, video_model=None,
@@ -217,9 +246,24 @@ class ToolTasks(ToolTaskLifecycle):
         # Snapshot validation and accepted ledger publication share the project
         # lock. A source cannot be replaced between checking and acceptance.
         with self.store.transaction():
-            return self._prepare_locked(project_id, value, session)
+            initial = self._prepare_locked(project_id, value, session, inspect=True)
+        if isinstance(initial, tuple):
+            return initial  # A replay does not query or reaccept its frozen job.
+        uses_mask = (value.get('tool') == 'inpainting-remove' or
+                     value.get('tool') == 'smart-edit' and (value.get('parameters') or {}).get('editMode', 'combined') != 'annotation')
+        if uses_mask and value.get('maskAssetId'):
+            source = self.assets.assets.get(project_id, value['sourceAssetIds'][0])
+            # Decode outside the storage transaction; freeze_inputs rechecks the
+            # immutable asset identities and matching dimensions before acceptance.
+            media.mask_from(self.assets.read_bytes(project_id, value['maskAssetId']),
+                            (source.metadata.width, source.metadata.height))
+        selected = {capability: config for capability, config in initial.items()
+                    if tool_request(config, capability) is not None}
+        prepared = dict(zip(selected, self.availability.prepare_many(selected.values()), strict=True))
+        with self.store.transaction():
+            return self._prepare_locked(project_id, value, session, prepared=prepared)
 
-    def _prepare_locked(self, project_id, value, session):
+    def _prepare_locked(self, project_id, value, session, *, inspect=False, prepared=None):
         if self.closing:
             raise ProjectError('工具服务正在关闭，请稍后查询原任务。', 503)
         self._ensure_owner()
@@ -253,37 +297,94 @@ class ToolTasks(ToolTaskLifecycle):
                     or existing.get('requestedModelConfigIds', existing.get('modelConfigIds', {})) != chosen):
                 raise ProjectError('工具任务标识已使用。', 409)
             return existing, directory, None
-        for capability in needs:
-            self._model(capability, chosen.get(capability))
         records = self.assets._records(directory, project_id)
         for asset_id in [*source_ids, *([mask_id] if mask_id else []), *([annotation_id] if annotation_id else [])]:
             if asset_id not in records:
                 raise ProjectError('来源素材不存在，请重新上传后提交。', 409)
+        if spec.sources == ('image',):
+            validate_image_sources(spec.id, [records[asset_id] for asset_id in source_ids])
         if records[source_ids[0]]['kind'] not in spec.sources:
             raise ProjectError('来源素材类型与工具不匹配。', 422)
         if mask_id and records[mask_id]['kind'] != 'image':
             raise ProjectError('选区必须是图片。', 422)
         if annotation_id and records[annotation_id]['kind'] != 'image':
             raise ProjectError('标注必须是图片。', 422)
+        if local_image_resize(spec.id, parameters, records[source_ids[0]]):
+            needs = ()
         canvas = value.get('canvas')
         if canvas and (len(canvas['sourceNodeIds']) != len(source_ids) or canvas['sourceNodeIds'][0] != canvas['nodeId']):
             raise ProjectError('工具任务的画布来源不匹配。', 422)
+        models = {capability: self._model(capability, chosen.get(capability))[0] for capability in needs}
+        if spec.id == 'layer-decompose' and self.providers().get('image.edit'):
+            models['image.edit'] = self._model('image.edit', chosen.get('image.edit'))[0]
+        if needs and self.providers().get('text.chat'):
+            models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
+        if inspect:
+            return models
         from .creation_tool_drafts import freeze_inputs
         frozen = freeze_inputs(self, project_id, value)
-        models = {capability: self._model(capability, chosen.get(capability))[0] for capability in needs}
-        if self.providers().get('text.chat'):
-            models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
+        image_policy, image_plan, video_plan = None, None, None
+        image_capability = next((name for name in ('image.edit', 'image.cutout', 'image.generate') if name in models), None)
+        if image_capability is not None:
+            image_policy = (image_input_policy(models[image_capability]) if image_capability == 'image.generate'
+                            else self.availability.image_execution_policy(models[image_capability]))
+            if image_capability != 'image.edit':
+                image_policy = {**image_policy, 'nativeMask': None}
+            image_plan = image_execution(spec.id, parameters, records[source_ids[0]], has_mask=bool(mask_id),
+                                         has_annotation=bool(annotation_id), policy=image_policy)
+            if image_capability == 'image.generate':
+                image_plan['roles'] = []
+        for capability, config in list(models.items()):
+            request = tool_request(config, capability, actual=True)
+            if request is None:
+                continue
+            parameters_to_check = [{}]
+            if capability in {'video.first_frame', 'video.edit'}:
+                video_plan = video_execution(spec.id, parameters, records[source_ids[0]],
+                                             adapter=adapter_for(config), capability=capability)
+                if video_plan is not None:
+                    parameters_to_check = video_plan['requests']
+            if capability == image_capability:
+                counts = {'text': 1, 'image': sum(role in {'image', 'annotation'} for role in image_plan['roles'])}
+                if image_plan['mode'] == 'native_mask':
+                    counts['mask_image'] = 1
+                    if 'reference' in image_plan['roles']:
+                        counts['reference_image'] = 1
+                request = replace(request, inputs=frozenset(counts), input_counts=tuple(counts.items()))
+                painter = adapter_for(config, image_policy=image_policy)
+                parameters_to_check = image_request_parameters(spec.id, parameters, [records[item] for item in source_ids],
+                    image_plan, adapter=painter, capability=capability, policy=image_policy) or [{}]
+                contract = self.availability.request_constraints(config, request)
+                if contract is not None:
+                    image_policy['requestConstraints'] = contract.model_dump(mode='json', exclude_none=True)
+            if capability not in (prepared or {}):
+                raise ProjectError('能力检查期间模型服务已变化，请重新提交。', 409, code='capability_connection_changed')
+            self.availability.assert_identity(config, prepared[capability])
+            for actual in parameters_to_check:
+                actual_request = replace(request, parameters=tuple(actual.items())) if actual else request
+                if capability in {'text.chat', 'image.edit'} and capability not in needs:
+                    if self.availability.decision(config, actual_request)['status'] == 'unavailable':
+                        del models[capability]
+                        break
+                else:
+                    self.availability.require(config, actual_request)
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',
                 'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'annotationAssetId': annotation_id,
                 'boxes': value.get('boxes') or [], 'parameters': parameters,
                 'modelConfigIds': {item: config['id'] for item, config in models.items()},
-                'modelSnapshots': {item: {key: val for key, val in config.items() if key != 'apiKey'} for item, config in models.items()}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
+                'modelSnapshots': {item: {key: val for key, val in config.items() if key not in {'apiKey', 'capabilityAutoCheck', 'availability'}} for item, config in models.items()}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
                 'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None,
                 'revision': 1, 'workerId': self.worker_id, 'localState': 'active',
                 'cancelRequested': False, 'modelCalls': [],
                 'canvas': canvas, 'sourceFingerprint': records[source_ids[0]]['fingerprint'],
                 'sourceKind': records[source_ids[0]]['kind'], 'placement': 'pending'}
         task.update(frozen)
+        if spec.id == 'layer-decompose':
+            task['backgroundCompletion'] = 'model' if 'image.edit' in models else 'transparent'
+        if image_policy is not None and image_capability in models:
+            task.update(imageExecutionPolicy=image_policy, imageExecution=image_plan)
+        if video_plan is not None:
+            task['videoExecution'] = video_plan
         self._write(directory, task)
         return task, directory, records
 
@@ -345,13 +446,22 @@ class ToolTasks(ToolTaskLifecycle):
                     await self._update(directory, task, phase=message)
 
                 def frozen_model(capability):
+                    if capability == 'image.edit' and task.get('backgroundCompletion') == 'transparent':
+                        # This task accepted a transparent background. A model
+                        # added later cannot turn it into a new remote request.
+                        raise ProjectError('本次拆分保留透明背景。', 409)
                     config, adapter = self._model(capability, task['modelConfigIds'].get(capability))
                     frozen = task.get('modelSnapshots', {}).get(capability)
                     if frozen and any(config.get(key) != frozen.get(key) for key in ('id', 'modelId', 'url', 'protocol', 'connectionType', 'videoAdapter')):
                         raise ProjectError('已接受工具任务的模型配置已变化，请新建尝试。', 409)
                     # Runtime credentials remain separate; execution options
                     # come from acceptance, not later configuration edits.
-                    return ({**frozen, 'apiKey': config.get('apiKey', '')} if frozen else config), adapter
+                    config = {**frozen, 'apiKey': config.get('apiKey', '')} if frozen else config
+                    if capability in {'image.edit', 'image.generate', 'image.cutout'}:
+                        adapter = adapter_for(config, self.transport, self.poll_interval,
+                                              image_policy=task.get('imageExecutionPolicy'),
+                                              legacy_image_policy=task.get('imageExecutionPolicy') is None)
+                    return config, adapter
 
                 async def image_model(request):
                     config, adapter = frozen_model('image.edit' if request.image is not None else 'image.generate')
@@ -410,8 +520,10 @@ class ToolTasks(ToolTaskLifecycle):
                 context = ToolContext(sources=sources, mask=mask, boxes=task['boxes'], parameters=task['parameters'],
                                       image_model=image_model, video_model=video_model, progress=progress, cutout_model=cutout_model,
                                       edit_model=edit_model, edit_seconds=limits, chat_model=chat_model,
+                                      video_execution=task.get('videoExecution'),
                                       segment_model=segment_model, track_model=track_model, edit_keeps_layout=keeps_layout,
                                       annotation=annotation, edit_max_images=edit_max_images,
+                                      native_mask=task.get('imageExecutionPolicy') is not None and task.get('imageExecution', {}).get('mode') == 'native_mask',
                                       segment_available='image.segment' in task['requires'], depth_model=depth_model)
                 outputs = await spec.recipe(context)
                 # Preserve already-produced bytes even if cancellation arrives

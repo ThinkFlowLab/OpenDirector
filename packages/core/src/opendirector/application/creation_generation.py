@@ -16,6 +16,7 @@ from filelock import FileLock, Timeout
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.voice_library import VoiceLibrary
+from opendirector.application.model_availability import ModelAvailability, generation_request
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
@@ -91,7 +92,7 @@ def new_seed():
 
 
 class CreationGeneration(GenerationRuntime):
-    def __init__(self, projects, configs, provider=None):
+    def __init__(self, projects, configs, provider=None, *, availability=None):
         super().__init__()
         self.projects, self.configs = projects, configs
         self.assets = CreationAssets(projects)
@@ -99,6 +100,7 @@ class CreationGeneration(GenerationRuntime):
         self.settings = gateway().settings(projects.local.repository)
         self.provider = provider or GenerationProviders(self.store)
         self.voices = VoiceLibrary(configs)
+        self.availability = availability or ModelAvailability(configs)
 
     def directory(self, project_id):
         with self.projects.local.transaction() as db:
@@ -163,7 +165,8 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
-            if input_rules(config)['profile'] == 'vllm-omni-image':
+            if (input_rules(config)['profile'] == 'vllm-omni-image'
+                    and not any(records[key]['kind'] == 'image' for key in node['referenceIds'])):
                 from opendirector.integrations.vllm_omni_image import SAMPLING
                 params.update(SAMPLING)
         if spec.kind == 'audio' and intent['creationType'] == 'music':
@@ -324,6 +327,14 @@ class CreationGeneration(GenerationRuntime):
         # again under commit so a slow/offline provider cannot freeze editing.
         initial = self.projects.snapshot(command.projectId)
         voice_spec = next((spec for spec in initial.generationSpecs if spec.id == command.payload.specId), None)
+        capability_identity = None
+        capability_failure = None
+        if voice_spec is not None and voice_spec.modelConfigId:
+            try:
+                capability_config = self.configs.resolve(str(voice_spec.modelConfigId), 'agent' if voice_spec.kind == 'text' else voice_spec.kind)
+                capability_identity = self.availability.prepare(capability_config)
+            except ProjectError as error:
+                capability_failure = error
         voice_config, voice_failure = None, None
         if voice_spec is not None and voice_spec.kind == 'audio' and voice_spec.parameters.creationType == 'audio':
             try:
@@ -366,7 +377,7 @@ class CreationGeneration(GenerationRuntime):
             intermediate = ProjectSnapshot.model_validate(data)
             spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
             config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
-            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': input_rules(config)})
+            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
             spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
             spec = execution_spec(spec, resolved, public.inputRules)
             try:
@@ -376,6 +387,10 @@ class CreationGeneration(GenerationRuntime):
                         raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)
                     if voice_failure is not None:
                         raise voice_failure
+                if capability_failure is not None:
+                    raise capability_failure
+                if capability_identity is not None:
+                    self.availability.require(config, generation_request(config, spec, resolved), capability_identity)
             except (ValueError, ProjectError) as error:
                 raise ContractError.from_error(error, spec.id) from error
             for reference in resolved:
@@ -399,6 +414,8 @@ class CreationGeneration(GenerationRuntime):
                 if hasattr(self.provider, 'prepare_inputs'):
                     self.provider.prepare_inputs(str(command.projectId), task, config)
                 parameters = self._parameters(spec, config, task, records)
+                if capability_identity is not None:
+                    self.availability.require(config, generation_request(config, spec, resolved, parameters=parameters), capability_identity)
             except ProjectError as error:
                 raise ContractError.from_error(error, spec.id) from error
             job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})

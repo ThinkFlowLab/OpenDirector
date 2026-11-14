@@ -44,11 +44,14 @@ class ToolContext:
 
     def __init__(self, *, sources, mask, boxes, parameters, image_model, video_model, progress, video_submitted=None, cutout_model=None,
                  edit_model=None, edit_seconds=(4.0, 15.0), chat_model=None, segment_model=None, track_model=None,
-                 edit_keeps_layout=True, annotation=None, edit_max_images=1, segment_available=False, depth_model=None):
+                 edit_keeps_layout=True, annotation=None, edit_max_images=1, segment_available=False, depth_model=None,
+                 native_mask=False, video_execution=None):
         self.sources: list[Source] = sources
         self.mask: bytes | None = mask
         self.annotation: bytes | None = annotation
         self.edit_max_images = edit_max_images
+        # Chosen and frozen at acceptance, never switched after a provider failure.
+        self.native_mask = native_mask
         self.segment_available = segment_available
         self.boxes: list[dict] = boxes
         self.parameters: dict = parameters
@@ -58,6 +61,7 @@ class ToolContext:
         self.edit_keeps_layout = edit_keeps_layout
         # Shortest and longest clip one redraw accepts; longer sources are processed piecewise.
         self.edit_seconds = edit_seconds
+        self.video_execution = video_execution
         # Optional: a chat model only improves prompts; tools never require it.
         self._chat = chat_model
         self._progress, self._video_submitted = progress, video_submitted
@@ -83,10 +87,13 @@ class ToolContext:
     async def progress(self, message):
         await self._progress(message)
 
-    async def edit(self, image: Image.Image, prompt: str, strength: float, *, references=()) -> Image.Image:
+    async def edit(self, image: Image.Image, prompt: str, strength: float, *, references=(), mask=None,
+                   reference=None) -> Image.Image:
         """Image-to-image at the source's aspect; the result is resampled back to the source size."""
         result = await self._image(ImageRequest(prompt=prompt, width=image.width, height=image.height,
-                                                image=media.rgb_png(image), strength=strength, references=tuple(references)))
+                                                image=media.rgb_png(image), strength=strength, references=tuple(references),
+                                                mask=media.png(mask.convert('L')) if mask is not None and self.native_mask else None,
+                                                reference=reference if self.native_mask else None))
         return media.resize(media.open_image(result.data), image.width, image.height)
 
     async def reframe(self, image: Image.Image, width: int, height: int, prompt: str) -> Image.Image:

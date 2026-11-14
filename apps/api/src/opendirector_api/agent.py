@@ -1,6 +1,7 @@
 """Project-scoped assistant persistence and native runtime streaming."""
 import asyncio
 from contextlib import aclosing, suppress
+from dataclasses import replace
 import json
 import logging
 from pathlib import Path
@@ -18,15 +19,23 @@ from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
 from opendirector.domain.projects import ProjectError
+from opendirector.application.model_availability import requests_for
 from opendirector.domain.rule_facts import MAX_REFERENCES, PROMPT_MAX_LENGTH
 from opendirector.infrastructure.creation_projects import durable_json
 from opendirector.infrastructure.local_projects import child, read_json
+from opendirector.integrations.chat_completions import CHAT_MAX_TOKENS
 from opendirector_api.localization import localized_error_for_language
 
 logger = logging.getLogger(__name__)
 
 
 Runtime = RuntimeId
+
+
+def _assistant_request(config):
+    """Admission uses the same output ceiling as the configured model gateway."""
+    return replace(requests_for(config, inputs={'text'})[0],
+                   parameters=(('max_tokens', CHAT_MAX_TOKENS),))
 
 
 class Draft(BaseModel):
@@ -113,7 +122,8 @@ class Conversations:
             return directory
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
-               begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None) -> dict:
+               begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
+               before_begin=None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
@@ -134,6 +144,8 @@ class Conversations:
             if begin is not None:
                 if any(message['id'] == begin['id'] for message in value['messages']):
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
+                if before_begin is not None:
+                    before_begin()
                 value['messages'].append(begin)
                 value['messages'].append({'id': str(uuid5(UUID(begin['id']), 'assistant')),
                     'role': 'assistant', 'text': '', 'status': 'streaming',
@@ -356,6 +368,11 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             if value.runtime == 'jiuwenswarm' and value.thinking != 'auto':
                 raise ProjectError('JiuwenSwarm 当前使用原生默认推理强度。', 409)
             config = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent') if spec.modelSource == 'settings' else None
+            if config is not None:
+                prepared = await asyncio.to_thread(generation.availability.prepare, config)
+                current = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent')
+                generation.availability.require(current, _assistant_request(current), prepared)
+                config = current
             available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
             if set(value.skills) - {item['name'] for item in available}:
                 raise ProjectError('技能已失效，请重新选择。', 409)
@@ -370,6 +387,10 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             preferences = {kind: {'modelConfigId': model_id, 'modelName': model_names.get(model_id)}
                 for kind, model_id in model_selections.items() if model_id}
             events = RunEvents()
+            def validate_connection():
+                if config is not None:
+                    current = configs.resolve(str(value.modelId), 'agent')
+                    generation.availability.require(current, _assistant_request(current), prepared)
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
@@ -384,7 +405,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                         'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
                         'modelSelections': dict(value.modelSelections),
                         'model': model, 'status': 'complete'}
-                    saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user, conversation_id=value.conversationId)
+                    saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user,
+                        conversation_id=value.conversationId, before_begin=validate_connection)
                     accepted = True
                     events.put({'type': 'start', 'conversation': saved})
                     previous_sources = {source['id']: source for message in saved['messages'][:-2]

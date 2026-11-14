@@ -96,6 +96,7 @@ export interface CanvasToolTask {
 export interface ToolCapability {
   available: boolean;
   reason?: string;
+  reasonCode?: string;
   /** Adapter-supplied fields own dynamic model/option constraints. */
   fields?: readonly ToolField[];
   parametersConfirmed?: boolean;
@@ -267,7 +268,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "layer-decompose",
     "图层分解",
-    "原站实测提供智能拆分、框选拆分和按描述拆分。框选需原图矩形选区；实际拆分及报价由真实服务提供。",
+    "按对象、选区或描述拆分图层；可用方式由连接的服务提供。",
     [
       {
         key: "mode",
@@ -300,14 +301,14 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "product-replacement",
     "商品替换",
-    "使用场景图和商品图替换主体，支持选区与提示词；原站已实测自动主体识别和 2K 结果。",
+    "使用场景图和商品图替换主体，支持选区与提示词。",
     [prompt, choice("resolution", "清晰度", ["2K", "4K"])],
     { minSources: 2, maxSources: 2 },
   ),
   tool(
     "multi-size",
     "智能多尺寸",
-    "按原站实测画幅和像素尺寸创建草稿；自定义范围与实际服务协议尚未接入。",
+    "设置目标画幅与输出尺寸。",
     [
       {
         key: "aspectRatio",
@@ -345,7 +346,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "dynamic-poster",
     "动态海报",
-    "基于原图比例创建动态海报请求；本轮原站入口仅提供 Seedance 2.5，实际生成需连接服务。",
+    "按原图比例生成动态海报，需要连接视频生成服务。",
     [
       prompt,
       choice("model", "模型", ["Seedance 2.5"]),
@@ -362,7 +363,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       choice("resolution", "清晰度", ["1.5K", "2K"]),
       {
         ...choice("aspectRatio", "画幅", ["1:1"]),
-        hint: "本轮只核对 1:1；其他画幅待服务确认。",
+        hint: "当前预设为 1:1。",
       },
     ],
     { maxSources: 6, parameterCoverage: "entry-only" },
@@ -409,12 +410,12 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "video-edit",
     "视频编辑",
-    "原站实测支持 4–30 秒素材、提示词及矩形/画笔/箭头/文字/橡皮擦/标记；本轮未见模型选择。这里只记录意图，视频标注数据尚未接入。",
+    "设置需要重拍的片段及修改要求；可用编辑方式由服务提供。",
     [
       { ...prompt, required: true },
       {
         key: "annotationTool",
-        label: "原站标注工具",
+        label: "标注工具",
         type: "select",
         options: [
           { value: "rectangle", label: "矩形" },
@@ -439,14 +440,14 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "video-subtitle-erasure",
     "字幕擦除",
-    "本轮原站实测没有额外设置；实际视频处理依赖真实服务。",
+    "擦除视频中的字幕，需要连接视频处理服务。",
     [],
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
     "video-matting",
     "视频抠像",
-    "原站实测可选黑色、绿色或透明背景；输出格式与处理协议由真实服务确定。",
+    "选择黑色、绿色或透明背景；输出格式由服务提供。",
     [
       {
         key: "background",
@@ -465,7 +466,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "video-translation",
     "视频翻译",
-    "静态代码存在候选入口，本轮原站未见；当前可用性和参数未知。",
+    "需要连接提供此功能的服务。",
     [],
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
@@ -508,7 +509,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "extract-audio",
     "提取音频",
-    "将视频音轨另存为音频素材；对应本轮原站「声音分离 → 分离音频」。",
+    "将视频音轨另存为音频素材。",
     [],
     {
       category: "audio",
@@ -520,7 +521,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "audio-separation",
     "音频分离",
-    "仅保留静态候选入口。本轮未见人声/伴奏分离；视频「声音分离」实测仅为提取音频，不能据此确认此能力。",
+    "分离人声与伴奏，需要连接音轨分离服务。",
     [],
     {
       category: "audio",

@@ -19,10 +19,9 @@ from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore, ZhipuSpeech
+from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech,
+                                                    VllmOmniMusic, VllmOmniScore, ZhipuSpeech, image_parts)
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
-from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
-from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
 

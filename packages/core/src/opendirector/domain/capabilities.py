@@ -46,6 +46,11 @@ class ImageRequest:
     seed: int | None = None
     # Further condition images (style, product, character) after the main image.
     references: tuple[bytes, ...] = ()
+    # Canonical selection: grayscale PNG, white edits and black preserves.
+    # It is an auxiliary input, never another ordinary condition image.
+    mask: bytes | None = None
+    # A separately declared reference_image role, distinct from repeated image parts.
+    reference: bytes | None = None
 
 
 @dataclass(frozen=True)

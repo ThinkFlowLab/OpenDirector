@@ -1,3 +1,4 @@
+import { availability } from "./availability.ts";
 import { voiceLibrary } from "./voiceLibrary.ts";
 import { trace } from "./trace.ts";
 import { modelSetup } from "./modelSetup.ts";
@@ -23,6 +24,7 @@ type ZhCatalog = typeof import("../zh-CN/index.ts").zhCN;
 /** `Record<keyof ZhCatalog, ...>` makes a missing English key a compile error. */
 export const enUS: Record<keyof ZhCatalog, MessageEntry> = {
   ...common,
+  ...availability,
   ...voiceLibrary,
   ...settings,
   ...modelSetup,

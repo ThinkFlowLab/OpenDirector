@@ -1,5 +1,6 @@
 """Business commands shared by every agent runtime."""
 import asyncio
+from opendirector.application.model_availability import ModelAvailability
 import difflib
 import shutil
 from pathlib import Path
@@ -233,6 +234,13 @@ def tools() -> list[dict]:
                          {'type': 'object', 'properties': {}, 'additionalProperties': False}),
               tool_schema('read', 'Read a discovered skill file/resource, or text asset via asset:<UUID>. No scripts.',
                          {'type': 'object', 'properties': {'path': {'type': 'string'}}, 'required': ['path'], 'additionalProperties': False})]
+    result.append(tool_schema('model_availability', 'Read current model operation availability without network access. '
+        'Set refresh=true to query declarations without inference. Manual refresh requires explicit configIds. '
+        'Unknown preserves manual configuration; unavailable blocks only new matching operations.',
+        {'type': 'object', 'properties': {'refresh': {'type': 'boolean', 'default': False},
+         'manual': {'type': 'boolean', 'default': False},
+         'configIds': {'type': 'array', 'items': {'type': 'string', 'format': 'uuid'}, 'minItems': 1, 'maxItems': 200}},
+         'additionalProperties': False}))
     query_schema = TypeAdapter(Query).json_schema()
     query_schema['type'] = 'object'
     for definition in query_schema['$defs'].values():
@@ -283,6 +291,7 @@ class AgentTools:
         self.projects = projects
         self.generation = generation
         self.configs = configs
+        self.availability = getattr(generation, 'availability', None) or ModelAvailability(configs)
         self.assets = CreationAssets(projects)
         self.voices = getattr(generation, 'voices', None) or VoiceLibrary(configs)
 
@@ -322,8 +331,16 @@ class AgentTools:
                 ref_text=arguments.get('refText'), speaker_description=arguments.get('speakerDescription'))
         if name == 'read_project':
             snapshot = await asyncio.to_thread(self.projects.snapshot, project_id)
-            return {'project': snapshot.model_dump(mode='json'), 'models': self.configs.list(), 'commands': list(COMMANDS),
+            return {'project': snapshot.model_dump(mode='json'), 'models': self.availability.catalog(), 'commands': list(COMMANDS),
                 'commandMetadata': {kind: {'description': model.__doc__} for kind, model in COMMANDS.items()}}
+        if name == 'model_availability':
+            refresh = TypeAdapter(bool).validate_python(arguments.get('refresh', False), strict=True)
+            manual = TypeAdapter(bool).validate_python(arguments.get('manual', False), strict=True)
+            config_ids = TypeAdapter(list[UUID]).validate_python(arguments['configIds']) if 'configIds' in arguments else None
+            if refresh:
+                return await asyncio.to_thread(self.availability.refresh,
+                    [str(item) for item in config_ids] if config_ids is not None else None, manual=manual)
+            return self.availability.list()
         if name == 'query':
             if {'projectId', 'queryId'} & arguments.keys():
                 raise ProjectError('查询身份与工程范围由宿主提供。')
@@ -429,4 +446,3 @@ class AgentTools:
         else:
             receipt = await asyncio.to_thread(self.projects.execute, command, session=session, source='agent')
         return receipt.model_dump(mode='json')
-

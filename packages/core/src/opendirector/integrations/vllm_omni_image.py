@@ -1,7 +1,7 @@
 """Self-hosted vLLM-Omni image models (Z-Image-Turbo, Qwen-Image-2.1) for canvas nodes.
 
-Reference documents are inlined as text. Z-Image-Turbo draws from the prompt
-alone; Qwen-Image-2.1 also takes connected images as condition images. Automatic
+Reference documents are inlined as text. Z-Image-Turbo accepts one input image;
+Qwen-Image-2.1 accepts up to four condition images. Automatic
 output uses H3's 16:9 canvas; explicit output uses the frozen request dimensions.
 The model API itself is reached through the capability adapter.
 """
@@ -19,8 +19,8 @@ WIDTH, HEIGHT = 1344, 768
 # Z-Image-Turbo is a few-step distilled model meant to run without CFG; vLLM-Omni's recipe uses 9 steps
 # and guidance 0. Left out, vLLM-Omni runs 50 steps with CFG at 1.0, about ten times the work.
 # Fixed into a job's parameters when it is accepted; see CreationGeneration._parameters.
-# Every new job sends these, which is safe only while the vllm-omni-image profile takes no reference images
-# (domain/input_rules.py): vLLM-Omni starts an edit at step int(steps * (1 - strength)), so 9 steps would
+# Apply only to text-to-image jobs. Image edits retain the service defaults:
+# vLLM-Omni starts an edit at step int(steps * (1 - strength)), so 9 steps would
 # start a strong edit from almost pure noise.
 SAMPLING = {'num_inference_steps': 9, 'guidance_scale': 0.0}
 SAMPLING_FIELDS = ('num_inference_steps', 'guidance_scale')
