@@ -123,6 +123,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                            else '当前模型接口尚未接通素材参考模式，请选择该模型支持的生成方式。')
     total_audio_ms, total_video_ms, media_bytes = 0, 0, 0
     source_metadata, text_context = [], []
+    mentioned = {str(part['assetId']) for part in task.get('promptContent') or () if part['type'] == 'reference'}
     role_by_asset = {str(value['assetId']): value['role'] for value in task.get('referenceRoles') or []}
     slot_roles = set()
     for index, (data, meta, source_kind) in enumerate(references(store, task['projectId'], task['referenceIds'], overrides), 1):
@@ -148,8 +149,12 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                     layout = None
                 if isinstance(layout, dict):
                     raise ProjectError('MOSS 布局 JSON 不支持附加文本参考，请将要求写入 JSON 或移除文本参考。', 422, code='moss_layout_reference')
-            result['prompt'] += f'\n\n参考{index}：{meta["name"]}\n{reference_text(data)}'
-            text_context.append(f'\n\n参考{index}：{meta["name"]}\n{reference_text(data)}')
+            # Only an @-mentioned text keeps its label, so the inline mention
+            # still points at its body; a connected text joins the prompt as is.
+            body = reference_text(data)
+            context = f'\n\n参考{index}：{meta["name"]}\n{body}' if str(meta['id']) in mentioned else f'\n\n{body}'
+            result['prompt'] += context
+            text_context.append(context)
             entry['role'] = 'text'
         elif source_kind == 'image':
             mime = image_type(data)

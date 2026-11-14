@@ -102,8 +102,21 @@ def test_blank_prompt_implicitly_uses_the_connected_text_reference(project):
     task, posts = run_image(project, reply, [note['id']], prompt='')
     assert task['status'] == 'succeeded', (task['error'], task['errorDetails'])
     [payload] = posts
-    # The text reference is the whole instruction, without a leading blank line.
-    assert payload['prompt'] == '参考1：用例.md\n水彩风灯塔，清晨'
+    # The text reference is the whole instruction, without a label or leading blank line.
+    assert payload['prompt'] == '水彩风灯塔，清晨'
+
+
+def test_only_mentioned_text_references_keep_their_label():
+    from opendirector.integrations.reference_inputs import generation_references
+    brief, style = str(uuid4()), str(uuid4())
+    overrides = {brief: ('水彩风灯塔'.encode(), {'id': brief, 'name': '用例.md', 'type': 'text/markdown', 'fingerprint': ''}),
+                 style: ('柔和粉色'.encode(), {'id': style, 'name': '风格.md', 'type': 'text/markdown', 'fingerprint': ''})}
+    task = {'kind': 'image', 'projectId': str(uuid4()), 'prompt': '', 'referenceIds': [style, brief],
+            'promptContent': [{'type': 'text', 'text': '按'}, {'type': 'reference', 'assetId': style, 'name': '风格.md'},
+                              {'type': 'text', 'text': '画'}]}
+    prepared = generation_references(None, task, ZIMAGE, overrides=overrides)
+    # The @-mentioned style keeps the label its inline mention names; the connected brief does not.
+    assert prepared['prompt'] == '按［参考1：风格.md］画\n\n参考1：风格.md\n柔和粉色\n\n水彩风灯塔'
 
 
 def test_blank_prompt_without_a_text_reference_is_still_rejected(project):
