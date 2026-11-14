@@ -202,6 +202,10 @@ export const generation = {
   "generation.picker.noReturned": "服务未返回模型",
   "generation.picker.noneAdded": "尚未添加模型",
   "generation.picker.manualHint": "可以手动添加服务支持的模型 ID。",
+  "generation.picker.uncertain": "可能不支持{kind}，请确认后再保存，或改用手动添加。",
+  "generation.picker.filtered": "已隐藏 {count} 个不支持{kind}的模型。",
+  "generation.picker.noneCompatible": "服务返回的模型均不支持{kind}",
+  "generation.picker.noneCompatibleHint": "请改用对应官方预设，或手动添加支持的模型 ID。",
   "generation.picker.fetchHint":
     "填写服务地址后点击“获取模型”，勾选需要启用的模型。",
   "generation.picker.noSelection": "还没有选择模型",

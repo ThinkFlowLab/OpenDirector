@@ -220,6 +220,13 @@ export const generation = {
   "generation.picker.noReturned": "The service returned no models",
   "generation.picker.noneAdded": "No models added yet",
   "generation.picker.manualHint": "You can add a model ID supported by the service.",
+  "generation.picker.uncertain": "This model may not support {kind}. Confirm before saving, or add a supported ID manually.",
+  "generation.picker.filtered": {
+    one: "Hid {count} model that does not support {kind}.",
+    other: "Hid {count} models that do not support {kind}.",
+  },
+  "generation.picker.noneCompatible": "None of the returned models support {kind}",
+  "generation.picker.noneCompatibleHint": "Use the official preset, or add a supported model ID manually.",
   "generation.picker.fetchHint":
     "Enter the service address, choose Fetch models, then select the models to enable.",
   "generation.picker.noSelection": "No model selected yet",

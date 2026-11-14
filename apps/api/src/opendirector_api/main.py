@@ -215,10 +215,9 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.post('/api/model-configs/discover')
     async def discover_models(value: ModelDiscoveryRequest):
-        models = await catalog.discover(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(),
+        return await catalog.discover(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(),
                                         str(value.configId) if value.configId else None, connection_type=value.connectionType,
                                         protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode)
-        return {'models': models}
 
     @app.post('/api/model-configs/test-agent')
     async def test_agent_model(value: AgentModelTest):

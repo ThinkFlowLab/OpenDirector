@@ -8,6 +8,7 @@ import time
 
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.model_connection import connection_fields, model_fields
+from opendirector.domain.model_kind_support import classify_service_models, reject_incompatible_models
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.chat_completions import ChatCompletions, chat_payload
 from opendirector.integrations.model_capabilities import read_service_models, read_video_capabilities
@@ -40,9 +41,11 @@ class ModelCatalog:
         return self.configs.list()
 
     def save(self, kind, url, model_id, api_key, config_id=None, **options):
+        reject_incompatible_models(kind, [model_id], {'url': url, 'protocol': options.get('protocol')})
         return self.configs.save(kind, url, model_id, api_key, config_id, **options)
 
     def save_many(self, kind, url, model_ids, api_key, config_id=None, **options):
+        reject_incompatible_models(kind, model_ids, {'url': url, 'protocol': options.get('protocol')})
         return self.configs.save_many(kind, url, model_ids, api_key, config_id, **options)
 
     def delete(self, config_id):
@@ -71,7 +74,7 @@ class ModelCatalog:
         config = _draft(kind, url, model_id or 'discovery', api_key, connection_type, protocol, auth_mode, proxy_mode)
         config = await self._with_saved_key(config, config_id, kind, require_key=True, threaded=True)
         models = await read_service_models(config)
-        return list(dict.fromkeys(item['id'] for item in models))
+        return classify_service_models(kind, models, config)
 
     async def test_agent(self, url, model_id, api_key, config_id=None, *, connection_type='api', protocol=None,
                          auth_mode=None, proxy_mode=None, timeout=AGENT_TEST_TIMEOUT_SECONDS):

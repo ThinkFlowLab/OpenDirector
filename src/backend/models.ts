@@ -51,8 +51,14 @@ export interface ModelConfigInput {
   videoCapabilities?: VideoCapabilities | null;
 }
 
+export interface ModelDiscovery {
+  models: string[];
+  uncertain: string[];
+  unsupported: string[];
+}
+
 export function discoverModels(value: ModelConfigInput, configId?: string) {
-  return request<{ models: string[] }>(
+  return request<ModelDiscovery>(
     "/model-configs/discover",
     json("POST", { ...value, configId }),
   );

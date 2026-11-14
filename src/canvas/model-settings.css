@@ -391,6 +391,18 @@
 .cw-model-option > label span {
   overflow-wrap: anywhere;
 }
+.cw-model-option-warning,
+.cw-model-filter-note {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: 24px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--settings-muted);
+}
+.cw-model-filter-note {
+  padding: 0 0 8px;
+}
 .cw-model-settings input[type="checkbox"] {
   width: 14px;
   height: 14px;

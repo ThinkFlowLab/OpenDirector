@@ -12,6 +12,9 @@ export function ModelPicker({
   modelPlaceholder,
   available,
   selected,
+  uncertain = [],
+  unsupportedCount = 0,
+  categoryLabel,
   loaded,
   loading,
   error,
@@ -27,6 +30,9 @@ export function ModelPicker({
   modelPlaceholder: string;
   available: string[];
   selected: string[];
+  uncertain?: string[];
+  unsupportedCount?: number;
+  categoryLabel?: string;
   loaded: boolean;
   loading: boolean;
   error: string;
@@ -206,6 +212,11 @@ export function ModelPicker({
           </div>
         </>
       )}
+      {loaded && unsupportedCount > 0 && available.length > 0 && (
+        <p className="cw-model-filter-note">
+          {t("generation.picker.filtered", { count: unsupportedCount, kind: categoryLabel ?? "" })}
+        </p>
+      )}
       <div className="cw-model-options" aria-busy={loading}>
         {loading && !ids.length ? (
           <div className="cw-model-empty-state" role="status">
@@ -216,10 +227,16 @@ export function ModelPicker({
         ) : !ids.length ? (
           <div className="cw-model-empty-state">
             <CanvasIcon name="model" size={26} />
-            <strong>{loaded ? t("generation.picker.noReturned") : t("generation.picker.noneAdded")}</strong>
+            <strong>{loaded
+              ? (unsupportedCount
+                ? t("generation.picker.noneCompatible", { kind: categoryLabel ?? "" })
+                : t("generation.picker.noReturned"))
+              : t("generation.picker.noneAdded")}</strong>
             <p>
               {loaded
-                ? t("generation.picker.manualHint")
+                ? (unsupportedCount
+                  ? t("generation.picker.noneCompatibleHint")
+                  : t("generation.picker.manualHint"))
                 : t("generation.picker.fetchHint")}
             </p>
           </div>
@@ -264,6 +281,11 @@ export function ModelPicker({
                 <ModelLogo modelId={id} />
                 <span title={id}>{id}</span>
               </label>
+              {uncertain.includes(id) && (
+                <p className="cw-model-option-warning">
+                  {t("generation.picker.uncertain", { kind: categoryLabel ?? "" })}
+                </p>
+              )}
               {onTest && (
                 <button
                   type="button"

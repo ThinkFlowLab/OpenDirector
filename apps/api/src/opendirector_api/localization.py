@@ -78,6 +78,7 @@ ENGLISH_BY_CODE = {
     "reference_invalid": "A reference is no longer valid. Select it again and retry.",
     "role_restricted": "This item does not allow that operation.",
     "storage_unavailable": "A stored file is missing or has changed. Restore the file and try again.",
+    "model_kind_unsupported": "This model does not support the selected category. Choose a compatible model, use the official preset, or add a supported model ID manually.",
     "capability_unsupported": "This capability is not supported yet.",
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",

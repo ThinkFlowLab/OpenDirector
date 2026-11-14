@@ -301,13 +301,44 @@ def test_discover_models_without_model_id_and_preserve_key(api, monkeypatch):
     response = client.post('/api/model-configs/discover', json=payload(
         modelId='', apiKey='', configId=saved['id']))
     assert response.status_code == 200
-    assert response.json() == {'models': ['model-a', 'model-b']}
+    assert response.json() == {'models': ['model-a', 'model-b'], 'uncertain': ['model-a', 'model-b'], 'unsupported': []}
     assert calls[0]['apiKey'] == 'test-secret'
     assert (store.state_dir / 'models.json').read_bytes() == before
     response = client.post('/api/model-configs/discover', json=payload(
         modelId='', apiKey='', configId=saved['id'], url='https://other.example/v1'))
     assert response.status_code == 400
     assert len(calls) == 1
+
+
+def test_discover_and_save_filter_incompatible_image_models(api, monkeypatch):
+    client, _ = api
+
+    async def models(config):
+        assert config['kind'] == 'image'
+        return [{'id': 'MiniMax-M3.1-Flash'}, {'id': 'MiniMax-H3-Image'}, {'id': 'studio-xl'}]
+
+    monkeypatch.setattr('opendirector.application.model_catalog.read_service_models', models)
+    response = client.post('/api/model-configs/discover', json=payload(
+        kind='image', url='https://api.minimax.cn/v1', modelId='', protocol='openai'))
+    assert response.status_code == 200
+    assert response.json() == {
+        'models': ['MiniMax-H3-Image', 'studio-xl'],
+        'uncertain': ['studio-xl'],
+        'unsupported': ['MiniMax-M3.1-Flash'],
+    }
+    refused = client.post('/api/model-configs', json=payload(
+        kind='image', url='https://api.minimax.cn/v1', modelId='MiniMax-M3.1-Flash', protocol='openai'))
+    assert refused.status_code == 422
+    assert refused.json()['code'] == 'model_kind_unsupported'
+    assert 'MiniMax-M3.1-Flash' in refused.json()['detail']
+    batch = client.post('/api/model-configs/batch', json=payload(
+        kind='image', url='https://api.minimax.cn/v1', modelId='unused',
+        modelIds=['MiniMax-M3.1-Flash', 'MiniMax-H3-Image'], protocol='openai'))
+    assert batch.status_code == 422
+    assert batch.json()['code'] == 'model_kind_unsupported'
+    saved = client.post('/api/model-configs', json=payload(
+        kind='image', url='https://api.minimax.cn/v1', modelId='MiniMax-H3-Image', protocol='openai'))
+    assert saved.status_code == 200, saved.text
 
 
 def test_read_service_models_protocol():
