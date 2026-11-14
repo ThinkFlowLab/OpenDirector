@@ -118,6 +118,11 @@ def finalize_video_edit(store, task, suffix, data):
     if task.get('protocol') != 'vllm_omni' or task['kind'] != 'video':
         return suffix, data
     if not policy:
+        # H3 puts the tail anchor at the last frame of its native 17n+5 grid.
+        if task.get('videoMode') == 'first_frame' and any(
+            ref['role'] == 'last_frame' for ref in task.get('referenceRoles', ())
+        ):
+            return suffix, data
         # Native H3 continuation resumes from the server's untrimmed clip, so only FastH3 is trimmed.
         if (task.get('referenceInputs') or {}).get('profile') == 'fasth3-omni' and task.get('parameters', {}).get('duration'):
             return _trim_plain_fasth3(task, suffix, data)

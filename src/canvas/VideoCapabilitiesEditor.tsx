@@ -36,7 +36,7 @@ export function VideoCapabilitiesEditor({
   onChange: (value: VideoCapabilityDraft) => void;
 }) {
   const t = useT();
-  const h3 = adapter === "fasth3" || adapter === "minimax_h3";
+  const h3 = adapter === "fasth3" || adapter === "fasth3_dual" || adapter === "minimax_h3";
   const update = (patch: Partial<VideoCapabilityDraft>) =>
     onChange({ ...value, ...patch });
   const rowChange = (index: number, patch: Partial<VideoOutputDraft>) =>

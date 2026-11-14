@@ -17,7 +17,7 @@ from opendirector.integrations.volcengine import VolcengineGeneration, bounded, 
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
-from opendirector.integrations.vllm_omni import VllmOmniGeneration
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
 from opendirector.integrations.model_adapters import BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore, ZhipuSpeech
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
@@ -170,19 +170,31 @@ class GenerationProviders(VolcengineGeneration):
                         prepared = await asyncio.to_thread(generation_references, self.store, task, config)
                         files = []
                         fast = input_rules(config)['profile'] == 'fasth3-omni'
-                        for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
-                            if source_kind in {'image', 'video', 'audio'}:
-                                files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
+                        frame_indices = prepared.get('frameIndices')
+                        if frame_indices is not None:
+                            files = [('input_references', _upload(image, 'first_frame' if index == 0 else 'last_frame'))
+                                     for index, image in zip(frame_indices, prepared['images'], strict=True)]
+                        else:
+                            for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
+                                if source_kind in {'image', 'video', 'audio'}:
+                                    files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
                         parameters = task['parameters']
                         form = {'model': config['modelId'], 'prompt': prepared['prompt']}
                         if 'duration' in parameters: form['seconds'] = format(parameters['duration'], 'g')
                         if 'size' in parameters: form['size'] = parameters['size']
                         if fast:
+                            extra = {'task': 'ref2va', 'duration': float(parameters.get('duration', parameters.get('seconds', 5))), 'audio_flow_shift': 3}
+                            steps = 8
+                            if frame_indices is not None:
+                                extra.update(task='fl2va' if frame_indices else 't2va', sampler='res_multistep')
+                                if frame_indices:
+                                    extra['frame_indices'] = frame_indices
+                                steps = parameters.get('num_inference_steps', 20)
                             form.update({
                                 'seconds': str(parameters.get('seconds', '5')), 'size': parameters.get('size', '832x480'),
-                                'num_inference_steps': '8', 'guidance_scale': '1', 'fps': '24',
+                                'num_inference_steps': str(steps), 'guidance_scale': '1', 'fps': '24',
                                 'seed': str(parameters.get('seed', 1234)),
-                                'extra_params': json.dumps({'task': 'ref2va', 'duration': float(parameters.get('duration', parameters.get('seconds', 5))), 'audio_flow_shift': 3})})
+                                'extra_params': json.dumps(extra)})
                         # Force multipart even for an empty reference list.
                         value = await self._json(client, 'POST', url, config, data=form, files=files or {'_multipart': (None, '1')})
                         external_id = value['id']

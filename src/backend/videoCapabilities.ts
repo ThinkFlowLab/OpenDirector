@@ -59,7 +59,7 @@ export function createVideoCapabilities(
       // The /videos resolver needs pixels except for the two H3 buckets it
       // derives itself; saving anything else would only fail at generation.
       const derived =
-        (adapter === "fasth3" || adapter === "minimax_h3") &&
+        (adapter === "fasth3" || adapter === "fasth3_dual" || adapter === "minimax_h3") &&
         (resolution === "480P" || resolution === "768P");
       if (!derived)
         throw new Error(

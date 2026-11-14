@@ -88,6 +88,7 @@ export const models = {
   "models.service.videoAdapter": "视频适配方式",
   "models.service.adapterAuto": "自动识别已知模型；其他使用通用首帧接口",
   "models.service.adapterFastH3": "FastH3-Omni（8 步、多素材参考）",
+  "models.service.adapterFastH3Dual": "FastH3-Omni（首尾帧锚点）",
   "models.service.adapterMiniMaxH3": "原生 MiniMax-H3（首帧、素材参考、接续）",
   "models.service.adapterStandard": "通用 /videos（文本、单张首帧）",
   "models.service.loadPreset": "载入适配预设",

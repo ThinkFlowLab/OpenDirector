@@ -8,7 +8,7 @@ from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_models import MINIMAX_MODELS, minimax_capabilities
 from opendirector.domain.kling_models import kling_capabilities
 
-VideoAdapter = Literal['auto', 'fasth3', 'minimax_h3', 'standard']
+VideoAdapter = Literal['auto', 'fasth3', 'fasth3_dual', 'minimax_h3', 'standard']
 Second = Annotated[StrictInt, Field(ge=1, le=60)]
 
 
@@ -106,7 +106,7 @@ def validate_kling_outputs(capabilities, model_id='kling-4.0'):
 
 
 def check_video_config(kind, protocol, adapter, capabilities):
-    if adapter not in {'auto', 'fasth3', 'minimax_h3', 'standard'}:
+    if adapter not in {'auto', 'fasth3', 'fasth3_dual', 'minimax_h3', 'standard'}:
         raise ProjectError('无效的视频适配方式。')
     if kind != 'video' and (adapter != 'auto' or capabilities is not None):
         raise ProjectError('输出能力配置仅适用于视频模型。')
@@ -130,14 +130,14 @@ def check_video_config(kind, protocol, adapter, capabilities):
                    item.get('width') is not None or item.get('height') is not None for item in capabilities['outputs']):
                 raise ProjectError('MiniMax-H3 官方接口支持 480P、768P、2K 和 4—15 秒，具体取决于型号，不接受自定义像素尺寸。')
             return capabilities
-        if adapter in {'fasth3', 'minimax_h3'}:
+        if adapter in {'fasth3', 'fasth3_dual', 'minimax_h3'}:
             if any(not 4 <= second <= 15 for item in capabilities['outputs'] for second in item['durations']):
                 raise ProjectError('当前 H3 适配支持 4–15 秒，不能通过能力配置扩大此范围。')
             if capabilities['dimensionStep'] != 32:
                 raise ProjectError('H3 输出宽高必须按 32 像素对齐（像素对齐步长须为 32）。')
         # The /videos resolver needs explicit pixels, except for the two H3 buckets
         # it derives itself; saving an unusable declaration would only fail later.
-        derived = {'480P', '768P'} if adapter in {'fasth3', 'minimax_h3'} else set()
+        derived = {'480P', '768P'} if adapter in {'fasth3', 'fasth3_dual', 'minimax_h3'} else set()
         if any(item.get('width') is None and item['resolution'] not in derived for item in capabilities['outputs']):
             raise ProjectError('该适配方式需要为每个输出规格填写像素宽高（H3 的 480P、768P 可按档位推算）。')
     return capabilities

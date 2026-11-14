@@ -348,3 +348,100 @@ def test_native_prompt_and_full_duration_reach_actual_video_multipart():
         assert value == 'verified-wire'
     provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
     assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+
+
+@pytest.mark.parametrize('slots,indices', [
+    (('first_frame',), [0]),
+    (('last_frame',), [-1]),
+    (('last_frame', 'first_frame'), [0, -1]),
+])
+def test_dual_h3_frame_slots_bind_actual_multipart(slots, indices):
+    import asyncio
+    from email.parser import BytesParser
+    from email.policy import default
+    import httpx
+    from opendirector.integrations.providers import GenerationProviders
+
+    images = {role: source('image', role + '.png', fingerprint='fixture') for role in slots}
+    data = {image['id']: (b'\x89PNG\r\n\x1a\n' + role.encode(), image) for role, image in images.items()}
+    store = SimpleNamespace(asset=lambda owner, key: data[key])
+    task = {'kind': 'video', 'projectId': 'owner', 'prompt': 'Animate the transition',
+            'referenceIds': list(data), 'videoMode': 'first_frame', 'parameters': {'duration': 4},
+            'referenceRoles': [{'assetId': image['id'], 'role': role} for role, image in images.items()]}
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1',
+              'modelId': 'FastH3-Omni-INT8', 'videoAdapter': 'fasth3_dual', 'apiKey': '', 'authMode': 'none'}
+
+    def handle(request):
+        if request.method == 'POST':
+            prefix = 'Content-Type: ' + request.headers['content-type'] + '\r\n\r\n'
+            message = BytesParser(policy=default).parsebytes(prefix.encode() + request.content)
+            fields, uploads = {}, []
+            for part in message.iter_parts():
+                field = part.get_param('name', header='content-disposition')
+                payload = part.get_payload(decode=True)
+                if part.get_filename():
+                    assert field == 'input_references'
+                    uploads.append((part.get_filename(), payload.split(b'\n')[-1].decode()))
+                else:
+                    fields[field] = payload
+            # The uploaded filename states the slot, so it must agree with the
+            # frame index recorded in extra_params, including a lone tail anchor.
+            assert uploads == [(role + '.png', role) for role in ('first_frame', 'last_frame') if role in slots]
+            assert fields['prompt'] == b'Animate the transition'
+            assert fields['num_inference_steps'] == b'20'
+            extra = json.loads(fields['extra_params'])
+            assert (extra['task'], extra['frame_indices'], extra['sampler']) == ('fl2va', indices, 'res_multistep')
+            return httpx.Response(200, json={'id': 'verified-frame-job'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=b'generated')
+        return httpx.Response(200, json={'status': 'completed'})
+
+    async def submitted(value):
+        assert value == 'verified-frame-job'
+
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+    assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+
+
+def test_dual_h3_without_frame_anchors_sends_text_task():
+    import asyncio
+    from email.parser import BytesParser
+    from email.policy import default
+    import httpx
+    from opendirector.integrations.providers import GenerationProviders
+
+    task = {'kind': 'video', 'projectId': 'owner', 'prompt': 'A calm lake at dawn',
+            'referenceIds': [], 'videoMode': 'first_frame', 'parameters': {'duration': 4},
+            'referenceRoles': []}
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1',
+              'modelId': 'FastH3-Omni-INT8', 'videoAdapter': 'fasth3_dual', 'apiKey': '', 'authMode': 'none'}
+
+    def handle(request):
+        if request.method == 'POST':
+            prefix = 'Content-Type: ' + request.headers['content-type'] + '\r\n\r\n'
+            message = BytesParser(policy=default).parsebytes(prefix.encode() + request.content)
+            parts = list(message.iter_parts())
+            assert [part.get_filename() for part in parts if part.get_filename()] == []
+            fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True)
+                      for part in parts if part.get_filename() is None}
+            assert fields['prompt'] == b'A calm lake at dawn'
+            assert fields['num_inference_steps'] == b'20'
+            extra = json.loads(fields['extra_params'])
+            assert (extra['task'], 'frame_indices' in extra, extra['sampler']) == ('t2va', False, 'res_multistep')
+            return httpx.Response(200, json={'id': 'verified-text-job'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=b'generated')
+        return httpx.Response(200, json={'status': 'completed'})
+
+    async def submitted(value):
+        assert value == 'verified-text-job'
+
+    store = SimpleNamespace(asset=lambda *args: pytest.fail('a text-to-video request uploads no anchor'))
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+    assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+
+
+def test_tail_anchor_preserves_last_native_frame():
+    task = {**plain_task('fasth3-omni'), 'videoMode': 'first_frame',
+            'referenceRoles': [{'assetId': str(uuid4()), 'role': 'last_frame'}]}
+    assert finalize_video_edit(None, task, 'mp4', b'native-grid-output') == ('mp4', b'native-grid-output')

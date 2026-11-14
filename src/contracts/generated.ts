@@ -831,7 +831,7 @@ export interface ModelConnectionInput extends ContractInput {
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
 }
 
@@ -844,7 +844,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules?: InputRulesInput | null;
 }
 
@@ -2405,7 +2405,7 @@ export interface ModelConnection extends Contract {
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities: VideoCapabilities | null;
 }
 
@@ -2418,7 +2418,7 @@ export interface ModelSnapshot extends Contract {
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules: InputRules | null;
 }
 

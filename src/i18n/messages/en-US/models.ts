@@ -104,6 +104,8 @@ export const models = {
     "Auto-detect known models; use the generic first-frame API for others",
   "models.service.adapterFastH3":
     "FastH3-Omni (8 steps, multi-asset reference)",
+  "models.service.adapterFastH3Dual":
+    "FastH3-Omni (first/last keyframe anchors)",
   "models.service.adapterMiniMaxH3":
     "Native MiniMax-H3 (first frame, asset references, continuation)",
   "models.service.adapterStandard":

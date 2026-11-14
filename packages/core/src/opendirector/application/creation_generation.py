@@ -192,6 +192,8 @@ class CreationGeneration(GenerationRuntime):
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
+                if config.get('videoAdapter') == 'fasth3_dual' and node.get('videoMode') == 'first_frame':
+                    params['num_inference_steps'] = 20
                 # FastH3's wire contract sends duration; its derived frame
                 # estimate is not an explicitly submitted execution parameter.
                 params.pop('num_frames', None)

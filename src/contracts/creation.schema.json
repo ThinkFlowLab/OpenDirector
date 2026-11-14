@@ -8170,6 +8170,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8326,6 +8327,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8471,6 +8473,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8597,6 +8600,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23590,6 +23594,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23736,6 +23741,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23886,6 +23892,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -24016,6 +24023,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
