@@ -42,7 +42,7 @@ function requireArray(value, field) {
   return value
 }
 
-function requireEnum(value, field, values) {
+export function requireEnum(value, field, values) {
   if (value == null) fail('input.required', { field })
   if (!values.includes(value)) fail('input.enum', { field, values: values.join('|') })
   return value
@@ -228,6 +228,7 @@ export function buildSubmitCommand({
   expectedSpecRevision,
   originItemId,
   expectedItemRevision,
+  previousJobId,
 } = {}) {
   const id = requireUuid(projectId, 'projectId')
   const commandId = requireUuid(operationId, 'operationId')
@@ -252,6 +253,7 @@ export function buildSubmitCommand({
       specId: spec,
       expectedSpecRevision: revision,
       ...(origin == null ? {} : { originItemId: origin }),
+      ...(previousJobId == null ? {} : { previousJobId: requireUuid(previousJobId, 'previousJobId') }),
       adoptionPolicy: 'candidate_only',
       showAdditionalResult: false,
     },

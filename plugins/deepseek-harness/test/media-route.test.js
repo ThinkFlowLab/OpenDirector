@@ -10,7 +10,7 @@ test('media route accepts relative URLs, forwards ranges, and ends a stalled bod
   const stalled = randomUUID()
   const server = createServer((request, response) => {
     const root = '/api/creation/projects/' + project + '/assets/'
-    if (request.url === root + asset + '/content') {
+    if (request.url === root + asset + '/content' && request.headers.accept === 'video/*') {
       assert.equal(request.headers.range, 'bytes=0-2')
       response.writeHead(206, { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 0-2/9',
         'Content-Length': '3', 'Accept-Ranges': 'bytes' })
@@ -18,6 +18,9 @@ test('media route accepts relative URLs, forwards ranges, and ends a stalled bod
     } else if (request.url === root + asset + '/thumbnail') {
       response.writeHead(200, { 'Content-Type': 'image/webp' })
       response.end('thumbnail')
+    } else if (request.url === root + asset + '/content' && request.headers.accept === 'image/*') {
+      response.writeHead(200, { 'Content-Type': 'image/png' })
+      response.end('original')
     } else if (request.url === root + stalled + '/content') {
       response.writeHead(200, { 'Content-Type': 'video/mp4' })
       response.write('a')
@@ -34,12 +37,14 @@ test('media route accepts relative URLs, forwards ranges, and ends a stalled bod
       inject(_services, configure) {
         configure({
           effect(register) { register() },
-          connection: { fetch: { register(value) { route = value } } },
+          connection: { fetch: { register(value) {
+            if (value.path === '/api/opendirector/media') route = value
+          } } },
         })
       },
     }, { baseUrl: 'http://127.0.0.1:' + server.address().port, requestTimeoutMs: 750 })
-    const request = (id, kind, range) => route.fetch({
-      url: '/api/opendirector/media?' + new URLSearchParams({ project, asset: id, kind }),
+    const request = (id, kind, range, original = false) => route.fetch({
+      url: '/api/opendirector/media?' + new URLSearchParams({ project, asset: id, kind, ...(original && { original: '1' }) }),
       headers: new Headers(range ? { Range: range } : {}),
     })
     const video = await request(asset, 'video', 'bytes=0-2')
@@ -51,6 +56,9 @@ test('media route accepts relative URLs, forwards ranges, and ends a stalled bod
     const thumbnail = await request(asset, 'image')
     assert.equal(thumbnail.headers.get('content-type'), 'image/webp')
     assert.equal(await thumbnail.text(), 'thumbnail')
+    const original = await request(asset, 'image', undefined, true)
+    assert.equal(original.headers.get('content-type'), 'image/png')
+    assert.equal(await original.text(), 'original')
     assert.equal((await request('invalid-id', 'video')).status, 400)
 
     const waiting = await request(stalled, 'video')

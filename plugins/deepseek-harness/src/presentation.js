@@ -1,3 +1,14 @@
+export function mediaDetails(metadata) {
+  const { width, height, durationSeconds } = metadata ?? {}
+  const hasDimensions = Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0
+  const hasDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+  if (!hasDimensions && !hasDuration) return undefined
+  return {
+    ...(hasDimensions && { width, height }),
+    ...(hasDuration && { durationSeconds }),
+  }
+}
+
 /** Model-facing summaries. The canonical value remains available to programs. */
 export function renderToolResult(key, value, t, { webPreview = false } = {}) {
   const lines = [t(`render.${key}`)]

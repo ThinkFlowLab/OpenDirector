@@ -6,7 +6,7 @@ Create media from a DSH conversation, follow generation progress, and open the s
 
 ## Install and connect
 
-Use DSH **0.2.2-rc.1** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
+Use DSH **0.2.2-rc.1 or 0.2.2-rc.2** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
 
 ```sh
 npm pack
@@ -28,26 +28,52 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 The bundle ships ready-to-run JavaScript and needs no build. Tarball installation installs its dependencies; a linked checkout keeps its own `node_modules`. Neither route requires an npm release or a marketplace listing.
 
+## Platform coverage
+
+The interactive workflow has been verified in DSH Web with the host running in WSL Ubuntu. Native Windows checks cover plugin loading, tool execution and HTTP routes. The plugin workflow includes Linux, Windows and macOS jobs. DSH Desktop still needs an end-to-end installation and media check.
+
 ## Try a complete workflow
 
 In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](../../docs/guides/user-guide.md) explains model connections. The example uses that configured service.
 
-In DSH Web, choose **Create media** in the composer and describe what you want:
+In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
+
+If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
+
+Choose **Generate another candidate** to run the same canvas node again with its saved settings. Compare the results in the dialog and choose **Adopt** on the one you want to use.
+
+Cards show the file's actual dimensions and duration when available. Click an image to view the original in DSH, then switch between **Actual size** and **Fit to window**.
+
+If you lose the connection, use **Check submission** or **Check progress** to look up the same operation. If the provider confirms a quota or rate limit failure, fix the issue and choose **Retry generation** to use the same node. When a canvas holds the project open, save and close it, then try again in the same dialog.
+
+For an open-ended request, use the chat as usual:
 
 > Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
 
 1. DSH uses `opendirector_projects` and `opendirector_project` to create the project and find its image model. It saves a node with `opendirector_create_generation`, submits it with `opendirector_submit`, then checks the job ID with `opendirector_job`.
 2. Once the job succeeds, inspect the saved candidate right in DSH Web. You can also open the project link and find the candidate under **Generation history**. Close the canvas tab before asking DSH to write to the project.
-3. Choose **Adopt** on the candidate card. The action prepares a draft in the same DSH conversation. Review and send it. DSH reads the current revisions and calls `opendirector_adopt_result`.
+3. Choose **Adopt** on the candidate card. The plugin reads the current revisions, selects the result, and shows a link to the canvas.
 4. Follow the `/ai-canvas/<projectId>` link back to the same project. Double-click the image node's title, rename it, and reopen the project to check that the new name and the selected image are still there.
 
-To revise an image, choose **Edit** on its result card. Describe the change on the card and choose **Send request**. Use a model that accepts reference images. DSH uses `sourceResultId` to pin the exact saved image, then creates a separate generation node in the same project. The result card shows the source and candidate together. Both remain available on the canvas. Card actions preserve your current draft and attachments.
+To revise an image, choose **Edit** on its result card. Pick a model that accepts reference images, describe the change, and click **Generate one candidate**. The plugin pins the saved image and creates a separate generation node in the same project. You can compare the source and the new result before adopting it. These forms preserve your chat draft and submit directly to OpenDirector.
 
-### Continue a video
+If the model accepts multiple references, choose **Add reference images** to pick other saved images from the same project. The source stays first. Use the arrows to change the order of the other references.
 
-With a configured MiniMax-H3 vLLM-Omni connection, choose **Animate** on an image result, describe the shot on the card, and send the request. Once the clip is ready, play it in the result card. Choose **Continue** and describe what should happen next. DSH shows the source clip and the continuation together before you decide whether to adopt the new candidate.
+If the submission reply is lost, choose **Check submission** to look up the original operation. For a job that failed after submission, open the canvas to inspect the saved generation settings and the failure details.
 
-The first job uses `videoMode: first_frame` with the saved image's `sourceResultId`. The next uses `videoMode: continuation` with the saved clip's result ID. The configured backend must still hold that clip's continuation cache. If the cache has expired, DSH shows the job's recovery guidance. Regenerate the source on that backend or choose first-frame or reference mode. Both the existing clip and the failed attempt's inputs stay in the project.
+### Pick up an earlier project
+
+Choose **Resume project** next to the composer, then select an OpenDirector project. Filter the saved results by media type or current selection, sort by when they were saved, and choose **Load more** for the next page. If a canvas is open for editing, save and close it before trying to adopt a result. If the connection drops during adoption, choose **Check adoption** to look up the original write.
+
+Choose **Tasks** to find running, completed, and failed generations, including work submitted before you refreshed DSH. Filter by media type or change the order to find an earlier task. **View progress** opens that saved task. Completed candidates can be previewed and adopted there. A confirmed retryable failure offers **Retry generation** on the existing node. Closing the dialog keeps the task available in this list.
+
+Right-click a result card or choose **More actions** on it. The menu shows the actions for that media type, including downloading the original file. Use the arrow keys to move between actions, and press Escape to return to the card.
+
+### Animate an image or continue a clip
+
+Choose **Animate** on a saved image. The form shows that image as the first frame and lists the video models that support it. Pick a model, choose a duration from its available options, and describe the motion. Generate one candidate and play it in DSH before adopting it.
+
+For a clip generated by a compatible MiniMax-H3 vLLM-Omni connection, choose **Continue**. Select the same connection, choose the duration of the next shot, and describe what happens next. Play the source and candidate in the same form. The service uses its cached state for that clip. If the cache has expired, generate the source clip again on that connection. The clip and the continuation settings are saved in the project.
 
 ## Configuration
 
@@ -119,7 +145,7 @@ Cancellation is an explicit `opendirector_cancel` action. Aborting a tool reques
 
 Tools return canonical JSON for programmatic use. Submission, progress, candidate selection, and cancellation render short localized summaries with the project name, useful IDs, next step, and project link. A full project/model read is available when the agent needs it.
 
-DSH Web shows saved images and videos on result cards in the current interface language. Editing and continuation can be sent from the card. **Adopt** prepares a draft for you to review before sending. Once it succeeds, the receipt has a direct link to the editable canvas.
+DSH Web shows saved images, videos, and audio on result cards in the current interface language. Open the creation forms directly from a card. **Adopt** selects the result and links back to the canvas.
 
 ## Development checks
 
@@ -145,4 +171,4 @@ node test/creation.integration.mjs
 
 This checks project creation, a saved PNG candidate, result selection and replay, edit-session conflicts, and an accepted job completing while the plugin is disabled. It requires the fixture's health marker before writing. `OPENDIRECTOR_FIXTURE_URL` can select another fixture port; the test uses generated fixture images rather than a model service.
 
-The package pins its DSH compatibility to `0.2.2-rc.1`; DSH is in developer preview, so check compatibility before upgrading the host. OpenDirector’s own installation requirements are maintained in its installation guide.
+The package declares DSH `0.2.2-rc.1` and `0.2.2-rc.2`. Web installation and operation have been verified on rc.1. The rc.2 tool and Web extension interfaces have been checked against its release source; an installed rc.2 run is pending npm availability. OpenDirector’s installation requirements are maintained in its installation guide.
