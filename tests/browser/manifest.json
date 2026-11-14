@@ -13,7 +13,9 @@
     },
     {
       "file": "kling_video.mjs",
-      "lanes": ["extendedFixture"],
+      "lanes": [
+        "extendedFixture"
+      ],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
     },
     {
@@ -483,6 +485,13 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "tts_reading_references.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "TTS reading panels keep connected, context-only references visible and removable. Isolated fixture only; does not submit generation or call a paid model."
     },
     {
       "file": "voice_library.mjs",

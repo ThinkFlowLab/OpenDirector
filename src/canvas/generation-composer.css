@@ -51,6 +51,15 @@
   box-sizing: border-box;
 }
 
+.cw-reference-context-note {
+  flex: 0 0 auto;
+  margin: 0;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--cw-prompt-dim, #7d8291);
+}
+
 .cw-reference-strip {
   display: flex;
   gap: 6px;

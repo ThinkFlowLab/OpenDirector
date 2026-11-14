@@ -51,6 +51,7 @@ import {
   frameImageLimitIssue,
   frameImageLimitMessage,
 } from "./frameReferences.ts";
+import { composerReferenceVisibility } from "./composerReferenceVisibility.ts";
 
 export interface NodeComposerProps {
   selectedNode: CanvasNode | null;
@@ -156,6 +157,14 @@ export function NodeComposer({
   // YuE2-style music models can follow one connected recording.
   const musicReferences =
     music && Boolean(config?.inputRules.allowedKinds.includes("audio"));
+  const referenceVisibility = composerReferenceVisibility({
+    firstLast,
+    reading,
+    music,
+    musicReferences,
+    incomingCount: incomingNodes.length,
+    mode,
+  });
   const followsReference = Boolean(
     config && hasMusicReference(settings, incomingNodes, config),
   );
@@ -385,37 +394,39 @@ export function NodeComposer({
             </TooltipButton>
           </div>
         )}
-        {!firstLast &&
-          !reading &&
-          (!music || musicReferences) &&
-          (mode === "video" || incomingNodes.length > 0) && (
-            <div className="cw-reference-strip">
-              <TooltipButton
-                type="button"
-                className="cw-add-reference"
-                disabled={running}
-                onClick={() => mentions.current?.openUpload()}
-                aria-label={t("generation.reference.add")}
-                label={t("generation.reference.add")}
-              >
-                <CanvasIcon name="plus" size={20} />
-              </TooltipButton>
-              {incomingNodes.map((node) => (
-                <ReferenceThumbnail
-                  key={node.id}
-                  node={node}
-                  onInsert={() => insertReference(node)}
-                  onRemove={() => mentions.current?.remove(node)}
-                  disabled={running || Boolean(referenceIssue(node))}
-                  removalDisabled={running}
-                  title={`${t("generation.reference.title", {
-                    role: generationReferenceRole(node, t),
-                    title: node.data.title,
-                  })}${referenceIssue(node) ? ` · ${referenceIssue(node)}` : ""}`}
-                />
-              ))}
-            </div>
-          )}
+        {referenceVisibility.showStrip && (
+          <div className="cw-reference-strip">
+            <TooltipButton
+              type="button"
+              className="cw-add-reference"
+              disabled={running}
+              onClick={() => mentions.current?.openUpload()}
+              aria-label={t("generation.reference.add")}
+              label={t("generation.reference.add")}
+            >
+              <CanvasIcon name="plus" size={20} />
+            </TooltipButton>
+            {incomingNodes.map((node) => (
+              <ReferenceThumbnail
+                key={node.id}
+                node={node}
+                onInsert={() => insertReference(node)}
+                onRemove={() => mentions.current?.remove(node)}
+                disabled={running || Boolean(referenceIssue(node))}
+                removalDisabled={running}
+                title={`${t("generation.reference.title", {
+                  role: generationReferenceRole(node, t),
+                  title: node.data.title,
+                })}${referenceIssue(node) ? ` · ${referenceIssue(node)}` : ""}`}
+              />
+            ))}
+          </div>
+        )}
+        {referenceVisibility.showReadingContextNote && (
+          <p className="cw-reference-context-note" data-reference-role="reading-context">
+            {t("generation.reference.readingContext")}
+          </p>
+        )}
         <GenerationReferenceEditor
           key={selectedNode.id}
           pickerRef={mentions}
@@ -697,21 +708,18 @@ export function NodeComposer({
               </button>
             )}
           </div>
-          {!firstLast &&
-            !reading &&
-            (!music || musicReferences) &&
-            incomingNodes.length === 0 && (
-              <TooltipButton
-                type="button"
-                className="cw-reference-trigger"
-                aria-label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
-                label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
-                disabled={running}
-                onClick={() => mentions.current?.openUpload()}
-              >
-                <CanvasIcon name="plus" size={16} />
-              </TooltipButton>
-            )}
+          {referenceVisibility.showEmptyAdd && (
+            <TooltipButton
+              type="button"
+              className="cw-reference-trigger"
+              aria-label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
+              label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
+              disabled={running}
+              onClick={() => mentions.current?.openUpload()}
+            >
+              <CanvasIcon name="plus" size={16} />
+            </TooltipButton>
+          )}
           {mode === "video" && (
             <button
               type="button"
@@ -737,7 +745,7 @@ export function NodeComposer({
               <CanvasIcon name="chevronDown" size={12} />
             </button>
           )}
-          {!reading && !music && (
+          {referenceVisibility.showMention && (
             <TooltipButton
               type="button"
               className="cw-reference-trigger"

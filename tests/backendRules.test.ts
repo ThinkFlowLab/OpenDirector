@@ -329,3 +329,27 @@ test("FastH3 preserves supported reference mode for text-only generation", () =>
   assert.equal(backendVideoMode(settings, [], fast), "reference");
   assert.equal(backendBlocker(settings, [], [fast]), null);
 });
+
+test("reading service names unused image references without treating them as model inputs", () => {
+  const speech = {
+    ...config("audio", {
+      profile: "openai-speech",
+      allowedKinds: [],
+      maxImages: 0,
+      maxVideos: 0,
+      maxAudios: 0,
+      videoModes: [],
+    }),
+    protocol: "openai" as const,
+    modelId: "seed-tts-2.0",
+  };
+  const settings = {
+    ...generationDefaults("audio"),
+    modelConfigId: speech.id,
+    audioMode: "tts" as const,
+    prompt: "朗读这段文字",
+  };
+  const image = media("image");
+  assert.match(backendReferenceIssue(image, settings, speech)!, /不使用该参考/);
+  assert.deepEqual(backendReferences(settings, [image], speech), []);
+});

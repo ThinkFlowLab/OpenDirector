@@ -140,6 +140,7 @@ export const generation = {
   "generation.reference.connected": "Reference connected node",
   "generation.reference.upload": "Upload node reference",
   "generation.reference.title": "{role}: {title}",
+  "generation.reference.readingContext": "Text-to-speech does not send these references to the model. You can still inspect or remove them.",
 
   "generation.action.cancel": "Cancel generation",
   "generation.action.submit": "Generate",
