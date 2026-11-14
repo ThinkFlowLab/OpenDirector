@@ -518,3 +518,77 @@ vite build                                 ✓ built in 5.14s
 ```
 
 \* 失败项为 `test_symlinked_content_and_asset_paths_are_rejected_without_external_writes`，原因是当前 Windows 账户缺少创建符号链接的权限（`WinError 1314`）。**已确认该用例在未改动的基线上同样失败**，与本次改动无关。
+
+---
+
+## 9. 第二轮：`视频创作示例画布.canvas` 暴露的两个阻塞点
+
+issue #256 报告的是同一层缺陷的另一次表现。用真实归档跑完整导入链路（真实 API 进程 + 真实 `readCanvasArchive` / `importWorkspaceDocument`）后，共发现两个阻塞点，前一个掩盖了后一个。
+
+### 9.1 阻塞点一：毫秒取整让每个非整毫秒片段都越界
+
+| 环节 | 值 |
+|---|---|
+| 素材实际时长（ffprobe） | `5.041667`（121 帧 ÷ 24 fps） |
+| 生成结果 API 上报 | `durationMs = round(5.041667 × 1000)` = `5042` |
+| 前端 `tools.ts` 反算 | `5042 / 1000` = **`5.042`** |
+| 时间线 `outPoint`（直接取自该值） | **`5.042`** |
+| 导入时重新探测 | `5.041667` |
+| 溢出 | **`+0.000333` 秒 = 原容差 `1e-6` 的 333 倍** |
+
+取整最多引入半毫秒误差，容差却只有 `1e-6` 秒，因此**任何帧数不能被 1000 整除的素材在导入时都必然失败**，与用户数据无关。
+
+修复：`TIMELINE_DURATION_EPSILON = 0.0005`（半毫秒，即取整能引入的最大误差），由 `rule_facts.py` 经 `facts_payload()` 导出到 `src/contracts/ruleFacts.generated.ts`。服务端三处（`project.py`、`creation_timeline.py`、`creation_timeline_packages.py`）与客户端 `dataBoundary.ts` 共用该常量。
+
+同时把「时长未知」的语义统一：**未知时长无法证明越界**，三处服务端与客户端一律跳过比较。此前 `project.py` 放过、另两处拒绝，同一份文档会在不同关卡得到相反结论。
+
+### 9.2 阻塞点二：归档里存在过期的装配链接
+
+时长校验放行后，导入推进到装配校验并报「装配素材与来源节点当前内容不一致，请重新读取。」（`creation_canvas.py`）。
+
+根因不是文件损坏，而是**归档忠实记录了编辑过程中形成的不一致**：
+
+| 对象 | 素材 |
+|---|---|
+| 源节点 `97c7546b`「主体替换结果」当前素材 | `主体替换结果.mp4` |
+| 隐藏时间线 clip `e810ff2f`（来源标为 `97c7546b`） | `把画面中的主体替换为…mp4` |
+
+用户装配之后重新生成过该节点，片段保留了装配当时的那份素材。这在**实时工程里是被容忍的**——服务端对值未变的既有连接直接跳过校验（`previous_inputs`），而导入时连接全是新的、没有「既有值」，于是按全新装配严格校验并拒绝。
+
+修复落在翻译层（`creationProjection.editorInput`）：**新连接必须指向源节点当前素材；已登记的连接原样保留。**
+
+- 已登记（`current.inputConnections` 中存在同 id 且资产引用相同）→ 保留，服务端照旧跳过，实时工程行为不变。
+- 未登记且 `clip.resource.src !== 源节点.data.src` → 判定为过期链接，只丢弃链接、**保留片段本身**（片段的素材是用户的编辑内容）。
+
+媒体经 `readCanvasArchive` 还原为 data URL，内容相同的素材串相同，因此 `src` 比较等价于字节比较。
+
+### 9.3 真实归档验证
+
+导入 `视频创作示例画布.canvas`（26,128,975 字节，17 可见 + 12 隐藏节点）后：
+
+| 指标 | 结果 |
+|---|---|
+| 导入结果 | 成功，新建工程 |
+| 素材 | 18 |
+| 画布节点 | 29 |
+| 时间线文档 | 2（可见 2 片段 / 隐藏 4 片段） |
+| 可见时间线装配连接 | 2（全部保留） |
+| 隐藏时间线装配连接 | 3（原有 4，丢弃过期 1 条） |
+| 过期片段的素材 | 保留，片段仍在时间线内 |
+| 全部片段 `outPoint` 相对实测偏差 | `+0.000333` 秒，均被容忍 |
+
+### 9.4 本次新增回归测试
+
+| 测试 | 锁定内容 |
+|---|---|
+| `test_creation_timeline_render.py::test_timeline_accepts_a_clip_rounded_to_the_nearest_millisecond` | 毫秒取整偏差不再被判越界；`1e-6` 下失败、`0.0005` 下通过 |
+| `test_creation_timeline_render.py::test_timeline_skips_the_duration_check_when_the_asset_was_never_measured` | 未知时长与客户端一致跳过 |
+| `test_creation_timeline_render.py::test_timeline_rejects_clip_beyond_actual_duration_even_when_client_claims_longer` | 真正越界仍被拒绝（原有） |
+| `archiveGenerationImport.test.ts::a clip still carrying the media it was assembled with keeps its link` | 正常装配链接不被误删 |
+| `archiveGenerationImport.test.ts::an archive whose clip outlived a regenerated source imports without the stale link` | 过期链接被丢弃、片段保留 |
+
+### 9.5 教训：测试替身掩盖了真实校验
+
+既有导入测试（`backendWorkspace.test.ts` / `archiveGenerationImport.test.ts`）把 `client.batch` 与 `fetch` 全部替换为桩，因此**从未执行服务端校验**，两个阻塞点都能顺利通过。本次改为启动真实 API 进程、用真实 `readCanvasArchive` 读取真实归档来驱动导入，才复现出用户看到的报错。
+
+凡涉及「文档 → 工程」翻译层的缺陷，验证必须经过真实服务端校验。

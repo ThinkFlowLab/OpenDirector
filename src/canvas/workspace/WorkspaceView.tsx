@@ -56,6 +56,7 @@ import { LocalMediaEditor } from "../LocalMediaEditor";
 import { canAddReference, MAX_ZOOM, MIN_ZOOM } from "../model";
 import { gridSplitImage } from "../nodeActionWorkflow";
 import { NodeComposer } from "../NodeComposer";
+import { pinnedPrecheckNodes } from "../workspaceInteraction.ts";
 
 import { NodeInfoButton } from "../NodeInfoButton";
 import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
@@ -121,6 +122,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     composerExpanded,
     composerIncoming,
     composerNode,
+    submissionAssets,
     composerRunning,
     confirmSubjectImport,
     connect,
@@ -1614,6 +1616,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}
+                pinnedPrecheck={pinnedPrecheckNodes({
+                  node: composerNode,
+                  incoming: composerIncoming,
+                  assets: typeof submissionAssets === "function" ? submissionAssets() : [],
+                })}
                 referenceControls={generationReferenceControls(composerNode)}
                 onUpdate={(patch) =>
                   command({

@@ -109,6 +109,52 @@ def test_timeline_rejects_clip_beyond_actual_duration_even_when_client_claims_lo
     assert store.snapshot(pid) == before
 
 
+def test_timeline_accepts_a_clip_rounded_to_the_nearest_millisecond(project):
+    """Durations also travel as whole milliseconds, so a clip seeded from that
+    rounded value can sit up to half a millisecond past the measured one. A
+    121-frame clip at 24 fps lasts 5.041667s and is announced as 5042ms, which is
+    5.042s; re-probing the same file on import finds 5.041667 again. The shared
+    tolerance has to cover the rounding, or every import of such a clip fails."""
+    from opendirector.domain.rule_facts import TIMELINE_DURATION_EPSILON
+    measured, rounded = 5.041667, 5.042
+    assert rounded - measured <= TIMELINE_DURATION_EPSILON
+
+    store, pid, session = project
+    _, _, versions, _ = prepared(project)
+    document = store.snapshot(pid).editorDocuments[0].model_dump(mode='json')
+    source = document['data']['tracks'][0]['clips'][0]
+    # The fixture imports a whole second of video, so shift the clip by the same
+    # kind of rounding instead of inventing a new asset.
+    source['outPoint'] = 4.000333
+    source['resource']['durationSeconds'] = 4.000333
+    receipt = send(store, pid, 'editor.save', session=session, versions=versions, document=document)
+    assert receipt.status == 'applied', receipt
+
+
+def test_timeline_skips_the_duration_check_when_the_asset_was_never_measured(project, monkeypatch):
+    """A probe that cannot report a duration says nothing about overflow. The
+    document boundary and the aggregate validation already skip the comparison
+    in that case, so the timeline gate must agree instead of rejecting a
+    document the client accepted."""
+    from opendirector.application.creation_assets import CreationAssets
+
+    store, pid, session = project
+    _, _, versions, _ = prepared(project)
+    document = store.snapshot(pid).editorDocuments[0].model_dump(mode='json')
+    document['data']['tracks'][0]['clips'][0]['resource']['title'] = 'Source again'
+
+    original = CreationAssets._reference.__func__
+
+    def unmeasured(assets, snapshot, reference):
+        asset = original(assets, snapshot, reference)
+        return asset.model_copy(update={'metadata': asset.metadata.model_copy(
+            update={'durationSeconds': None})})
+
+    monkeypatch.setattr(CreationAssets, '_reference', classmethod(unmeasured))
+    receipt = send(store, pid, 'editor.save', session=session, versions=versions, document=document)
+    assert receipt.status == 'applied', receipt
+
+
 def prepared_text(project, tmp_path, *, pure_text=False, output_seconds=3):
     from test_timeline_fonts import timeline_document, tiny_font
     store, pid, session = project

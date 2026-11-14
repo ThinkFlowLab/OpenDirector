@@ -7,6 +7,7 @@ import {
 } from "../src/backend/creationClient.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
 import { createDocument, createNode } from "../src/canvas/model.ts";
+import { assembleNode } from "../src/canvas/editorAssembly.ts";
 import type {
   ObjectVersion,
   ProjectSnapshot,
@@ -198,4 +199,151 @@ test("an imported group is created before the members that name it", async () =>
     groupIndex < childIndex,
     "the group exists before the member that names it",
   );
+});
+
+/** A timeline whose single clip was assembled from `source`. */
+function assembledTimeline(projectId: string) {
+  const document: CanvasDocument = createDocument("装配");
+  document.id = projectId;
+  const source = createNode("video", { x: 0, y: 0 }, {
+    src: "data:video/mp4;base64,AAAA",
+    mimeType: "video/mp4",
+    media: { durationSeconds: 5 },
+  });
+  const timeline = createNode("timeline", { x: 200, y: 0 });
+  const assembled = assembleNode(source, timeline).node;
+  document.nodes = [source, assembled];
+  document.edges = [
+    {
+      id: crypto.randomUUID(),
+      source: source.id,
+      target: assembled.id,
+      intent: "assembly_input",
+      assemblySlotId: assembled.data.timeline!.tracks
+        .flatMap((track) => track.clips)[0]!.id,
+    },
+  ];
+  return { document, source, timeline: assembled };
+}
+
+test("a clip still carrying the media it was assembled with keeps its link", async () => {
+  const { client, batches, snapshot } = emptyProject();
+  const projection = new CreationProjection(client);
+  projection.baseline = await projection.read();
+  projection.basis = snapshot;
+  const { document } = assembledTimeline(client.id);
+  await projection.save(document);
+
+  const created = batches[0]!.operations.find(
+    (op) => op.type === "editor.create",
+  ) as Extract<CreationOperation, { type: "editor.create" }>;
+  assert.equal(created.payload.document.inputConnections?.length, 1);
+});
+
+test("a link the project already recorded survives its source being regenerated", async () => {
+  // The export/import pair is not the only path that produces a clip whose
+  // source moved on: regenerating a node does it in place. Such a link is
+  // already recorded, and the backend retains it, so the projection must keep
+  // it instead of dropping it as if it were a fresh lie.
+  const base = emptyProject();
+  const { client, batches } = base;
+  const { document, source, timeline } = assembledTimeline(client.id);
+  const edge = document.edges[0]!;
+  const asset = base.snapshot.assets[0]!;
+  const editorId = crypto.randomUUID();
+  const snapshot: ProjectSnapshot = {
+    ...base.snapshot,
+    canvasItems: [
+      {
+        id: timeline.id,
+        projectId: client.id,
+        revision: 1,
+        kind: "timeline",
+        title: "时间线 1",
+        position: { x: 0, y: 0 },
+        width: 720,
+        height: 280,
+        zIndex: 0,
+        locked: false,
+        visible: true,
+        parentId: null,
+        tags: [],
+        binding: {
+          role: "editor",
+          objectRef: { objectType: "editor_document", id: editorId, kind: "timeline" },
+        },
+      },
+    ],
+    editorDocuments: [
+      {
+        id: editorId,
+        projectId: client.id,
+        revision: 1,
+        schemaVersion: 1,
+        kind: "timeline",
+        inputConnections: [
+          {
+            id: edge.id,
+            sourceId: source.id,
+            slotId: edge.assemblySlotId!,
+            asset: {
+              assetId: asset.id,
+              revision: asset.revision,
+              fingerprint: asset.fingerprint,
+              kind: asset.kind,
+            },
+          },
+        ],
+        data: { fps: 24, width: 64, height: 64, importedAssets: [], tracks: [] },
+      },
+    ],
+  };
+  client.install(snapshot);
+  const projection = new CreationProjection(client);
+  projection.baseline = await projection.read();
+  projection.basis = snapshot;
+
+  source.data.src = "data:video/mp4;base64,BBBB";
+  // Any real edit is enough to make the document worth saving.
+  timeline.data.timeline!.tracks[0]!.clips[0]!.outPoint = 4.5;
+  await projection.save(document);
+
+  const saved = batches[0]!.operations.find(
+    (op) => op.type === "editor.save",
+  ) as Extract<CreationOperation, { type: "editor.save" }> | undefined;
+  assert.ok(saved, "the trimmed timeline is saved");
+  assert.equal(
+    saved.payload.document.inputConnections?.length,
+    1,
+    "the recorded link is retained",
+  );
+});
+
+test("an archive whose clip outlived a regenerated source imports without the stale link", async () => {
+  // Regenerating a source node leaves the assembled clip holding the media it
+  // was assembled with, so an exported archive can pair a clip with a node that
+  // no longer produces it. The clip is still valid on its own; the link is what
+  // the backend refuses, because a fresh connection must name the source's
+  // current media.
+  const { client, batches, snapshot } = emptyProject();
+  const projection = new CreationProjection(client);
+  projection.baseline = await projection.read();
+  projection.basis = snapshot;
+  const { document, source } = assembledTimeline(client.id);
+  source.data.src = "data:video/mp4;base64,BBBB";
+  await projection.save(document);
+
+  const created = batches[0]!.operations.find(
+    (op) => op.type === "editor.create",
+  ) as Extract<CreationOperation, { type: "editor.create" }>;
+  assert.equal(
+    created.payload.document.inputConnections?.length,
+    0,
+    "the stale link is not recreated",
+  );
+  const clips =
+    "tracks" in created.payload.document.data
+      ? created.payload.document.data.tracks.flatMap((track) => track.clips)
+      : [];
+  assert.equal(clips.length, 1, "the clip itself survives");
 });

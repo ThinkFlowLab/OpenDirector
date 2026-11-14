@@ -6,7 +6,7 @@ from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.media.fonts import FONT_MIMES, inspect_font, require_font_characters
 
-from opendirector.domain.rule_facts import TIMELINE_FONT_TOTAL_BYTES
+from opendirector.domain.rule_facts import TIMELINE_DURATION_EPSILON, TIMELINE_FONT_TOTAL_BYTES
 from opendirector.domain.timeline_errors import timeline_error_message
 
 
@@ -31,7 +31,9 @@ def validate_timeline_resources(data: TimelineData, snapshot: ProjectSnapshot, a
         for clip in track.clips:
             asset = assets._reference(snapshot, clip.resource.asset)
             duration = asset.metadata.durationSeconds
-            if asset.kind != 'image' and (duration is None or clip.outPoint > duration + 1e-6):
+            # An unknown duration cannot prove an overflow, and the aggregate
+            # validation and the document boundary already read it that way.
+            if asset.kind != 'image' and duration is not None and clip.outPoint > duration + TIMELINE_DURATION_EPSILON:
                 raise ContractError('invalid_input', '时间线片段超出实际素材时长。', asset.id)
     text_by_font = {}
     for overlay in data.overlays:

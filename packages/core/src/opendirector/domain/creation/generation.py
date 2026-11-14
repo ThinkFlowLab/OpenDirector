@@ -370,10 +370,12 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     rules = model.inputRules
     if rules.referencesAllowed is False and references:
         raise ValueError('当前模型不支持参考素材，请移除参考后重试。')
-    if rules.profile == 'moss-speech':
+    if rules.profile in {'moss-speech', 'minimax-speech'}:
+        from opendirector.domain.minimax_speech import validate_minimax_speech_input
         from opendirector.domain.moss_speech import validate_moss_speech_input
         text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
-        validate_moss_speech_input(text, spec.parameters.voice)
+        validate = validate_moss_speech_input if rules.profile == 'moss-speech' else validate_minimax_speech_input
+        validate(text, spec.parameters.voice)
     elif rules.profile == 'zhipu-speech':
         from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
         text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')

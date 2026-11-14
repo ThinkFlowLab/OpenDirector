@@ -23,6 +23,14 @@ TIMELINE_TEXT_MAX_LENGTH = 4096
 TIMELINE_TEXT_TOTAL_LENGTH = 200000
 TIMELINE_FONT_BYTES = 32 * 1024 * 1024
 TIMELINE_FONT_TOTAL_BYTES = 64 * 1024 * 1024
+# A clip's out point is seeded from the duration a probe reported, so comparing
+# it against a later measurement must tolerate re-probing noise. Durations also
+# travel through millisecond-rounded fields (`durationMs`), so a stored value can
+# sit up to half a millisecond past the measured one: a 121-frame clip at 24 fps
+# is 5.041667s and is announced as 5042ms, which is 5.042s. Rounding to the
+# nearest millisecond is the widest error a caller can introduce, so half a
+# millisecond is the tolerance every boundary shares.
+TIMELINE_DURATION_EPSILON = 0.0005
 FRAME_IMAGE_LIMIT = 2
 PROMPT_MAX_LENGTH = 20000
 TEXT_MAX_TOKENS = 32768
@@ -52,6 +60,7 @@ def facts_payload():
         'timelineTextTotalLength': TIMELINE_TEXT_TOTAL_LENGTH,
         'timelineFontBytes': TIMELINE_FONT_BYTES,
         'timelineFontTotalBytes': TIMELINE_FONT_TOTAL_BYTES,
+        'timelineDurationEpsilon': TIMELINE_DURATION_EPSILON,
         'maxReferences': MAX_REFERENCES,
         'textReferenceBytes': TEXT_REFERENCE_BYTES,
         'agentImageBytes': AGENT_IMAGE_BYTES,

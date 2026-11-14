@@ -109,6 +109,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         return result
     if kind == 'audio':
         if rules.get('referencesAllowed') is False and task['referenceIds']:
+            if rules['profile'] == 'minimax-speech':
+                raise ProjectError('MiniMax 语音合成不支持参考素材，请直接填写朗读文本并选择音色。', 422, code='minimax_speech_reference')
             if rules['profile'] == 'zhipu-speech':
                 raise ProjectError('GLM-TTS 不支持参考素材，请直接填写朗读文本并选择音色。', 422, code='zhipu_speech_reference')
             raise ProjectError('MOSS 语音生成不支持参考素材，请直接填写朗读文本和音色 ID。', 422, code='moss_speech_reference')

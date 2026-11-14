@@ -5,6 +5,8 @@ from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTE
 from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
+from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTERS, is_minimax_speech
+from .projects import ProjectError
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 from .bigmodel_image import is_bigmodel_image
 from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
@@ -36,6 +38,12 @@ def _adapter_rules(config):
     if is_moss_speech(config):
         rules.update(profile='moss-speech', allowedKinds=[], maxImages=0,
                      voiceRequired=True, referencesAllowed=False)
+        return rules
+    if is_minimax_speech(config):
+        if config['modelId'] not in MINIMAX_SPEECH_MODELS:
+            raise ProjectError('不支持该 MiniMax 语音型号，请选择预设中的型号。', 422, code='minimax_speech_model')
+        rules.update(profile='minimax-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
+                     referencesAllowed=False, maxPromptCharacters=MINIMAX_SPEECH_TEXT_CHARACTERS)
         return rules
     if is_zhipu_speech(config):
         rules.update(profile='zhipu-speech', allowedKinds=[], maxImages=0, voiceRequired=True,

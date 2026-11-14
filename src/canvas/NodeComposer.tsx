@@ -55,6 +55,8 @@ import {
 export interface NodeComposerProps {
   selectedNode: CanvasNode | null;
   incomingNodes: CanvasNode[];
+  /** Pinned assets included in run-before reference checks, not frame-slot limits. */
+  pinnedPrecheck?: CanvasNode[];
   onUpdate: (data: Partial<CanvasNodeData>) => void;
   onRun: () => void;
   onCancel: () => void;
@@ -82,6 +84,7 @@ const DEMO_VOICE = "动漫海绵";
 export function NodeComposer({
   selectedNode,
   incomingNodes,
+  pinnedPrecheck,
   onUpdate,
   onRun,
   onCancel,
@@ -131,7 +134,7 @@ export function NodeComposer({
   const blocker = unconfigured
     ? t("generation.model.unconfigured")
     : backend
-      ? backendBlocker(settings, incomingNodes, backendModels)
+      ? backendBlocker(settings, incomingNodes, backendModels, pinnedPrecheck)
       : generationBlocker(settings, incomingNodes, t);
   const canRun = !blocker;
   const model = backend ? undefined : generationModel(settings);

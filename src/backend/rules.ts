@@ -511,6 +511,7 @@ export function backendBlocker(
   settings: GenerationSettings,
   incoming: readonly CanvasNode[],
   models: readonly ModelConfig[],
+  pinned: readonly CanvasNode[] = [],
 ): string | null {
   const frameLimit = frameImageLimitIssue(settings, incoming);
   if (frameLimit) return frameLimit;
@@ -540,7 +541,7 @@ export function backendBlocker(
         ? tNow("errors.rules.musicStyle")
         : tNow("errors.rules.speechText");
   const rules = config.inputRules;
-  if (rules.referencesAllowed === false && incoming.length)
+  if (rules.referencesAllowed === false && (incoming.length || pinned.length))
     return tNow("errors.rules.referencesUnsupported");
   if (settings.mode === "audio" && !isMusicModel(config)) {
     const issue = voiceIssue(settings.voiceSelection, rules.voiceLibrary);
@@ -553,7 +554,7 @@ export function backendBlocker(
   }
   if (rules.voiceRequired && !serviceVoice(settings))
     return tNow(rules.voiceLibrary ? "voiceLibrary.selectRequired" : "errors.rules.voiceRequired");
-  if (rules.profile === "moss-image" && incoming.some((node) => node.data.kind === "text")) {
+  if (rules.profile === "moss-image" && [...incoming, ...pinned].some((node) => node.data.kind === "text")) {
     let layout: unknown;
     try {
       layout = JSON.parse(settings.prompt);
@@ -594,11 +595,11 @@ export function backendBlocker(
       return tNow("errors.rules.lyricsLimit");
     if (
       !config.inputRules.allowedKinds.includes("audio") &&
-      incoming.some((node) => node.data.kind === "audio")
+      [...incoming, ...pinned].some((node) => node.data.kind === "audio")
     )
       return tNow("errors.rules.referenceMusic");
     if (
-      hasMusicReference(settings, incoming, config) &&
+      hasMusicReference(settings, [...incoming, ...pinned], config) &&
       !models.some(isScoreModel)
     )
       return tNow("errors.rules.transcriptionRequired");
@@ -624,7 +625,7 @@ export function backendBlocker(
     }).includes(false)
   )
     return tNow("errors.rules.audioDisable");
-  const references = backendReferences(settings, incoming, config);
+  const references = backendReferences(settings, [...incoming, ...pinned], config);
   if (settings.mode === "video") {
     const durations = backendDurations(config);
     if (durations.length && !durations.includes(settings.durationSeconds))

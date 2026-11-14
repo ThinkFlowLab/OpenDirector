@@ -28,6 +28,7 @@ from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
@@ -111,6 +112,9 @@ class CreationGeneration(GenerationRuntime):
 
     def task(self, job):
         spec, model = job.inputSnapshot.spec, job.inputSnapshot.model
+        config = model.model_dump()
+        # Project accepted jobs without revalidating the current speech catalog.
+        profile = 'minimax-speech' if is_minimax_speech(config) else input_rules(config)['profile']
         assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
         reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only'))
         content = None
@@ -140,7 +144,7 @@ class CreationGeneration(GenerationRuntime):
             modelConfigId=str(model.modelConfigId), model=model.modelId, baseURL=model.url, protocol=model.protocol,
             title=spec.prompt[:80] or spec.kind, prompt=spec.prompt, promptContent=content, referenceIds=reference_ids,
             referenceRoles=[{'assetId': str(r.asset.assetId), 'role': r.role} for r in job.inputSnapshot.references if r.transmission != 'context_only'],
-            referenceInputs={'profile': input_rules({**model.model_dump(), 'kind': model.kind})['profile']},
+            referenceInputs={'profile': profile},
             videoMode=spec.parameters.videoMode if spec.kind == 'video' else 'first_frame', parameters=job.adapterParameters,
             externalTaskId=job.externalTaskId, assetId=str(job.asset.assetId) if job.asset else None,
             adopted=job.adopted, error=None, errorDetails=job.errorDetails.model_dump(mode='json') if job.errorDetails else None,
@@ -233,6 +237,8 @@ class CreationGeneration(GenerationRuntime):
             params = dict(size=params['size'], watermark_enabled=not self.settings.get()['removeWatermark'])
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
             params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'minimax-speech':
+            params = dict(voice=intent['voice'], format='mp3', output_format='url', stream=False)
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'zhipu-speech':
             params = dict(voice=intent['voice'], response_format='wav', stream=False,
                           watermark_enabled=not self.settings.get()['removeWatermark'])
@@ -252,7 +258,7 @@ class CreationGeneration(GenerationRuntime):
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
                         scoreMode=parameters.get('score_mode'), seed=parameters.get('seed'))
         if kind == 'audio':
-            if input_rules(config)['profile'] == 'moss-speech':
+            if input_rules(config)['profile'] in {'moss-speech', 'minimax-speech'}:
                 return dict(kind=kind, voice=parameters['voice'], format='mp3')
             if input_rules(config)['profile'] == 'zhipu-speech':
                 return dict(kind=kind, voice=parameters['voice'], format='wav', sampleRate=24000)
@@ -637,10 +643,8 @@ class CreationGeneration(GenerationRuntime):
                 valid = False
             if not valid:
                 if mode == 'download':
-                    # The private locator belongs to the accepted result, not
-                    # the current model selection. Never attach another model's
-                    # credentials or turn this read into a new submission.
-                    config = None
+                    # Keep the accepted adapter and download policy without current credentials.
+                    config = {**job.inputSnapshot.model.model_dump(mode='json'), 'apiKey': '', 'authMode': 'none'}
                 else:
                     task.update(status='interrupted', recovery='review', resumeAllowed=False)
                     await asyncio.to_thread(self.checkpoint, project_id, task, pinned)

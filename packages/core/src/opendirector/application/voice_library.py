@@ -155,6 +155,21 @@ class VoiceLibrary:
             records[identity] = (record, locator)
         return list(records.values()), None
 
+    def _minimax_page(self, config, capabilities):
+        # https://platform.minimaxi.com/docs/api-reference/voice-management-get
+        # Errors arrive as HTTP 200 with a nonzero base_resp.status_code.
+        value = self._request(config, 'POST', path='/get_voice', json={'voice_type': 'system'})
+        status = value.get('base_resp')
+        if not isinstance(status, dict) or type(status.get('status_code')) is not int:
+            raise voice_error('voice_provider_protocol', 502)
+        if status['status_code'] != 0:
+            raise voice_error('voice_provider_error', 502)
+        items = value.get('system_voice')
+        if not isinstance(items, list) or len(items) > 10000 or not all(isinstance(item, dict) for item in items):
+            raise voice_error('voice_provider_protocol', 502)
+        return [self._record({'id': item.get('voice_id'), 'name': item.get('voice_name')}, capabilities,
+                             source='builtin', has_audio=False, config=config) for item in items], None
+
     @staticmethod
     def _valid_cursor(cursor):
         return isinstance(cursor, str) and 0 < len(cursor) <= 2048 and cursor == cursor.strip() and cursor.isprintable()
@@ -206,6 +221,8 @@ class VoiceLibrary:
             self._assert_current(config, capabilities)
             if capabilities['provider'] == 'moss':
                 records, cursor = self._moss_page(config, capabilities, limit, after)
+            elif capabilities['provider'] == 'minimax':
+                records, cursor = self._minimax_page(config, capabilities)
             elif capabilities['provider'] == 'zhipu':
                 records, cursor = self._zhipu_page(config, capabilities)
             else:
@@ -226,6 +243,7 @@ class VoiceLibrary:
             after = cursor
 
     def list(self, model_config_id, *, page_size=None, after=None, connection_id=None):
+        # page_size bounds MOSS pages; other providers return one complete catalog.
         config, capabilities = self._config(model_config_id)
         if connection_id is not None and connection_id != capabilities['connectionId']:
             raise voice_error('voice_connection_changed', 409)

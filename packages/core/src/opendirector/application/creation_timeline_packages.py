@@ -25,7 +25,7 @@ from opendirector.domain.creation.timeline_packages import (TimelinePackageManif
     TimelinePackageImportRequest, TimelinePackageImportReceipt)
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
-from opendirector.domain.rule_facts import TIMELINE_FONT_TOTAL_BYTES
+from opendirector.domain.rule_facts import TIMELINE_DURATION_EPSILON, TIMELINE_FONT_TOTAL_BYTES
 from opendirector.ports.files import CHUNK_BYTES
 from opendirector.ports.gateway import gateway
 from opendirector.installation import default_timeline_font
@@ -266,7 +266,7 @@ class CreationTimelinePackages:
                 for track in data.tracks:
                     for clip in track.clips:
                         _, metadata = inspected[key(clip.resource.asset)]
-                        if clip.resource.asset.kind != 'image' and (metadata.durationSeconds is None or clip.outPoint > metadata.durationSeconds + 1e-6):
+                        if clip.resource.asset.kind != 'image' and metadata.durationSeconds is not None and clip.outPoint > metadata.durationSeconds + TIMELINE_DURATION_EPSILON:
                             raise invalid()
                 return manifest, data, inspected
         except (ValidationError, ValueError, KeyError, zipfile.BadZipFile, EOFError, RuntimeError, NotImplementedError):

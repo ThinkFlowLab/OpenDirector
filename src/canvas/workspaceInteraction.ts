@@ -13,7 +13,13 @@ import type { PortSide } from "./connectionPorts.ts";
 import { getNodeGenerationSettings } from "./generationSettings.ts";
 import { generationContent } from "./generationReferenceContent.ts";
 import type { ResultSource } from "./linkedResults.ts";
-import type { CanvasCommand, CanvasDocument, CanvasNode, Point } from "./model.ts";
+import {
+  createNode,
+  type CanvasCommand,
+  type CanvasDocument,
+  type CanvasNode,
+  type Point,
+} from "./model.ts";
 import { referenceSnapshot } from "./referenceEvidence.ts";
 import { agentGenerationBlocker, agentNodeSettings } from "./textGeneration.ts";
 
@@ -252,7 +258,68 @@ export function canvasKeyAction(input: {
   return null;
 }
 
-type SubmissionAsset = { id: string; kind?: string | null };
+
+type SubmissionAsset = { id: string; kind?: string | null; size?: number };
+
+/** Identity keys used to avoid counting a pinned asset that already arrives as a follow node. */
+function precheckSourceKeys(node: CanvasNode): string[] {
+  return [
+    `id:${node.id}`,
+    ...(node.data.backendAssetId ? [`asset:${node.data.backendAssetId}`] : []),
+    ...(node.data.src ? [`src:${node.data.src}`] : []),
+  ];
+}
+
+/**
+ * Pinned assets included in run-before reference checks.
+ * Missing asset metadata is skipped so the composer does not throw during precheck.
+ * A pinned tag that already arrives as a follow node is not counted twice.
+ */
+export function pinnedPrecheckNodes(input: {
+  node: CanvasNode;
+  incoming: readonly CanvasNode[];
+  assets: readonly SubmissionAsset[];
+}): CanvasNode[] {
+  const used = new Set(input.incoming.flatMap(precheckSourceKeys));
+  const extras: CanvasNode[] = [];
+  for (const part of input.node.data.promptContent ?? []) {
+    if (part.type !== "reference" || part.binding !== "asset") continue;
+    const asset = input.assets.find((item) => item.id === part.assetId);
+    const kind = asset?.kind;
+    if (!kind || !["text", "image", "video", "audio"].includes(kind)) continue;
+    const keys = [
+      `asset:${part.assetId}`,
+      ...(part.fingerprint ? [`fp:${part.fingerprint}`] : []),
+    ];
+    if (keys.some((key) => used.has(key))) continue;
+    const extra = createNode(
+      kind as "text" | "image" | "video" | "audio",
+      { x: 0, y: 0 },
+      {
+        title: part.name,
+        backendAssetId: part.assetId,
+        ...(kind === "text"
+          ? { text: part.name || " " }
+          : {
+              src: `pinned-asset:${part.assetId}`,
+              assetState: "ready" as const,
+            }),
+        ...(typeof asset.size === "number" ? { byteSize: asset.size } : {}),
+      },
+    );
+    for (const key of [...precheckSourceKeys(extra), ...keys]) used.add(key);
+    extras.push(extra);
+  }
+  return extras;
+}
+
+export function precheckReferenceSources(input: {
+  node: CanvasNode;
+  incoming: readonly CanvasNode[];
+  assets: readonly SubmissionAsset[];
+}): CanvasNode[] {
+  return [...input.incoming, ...pinnedPrecheckNodes(input)];
+}
 
 /** Pinned prompt tokens submit the saved asset, never a canvas node invented from the label. */
 export function pinnedSubmissionInputs(
@@ -300,7 +367,8 @@ export function serviceGenerationPlan(input: {
 }): ServiceGenerationPlan {
   const settings = getNodeGenerationSettings(input.node, input.models);
   const config = backendModel(settings, input.models);
-  const blocked = backendBlocker(settings, input.incoming, input.models);
+  const pinned = pinnedPrecheckNodes(input);
+  const blocked = backendBlocker(settings, input.incoming, input.models, pinned);
   if (blocked || !config)
     return { status: "blocked", message: blocked };
   const references = backendReferences(settings, input.incoming, config);

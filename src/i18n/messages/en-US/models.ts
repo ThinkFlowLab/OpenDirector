@@ -74,6 +74,8 @@ export const models = {
   "models.service.show": "Show",
   "models.service.urlNote":
     "Enter the API base URL provided by your service.",
+  "models.service.beijingWorkspaceUrl":
+    "Use a Beijing API key. To use your workspace endpoint, enter https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 with your workspace ID.",
   "models.service.inputCapabilities": "Input capabilities",
   "models.service.referenceOutput": "References and output",
   "models.service.textInput": "Text",

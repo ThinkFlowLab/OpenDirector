@@ -408,7 +408,9 @@ export function ModelServiceForm({
                 />
               </label>
               <p className="cw-model-note" id={`${connectionFieldId}-url-note`}>
-                {t("models.service.urlNote")}
+                {t(presetId === "bailian-beijing"
+                  ? "models.service.beijingWorkspaceUrl"
+                  : "models.service.urlNote")}
               </p>
             </div>
             <div className="cw-model-connection-field">

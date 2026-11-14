@@ -4,6 +4,7 @@ Run like creation_server.py. No GPU or MOSS account is contacted. Uploads still
 pass real ffprobe validation, and generation still validates the voice registry.
 """
 import io
+import json
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path
@@ -25,6 +26,13 @@ calls = []
 
 def provider(request):
     calls.append(dict(method=request.method, url=str(request.url)))
+    if request.url.host == 'api.minimax.cn':
+        assert request.method == 'POST' and request.url.path == '/v1/get_voice'
+        assert json.loads(request.content) == {'voice_type': 'system'}
+        return httpx.Response(200, json={'base_resp': {'status_code': 0}, 'system_voice': [
+            {'voice_id': 'Chinese (Mandarin)_Reliable_Executive', 'voice_name': 'Narrator'},
+            {'voice_id': 'Santa_Claus ', 'voice_name': 'Santa Claus'},
+        ]})
     cloud = request.url.host == 'api.mosi.cn'
     boundary = request.url.host
     records = uploads.setdefault(boundary, {})

@@ -404,6 +404,7 @@ IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'ro
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',
                     'bigmodel_image_size', 'bigmodel_image_reference', 'bigmodel_image_prompt',
                     'minimax_image_reference', 'minimax_image_count', 'minimax_image_bytes',
+                    'minimax_speech_text', 'minimax_speech_voice', 'minimax_speech_reference', 'minimax_speech_model',
                     'zhipu_speech_text', 'zhipu_speech_voice', 'zhipu_speech_reference',
                     'voice_library_unsupported', 'voice_connection_changed', 'voice_reference_required',
                     'voice_transcript_required', 'voice_transcript_too_long', 'voice_description_too_long',

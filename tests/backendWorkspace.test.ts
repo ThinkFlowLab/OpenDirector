@@ -660,7 +660,7 @@ test("a long read that lost its lease fails instead of adopting it", async (t) =
       (options.method ?? "GET") === "PUT"
     )
       return Response.json(
-        { detail: "工程正在其他窗口中打开", code: "storage_busy" },
+        { detail: "工程正在其他窗口中打开", code: "project_open_elsewhere" },
         { status: 409 },
       );
     return plain(url, options);

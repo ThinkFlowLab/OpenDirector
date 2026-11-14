@@ -10,6 +10,7 @@ from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_heade
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.reference_inputs import generation_references, references, image_type
 from opendirector.integrations.volcengine import VolcengineGeneration, bounded, endpoint
@@ -18,7 +19,7 @@ from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MossImages, MossSpeech, OpenAISpeech,
+from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech,
                                                     VllmOmniMusic, VllmOmniScore, ZhipuSpeech, image_parts)
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
@@ -37,6 +38,7 @@ class GenerationProviders(VolcengineGeneration):
         self.moss_image = MossImages(transport, poll_interval)
         self.bigmodel_image = BigModelImages(transport, poll_interval)
         self.moss_speech = MossSpeech(transport, poll_interval)
+        self.minimax_speech = MinimaxSpeech(transport, poll_interval)
         self.zhipu_speech = ZhipuSpeech(transport, poll_interval)
 
     def _profile_adapter(self, config):
@@ -84,6 +86,10 @@ class GenerationProviders(VolcengineGeneration):
             return json.loads(data)
 
     async def resume_result(self, config, suffix, url):
+        # Accepted results remain downloadable after a model leaves the catalog.
+        if config and is_minimax_speech(config):
+            result = await self.minimax_speech.download(config, url)
+            return result.suffix, result.data
         if config and input_rules(config)['profile'] == 'bigmodel-glm-image':
             return 'png', await self.bigmodel_image.download(config, url)
         adapter = self._profile_adapter(config)
@@ -138,6 +144,11 @@ class GenerationProviders(VolcengineGeneration):
         if input_rules(config)['profile'] == 'moss-speech':
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
             result = await self.moss_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
+                result_ready=result_ready)
+            return result.suffix, result.data
+        if input_rules(config)['profile'] == 'minimax-speech':
+            prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            result = await self.minimax_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
                 result_ready=result_ready)
             return result.suffix, result.data
         if input_rules(config)['profile'] == 'zhipu-speech':

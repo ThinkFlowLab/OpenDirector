@@ -7,8 +7,10 @@ const EN_NAMES: Record<string, string> = {
   "OpenAI 兼容": "OpenAI compatible",
   "MiniMax 官方视频": "MiniMax official video",
   "智谱 BigModel": "Zhipu BigModel",
+  "阿里云百炼（北京）": "Alibaba Cloud Model Studio (Beijing)",
   "可灵官方视频": "Kling official video",
   "MiniMax 官方图片": "MiniMax Official Images",
+  "MiniMax 官方语音": "MiniMax Official Speech",
   "MOSS 开放平台": "MOSS Open Platform",
   "火山方舟 / Agent Plan": "Volcano Ark / Agent Plan",
   "vLLM-Omni 图片接口": "vLLM-Omni image API",
@@ -58,6 +60,7 @@ export interface ProviderPreset {
   optionLabel?: string;
   kinds: ModelKind[];
   url: string;
+  workspaceUrlPattern?: RegExp;
   protocol: ModelConfigInput["protocol"];
   connectionType: ModelConfigInput["connectionType"];
   authMode: ModelConfigInput["authMode"];
@@ -109,6 +112,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelsByKind: { image: ["MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"] },
   },
   {
+    id: "minimax-speech",
+    logoOrganization: "MiniMaxAI",
+    name: "MiniMax 官方语音",
+    kinds: ["audio"],
+    url: "https://api.minimax.cn/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: { audio: ["speech-2.8-hd", "speech-2.8-turbo"] },
+  },
+  {
     id: "minimax-video",
     logoOrganization: "MiniMaxAI",
     name: "MiniMax 官方视频",
@@ -141,6 +155,18 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     protocol: "openai",
     connectionType: "api",
     authMode: "bearer",
+  },
+  {
+    id: "bailian-beijing",
+    logoOrganization: "Qwen",
+    name: "阿里云百炼（北京）",
+    kinds: ["agent"],
+    url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    workspaceUrlPattern: /^https:\/\/[a-z0-9-]+\.cn-beijing\.maas\.aliyuncs\.com\/compatible-mode\/v1$/,
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: { agent: ["qwen3.8-max"] },
   },
   {
     id: "zhipu",
@@ -237,12 +263,13 @@ export function providerPresetFor(model: ModelConfig): string {
   );
   if (deployed && model.connectionType === "self_hosted") return deployed.id;
   if (model.connectionType === "self_hosted") return "custom";
+  const url = model.url.replace(/\/+$/, "");
   return (
     PROVIDER_PRESETS.find(
       (preset) =>
         preset.kinds.includes(model.kind) &&
         preset.protocol === model.protocol &&
-        preset.url === model.url.replace(/\/+$/, ""),
+        (preset.url === url || preset.workspaceUrlPattern?.test(url)),
     )?.id ?? "custom"
   );
 }
