@@ -1,4 +1,6 @@
 import Schema from '@deepseek-ai/schemastery'
+import { Readable } from 'node:stream'
+import { zipEntries } from './src/archive.js'
 import { OpenDirectorClient } from './src/client.js'
 import { resolveConfig } from './src/config.js'
 import { ConfigError, HttpError, InputError, NetworkError, RequestTimeoutError, UnknownOperationError } from './src/errors.js'
@@ -175,6 +177,43 @@ export function apply(ctx, config) {
         }
       },
     }), 'OpenDirector job cancellation')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/action-packs',
+      methods: ['GET', 'POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        if (request.method === 'GET') {
+          try {
+            const params = new URL(request.url, 'http://localhost').searchParams
+            const input = { projectId: params.get('project'), packId: params.get('pack'),
+              action: params.has('pack') ? 'get' : 'list' }
+            if (params.get('download') === '1') {
+              const archive = await client.actionPackArchive(input, { signal: request.signal })
+              return new Response(Readable.toWeb(Readable.from(zipEntries(archive.entries,
+                { signal: request.signal, maxBytes: archive.maxBytes }))), {
+                headers: { ...headers, 'Content-Type': 'application/zip',
+                  'Content-Disposition': 'attachment; filename="' + archive.filename + '"' },
+              })
+            }
+            return Response.json({ ...await client.actionPack(input, { signal: request.signal }),
+              canvasUrl: client.canvasUrl(input.projectId) }, { headers })
+          } catch (error) {
+            return Response.json({ code: errorCode(error) }, { status: error instanceof InputError ? 400 : 502, headers })
+          }
+        }
+        if (!isBrowserAction(request)) return new Response(null, { status: 403, headers })
+        let input
+        try { input = await actionInput(request) } catch { return new Response(null, { status: 400, headers }) }
+        try {
+          const value = await client.actionPack(input, { signal: request.signal })
+          return Response.json({ ...value, projectId: input.projectId, canvasUrl: client.canvasUrl(input.projectId) }, { headers })
+        } catch (error) {
+          return Response.json(error instanceof UnknownOperationError || input.action === 'check'
+            ? { status: 'unknown' } : { status: 'rejected', code: errorCode(error) }, { headers })
+        }
+      },
+    }), 'OpenDirector action packs')
 
     scope.effect(() => scope.connection.fetch.register({
       path: '/api/opendirector/creation',

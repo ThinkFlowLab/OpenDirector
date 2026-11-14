@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mediaDetails } from './presentation.js'
+import { actionPackRequest, actionPackArchive } from './action-packs.js'
 import {
   buildCreateGeneration,
   buildJobCancelCommand,
@@ -294,6 +295,27 @@ export class OpenDirectorClient {
         && error.code !== 'storage_unavailable') throw error
       throw new UnknownOperationError({ projectId, operationId, cause: error })
     }
+  }
+
+  actionPack(input, { signal } = {}) {
+    return this.#actionPackIO(input, signal, actionPackRequest)
+  }
+
+  actionPackArchive(input, { signal } = {}) {
+    return this.#actionPackIO(input, signal, actionPackArchive)
+  }
+
+  #actionPackIO(input, signal, run) {
+    const projectId = requireUuid(input.projectId, 'projectId')
+    return run({ ...input, projectId }, {
+      read: () => this.project(projectId, { signal }),
+      models: () => this.creationModels({ signal }),
+      receipt: id => this.receipt(projectId, id, { signal }),
+      canRetry: canRetryFailedJob,
+      media: (assetId, kind) => this.media(projectId, assetId, { kind, original: true, signal }),
+      edit: action => this.#withLease(projectId, signal, (session, snapshot) => action(snapshot,
+        command => this.#command({ projectId, operationId: command.commandId, command, session, signal }))),
+    })
   }
 
   async listProjects({ signal } = {}) {

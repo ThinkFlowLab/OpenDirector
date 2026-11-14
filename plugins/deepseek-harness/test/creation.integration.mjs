@@ -64,8 +64,8 @@ try {
   await ctx.loader.await();
   const entry = [...ctx.loader.entries()].find(value => value.options.id === 'opendirector');
   assert.ok(entry);
-  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 8);
-  evidence.checks.push('real Cordis Loader registered 8 native tools');
+  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 9);
+  evidence.checks.push('real Cordis Loader registered 9 native tools');
   const projectId = randomUUID();
   const name = `DSH 148 isolated project ${projectId.slice(0, 8)}`;
   const created = await call('opendirector_projects', { action: 'create', name, projectId, operationId: randomUUID() });
@@ -120,7 +120,7 @@ try {
   await entry.update({ disabled: false });
   await ctx.loader.await();
   assert.ok(entry);
-  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 8);
+  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 9);
   const resumed = await call('opendirector_job', { projectId, jobId: pending.jobIds[0] });
   assert.equal(resumed.job.status, 'succeeded');
   evidence.checks.push('real loader disable unregisters tools; accepted OD job completes; enable restores persisted result query');

@@ -602,5 +602,36 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
     },
   })
 
-  return [projects, project, createGeneration, submit, job, adoptResult, cancel, operation]
+
+  const actionPack = makeTool({
+    key: 'actionPack',
+    name: 'opendirector_action_pack',
+    description: t('tool.actionPack.description'),
+    parameters: {
+      projectId: projectIdParam,
+      action: required({ type: 'string', enum: ['list', 'get', 'prepare', 'generate', 'check'] }),
+      operationId: string(t('param.operationId')),
+      packId: string(t('param.packId')),
+      packAction: { type: 'string', enum: ['prepare', 'generate'], description: t('param.packCheck') },
+      sourceResultId: string(t('param.sourceResultId')),
+      title: string(t('param.packTitle')),
+      sharedPrompt: string(t('param.packShared')),
+      actions: { ...arrayOf(objectOf({ name: required(string(t('param.packName'))),
+        prompt: required(string(t('param.prompt'))) }, { additionalProperties: false })) },
+      modelConfigId: string(t('param.modelConfigId')),
+      output: objectOf({ size: required(string(t('param.packSize'))),
+        aspectRatio: required(string(t('param.packRatio'))) }, { additionalProperties: false }),
+      durationSeconds: number(t('param.packDuration')),
+      itemIds: arrayOf(string(t('param.originItemId'))),
+      redo: boolean(t('param.packRedo')),
+    },
+    schema: outputSchema({ projectId: string(), packId: string(), status: string(),
+      canvasUrl: string(), actions: arrayOf(objectOf()), packs: arrayOf(objectOf()) }, ['projectId', 'canvasUrl']),
+    async execute(args, exec) {
+      const value = await client.actionPack(args, { signal: exec.signal })
+      return { ...value, projectId: args.projectId, canvasUrl: client.canvasUrl(args.projectId) }
+    },
+  })
+
+  return [projects, project, createGeneration, submit, job, adoptResult, cancel, operation, actionPack]
 }

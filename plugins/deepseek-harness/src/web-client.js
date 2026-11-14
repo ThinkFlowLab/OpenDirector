@@ -5,6 +5,21 @@ window.__ModuleLoader__.load({
     const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
+      actionPacks: 'Action packs', newActionPack: 'Make an action pack', packTitle: 'Pack name',
+      packHint: 'Keep one reference image, make each action separately, then choose one version per action.',
+      packEmpty: 'No action packs in this project yet. Start from a saved image.',
+      packSource: 'Use as character reference', packShared: 'Shared description', packActionName: 'Action name',
+      packDescription: 'Describe this action', packAdd: 'Add an action', packRemove: 'Remove action',
+      packCreate: 'Create and generate {count} actions', packMissing: 'Generate {count} unstarted actions',
+      packCount: '{selected}/{total} actions selected', packExport: 'Download action pack',
+      packExportHint: 'Choose one result for every action to export named media files and manifest.json (up to 128 MB).',
+      packInvalid: 'Give the pack a name and add 1–6 actions with unique names and descriptions.',
+      packNotStarted: 'Not started', packContinue: 'Continue original submission',
+      packReference: 'Character reference', packSelectSource: 'Choose a saved reference image',
+      packIdle: 'Idle', packIdlePrompt: 'Stand naturally, relaxed posture, keep the same character and appearance.',
+      packWave: 'Wave', packWavePrompt: 'Wave one hand in greeting, keep the same character and appearance.',
+      packThink: 'Think', packThinkPrompt: 'Tilt the head thoughtfully, keep the same character and appearance.',
+      packDefaultTitle: 'Character actions',
       images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
       viewOriginal: 'View original image', fitImage: 'Fit to window', actualImageSize: 'Actual size',
       originalUnavailable: 'Could not load the original image.', duration: '{seconds} s',
@@ -108,6 +123,21 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      actionPacks: '动作素材包', newActionPack: '制作动作素材包', packTitle: '素材包名称',
+      packHint: '固定一张角色参考图，分别生成各个动作，再为每个动作选一版。',
+      packEmpty: '这个工程还没有动作素材包，可以从已保存的图片开始。',
+      packSource: '用作角色参考', packShared: '共用描述', packActionName: '动作名称',
+      packDescription: '描述这个动作', packAdd: '添加动作', packRemove: '移除动作',
+      packCreate: '创建并生成 {count} 个动作', packMissing: '生成 {count} 个未开始的动作',
+      packCount: '已选择 {selected}/{total} 个动作', packExport: '下载动作素材包',
+      packExportHint: '每个动作选一版后，可导出按动作命名的媒体文件和 manifest.json，合计最多 128 MB。',
+      packInvalid: '请填写素材包名称，添加 1 至 6 个名称不重复、描述完整的动作。',
+      packNotStarted: '未开始', packContinue: '继续原提交',
+      packReference: '角色参考图', packSelectSource: '选择已保存的参考图',
+      packIdle: '待机', packIdlePrompt: '自然站立，姿态放松，保持同一个角色和外观。',
+      packWave: '挥手', packWavePrompt: '抬起一只手打招呼，保持同一个角色和外观。',
+      packThink: '思考', packThinkPrompt: '歪头思考，保持同一个角色和外观。',
+      packDefaultTitle: '角色动作',
       images: '图片结果', videos: '视频结果', original: '原图', sourceClip: '源片段',
       viewOriginal: '查看原图', fitImage: '适应窗口', actualImageSize: '实际大小',
       originalUnavailable: '暂时无法加载原图。', duration: '{seconds} 秒',
@@ -363,6 +393,12 @@ window.__ModuleLoader__.load({
             label: typeof item.label === 'string' ? item.label.slice(0, 160) : '',
             ...(typeof item.projectName === 'string' && { projectName: item.projectName.slice(0, 255) }),
             ...(item.repeatJobId && { repeatJobId: item.repeatJobId }),
+            ...(['prepare', 'generate'].includes(item.packAction) && {
+              packAction: item.packAction, packRedo: item.packRedo === true,
+              ...(uuid.test(item.packId) && { packId: item.packId }),
+              ...(Array.isArray(item.packItemIds) && item.packItemIds.length <= 6
+                && item.packItemIds.every(id => uuid.test(id)) && { packItemIds: item.packItemIds }),
+            }),
             ...(Number.isInteger(item.candidateCount) && item.candidateCount >= 2 && item.candidateCount <= 4
               && { candidateCount: item.candidateCount }),
           })) : []
@@ -391,6 +427,8 @@ window.__ModuleLoader__.load({
         projectId: input.projectId, operationId: input.operationId, context, label: label.slice(0, 160),
         ...(input.projectName != null && { projectName: input.projectName.slice(0, 255) }),
         ...(input.repeatJobId && { repeatJobId: input.repeatJobId }),
+        ...(input.packAction && { packAction: input.packAction, packId: input.packId,
+          packItemIds: input.packItemIds, packRedo: input.packRedo === true }),
         ...(input.candidateCount > 1 && { candidateCount: input.candidateCount }),
       }
       writePendingSubmissions([...readPendingSubmissions().filter(value => pendingIdentity(value) !== pendingIdentity(item)), item])
@@ -404,7 +442,7 @@ window.__ModuleLoader__.load({
 
     function PendingSubmissions({ context, onRecovered, t }) {
       const saved = useSyncExternalStore(subscribePending, readPendingSubmissions)
-      const items = context ? saved.filter(item => item.context === context) : saved
+      const items = context === 'packs' ? saved.filter(item => item.packAction) : context ? saved.filter(item => item.context === context) : saved
       const [page, setPage] = useState({})
       const [feedback, setFeedback] = useState({})
       const busy = useRef(new Set())
@@ -420,14 +458,18 @@ window.__ModuleLoader__.load({
         setFeedback(previous => ({ ...previous, [key]: { message: 'submitting' } }))
         try {
           const { projectId, operationId, repeatJobId, projectName, candidateCount } = item
-          const response = await fetch('/api/opendirector/creation', {
+          const response = await fetch(item.packAction ? '/api/opendirector/action-packs' : '/api/opendirector/creation', {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
-            body: JSON.stringify({ projectId, operationId, ...(repeatJobId && { repeatJobId }),
+            body: JSON.stringify(item.packAction ? { action: 'check', projectId, operationId,
+              packId: item.packId, packAction: item.packAction, itemIds: item.packItemIds } : { projectId, operationId, ...(repeatJobId && { repeatJobId }),
               ...(projectName != null && { projectName }), ...(candidateCount && { candidateCount }), check: true }),
           })
           if (!response.ok) throw new Error('Receipt unavailable')
           const value = await response.json()
-          if (value.jobId && (value.groupId || ['accepted', 'applied', 'noop'].includes(value.status))) {
+          if (item.packAction && value.found) {
+            setFeedback(previous => ({ ...previous, [key]: { message: value.status === 'unknown' ? 'generationUnknown' : 'pendingConfirmed' } }))
+            onRecovered({ ...value, projectId, recovery: item })
+          } else if (value.jobId && (value.groupId || ['accepted', 'applied', 'noop'].includes(value.status))) {
             onRecovered({ ...value, projectId, prompt: item.label, recovery: item,
               ...(value.groupId && { requestedCount: candidateCount }) })
           } else {
@@ -470,6 +512,8 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'od-media-ui', style: row },
         button(t('create'), () => setOpen('creation'), { primary: true, symbol: 'create', title: 'OpenDirector', 'aria-haspopup': 'dialog' }),
         button(t('resume'), () => setOpen('library'), { symbol: 'library', 'aria-haspopup': 'dialog' }),
+        button(t('actionPacks'), () => setOpen('packs'), { 'aria-haspopup': 'dialog' }),
+        open === 'packs' && h(ActionPackLibrary, { t, onClose: () => setOpen(null) }),
         open === 'library' && h(ProjectLibrary, { t, onClose: () => setOpen(null) }),
         open === 'creation' && h(GenerationDialog, { t, onClose: () => setOpen(null) }))
     }
@@ -654,9 +698,10 @@ window.__ModuleLoader__.load({
         projectId, resultIds: comparison.map(item => item.resultId), t, onAdopted: refresh,
         onClose: () => setComparing(false),
       }),
-      task && h(GenerationDialog, {
+      task && (task.packId ? h(ActionPackDialog, { projectId: task.projectId, packId: task.packId,
+        recovery: task.recovery, status: task.status, t, onClose: () => { setTask(null); refresh() } }) : h(GenerationDialog, {
         existingJob: task, t, onClose: () => { setTask(null); refresh() },
-      }))
+      })))
     }
 
     function ImageComparisonDialog({ projectId, resultIds, t, onClose, onAdopted }) {
@@ -772,6 +817,334 @@ window.__ModuleLoader__.load({
               () => add(item), { key: item.resultId, disabled: full, title: item.prompt || t('addReference'),
                 'aria-label': `${t('addReference')} ${index + 1}` }))),
           page && h(PageControls, { cursor, nextCursor: page.nextCursor, disabled: loading || full, onPage: setCursor, t })))
+    }
+
+
+    async function readPack(projectId, packId, signal) {
+      const response = await fetch('/api/opendirector/action-packs?' + new URLSearchParams({
+        project: projectId, ...(packId && { pack: packId }),
+      }), { signal })
+      if (!response.ok) throw new Error('Pack unavailable')
+      return response.json()
+    }
+    async function writePack(input) {
+      const response = await fetch('/api/opendirector/action-packs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenDirector-Action': '1' },
+        body: JSON.stringify(input),
+      })
+      if (!response.ok) throw new Error('Pack request unavailable')
+      return response.json()
+    }
+
+
+    const packStyles = `
+      .od-pack-reference{display:flex;gap:1rem;align-items:center;margin:1rem 0;color:var(--dsw-alias-label-secondary)}
+      .od-pack-reference img{width:5rem;height:5rem;object-fit:contain;border-radius:.7rem}
+      .od-pack-form fieldset{display:grid;gap:1rem;border:0;padding:0}
+      .od-pack-form label{display:grid;gap:.35rem;min-width:0}
+      .od-pack-action-input{display:grid;grid-template-columns:minmax(7rem,1fr) minmax(12rem,3fr) auto;gap:.6rem;padding:.8rem;border:1px solid #8884;border-radius:.7rem;align-items:center}
+      .od-pack-form textarea{min-height:4rem;width:100%;box-sizing:border-box}
+      .od-pack-form input,.od-pack-form select{max-width:100%;box-sizing:border-box}
+      .od-pack-form button[type=submit]{justify-self:start}
+      .od-pack-toolbar,.od-pack-summary{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+      .od-pack-summary{padding:.8rem;border-bottom:1px solid #8884}
+      .od-pack-summary strong{flex:1}
+      .od-pack-action{min-width:0;margin:.2rem 0;padding:1rem;border:1px solid #8884;border-radius:1rem}
+      .od-pack-candidates,.od-pack-source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(16rem,100%),1fr));gap:1rem}
+      .od-pack-actions-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(22rem,100%),1fr));gap:1rem}
+      .od-action-pack .od-pack-candidates .od-preview:only-child{--od-preview-height:14rem}
+      .od-pack-source{display:grid;background:transparent;color:inherit;border:1px solid #8884;border-radius:.8rem;cursor:pointer;padding:.7rem}
+      .od-pack-source img{width:100%;height:9rem;object-fit:contain}
+      .od-action-pack h3{margin:.3rem 0;flex:1}
+      .od-action-pack .od-hint{overflow-wrap:anywhere}
+      @media(max-width:600px){.od-pack-action-input{grid-template-columns:1fr}
+      .od-pack-action{padding:.6rem}}
+    `
+
+    function ActionPackLibrary({ t, onClose }) {
+      const dialog = useRef(null)
+      const [projects, setProjects] = useState([])
+      const [projectId, setProjectId] = useState('')
+      const [packs, setPacks] = useState(null)
+      const [sourcePicker, setSourcePicker] = useState(false)
+      const [images, setImages] = useState(null)
+      const [cursor, setCursor] = useState({})
+      const [task, setTask] = useState(null)
+      const [version, setVersion] = useState(0)
+      const [error, setError] = useState(false)
+      useEffect(() => { dialog.current.showModal() }, [])
+      useEffect(() => {
+        const controller = new AbortController()
+        readLibrary(null, controller.signal).then(value => setProjects(value.projects))
+          .catch(() => { if (!controller.signal.aborted) setError(true) })
+        return () => controller.abort()
+      }, [])
+      useEffect(() => {
+        if (!projectId) return
+        const controller = new AbortController()
+        setPacks(null); setImages(null); setError(false)
+        Promise.all([readPack(projectId, null, controller.signal),
+          sourcePicker ? readLibrary(projectId, controller.signal, { kind: 'image' }, cursor.after) : null])
+          .then(([value, library]) => { setPacks(value.packs); setImages(library) })
+          .catch(() => { if (!controller.signal.aborted) setError(true) })
+        return () => controller.abort()
+      }, [projectId, version, sourcePicker, cursor])
+      return h('dialog', { ref: dialog, className: 'od-media-ui', style: dialogStyle, onCancel: onClose },
+        dialogHeader(t('actionPacks'), onClose, t, t('packHint')),
+        h(PendingSubmissions, { context: 'packs', t, onRecovered: value => setTask(value) }),
+        h('label', null, t('chooseProject'), h('select', { 'aria-label': t('chooseProject'),
+          value: projectId, onChange: event => { setProjectId(event.target.value); setCursor({}); setSourcePicker(false) },
+        }, h('option', { value: '' }, t('chooseProject')), ...projects.map(project =>
+          h('option', { key: project.id, value: project.id }, project.name)))),
+        error && h('p', { role: 'alert' }, t('libraryError')),
+        projectId && h('div', { style: row },
+          button(t('newActionPack'), () => setSourcePicker(value => !value), { primary: true }),
+          button(t('refresh'), () => setVersion(value => value + 1))),
+        projectId && !packs && !error && h('p', null, t('loading')),
+        packs && !packs.length && h('p', null, t('packEmpty')),
+        ...(packs ?? []).map(pack => h('article', { key: pack.packId, className: 'od-pack-summary' },
+          h('strong', null, pack.title),
+          h('span', null, t('packCount').replace('{selected}', pack.selectedCount).replace('{total}', pack.actionCount)),
+          button(t('viewTask'), () => setTask({ projectId, packId: pack.packId })))),
+        sourcePicker && h('section', { 'aria-label': t('packSelectSource') },
+          h('h3', null, t('packSelectSource')),
+          images && !images.results.length && h('p', null, t('resultsEmpty')),
+          h('div', { className: 'od-pack-source-grid' }, ...(images?.results ?? []).map(image =>
+            h('button', { type: 'button', key: image.resultId, className: 'od-pack-source',
+              'aria-label': t('packSource'), onClick: () => setTask({ source: { ...image, projectId } }) },
+            h('img', { src: mediaHref(projectId, image.assetId, 'image'), alt: image.title || t('candidate'), loading: 'lazy' }),
+            h('span', null, image.title || t('packSource'))))),
+          h(PageControls, { cursor, nextCursor: images?.nextCursor, onPage: setCursor, t })),
+        task && h(ActionPackDialog, { ...task, t, onClose: () => { setTask(null); setVersion(value => value + 1) } }))
+    }
+
+    function ActionPackDialog({ source, projectId: suppliedProject, packId: suppliedPack, recovery, status: recoveredStatus, t, onClose }) {
+      const dialog = useRef(null)
+      const busy = useRef(false)
+      const projectId = source?.projectId ?? suppliedProject
+      const draftKey = 'pack-create:' + projectId + ':' + source?.resultId
+      const [packId, setPackId] = useState(suppliedPack ?? null)
+      const [pack, setPack] = useState(null)
+      const [catalog, setCatalog] = useState(null)
+      const [form, setForm] = useState(() => readMediaDraft(draftKey)?.form ?? {
+        title: t('packDefaultTitle'), prompt: '', kind: 'image', modelId: '', output: null,
+        durationSeconds: null, actions: [
+          { name: t('packIdle'), prompt: t('packIdlePrompt') },
+          { name: t('packWave'), prompt: t('packWavePrompt') },
+          { name: t('packThink'), prompt: t('packThinkPrompt') },
+        ],
+      })
+      const [submitting, setSubmitting] = useState(false)
+      const [feedback, setFeedback] = useState('')
+      const [version, setVersion] = useState(0)
+      const [pages, setPages] = useState({})
+      const [comparison, setComparison] = useState([])
+      const [comparing, setComparing] = useState(false)
+      const pending = useSyncExternalStore(subscribePending, readPendingSubmissions)
+      const pendingItems = pending.filter(item => item.context === (packId ? 'pack:' + packId : draftKey))
+      const pendingItem = pendingItems[0]
+      const locked = submitting || Boolean(pendingItem)
+      const refresh = () => setVersion(value => value + 1)
+      useEffect(() => { dialog.current.showModal() }, [])
+      useEffect(() => {
+        if (recovery && packId) {
+          if (recovery.packAction === 'prepare' || ['applied', 'accepted', 'noop', 'rejected'].includes(recoveredStatus)) forgetSubmission(recovery)
+        }
+      }, [recovery, packId, recoveredStatus])
+      useEffect(() => {
+        if (packId || !source || pendingItem) return
+        const controller = new AbortController()
+        fetch('/api/opendirector/creation', { signal: controller.signal }).then(response => {
+          if (!response.ok) throw new Error('Catalog unavailable')
+          return response.json()
+        }).then(setCatalog).catch(() => { if (!controller.signal.aborted) setFeedback('libraryError') })
+        return () => controller.abort()
+      }, [packId, Boolean(pendingItem), version])
+      useEffect(() => {
+        if (!packId && !locked) saveMediaDraft(draftKey, { form })
+      }, [packId, locked, form, draftKey])
+      useEffect(() => {
+        if (!packId) return
+        const controller = new AbortController()
+        let timer, inFlight = false
+        async function update() {
+          if (inFlight || document.visibilityState === 'hidden' || !navigator.onLine) return
+          inFlight = true
+          try {
+            const value = await readPack(projectId, packId, controller.signal)
+            if (controller.signal.aborted) return
+            setPack(value)
+            if (value.active) timer = setTimeout(update, 2500)
+          } catch { if (!controller.signal.aborted) setFeedback('progressUnavailable') }
+          finally { inFlight = false }
+        }
+        update()
+        const visible = () => { clearTimeout(timer); update() }
+        document.addEventListener('visibilitychange', visible)
+        window.addEventListener('online', visible)
+        return () => {
+          clearTimeout(timer); controller.abort()
+          document.removeEventListener('visibilitychange', visible)
+          window.removeEventListener('online', visible)
+        }
+      }, [packId, projectId, version])
+      const choices = catalog?.models.filter(model => model.kind === form.kind
+        && (form.kind === 'image' ? model.maxImages > 0 : model.videoChoices?.first_frame)) ?? []
+      const model = choices.find(model => model.id === form.modelId)
+      const outputs = model?.imageOutputs ?? []
+      const outputIndex = form.output ? outputs.findIndex(output =>
+        output.size === form.output.size && output.aspectRatio === form.output.aspectRatio) : 0
+      const video = model?.videoChoices?.first_frame
+      function change(key, value) {
+        setForm(previous => ({ ...previous, [key]: value,
+          ...(['kind', 'modelId'].includes(key) && { output: null, durationSeconds: null }),
+          ...(key === 'kind' && { modelId: '' }),
+        }))
+      }
+      async function submitActions(id, itemIds, redo = false, original) {
+        const input = { action: 'generate', projectId, packId: id,
+          operationId: original?.operationId ?? crypto.randomUUID(), itemIds, redo }
+        const saved = { ...input, packAction: 'generate', packItemIds: itemIds, packRedo: redo }
+        rememberSubmission(saved, 'pack:' + id, pack?.title ?? form.title)
+        let value
+        try { value = await writePack(input) } catch { value = { status: 'unknown' } }
+        if (value.status !== 'unknown') forgetSubmission(saved)
+        setFeedback(value.status === 'unknown' ? 'generationUnknown' : value.status === 'rejected'
+          ? packError(value.code) : '')
+        refresh()
+      }
+      async function generate(itemIds, redo, original) {
+        if (busy.current) return
+        busy.current = true; setSubmitting(true)
+        try { await submitActions(packId, itemIds, redo, original) }
+        finally { busy.current = false; setSubmitting(false) }
+      }
+      async function prepare(event) {
+        event.preventDefault()
+        if (busy.current || pendingItem) return
+        const names = form.actions.map(action => action.name.trim().normalize('NFKC').toLowerCase())
+        if (!form.title.trim() || !form.actions.length || names.some(name => !name)
+          || new Set(names).size !== names.length || form.actions.some(action => !action.prompt.trim())) {
+          setFeedback('packInvalid'); return
+        }
+        busy.current = true; setSubmitting(true); setFeedback('')
+        const input = { action: 'prepare', projectId, operationId: crypto.randomUUID(),
+          sourceResultId: source.resultId, title: form.title, sharedPrompt: form.prompt,
+          actions: form.actions, modelConfigId: form.modelId,
+          ...(outputs[outputIndex] && { output: outputs[outputIndex] }),
+          ...(video && { durationSeconds: form.durationSeconds ?? video.defaultDuration }),
+        }
+        const saved = { ...input, packAction: 'prepare' }
+        rememberSubmission(saved, draftKey, form.title)
+        try {
+          let value
+          try { value = await writePack(input) } catch { value = { status: 'unknown' } }
+          if (value.status === 'unknown') { setFeedback('generationUnknown'); return }
+          forgetSubmission(saved)
+          if (value.status === 'rejected') { setFeedback(packError(value.code)); return }
+          setPackId(value.packId)
+          saveMediaDraft(draftKey, null); flushMediaDrafts()
+          const current = await readPack(projectId, value.packId)
+          setPack(current)
+          await submitActions(value.packId, current.actions.map(action => action.itemId))
+        } catch { setFeedback('progressUnavailable') }
+        finally { busy.current = false; setSubmitting(false) }
+      }
+      function recovered(value) {
+        setPackId(value.packId); setPack(value)
+        setFeedback(value.status === 'unknown' ? 'generationUnknown' : '')
+        if (value.status !== 'unknown') forgetSubmission(value.recovery)
+        if (value.recovery.packAction === 'prepare') {
+          saveMediaDraft(draftKey, null); flushMediaDrafts()
+        }
+        refresh()
+      }
+      const remaining = pack?.actions.filter(action => !action.jobs.length) ?? []
+      const sourceImage = source ?? pack?.actions[0]?.reference
+      return h('dialog', { ref: dialog, className: 'od-media-ui od-action-pack', 'aria-label': t('newActionPack'), style: { ...dialogStyle, width: 'min(80rem, calc(100vw - 2rem))' }, onCancel: onClose },
+        dialogHeader(pack?.title ?? t('newActionPack'), onClose, t, t('packHint')),
+        sourceImage && h('div', { className: 'od-pack-reference' },
+          h('img', { src: mediaHref(projectId, sourceImage.assetId, 'image'), alt: t('packReference') }),
+          h('span', null, t('packReference'))),
+        h(PendingSubmissions, { context: packId ? 'pack:' + packId : draftKey, onRecovered: recovered, t }),
+        feedback && h('p', { role: 'status' }, t(feedback)),
+        pendingItem?.packAction === 'generate' && button(t('packContinue'),
+          () => generate(pendingItem.packItemIds, pendingItem.packRedo, pendingItem), { disabled: submitting }),
+        !packId && !pendingItem && h('form', { onSubmit: prepare, className: 'od-pack-form' },
+          h('fieldset', { disabled: locked },
+            h('label', null, t('packTitle'), h('input', { required: true, maxLength: 100, value: form.title, onChange: e => change('title', e.target.value) })),
+            h('label', null, t('packShared'), h('textarea', { maxLength: 4000, value: form.prompt, onChange: e => change('prompt', e.target.value) })),
+            h('div', { style: row },
+              h('label', null, t('mediaType'), h('select', { 'aria-label': t('mediaType'), value: form.kind, onChange: e => change('kind', e.target.value) },
+                h('option', { value: 'image' }, t('picture')), h('option', { value: 'video' }, t('video')))),
+              h('label', null, t('model'), h('select', { 'aria-label': t('model'), required: true, value: form.modelId, onChange: e => change('modelId', e.target.value) },
+                h('option', { value: '' }, t('model')), ...choices.map(model =>
+                  h('option', { key: model.id, value: model.id }, model.modelId)))),
+              form.kind === 'image' && outputs.length > 0 && h('label', null, t('output'), h('select', {
+                'aria-label': t('output'), value: outputIndex, onChange: e => change('output', outputs[Number(e.target.value)]),
+              }, ...outputs.map((output, index) => h('option', { key: index, value: index }, output.aspectRatio + ' · ' + output.size)))),
+              video?.durations.length > 0 && h('label', null, t('videoDuration'), h('select', {
+                'aria-label': t('videoDuration'), value: form.durationSeconds ?? video.defaultDuration ?? video.durations[0],
+                onChange: e => change('durationSeconds', Number(e.target.value)),
+              }, ...video.durations.map(seconds => h('option', { key: seconds, value: seconds }, t('duration').replace('{seconds}', seconds)))))),
+            catalog && !choices.length && h('p', null, t('noModels')),
+            ...form.actions.map((action, index) => h('div', { key: index, className: 'od-pack-action-input' },
+              h('label', null, t('packActionName'), h('input', { required: true, maxLength: 80, value: action.name,
+                onChange: e => change('actions', form.actions.map((value, i) => i === index ? { ...value, name: e.target.value } : value)) })),
+              h('label', null, t('packDescription'), h('textarea', { required: true, maxLength: 4000, value: action.prompt,
+                onChange: e => change('actions', form.actions.map((value, i) => i === index ? { ...value, prompt: e.target.value } : value)) })),
+              button(t('packRemove'), () => change('actions', form.actions.filter((_, i) => i !== index)), { disabled: form.actions.length === 1 }))),
+            button(t('packAdd'), () => change('actions', [...form.actions, { name: '', prompt: '' }]), { disabled: form.actions.length >= 6 }),
+            h('button', { type: 'submit', className: 'od-button od-primary', disabled: locked || !model || (outputs.length > 0 && outputIndex < 0) },
+              t(submitting ? 'submitting' : 'packCreate').replace('{count}', form.actions.length)))),
+        packId && !pack && h('p', null, t('loading')),
+        pack && h('section', null,
+          h('div', { className: 'od-pack-toolbar' },
+            h('strong', null, t('packCount').replace('{selected}', pack.selectedCount).replace('{total}', pack.actions.length)),
+            button(t('refresh'), refresh, { disabled: submitting }),
+            remaining.length > 0 && button(t('packMissing').replace('{count}', remaining.length),
+              () => generate(remaining.map(action => action.itemId), false), { primary: true, disabled: locked }),
+            pack.actions.length > 0 && pack.selectedCount === pack.actions.length
+              && h('a', { href: '/api/opendirector/action-packs?' + new URLSearchParams({ project: projectId, pack: packId, download: '1' }),
+                className: 'od-button od-primary', download: '', style: { ...buttonStyle, textDecoration: 'none' } }, t('packExport'))),
+          h('p', { className: 'od-hint' }, t('packExportHint')),
+          h('div', { className: 'od-pack-actions-grid' }, ...pack.actions.map(action => {
+            const page = pages[action.itemId] ?? 0
+            const results = [...action.results].reverse().slice(page * 4, page * 4 + 4)
+            const active = action.jobs.filter(job => ['queued', 'running'].includes(job.status))
+            return h('article', { key: action.itemId, className: 'od-pack-action', 'data-pack-action': action.itemId },
+              h('div', { className: 'od-pack-toolbar' }, h('h3', null, action.name),
+                h('span', { role: 'status' }, t(action.status === 'not_started' ? 'packNotStarted' : action.status)),
+                button(t(action.jobs.length ? 'repeatGeneration' : 'generate'),
+                  () => generate([action.itemId], Boolean(action.jobs.length)), { disabled: locked || !action.canGenerate })),
+              h('details', { className: 'od-hint' }, h('summary', null, t('generationSettings')), h('p', null, action.prompt)),
+              ...active.map(job => h(JobCancellation, { key: job.jobId, projectId, jobId: job.jobId, progress: job, t, onChange: refresh })),
+              ['failed', 'interrupted'].includes(action.status) && h('p', null, t(generationMessages.get(action.jobs.at(-1)?.category) ?? 'recoverOnCanvas')),
+              h('div', { className: 'od-pack-candidates' }, ...results.map((result, index) => h(Preview, {
+                ...result, key: result.resultId, projectId, title: t(result.selected ? 'selected' : 'candidate') + ' ' + (action.results.length - page * 4 - index),
+                t, onAdopted: refresh, canvasUrl: pack.canvasUrl, compactActions: true,
+                onCompare: action.kind === 'image' ? () => setComparison(previous =>
+                  previous.some(item => item.resultId === result.resultId) ? previous.filter(item => item.resultId !== result.resultId)
+                    : previous[0]?.itemId !== action.itemId ? [{ itemId: action.itemId, resultId: result.resultId }]
+                      : [...previous, { itemId: action.itemId, resultId: result.resultId }].slice(0, 2)) : undefined,
+                compareSelected: comparison.some(item => item.resultId === result.resultId),
+                compareDisabled: comparison.length === 2 && comparison[0]?.itemId === action.itemId && !comparison.some(item => item.resultId === result.resultId),
+              }))),
+              action.results.length > 4 && h('div', { style: row },
+                button(t('previousPage'), () => setPages(previous => ({ ...previous, [action.itemId]: page - 1 })), { disabled: page === 0 }),
+                button(t('nextPage'), () => setPages(previous => ({ ...previous, [action.itemId]: page + 1 })), { disabled: (page + 1) * 4 >= action.results.length })))
+          })),
+          comparison.length === 2 && button(t('openComparison'), () => setComparing(true)),
+          pack.canvasUrl && canvasLink(pack.canvasUrl, t)),
+        comparing && h(ImageComparisonDialog, { projectId, resultIds: comparison.map(item => item.resultId),
+          onAdopted: refresh, t, onClose: () => setComparing(false) }))
+    }
+    function packError(code) {
+      if (code === 'storage_busy') return 'adoptBusy'
+      if (['pack.plan', 'input.string', 'input.required'].includes(code)) return 'packInvalid'
+      if (code === 'pack.model') return 'noModels'
+      if (code === 'creation.output') return 'chooseOutput'
+      return 'failedToSubmit'
     }
 
     function GenerationDialog({ source, videoMode, existingJob, templateOf, t, onClose }) {
@@ -1381,7 +1754,7 @@ window.__ModuleLoader__.load({
             })))
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl, expanded, onCompare, compareSelected, compareDisabled }) {
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [status, setStatus] = useState('')
@@ -1446,6 +1819,7 @@ window.__ModuleLoader__.load({
       const actions = [
         !expanded && (image || audio) && { label: 'reuseSettings', run: () => setAction('reuse') },
         !expanded && image && { label: 'edit', run: () => setAction('edit') },
+        image && { label: 'newActionPack', run: () => setAction('pack') },
         image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
         !expanded && image && { label: 'firstFrame', run: () => setAction('first_frame') },
         video && { label: 'continue', run: () => setAction('continuation') },
@@ -1472,10 +1846,10 @@ window.__ModuleLoader__.load({
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
-            !expanded && (image || audio) && button(t('reuseSettings'), () => setAction('reuse'), { 'aria-haspopup': 'dialog' }),
-            video && button(t('continue'), () => setAction('continuation'), { 'aria-haspopup': 'dialog' }),
-            !expanded && image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
-            !expanded && image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
+            !compactActions && !expanded && (image || audio) && button(t('reuseSettings'), () => setAction('reuse'), { 'aria-haspopup': 'dialog' }),
+            !compactActions && video && button(t('continue'), () => setAction('continuation'), { 'aria-haspopup': 'dialog' }),
+            !compactActions && !expanded && image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
+            !compactActions && !expanded && image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
             button(t(adoptLabel), adoption.adopt, { primary: !selected, current: selected, symbol: selected ? 'check' : undefined, disabled: pending || selected }),
             button('···', event => {
               if (menu) closeMenu()
@@ -1489,7 +1863,8 @@ window.__ModuleLoader__.load({
             && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t(adoption.status)),
           adoption.canvasUrl && !onAdopted && canvasLink(adoption.canvasUrl, t),
           status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)),
-        action && h(GenerationDialog, {
+        action === 'pack' && h(ActionPackDialog, { source: { projectId, resultId, assetId, kind, details }, t, onClose: () => setAction(null) }),
+        action && action !== 'pack' && h(GenerationDialog, {
           source: action === 'reuse' ? undefined : { projectId, assetId, resultId, kind, details },
           templateOf: action === 'reuse' ? { projectId, resultId, kind, canvasUrl } : undefined,
           videoMode: ['edit', 'reuse'].includes(action) ? undefined : action,
@@ -1555,7 +1930,7 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         ctx.effect(() => {
           const style = document.createElement('style')
-          style.textContent = clientStyles
+          style.textContent = clientStyles + packStyles
           document.head.append(style)
           return () => style.remove()
         })

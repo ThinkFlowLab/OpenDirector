@@ -17,7 +17,7 @@ dsh --profile studio
 
 Open the full DSH Web address printed at startup, then choose a workspace and a configured DSH conversation model. Initializing from `web` supplies the chat interface. For an existing Web profile, just run the `plugin ... add` command with its name. Tarball installation, Web chat, and the canvas handoff were verified with DSH 0.2.2-rc.1.
 
-The default OpenDirector connection is `http://127.0.0.1:8000`, so a normal local installation needs no extra configuration. The plugin row is named `opendirector`. DSH calls its eight native tools as part of its own agent loop.
+The default OpenDirector connection is `http://127.0.0.1:8000`, so a normal local installation needs no extra configuration. The plugin row is named `opendirector`. DSH calls its native tools as part of its own agent loop.
 
 For development, install this checkout's dependencies before linking it into an existing profile:
 
@@ -166,6 +166,16 @@ Cancellation is an explicit `opendirector_cancel` action. Aborting a tool reques
 Tools return canonical JSON for programmatic use. Submission, progress, candidate selection, and cancellation render short localized summaries with the project name, useful IDs, next step, and project link. A full project/model read is available when the agent needs it.
 
 DSH Web shows saved images, videos, and audio on result cards in the current interface language. Open the creation forms directly from a card. **Adopt** selects the result and links back to the canvas.
+
+## Character action packs
+
+From a saved image, open **More actions → Make an action pack**. Name 1–6 actions, add a shared character description, and choose an image model accepting references or a first-frame video model. **Create and generate** sends one task per action. Each action keeps its own candidates and adoption; generating another version leaves the current choice in place.
+
+Choose **Action packs** next to the composer to reopen a saved pack. Pick one version for every action, then **Download action pack**. The ZIP contains numbered media files and a manifest with the selected results, descriptions, model IDs and content fingerprints. Downloads stream directly from project assets, up to 128 MB, without making a second local copy.
+
+The reference image is pinned for every action. Character consistency, motion quality, transparency and loop timing depend on the model and the prompt; inspect the actual output before using it in a desktop pet. The pack exports individual images or clips, rather than an installed pet or a sprite-sheet runtime.
+
+In conversation, use `opendirector_action_pack` to list, read, prepare, generate or check a pack. Preparing saves its nodes without calling a model. Generating requires explicit action item IDs and keeps the results as candidates. For a lost response, check the original operation ID and continue the same submission. Selection uses the existing adoption tool. Closing the dialog leaves accepted jobs running.
 
 ## Development checks
 

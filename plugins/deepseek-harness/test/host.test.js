@@ -17,7 +17,7 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
   const specId = randomUUID()
   const asset = { assetId: randomUUID(), revision: 1, fingerprint: `sha256:${'a'.repeat(64)}`, kind: 'image' }
   const snapshot = {
-    project: { id: projectId, revision: 1, name: 'Studio' },
+    project: { id: projectId, revision: 1, name: 'Studio' }, canvasItems: [], references: [],
     generationSpecs: [{ id: specId, currentResultId: null }],
     assets: [{ id: asset.assetId, metadata: { width: 512, height: 512 } }],
     jobs: [{ id: jobId, revision: 3, status: 'succeeded', originItemId: null, errorDetails: null,
@@ -46,7 +46,10 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     const entry = [...ctx.loader.entries()].find(value => value.options.id === 'opendirector')
     assert.ok(entry)
     const names = () => ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_'))
-    assert.equal(names().length, 8)
+    assert.equal(names().length, 9)
+    const actionPack = names().find(tool => tool.name === 'opendirector_action_pack').parameters
+    assert.deepEqual(actionPack.required, ['projectId', 'action'])
+    assert.deepEqual(actionPack.properties.actions.items.required, ['name', 'prompt'])
     const generation = names().find(tool => tool.name === 'opendirector_create_generation').parameters
     assert.deepEqual(generation.required, ['projectId', 'operationId', 'kind', 'modelConfigId', 'prompt', 'parameters', 'position'])
     assert.deepEqual(generation.properties.position.required, ['x', 'y'])
@@ -65,6 +68,12 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
       assert.equal(result.isError, false, JSON.stringify(result))
       return result
     }
+    const packRead = await ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: randomUUID(), name: 'opendirector_action_pack',
+        arguments: JSON.stringify({ projectId, action: 'list' }) }], signal: new AbortController().signal,
+    })
+    assert.equal(packRead.results[0].result.isError, false)
+    assert.deepEqual(packRead.results[0].result.value.packs, [])
     const english = await readJob()
     assert.equal(english.value.job.originItemId, null)
     assert.equal(english.value.job.errorDetails, null)
@@ -81,7 +90,7 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     assert.equal(names().length, 0)
     await entry.update({ config: { baseUrl, locale: 'zh-CN' }, disabled: false })
     await ctx.loader.await()
-    assert.equal(names().length, 8)
+    assert.equal(names().length, 9)
     const chinese = await readJob()
     assert.match(chinese.content[0].text, /候选已保存到此工程/)
     assert.doesNotMatch(chinese.content[0].text, /Candidate saved|Status:|Project:/)
