@@ -93,6 +93,7 @@ export function apply(ctx, config) {
             const options = {
               kind: params.get('kind') ?? undefined, selection: params.get('selection') ?? undefined,
               order: params.get('order') ?? undefined, after: params.get('after'), signal: request.signal,
+              query: params.get('q') ?? '', status: params.get('status') ?? undefined,
             }
             const library = params.get('view') === 'jobs'
               ? await client.libraryJobs(projectId, options)

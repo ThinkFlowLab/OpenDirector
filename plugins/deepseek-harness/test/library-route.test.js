@@ -179,3 +179,80 @@ test('task history filters and pages saved jobs without creating an editing sess
   assert.equal(video.jobs[0].status, 'failed')
   await assert.rejects(client.libraryJobs(projectId, { after: randomUUID() }), { key: 'library.cursor_expired' })
 })
+
+test('saved-work search covers the full project and combines with paging, adoption and task status', async t => {
+  const projectId = randomUUID()
+  const statuses = ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']
+  const records = Array.from({ length: 60 }, (_, index) => ({
+    specId: randomUUID(), jobId: randomUUID(), resultId: randomUUID(), assetId: randomUUID(),
+    prompt: 'x'.repeat(180) + (index % 2 ? ' afternoon' : ' DeepFocus 青瓷'),
+    status: statuses[index % statuses.length], title: 'Reviewed studio ' + index,
+  }))
+  const snapshot = {
+    project: { id: projectId, name: 'Saved work' }, assets: [],
+    generationSpecs: records.map((row, index) => ({ id: row.specId, prompt: 'Changed current description', currentResultId: index === 28 ? row.resultId : null })),
+    canvasItems: records.map(row => ({ title: row.title, binding: { role: 'generation', objectRef: { id: row.specId } } })),
+    jobs: records.map(row => ({ id: row.jobId, status: row.status, inputSnapshot: {
+      spec: { id: row.specId, kind: 'image', prompt: row.prompt },
+      model: { modelId: 'studio-image-01', url: 'http://private-model', apiKey: 'private-key' },
+    } })),
+    results: records.map(row => ({ id: row.resultId, specId: row.specId, jobId: row.jobId, asset: { kind: 'image', assetId: row.assetId } })),
+  }
+  const calls = []
+  const server = createServer((request, response) => {
+    calls.push([request.method, request.url])
+    assert.equal(request.method, 'GET')
+    assert.equal(request.url, '/api/creation/projects/' + projectId)
+    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(snapshot))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => {
+    server.closeAllConnections()
+    return new Promise(resolve => server.close(resolve))
+  })
+  const routes = new Map()
+  apply({
+    tools: { register() {} }, get() {},
+    inject(_services, configure) {
+      configure({ effect(register) { register() }, connection: { fetch: { register(value) { routes.set(value.path, value.fetch) } } } })
+    },
+  }, { baseUrl: 'http://127.0.0.1:' + server.address().port })
+  const read = async (filters = {}) => {
+    const response = await routes.get('/api/opendirector/library')({
+      url: '/api/opendirector/library?' + new URLSearchParams({ project: projectId, ...filters }),
+    })
+    assert.equal(response.status, 200)
+    return response.json()
+  }
+  const query = { q: 'ＤＥＥＰＦＯＣＵＳ 青瓷', kind: 'image' }
+  const first = await read(query)
+  const expected = records.filter((_, index) => index % 2 === 0).reverse().map(row => row.resultId)
+  assert.deepEqual(first.results.map(row => row.resultId), expected.slice(0, 12))
+  assert.equal(first.results[0].prompt, 'x'.repeat(160))
+  assert.doesNotMatch(JSON.stringify(first), /private-model|private-key/)
+  const second = await read({ ...query, after: first.nextCursor })
+  const third = await read({ ...query, after: second.nextCursor })
+  assert.deepEqual([...first.results, ...second.results, ...third.results].map(row => row.resultId), expected)
+  assert.equal(third.nextCursor, null)
+  const selected = await read({ ...query, selection: 'current' })
+  assert.deepEqual(selected.results.map(row => row.resultId), [records[28].resultId])
+  assert.equal(selected.results[0].title, 'Reviewed studio 28')
+  assert.deepEqual((await read({ q: 'reviewed studio 28' })).results.map(row => row.resultId), [records[28].resultId])
+  assert.deepEqual((await read({ q: records[3].resultId })).results.map(row => row.resultId), [records[3].resultId])
+  assert.deepEqual((await read({ q: 'Changed current description' })).results, [])
+  assert.deepEqual((await read({ q: 'not in this project' })).results, [])
+  const active = await read({ view: 'jobs', q: 'STUDIO-IMAGE-01 青瓷', status: 'active', order: 'oldest' })
+  assert.deepEqual(active.jobs.map(row => row.jobId), records.filter((row, index) => index % 2 === 0 && row.status === 'queued').map(row => row.jobId))
+  const failed = await read({ view: 'jobs', status: 'failed', q: 'afternoon' })
+  assert.deepEqual(failed.jobs.map(row => row.jobId), records.filter(row => row.status === 'failed').reverse().map(row => row.jobId))
+  const invalid = await routes.get('/api/opendirector/library')({
+    url: '/api/opendirector/library?' + new URLSearchParams({ project: projectId, view: 'jobs', status: 'imaginary' }),
+  })
+  assert.equal(invalid.status, 400)
+  const tooLong = await routes.get('/api/opendirector/library')({
+    url: '/api/opendirector/library?' + new URLSearchParams({ project: projectId, q: 'x'.repeat(201) }),
+  })
+  assert.equal(tooLong.status, 400)
+  assert.ok(calls.length > 10)
+  assert.equal(snapshot.generationSpecs[28].currentResultId, records[28].resultId)
+})

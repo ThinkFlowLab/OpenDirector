@@ -42,6 +42,8 @@ Unsubmitted input stays in the current browser tab. Close the dialog or reload D
 
 If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
 
+In **Resume project**, search descriptions, canvas node names, models or copied IDs across the whole project. Search checks the full recorded description, including text beyond the card preview. Combine it with media and adoption filters, or filter tasks by their current status. **Clear search and filters** returns to the full list.
+
 To change a saved image or voiceover, choose **Reuse settings** on its result card. The form starts from that version’s recorded prompt and parameters. Images can keep their original size or use another listed size. The model, voice identity and references stay fixed; other saved parameters are retained. Generation creates a new node in the same project, ready to review before adoption. Structured prompt documents and expanded subject references can be adjusted on the canvas.
 
 Choose **Generate another candidate** to run the same canvas node again with its saved settings. Compare the results in the dialog and choose **Adopt** on the one you want to use.

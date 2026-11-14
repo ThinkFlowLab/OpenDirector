@@ -70,6 +70,9 @@ window.__ModuleLoader__.load({
       succeeded: 'Candidate ready', stopped: 'Generation stopped', failed: 'Generation failed',
       quota: 'Check the model account’s balance or quota before trying again.',
       checkProgress: 'Check progress', download: 'Download original',
+      searchLibrary: 'Search saved work', searchHint: 'Description, node name, model or ID',
+      clearFilters: 'Clear search and filters', taskStatus: 'Filter tasks by status', allTasks: 'All tasks',
+      activeTasks: 'Queued or running',
       libraryType: 'Filter by media', librarySelection: 'Filter by selection', libraryOrder: 'Sort results',
       allMedia: 'All media', video: 'Video', audio: 'Audio', allSelections: 'All results', other: 'Other results',
       newest: 'Newest first', oldest: 'Oldest first', loadMore: 'Load more', noMatches: 'No results match these filters.',
@@ -148,6 +151,9 @@ window.__ModuleLoader__.load({
       succeeded: '候选已生成', stopped: '生成已停止', failed: '生成失败',
       quota: '请检查模型账号的余额或套餐额度，再重试生成。',
       checkProgress: '查询进度', download: '下载原文件',
+      searchLibrary: '搜索已有作品', searchHint: '描述、节点名称、模型或 ID',
+      clearFilters: '清除搜索和筛选', taskStatus: '按任务状态筛选', allTasks: '全部任务',
+      activeTasks: '排队或生成中',
       libraryType: '按素材类型筛选', librarySelection: '按采用状态筛选', libraryOrder: '排序',
       allMedia: '全部素材', video: '视频', audio: '音频', allSelections: '全部结果', other: '其他结果',
       newest: '最新优先', oldest: '最早优先', loadMore: '加载更多', noMatches: '没有符合筛选条件的结果。',
@@ -171,7 +177,7 @@ window.__ModuleLoader__.load({
     }
     const dialogStyle = { width: 'min(46rem, calc(100vw - 2rem))', maxHeight: '80vh', boxSizing: 'border-box',
       color: 'inherit', background: surface, border, borderRadius: '.85rem', padding: '1rem' }
-    const libraryDefaults = { kind: 'all', selection: 'all', order: 'newest' }
+    const libraryDefaults = { kind: 'all', selection: 'all', order: 'newest', status: 'all' }
     const submissionMessages = new Map([
       ['storage_busy', 'adoptBusy'], ['creation.unavailable', 'connectionUnavailable'],
       ['creation.repeat_unavailable', 'repeatUnavailable'], ['revision_conflict', 'adoptConflict'],
@@ -258,10 +264,14 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState(false)
       const [pending, setPending] = useState(true)
       const [filters, setFilters] = useState(libraryDefaults)
+      const [search, setSearch] = useState('')
+      const [query, setQuery] = useState('')
+      const [composing, setComposing] = useState(false)
       const [page, setPage] = useState({})
       const [view, setView] = useState('results')
       const [task, setTask] = useState(null)
       const taskView = view === 'jobs'
+      const searching = search.trim() !== query
       useEffect(() => {
         dialog.current.showModal()
       }, [])
@@ -269,7 +279,7 @@ window.__ModuleLoader__.load({
         const controller = new AbortController()
         setPending(true)
         setError(false)
-        readLibrary(projectId, controller.signal, { ...filters, view }, page.after).then(value => {
+        readLibrary(projectId, controller.signal, { ...filters, view, q: query }, page.after).then(value => {
           if (controller.signal.aborted) return
           if (projectId) setLibrary(previous => {
             if (!page.after || previous?.projectId !== projectId) return value
@@ -286,9 +296,27 @@ window.__ModuleLoader__.load({
           setPending(false)
         })
         return () => controller.abort()
-      }, [projectId, filters, page, view])
-      const current = library?.projectId === projectId ? library : null
+      }, [projectId, filters, page, view, query])
+      useEffect(() => {
+        if (composing) return
+        const timeout = setTimeout(() => {
+          if (search.trim() === query) return
+          setQuery(search.trim())
+          setLibrary(null)
+          setPage({})
+        }, 250)
+        return () => clearTimeout(timeout)
+      }, [search, query, composing])
+      const current = !searching && library?.projectId === projectId ? library : null
       const refresh = () => setPage({})
+      const filtered = search.trim() || Object.keys(libraryDefaults).some(key => filters[key] !== libraryDefaults[key])
+      function clearFilters() {
+        setSearch('')
+        setQuery('')
+        setFilters(libraryDefaults)
+        setLibrary(null)
+        refresh()
+      }
       function changeProject(id) {
         setProjectId(id)
         setLibrary(null)
@@ -330,10 +358,20 @@ window.__ModuleLoader__.load({
         button(t('recent'), () => changeView('results'), { 'aria-pressed': !taskView }),
         button(t('tasks'), () => changeView('jobs'), { 'aria-pressed': taskView })),
       projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
+        h('input', { type: 'search', 'aria-label': t('searchLibrary'), placeholder: t('searchHint'),
+          maxLength: 200, value: search, style: { flex: '1 1 18rem', minWidth: 0 },
+          onChange: event => setSearch(event.target.value),
+          onCompositionStart: () => setComposing(true),
+          onCompositionEnd: event => { setComposing(false); setSearch(event.currentTarget.value) },
+        }),
+        filtered && button(t('clearFilters'), clearFilters)),
+      projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
         filterControl('kind', 'libraryType', [['all', 'allMedia'], ['image', 'picture'], ['video', 'video'], ['audio', 'audio']]),
+        taskView && filterControl('status', 'taskStatus', [['all', 'allTasks'], ['active', 'activeTasks'],
+          ['succeeded', 'succeeded'], ['failed', 'failed'], ['cancelled', 'cancelled'], ['interrupted', 'interrupted']]),
         !taskView && filterControl('selection', 'librarySelection', [['all', 'allSelections'], ['current', 'selected'], ['other', 'other']]),
         filterControl('order', 'libraryOrder', [['newest', 'newest'], ['oldest', 'oldest']])),
-      pending && h('p', { role: 'status' }, t('loading')),
+      (pending || searching) && h('p', { role: 'status' }, t('loading')),
       error && h('p', { role: 'alert' }, t('libraryError')),
       projects?.length === 0 && h('p', null, t('projectsEmpty')),
       current && h('section', { 'aria-label': t(taskView ? 'tasks' : 'recent') },
@@ -345,14 +383,15 @@ window.__ModuleLoader__.load({
             },
             h('strong', null, t(['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.status)
               ? job.status : 'waiting')),
+            job.title && h('span', null, job.title),
             h('small', { style: { color: muted } }, job.modelId),
             h('p', { style: { margin: 0, overflowWrap: 'anywhere' } }, job.prompt),
             button(t('viewTask'), () => setTask({ ...job, projectId, canvasUrl: current.canvasUrl }), { 'aria-haspopup': 'dialog' })))))
-          : current.results.length === 0 ? h('p', null, t(filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
+          : current.results.length === 0 ? h('p', null, t(!query && filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
           : h('div', { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
-            ...current.results.map(({ resultId, assetId, kind, selected, prompt, details }, index) => h(Preview, {
+            ...current.results.map(({ resultId, assetId, kind, selected, prompt, details, title }, index) => h(Preview, {
               key: resultId, projectId, resultId, assetId, kind, selected, prompt, details, t, canvasUrl: current.canvasUrl,
-              title: `${t('candidate')} ${index + 1}`,
+              title: title || `${t('candidate')} ${index + 1}`,
               onAdopted: refresh,
             }))),
         current.nextCursor && h('div', { style: { marginTop: '.7rem' } },

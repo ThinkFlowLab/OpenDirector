@@ -47,6 +47,27 @@ function canRetryFailedJob(job) {
     && RETRYABLE_FAILURES.has(job.errorDetails?.category)
 }
 
+function librarySearch(snapshot, query) {
+  if (typeof query !== 'string' || query.length > 200) throw new InputError('library.search')
+  const normalize = value => value.normalize('NFKC').toLowerCase()
+  const terms = normalize(query).trim().split(/\s+/).filter(Boolean)
+  const titles = new Map()
+  for (const item of snapshot.canvasItems ?? []) {
+    if (item.binding?.role !== 'generation' || !item.title) continue
+    const specId = item.binding.objectRef.id
+    titles.set(specId, [titles.get(specId), item.title].filter(Boolean).join(' · '))
+  }
+  return {
+    title: specId => titles.get(specId),
+    matches: (prompt, title, modelId, ...ids) => {
+      if (!terms.length) return true
+      const text = normalize([prompt, title, modelId].filter(value => typeof value === 'string').join('\n'))
+      return terms.every(term => text.includes(term))
+        || (terms.length === 1 && terms[0].length >= 8 && ids.some(id => id?.startsWith(terms[0])))
+    },
+  }
+}
+
 function creationSeed(snapshot, resultId, model) {
   const result = snapshot.results.find(item => item.id === resultId)
   const job = snapshot.jobs.find(item => item.id === result?.jobId)
@@ -284,12 +305,13 @@ export class OpenDirectorClient {
     return this.#request('GET', creationPath(id), { signal })
   }
 
-  async libraryResults(projectId, { kind = 'all', selection = 'all', order = 'newest', after, signal } = {}) {
+  async libraryResults(projectId, { kind = 'all', selection = 'all', order = 'newest', query = '', after, signal } = {}) {
     requireEnum(kind, 'kind', ['all', ...Object.keys(MEDIA_TYPES)])
     requireEnum(selection, 'selection', ['all', 'current', 'other'])
     requireEnum(order, 'order', ['newest', 'oldest'])
     const cursor = after == null ? null : requireUuid(after, 'after')
     const snapshot = await this.project(projectId, { signal })
+    const search = librarySearch(snapshot, query)
     const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
     const metadata = assetMetadata(snapshot)
@@ -304,6 +326,10 @@ export class OpenDirectorClient {
       if (!Object.hasOwn(MEDIA_TYPES, asset.kind) || (kind !== 'all' && asset.kind !== kind)) continue
       const selected = specs.get(specId)?.currentResultId === id
       if ((selection === 'current' && !selected) || (selection === 'other' && selected)) continue
+      const job = jobs.get(jobId)
+      const prompt = job?.inputSnapshot?.spec?.prompt ?? ''
+      const title = search.title(specId)
+      if (!search.matches(prompt, title, job?.inputSnapshot?.model?.modelId, id, jobId, specId)) continue
       const details = mediaDetails(metadata.get(asset.assetId))
       results.push({
         resultId: id,
@@ -311,8 +337,8 @@ export class OpenDirectorClient {
         assetId: asset.assetId,
         kind: asset.kind,
         selected,
-        ...(details && { details }),
-        prompt: jobs.get(jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 160) ?? '',
+        ...(details && { details }), ...(title && { title }),
+        prompt: prompt.slice(0, 160),
       })
     }
     const hasMore = results.length > LIBRARY_PAGE_SIZE
@@ -325,11 +351,13 @@ export class OpenDirectorClient {
     return this.#request('GET', '/api/model-configs', { signal })
   }
 
-  async libraryJobs(projectId, { kind = 'all', order = 'newest', after, signal } = {}) {
+  async libraryJobs(projectId, { kind = 'all', order = 'newest', status = 'all', query = '', after, signal } = {}) {
     requireEnum(kind, 'kind', ['all', ...Object.keys(MEDIA_TYPES)])
     requireEnum(order, 'order', ['newest', 'oldest'])
     const cursor = after == null ? null : requireUuid(after, 'after')
     const snapshot = await this.project(projectId, { signal })
+    requireEnum(status, 'status', ['all', 'active', 'succeeded', 'failed', 'cancelled', 'interrupted'])
+    const search = librarySearch(snapshot, query)
     const cursorIndex = cursor === null ? null : snapshot.jobs.findIndex(job => job.id === cursor)
     if (cursorIndex === -1) throw new InputError('library.cursor_expired')
     const step = order === 'oldest' ? 1 : -1
@@ -339,8 +367,13 @@ export class OpenDirectorClient {
       const job = snapshot.jobs[index]
       const spec = job.inputSnapshot.spec
       if (!Object.hasOwn(MEDIA_TYPES, spec.kind) || (kind !== 'all' && spec.kind !== kind)) continue
+      if (status === 'active' ? !['queued', 'running'].includes(job.status)
+        : status !== 'all' && job.status !== status) continue
+      const title = search.title(spec.id)
+      if (!search.matches(spec.prompt, title, job.inputSnapshot.model.modelId, job.id, spec.id)) continue
       jobs.push({
         jobId: job.id, kind: spec.kind, status: job.status, prompt: spec.prompt.slice(0, 160),
+        ...(title && { title }),
         modelId: job.inputSnapshot.model.modelId,
       })
     }
