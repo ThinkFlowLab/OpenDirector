@@ -13,23 +13,11 @@ const EN_NAMES: Record<string, string> = {
   "MiniMax 官方语音": "MiniMax Official Speech",
   "MOSS 开放平台": "MOSS Open Platform",
   "火山方舟 / Agent Plan": "Volcano Ark / Agent Plan",
-  "vLLM-Omni 图片接口": "vLLM-Omni image API",
-  "vLLM-Omni 语音合成接口": "vLLM-Omni speech synthesis API",
-  "vLLM-Omni 音乐生成接口": "vLLM-Omni music generation API",
-  "vLLM-Omni 扒谱接口": "vLLM-Omni transcription API",
-  "vLLM-Omni 视频接口": "vLLM-Omni video API",
-  "vLLM-Omni 分割接口": "vLLM-Omni segmentation API",
-  "vLLM-Omni 深度接口": "vLLM-Omni depth API",
+  "vLLM-Omni 本地服务": "vLLM-Omni local service",
 };
 
 const EN_OPTION_LABELS: Record<string, string> = {
-  图片接口: "Image API",
-  语音合成接口: "Speech synthesis API",
-  音乐生成接口: "Music generation API",
-  扒谱接口: "Transcription API",
-  视频接口: "Video API",
-  分割接口: "Segmentation API",
-  深度接口: "Depth API",
+  本地服务: "Local service",
 };
 
 const EN_GROUPS: Record<string, string> = {
@@ -52,6 +40,13 @@ function groupLabel(value: string | undefined): string | undefined {
   return getActiveLocale() === "en-US" ? (EN_GROUPS[value] ?? value) : value;
 }
 
+/** One stage of a multi-stage self-hosted service: the endpoints it serves. */
+export interface ProviderStage {
+  /** Endpoint paths appended to the connection URL, e.g. `/images/generations`. */
+  paths: readonly string[];
+  protocol: ModelConfigInput["protocol"];
+}
+
 export interface ProviderPreset {
   id: string;
   name: string;
@@ -65,6 +60,12 @@ export interface ProviderPreset {
   connectionType: ModelConfigInput["connectionType"];
   authMode: ModelConfigInput["authMode"];
   modelsByKind?: Partial<Record<ModelKind, readonly string[]>>;
+  /**
+   * Per-kind endpoints of a service that serves several stages behind one
+   * connection. Absent for single-purpose presets, where `url` + `protocol`
+   * describe the whole connection.
+   */
+  stages?: Partial<Record<ModelKind, ProviderStage>>;
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -212,39 +213,55 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     connectionType: "api",
     authMode: "bearer",
   },
-  ...(
-    [
-      ["vllm-omni-image", "vLLM-Omni 图片接口", "openai", ["image"]],
-      ["vllm-omni-speech", "vLLM-Omni 语音合成接口", "openai", ["audio"]],
-      [
-        "vllm-omni-music",
-        "vLLM-Omni 音乐生成接口",
-        "vllm_omni_music",
-        ["audio"],
-      ],
-      ["vllm-omni-score", "vLLM-Omni 扒谱接口", "vllm_omni_score", ["audio"]],
-      ["vllm-omni-video", "vLLM-Omni 视频接口", "vllm_omni", ["video"]],
-      [
-        "vllm-omni-segmentation",
-        "vLLM-Omni 分割接口",
-        "vllm_omni_segmentation",
-        ["image", "video", "vision"],
-      ],
-      ["vllm-omni-depth", "vLLM-Omni 深度接口", "vllm_omni_depth", ["video"]],
-    ] as const
-  ).map(([id, name, protocol, kinds]) => ({
-    id,
-    name,
-    group: "vLLM-Omni",
+  {
+    id: "vllm-omni-local",
     logoOrganization: "vllm-project",
-    optionLabel: name.replace("vLLM-Omni ", ""),
-    protocol,
-    kinds: [...kinds],
-    url: "",
-    connectionType: "self_hosted" as const,
-    authMode: "none" as const,
-  })),
+    name: "vLLM-Omni 本地服务",
+    optionLabel: "本地服务",
+    group: "vLLM-Omni",
+    kinds: ["agent", "image", "video", "audio", "vision"],
+    url: "http://127.0.0.1:8000/v1",
+    protocol: "vllm_omni",
+    connectionType: "self_hosted",
+    authMode: "none",
+    // One localhost service serves several stages; each stage keeps the
+    // protocol its adapter expects, so a single connection is enough.
+    stages: {
+      agent: { paths: ["/chat/completions"], protocol: "openai" },
+      image: { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
+      video: { paths: ["/videos"], protocol: "vllm_omni" },
+      audio: { paths: ["/audio/speech", "/audio/transcriptions"], protocol: "openai" },
+      vision: {
+        paths: ["/images/segmentations", "/videos/segmentations"],
+        protocol: "vllm_omni_segmentation",
+      },
+    },
+  },
 ];
+
+export const LOCAL_OMNI_PRESET_ID = "vllm-omni-local";
+
+/**
+ * Protocols a saved self-hosted connection may still carry from the retired
+ * per-stage vLLM-Omni presets. They now resolve to the one local service, so
+ * an existing configuration keeps its provider name instead of reading as
+ * "custom".
+ */
+const OMNI_STAGE_PROTOCOLS: readonly ModelConfigInput["protocol"][] = [
+  "vllm_omni",
+  "vllm_omni_music",
+  "vllm_omni_score",
+  "vllm_omni_segmentation",
+  "vllm_omni_depth",
+];
+
+/** The protocol a connection uses for one kind; falls back to the preset's own. */
+export function presetProtocol(
+  preset: ProviderPreset | undefined,
+  kind: ModelKind,
+): ModelConfigInput["protocol"] | undefined {
+  return preset?.stages?.[kind]?.protocol ?? preset?.protocol;
+}
 
 export function providerPresetFor(model: ModelConfig): string {
   const explicit = PROVIDER_PRESETS.find(
@@ -255,6 +272,12 @@ export function providerPresetFor(model: ModelConfig): string {
       preset.kinds.includes(model.kind),
   );
   if (explicit) return explicit.id;
+  if (
+    model.connectionType === "self_hosted" &&
+    model.protocol &&
+    OMNI_STAGE_PROTOCOLS.includes(model.protocol)
+  )
+    return LOCAL_OMNI_PRESET_ID;
   const deployed = PROVIDER_PRESETS.find(
     (preset) =>
       preset.connectionType === "self_hosted" &&
