@@ -31,6 +31,10 @@ function fixture() {
           if (type === 'reference.add') snapshot.references.push(payload.reference)
         }
         receipt = { status: 'applied' }
+      } else if (command.type === 'generationSpec.update') {
+        const index = snapshot.generationSpecs.findIndex(spec => spec.id === command.payload.spec.id)
+        snapshot.generationSpecs[index] = { ...command.payload.spec, revision: command.payload.spec.revision + 1 }
+        receipt = { status: 'applied' }
       } else {
         const spec = snapshot.generationSpecs.find(spec => spec.id === command.payload.specId)
         const job = { id: randomUUID(), status: 'succeeded', inputSnapshot: {
@@ -228,4 +232,56 @@ test('a receipt read outage after a partial group keeps the original operation r
   await actionPackRequest(input, f.io)
   assert.equal(f.snapshot.jobs.length, 2)
   assert.equal(f.commands.filter(command => command.type === 'generation.submit').length, 2)
+})
+
+test('revising one action preserves pinned references, sibling prompts, selected results and frozen jobs', async () => {
+  const f = fixture()
+  const { packId } = await actionPackRequest(f.input, f.io)
+  const plan = packState(f.snapshot, packId, f.io.canRetry)
+  await actionPackRequest({ action: 'generate', projectId: f.input.projectId, packId,
+    operationId: randomUUID(), itemIds: plan.actions.map(action => action.itemId) }, f.io)
+  const first = f.snapshot.generationSpecs[0]
+  const selected = first.currentResultId = randomUUID()
+  const oldInputs = structuredClone(f.snapshot.jobs.map(job => job.inputSnapshot))
+  const oldRefs = structuredClone(f.snapshot.references)
+  const input = { action: 'revise', projectId: f.input.projectId, packId, operationId: randomUUID(),
+    itemId: plan.actions[0].itemId, expectedSpecRevision: first.revision, prompt: 'A slower wave' }
+  const result = await actionPackRequest(input, f.io)
+  assert.equal(result.status, 'applied')
+  assert.equal(f.snapshot.generationSpecs[0].prompt, input.prompt)
+  assert.equal(f.snapshot.generationSpecs[0].revision, 2)
+  assert.equal(f.snapshot.generationSpecs[0].currentResultId, selected)
+  assert.equal(f.snapshot.generationSpecs[1].prompt, 'same character\n\nwaving')
+  assert.deepEqual(f.snapshot.references, oldRefs)
+  assert.deepEqual(f.snapshot.jobs.map(job => job.inputSnapshot), oldInputs)
+  assert.equal(f.snapshot.jobs.length, 2)
+  const writes = f.commands.length
+  await actionPackRequest(input, f.io)
+  assert.equal(f.commands.length, writes)
+  const checked = await actionPackRequest({ action: 'check', projectId: f.input.projectId, packId,
+    operationId: input.operationId, packAction: 'revise', itemIds: [input.itemId] }, f.io)
+  assert.equal(checked.status, 'applied')
+  await assert.rejects(actionPackRequest({ ...input, operationId: randomUUID() }, f.io), { key: 'revision_conflict' })
+  assert.equal(f.commands.length, writes)
+  f.snapshot.jobs[0].status = 'running'
+  await assert.rejects(actionPackRequest({ ...input, operationId: randomUUID(), expectedSpecRevision: 2 }, f.io), { key: 'pack.active' })
+  assert.equal(f.commands.length, writes)
+})
+
+test('lost action-edit response can be confirmed without generating or rewriting the revision', async () => {
+  const f = fixture()
+  const { packId } = await actionPackRequest(f.input, f.io)
+  const action = packState(f.snapshot, packId, f.io.canRetry).actions[0]
+  const input = { action: 'revise', projectId: f.input.projectId, packId, operationId: randomUUID(),
+    itemId: action.itemId, expectedSpecRevision: 1, prompt: 'Wave with the other hand' }
+  f.lose()
+  await assert.rejects(actionPackRequest(input, f.io), { name: 'UnknownOperationError' })
+  const recovered = await actionPackRequest({ action: 'check', projectId: f.input.projectId, packId,
+    operationId: input.operationId, packAction: 'revise', itemIds: [input.itemId] }, f.io)
+  assert.equal(recovered.status, 'applied')
+  assert.equal(recovered.actions[0].prompt, input.prompt)
+  assert.equal(recovered.actions[0].revision, 2)
+  assert.equal(f.snapshot.jobs.length, 0)
+  await actionPackRequest(input, f.io)
+  assert.equal(f.snapshot.generationSpecs[0].revision, 2)
 })

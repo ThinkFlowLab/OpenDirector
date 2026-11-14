@@ -28,6 +28,14 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 The bundle ships ready-to-run JavaScript and needs no build. Tarball installation installs its dependencies; a linked checkout keeps its own `node_modules`. Neither route requires an npm release or a marketplace listing.
 
+## Find and install the plugin
+
+The package name is `@opendirector/dsh-plugin`. In DSH’s plugin manager it appears as **OpenDirector**, with a localized description and icon. This checkout provides source and an installable `.tgz`; a registry package or a plugin-index listing is a separate publication step. Until a package is published, install from a local path or a tarball rather than entering the bare package name. Once a PR’s **DSH plugin checks** run succeeds, its Linux job uploads an installable bundle and SHA-256 file under **Artifacts**, retained for seven days.
+
+In DSH rc.3, **Plugins → Experimental plugins → Custom plugin indexes** adds a **Discover** tab. It lists the index sources the user adds; installing a local plugin does not list it for everyone. A future index entry should point to a published, versioned package or release artifact, with its compatibility range and screenshots. [DSH custom plugin indexes](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/plugin-market-bundle/README.md)
+
+Use the same installation source to update a local tarball or linked checkout. Registry-installed bundles can use DSH’s compatible-version update controls after publication; the plugin leaves installation and updates to DSH.
+
 ## Platform coverage
 
 The interactive workflow has been verified in DSH Web with the host running in WSL Ubuntu. Native Windows checks cover plugin loading, tool execution and HTTP routes. The plugin workflow includes Linux, Windows and macOS jobs. DSH Desktop still needs an end-to-end installation and media check.
@@ -169,13 +177,13 @@ DSH Web shows saved images, videos, and audio on result cards in the current int
 
 ## Character action packs
 
-From a saved image, open **More actions → Make an action pack**. Name 1–6 actions, add a shared character description, and choose an image model accepting references or a first-frame video model. **Create and generate** sends one task per action. Each action keeps its own candidates and adoption; generating another version leaves the current choice in place.
+From a saved image, open **More actions → Make an action pack**. Name 1–6 actions, add a shared character description, and choose an image model accepting references or a first-frame video model. **Create and generate** sends one task per action. Each action keeps its own candidates and adoption; generating another version leaves the current choice in place. Use **Adjust action** to change one action’s description and generate a new version while keeping other actions and existing choices.
 
 Choose **Action packs** next to the composer to reopen a saved pack. Pick one version for every action, then **Download action pack**. The ZIP contains numbered media files and a manifest with the selected results, descriptions, model IDs and content fingerprints. Downloads stream directly from project assets, up to 128 MB, without making a second local copy.
 
 The reference image is pinned for every action. Character consistency, motion quality, transparency and loop timing depend on the model and the prompt; inspect the actual output before using it in a desktop pet. The pack exports individual images or clips, rather than an installed pet or a sprite-sheet runtime.
 
-In conversation, use `opendirector_action_pack` to list, read, prepare, generate or check a pack. Preparing saves its nodes without calling a model. Generating requires explicit action item IDs and keeps the results as candidates. For a lost response, check the original operation ID and continue the same submission. Selection uses the existing adoption tool. Closing the dialog leaves accepted jobs running.
+In conversation, use `opendirector_action_pack` to list, read, prepare, generate or check a pack. Preparing saves its nodes without calling a model. Generating requires explicit action item IDs and keeps the results as candidates. For a lost response, check the original operation ID and continue the same submission. Use `revise` with `itemId`, `prompt` and `expectedSpecRevision` to save one action’s description without generating. Selection uses the existing adoption tool. Closing the dialog leaves accepted jobs running.
 
 ## Development checks
 
@@ -201,4 +209,4 @@ node test/creation.integration.mjs
 
 This checks project creation, a saved PNG candidate, result selection and replay, edit-session conflicts, and an accepted job completing while the plugin is disabled. It requires the fixture's health marker before writing. `OPENDIRECTOR_FIXTURE_URL` can select another fixture port; the test uses generated fixture images rather than a model service.
 
-The package declares DSH 0.2.2-rc.1, rc.2 and rc.3. Web installation and operation have been verified on rc.1. The rc.2 tool interfaces were checked against its release source. Published rc.3 tools, Native executor and system-prompt packages passed the plugin tool-contract checks with the remaining runtime on rc.1. Full rc.2/rc.3 Web and Desktop runs remain to be tested. OpenDirector’s installation requirements are maintained in its installation guide.
+The package declares DSH 0.2.2-rc.1, rc.2 and rc.3. Web installation and operation have been verified on rc.1. In a full published rc.3 Web host, the packaged plugin passed image creation, action revisions, independent candidate selection, reload recovery, video playback and ZIP export. The rc.3 tool packages also passed the plugin loading and execution checks. The rc.2 tool interfaces were checked against its release source; a full rc.2 host and DSH Desktop still need hands-on acceptance. OpenDirector’s installation requirements are maintained in its installation guide.

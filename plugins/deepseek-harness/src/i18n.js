@@ -1,5 +1,6 @@
 const enUS = {
-  "tool.actionPack.description": "Create and resume an action pack from one saved character image. list/get/check only read. prepare atomically saves 1–6 named action nodes with a pinned image, using a compatible image or first-frame video model; it does not generate. generate submits the explicit itemIds as candidate-only jobs. Count each action as a separate model request. For an unknown outcome check with the same operationId, packAction and itemIds; continue with the original generate input. Never automatically adopt; use opendirector_adopt_result for each chosen action result.",
+  "pack.active": "Wait for this action’s running task to finish before changing its description.",
+  "tool.actionPack.description": "Create and resume an action pack from one saved character image. list/get/check only read. revise saves one action’s new prompt using itemId and expectedSpecRevision, retaining candidates and current adoption; generate explicitly starts a new candidate. prepare atomically saves 1–6 named action nodes with a pinned image, using a compatible image or first-frame video model; it does not generate. generate submits the explicit itemIds as candidate-only jobs. Count each action as a separate model request. For an unknown outcome check with the same operationId, packAction and itemIds; continue with the original generate input. Never automatically adopt; use opendirector_adopt_result for each chosen action result.",
   "param.packId": "Action pack group UUID returned by prepare or list.",
   "param.packCheck": "Original action being checked. For generate preserve the original itemIds and operationId.",
   "param.packTitle": "Action pack title (1–100 characters).",
@@ -144,7 +145,8 @@ const enUS = {
 }
 
 const zhCN = {
-  "tool.actionPack.description": "从已保存的角色图片创建并继续动作素材包。list/get/check 只读。prepare 原子保存 1 至 6 个命名动作节点和固定图片引用，使用支持参考图的图片模型或首帧视频模型，不会生成。generate 为明确指定的 itemIds 分别提交仅候选任务，每个动作消耗一次模型请求。结果未知时，以原 operationId、packAction 和 itemIds 查询；继续提交沿用原 generate 输入。不会自动采用，请用 opendirector_adopt_result 逐项采用用户选择的结果。",
+  "pack.active": "请等待这个动作的任务结束，再修改描述。",
+  "tool.actionPack.description": "从已保存的角色图片创建并继续动作素材包。list/get/check 只读。revise 用 itemId、prompt 与 expectedSpecRevision 保存一个动作的新描述，保留历史候选和采用结果，随后由 generate 明确生成新候选。prepare 原子保存 1 至 6 个命名动作节点和固定图片引用，使用支持参考图的图片模型或首帧视频模型，不会生成。generate 为明确指定的 itemIds 分别提交仅候选任务，每个动作消耗一次模型请求。结果未知时，以原 operationId、packAction 和 itemIds 查询；继续提交沿用原 generate 输入。不会自动采用，请用 opendirector_adopt_result 逐项采用用户选择的结果。",
   "param.packId": "prepare 或 list 返回的动作素材包分组 UUID。",
   "param.packCheck": "要查询的原操作。generate 保留原 itemIds 和 operationId。",
   "param.packTitle": "素材包名称，1 至 100 字符。",

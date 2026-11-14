@@ -38,6 +38,7 @@ export function packState(snapshot, packId, canRetry) {
       status: active?.status ?? latest?.status ?? 'not_started',
       jobs: jobs.map(job => ({ jobId: job.id, status: job.status, category: job.errorDetails?.category,
         cancelRequested: job.cancelRequested, remoteCancellation: job.remoteCancellation })),
+      canRevise: !active,
       canGenerate: !active && (!latest || latest.status === 'succeeded' || canRetry(latest)),
       results,
       ...(reference && { reference: { assetId: reference.source.assetId, kind: reference.source.kind,
@@ -76,7 +77,7 @@ function packItemIds(input) {
 
 export async function actionPackRequest(input, io) {
   const action = input.action ?? 'get'
-  if (!['list', 'get', 'check', 'prepare', 'generate'].includes(action)) throw new InputError('pack.action')
+  if (!['list', 'get', 'check', 'prepare', 'generate', 'revise'].includes(action)) throw new InputError('pack.action')
   if (input.redo != null && typeof input.redo !== 'boolean') throw new InputError('pack.plan')
   if (action === 'list') {
     const snapshot = await io.read()
@@ -102,11 +103,11 @@ export async function actionPackRequest(input, io) {
     const exists = snapshot.canvasItems.some(item => item.id === packId && item.tags?.includes(TAG))
     if (!exists && action === 'check') return { status: 'unknown', projectId: input.projectId, packId, found: false }
     let status = 'applied', code
-    if (action === 'check' && input.packAction === 'generate') {
+    if (action === 'check' && ['generate', 'revise'].includes(input.packAction)) {
       const ids = packItemIds(input)
-      const receipts = await Promise.all(ids.map(id => io.receipt(uuid5(operationId, 'action:' + id))))
+      const receipts = await Promise.all(ids.map(id => io.receipt(uuid5(operationId, (input.packAction === 'revise' ? 'action.revise:' : 'action:') + id))))
       const rejected = receipts.find(receipt => receipt?.status === 'rejected')
-      status = rejected ? 'rejected' : receipts.every(receipt => receipt?.status === 'accepted') ? 'applied' : 'unknown'
+      status = rejected ? 'rejected' : receipts.every(receipt => ['accepted', 'applied', 'noop'].includes(receipt?.status)) ? 'applied' : 'unknown'
       code = rejected?.issues?.[0]?.code
     }
     return { ...packState(snapshot, packId, io.canRetry), status, found: true, ...(code && { code }) }
@@ -163,6 +164,31 @@ export async function actionPackRequest(input, io) {
       })
       const receipt = await execute({ commandId: uuid5(operationId, 'pack.prepare'), projectId: input.projectId,
         type: 'creation.batch', expectedVersions: [], payload: { operations } })
+      return { status: receipt.status, packId, code: receipt.issues?.[0]?.code }
+    })
+  }
+  if (action === 'revise') {
+    const itemId = requireUuid(input.itemId, 'itemId')
+    const commandId = uuid5(operationId, 'action.revise:' + itemId)
+    const prior = await io.receipt(commandId)
+    if (prior) return { status: prior.status, packId, code: prior.issues?.[0]?.code }
+    const prompt = requireString(input.prompt, 'prompt').trim()
+    if (!prompt || Array.from(prompt).length > 20000) throw new InputError('pack.plan')
+    if (!Number.isInteger(input.expectedSpecRevision) || input.expectedSpecRevision < 1) {
+      throw new InputError('input.positiveInteger', { field: 'expectedSpecRevision' })
+    }
+    return io.edit(async (snapshot, execute) => {
+      const { nodes, specs } = packNodes(snapshot, packId)
+      const item = nodes.find(item => item.id === itemId)
+      if (!item) throw new InputError('pack.missing')
+      const spec = specs.get(item.binding.objectRef.id)
+      if (spec.revision !== input.expectedSpecRevision) throw new InputError('revision_conflict')
+      if (snapshot.jobs.some(job => job.inputSnapshot.spec.id === spec.id && ['queued', 'running'].includes(job.status))) {
+        throw new InputError('pack.active')
+      }
+      const receipt = await execute({ commandId, projectId: input.projectId, type: 'generationSpec.update',
+        expectedVersions: [{ objectType: 'generation_spec', id: spec.id, revision: spec.revision }],
+        payload: { spec: { ...spec, prompt } } })
       return { status: receipt.status, packId, code: receipt.issues?.[0]?.code }
     })
   }

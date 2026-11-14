@@ -5,6 +5,10 @@ window.__ModuleLoader__.load({
     const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
+      packRevise: 'Adjust action', packEditPrompt: 'Action description', packSaveGenerate: 'Generate with this description',
+      packCancelEdit: 'Cancel changes', packRevised: 'Description saved. Review it, then generate a candidate when ready.',
+      packActive: 'Wait for this action’s task to finish before changing its description.',
+
       actionPacks: 'Action packs', newActionPack: 'Make an action pack', packTitle: 'Pack name',
       packHint: 'Keep one reference image, make each action separately, then choose one version per action.',
       packEmpty: 'No action packs in this project yet. Start from a saved image.',
@@ -123,6 +127,10 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      packRevise: '调整动作', packEditPrompt: '动作描述', packSaveGenerate: '按这份描述生成',
+      packCancelEdit: '取消修改', packRevised: '描述已保存。确认后可以再生成一版候选。',
+      packActive: '请等待这个动作的任务结束，再修改描述。',
+
       actionPacks: '动作素材包', newActionPack: '制作动作素材包', packTitle: '素材包名称',
       packHint: '固定一张角色参考图，分别生成各个动作，再为每个动作选一版。',
       packEmpty: '这个工程还没有动作素材包，可以从已保存的图片开始。',
@@ -393,7 +401,7 @@ window.__ModuleLoader__.load({
             label: typeof item.label === 'string' ? item.label.slice(0, 160) : '',
             ...(typeof item.projectName === 'string' && { projectName: item.projectName.slice(0, 255) }),
             ...(item.repeatJobId && { repeatJobId: item.repeatJobId }),
-            ...(['prepare', 'generate'].includes(item.packAction) && {
+            ...(['prepare', 'generate', 'revise'].includes(item.packAction) && {
               packAction: item.packAction, packRedo: item.packRedo === true,
               ...(uuid.test(item.packId) && { packId: item.packId }),
               ...(Array.isArray(item.packItemIds) && item.packItemIds.length <= 6
@@ -940,6 +948,8 @@ window.__ModuleLoader__.load({
       const [pages, setPages] = useState({})
       const [comparison, setComparison] = useState([])
       const [comparing, setComparing] = useState(false)
+      const [editing, setEditing] = useState(null)
+      const editDraftKey = itemId => 'pack-revise:' + projectId + ':' + packId + ':' + itemId
       const pending = useSyncExternalStore(subscribePending, readPendingSubmissions)
       const pendingItems = pending.filter(item => item.context === (packId ? 'pack:' + packId : draftKey))
       const pendingItem = pendingItems[0]
@@ -1054,10 +1064,47 @@ window.__ModuleLoader__.load({
         setPackId(value.packId); setPack(value)
         setFeedback(value.status === 'unknown' ? 'generationUnknown' : '')
         if (value.status !== 'unknown') forgetSubmission(value.recovery)
+        if (value.recovery.packAction === 'revise' && value.status !== 'unknown') {
+          if (['applied', 'accepted', 'noop'].includes(value.status)) {
+            saveMediaDraft(editDraftKey(value.recovery.packItemIds[0]), null)
+            setEditing(null); setFeedback('packRevised')
+          } else setFeedback(packError(value.code))
+        }
         if (value.recovery.packAction === 'prepare') {
           saveMediaDraft(draftKey, null); flushMediaDrafts()
         }
         refresh()
+      }
+      function changeAction(action) {
+        const draft = readMediaDraft(editDraftKey(action.itemId))?.form
+        setEditing(draft?.itemId === action.itemId ? draft
+          : { itemId: action.itemId, prompt: action.prompt, revision: action.revision })
+      }
+      function cancelEdit() {
+        if (editing) saveMediaDraft(editDraftKey(editing.itemId), null)
+        setEditing(null)
+      }
+      useEffect(() => {
+        if (editing) saveMediaDraft(editDraftKey(editing.itemId), { form: editing })
+      }, [editing, packId])
+      async function revise(event) {
+        event.preventDefault()
+        if (busy.current || !editing || pendingItem) return
+        busy.current = true; setSubmitting(true); setFeedback('')
+        const input = { action: 'revise', projectId, packId, operationId: crypto.randomUUID(),
+          itemId: editing.itemId, prompt: editing.prompt, expectedSpecRevision: editing.revision }
+        const saved = { ...input, packAction: 'revise', packItemIds: [editing.itemId] }
+        rememberSubmission(saved, 'pack:' + packId, pack.title)
+        try {
+          let value
+          try { value = await writePack(input) } catch { value = { status: 'unknown' } }
+          if (value.status === 'unknown') { setFeedback('generationUnknown'); return }
+          forgetSubmission(saved)
+          if (value.status === 'rejected') { setFeedback(packError(value.code)); return }
+          const itemId = editing.itemId
+          cancelEdit()
+          await submitActions(packId, [itemId], true)
+        } finally { busy.current = false; setSubmitting(false); refresh() }
       }
       const remaining = pack?.actions.filter(action => !action.jobs.length) ?? []
       const sourceImage = source ?? pack?.actions[0]?.reference
@@ -1116,8 +1163,18 @@ window.__ModuleLoader__.load({
               h('div', { className: 'od-pack-toolbar' }, h('h3', null, action.name),
                 h('span', { role: 'status' }, t(action.status === 'not_started' ? 'packNotStarted' : action.status)),
                 button(t(action.jobs.length ? 'repeatGeneration' : 'generate'),
-                  () => generate([action.itemId], Boolean(action.jobs.length)), { disabled: locked || !action.canGenerate })),
+                  () => generate([action.itemId], Boolean(action.jobs.length)), { disabled: locked || !action.canGenerate }),
+                button(t('packRevise'), () => changeAction(action), { disabled: locked || !action.canRevise })),
               h('details', { className: 'od-hint' }, h('summary', null, t('generationSettings')), h('p', null, action.prompt)),
+              editing?.itemId === action.itemId && h('form', { onSubmit: revise },
+                h('label', { style: { display: 'grid', gap: '.4rem' } }, t('packEditPrompt'),
+                  h('textarea', { required: true, maxLength: 20000, 'aria-label': t('packEditPrompt'),
+                    style: { width: '100%', minHeight: '8rem', boxSizing: 'border-box' }, disabled: locked,
+                    value: editing.prompt, onChange: event => setEditing(previous => ({ ...previous, prompt: event.target.value })) })),
+                h('div', { style: row },
+                  h('button', { type: 'submit', className: 'od-button od-primary', style: buttonStyle,
+                    disabled: locked || !editing.prompt.trim() }, t('packSaveGenerate')),
+                  button(t('packCancelEdit'), cancelEdit, { disabled: locked }))),
               ...active.map(job => h(JobCancellation, { key: job.jobId, projectId, jobId: job.jobId, progress: job, t, onChange: refresh })),
               ['failed', 'interrupted'].includes(action.status) && h('p', null, t(generationMessages.get(action.jobs.at(-1)?.category) ?? 'recoverOnCanvas')),
               h('div', { className: 'od-pack-candidates' }, ...results.map((result, index) => h(Preview, {
@@ -1143,6 +1200,8 @@ window.__ModuleLoader__.load({
       if (code === 'storage_busy') return 'adoptBusy'
       if (['pack.plan', 'input.string', 'input.required'].includes(code)) return 'packInvalid'
       if (code === 'pack.model') return 'noModels'
+      if (code === 'pack.active') return 'packActive'
+      if (submissionMessages.has(code)) return submissionMessages.get(code)
       if (code === 'creation.output') return 'chooseOutput'
       return 'failedToSubmit'
     }
