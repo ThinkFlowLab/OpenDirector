@@ -70,6 +70,11 @@ window.__ModuleLoader__.load({
       succeeded: 'Candidate ready', stopped: 'Generation stopped', failed: 'Generation failed',
       quota: 'Check the model account’s balance or quota before trying again.',
       checkProgress: 'Check progress', download: 'Download original',
+      compareImages: 'Compare images', compareHint: 'Choose two images, then open the comparison.',
+      openComparison: 'Open comparison', clearComparison: 'Clear comparison',
+      chooseComparison: 'Compare this image', removeComparison: 'Remove from comparison',
+      comparisonUnavailable: 'Could not load this comparison. Refresh the results and select two saved images.',
+      buffering: 'Buffering…', updatesPaused: 'Automatic status checks are paused while offline or in the background.',
       searchLibrary: 'Search saved work', searchHint: 'Description, node name, model or ID',
       clearFilters: 'Clear search and filters', taskStatus: 'Filter tasks by status', allTasks: 'All tasks',
       activeTasks: 'Queued or running',
@@ -151,6 +156,11 @@ window.__ModuleLoader__.load({
       succeeded: '候选已生成', stopped: '生成已停止', failed: '生成失败',
       quota: '请检查模型账号的余额或套餐额度，再重试生成。',
       checkProgress: '查询进度', download: '下载原文件',
+      compareImages: '对比图片', compareHint: '选择两张图片，再打开对比。',
+      openComparison: '打开对比', clearComparison: '清空对比选择',
+      chooseComparison: '加入图片对比', removeComparison: '移出图片对比',
+      comparisonUnavailable: '暂时无法加载对比，请刷新结果并重新选择两张已保存图片。',
+      buffering: '缓冲中…', updatesPaused: '离线或切到后台时，自动状态查询已暂停。',
       searchLibrary: '搜索已有作品', searchHint: '描述、节点名称、模型或 ID',
       clearFilters: '清除搜索和筛选', taskStatus: '按任务状态筛选', allTasks: '全部任务',
       activeTasks: '排队或生成中',
@@ -270,6 +280,9 @@ window.__ModuleLoader__.load({
       const [page, setPage] = useState({})
       const [view, setView] = useState('results')
       const [task, setTask] = useState(null)
+      const [compareMode, setCompareMode] = useState(false)
+      const [comparison, setComparison] = useState([])
+      const [comparing, setComparing] = useState(false)
       const taskView = view === 'jobs'
       const searching = search.trim() !== query
       useEffect(() => {
@@ -319,6 +332,8 @@ window.__ModuleLoader__.load({
       }
       function changeProject(id) {
         setProjectId(id)
+        setComparison([])
+        setComparing(false)
         setLibrary(null)
         refresh()
       }
@@ -326,6 +341,11 @@ window.__ModuleLoader__.load({
         setView(value)
         setLibrary(null)
         refresh()
+      }
+      function toggleComparison(image) {
+        setComparison(previous => previous.some(item => item.resultId === image.resultId)
+          ? previous.filter(item => item.resultId !== image.resultId)
+          : previous.length < 2 ? [...previous, image] : previous)
       }
       function filterControl(key, label, options) {
         return h('select', {
@@ -356,7 +376,16 @@ window.__ModuleLoader__.load({
         current && canvasLink(current.canvasUrl, t)),
       projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
         button(t('recent'), () => changeView('results'), { 'aria-pressed': !taskView }),
-        button(t('tasks'), () => changeView('jobs'), { 'aria-pressed': taskView })),
+        button(t('tasks'), () => changeView('jobs'), { 'aria-pressed': taskView }),
+        button(t('compareImages'), () => setCompareMode(value => !value), { 'aria-pressed': compareMode })),
+      projectId && compareMode && h('section', { 'aria-label': t('compareImages'), style: { display: 'grid', gap: '.4rem', marginBlock: '.7rem' } },
+        h('small', null, t('compareHint')),
+        h('div', { style: row },
+          ...comparison.map((image, index) => button((index + 1) + ' · ' + image.title + ' ×', () => toggleComparison(image), {
+            key: image.resultId, 'aria-label': t('removeComparison') + ' ' + (index + 1),
+          })),
+          button(t('openComparison') + ' (' + comparison.length + '/2)', () => setComparing(true), { disabled: comparison.length !== 2 }),
+          comparison.length > 0 && button(t('clearComparison'), () => setComparison([])))),
       projectId && h('div', { style: { ...row, marginBlock: '.7rem' } },
         h('input', { type: 'search', 'aria-label': t('searchLibrary'), placeholder: t('searchHint'),
           maxLength: 200, value: search, style: { flex: '1 1 18rem', minWidth: 0 },
@@ -393,12 +422,57 @@ window.__ModuleLoader__.load({
               key: resultId, projectId, resultId, assetId, kind, selected, prompt, details, t, canvasUrl: current.canvasUrl,
               title: title || `${t('candidate')} ${index + 1}`,
               onAdopted: refresh,
+              compareSelected: comparison.some(item => item.resultId === resultId),
+              compareDisabled: comparison.length === 2 && !comparison.some(item => item.resultId === resultId),
+              onCompare: compareMode && kind === 'image'
+                ? () => toggleComparison({ resultId, title: title || resultId.slice(0, 8) }) : undefined,
             }))),
         current.nextCursor && h('div', { style: { marginTop: '.7rem' } },
           button(t('loadMore'), () => setPage({ after: current.nextCursor }), { disabled: pending }))),
+      comparing && h(ImageComparisonDialog, {
+        projectId, resultIds: comparison.map(item => item.resultId), t, onAdopted: refresh,
+        onClose: () => setComparing(false),
+      }),
       task && h(GenerationDialog, {
         existingJob: task, t, onClose: () => { setTask(null); refresh() },
       }))
+    }
+
+    function ImageComparisonDialog({ projectId, resultIds, t, onClose, onAdopted }) {
+      const dialog = useRef(null)
+      const [value, setValue] = useState(null)
+      const [failed, setFailed] = useState(false)
+      const [revision, setRevision] = useState(0)
+      const pair = resultIds.join(',')
+      useEffect(() => { dialog.current.showModal() }, [])
+      useEffect(() => {
+        const controller = new AbortController()
+        setFailed(false)
+        fetch('/api/opendirector/library?' + new URLSearchParams({ project: projectId, compare: pair }),
+          { signal: controller.signal }).then(async response => {
+          if (!response.ok) throw new Error('Comparison unavailable')
+          const result = await response.json()
+          if (!controller.signal.aborted) setValue(result)
+        }).catch(() => { if (!controller.signal.aborted) setFailed(true) })
+        return () => controller.abort()
+      }, [projectId, pair, revision])
+      return h('dialog', {
+        ref: dialog, 'aria-label': t('compareImages'),
+        onClose: event => { if (event.target === event.currentTarget) onClose() },
+        style: { ...dialogStyle, width: 'min(80rem, calc(100vw - 2rem))' },
+      },
+        h('header', { style: { ...row, justifyContent: 'space-between', marginBottom: '.7rem' } },
+          h('strong', null, t('compareImages')), button(t('close'), () => dialog.current.close(), { autoFocus: true })),
+        !value && !failed && h('p', { role: 'status' }, t('loading')),
+        failed && h('div', null, h('p', { role: 'alert' }, t('comparisonUnavailable')),
+          button(t('refresh'), () => setRevision(previous => previous + 1))),
+        value && !failed && h('div', { style: { display: 'grid', gap: '1rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(24rem, 100%), 1fr))' } },
+          ...value.images.map((image, index) => h(Preview, {
+            ...image, key: image.resultId, projectId, t, expanded: true, canvasUrl: value.canvasUrl,
+            title: (index + 1) + ' · ' + (image.title || t('candidate')),
+            onAdopted: () => { setRevision(previous => previous + 1); onAdopted?.() },
+          }))))
     }
 
     function ReferencePicker({ projectId, references, setReferences, limit, locked, t }) {
@@ -501,6 +575,7 @@ window.__ModuleLoader__.load({
       const [repeatStatus, setRepeatStatus] = useState(null)
       const [submitting, setSubmitting] = useState(false)
       const [pollError, setPollError] = useState(false)
+      const [updatesPaused, setUpdatesPaused] = useState(false)
       const [pollRun, setPollRun] = useState(0)
       const [references, setReferences] = useState(() => source && !videoMode
         ? [source, ...(Array.isArray(saved?.references) ? saved.references.filter(item => item?.kind === 'image'
@@ -582,22 +657,44 @@ window.__ModuleLoader__.load({
         if (!jobId) return
         const controller = new AbortController()
         let timer
+        let inFlight = false
+        let active = true
+        const available = () => !document.hidden && navigator.onLine !== false
         async function poll() {
+          if (controller.signal.aborted || inFlight || !available()) return
+          inFlight = true
           try {
             const params = new URLSearchParams({ project: projectId, job: jobId })
             const response = await fetch('/api/opendirector/creation?' + params, { signal: controller.signal })
             if (!response.ok) throw new Error('Job status unavailable')
             const value = await response.json()
             if (controller.signal.aborted) return
+            active = ['accepted', 'queued', 'running'].includes(value.status)
             setPollError(false)
             setProgress(previous => ({ ...value, jobId, results: value.results ?? previous?.results ?? [] }))
-            if (['accepted', 'queued', 'running'].includes(value.status)) timer = setTimeout(poll, 2500)
+            if (active && available()) timer = setTimeout(poll, 2500)
           } catch {
             if (!controller.signal.aborted) setPollError(true)
+          } finally {
+            inFlight = false
           }
         }
-        poll()
-        return () => { controller.abort(); clearTimeout(timer) }
+        function wake() {
+          clearTimeout(timer)
+          setUpdatesPaused(!available())
+          if (active) poll()
+        }
+        document.addEventListener('visibilitychange', wake)
+        window.addEventListener('online', wake)
+        window.addEventListener('offline', wake)
+        wake()
+        return () => {
+          controller.abort()
+          clearTimeout(timer)
+          document.removeEventListener('visibilitychange', wake)
+          window.removeEventListener('online', wake)
+          window.removeEventListener('offline', wake)
+        }
       }, [jobId, projectId, pollRun])
       async function send(makeAttempt) {
         if (busy.current) return
@@ -765,6 +862,8 @@ window.__ModuleLoader__.load({
           onChange: () => setPollRun(value => value + 1) }),
         continuation && status === 'failed' && progress.category === 'reference' && h('p', null, t('continuationUnavailable')),
         status && progress.canResume && h('p', null, t('recoverOnCanvas')),
+        updatesPaused && ['accepted', 'queued', 'running'].includes(progress?.status ?? result?.status ?? existingJob?.status)
+          && h('small', { role: 'status' }, t('updatesPaused')),
         pollError && h('p', { role: 'alert' }, t('progressUnavailable')),
         (pollError || providerUnknown) && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
         result?.canvasUrl && (jobId || result.draftSaved) && canvasLink(result.canvasUrl, t),
@@ -971,17 +1070,19 @@ window.__ModuleLoader__.load({
             })))
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl }) {
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl, expanded, onCompare, compareSelected, compareDisabled }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [status, setStatus] = useState('')
       const [viewingOriginal, setViewingOriginal] = useState(false)
       const [menu, setMenu] = useState(null)
+      const [buffering, setBuffering] = useState(false)
       const trigger = useRef(null)
       const player = useRef(null)
       const adoption = useAdoption({ projectId, resultId, onAdopted })
-      const url = mediaHref(projectId, assetId, kind)
-      const downloadUrl = url + '&original=1'
+      const thumbnailUrl = mediaHref(projectId, assetId, kind)
+      const downloadUrl = thumbnailUrl + '&original=1'
+      const url = expanded && kind === 'image' ? downloadUrl : thumbnailUrl
       const video = kind === 'video'
       const audio = kind === 'audio'
       const image = kind === 'image'
@@ -990,12 +1091,17 @@ window.__ModuleLoader__.load({
         (video || audio) && details?.durationSeconds
           && t('duration').replace('{seconds}', Number(details.durationSeconds.toFixed(2))),
       ].filter(Boolean)
-      const mediaStyle = { width: '100%', height: 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
+      const mediaStyle = { width: '100%', height: expanded ? 'clamp(14rem, 50vh, 36rem)' : 'clamp(8rem, 23vw, 15rem)', display: 'block', objectFit: 'contain',
         borderRadius: '.55rem', background: surface }
-      const onError = () => setFailed(true)
+      const onError = () => { setBuffering(false); setFailed(true) }
+      const playbackEvents = {
+        onWaiting: () => setBuffering(true), onStalled: () => setBuffering(true),
+        onPlaying: () => setBuffering(false), onCanPlay: () => setBuffering(false),
+        onPause: () => setBuffering(false), onEnded: () => setBuffering(false),
+      }
       const media = video
-        ? h('video', { ref: player, src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
-        : audio ? h('audio', { ref: player, src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
+        ? h('video', { ...playbackEvents, ref: player, src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
+        : audio ? h('audio', { ...playbackEvents, ref: player, src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
           : h('button', { type: 'button', onClick: () => setViewingOriginal(true),
             'aria-label': t('viewOriginal'), 'aria-haspopup': 'dialog', title: t('viewOriginal'),
             style: { padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in' },
@@ -1027,10 +1133,10 @@ window.__ModuleLoader__.load({
       const adoptLabel = pending ? 'adopting' : selected ? 'selected'
         : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
       const actions = [
-        (image || audio) && { label: 'reuseSettings', run: () => setAction('reuse') },
-        image && { label: 'edit', run: () => setAction('edit') },
+        !expanded && (image || audio) && { label: 'reuseSettings', run: () => setAction('reuse') },
+        !expanded && image && { label: 'edit', run: () => setAction('edit') },
         image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
-        image && { label: 'firstFrame', run: () => setAction('first_frame') },
+        !expanded && image && { label: 'firstFrame', run: () => setAction('first_frame') },
         video && { label: 'continue', run: () => setAction('continuation') },
         (video || audio) && !failed && { label: player.current?.paused === false ? 'pause' : 'play', run: togglePlayback },
         !selected && !pending && { label: adoptLabel, run: adoption.adopt },
@@ -1047,13 +1153,17 @@ window.__ModuleLoader__.load({
           h('strong', null, title), facts.length > 0 && h('span', null, facts.join(' · '))),
         failed ? h('div', { style: row }, h('span', null, t('unavailable')),
           image && button(t('viewOriginal'), () => setViewingOriginal(true), { 'aria-haspopup': 'dialog' })) : media,
+        buffering && h('small', { role: 'status' }, t('buffering')),
+        onCompare && h('label', { style: row },
+          h('input', { type: 'checkbox', checked: compareSelected, disabled: compareDisabled,
+            onChange: onCompare }), t('chooseComparison')),
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
-            (image || audio) && button(t('reuseSettings'), () => setAction('reuse'), { 'aria-haspopup': 'dialog' }),
+            !expanded && (image || audio) && button(t('reuseSettings'), () => setAction('reuse'), { 'aria-haspopup': 'dialog' }),
             video && button(t('continue'), () => setAction('continuation'), { 'aria-haspopup': 'dialog' }),
-            image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
-            image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
+            !expanded && image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
+            !expanded && image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
             button(t(adoptLabel), adoption.adopt, { primary: true, disabled: pending || selected }),
             button('···', event => {
               if (menu) closeMenu()

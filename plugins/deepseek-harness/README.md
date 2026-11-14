@@ -6,7 +6,7 @@ Create media from a DSH conversation, follow generation progress, and open the s
 
 ## Install and connect
 
-Use DSH **0.2.2-rc.1 or 0.2.2-rc.2** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
+Use DSH **0.2.2-rc.1, rc.2 or rc.3** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
 
 ```sh
 npm pack
@@ -43,6 +43,10 @@ Unsubmitted input stays in the current browser tab. Close the dialog or reload D
 If you choose an image size and then change models, the form keeps your choice when the new model supports it. If that size is unavailable, choose a different size or model before generating.
 
 In **Resume project**, search descriptions, canvas node names, models or copied IDs across the whole project. Search checks the full recorded description, including text beyond the card preview. Combine it with media and adoption filters, or filter tasks by their current status. **Clear search and filters** returns to the full list.
+
+Choose **Compare images** in **Resume project**, select two saved images, and open the comparison. Selections can come from different filtered pages of the same project. Original images load only when you open the comparison. You can inspect them at a larger size and adopt either result; each node keeps its own current-result selection.
+
+Automatic task checks pause while the page is hidden or offline. Returning to the page or reconnecting checks the same task. This does not stop the generation job. Media players show a buffering message while waiting for content.
 
 To change a saved image or voiceover, choose **Reuse settings** on its result card. The form starts from that version’s recorded prompt and parameters. Images can keep their original size or use another listed size. The model, voice identity and references stay fixed; other saved parameters are retained. Generation creates a new node in the same project, ready to review before adoption. Structured prompt documents and expanded subject references can be adjusted on the canvas.
 
@@ -179,4 +183,4 @@ node test/creation.integration.mjs
 
 This checks project creation, a saved PNG candidate, result selection and replay, edit-session conflicts, and an accepted job completing while the plugin is disabled. It requires the fixture's health marker before writing. `OPENDIRECTOR_FIXTURE_URL` can select another fixture port; the test uses generated fixture images rather than a model service.
 
-The package declares DSH `0.2.2-rc.1` and `0.2.2-rc.2`. Web installation and operation have been verified on rc.1. The rc.2 tool and Web extension interfaces have been checked against its release source; an installed rc.2 run is pending npm availability. OpenDirector’s installation requirements are maintained in its installation guide.
+The package declares DSH 0.2.2-rc.1, rc.2 and rc.3. Web installation and operation have been verified on rc.1. The rc.2 tool interfaces were checked against its release source. Published rc.3 tools, Native executor and system-prompt packages passed the plugin tool-contract checks with the remaining runtime on rc.1. Full rc.2/rc.3 Web and Desktop runs remain to be tested. OpenDirector’s installation requirements are maintained in its installation guide.

@@ -398,6 +398,31 @@ export class OpenDirectorClient {
       }))
   }
 
+  async compareImages(projectId, resultIds, { signal } = {}) {
+    const project = requireUuid(projectId, 'projectId')
+    if (!Array.isArray(resultIds) || resultIds.length !== 2) throw new InputError('library.compare')
+    const ids = resultIds.map(id => requireUuid(id, 'resultId'))
+    if (ids[0] === ids[1]) throw new InputError('library.compare')
+    const snapshot = await this.project(project, { signal })
+    const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
+    const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
+    const results = new Map(snapshot.results.map(result => [result.id, result]))
+    const metadata = assetMetadata(snapshot)
+    const names = librarySearch(snapshot, '')
+    const images = ids.map(resultId => {
+      const result = results.get(resultId)
+      if (result?.asset.kind !== 'image') throw new InputError('library.compare')
+      return {
+        resultId, assetId: result.asset.assetId, kind: 'image', specId: result.specId,
+        selected: specs.get(result.specId)?.currentResultId === resultId,
+        title: names.title(result.specId) ?? '',
+        prompt: jobs.get(result.jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 500) ?? '',
+        details: mediaDetails(metadata.get(result.asset.assetId)),
+      }
+    })
+    return { projectId: project, canvasUrl: this.canvasUrl(project), images }
+  }
+
   async creationTemplate(projectId, resultId, { signal } = {}) {
     const project = requireUuid(projectId, 'projectId')
     const id = requireUuid(resultId, 'resultId')

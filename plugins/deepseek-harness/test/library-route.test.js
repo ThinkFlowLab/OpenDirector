@@ -253,6 +253,25 @@ test('saved-work search covers the full project and combines with paging, adopti
     url: '/api/opendirector/library?' + new URLSearchParams({ project: projectId, q: 'x'.repeat(201) }),
   })
   assert.equal(tooLong.status, 400)
+  const beforeCompare = calls.length
+  const compareRequest = ids => routes.get('/api/opendirector/library')({
+    url: '/api/opendirector/library?' + new URLSearchParams({ project: projectId, compare: ids.join(',') }),
+  })
+  const pair = [records[28].resultId, records[0].resultId]
+  const compared = await compareRequest(pair)
+  assert.equal(compared.status, 200)
+  const comparison = await compared.json()
+  assert.deepEqual(comparison.images.map(image => [image.resultId, image.selected]), [[pair[0], true], [pair[1], false]])
+  assert.equal(comparison.images[0].title, records[28].title)
+  assert.equal(calls.length, beforeCompare + 1)
+  assert.doesNotMatch(JSON.stringify(comparison), /private-model|private-key/)
+  assert.equal((await compareRequest([pair[0], pair[0]])).status, 400)
+  assert.equal((await compareRequest([pair[0]])).status, 400)
+  assert.equal(calls.length, beforeCompare + 1)
+  snapshot.results[0].asset.kind = 'audio'
+  assert.equal((await compareRequest(pair)).status, 400)
+  snapshot.results[0].asset.kind = 'image'
+  assert.equal((await compareRequest([pair[0], randomUUID()])).status, 400)
   assert.ok(calls.length > 10)
   assert.equal(snapshot.generationSpecs[28].currentResultId, records[28].resultId)
 })

@@ -89,6 +89,10 @@ export function apply(ctx, config) {
         try {
           const params = new URL(request.url, 'http://localhost').searchParams
           const projectId = params.get('project')
+          if (params.has('compare')) {
+            const value = await client.compareImages(projectId, params.get('compare').split(','), { signal: request.signal })
+            return Response.json(value, { headers })
+          }
           if (projectId !== null) {
             const options = {
               kind: params.get('kind') ?? undefined, selection: params.get('selection') ?? undefined,
