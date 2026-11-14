@@ -36,6 +36,8 @@ import { REFERENCE_PORT_ICON_SIZE, REFERENCE_PORT_SIZE, referencePortDirection, 
 import { batchCreationKinds, SELECTION_PADDING, SELECTION_PORT_SIZE } from "../selectionReferences";
 
 import "../multi-selection.css";
+import { CreationRipples } from "../CreationRipples";
+import { canvasDotGrid } from "../creationRipples.ts";
 import "../node-reference-ports.css";
 import "../control-theme.css";
 import { CreationAssetList } from "../CreationAssetList.tsx";
@@ -603,8 +605,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           >
             <Background
               variant={BackgroundVariant.Dots}
-              gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
-              size={Math.max(1, 1 / zoom)}
+              gap={canvasDotGrid(zoom).gap}
+              size={canvasDotGrid(zoom).size}
               color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
               bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
             />
@@ -615,6 +617,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               }
             />
             <ViewportPortal>
+              <CreationRipples
+                documentId={doc.id}
+                nodes={doc.nodes}
+                zoom={zoom}
+                active={ready && !switching}
+              />
               {selectionGeometry && !interacting && (
                 <div
                   className="cw-multi-selection-frame"
