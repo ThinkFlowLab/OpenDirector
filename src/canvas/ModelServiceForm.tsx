@@ -17,8 +17,10 @@ import {
 } from "../backend/rules.ts";
 import { ModelCapabilityCard } from "./ModelCapabilityCard";
 import {
+  LOCAL_OMNI_PRESET_ID,
   PROVIDER_PRESETS,
   matchingConnections,
+  presetProtocol,
   providerPresetFor,
 } from "./providerPresets";
 import { CanvasIcon } from "./CanvasIcon";
@@ -71,13 +73,9 @@ export function ModelServiceForm({
   const [presetId, setPresetId] = useState(
     existing
       ? providerPresetFor(existing)
-      : kind === "video"
-        ? "vllm-omni-video"
-        : kind === "image"
-          ? "vllm-omni-image"
-          : kind === "audio"
-            ? "vllm-omni-speech"
-            : "custom",
+      : kind === "video" || kind === "image" || kind === "audio"
+        ? LOCAL_OMNI_PRESET_ID
+        : "custom",
   );
   const [modelOptions, setModelOptions] = useState<
     Record<string, ModelOptions>
@@ -269,7 +267,7 @@ export function ModelServiceForm({
       apiKey: "",
       videoAdapter: "auto",
       url: preset?.url ?? "",
-      protocol: preset?.protocol ?? PROTOCOLS[kind][0][0],
+      protocol: presetProtocol(preset, kind) ?? PROTOCOLS[kind][0][0],
       connectionType: preset?.connectionType ?? "self_hosted",
       authMode: preset?.authMode ?? "none",
       proxyMode: "direct",
