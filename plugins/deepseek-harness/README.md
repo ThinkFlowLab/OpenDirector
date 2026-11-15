@@ -6,7 +6,7 @@ Create media from a DSH conversation, follow generation progress, and open the s
 
 ## Install and connect
 
-Use DSH **0.2.2-rc.1, rc.2 or rc.3** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
+Use DSH **0.2.2-rc.1, rc.2 or rc.3** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
 
 ```sh
 npm pack
@@ -32,7 +32,7 @@ The bundle ships ready-to-run JavaScript and needs no build. Tarball installatio
 
 The package name is `@opendirector/dsh-plugin`. In DSH’s plugin manager it appears as **OpenDirector**, with a localized description and icon. This checkout provides source and an installable `.tgz`; a registry package or a plugin-index listing is a separate publication step. Until a package is published, install from a local path or a tarball rather than entering the bare package name. Once a PR’s **DSH plugin checks** run succeeds, its Linux job uploads an installable bundle and SHA-256 file under **Artifacts**, retained for seven days.
 
-In DSH rc.3, **Plugins → Experimental plugins → Custom plugin indexes** adds a **Discover** tab. It lists the index sources the user adds; installing a local plugin does not list it for everyone. A future index entry should point to a published, versioned package or release artifact, with its compatibility range and screenshots. [DSH custom plugin indexes](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/plugin-market-bundle/README.md)
+In DSH rc.3, **Plugins → Experimental plugins → Custom plugin indexes** adds a **Discover** tab. It lists the index sources the user adds; installing a local plugin does not list it for everyone. An index entry can point to a published npm version or an exact Git commit and package directory. A release tarball remains a direct installation option. [DSH custom plugin indexes](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/plugin-market-bundle/README.md)
 
 Use the same installation source to update a local tarball or linked checkout. Registry-installed bundles can use DSH’s compatible-version update controls after publication; the plugin leaves installation and updates to DSH.
 
@@ -53,9 +53,17 @@ An empty model catalog links you to OpenDirector to configure one. Connection er
 
 The interactive workflow has been verified in DSH Web with the host running in WSL Ubuntu. Native Windows checks cover plugin loading, tool execution and HTTP routes. The plugin workflow includes Linux, Windows and macOS jobs. DSH Desktop still needs an end-to-end installation and media check.
 
+## Examples and a short demo
+
+Open **Try an example** in a creation form to start with a studio image, character reference, product cover or voiceover. Saved-image actions offer examples for edits and motion; continuation has its own example. Read the description, then choose **Use this description** or **Replace current description**. Your model, image size, reference order and candidate count stay as selected. Filling an example does not generate media.
+
+Action packs offer **Example actions** for a desktop companion or a set of expressions. **Replace action list** fills three editable actions while keeping the reference image, shared description and model.
+
+See the [workflow demo and example scenarios](https://github.com/ThinkFlowLab/OpenDirector/blob/main/plugins/deepseek-harness/docs/showcase.md). To prepare a versioned tarball, checksum, Release notes and a custom plugin index together, follow the [release guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/plugins/deepseek-harness/RELEASING.md).
+
 ## Try a complete workflow
 
-In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](../../docs/guides/user-guide.md) explains model connections. The example uses that configured service.
+In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/user-guide.md) explains model connections. The example uses that configured service.
 
 In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
 

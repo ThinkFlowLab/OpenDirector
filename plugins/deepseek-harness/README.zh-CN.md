@@ -32,7 +32,7 @@ dsh plugin --profile studio add /absolute/path/to/OpenDirector/plugins/deepseek-
 
 包名是 `@opendirector/dsh-plugin`，装好后在 DSH 插件管理器中显示为 **OpenDirector**，带中英文介绍和图标。当前代码提供源码和可安装的 `.tgz`；发布到 npm 或收录到插件索引是另外的步骤。包还未发布时，请用本地目录或安装包，不要直接输入包名安装。PR 的 **DSH plugin checks** 运行成功后，Linux 任务会在 **Artifacts** 中提供安装包和 SHA-256 文件，保留七天。
 
-DSH rc.3 可在**插件 → 实验性插件 → 自定义插件索引**中开启**发现**页。它展示用户添加的索引来源；本地装好插件，不会自动进入所有人的发现页。后续索引条目需要指向已发布、带版本号的包或发布文件，并提供兼容版本和使用截图。[DSH 自定义插件索引说明](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/plugin-market-bundle/README.md)
+DSH rc.3 可在**插件 → 实验性插件 → 自定义插件索引**中开启**发现**页。它展示用户添加的索引来源；本地装好插件，不会自动进入所有人的发现页。索引条目支持已发布的 npm 版本，或固定的 Git 提交及包目录。Release 安装包可直接安装。[DSH 自定义插件索引说明](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/plugin-market-bundle/README.md)
 
 本地安装包或源码链接沿用同一来源更新。发布到 npm 后，从注册表安装的插件可使用 DSH 提供的兼容版本更新入口；安装、升级和失败回退由 DSH 处理。
 
@@ -51,6 +51,14 @@ DSH rc.3 可在**插件 → 实验性插件 → 自定义插件索引**中开启
 ## 平台验收范围
 
 交互流程已在 WSL Ubuntu 中运行的 DSH Web 验证。Windows 原生检查覆盖插件加载、工具执行和 HTTP 路由。插件检查工作流包含 Linux、Windows 和 macOS 三个系统。DSH 桌面客户端仍待安装及完整素材流程验收。
+
+## 示例和演示
+
+打开创作表单中的 **试一个例子**，可以选择工作室图片、角色参考图、产品封面或配音。已保存图片的改图和视频操作也有相应示例，续写有自己的描述。先查看内容，再点击 **填入这份描述** 或 **替换当前描述**。模型、图片尺寸、参考图顺序和候选数量会保留，填入示例不会生成素材。
+
+动作包提供桌宠基础动作和表情动作示例。点击 **替换动作列表** 可填入三个可编辑动作，保留参考图、共用描述和模型。
+
+[查看操作演示和示例场景](https://github.com/ThinkFlowLab/OpenDirector/blob/main/plugins/deepseek-harness/docs/showcase.md)。维护者可以按[发布说明](https://github.com/ThinkFlowLab/OpenDirector/blob/main/plugins/deepseek-harness/RELEASING.md)，将固定版本的安装包、校验文件、Release 文案和插件索引一起准备好。
 
 ## 试一次完整创作
 

@@ -41,7 +41,8 @@
     "media"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "engines": {
     "dsh": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3",

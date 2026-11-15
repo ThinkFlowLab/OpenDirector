@@ -5,6 +5,32 @@ window.__ModuleLoader__.load({
     const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
+      examples: 'Try an example', exampleChoose: 'Example', exampleApply: 'Use this description',
+      exampleReplace: 'Replace current description', exampleHint: 'Fills the description only. Review your model and settings, then generate when ready.',
+      exampleStudio: 'Studio by the window',
+      exampleStudioPrompt: 'Warm sunlight streams through a large studio window onto a wooden desk. A blue ceramic mug sits beside a leafy green plant. Natural light, realistic photography, shallow depth of field.',
+      exampleCharacter: 'A character for an action pack',
+      exampleCharacterPrompt: 'A small friendly robot with a rounded cream body, teal eyes and a tiny orange scarf. Full body, front view, centered, plain light background, clean silhouette, soft 3D illustration.',
+      exampleCover: 'Product cover',
+      exampleCoverPrompt: 'A single handmade ceramic mug on a pale wooden surface, soft side lighting, uncluttered warm background, realistic product photography. Leave space above for a title; no text in the image.',
+      exampleLamp: 'Add a desk lamp',
+      exampleLampPrompt: 'Keep the original composition and objects. Add a brass desk lamp on the left side of the wooden desk. Match the existing perspective, light and shadows.',
+      exampleEvening: 'Change the lighting',
+      exampleEveningPrompt: 'Keep the same subject, layout and camera position. Change the light to a calm blue evening with a warm lamp nearby. Preserve the identity and details of the original subject.',
+      exampleWave: 'A gentle greeting',
+      exampleWavePrompt: 'The character gently waves one hand in greeting, then returns to the starting pose. Keep the same character, framing and background. Fixed camera, smooth restrained movement.',
+      examplePush: 'Slow camera move',
+      examplePushPrompt: 'The camera moves slowly toward the main subject. Soft natural light and a gentle background breeze. Keep the original layout, objects and visual style.',
+      exampleContinue: 'Continue the moment',
+      exampleContinuePrompt: 'Continue smoothly from the end of the previous shot. Keep the same subject, setting, camera direction and lighting. Let the action settle naturally.',
+      exampleSpeech: 'A short introduction',
+      exampleSpeechPrompt: 'A quiet corner, a warm cup, and a little room to create. Welcome to our studio.',
+      exampleNarration: 'A character introduction',
+      exampleNarrationPrompt: 'Meet our little robot. It likes to wave hello, think through new ideas, and take a well-earned rest.',
+      actionExamples: 'Example actions', actionExamplesHint: 'Replaces the action list. Keeps the shared description, reference image and model.',
+      actionExampleApply: 'Replace action list', actionExampleStarter: 'Desktop companion',
+      actionExampleMood: 'Expressions', packHappy: 'Happy', packHappyPrompt: 'Show a happy expression with a small cheerful bounce, keep the same character and camera framing.',
+      packSleep: 'Rest', packSleepPrompt: 'Close the eyes and rest calmly, keep the same character, pose scale and camera framing.',
       connection: 'Connection check', connectionHint: 'Check your OpenDirector service and available model connections.',
       connectionChecking: 'Checking connection…', connectionReady: 'Connected',
       connectionPartial: 'Some checks need attention', connectionFailed: 'Could not reach OpenDirector',
@@ -147,6 +173,32 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      examples: '试一个例子', exampleChoose: '创作示例', exampleApply: '填入这份描述',
+      exampleReplace: '替换当前描述', exampleHint: '只填入描述。确认模型和参数后，再点击生成。',
+      exampleStudio: '窗边工作室',
+      exampleStudioPrompt: '阳光透过工作室的大窗洒在木桌上，桌上有一只蓝色陶瓷杯，旁边是一盆绿植。暖色自然光，真实摄影质感，浅景深。',
+      exampleCharacter: '动作包的角色原图',
+      exampleCharacterPrompt: '一个友好的小机器人，圆润的奶油色身体，青绿色眼睛，系着一条小橙色围巾。全身正面，居中，浅色纯背景，轮廓清晰，柔和的三维插画风格。',
+      exampleCover: '产品封面',
+      exampleCoverPrompt: '一只手工陶瓷杯放在浅色木桌上，柔和的侧光，温暖简洁的背景，真实产品摄影。画面上方留出标题空间，图片中不要出现文字。',
+      exampleLamp: '加一盏台灯',
+      exampleLampPrompt: '保留原来的构图和物体，在木桌左侧加一盏黄铜台灯。让透视、光线和阴影与原图一致。',
+      exampleEvening: '换成傍晚光线',
+      exampleEveningPrompt: '保留原图的主体、布局和机位，改为安静的蓝调傍晚光线，旁边有一盏暖色灯。保持主体身份和细节。',
+      exampleWave: '角色挥手',
+      exampleWavePrompt: '角色轻轻挥手打招呼，然后回到起始姿势。保持同一个角色、构图和背景，固定镜头，动作平滑自然。',
+      examplePush: '缓慢推进',
+      examplePushPrompt: '镜头缓缓向主体推进，自然光柔和，背景有轻微的风。保留原有布局、物体和视觉风格。',
+      exampleContinue: '延续这个瞬间',
+      exampleContinuePrompt: '从上一段结尾平滑接续，保持同一个主体、场景、镜头方向和光线，让动作自然收束。',
+      exampleSpeech: '工作室开场白',
+      exampleSpeechPrompt: '一处安静的角落，一杯热饮，一点创作的空间。欢迎来到我们的工作室。',
+      exampleNarration: '角色介绍',
+      exampleNarrationPrompt: '这是我们的小机器人。它喜欢挥手打招呼，认真思考新点子，也会在忙完以后好好休息。',
+      actionExamples: '试用示例动作', actionExamplesHint: '替换动作列表，保留共用描述、参考图和模型。',
+      actionExampleApply: '替换动作列表', actionExampleStarter: '桌宠基础动作',
+      actionExampleMood: '表情动作', packHappy: '开心', packHappyPrompt: '露出开心的表情，轻轻跳一下，保持同一个角色和镜头构图。',
+      packSleep: '休息', packSleepPrompt: '闭眼安静休息，保持同一个角色、身体比例和镜头构图。',
       connection: '连接检查', connectionHint: '查看 OpenDirector 服务和可用的模型连接。',
       connectionChecking: '正在检查连接…', connectionReady: '连接正常',
       connectionPartial: '部分检查需要处理', connectionFailed: '未能连接 OpenDirector',
@@ -1258,6 +1310,7 @@ window.__ModuleLoader__.load({
                 onChange: e => change('durationSeconds', Number(e.target.value)),
               }, ...video.durations.map(seconds => h('option', { key: seconds, value: seconds }, t('duration').replace('{seconds}', seconds)))))),
             catalog && !choices.length && h('p', null, t('noModels')),
+            !locked && h(ActionExamples, { t, onApply: actions => change('actions', actions) }),
             ...form.actions.map((action, index) => h('div', { key: index, className: 'od-pack-action-input' },
               h('label', null, t('packActionName'), h('input', { required: true, maxLength: 80, value: action.name,
                 onChange: e => change('actions', form.actions.map((value, i) => i === index ? { ...value, name: e.target.value } : value)) })),
@@ -1327,6 +1380,38 @@ window.__ModuleLoader__.load({
       if (submissionMessages.has(code)) return submissionMessages.get(code)
       if (code === 'creation.output') return 'chooseOutput'
       return 'failedToSubmit'
+    }
+
+    function ExamplePicker({ mode, t, prompt, onApply }) {
+      const [choice, setChoice] = useState('')
+      const ids = mode === 'audio' ? ['Speech', 'Narration'] : mode === 'edit' ? ['Lamp', 'Evening']
+        : mode === 'first_frame' ? ['Wave', 'Push'] : mode === 'continuation' ? ['Continue']
+          : ['Studio', 'Character', 'Cover']
+      const selected = ids.includes(choice) ? choice : ids[0]
+      return h('details', { className: 'od-settings', 'data-opendirector-examples': mode },
+        h('summary', null, t('examples')),
+        h('div', { style: { display: 'grid', gap: '.5rem', marginTop: '.6rem' } },
+          h('label', null, t('exampleChoose'), h('select', {
+            'aria-label': t('exampleChoose'), value: selected, onChange: e => setChoice(e.target.value),
+          }, ...ids.map(id => h('option', { key: id, value: id }, t('example' + id))))),
+          h('p', { style: { margin: 0, whiteSpace: 'pre-wrap', fontSize: '.88em' } }, t('example' + selected + 'Prompt')),
+          h('small', { className: 'od-hint' }, t('exampleHint')),
+          h('div', { style: row }, button(t(prompt.trim() ? 'exampleReplace' : 'exampleApply'),
+            () => onApply(t('example' + selected + 'Prompt'))))))
+    }
+
+    function ActionExamples({ t, onApply }) {
+      const [choice, setChoice] = useState('starter')
+      const keys = choice === 'starter' ? ['Idle', 'Wave', 'Think'] : ['Happy', 'Think', 'Sleep']
+      return h('details', { className: 'od-settings', 'data-opendirector-action-examples': '' },
+        h('summary', null, t('actionExamples')),
+        h('div', { style: { display: 'grid', gap: '.5rem', marginTop: '.6rem' } },
+          h('select', { 'aria-label': t('actionExamples'), value: choice, onChange: e => setChoice(e.target.value) },
+            h('option', { value: 'starter' }, t('actionExampleStarter')), h('option', { value: 'mood' }, t('actionExampleMood'))),
+          h('span', null, keys.map(key => t('pack' + key)).join(' · ')),
+          h('small', { className: 'od-hint' }, t('actionExamplesHint')),
+          h('div', { style: row }, button(t('actionExampleApply'),
+            () => onApply(keys.map(key => ({ name: t('pack' + key), prompt: t('pack' + key + 'Prompt') })))))))
     }
 
     function GenerationDialog({ source, videoMode, existingJob, templateOf, t, onClose }) {
@@ -1679,6 +1764,10 @@ window.__ModuleLoader__.load({
           continuation && h('small', null, t('continuationHint')),
           source && !videoMode && h(ReferencePicker, { projectId: source.projectId, references, setReferences, limit: referenceLimit, locked, t }),
           tooManyReferences && h('p', { role: 'alert' }, t('referencesChanged')),
+          !locked && h(ExamplePicker, {
+            mode: form.kind === 'audio' ? 'audio' : continuation ? 'continuation' : videoMode ? 'first_frame' : source ? 'edit' : 'image',
+            prompt: form.prompt, t, onApply: value => update('prompt', value),
+          }),
           field(form.kind === 'audio' ? 'speechText' : continuation ? 'shot' : videoMode ? 'motion' : source ? 'brief' : 'prompt', h('textarea', {
             required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
             value: form.prompt, onChange: event => update('prompt', event.target.value),

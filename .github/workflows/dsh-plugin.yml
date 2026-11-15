@@ -61,6 +61,10 @@ jobs:
             assert.ok(manifest.version && manifest.engines?.dsh)
             const sha256 = createHash('sha256').update(readFileSync(filename)).digest('hex')
             writeFileSync(filename + '.sha256', sha256 + '  ' + filename + '\n')
+            if (process.env.RUNNER_OS === 'Linux') {
+              execFileSync(process.execPath, ['scripts/prepare-release.mjs', '--tarball', filename,
+                '--output', process.env.RUNNER_TEMP + '/opendirector-dsh-release'], { stdio: 'inherit' })
+            }
           } finally {
             unlinkSync('package-check.json')
           }
@@ -70,9 +74,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: opendirector-dsh-plugin-${{ github.sha }}
-          path: |
-            plugins/deepseek-harness/*.tgz
-            plugins/deepseek-harness/*.tgz.sha256
+          path: ${{ runner.temp }}/opendirector-dsh-release/*
           if-no-files-found: error
           retention-days: 7
 

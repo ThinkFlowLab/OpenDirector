@@ -46,6 +46,7 @@ test('locale metadata identifies OpenDirector with matching user-facing descript
 
   for (const locale of [en, zh]) {
     assert.equal(locale.meta.title, 'OpenDirector')
+    await assertFile(resolve(packageRoot, locale.meta.detail), 'localized detail document')
     assert.equal(typeof locale.meta.description, 'string')
     assert.ok(locale.meta.description.trim().length > 0)
   }
