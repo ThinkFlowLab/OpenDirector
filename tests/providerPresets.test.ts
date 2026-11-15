@@ -107,6 +107,51 @@ test("saved Beijing workspace connections retain their preset", () => {
   assert.equal(providerPresetFor({ ...model, kind: "image", url: workspace }), "custom");
 });
 
+test("Moonshot Kimi offers mainland chat without pinning the model list", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "kimi");
+  assert.ok(preset);
+  assert.deepEqual(preset.kinds, ["agent"]);
+  assert.equal(preset.url, "https://api.moonshot.cn/v1");
+  assert.equal(preset.connectionType, "api");
+  assert.equal(preset.protocol, "openai");
+  assert.equal(preset.authMode, "bearer");
+  assert.equal(preset.logoOrganization, "moonshotai");
+  // Omitting modelsByKind keeps live /models discovery, so the picker lists the
+  // models the entered key can actually reach instead of a hardcoded snapshot.
+  assert.equal(preset.modelsByKind, undefined);
+  const previous = getActiveLocale();
+  try {
+    for (const [locale, label] of [["zh-CN", "月之暗面 Kimi"], ["en-US", "Moonshot Kimi"]] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("agent").find((item) => item.id === preset.id)?.name, label);
+    }
+  } finally {
+    setActiveLocale(previous);
+  }
+  assert.equal(providerOptions("agent").some((item) => item.id === "kimi"), true);
+  for (const kind of ["image", "video", "audio"] as const)
+    assert.equal(providerOptions(kind).some((item) => item.id === "kimi"), false);
+});
+
+test("saved Moonshot connections retain their preset on the mainland endpoint only", () => {
+  const model: ModelConfig = {
+    id: "saved-kimi", kind: "agent", modelId: "kimi-k3", connectionType: "api",
+    protocol: "openai", authMode: "bearer", url: "https://api.moonshot.cn/v1",
+    inputRules: { profile: "agent", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] },
+  };
+  assert.equal(providerPresetFor(model), "kimi");
+  assert.equal(providerPresetFor({ ...model, url: "https://api.moonshot.cn/v1/" }), "kimi");
+  for (const url of [
+    // The international endpoint is a separately tracked row in #240.
+    "https://api.moonshot.ai/v1",
+    "https://api.moonshot.cn/v1/chat/completions",
+    "https://proxy.example.org/v1",
+  ]) {
+    assert.equal(providerPresetFor({ ...model, url }), "custom");
+  }
+  assert.equal(providerPresetFor({ ...model, kind: "image", url: "https://api.moonshot.cn/v1" }), "custom");
+});
+
 test("MOSS presets offer the supported image and speech models by kind", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "moss");
   assert.ok(preset);

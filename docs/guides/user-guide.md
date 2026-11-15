@@ -29,6 +29,8 @@ A service can provide multiple models within the same category. After entering i
 
 The service URL and Model ID must match your model service. Self-hosted service URLs typically include `/v1`; use the model name actually exposed by the service as the Model ID. For third-party services, follow the information provided by the service.
 
+For Kimi assistant chat, choose **Moonshot Kimi** and enter a mainland API key from the Moonshot open platform. The preset fills `https://api.moonshot.cn/v1`; **Fetch models** then lists the models that key can reach, such as `kimi-k3` and `kimi-k3.1-pro`. This preset does not cover the international endpoint; add that one as a custom OpenAI-compatible service with its own base URL. [Moonshot platform documentation](https://platform.moonshot.cn/docs)
+
 For Qwen assistant chat, choose **Alibaba Cloud Model Studio (Beijing)** and enter a Beijing API key. The preset selects `qwen3.8-max`. You can keep the shared Beijing URL or enter your Beijing workspace's OpenAI-compatible Base URL ending in `/compatible-mode/v1`. [Alibaba Cloud endpoint guide](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope)
 
 For a self-hosted chat service, allow at least 8192 tokens of context: the
