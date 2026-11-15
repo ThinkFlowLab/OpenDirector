@@ -24,6 +24,7 @@ from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthR
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.bigmodel_image import validate_bigmodel_image
 from opendirector.domain.minimax_image import validate_minimax_image_reference
+from opendirector.domain.minimax_speech import validate_minimax_speech_input
 from opendirector.media import heif_type
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
@@ -263,10 +264,55 @@ class MossSpeech(ModelAdapter):
 
     async def download(self, config, url):
         data = await _download_moss_result(self, config, url)
-        mpeg_frame = len(data) >= 4 and data[0] == 0xff and data[1] & 0xe0 == 0xe0 and data[1] & 0x06
-        if not data.startswith(b'ID3') and not mpeg_frame:
+        if not _is_mp3(data):
             raise protocol_failure('download')
         return data
+
+
+def _is_mp3(data):
+    mpeg_frame = len(data) >= 4 and data[0] == 0xff and data[1] & 0xe0 == 0xe0 and data[1] & 0x06
+    return data.startswith(b'ID3') or bool(mpeg_frame)
+
+
+class MinimaxSpeech(ModelAdapter):
+    """MiniMax synchronous T2A v2, non-streaming, answering with a result URL."""
+    capabilities = frozenset({'audio.speech'})
+
+    async def speech(self, config, request: SpeechRequest, *, result_ready=None) -> MediaResult:
+        validate_minimax_speech_input(request.text, request.voice)
+        payload = {'model': config['modelId'], 'text': request.text, 'stream': False,
+                   'voice_setting': {'voice_id': request.voice}, 'audio_setting': {'format': 'mp3'},
+                   'output_format': 'url'}
+
+        async def submit():
+            secrets = (config.get('apiKey', ''),)
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/t2a_v2'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets, limit=1024 * 1024))
+            # Errors arrive as HTTP 200 with a nonzero base_resp.status_code.
+            status = value['base_resp']['status_code']
+            if type(status) is not int:
+                raise protocol_failure('submit')
+            if status != 0:
+                raise provider_failure({'code': status, 'request_id': value.get('trace_id')}, stage='submit',
+                                       http_status=200, secrets=secrets, provider='minimax')
+            if type(value['data']['status']) is not int or value['data']['status'] != 2:
+                raise protocol_failure('submit')
+            return _result_url(value['data']['audio'], 'submit')
+
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('mp3', url)
+        return await self.download(config, url)
+
+    async def download(self, config, url):
+        # The signed result URL is public storage: it never receives the API key.
+        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(
+            config, 'mp3', url, public_only=True)
+        if not _is_mp3(data):
+            raise protocol_failure('download')
+        return MediaResult(data, 'mp3')
 
 
 class MinimaxH3Images(ModelAdapter):
@@ -836,6 +882,8 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return MossImages(transport, poll_interval)
     if profile == 'moss-speech':
         return MossSpeech(transport, poll_interval)
+    if profile == 'minimax-speech':
+        return MinimaxSpeech(transport, poll_interval)
     if profile == 'zhipu-speech':
         return ZhipuSpeech(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':

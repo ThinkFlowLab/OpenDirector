@@ -48,6 +48,37 @@ await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1"
 const errors = [];
 page.on("pageerror", error => errors.push(error.message));
 await mkdir("test-results/heif", { recursive: true });
+// A reload restores the last persisted viewport, which may not include a node created
+// off-screen through the client. Fit all content the way a user would (Shift+1) and
+// wait until the target sits inside the canvas and the viewport has stopped moving.
+async function reveal(id) {
+  await page.getByText(/^(Saved on this device|已保存到本机)$/).waitFor();
+  const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+  await node.waitFor();
+  for (let attempt = 1; ; attempt++) {
+    await page.locator(".cw-workspace").focus();
+    await page.keyboard.press("Shift+1");
+    try {
+      await page.waitForFunction(id => {
+        const pane = document.querySelector(".react-flow")?.getBoundingClientRect();
+        const target = document.querySelector(`.react-flow__node[data-id="${id}"]`)?.getBoundingClientRect();
+        const transform = document.querySelector(".react-flow__viewport")?.style.transform;
+        const stable = transform === window.heifRevealTransform;
+        window.heifRevealTransform = transform;
+        return Boolean(pane && target && stable && target.width > 0 && target.left >= pane.left &&
+          target.top >= pane.top && target.right <= pane.right && target.bottom <= pane.bottom);
+      }, id, { timeout: 5000 });
+      return node;
+    } catch (error) {
+      if (attempt === 3) {
+        const state = await page.evaluate(id => ({ transform: document.querySelector(".react-flow__viewport")?.style.transform,
+          pane: document.querySelector(".react-flow")?.getBoundingClientRect().toJSON(),
+          node: document.querySelector(`.react-flow__node[data-id="${id}"]`)?.getBoundingClientRect().toJSON() }), id);
+        throw new Error(`node ${id} stayed outside the canvas after fitting: ${JSON.stringify(state)}`, { cause: error });
+      }
+    }
+  }
+}
 try {
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
@@ -162,7 +193,7 @@ try {
       return { itemId, specId };
     }, { projectId, model, sources: orderedAssets });
     await page.reload();
-    await page.locator(`.react-flow__node[data-id="${created.itemId}"]`).click();
+    await (await reveal(created.itemId)).click();
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     const completed = await until(snapshot, value => value.jobs.some(job => job.inputSnapshot.spec.id === created.specId && job.status === "succeeded"), "image edit");
     const job = completed.jobs.find(job => job.inputSnapshot.spec.id === created.specId);
@@ -200,7 +231,7 @@ try {
     return itemId;
   }, { projectId, assets: originals });
   await page.reload();
-  await page.locator(`.react-flow__node[data-id="${timelineId}"]`).click({ button: "right" });
+  await (await reveal(timelineId)).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Open editor", exact: true }).click();
   await page.locator(".cw-timeline-dialog").waitFor();
   const [timelineDownload] = await Promise.all([

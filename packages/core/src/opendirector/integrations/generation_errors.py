@@ -96,6 +96,11 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         if code in {'1300', '1301'}:
             message, suggestion = ('供应商判定提示词或参考图片违反内容政策，已拒绝生成。',
                                    '请调整提示词或参考素材后再生成；当前输入和已有结果保留。')
+    if provider == 'minimax':
+        # MiniMax open-platform base_resp.status_code values, delivered with HTTP 200.
+        category = {'1001': 'temporary', '1002': 'rate_limit', '1039': 'rate_limit', '1004': 'authentication',
+                    '2049': 'authentication', '1008': 'quota', '1042': 'input', '2013': 'input'}.get(code, category)
+        message, suggestion = _REASONS[category]
     diagnostic = error.get('message', '')
     diagnostic = diagnostic[:8192].lower() if isinstance(diagnostic, str) else ''
     if http_status in {400, 422} and category == 'input':
@@ -105,7 +110,8 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         elif re.search(r'(?:not support|unsupported|not supported)', diagnostic) and re.search(r'(?:reference_(?:image|video|audio)|image_url|video_url|audio_url|input_audio)', diagnostic):
             category, message = 'reference', '供应商拒绝了参考类型或输入组合。'
             suggestion = '请核对参考类型和生成模式，或选择其他已适配模型；当前输入和已有结果保留。'
-    if name == 'voice_not_found' or (code == '1214' and diagnostic.startswith('音色不存在')):
+    if (name == 'voice_not_found' or provider == 'minimax' and code == '2054'
+            or code == '1214' and diagnostic.startswith('音色不存在')):
         category, message = 'input', '所选音色不存在或不可用。'
         suggestion = '请检查音色 ID 是否属于当前账户可用的音色。'
     elif name == 'inputimagesensitivecontentdetected.privacyinformation':

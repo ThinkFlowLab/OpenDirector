@@ -19,6 +19,7 @@ from opendirector.infrastructure.generation_results import GenerationResults
 from opendirector.infrastructure.local_projects import LocalProjects, write_json
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.volcengine import VolcengineGeneration
+from opendirector.integrations.providers import GenerationProviders
 from opendirector_api.main import create_app
 
 
@@ -155,6 +156,54 @@ def test_image_download_recovers_from_private_locator_without_resubmitting(conte
         assert sum(call.method == 'POST' for call in calls) == 1 and len(calls) == 5
         assert not cache.directory.exists()
         await restarted.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('configuration_change', ['changed', 'deleted'])
+@pytest.mark.parametrize('redirect', [False, True])
+def test_self_hosted_download_recovery_keeps_origin_without_credentials_or_redirects(context, configuration_change, redirect):
+    store, session, project, configs = context
+    config = configs.save('image', 'http://127.0.0.1:9000/v1', 'custom-image', 'original-key',
+                          connection_type='self_hosted', protocol='openai')
+    calls, healthy = [], False
+    def handle(request):
+        calls.append(request)
+        if request.method == 'POST':
+            return httpx.Response(200, json={'data': [{'url': 'http://127.0.0.1:9000/content'}]})
+        if not healthy: raise httpx.ReadTimeout('download outage', request=request)
+        if redirect and request.url.path.endswith('/content'):
+            return httpx.Response(302, headers={'Location': '/result.png'})
+        return httpx.Response(200, content=png())
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0, retry_delays=(0, 0))
+    async def run():
+        nonlocal healthy
+        first = CreationGeneration(store, configs, provider)
+        try:
+            first._launch(*prepared(first, project, session, config))
+            await settled(first)
+            assert store.snapshot(project['id']).jobs[0].recovery == 'download'
+        finally:
+            await first.close()
+        if configuration_change == 'deleted':
+            configs.delete(config['id'])
+        else:
+            configs.save('image', 'http://127.0.0.1:9001/v1', 'replacement', 'replacement-key', config['id'],
+                         connection_type='self_hosted', protocol='openai')
+        healthy = True
+        before = len(calls)
+        restarted = CreationGeneration(store, configs, provider)
+        try:
+            await restarted.start()
+            await settled(restarted)
+            snapshot = store.snapshot(project['id'])
+            assert snapshot.jobs[0].status == ('failed' if redirect else 'succeeded')
+            assert len(snapshot.assets) == (0 if redirect else 1)
+            assert len(calls) == before + 1
+            assert str(calls[-1].url) == 'http://127.0.0.1:9000/content'
+            assert 'authorization' not in calls[-1].headers
+            assert sum(call.method == 'POST' for call in calls) == 1
+        finally:
+            await restarted.close()
     asyncio.run(run())
 
 

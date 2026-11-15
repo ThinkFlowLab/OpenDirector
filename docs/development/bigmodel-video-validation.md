@@ -95,3 +95,16 @@ Validation on the merged tree:
 - Generated-contract consistency, all four import boundaries, dependency consistency and diff checks passed. Bundled OpenCode reports 1.19.5.
 - The shared pre-commit configuration passed for the entire PR diff; hooks without matching files were skipped. Its initial actionlint installation hit a timeout at the default Go module proxy; retrying with an accessible module proxy completed successfully.
 - The existing build chunk-size and Starlette/httpx deprecation warnings remain. Skipped tests and browser journeys were not newly validated. No paid generation request was submitted; the earlier live evidence retains its original scope.
+
+## Main sync after the renewed conflict report
+
+Merged main `47fc68ce0f5d439650a60234cf868f4e34424eec` after the next conflict report. Regenerating the contracts combines the upstream MiniMax speech error codes with the CogVideoX-3 codes. The upstream speech adapter, model presets, accepted-snapshot download recovery and text-reference prompt behavior remain intact, as does the shared BigModel watermark-waiver note.
+
+The first production build failed on macOS because the upstream extensionless `../CreationRipples` import resolved to `creationRipples.ts` instead of `CreationRipples.tsx`. The exact import also exists on main. Specifying `.tsx` explicitly fixes module resolution without changing the component or its behavior; the subsequent production build passed.
+
+Validation on this merged tree:
+
+- Full Python suite: 1,997 passed, 100 skipped, with the existing Starlette/httpx deprecation warning.
+- All 818 frontend tests passed. Production build, i18n (3,014 keys; zero problems), browser-locale and browser-manifest checks passed. Bundled OpenCode reports 1.19.5.
+- Generated contracts, all four import boundaries, dependency consistency, the shared static hooks over the entire PR diff and diff checks passed; hooks without matching files were skipped.
+- No additional paid provider call or browser journey was run. The earlier live-service evidence retains its original scope, and the production build retains its chunk-size warning.

@@ -56,7 +56,7 @@ def server(posts, reply, authorization='Bearer token'):
     return handle
 
 
-def run_image(project, reply, references=(), *, self_hosted=False):
+def run_image(project, reply, references=(), *, self_hosted=False, prompt='樱花校门前的少女'):
     store, value, session, _ = project
     configs = ModelConfigs(store.local.repository)
     config = (configs.save('image', ZIMAGE['url'], ZIMAGE['modelId'], '', connection_type='self_hosted') if self_hosted
@@ -67,7 +67,7 @@ def run_image(project, reply, references=(), *, self_hosted=False):
         manager.provider = GenerationProviders(manager.store, httpx.MockTransport(server(posts, reply, None if self_hosted else 'Bearer token')), poll_interval=0)
         try:
             manager._launch(*prepared(manager, (store, value['id'], session), config,
-                prompt='樱花校门前的少女', parameters=dict(aspectRatio='16:9'), references=references))
+                prompt=prompt, parameters=dict(aspectRatio='16:9'), references=references))
             await asyncio.gather(*(job.future for job in manager.jobs.values()))
             return tasks(manager, value['id'])[-1]
         finally:
@@ -93,6 +93,36 @@ def test_generates_a_16_9_png_with_text_references_inlined(project):
     assert 'image' not in payload and 'watermark' not in payload
     asset = project[3].record(project[3].assets.get(value['id'], task['assetId']))
     assert asset['kind'] == 'image' and (asset['width'], asset['height']) == (16, 12)
+
+
+def test_blank_prompt_implicitly_uses_the_connected_text_reference(project):
+    store, value, session, _ = project
+    note = CreationToolAssets(store).import_file(value['id'], str(uuid4()), '用例.md', '水彩风灯塔，清晨'.encode(), session)
+    reply = httpx.Response(200, json={'created': 0, 'data': [{'b64_json': base64.b64encode(png()).decode()}]})
+    task, posts = run_image(project, reply, [note['id']], prompt='')
+    assert task['status'] == 'succeeded', (task['error'], task['errorDetails'])
+    [payload] = posts
+    # The text reference is the whole instruction, without a label or leading blank line.
+    assert payload['prompt'] == '水彩风灯塔，清晨'
+
+
+def test_only_mentioned_text_references_keep_their_label():
+    from opendirector.integrations.reference_inputs import generation_references
+    brief, style = str(uuid4()), str(uuid4())
+    overrides = {brief: ('水彩风灯塔'.encode(), {'id': brief, 'name': '用例.md', 'type': 'text/markdown', 'fingerprint': ''}),
+                 style: ('柔和粉色'.encode(), {'id': style, 'name': '风格.md', 'type': 'text/markdown', 'fingerprint': ''})}
+    task = {'kind': 'image', 'projectId': str(uuid4()), 'prompt': '', 'referenceIds': [style, brief],
+            'promptContent': [{'type': 'text', 'text': '按'}, {'type': 'reference', 'assetId': style, 'name': '风格.md'},
+                              {'type': 'text', 'text': '画'}]}
+    prepared = generation_references(None, task, ZIMAGE, overrides=overrides)
+    # The @-mentioned style keeps the label its inline mention names; the connected brief does not.
+    assert prepared['prompt'] == '按［参考1：风格.md］画\n\n参考1：风格.md\n柔和粉色\n\n水彩风灯塔'
+
+
+def test_blank_prompt_without_a_text_reference_is_still_rejected(project):
+    reply = httpx.Response(200, json={'created': 0, 'data': [{'b64_json': base64.b64encode(png()).decode()}]})
+    with pytest.raises(ProjectError, match='请填写生成提示词'):
+        run_image(project, reply, prompt='')
 
 
 @pytest.mark.parametrize('parameters', [

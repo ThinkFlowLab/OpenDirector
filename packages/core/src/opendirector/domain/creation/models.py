@@ -30,7 +30,7 @@ class ImageOutput(Contract):
 
 
 class VoiceLibraryCapabilities(Contract):
-    provider: Literal['vllm_omni', 'moss', 'zhipu'] = Field(description='Voice registry protocol.')
+    provider: Literal['vllm_omni', 'moss', 'minimax', 'zhipu'] = Field(description='Voice registry protocol.')
     connectionId: str = Field(min_length=1, max_length=200, description='Opaque service, endpoint and account identity.')
     requiresTranscript: bool = Field(description='Registered voice must have a reference transcript.')
     acceptsTranscript: bool = Field(default=False, description='Registry stores an optional reference transcript when one is supplied.')

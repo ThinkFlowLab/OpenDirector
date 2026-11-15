@@ -19,6 +19,19 @@ function sourceResource(node: CanvasNode): CanvasResource {
   };
 }
 
+/** A clip keeps the media it was assembled with. Regenerating the source node
+ * afterwards leaves the link naming a node that no longer produces that media,
+ * and an exported archive carries the pair as it stood. The clip still owns its
+ * media, so such a link is stale rather than corrupt: sending it asks the
+ * domain to record a relation it would refuse. */
+export function staleAssembly(
+  source: CanvasNode | undefined,
+  resource: CanvasResource,
+) {
+  const media = source ? sourceResource(source).src : undefined;
+  return Boolean(media && resource.src && resource.src !== media);
+}
+
 export function assemblyIssue(source: CanvasNode, target: CanvasNode) {
   if (target.type === "subject") {
     const subject = target.data.subject;

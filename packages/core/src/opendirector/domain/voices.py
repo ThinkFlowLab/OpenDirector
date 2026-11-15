@@ -4,6 +4,7 @@ import json
 import re
 from urllib.parse import urlsplit, urlunsplit
 
+from .minimax_speech import MINIMAX_SPEECH_MODELS, is_minimax_speech
 from .moss_speech import is_moss_speech
 from .zhipu_speech import is_zhipu_speech
 from .projects import ProjectError
@@ -46,21 +47,28 @@ def voice_library_capabilities(config):
     if config.get('kind') != 'audio' or config.get('protocol') != 'openai':
         return None
     name = config.get('modelId', '').rsplit('/', 1)[-1].lower().replace('_', '-')
+    moss, minimax = is_moss_speech(config), is_minimax_speech(config)
+    if minimax and config.get('modelId') not in MINIMAX_SPEECH_MODELS:
+        return None
     if is_zhipu_speech(config):
         return _scoped(config, 'zhipu', dict(
             requiresTranscript=False, acceptsTranscript=True, requiresReferenceAudio=False, supportsUploadedVoices=True,
             referenceEmbeddingDimension=None, canDelete=True, maxBytes=10 * 1024 * 1024,
             formats=['wav', 'mp3'], minSeconds=3, maxSeconds=30))
-    moss = is_moss_speech(config)
     cosyvoice = name.startswith(('cosyvoice3', 'fun-cosyvoice3'))
     fish_speech = name.startswith('fish-speech') or name in {'s2-pro', 'drama-3', 'drama-3-int4'}
     # Explicit served-model families; an arbitrary compatible endpoint is not
     # evidence that the server implements the vLLM voice registry.
     known = cosyvoice or fish_speech or name.startswith(('moss-tts', 'qwen3-tts', 'fishaudio',
                              'index-tts', 'indextts', 'omnivoice', 'higgs-audio', 'glm-tts', 'ming-', 'drama3'))
-    if not moss and not (config.get('connectionType') == 'self_hosted' and known):
+    if not moss and not minimax and not (config.get('connectionType') == 'self_hosted' and known):
         return None
-    provider = 'moss' if moss else 'vllm_omni'
+    provider = 'moss' if moss else 'minimax' if minimax else 'vllm_omni'
+    if minimax:
+        # Read-only system voices. MiniMax cloning and voice design are not adapted.
+        return _scoped(config, provider, dict(requiresTranscript=False, acceptsTranscript=False,
+                    requiresReferenceAudio=False, supportsUploadedVoices=False, referenceEmbeddingDimension=None,
+                    canDelete=False, maxBytes=10 * 1024 * 1024, formats=[], minSeconds=None, maxSeconds=None))
     # Upstream vllm_omni/entrypoints/openai/tts_adapters/moss_tts.py:
     # validate() requires reference audio for standard/realtime/local/Nano.
     # Local-Transformer ref_text is optional continuation conditioning; Drama3

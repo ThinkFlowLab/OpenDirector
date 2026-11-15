@@ -4,7 +4,7 @@ Mutations work on a private draft. The repository validates and publishes the
 entire transaction once, including versions, receipt and outbox event.
 """
 import asyncio
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
@@ -236,6 +236,59 @@ def reference_evidence(snapshot, spec, reference):
     return 'used' if old and identity(old) == identity(now) else 'pending'
 
 
+def _timeline_clip_ids(document):
+    if not document or document.get('kind') != 'timeline':
+        return set()
+    return {clip['id'] for track in document['data']['tracks'] for clip in track['clips']}
+
+
+def _asset_key(ref):
+    return (str(ref.assetId), ref.revision, ref.fingerprint, ref.kind)
+
+
+def bind_unique_timeline_sources(data, document, *, new_slot_ids):
+    """Attach assembly provenance for new timeline clips with one visible source.
+
+    Multiple visible nodes that share the same asset are left unconnected. Existing
+    connections and already saved clips are left unchanged. External imports with
+    no canvas node stay unconnected.
+    """
+    if document.get('kind') != 'timeline' or not new_slot_ids:
+        return
+    snapshot = ProjectSnapshot.model_validate(data)
+    visible = visible_item_ids(snapshot)
+    connections = list(document.get('inputConnections') or [])
+    used_sources = {str(value['sourceId']) for value in connections}
+    used_slots = {value['slotId'] for value in connections}
+    by_asset = {}
+    for item in snapshot.canvasItems:
+        if item.id not in visible:
+            continue
+        asset = current_asset(snapshot, item)
+        if asset is None or item.kind != asset.kind or 'timeline' not in downstream_kinds(snapshot, item):
+            continue
+        try:
+            CreationCanvas._editable(data, item.id)
+        except ContractError:
+            continue
+        by_asset.setdefault(_asset_key(asset_ref(asset)), []).append(item)
+    for track in document['data']['tracks']:
+        for clip in track['clips']:
+            if clip['id'] not in new_slot_ids or clip['id'] in used_slots:
+                continue
+            candidates = by_asset.get(_asset_key(AssetRef.model_validate(clip['resource']['asset'])), [])
+            if len(candidates) != 1:
+                continue
+            source = candidates[0]
+            if str(source.id) in used_sources:
+                continue
+            connections.append(dict(id=str(uuid4()), sourceId=str(source.id), slotId=clip['id'],
+                                    asset=asset_ref(current_asset(snapshot, source)).model_dump(mode='json')))
+            used_sources.add(str(source.id))
+            used_slots.add(clip['id'])
+    document['inputConnections'] = connections
+
+
 class CreationCanvas:
     def __init__(self, projects):
         self.projects = projects
@@ -267,6 +320,15 @@ class CreationCanvas:
             previous = previous_specs.get(spec['id'])
             if spec['promptContent'] is not None and (previous is None or any(spec[key] != previous[key] for key in ('prompt', 'promptContent'))):
                 spec['prompt'] = prompt_projection(data, spec)
+        # Bind after every mutation in this transaction so a later canvas.show
+        # in the same batch can still identify a unique visible source.
+        previous_docs = {str(doc.id): doc.model_dump(mode='json') for doc in before.editorDocuments}
+        for document in data['editorDocuments']:
+            prior = previous_docs.get(str(document['id']))
+            bind_unique_timeline_sources(
+                data, document,
+                new_slot_ids=_timeline_clip_ids(document) - _timeline_clip_ids(prior or {}),
+            )
         # One revision per object per atomic transaction, regardless of how many
         # semantic operations touch it. New objects always begin at revision 1.
         for collection in COLLECTIONS.values():

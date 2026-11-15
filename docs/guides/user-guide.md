@@ -29,6 +29,8 @@ A service can provide multiple models within the same category. After entering i
 
 The service URL and Model ID must match your model service. Self-hosted service URLs typically include `/v1`; use the model name actually exposed by the service as the Model ID. For third-party services, follow the information provided by the service.
 
+For Qwen assistant chat, choose **Alibaba Cloud Model Studio (Beijing)** and enter a Beijing API key. The preset selects `qwen3.8-max`. You can keep the shared Beijing URL or enter your Beijing workspace's OpenAI-compatible Base URL ending in `/compatible-mode/v1`. [Alibaba Cloud endpoint guide](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope)
+
 For a self-hosted chat service, allow at least 8192 tokens of context: the
 application sends `max_tokens: 8192`, so a smaller `--max-model-len` (for
 example vLLM's 4096 default) rejects every request with HTTP 400.
@@ -82,6 +84,8 @@ The canvas saves automatically. Before closing it or switching projects, check t
 
 After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
 
+When an image or video node is connected to a text node with content, the prompt may stay blank: generation uses the text as is as the prompt, and anything typed in the prompt is added to it. Connected text carries no "Reference N: title" label; only text inserted with `@` keeps its label so the inline mention points at it. One text node can feed several generation nodes that use different models, and they all pick up edits to the text. Speech and music never read text references and still need their own text or style.
+
 An empty node must first receive an upload, saved text, or generated content before it can serve as a valid reference for other nodes. When uploading a node's own content, the file type must match the node. To add references, use connections, `@`, or the reference controls in the generation panel.
 
 **MiniMax-H3-Image / MiniMax-H3-Image-Highspeed** can mix HEIC, HEIF, PNG, JPEG and WebP references in the selected order, through the canvas or Agent commands. Both use the original project assets. Each edge must be 128–8192 pixels, the long-to-short edge ratio at most 4:1, and there can be at most 16 images. The complete Base64-encoded request must fit within 64 MiB; oversized inputs are rejected without automatic compression. Other models retain their own format restrictions.
@@ -92,9 +96,15 @@ For video generation, choose a mode supported by the model:
 - **First and last frames**: Connect up to two image sources and assign them to the first- and last-frame slots. Last-frame support depends on the model's capabilities and the guidance in the interface.
 - **Continuation**: Select a model that supports continuation and a source video. If the service restarts or the source is no longer available, you may need to regenerate the source video.
 
-For audio generation, enter the text to be read aloud in the prompt. Supported vLLM-Omni speech models and MOSS Open Platform offer **Voice library** beside the model controls. The library opens above the composer with **All voices**, **My voices**, and **Favorites**. Click a compatible voice’s name to select it. When a preview is available, click the circular play button to listen. When a compatible voice has no preview, its icon and card background also select it. Metadata filters appear only when supplied by the service.
+For audio generation, enter the text to be read aloud in the prompt. Supported vLLM-Omni speech models, MOSS Open Platform, and MiniMax Official Speech offer **Voice library** beside the model controls. The library opens above the composer with **All voices**, **My voices**, and **Favorites**. Click a compatible voice’s name to select it. When a preview is available, click the circular play button to listen. When a compatible voice has no preview, its icon and card background also select it. Metadata filters appear only when supplied by the service.
 
 On MOSS Open Platform, select the stable `moss-tts-1.5-flash` or `moss-tts-1.0-pro` model, or choose its dated snapshot to pin a version. All four use the same voice library on a given account connection. The library shows up to 150 MOSS voices per page. Use **Next page** and **Previous page** to browse. Filters and the Favorites tab show matches on the current page.
+
+For MiniMax, choose **Settings → Model connections → Audio → Add service → MiniMax Official Speech**, enter your mainland China API key, and save `speech-2.8-hd` or `speech-2.8-turbo`. The preset uses `https://api.minimax.cn/v1`. Unsupported model IDs are rejected when saving the service; choose a supported model from the preset. In an audio node, select that model, choose a system voice from **Voice library**, and enter up to 3,000 characters. MiniMax recommends streaming for longer text; this integration uses non-streaming synthesis. Reference assets, voice cloning, voice design, and deletion are not supported by this integration. The system voice API does not provide previews; selecting a voice does not start a paid synthesis request. Compatible MiniMax speech models on the same account connection retain the selection.
+
+MiniMax speech uses the [synchronous T2A API](https://platform.minimax.cn/docs/api-reference/speech-t2a-http) and saves an MP3 in the project. A saved result URL permits download recovery without another synthesis request, even after removing the model configuration. The provider's URLs expire after 24 hours; an expired link cannot be recovered locally. An unknown submission is not retried automatically. This integration covers the mainland China endpoint; international endpoints and real-account availability need separate verification.
+
+![MiniMax system voice selection with a mocked catalog](images/minimax-speech-voices-en-US.png)
 
 Choose **Create voice** to upload a local recording, name it, and review its playback, format, size and duration before submitting. vLLM-Omni requires the consent recording ID; adapters such as Drama3 also require the recording transcript. MOSS-TTS-Nano needs a registered voice with reference audio: a listed `default` voice is insufficient. This upload registers the voice with the selected service without adding a canvas reference node.
 

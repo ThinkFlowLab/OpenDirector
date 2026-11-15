@@ -76,6 +76,8 @@ export const models = {
   "models.service.show": "Show",
   "models.service.urlNote":
     "Self-hosted services usually use a /v1 URL; when connecting through an SSH tunnel, enter the local forwarded address.",
+  "models.service.beijingWorkspaceUrl":
+    "Use a Beijing API key. To use your workspace endpoint, enter https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 with your workspace ID.",
   "models.service.inputCapabilities": "Input capabilities",
   "models.service.referenceOutput": "References and output",
   "models.service.textInput": "Text",

@@ -67,6 +67,8 @@ export const models = {
   "models.service.show": "显示",
   "models.service.urlNote":
     "自部署服务通常填写 /v1 地址；通过 SSH 隧道连接时填写本地转发地址。",
+  "models.service.beijingWorkspaceUrl":
+    "使用北京地域的 API Key。如需使用业务空间专属地址，请将 https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 中的 <workspace-id> 替换为你的业务空间 ID。",
   "models.service.inputCapabilities": "输入能力",
   "models.service.referenceOutput": "参考与输出能力",
   "models.service.textInput": "文本",

@@ -3509,6 +3509,10 @@
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "minimax_speech_text",
+              "minimax_speech_voice",
+              "minimax_speech_reference",
+              "minimax_speech_model",
               "zhipu_speech_text",
               "zhipu_speech_voice",
               "zhipu_speech_reference",
@@ -14433,6 +14437,7 @@
             "enum": [
               "vllm_omni",
               "moss",
+              "minimax",
               "zhipu"
             ],
             "title": "Provider",
@@ -18727,6 +18732,10 @@
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "minimax_speech_text",
+              "minimax_speech_voice",
+              "minimax_speech_reference",
+              "minimax_speech_model",
               "zhipu_speech_text",
               "zhipu_speech_voice",
               "zhipu_speech_reference",
@@ -30105,6 +30114,7 @@
             "enum": [
               "vllm_omni",
               "moss",
+              "minimax",
               "zhipu"
             ],
             "title": "Provider",

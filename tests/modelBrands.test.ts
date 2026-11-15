@@ -8,6 +8,9 @@ import { modelBrand } from "../src/canvas/modelBrands.ts";
 test("model brands recognize organizations and known bare names without assigning unknown aliases", () => {
   assert.equal(modelBrand("MiniMaxAI/MiniMax-H3")?.org, "MiniMaxAI");
   assert.equal(modelBrand("MiniMax-H3")?.org, "MiniMaxAI");
+  assert.equal(modelBrand("speech-2.8-hd")?.org, "MiniMaxAI");
+  assert.equal(modelBrand("speech-02-turbo")?.org, "MiniMaxAI");
+  assert.equal(modelBrand("speech-custom"), undefined);
   assert.equal(modelBrand("kling-4.0")?.file, "kling.svg");
   assert.equal(modelBrand("kling-4.0-flash")?.file, "kling.svg");
   assert.equal(modelBrand("deepseek-ai/DeepSeek-V3")?.name, "DeepSeek");

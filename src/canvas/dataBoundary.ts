@@ -266,7 +266,8 @@ export function timelineError(value: unknown): string | null {
       if (
         clip.resource.durationSeconds !== undefined &&
         clip.resource.kind !== "image" &&
-        clip.outPoint > clip.resource.durationSeconds + 0.000001
+        clip.outPoint >
+          clip.resource.durationSeconds + RULE_FACTS.timelineDurationEpsilon
       )
         return tNow("errors.data.timelineOutPoint");
       if (track.kind === "visual") {

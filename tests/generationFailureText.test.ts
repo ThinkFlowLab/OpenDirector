@@ -157,3 +157,15 @@ test("provider moderation verdicts are explained in both languages", () => {
     /生成内容涉及敏感信息/,
   );
 });
+
+test("MiniMax missing voices use the shared localized message", () => {
+  const value = failure({ providerCode: "2054", httpStatus: 200, message: "所选音色不存在或不可用。" });
+  try {
+    setActiveLocale("en-US");
+    assert.match(generationFailureMessage(value), /voice library/);
+    assert.doesNotMatch(generationFailureMessage(value), /MOSS|[\u3400-\u9fff]/);
+    setActiveLocale("zh-CN");
+    assert.match(generationFailureMessage(value), /音色库/);
+    assert.doesNotMatch(generationFailureMessage(value), /MOSS/);
+  } finally { setActiveLocale("zh-CN"); }
+});

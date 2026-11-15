@@ -193,8 +193,10 @@ def test_leases_expiry_external_moves_and_closed_rename_guards(projects):
     created = create(projects)
     session, other = str(uuid4()), str(uuid4())
     projects.open(created.projectId, session)
-    with pytest.raises(ProjectError, match='其他窗口'):
+    with pytest.raises(ProjectError, match='其他窗口') as busy:
         projects.open(created.projectId, other)
+    # Another window is not a lock timeout: it must not share the retryable code.
+    assert busy.value.code == 'project_open_elsewhere'
     with pytest.raises(ProjectError, match='关闭'):
         projects.execute(rename(created))
     (projects.root / 'Example').rename(projects.root / 'Moved outside app')

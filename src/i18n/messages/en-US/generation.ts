@@ -95,6 +95,8 @@ export const generation = {
     "Enter a prompt, or @ a reference and let the Agent write the text",
   "generation.prompt.reading": "Text to read",
   "generation.prompt.music": "Music style",
+  "generation.prompt.implicitTextPlaceholder":
+    "Leave blank to use the connected text reference as the prompt, or type to add to it",
   "generation.prompt.imagePlaceholder":
     "Upload a reference, type a prompt, or @ a subject to describe the image you want",
   "generation.prompt.videoPlaceholder":

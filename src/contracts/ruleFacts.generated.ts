@@ -11,6 +11,7 @@ export const RULE_FACTS = {
   "timelineTextTotalLength": 200000,
   "timelineFontBytes": 33554432,
   "timelineFontTotalBytes": 67108864,
+  "timelineDurationEpsilon": 0.0005,
   "maxReferences": 64,
   "textReferenceBytes": 65536,
   "agentImageBytes": 33554432,

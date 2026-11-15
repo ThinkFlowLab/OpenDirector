@@ -354,6 +354,18 @@ def execution_spec(spec, references, rules):
     return spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': mode})})
 
 
+def implicit_text_prompt(spec: GenerationSpec, references: tuple[ResolvedReference, ...] = ()) -> bool:
+    """A connected text reference implicitly supplies an image or video prompt.
+
+    Its body is already appended to the provider prompt, so a blank prompt that
+    is backed by transmitted text still carries a creative instruction. Speech
+    and music never read text references, and text generation keeps its own
+    instruction requirement.
+    """
+    return spec.kind in {'image', 'video'} and any(
+        ref.asset.kind == 'text' and ref.transmission == 'content' for ref in references)
+
+
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = ()):
     """Pure shared validation; it never submits, uploads or changes a project."""
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
@@ -364,15 +376,19 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         raise ValueError('视频深度模型仅用于深度动作捕捉，请选择生成模型。')
     if model.inputRules.profile == 'vllm-omni-score':
         raise ValueError('扒谱模型仅用于参照音乐生成，请选择音乐生成模型。')
-    if (spec.promptContent is not None and not any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)) or (spec.promptContent is None and not spec.prompt.strip()):
+    written = (any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)
+               if spec.promptContent is not None else bool(spec.prompt.strip()))
+    if not written and not implicit_text_prompt(spec, references):
         raise ValueError('请填写生成提示词。')
     rules = model.inputRules
     if rules.referencesAllowed is False and references:
         raise ValueError('当前模型不支持参考素材，请移除参考后重试。')
-    if rules.profile == 'moss-speech':
+    if rules.profile in {'moss-speech', 'minimax-speech'}:
+        from opendirector.domain.minimax_speech import validate_minimax_speech_input
         from opendirector.domain.moss_speech import validate_moss_speech_input
         text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
-        validate_moss_speech_input(text, spec.parameters.voice)
+        validate = validate_moss_speech_input if rules.profile == 'moss-speech' else validate_minimax_speech_input
+        validate(text, spec.parameters.voice)
     elif rules.profile == 'zhipu-speech':
         from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
         text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')

@@ -9,6 +9,7 @@ from .base import Contract, NonNegative, ObjectVersion, Point, ProjectEntity, Re
 from .canvas import CanvasItem, EditorBinding, GenerationBinding, MaterialBinding, MediaCanvasItem
 from .editors import EditorDocument, MediaEditDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
 from .generation import FollowingReference, GenerationSpec, Job, PromptReference, Reference, ResultVersion
+from ..rule_facts import TIMELINE_DURATION_EPSILON
 
 
 class Project(Contract):
@@ -205,7 +206,7 @@ class ProjectSnapshot(Contract):
                     for clip in track.clips:
                         asset = assets[clip.resource.asset.assetId]
                         duration = asset.metadata.durationSeconds
-                        if asset.kind != 'image' and duration is not None and clip.outPoint > duration + 1e-6:
+                        if asset.kind != 'image' and duration is not None and clip.outPoint > duration + TIMELINE_DURATION_EPSILON:
                             raise ValueError('时间线片段超过素材的实际时长。')
         return self
 

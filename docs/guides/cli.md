@@ -115,6 +115,10 @@ Use the previous response's `nextCursor` and `connectionId` for each following p
 
 MOSS 音色较多时，首次查询加上 `--page-size 150`。下一页沿用该参数，把上一页返回的 `nextCursor` 和 `connectionId` 分别传给 `--after` 和 `--connection`。当 `nextCursor` 为 `null` 时，已经读到最后一页。
 
+`pageSize` limits MOSS pages only. MiniMax system voices and vLLM-Omni voices return their complete native catalogue in one response with `nextCursor: null`; a supplied page size does not truncate these libraries.
+
+`pageSize` 仅限制 MOSS 的每页数量。MiniMax 系统音色和 vLLM-Omni 音色会在一次响应中返回完整目录，`nextCursor` 为 `null`；传入每页数量不会截断这些音色库。
+
 To register an authorized recording, run the following command.
 
 ```sh

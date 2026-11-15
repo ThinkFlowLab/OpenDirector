@@ -154,6 +154,12 @@
       ]
     },
     {
+      "file": "creation_ripple.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
       "file": "creation_asset_list.mjs",
       "lanes": [
         "extended"
@@ -349,6 +355,13 @@
         "gate",
         "production"
       ]
+    },
+    {
+      "file": "session_lease.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "Reload after a lost lease release reopens at once; a second window is refused with project_open_elsewhere (#277)."
     },
     {
       "file": "project_title_enter.mjs",
