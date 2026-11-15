@@ -64,6 +64,14 @@ function rawInput(args) {
   return output
 }
 
+function resultVersionFields(result) {
+  const fields = {}
+  for (const key of ['version', 'createdAt', 'sourceResultId', 'sourceVersion', 'sourceTitle']) {
+    if (result?.[key] !== undefined) fields[key] = result[key]
+  }
+  return fields
+}
+
 function presentationMeta(_args, value) {
   const meta = {}
   for (const key of ['projectId', 'operationId', 'specId', 'itemId', 'resultId', 'jobId', 'canvasUrl']) {
@@ -87,9 +95,10 @@ function presentationMeta(_args, value) {
       projectName: value.projectName,
       ...(source && { sourceAssetId: source.asset.assetId, sourceKind: source.asset.kind }),
       ...(sourceDetails && { sourceDetails }),
-      candidates: candidates.map(({ id, asset }) => {
-        const details = value.resultDetails?.[asset.assetId]
-        return { resultId: id, assetId: asset.assetId, ...(details && { details }) }
+      candidates: candidates.map((result) => {
+        const details = value.resultDetails?.[result.asset.assetId]
+        return { resultId: result.id, assetId: result.asset.assetId,
+          ...(details && { details }), ...resultVersionFields(result) }
       }),
     }
   }

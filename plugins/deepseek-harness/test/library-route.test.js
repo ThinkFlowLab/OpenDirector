@@ -71,7 +71,7 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
   }, { baseUrl: 'http://127.0.0.1:' + server.address().port })
   const library = routes.get('/api/opendirector/library')
   const projects = await library({ url: '/api/opendirector/library' })
-  assert.deepEqual(await projects.json(), { projects: [snapshot.project] })
+  assert.deepEqual(await projects.json(), { projects: [snapshot.project], scope: 'http://127.0.0.1:' + server.address().port })
   const recent = await library({ url: '/api/opendirector/library?project=' + project })
   const { results } = await recent.json()
   assert.deepEqual(results.map(result => [result.resultId, result.selected, result.prompt]), [

@@ -176,8 +176,8 @@ test('another video candidate reuses the node and reconciles a lost response wit
   assert.deepEqual(await client.creationStatus(projectId, repeatId), {
     status: 'succeeded',
     results: [
-      { resultId: firstId, assetId: firstAsset, kind: 'video', selected: true, details: { width: 512, height: 512 } },
-      { resultId: secondId, assetId: secondAsset, kind: 'video', selected: false },
+      { resultId: firstId, assetId: firstAsset, kind: 'video', selected: true, version: 1, details: { width: 512, height: 512 } },
+      { resultId: secondId, assetId: secondAsset, kind: 'video', selected: false, version: 2 },
     ],
   })
 })

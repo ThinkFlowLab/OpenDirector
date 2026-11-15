@@ -53,6 +53,14 @@ An empty model catalog links you to OpenDirector to configure one. Connection er
 
 The interactive workflow has been verified in DSH Web with the host running in WSL Ubuntu. Native Windows checks cover plugin loading, tool execution and HTTP routes. The plugin workflow includes Linux, Windows and macOS jobs. DSH Desktop still needs an end-to-end installation and media check.
 
+## Continue with fewer repeated choices
+
+On this device, the plugin remembers the last project, project-list view and model settings for each creation action, separately for each OpenDirector service. New forms reuse models that are still available and keep the last image size or video duration. For continuation, choose the connection that generated the source clip. An unsubmitted draft takes priority. A fresh creation starts with one candidate; a saved draft keeps the count you chose. Clear these preferences under **Connection check → Diagnostic text → Forget recent settings**.
+
+Image cards keep **Adopt**, **Edit** and **More actions** in view. **Animate**, **Reuse settings**, download and action packs remain in the menu. Video cards keep continuation handy, and voiceover cards offer reuse.
+
+Each node's results show V1, V2 and so on in registration order, unchanged by search or pagination. Cards also show the job time and an identified source version when available. An edit creates a separate node, so its numbering starts at V1 and can point back to the source node's version.
+
 ## Examples and a short demo
 
 Open **Try an example** in a creation form to start with a studio image, character reference, product cover or voiceover. Saved-image actions offer examples for edits and motion; continuation has its own example. Read the description, then choose **Use this description** or **Replace current description**. Your model, image size, reference order and candidate count stay as selected. Filling an example does not generate media.

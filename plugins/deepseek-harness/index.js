@@ -124,7 +124,7 @@ export function apply(ctx, config) {
           }
           const value = await client.listProjects({ signal: request.signal })
           const projects = value.projects.map(({ id, name }) => ({ id, name }))
-          return Response.json({ projects }, { headers })
+          return Response.json({ projects, scope: resolved.baseUrl }, { headers })
         } catch (error) {
           const status = error instanceof InputError ? (error.key === 'library.cursor_expired' ? 409 : 400)
             : error instanceof HttpError && error.status === 404 ? 404
@@ -246,7 +246,7 @@ export function apply(ctx, config) {
               ? await client.creationStatus(params.get('project'), params.get('job'), { signal })
               : params.has('reuse')
                 ? await client.creationTemplate(params.get('project'), params.get('reuse'), { signal })
-                : { models: await client.creationModels({ signal }) }
+                : { models: await client.creationModels({ signal }), scope: resolved.baseUrl }
             return Response.json(value, { headers })
           } catch (error) {
             return new Response(null, { status: error instanceof InputError ? 400 : 502, headers })

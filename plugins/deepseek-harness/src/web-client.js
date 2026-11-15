@@ -5,6 +5,8 @@ window.__ModuleLoader__.load({
     const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
+      recentRestored: 'Using your recent settings.', forgetRecent: 'Forget recent settings', recentForgotten: 'Recent settings cleared.',
+      versionLabel: 'V{number}', sourceVersionLabel: 'From {title} · V{number}',
       examples: 'Try an example', exampleChoose: 'Example', exampleApply: 'Use this description',
       exampleReplace: 'Replace current description', exampleHint: 'Fills the description only. Review your model and settings, then generate when ready.',
       exampleStudio: 'Studio by the window',
@@ -173,6 +175,8 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      recentRestored: '已沿用上次设置。', forgetRecent: '清除最近设置', recentForgotten: '最近设置已清除。',
+      versionLabel: 'V{number}', sourceVersionLabel: '来源：{title} · V{number}',
       examples: '试一个例子', exampleChoose: '创作示例', exampleApply: '填入这份描述',
       exampleReplace: '替换当前描述', exampleHint: '只填入描述。确认模型和参数后，再点击生成。',
       exampleStudio: '窗边工作室',
@@ -381,6 +385,8 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-bg-layer-1); overflow: hidden; }
       .od-media-ui .od-preview:only-child { --od-preview-height: clamp(14rem, 36vh, 23rem); }
       .od-media-ui .od-preview[data-selected] { border-color: var(--dsw-alias-brand-primary); }
+      .od-version { font-size: .75em; padding: .05rem .45rem; border: 1px solid var(--dsw-alias-border-l1); border-radius: 1rem; }
+      .od-version[data-current] { color: var(--dsw-alias-brand-text); border-color: var(--dsw-alias-brand-primary); }
       .od-preview figcaption { justify-content: space-between; padding: .1rem 0 .35rem; }
       .od-media-ui .od-settings { padding: .6rem .75rem; margin-block: .7rem;
         border: 1px solid var(--dsw-alias-border-l1); border-radius: .65rem; }
@@ -442,6 +448,40 @@ window.__ModuleLoader__.load({
 
     function mediaHref(project, asset, kind) {
       return '/api/opendirector/media?' + new URLSearchParams({ project, asset, kind })
+    }
+
+    const recentKey = '@opendirector/dsh-plugin:recent:v1:'
+    const recentCache = new Map()
+    function readRecent(scope) {
+      if (!scope) return {}
+      if (!recentCache.has(scope)) {
+        let value
+        try { value = JSON.parse(window.localStorage.getItem(recentKey + scope) ?? '{}') } catch {}
+        recentCache.set(scope, value && typeof value === 'object' && !Array.isArray(value) ? value : {})
+      }
+      return recentCache.get(scope)
+    }
+    function rememberRecent(scope, changes) {
+      if (!scope) return
+      const previous = readRecent(scope)
+      const value = { ...previous, ...changes,
+        ...(changes.setups && { setups: { ...previous.setups, ...changes.setups } }) }
+      recentCache.set(scope, value)
+      try { window.localStorage.setItem(recentKey + scope, JSON.stringify(value)) } catch {}
+    }
+    function forgetRecent(scope) {
+      recentCache.set(scope, {})
+      try { window.localStorage.removeItem(recentKey + scope) } catch {}
+    }
+    function recentSetup(catalog, context, kind, videoMode) {
+      const saved = readRecent(catalog?.scope).setups?.[context]
+      const model = catalog?.models?.find(item => item.id === saved?.modelId && item.kind === kind
+        && (videoMode ? item.videoChoices?.[videoMode] : context === 'edit' || context.startsWith('pack:') ? item.maxImages > 0 : true))
+      if (!model) return {}
+      const output = saved.output && typeof saved.output.size === 'string' && typeof saved.output.aspectRatio === 'string'
+        ? { size: saved.output.size, aspectRatio: saved.output.aspectRatio } : null
+      const durationSeconds = Number.isFinite(saved.durationSeconds) ? saved.durationSeconds : null
+      return { modelId: model.id, output, durationSeconds }
     }
 
     const mediaDraftKey = '@opendirector/dsh-plugin:media-drafts:v1'
@@ -628,6 +668,7 @@ window.__ModuleLoader__.load({
       const [checking, setChecking] = useState(true)
       const [revision, setRevision] = useState(0)
       const [copyState, setCopyState] = useState('')
+      const [forgotten, setForgotten] = useState(false)
       useEffect(() => { dialog.current.showModal() }, [])
       useEffect(() => {
         const controller = new AbortController()
@@ -689,7 +730,9 @@ window.__ModuleLoader__.load({
           h('div', { style: row }, h('a', { href: value.canvasUrl, className: 'od-button', style: buttonStyle,
             target: '_blank', rel: 'noopener noreferrer' }, t('connectionOpen'))),
           h('details', null, h('summary', null, t('connectionDiagnostic')),
-            h('pre', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '.8em' } }, diagnostic))),
+            h('pre', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '.8em' } }, diagnostic),
+            button(t('forgetRecent'), () => { forgetRecent(value.apiUrl); setForgotten(true) }),
+            forgotten && h('p', { role: 'status' }, t('recentForgotten')))),
         h('p', { className: 'od-hint' }, t('connectionSetup')),
         h('div', { style: row },
           button(t('connectionCheck'), () => setRevision(v => v + 1), { disabled: checking }),
@@ -724,6 +767,7 @@ window.__ModuleLoader__.load({
     function ProjectLibrary({ t, onClose }) {
       const dialog = useRef(null)
       const [projects, setProjects] = useState(null)
+      const [scope, setScope] = useState('')
       const [projectId, setProjectId] = useState('')
       const [library, setLibrary] = useState(null)
       const [error, setError] = useState(false)
@@ -750,7 +794,13 @@ window.__ModuleLoader__.load({
         readLibrary(projectId, controller.signal, { ...filters, view, q: query }, page.after).then(value => {
           if (controller.signal.aborted) return
           if (projectId) setLibrary(value)
-          else setProjects(value.projects)
+          else {
+            setProjects(value.projects)
+            setScope(value.scope)
+            const recent = readRecent(value.scope)
+            if (value.projects.some(project => project.id === recent.projectId)) setProjectId(recent.projectId)
+            if (['results', 'jobs'].includes(recent.view)) setView(recent.view)
+          }
           setPending(false)
         }).catch(() => {
           if (controller.signal.aborted) return
@@ -780,6 +830,7 @@ window.__ModuleLoader__.load({
         refresh()
       }
       function changeProject(id) {
+        if (id) rememberRecent(scope, { projectId: id })
         setProjectId(id)
         setComparison([])
         setComparing(false)
@@ -787,6 +838,7 @@ window.__ModuleLoader__.load({
         refresh()
       }
       function changeView(value) {
+        rememberRecent(scope, { view: value })
         setView(value)
         setLibrary(null)
         refresh()
@@ -867,14 +919,14 @@ window.__ModuleLoader__.load({
             button(t('viewTask'), () => setTask({ ...job, projectId, canvasUrl: current.canvasUrl }), { 'aria-haspopup': 'dialog' })))))
           : current.results.length === 0 ? h('p', null, t(!query && filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
           : h('div', { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
-            ...current.results.map(({ resultId, assetId, kind, selected, prompt, details, title }, index) => h(Preview, {
-              key: resultId, projectId, resultId, assetId, kind, selected, prompt, details, t, canvasUrl: current.canvasUrl,
-              title: title || `${t('candidate')} ${index + 1}`,
+            ...current.results.map((candidate, index) => h(Preview, {
+              ...candidate, key: candidate.resultId, projectId, t, canvasUrl: current.canvasUrl,
+              title: candidate.title || (candidate.version ? t('candidate') : `${t('candidate')} ${index + 1}`),
               onAdopted: refresh,
-              compareSelected: comparison.some(item => item.resultId === resultId),
-              compareDisabled: comparison.length === 2 && !comparison.some(item => item.resultId === resultId),
-              onCompare: compareMode && kind === 'image'
-                ? () => toggleComparison({ resultId, title: title || resultId.slice(0, 8) }) : undefined,
+              compareSelected: comparison.some(item => item.resultId === candidate.resultId),
+              compareDisabled: comparison.length === 2 && !comparison.some(item => item.resultId === candidate.resultId),
+              onCompare: compareMode && candidate.kind === 'image'
+                ? () => toggleComparison({ resultId: candidate.resultId, title: candidate.title || candidate.resultId.slice(0, 8) }) : undefined,
             }))),
         h(PageControls, { cursor: page, nextCursor: current.nextCursor, disabled: pending, onPage: setPage, t })),
       comparing && h(ImageComparisonDialog, {
@@ -1047,6 +1099,7 @@ window.__ModuleLoader__.load({
     function ActionPackLibrary({ t, onClose }) {
       const dialog = useRef(null)
       const [projects, setProjects] = useState([])
+      const [scope, setScope] = useState('')
       const [projectId, setProjectId] = useState('')
       const [packs, setPacks] = useState(null)
       const [sourcePicker, setSourcePicker] = useState(false)
@@ -1055,31 +1108,45 @@ window.__ModuleLoader__.load({
       const [task, setTask] = useState(null)
       const [version, setVersion] = useState(0)
       const [error, setError] = useState(false)
+      const [imageError, setImageError] = useState(false)
       useEffect(() => { dialog.current.showModal() }, [])
       useEffect(() => {
         const controller = new AbortController()
-        readLibrary(null, controller.signal).then(value => setProjects(value.projects))
+        readLibrary(null, controller.signal).then(value => {
+          if (controller.signal.aborted) return
+          setProjects(value.projects); setScope(value.scope)
+          const recent = readRecent(value.scope)
+          if (value.projects.some(project => project.id === recent.projectId)) setProjectId(recent.projectId)
+        })
           .catch(() => { if (!controller.signal.aborted) setError(true) })
         return () => controller.abort()
       }, [])
       useEffect(() => {
         if (!projectId) return
         const controller = new AbortController()
-        setPacks(null); setImages(null); setError(false)
-        Promise.all([readPack(projectId, null, controller.signal),
-          sourcePicker ? readLibrary(projectId, controller.signal, { kind: 'image' }, cursor.after) : null])
-          .then(([value, library]) => { setPacks(value.packs); setImages(library) })
+        setPacks(null); setError(false)
+        readPack(projectId, null, controller.signal)
+          .then(value => { if (!controller.signal.aborted) setPacks(value.packs) })
           .catch(() => { if (!controller.signal.aborted) setError(true) })
         return () => controller.abort()
-      }, [projectId, version, sourcePicker, cursor])
+      }, [projectId, version])
+      useEffect(() => {
+        setImages(null); setImageError(false)
+        if (!projectId || !sourcePicker) return
+        const controller = new AbortController()
+        readLibrary(projectId, controller.signal, { kind: 'image' }, cursor.after)
+          .then(value => { if (!controller.signal.aborted) setImages(value) })
+          .catch(() => { if (!controller.signal.aborted) setImageError(true) })
+        return () => controller.abort()
+      }, [projectId, sourcePicker, cursor, version])
       return h('dialog', { ref: dialog, className: 'od-media-ui', style: dialogStyle, onCancel: onClose },
         dialogHeader(t('actionPacks'), onClose, t, t('packHint')),
         h(PendingSubmissions, { context: 'packs', t, onRecovered: value => setTask(value) }),
         h('label', null, t('chooseProject'), h('select', { 'aria-label': t('chooseProject'),
-          value: projectId, onChange: event => { setProjectId(event.target.value); setCursor({}); setSourcePicker(false) },
+          value: projectId, onChange: event => { if (event.target.value) rememberRecent(scope, { projectId: event.target.value }); setProjectId(event.target.value); setCursor({}); setSourcePicker(false) },
         }, h('option', { value: '' }, t('chooseProject')), ...projects.map(project =>
           h('option', { key: project.id, value: project.id }, project.name)))),
-        error && h('p', { role: 'alert' }, t('libraryError')),
+        (error || imageError) && h('p', { role: 'alert' }, t('libraryError')),
         projectId && h('div', { style: row },
           button(t('newActionPack'), () => setSourcePicker(value => !value), { primary: true }),
           button(t('refresh'), () => setVersion(value => value + 1))),
@@ -1091,6 +1158,7 @@ window.__ModuleLoader__.load({
           button(t('viewTask'), () => setTask({ projectId, packId: pack.packId })))),
         sourcePicker && h('section', { 'aria-label': t('packSelectSource') },
           h('h3', null, t('packSelectSource')),
+          !images && !imageError && h('p', { role: 'status' }, t('loading')),
           images && !images.results.length && h('p', null, t('resultsEmpty')),
           h('div', { className: 'od-pack-source-grid' }, ...(images?.results ?? []).map(image =>
             h('button', { type: 'button', key: image.resultId, className: 'od-pack-source',
@@ -1109,7 +1177,8 @@ window.__ModuleLoader__.load({
       const [packId, setPackId] = useState(suppliedPack ?? null)
       const [pack, setPack] = useState(null)
       const [catalog, setCatalog] = useState(null)
-      const [form, setForm] = useState(() => readMediaDraft(draftKey)?.form ?? {
+      const [initialDraft] = useState(() => readMediaDraft(draftKey))
+      const [form, setForm] = useState(() => initialDraft?.form ?? {
         title: t('packDefaultTitle'), prompt: '', kind: 'image', modelId: '', output: null,
         durationSeconds: null, actions: [
           { name: t('packIdle'), prompt: t('packIdlePrompt') },
@@ -1142,7 +1211,16 @@ window.__ModuleLoader__.load({
         fetch('/api/opendirector/creation', { signal: controller.signal }).then(response => {
           if (!response.ok) throw new Error('Catalog unavailable')
           return response.json()
-        }).then(setCatalog).catch(() => { if (!controller.signal.aborted) setFeedback('libraryError') })
+        }).then(value => {
+          if (controller.signal.aborted) return
+          setCatalog(value)
+          if (!initialDraft) {
+            const kind = ['image', 'video'].includes(readRecent(value.scope).packKind) ? readRecent(value.scope).packKind : 'image'
+            setForm(previous => ({ ...previous, kind,
+              ...recentSetup(value, 'pack:' + kind, kind, kind === 'video' ? 'first_frame' : undefined),
+            }))
+          }
+        }).catch(() => { if (!controller.signal.aborted) setFeedback('libraryError') })
         return () => controller.abort()
       }, [packId, Boolean(pendingItem), version])
       useEffect(() => {
@@ -1183,9 +1261,17 @@ window.__ModuleLoader__.load({
       function change(key, value) {
         setForm(previous => ({ ...previous, [key]: value,
           ...(['kind', 'modelId'].includes(key) && { output: null, durationSeconds: null }),
-          ...(key === 'kind' && { modelId: '' }),
+          ...(key === 'kind' && { modelId: '',
+            ...recentSetup(catalog, 'pack:' + value, value, value === 'video' ? 'first_frame' : undefined) }),
         }))
       }
+      useEffect(() => {
+        if (packId || locked || !model) return
+        rememberRecent(catalog.scope, { projectId, packKind: form.kind, setups: { ['pack:' + form.kind]: {
+          modelId: model.id, output: form.kind === 'image' ? outputs[outputIndex] ?? null : null,
+          durationSeconds: form.durationSeconds ?? video?.defaultDuration ?? null,
+        } } })
+      }, [packId, locked, model?.id, form.kind, form.output, form.durationSeconds, catalog?.scope, projectId])
       async function submitActions(id, itemIds, redo = false, original) {
         const input = { action: 'generate', projectId, packId: id,
           operationId: original?.operationId ?? crypto.randomUUID(), itemIds, redo }
@@ -1430,6 +1516,8 @@ window.__ModuleLoader__.load({
       }
       const [saved] = useState(() => existingJob ? null : readMediaDraft(draftKey))
       const [restored, setRestored] = useState(Boolean(saved))
+      const [recentRestored, setRecentRestored] = useState(false)
+      const [recentBase, setRecentBase] = useState(null)
       const [form, setForm] = useState(() => ({ ...defaults, ...saved?.form }))
       const [result, setResult] = useState(existingJob ?? null)
       const [progress, setProgress] = useState(null)
@@ -1467,7 +1555,7 @@ window.__ModuleLoader__.load({
       const locked = submitting || unknown || Boolean(jobId) || result?.draftSaved === true
       const draftBase = catalog?.template ? { ...defaults, projectId: templateOf.projectId,
         kind: catalog.template.kind, modelId: catalog.template.modelConfigId,
-        prompt: catalog.template.prompt, voice: catalog.template.voice } : defaults
+        prompt: catalog.template.prompt, voice: catalog.template.voice } : recentBase ?? defaults
       const dirty = Object.keys(defaults).some(key => form[key] !== draftBase[key])
         || references.length > (source && !videoMode ? 1 : 0)
       const projectUnavailable = !source && !templateOf && catalog && !catalog.error && form.projectId && form.projectId !== 'new'
@@ -1485,9 +1573,22 @@ window.__ModuleLoader__.load({
         flushMediaDrafts()
       }
       const update = (key, value) => setForm(previous => ({ ...previous, [key]: value,
-        ...(key === 'kind' && { modelId: '', output: null }),
+        ...(key === 'kind' && { modelId: '', output: null, durationSeconds: null,
+          ...recentSetup(catalog, value, value) }),
         ...((key === 'kind' || key === 'modelId') && { voice: '' }),
       }))
+      useEffect(() => {
+        if (existingJob || templateOf || videoMode === 'continuation' || locked || !model || !catalog?.scope) return
+        const context = videoMode ?? (source ? 'edit' : form.kind)
+        const chosenProject = source?.projectId
+          ?? (catalog.projects?.some(project => project.id === form.projectId) ? form.projectId : undefined)
+        rememberRecent(catalog.scope, {
+          ...(!source && { kind: form.kind }), ...(chosenProject && { projectId: chosenProject }),
+          setups: { [context]: { modelId: model.id, output: form.kind === 'image' ? output ?? null : null,
+            durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null } },
+        })
+      }, [existingJob, templateOf, locked, model?.id, form.kind, form.projectId, form.output, form.durationSeconds, catalog?.scope])
+
       useEffect(() => {
         dialog.current.showModal()
       }, [])
@@ -1513,6 +1614,16 @@ window.__ModuleLoader__.load({
             kind: template.kind, projectId: templateOf.projectId, modelId: template.modelConfigId,
             ...(!saved && { prompt: template.prompt, voice: template.voice }),
           }))
+          else if (!saved) {
+            const recent = readRecent(models.scope)
+            const kind = !source && ['image', 'audio'].includes(recent.kind) ? recent.kind : defaults.kind
+            const preferred = videoMode === 'continuation' ? {} : recentSetup(models, videoMode ?? (source ? 'edit' : kind), kind, videoMode)
+            const preferredProject = !source && projects.projects.some(project => project.id === recent.projectId) ? recent.projectId : ''
+            const restoredForm = { ...defaults, kind, ...preferred, ...(preferredProject && { projectId: preferredProject }) }
+            setRecentBase(restoredForm)
+            setForm(restoredForm)
+            setRecentRestored(Boolean(preferred.modelId || preferredProject))
+          }
         }).catch(() => {
           if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
         })
@@ -1594,6 +1705,7 @@ window.__ModuleLoader__.load({
             setCatalog(previous => previous.projects.some(item => item.id === project.id) ? previous
               : { ...previous, projects: [...previous.projects, project] })
             setForm(previous => ({ ...previous, projectId: project.id }))
+            rememberRecent(catalog?.scope, { projectId: project.id })
           }
           if (attempt.current?.repeatJobId && !value.jobId) {
             setRepeatStatus(value.status === 'unknown' ? 'generationUnknown'
@@ -1687,7 +1799,7 @@ window.__ModuleLoader__.load({
         await send(() => ({ ...identity, continueGroup: true }))
       }
       const sourcePreview = source && h(Preview, {
-        projectId: source.projectId, assetId: source.assetId, kind: source.kind, details: source.details, t,
+        version: source.version, projectId: source.projectId, assetId: source.assetId, kind: source.kind, details: source.details, t,
         title: t(continuation ? 'sourceClip' : videoMode ? 'firstFrameSource' : 'original'),
       })
       if (recoveredJob) return h(GenerationDialog, { existingJob: recoveredJob, t, onClose })
@@ -1701,6 +1813,7 @@ window.__ModuleLoader__.load({
         !existingJob && !restoringPending && !catalog && h('p', { role: 'status' }, t('loading')),
         !existingJob && !restoringPending && !locked && h('div', { style: row },
           restored && h('small', { role: 'status' }, t('draftRestored')),
+          !restored && recentRestored && h('small', { role: 'status' }, t('recentRestored')),
           dirty && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
         projectUnavailable && h('p', { role: 'alert' }, t('projectUnavailable')),
         modelUnavailable && h('p', { role: 'alert' }, t('modelUnavailable')),
@@ -1813,7 +1926,7 @@ window.__ModuleLoader__.load({
             gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' },
         }, sourcePreview, ...candidates.map((candidate, index) => h(Preview, {
           ...candidate, projectId, key: candidate.resultId, t, canvasUrl: result.canvasUrl,
-          title: candidates.length === 1 ? t('candidate') : `${t('candidate')} ${index + 1}`,
+          title: candidate.version || candidates.length === 1 ? t('candidate') : `${t('candidate')} ${index + 1}`,
           onCompare: groupId && candidate.kind === 'image' ? () => toggleComparison(candidate) : undefined,
           compareSelected: comparison.includes(candidate.resultId),
           compareDisabled: comparison.length === 2 && !comparison.includes(candidate.resultId),
@@ -1990,7 +2103,7 @@ window.__ModuleLoader__.load({
         ref: menu, role: 'menu', 'aria-label': t('actions'), onKeyDown: keyboard,
         style: { position: 'fixed', zIndex: 100, padding: '.25rem', border, borderRadius: '.45rem',
           background: surface, boxShadow: '0 4px 16px #0004', maxHeight: 'calc(100vh - 16px)', overflow: 'auto' },
-      }, ...actions.map(({ label, run, href, ...attributes }) => h(href ? 'a' : 'button', {
+      }, ...actions.map(({ label, run, href, quick, ...attributes }) => h(href ? 'a' : 'button', {
         key: label, role: 'menuitem', tabIndex: -1, style,
         ...(href ? { href } : { type: 'button' }), ...attributes,
         onClick: () => { close(); run?.() },
@@ -2025,7 +2138,7 @@ window.__ModuleLoader__.load({
             })))
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions }) {
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions, version, createdAt, sourceResultId, sourceVersion, sourceTitle }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [status, setStatus] = useState('')
@@ -2046,6 +2159,10 @@ window.__ModuleLoader__.load({
         (video || audio) && details?.durationSeconds
           && t('duration').replace('{seconds}', Number(details.durationSeconds.toFixed(2))),
       ].filter(Boolean)
+      const versionText = Number.isInteger(version) && version > 0 ? t('versionLabel').replace('{number}', version) : ''
+      const created = typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? new Date(createdAt) : null
+      const sourceText = sourceResultId && Number.isInteger(sourceVersion) && sourceVersion > 0
+        ? t('sourceVersionLabel').replace('{title}', sourceTitle || t('candidate')).replace('{number}', sourceVersion) : ''
       const mediaStyle = { width: '100%', height: expanded ? 'clamp(14rem, 50vh, 36rem)' : 'var(--od-preview-height)', display: 'block', objectFit: 'contain',
         borderRadius: '.55rem', background: surface }
       const onError = () => { setBuffering(false); setFailed(true) }
@@ -2088,18 +2205,19 @@ window.__ModuleLoader__.load({
       const adoptLabel = pending ? 'adopting' : selected ? 'selected'
         : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
       const actions = [
-        !expanded && (image || audio) && { label: 'reuseSettings', run: () => setAction('reuse') },
-        !expanded && image && { label: 'edit', run: () => setAction('edit') },
+        !expanded && (image || audio) && { label: 'reuseSettings', quick: audio && !compactActions, run: () => setAction('reuse') },
+        !expanded && image && { label: 'edit', quick: !compactActions, run: () => setAction('edit') },
         image && { label: 'newActionPack', run: () => setAction('pack') },
         image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
         !expanded && image && { label: 'firstFrame', run: () => setAction('first_frame') },
-        video && { label: 'continue', run: () => setAction('continuation') },
+        video && { label: 'continue', quick: !compactActions, run: () => setAction('continuation') },
         (video || audio) && !failed && { label: player.current?.paused === false ? 'pause' : 'play', run: togglePlayback },
         !selected && !pending && { label: adoptLabel, run: adoption.adopt },
         { label: 'download', href: downloadUrl, download: '' },
         canvasUrl && { label: 'canvas', href: canvasUrl, target: '_blank', rel: 'noopener noreferrer' },
         { label: 'copyId', run: copyResult },
       ].filter(Boolean)
+      const quickAction = actions.find(action => action.quick)
       return h('figure', {
         className: 'od-media-ui od-preview', 'data-selected': selected || undefined,
         'data-opendirector-result': resultId,
@@ -2107,7 +2225,13 @@ window.__ModuleLoader__.load({
         style: { margin: 0, minWidth: 0, display: 'grid', gap: '.45rem', alignContent: 'start' },
       },
         h('figcaption', { style: { ...row, color: muted, fontSize: '.8em' } },
-          h('strong', null, title), facts.length > 0 && h('span', null, facts.join(' · '))),
+          h('strong', null, selected && title === t('candidate') ? t('selected') : title),
+          versionText && h('span', { className: 'od-version', 'data-opendirector-version': version, 'data-current': selected || undefined }, versionText),
+          facts.length > 0 && h('span', null, facts.join(' · '))),
+        (created || sourceText) && h('div', { style: { ...row, color: muted, fontSize: '.73em' } },
+          created && h('time', { dateTime: createdAt, title: created.toLocaleString() },
+            created.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })),
+          sourceText && h('span', { 'data-opendirector-source-version': sourceVersion }, sourceText)),
         failed ? h('div', { style: row }, h('span', null, t('unavailable')),
           image && button(t('viewOriginal'), () => setViewingOriginal(true), { 'aria-haspopup': 'dialog' })) : media,
         buffering && h('small', { role: 'status' }, t('buffering')),
@@ -2117,11 +2241,8 @@ window.__ModuleLoader__.load({
         prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
-            !compactActions && !expanded && (image || audio) && button(t('reuseSettings'), () => setAction('reuse'), { 'aria-haspopup': 'dialog' }),
-            !compactActions && video && button(t('continue'), () => setAction('continuation'), { 'aria-haspopup': 'dialog' }),
-            !compactActions && !expanded && image && button(t('edit'), () => setAction('edit'), { 'aria-haspopup': 'dialog' }),
-            !compactActions && !expanded && image && button(t('firstFrame'), () => setAction('first_frame'), { 'aria-haspopup': 'dialog' }),
             button(t(adoptLabel), adoption.adopt, { primary: !selected, current: selected, symbol: selected ? 'check' : undefined, disabled: pending || selected }),
+            quickAction && button(t(quickAction.label), quickAction.run, { 'aria-haspopup': 'dialog' }),
             button('···', event => {
               if (menu) closeMenu()
               else {
@@ -2134,9 +2255,9 @@ window.__ModuleLoader__.load({
             && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t(adoption.status)),
           adoption.canvasUrl && !onAdopted && canvasLink(adoption.canvasUrl, t),
           status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)),
-        action === 'pack' && h(ActionPackDialog, { source: { projectId, resultId, assetId, kind, details }, t, onClose: () => setAction(null) }),
+        action === 'pack' && h(ActionPackDialog, { source: { projectId, resultId, assetId, kind, details, version }, t, onClose: () => setAction(null) }),
         action && action !== 'pack' && h(GenerationDialog, {
-          source: action === 'reuse' ? undefined : { projectId, assetId, resultId, kind, details },
+          source: action === 'reuse' ? undefined : { projectId, assetId, resultId, kind, details, version },
           templateOf: action === 'reuse' ? { projectId, resultId, kind, canvasUrl } : undefined,
           videoMode: ['edit', 'reuse'].includes(action) ? undefined : action,
           t, onClose: () => setAction(null),
@@ -2166,11 +2287,11 @@ window.__ModuleLoader__.load({
         h('div', { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' } },
           preview.sourceAssetId && h(Preview, {
             key: preview.sourceAssetId, projectId: meta.projectId, assetId: preview.sourceAssetId,
-            kind: sourceKind, details: preview.sourceDetails, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
+            version: preview.candidates[0]?.sourceVersion, kind: sourceKind, details: preview.sourceDetails, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
           }),
-          ...preview.candidates.map(({ resultId, assetId, details }, index) => h(Preview, {
-            key: resultId, projectId: meta.projectId, assetId, resultId, kind, details, t, canvasUrl: meta.canvasUrl,
-            title: preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate'),
+          ...preview.candidates.map((candidate, index) => h(Preview, {
+            ...candidate, key: candidate.resultId, projectId: meta.projectId, kind, t, canvasUrl: meta.canvasUrl,
+            title: candidate.version ? t('candidate') : preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate'),
           }))))
     }
 

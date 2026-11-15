@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mediaDetails } from './presentation.js'
+import { resultVersionInfo } from './versions.js'
 import { actionPackRequest, actionPackArchive } from './action-packs.js'
 import {
   buildCreateGeneration,
@@ -337,6 +338,7 @@ export class OpenDirectorClient {
     const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
     const metadata = assetMetadata(snapshot)
+    const versions = resultVersionInfo(snapshot)
     const results = []
     const step = order === 'oldest' ? 1 : -1
     const cursorIndex = cursor === null ? null : snapshot.results.findIndex(result => result.id === cursor)
@@ -359,6 +361,7 @@ export class OpenDirectorClient {
         assetId: asset.assetId,
         kind: asset.kind,
         selected,
+        ...(versions.get(id) ?? {}),
         ...(details && { details }), ...(title && { title }),
         prompt: prompt.slice(0, 160),
       })
@@ -432,12 +435,14 @@ export class OpenDirectorClient {
     const results = new Map(snapshot.results.map(result => [result.id, result]))
     const metadata = assetMetadata(snapshot)
     const names = librarySearch(snapshot, '')
+    const versions = resultVersionInfo(snapshot)
     const images = ids.map(resultId => {
       const result = results.get(resultId)
       if (result?.asset.kind !== 'image') throw new InputError('library.compare')
       return {
         resultId, assetId: result.asset.assetId, kind: 'image', specId: result.specId,
         selected: specs.get(result.specId)?.currentResultId === resultId,
+        ...(versions.get(resultId) ?? {}),
         title: names.title(result.specId) ?? '',
         prompt: jobs.get(result.jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 500) ?? '',
         details: mediaDetails(metadata.get(result.asset.assetId)),
@@ -482,8 +487,9 @@ export class OpenDirectorClient {
       ? snapshot.jobs.find((item) => item.id === job)
       : undefined
     if (!value) throw new InputError('job.missing', { jobId: job, projectId: id })
+    const versions = resultVersionInfo(snapshot)
     const results = Array.isArray(snapshot?.results)
-      ? snapshot.results.filter((item) => item.jobId === job)
+      ? snapshot.results.filter((item) => item.jobId === job).map(item => ({ ...item, ...versions.get(item.id) }))
       : []
     const metadata = assetMetadata(snapshot)
     const resultDetails = Object.fromEntries(results.flatMap(({ asset }) => {
@@ -518,11 +524,13 @@ export class OpenDirectorClient {
     const specId = job.inputSnapshot.spec.id
     const selected = snapshot.generationSpecs.find(spec => spec.id === specId)?.currentResultId
     const metadata = assetMetadata(snapshot)
+    const versions = resultVersionInfo(snapshot)
     return {
       status: job.status, ...cancellation,
       results: snapshot.results.filter(result => result.specId === specId).map(({ id, asset }) => {
         const details = mediaDetails(metadata.get(asset.assetId))
         return { resultId: id, assetId: asset.assetId, kind: asset.kind, selected: id === selected,
+          ...(versions.get(id) ?? {}),
           ...(details && { details }) }
       }),
     }
@@ -542,12 +550,14 @@ export class OpenDirectorClient {
     const ids = new Set(jobs.map(job => job.id))
     const selected = new Set(snapshot.generationSpecs.map(spec => spec.currentResultId))
     const metadata = assetMetadata(snapshot)
+    const versions = resultVersionInfo(snapshot)
     return {
       groupId: group, status, completedCount: done, failedCount: failed, totalCount: jobs.length,
       jobs: jobs.map(job => ({ jobId: job.id, status: job.status, cancelRequested: job.cancelRequested,
         remoteCancellation: job.remoteCancellation, category: job.errorDetails?.category })),
       results: snapshot.results.filter(result => ids.has(result.jobId)).map(({ id, asset }) => ({
         resultId: id, assetId: asset.assetId, kind: asset.kind, selected: selected.has(id),
+        ...(versions.get(id) ?? {}),
         ...(metadata.has(asset.assetId) && { details: mediaDetails(metadata.get(asset.assetId)) }),
       })),
     }
