@@ -430,73 +430,34 @@ node tests/browser/provider_settings.mjs
 
 ## 画布 Markdown 文本节点（#336）
 
-本地验收覆盖 [#336](https://github.com/ThinkFlowLab/OpenDirector/issues/336) 的画布、全屏编辑与 CLI 路径。以下交互与真实 harness 结果由协调者复核；本节记录已观察到的结果，不把未运行的 runtime 或真实模型记为通过。
-
-从 300×300 的文本节点开始，在四个视口缩放比例下拖动右下角手柄，屏幕位移均为 120×60 像素。保存后的宽高对应初始尺寸加上屏幕位移除以 zoom，重新打开项目仍保持该几何值；宽高使用画布坐标单位。
-
-| 视口 zoom | 拖动前 | 拖动并保存后 |
-| --- | --- | --- |
-| 0.4 | 300×300 | 600×450 |
-| 0.7 | 300×300 | 471×385 |
-| 1.0 | 300×300 | 420×360 |
-| 1.3 | 300×300 | 392×346 |
-
-其余已验证交互：
-
-- Markdown 标题、列表、引用、强调、链接、围栏代码和表格均正确渲染；代码块上方没有游离的语言名称。
-- 使用 Chromium CDP `Input.imeSetComposition` 驱动真实浏览器 composition：输入缓冲区保留，光标位于组合输入范围内，组合期间按 Escape 不会关闭编辑器，提交后的文本持久化字节完全一致。这不等同于硬件输入法候选窗口测试。
-- 全屏源码与预览共享同一文档，返回行内编辑时恢复选区和光标。
-- 强制过期版本保存后显示 `Save failed: ...`，保留本地草稿，并提供 `Export unsaved copy` 恢复控件。
-- 锁定节点拒绝调整尺寸和编辑内容。
-
-真实 harness 验收使用正在监听的 HTTP API。`codex` 与 DeepSeek（`dsh`）各自通过 `opendirector canvas text create` 创建一个 480×320、包含三个章节的 Markdown 节点，再用 `canvas text show` 读取原文，通过 `canvas text update --expected-version` 只修改第 1 节。两次运行均结束于 `canvas_item` revision 2，第 2、3 节与创建时逐字节一致。
-
-对应业务命令如下；占位符代表各轮的工程／节点 ID、Markdown 文件路径和画布坐标，更新使用 `show` 返回的版本：
+使用隔离的 API 和 Vite 运行已注册到浏览器门禁的回归；在三个终端分别执行：
 
 ```sh
-opendirector --project PROJECT_UUID canvas text create \
-  --file MARKDOWN_FILE --width 480 --height 320 --x X --y Y
-opendirector --project PROJECT_UUID canvas text show --id ITEM_UUID
-opendirector --project PROJECT_UUID canvas text update \
-  --id ITEM_UUID --file REVISED_MARKDOWN_FILE \
-  --expected-version canvas_item:ITEM_UUID:1
-opendirector --project PROJECT_UUID canvas text show --id ITEM_UUID
+# 终端 1：隔离工程存储与模型替身
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python tests/browser/creation_server.py --port 8027
+
+# 终端 2：前端代理到隔离 API
+OPENDIRECTOR_API_URL=http://127.0.0.1:8027 npm run dev -- --port 5187
+
+# 终端 3：文本节点回归
+CREATION_WEB_URL=http://127.0.0.1:5187 node tests/browser/canvas_text_markdown.mjs
 ```
 
-自动化必须遵守两个已验证的运行条件：
+如使用本机安装的浏览器或 Playwright 模块，通过 `BROWSER_PATH`、`PLAYWRIGHT_MODULE` 指定路径。完整浏览器门禁使用 `npm run test:browser`，并将 `CREATION_API_URL`、`CREATION_WEB_URL` 指向同一组隔离服务。
 
-- `canvas text show` 的有界源码读取使用 HTTP 传输，即使其他命令通过 live harness 调用；没有监听 API 的进程内 harness 会得到 connection refused。
+该回归验证：
+
+- 在 zoom 0.8 和 1.3 下，从未选中卡片的角落拖动并选中后立即拖拽缩放手柄，不等待选中后的视口动画结束。指针按住期间视口 transform 字符串保持不变；保存的宽高等于原尺寸加上屏幕位移除以手势开始时的 zoom，允许不超过 1 个画布单位的整数舍入误差。
+- 缩放期间没有业务写入，释放指针后只有一次提交；释放位置在手柄外也能结束交互。Escape 和 pointercancel 丢弃临时尺寸、结束历史事务并清除交互保护。正常选中仍可调整视口，手势开始会停止进行中的自动调整；手势后工具栏、生成器和键盘快捷键恢复可用。
+- 缩放只修改展示尺寸，保持文本素材不变，一次撤销／重做覆盖整个手势，重新打开工程后宽高保留。锁定文本节点不提供手柄且拒绝编辑。
+- Markdown 标题、列表、引用、强调、链接、代码块和表格的渲染，代码块语言标签的展示，以及行内输入缓冲区、全屏源码／预览、选区／光标／滚动交接和中英界面。
+
+自动化必须遵守两个运行条件：
+
+- `canvas text show` 的有界完整源码读取需要正在监听的 HTTP API，即使其他命令使用进程内或 live agent 桥接；没有监听 API 时会返回 `asset_text_api_unavailable`，提示启动 API 并检查 `OPENDIRECTOR_API_URL`。
 - 工程租约在 15 秒后过期。跨 agent 轮次的脚本必须续租，否则写入会被拒绝，错误为 `工程已关闭或会话已过期`。
 
-未完成的真实运行范围：OpenCode 自身 CLI 凭据无效，返回 `Unauthorized: The API Key appears to be invalid`，因此未完成其工作流；JiuwenSwarm 已安装但没有模型，状态为 `needs_configuration`，只用脚本化本地模型验证过，未验证真实模型；内置 `default` runtime 需要应用中配置的模型，本次没有运行。硬件 IME、Firefox 和 WebKit 均未测试。
-
-仓库中的浏览器回归可连接上文的隔离 API 和 Vite 复现：
-
-```sh
-CREATION_WEB_URL=http://127.0.0.1:5179 node tests/browser/canvas_text_markdown.mjs
-```
-
-该回归使用模型替身，覆盖 Markdown、输入缓冲区、全屏选区／滚动交接、拖动期间不写入、释放后单次提交、撤销／重做、重开和中英界面；它不能替代上面的 CDP、冲突及真实 harness 补充验收。
-
-以下四张静态截图来自真实应用渲染 `codex` 运行产出的 Markdown；动画展示画布、调整尺寸、行内编辑及全屏源码／预览。媒体保留协调者提供的原始文件，没有重新生成或裁剪。
-
-![Text node demo / 文本节点演示](images/issue-336-text-node/demo.gif)
-
-画布 Markdown 与选中后的缩放手柄 / Canvas Markdown and selected resize grip:
-
-![Canvas Markdown blocks / 画布 Markdown 内容块](images/issue-336-text-node/canvas-markdown-blocks.png)
-
-调整尺寸后的文本卡片 / Resized text card:
-
-![Resized text node / 调整尺寸后的文本节点](images/issue-336-text-node/resize-resized.png)
-
-英文全屏预览 / Fullscreen preview in English:
-
-![Fullscreen preview in English / 英文全屏预览](images/issue-336-text-node/fullscreen-preview-en.png)
-
-中文全屏预览 / Fullscreen preview in Chinese:
-
-![Fullscreen preview in Chinese / 中文全屏预览](images/issue-336-text-node/fullscreen-preview-zh.png)
+CLI 命令、参数和示例见 [CLI 使用说明](../guides/cli.md)。每个拉取请求的媒体、实测结果和验证范围记录在该拉取请求描述中。
 
 ## 定时文字与可移植时间线
 
