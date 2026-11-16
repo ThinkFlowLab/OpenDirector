@@ -502,7 +502,7 @@
     {
       "file": "kimi_real.mjs",
       "helper": true,
-      "note": "Manual acceptance against the real Moonshot Kimi chat endpoint; needs MOONSHOT_API_KEY and incurs charges, so no lane runs it."
+      "note": "Manual acceptance against a real Kimi chat endpoint; KIMI_ROUTE=open needs MOONSHOT_API_KEY, KIMI_ROUTE=coding needs KIMI_CODING_API_KEY. Both incur charges, so no lane runs it."
     },
     {
       "file": "zhipu_real.mjs",

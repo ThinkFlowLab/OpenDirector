@@ -1,6 +1,8 @@
-/** Real Moonshot Kimi evidence: the mainland chat preset drives the Default agent.
+/** Real Moonshot Kimi evidence: a Kimi chat preset drives the Default agent.
  * Requires a running OpenDirector (OPENDIRECTOR_URL and OPENDIRECTOR_API) on an
- * isolated OPENDIRECTOR_ROOT and MOONSHOT_API_KEY for a funded Moonshot account.
+ * isolated OPENDIRECTOR_ROOT. KIMI_ROUTE picks which billing route to exercise:
+ * "open" (default) needs MOONSHOT_API_KEY for the pay-per-token open platform,
+ * "coding" needs KIMI_CODING_API_KEY for a Kimi Code Plan subscription.
  * Contacts the real service and incurs charges. It writes one text asset.
  */
 import assert from "node:assert/strict";
@@ -9,10 +11,25 @@ import { launchBrowser } from "./engine.mjs";
 
 const web = process.env.OPENDIRECTOR_URL ?? "http://127.0.0.1:5190";
 const api = process.env.OPENDIRECTOR_API ?? "http://127.0.0.1:8040";
-const key = process.env.MOONSHOT_API_KEY;
+const route = process.env.KIMI_ROUTE ?? "open";
+const routes = {
+  open: {
+    key: process.env.MOONSHOT_API_KEY, keyVariable: "MOONSHOT_API_KEY",
+    url: "https://api.moonshot.cn/v1",
+    option: { "zh-CN": "月之暗面 Kimi 开放平台", "en-US": "Moonshot Kimi Open Platform" },
+  },
+  coding: {
+    key: process.env.KIMI_CODING_API_KEY, keyVariable: "KIMI_CODING_API_KEY",
+    url: "https://api.kimi.com/coding/v1",
+    option: { "zh-CN": "月之暗面 Kimi Code 订阅", "en-US": "Moonshot Kimi Code subscription" },
+  },
+}[route];
+assert.ok(routes, "KIMI_ROUTE must be open or coding");
+const key = routes.key;
 const output = process.env.KIMI_SCREENSHOTS ?? "/tmp/opendirector-kimi-evidence";
-assert.ok(key, "Set MOONSHOT_API_KEY");
-const url = "https://api.moonshot.cn/v1";
+assert.ok(key, "Set " + routes.keyVariable);
+const url = routes.url;
+const model = process.env.KIMI_MODEL ?? "kimi-k3";
 const headers = { "X-OpenDirector-Request": "1", "Content-Type": "application/json" };
 async function call(path, body, method) {
   const response = await fetch(api + path, {
@@ -38,7 +55,7 @@ for (const item of (await call("/api/model-configs")).filter((entry) => entry.ki
   await call(`/api/model-configs/${item.id}`, undefined, "DELETE");
 }
 const config = await call("/api/model-configs", {
-  kind: "agent", url, modelId: "kimi-k3", apiKey: key,
+  kind: "agent", url, modelId: model, apiKey: key,
   connectionType: "api", protocol: "openai", authMode: "bearer",
 });
 assert.equal(config.url, url);
@@ -47,7 +64,7 @@ const discovered = await call("/api/model-configs/discover", {
   kind: "agent", url, modelId: config.modelId, apiKey: key, configId: config.id,
   connectionType: "api", protocol: "openai", authMode: "bearer",
 });
-assert.ok(discovered.models.includes("kimi-k3"), JSON.stringify(discovered));
+assert.ok(discovered.models.includes(model), JSON.stringify(discovered));
 
 const projectId = crypto.randomUUID();
 await call(`/api/creation/projects/${projectId}/commands`, {
@@ -73,7 +90,7 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("request", (request) => {
       // The API key never reaches the browser: all provider traffic stays server side.
-      if (/moonshot\.(cn|ai)/.test(request.url())) errors.push("Browser contacted Moonshot directly");
+      if (/moonshot\.(cn|ai)|api\.kimi\.com/.test(request.url())) errors.push("Browser contacted Kimi directly");
     });
     await page.addInitScript(([id, language]) => {
       // Pin the UI language before first paint so the assertions below are stable.
@@ -82,7 +99,7 @@ try {
       localStorage.setItem("opendirector.lastUnifiedFilesystemProject", id);
     }, [projectId, locale]);
 
-    // 1. The preset shows the mainland endpoint before the key is entered.
+    // 1. The preset shows this route's endpoint before the key is entered.
     const settings = page.getByRole("button", {
       name: locale === "zh-CN" ? "设置" : "Settings", exact: true,
     });
@@ -106,7 +123,7 @@ try {
     await page.getByRole("button", { name: locale === "zh-CN" ? "添加服务" : "Add service", exact: true }).click();
     await page.getByRole("combobox", { name: locale === "zh-CN" ? "提供商" : "Provider", exact: true }).click();
     await page.getByRole("listbox", { name: locale === "zh-CN" ? "提供商" : "Provider", exact: true })
-      .getByRole("option", { name: locale === "zh-CN" ? "月之暗面 Kimi" : "Moonshot Kimi", exact: true })
+      .getByRole("option", { name: routes.option[locale], exact: true })
       .click();
     const urlField = locale === "zh-CN" ? "服务地址（Base URL）" : "Service URL (Base URL)";
     assert.equal(await page.getByLabel(urlField).inputValue(), url);
@@ -127,7 +144,7 @@ try {
     const conversation = () => call(`/api/creation/projects/${projectId}/assistant`);
     await until(async () => (await conversation()).messages.at(-1)?.status === "complete", "reply");
     const reply = (await conversation()).messages.at(-1);
-    assert.equal(reply.model, "kimi-k3");
+        assert.equal(reply.model, model);
     assert.ok(reply.text.trim().length > 0);
     await until(async () => flatten(await panel.textContent()).includes(flatten(reply.text).slice(0, 16)), "rendered reply");
     await page.screenshot({ path: `${output}/zh-CN-2-reply.png` });
@@ -139,7 +156,7 @@ try {
     }, "asset");
     assert.equal(asset.kind, "text");
     assert.equal(asset.provenance.source, "agent_written");
-    assert.equal(asset.provenance.modelSnapshot.modelId, "kimi-k3");
+    assert.equal(asset.provenance.modelSnapshot.modelId, model);
     assert.equal(asset.provenance.modelSnapshot.url, url);
     await page.screenshot({ path: `${output}/zh-CN-3-canvas.png` });
     // 4. The asset list shows the file; adding it puts a text node on the canvas.

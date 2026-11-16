@@ -29,7 +29,7 @@
 
 服务地址和 Model ID 应与自己的模型服务一致。自部署服务的地址通常包含 `/v1`，Model ID 使用服务实际公开的模型名称；第三方服务按其提供的信息填写。
 
-使用 Kimi 对话助手时，选择 **月之暗面 Kimi** 并填写月之暗面开放平台的主大陆 API Key。预设会填入 `https://api.moonshot.cn/v1`，点击“获取模型”即可列出该 Key 可用的模型，例如 `kimi-k3`、`kimi-k3.1-pro`。国际站端点不在本预设覆盖范围内，请按自定义 OpenAI 兼容服务填写自己的地址。[月之暗面平台文档](https://platform.moonshot.cn/docs)
+Kimi 对话助手有两种计费方式，各自使用独立的 Key 和服务地址，按自己的账号选择对应预设。**月之暗面 Kimi 开放平台**按量计费：填写月之暗面开放平台的主大陆 API Key，预设会填入 `https://api.moonshot.cn/v1`。**月之暗面 Kimi Code 订阅**走 Kimi Code Plan 的套餐额度：填写该订阅发放的 Key，预设会填入 `https://api.kimi.com/coding/v1`。两种 Key 不能互换使用。两者都可点击“获取模型”列出该 Key 可用的模型，例如 `kimi-k3`、`kimi-k3.1-pro`。国际站端点不在这两个预设的覆盖范围内，请按自定义 OpenAI 兼容服务填写自己的地址。[月之暗面平台文档](https://platform.kimi.com/docs)、[Kimi Code 服务配置文档](https://moonshotai.github.io/kimi-cli/zh/configuration/providers.html)
 
 使用千问对话助手时，选择 **阿里云百炼（北京）** 并填写北京地域的 API Key。预设会选中 `qwen3.8-max`。服务地址可保留默认的北京通用地址，也可填写以 `/compatible-mode/v1` 结尾的北京业务空间专属地址。[百炼 OpenAI 兼容接口指南](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)
 
