@@ -6,7 +6,7 @@
 
 [Watch the short recording](media/walkthrough.mp4) · [Animated GIF](media/walkthrough.gif)
 
-The recording uses DSH rc.3 Web and two existing images replayed through a local provider. It shows the installed plugin comparing candidates, adopting one, and finding the same selection after reloading. Capture itself makes no paid model calls.
+The recording uses DSH rc.3 Web and two existing images replayed through a local provider. It shows three labeled versions, a comparison of the original images, adoption of V2, and the same selection after reloading. Capture itself makes no paid model calls.
 
 ## Try an example
 
@@ -26,7 +26,7 @@ A DSH conversation can start the same workflow:
 
 ## 中文
 
-这段演示使用完整的 DSH rc.3 网页宿主。图片来自已有素材回放，展示的是对比候选、采用，以及刷新后找回同一个选择的实际界面操作。录制过程没有调用付费模型。
+这段演示使用完整的 DSH rc.3 网页宿主。图片来自已有素材回放，展示三个带版本号的候选、原图对比、采用 V2，以及刷新后找回同一个选择的实际界面操作。录制过程没有调用付费模型。
 
 从「创作素材 → 试一个例子」开始，选择工作室生图、角色参考图或配音。示例先填入描述；检查模型和参数后再生成。已经选好的模型、尺寸、参考图顺序和候选数量会保留。
 
