@@ -309,6 +309,27 @@ def test_mention_trailing_punctuation_does_not_swallow_the_title(suffix):
     assert links[0]['nodeId'] == str(item.id)
 
 
+@pytest.mark.parametrize('text', [
+    '@Finished note. Next step',
+    '@Finished note: Next step',
+    '@Finished note.',
+])
+def test_mention_sentence_punctuation_ends_the_mention_before_running_prose(text):
+    item = node(uuid4(), title='Finished note')
+    links = canvas_links_for_text(text, snapshot(nodes=[item]), uuid4())
+    assert [link['status'] for link in links] == ['focused']
+    assert links[0]['target'] == '@Finished note'
+    assert links[0]['nodeId'] == str(item.id)
+
+
+def test_empty_link_destinations_are_not_persisted_as_missing_noise():
+    item = node(uuid4(), title='Finished note')
+    project = snapshot(nodes=[item])
+    links = canvas_links_for_text('[x]() [y]( ) [z](notes.md)', project)
+    assert [link['target'] for link in links] == ['notes.md']
+    assert link_targets('[x]() [y]( )') == []
+
+
 def test_mentions_keep_internal_punctuation_and_strip_only_trailing():
     chapter = node(uuid4(), title='Chapter 2.1')
     finished = node(uuid4(), title='Finished note')
@@ -350,6 +371,88 @@ def test_message_enrichment_only_attaches_project_references():
     assert 'canvasLinks' not in message
     user = with_canvas_links({'id': 'u', 'role': 'user', 'text': '[x](notes.md)'}, project)
     assert 'canvasLinks' not in user
+
+
+def test_agent_generation_submit_stamps_provenance_and_relative_link_hits_it(tmp_path):
+    import asyncio
+    from opendirector.application.creation_generation import CreationGeneration
+    from opendirector.domain.creation.commands import parse_command
+    from opendirector.infrastructure.creation_projects import CreationProjects
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    from opendirector.agent.tools import AgentTools
+
+    store = CreationProjects(LocalProjects(tmp_path))
+    pid, session = uuid4(), str(uuid4())
+
+    def send(kind, *, versions=(), **payload):
+        return store.execute(parse_command({
+            'type': kind, 'projectId': pid, 'commandId': uuid4(),
+            'expectedVersions': list(versions), 'payload': payload}), session=session)
+
+    def version(kind, obj):
+        return {'objectType': kind, 'id': str(obj.id), 'revision': obj.revision}
+
+    assert send('project.create', name='Links').status == 'applied'
+    store.open(pid, session)
+
+    spec_id, item_id = uuid4(), uuid4()
+    assert send('creation.batch', operations=[
+        {'type': 'generationSpec.create', 'payload': {'spec': {
+            'id': str(spec_id), 'projectId': str(pid), 'kind': 'text', 'purpose': 'generation'}}},
+        {'type': 'canvas.show', 'payload': {'item': {
+            'id': str(item_id), 'projectId': str(pid), 'kind': 'text', 'title': 'Result',
+            'binding': {'role': 'generation', 'objectRef': {'id': str(spec_id)}}}}}]).status == 'applied'
+
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('agent', 'http://127.0.0.1:12345/v1', 'test-agent', '',
+        connection_type='self_hosted', protocol='openai', auth_mode='none')
+    spec = next(s for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+    assert send('generationSpec.update', versions=[version('generation_spec', spec)],
+        spec=spec.model_copy(update={'prompt': 'result.md',
+            'modelConfigId': UUID(config['id'])}).model_dump(mode='json')).status == 'applied'
+    spec = store.snapshot(pid).generationSpecs[-1]
+    target = next(item for item in store.snapshot(pid).canvasItems if item.id == item_id)
+
+    # A same-named user import: only the stamped generation output carries the turn.
+    assert send('asset.writeText', name='result.md', text='v1').status == 'applied'
+
+    class Provider:
+        def __init__(self):
+            self.finish = asyncio.Event()
+
+        def validate(self, kind, config):
+            pass
+
+        async def generate(self, config, task, submitted):
+            await self.finish.wait()
+            return 'md', b'Actual generated text'
+
+    provider = Provider()
+    generation = CreationGeneration(store, configs, provider)
+    business = AgentTools(store, generation, configs)
+    turn_id = uuid4()
+    provider.finish.set()
+
+    async def submit_and_wait():
+        receipt = await business.execute(pid, turn_id, session, 'submit-call', 'execute_command', {
+            'type': 'generation.submit',
+            'expectedVersions': [version('canvas_item', target), version('generation_spec', spec)],
+            'payload': {'specId': str(spec.id), 'expectedSpecRevision': spec.revision,
+                        'originItemId': str(target.id)}}, [], None)
+        assert receipt['status'] == 'accepted', receipt
+        await asyncio.gather(*(job.future for job in list(generation.jobs.values())))
+
+    try:
+        asyncio.run(submit_and_wait())
+    finally:
+        asyncio.run(generation.close())
+
+    snapshot = store.snapshot(pid)
+    generated = next(asset for asset in snapshot.assets if asset.provenance.source == 'generated')
+    assert str(generated.provenance.agentRunId) == str(turn_id)
+    resolved = resolve_canvas_link('result.md', snapshot, turn_id)
+    assert resolved['status'] == 'focused'
+    assert resolved['nodeId'] == str(target.id)
 
 
 def frames(response):

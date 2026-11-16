@@ -3,6 +3,26 @@ import test from "node:test";
 import { translate } from "../src/i18n/messages.ts";
 import { zhCN } from "../src/i18n/messages/zh-CN/index.ts";
 import { enUS } from "../src/i18n/messages/en-US/index.ts";
+import { renderCanvasMentions } from "../src/canvas/assistantCanvasMentions.ts";
+
+type HastText = { type: "text"; value: string };
+type HastElement = { type: "element"; tagName: string; properties: Record<string, unknown>; children: HastNode[] };
+type HastNode = HastText | HastElement | { type: string };
+type HastRoot = { type: "root"; children: HastNode[] };
+
+function text(value: string): HastText {
+  return { type: "text", value };
+}
+
+function element(tagName: string, children: HastNode[], properties: Record<string, unknown> = {}): HastElement {
+  return { type: "element", tagName, properties, children };
+}
+
+function rendered(value: string, targets: string[]): HastNode[] {
+  const tree: HastRoot = { type: "root", children: [element("p", [text(value)])] };
+  renderCanvasMentions({ targets })(tree as unknown as Parameters<ReturnType<typeof renderCanvasMentions>>[0]);
+  return (tree.children[0] as HastElement).children;
+}
 
 const keys = [
   "assistant.reply.canvasLink.open",
@@ -36,4 +56,29 @@ test("canvas link outcome copy names the user-visible action", () => {
   assert.equal(translate("en-US", "assistant.reply.canvasLink.materialize"), "Show on canvas");
   assert.equal(translate("zh-CN", "assistant.reply.canvasLink.hidden"), "显示隐藏对象");
   assert.equal(translate("zh-CN", "assistant.reply.canvasLink.materialize"), "在画布中显示");
+});
+
+test("a standalone mention renders as a clickable canvas reference", () => {
+  assert.deepEqual(rendered("@Title", ["@Title"]), [
+    element("canvas-reference", [text("@Title")], { href: "@Title" }),
+  ]);
+});
+
+test("a mention glued to a word character stays plain prose", () => {
+  assert.deepEqual(rendered("foo@Title", ["@Title"]), [text("foo@Title")]);
+  assert.deepEqual(rendered("see foo@Title and @Title", ["@Title"]), [
+    text("see foo@Title and "),
+    element("canvas-reference", [text("@Title")], { href: "@Title" }),
+  ]);
+});
+
+test("a mention inside an anchor (an autolinked URL) is left untouched", () => {
+  const tree: HastRoot = {
+    type: "root",
+    children: [element("a", [text("https://x/@Title")], { href: "https://x/@Title" })],
+  };
+  renderCanvasMentions({ targets: ["@Title"] })(tree as unknown as Parameters<ReturnType<typeof renderCanvasMentions>>[0]);
+  const anchor = tree.children[0] as HastElement;
+  assert.equal(anchor.tagName, "a");
+  assert.deepEqual(anchor.children, [text("https://x/@Title")]);
 });

@@ -12,6 +12,7 @@ import { canvasLinkClickAction } from "./assistantCanvasLink";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
 import { assistantCitationFormatter } from "./assistantCitations.ts";
+import { renderCanvasMentions } from "./assistantCanvasMentions.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
 
 const STATUS: Record<ChatTool["status"], MessageKey> = {
@@ -51,62 +52,6 @@ function prepareCanvasReferences(options: { targets: string[] }) {
 
 function renderCanvasReferences(options: { targets: string[] }) {
   return canvasReferencePlugin({ ...options, prepare: false });
-}
-
-/** Turn plain @title mentions into the same clickable canvas-reference nodes. */
-function renderCanvasMentions({ targets }: { targets: string[] }) {
-  // Longer names first so a prefix mention never splits a longer one.
-  const mentions = targets.filter((target) => target.startsWith("@"))
-    .sort((a, b) => b.length - a.length);
-  return (tree: Root) => {
-    if (!mentions.length) return;
-    const split = (value: string): Element["children"] => {
-      const parts: Element["children"] = [];
-      let rest = value;
-      while (rest.length) {
-        let index = -1;
-        let mention = "";
-        for (const target of mentions) {
-          const found = rest.indexOf(target);
-          if (found !== -1 && (index === -1 || found < index)) {
-            index = found;
-            mention = target;
-          }
-        }
-        if (index === -1) {
-          parts.push({ type: "text", value: rest });
-          break;
-        }
-        if (index > 0) parts.push({ type: "text", value: rest.slice(0, index) });
-        parts.push({
-          type: "element",
-          tagName: "canvas-reference",
-          properties: { href: mention },
-          children: [{ type: "text", value: mention }],
-        });
-        rest = rest.slice(index + mention.length);
-      }
-      return parts;
-    };
-    const visit = (parent: Root | Element) => {
-      const next: Element["children"] = [];
-      for (const child of parent.children) {
-        if (child.type === "element") {
-          if (child.tagName !== "code" && child.tagName !== "pre" &&
-              child.tagName !== "a" && child.tagName !== "canvas-reference") {
-            visit(child);
-          }
-          next.push(child);
-        } else if (child.type === "text") {
-          next.push(...split(child.value));
-        } else {
-          next.push(child as Element["children"][number]);
-        }
-      }
-      parent.children = next;
-    };
-    visit(tree);
-  };
 }
 
 function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {

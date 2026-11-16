@@ -32,12 +32,27 @@ def link_targets(text: str) -> list[str]:
         for child in token.children:
             if child.type == 'link_open' and child.attrs:
                 href = child.attrs.get('href')
-                if href is not None:
+                if href is not None and str(href).strip():
                     targets.append(str(href))
     return targets
 
 
 _MENTION_TRAILING = '.:"\'\uff09'
+
+
+def _mention_name(value: str) -> str:
+    """Trim a mention at the first sentence punctuation that ends it.
+
+    A period or colon followed by whitespace (or the end of the text) ends the
+    mention, so ``@Finished note. Next step`` resolves ``Finished note``. An
+    internal period such as ``Chapter 2.1`` stays part of the title because it
+    is not followed by whitespace.
+    """
+    value = value.strip()
+    for index, char in enumerate(value):
+        if char in _MENTION_TRAILING and (index + 1 == len(value) or value[index + 1].isspace()):
+            return value[:index].rstrip()
+    return value.rstrip()
 
 
 def _mention_targets(text: str) -> list[str]:
@@ -55,11 +70,7 @@ def _mention_targets(text: str) -> list[str]:
                 for match in re.finditer(
                         r"(?<!\w)@([^@\n,;!?()[\]{}<>`\u3002\uff1b\uff0c\uff01\uff1f]+)",
                         child.content):
-                    name = match.group(1).strip()
-                    following = child.content[match.end():match.end() + 1]
-                    if not following or following.isspace():
-                        name = name.rstrip(_MENTION_TRAILING)
-                    targets.append('@' + name)
+                    targets.append('@' + _mention_name(match.group(1)))
     return targets
 
 
