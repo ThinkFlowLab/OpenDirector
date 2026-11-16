@@ -1,6 +1,7 @@
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { defaultTranslate } from "./assistantTranslate.ts";
 import { parseStageMotion, type StageMotion } from "./stageMotion.ts";
+import type { AssetRef } from "../contracts/generated.ts";
 
 /** Local previsualization format. V1 is migrated here, never in consumers. */
 export interface Vector3Value {
@@ -24,13 +25,23 @@ export interface StageMotionClip {
   duration: number;
   motion: StageMotion;
 }
+export type StageAssetRole = "character" | "scene";
+export type StageAssetFormat = "glb" | "gltf";
 export interface StageObject extends StageTransform {
   id: string;
-  kind: "person" | "box" | "sphere";
+  kind: "person" | "box" | "sphere" | "gltf";
   name: string;
   color: string;
   keyframes: StageTransformFrame[];
   motionClips: StageMotionClip[];
+  /** Registered asset identity. Omitted only while a local import is unsaved. */
+  asset?: AssetRef;
+  /** Browser URL used to reconstruct a preview; never sent to the backend. */
+  source?: string;
+  role?: StageAssetRole;
+  format?: StageAssetFormat;
+  animationNames?: string[];
+  hasAnimation?: boolean;
 }
 export interface StageCamera {
   position: Vector3Value;
@@ -50,6 +61,121 @@ export interface StageShot {
   duration: number;
 }
 export const STAGE_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"] as const;
+function hasExternalGltfResources(value: unknown) {
+  if (!value || typeof value !== "object") return true;
+  const document = value as {
+    buffers?: unknown;
+    images?: unknown;
+  };
+  return [document.buffers, document.images].some(
+    (resources) =>
+      Array.isArray(resources) &&
+      resources.some(
+        (resource) =>
+          resource &&
+          typeof resource === "object" &&
+          "uri" in resource &&
+          typeof resource.uri === "string" &&
+          !resource.uri.startsWith("data:"),
+      ),
+  );
+}
+const isGltfDocument = (value: unknown) => {
+  const asset = (value as { asset?: unknown })?.asset;
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !!asset &&
+    typeof asset === "object" &&
+    "version" in asset
+  );
+};
+export interface StageAssetProbe {
+  format: StageAssetFormat;
+  /** Whether the parsed document references external buffers or images. */
+  external: boolean;
+  /** Whether the document needs decoders the browser loader cannot provide. */
+  compressed: boolean;
+}
+const COMPRESSED_GLTF_EXTENSIONS = new Set([
+  "KHR_draco_mesh_compression",
+  "EXT_meshopt_compression",
+  "KHR_texture_basisu",
+]);
+function usesCompressedGltfExtensions(value: unknown) {
+  const document = (value as { extensionsUsed?: unknown; extensionsRequired?: unknown }) ?? {};
+  return [document.extensionsUsed, document.extensionsRequired].some(
+    (list) =>
+      Array.isArray(list) &&
+      list.some(
+        (name) =>
+          typeof name === "string" && COMPRESSED_GLTF_EXTENSIONS.has(name),
+      ),
+  );
+}
+/**
+ * Container and self-containment come from the actual bytes, matching the
+ * backend probe. Returns "corrupt" when a GLB header is valid but its
+ * embedded JSON chunk is missing, unparsable, or not a glTF document, and
+ * undefined when the bytes are no stage model at all.
+ */
+export function probeStageAsset(
+  buffer: ArrayBuffer,
+): StageAssetProbe | "corrupt" | undefined {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const glbVersion = () => view.getUint32(4, true);
+  const declaredLength = () => view.getUint32(8, true);
+  const isGlbMagic =
+    bytes.length >= 4 &&
+    bytes[0] === 0x67 &&
+    bytes[1] === 0x6c &&
+    bytes[2] === 0x54 &&
+    bytes[3] === 0x46;
+  const isGlb =
+    bytes.length >= 12 &&
+    isGlbMagic &&
+    glbVersion() === 2 &&
+    declaredLength() >= 12 &&
+    declaredLength() <= bytes.length;
+  if (isGlbMagic && !isGlb) return undefined;
+  if (isGlb) {
+    let offset = 12;
+    while (offset + 8 <= bytes.length) {
+      const length = view.getUint32(offset, true);
+      if (view.getUint32(offset + 4, true) === 0x4e4f534a) {
+        try {
+          const document: unknown = JSON.parse(
+            new TextDecoder().decode(
+              bytes.subarray(offset + 8, offset + 8 + length),
+            ),
+          );
+          if (!isGltfDocument(document)) return "corrupt";
+          return {
+            format: "glb",
+            external: hasExternalGltfResources(document),
+            compressed: usesCompressedGltfExtensions(document),
+          };
+        } catch {
+          return "corrupt";
+        }
+      }
+      offset += 8 + length;
+    }
+    return "corrupt";
+  }
+  try {
+    const document: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!isGltfDocument(document)) return undefined;
+    return {
+      format: "gltf",
+      external: hasExternalGltfResources(document),
+      compressed: usesCompressedGltfExtensions(document),
+    };
+  } catch {
+    return undefined;
+  }
+}
 export interface LocalStageDocument {
   format: "opendirector-local-stage";
   version: 2;
@@ -72,6 +198,7 @@ export interface StageSample {
   cameraId: string;
   objects: StageSampleObject[];
 }
+export const STAGE_ASSET_MAX_BYTES = 100 * 1024 * 1024;
 const record = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 const finite = (v: unknown): v is number =>
@@ -82,6 +209,15 @@ const nonempty = (v: unknown): v is string =>
   typeof v === "string" && !!v.trim();
 const color = (v: unknown): v is string =>
   typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+const assetRef = (v: unknown): v is AssetRef =>
+  record(v) &&
+  nonempty(v.assetId) &&
+  typeof v.revision === "number" &&
+  Number.isInteger(v.revision) &&
+  v.revision >= 1 &&
+  typeof v.fingerprint === "string" &&
+  /^sha256:[0-9a-f]{64}$/.test(v.fingerprint) &&
+  v.kind === "file";
 const sameVector = (a: Vector3Value, b: Vector3Value) =>
   a.x === b.x && a.y === b.y && a.z === b.z;
 function parseTransform(
@@ -296,6 +432,20 @@ function migrateV1(
     }),
   };
 }
+/** Text boundary for stage imports; unparsable files report a localized error
+ * instead of an engine SyntaxError quoting the file's bytes. */
+export function parseLocalStageDocument(
+  text: string,
+  t: Translate = defaultTranslate,
+): LocalStageDocument {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error(t("editors.stage.ui.importNotJson"));
+  }
+  return parseLocalStageValue(value, t);
+}
 export function parseLocalStageValue(
   input: unknown,
   t: Translate = defaultTranslate,
@@ -324,19 +474,43 @@ export function parseLocalStageValue(
     ids = new Set<string>(),
     cameraIds = new Set<string>();
   const objects: StageObject[] = v.objects.map((o) => {
+    const rawObject = record(o) ? o : undefined;
+    const imported = rawObject?.kind === "gltf";
+    const importedAsset =
+      imported && assetRef(rawObject?.asset) ? rawObject.asset : undefined;
+    const importedSource =
+      imported && typeof rawObject?.source === "string" && rawObject.source.trim()
+        ? rawObject.source
+        : undefined;
+    const animationNames =
+      imported && Array.isArray(rawObject?.animationNames)
+        ? rawObject.animationNames.filter((name): name is string => nonempty(name))
+        : [];
     if (
       !record(o) ||
       !nonempty(o.id) ||
       ids.has(o.id) ||
-      !["person", "box", "sphere"].includes(String(o.kind)) ||
+      !["person", "box", "sphere", "gltf"].includes(String(o.kind)) ||
       typeof o.name !== "string" ||
       !color(o.color) ||
-      !Array.isArray(o.motionClips)
+      !Array.isArray(o.motionClips) ||
+      (imported &&
+        ((!importedAsset && !importedSource) ||
+          !["character", "scene"].includes(String(rawObject?.role)) ||
+          !["glb", "gltf"].includes(String(rawObject?.format)) ||
+          !Array.isArray(rawObject?.animationNames) ||
+          animationNames.length !== rawObject?.animationNames.length ||
+          typeof rawObject?.hasAnimation !== "boolean" ||
+          rawObject.hasAnimation !== Boolean(animationNames.length)))
     )
       throw new Error(t("editors.stage.error.invalidObject"));
     ids.add(o.id);
-    if (o.kind !== "person" && o.motionClips.length)
+    if (o.kind !== "person" && o.kind !== "gltf" && o.motionClips.length)
       throw new Error(t("editors.stage.error.jointMotionPerson"));
+    if (imported && o.role === "scene" && o.motionClips.length)
+      throw new Error(t("editors.stage.error.importedSceneMotion"));
+    if (imported && !o.hasAnimation && o.motionClips.length)
+      throw new Error(t("editors.stage.error.importedMotionUnavailable"));
     return {
       id: o.id,
       kind: o.kind as StageObject["kind"],
@@ -359,6 +533,16 @@ export function parseLocalStageValue(
         t("editors.stage.label.motionClip"),
         t,
       ),
+      ...(importedAsset ? { asset: { ...importedAsset } } : {}),
+      ...(importedSource ? { source: importedSource } : {}),
+      ...(imported
+        ? {
+            role: o.role as StageAssetRole,
+            format: o.format as StageAssetFormat,
+            animationNames: [...animationNames],
+            hasAnimation: o.hasAnimation as boolean,
+          }
+        : {}),
     };
   });
   const cameras: StageCameraRig[] = v.cameras.map((c) => {
@@ -416,6 +600,14 @@ const sameCamera = (a: StageCamera, b: StageCamera) =>
   sameVector(a.position, b.position) &&
   sameVector(a.target, b.target) &&
   a.fov === b.fov;
+const sameAsset = (a: AssetRef | undefined, b: AssetRef | undefined) =>
+  a === b ||
+  (!!a &&
+    !!b &&
+    a.assetId === b.assetId &&
+    a.revision === b.revision &&
+    a.fingerprint === b.fingerprint &&
+    a.kind === b.kind);
 const sameFrames = <T>(
   a: { id: string; time: number; value: T }[],
   b: { id: string; time: number; value: T }[],
@@ -448,6 +640,12 @@ export function sameLocalStage(
           o.name === p.name &&
           o.kind === p.kind &&
           o.color === p.color &&
+          sameAsset(o.asset, p.asset) &&
+          o.role === p.role &&
+          o.format === p.format &&
+          o.hasAnimation === p.hasAnimation &&
+          (o.animationNames ?? []).join("\u0000") ===
+            (p.animationNames ?? []).join("\u0000") &&
           sameTransform(o, p) &&
           sameFrames(o.keyframes, p.keyframes, sameTransform) &&
           o.motionClips.length === p.motionClips.length &&
@@ -527,11 +725,12 @@ export function sampleStageCamera(
     fov: lerp(a.fov, b.fov, t),
   }));
 }
-/** Same global timeline and half-open cut boundaries for editor, screenshots and MP4. */
-export function sampleStage(
+/** The shot whose camera evaluates at a time, or the gap fallback. Half-open
+ * cut boundaries match the sampler shared by editor, screenshots and MP4. */
+export function stageCameraAt(
   stage: LocalStageDocument,
   time: number,
-): StageSample {
+): { cameraId: string; shot?: StageShot } {
   const at = Math.max(0, Math.min(stage.duration, time));
   const shot =
     stage.cameraSource === "storyboard"
@@ -542,7 +741,15 @@ export function sampleStage(
               (at === stage.duration && at === s.start + s.duration)),
         )
       : undefined;
-  const cameraId = shot?.cameraId ?? stage.activeCameraId;
+  return { cameraId: shot?.cameraId ?? stage.activeCameraId, shot };
+}
+/** Same global timeline and half-open cut boundaries for editor, screenshots and MP4. */
+export function sampleStage(
+  stage: LocalStageDocument,
+  time: number,
+): StageSample {
+  const at = Math.max(0, Math.min(stage.duration, time));
+  const cameraId = stageCameraAt(stage, at).cameraId;
   return {
     cameraId,
     camera: sampleStageCamera(stage, cameraId, at),
@@ -721,4 +928,16 @@ export function stageOutputSize(ratio: LocalStageDocument["aspectRatio"]): {
     width: Math.round((1280 * w!) / Math.max(w!, h!) / 2) * 2,
     height: Math.round((1280 * h!) / Math.max(w!, h!) / 2) * 2,
   };
+}
+/** Imported objects pinning assets the current project has not registered.
+ * Stage JSON exports carry no model bytes, so such objects can neither
+ * preview nor apply; importers reject them explicitly instead of failing
+ * at save time. */
+export function unregisteredStageAssets(
+  stage: LocalStageDocument,
+  isRegistered: (asset: AssetRef) => boolean,
+): StageObject[] {
+  return stage.objects.filter(
+    (object) => object.kind === "gltf" && object.asset && !isRegistered(object.asset),
+  );
 }

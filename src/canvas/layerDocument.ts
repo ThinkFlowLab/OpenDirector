@@ -219,7 +219,13 @@ export function parseLayerDocument(
   text: string,
   t: Translate = defaultTranslate,
 ): LayerDocument {
-  return parseLayerDocumentValue(JSON.parse(text), t);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error(t("editors.layerDocument.error.notJson"));
+  }
+  return parseLayerDocumentValue(value, t);
 }
 export function parseLayerDocumentValue(
   value: unknown,

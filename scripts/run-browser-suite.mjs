@@ -37,6 +37,15 @@ const workflows = [
   { name: "session lease", script: "tests/browser/session_lease.mjs" },
   { name: "mp4 export", script: "tests/browser/mp4_export.mjs" },
   { name: "editor save", script: "tests/browser/editor_save.mjs" },
+  {
+    name: "director stage entry",
+    script: "tests/browser/director_stage_entry.mjs",
+  },
+  {
+    name: "director stage entry (zh-CN)",
+    script: "tests/browser/director_stage_entry.mjs",
+    env: { DIRECTOR_STAGE_LOCALE: "zh-CN" },
+  },
   { name: "canvas crop", script: "tests/browser/canvas_crop.mjs" },
   { name: "canvas text Markdown", script: "tests/browser/canvas_text_markdown.mjs" },
   {

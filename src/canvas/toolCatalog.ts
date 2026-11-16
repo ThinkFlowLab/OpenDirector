@@ -560,6 +560,31 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     },
   ),
 ];
+/** Stage preview outputs are projections of an editable director stage;
+ * generative and audio transforms target the stage, not the render, and the
+ * render has no audio track. */
+export const STAGE_PREVIEW_EXCLUDED_VIDEO_TOOLS: ReadonlySet<CanvasToolId> =
+  new Set([
+    "video-partial-reshoot",
+    "video-upscale",
+    "video-edit",
+    "video-extend",
+    "video-depth-capture",
+    "extract-audio",
+    "audio-separation",
+    "video-frame-interpolation",
+    "video-subtitle-erasure",
+    "video-matting",
+  ]);
+export function isStagePreviewOutput(node: {
+  type: string;
+  data: { generationProvenance?: { stagePreview?: boolean } };
+}): boolean {
+  return (
+    node.type === "video" &&
+    node.data.generationProvenance?.stagePreview === true
+  );
+}
 export function toolFields(
   tool: CanvasToolDefinition,
   capability?: ToolCapability,

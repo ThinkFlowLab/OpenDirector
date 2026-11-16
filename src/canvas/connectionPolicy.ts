@@ -15,7 +15,7 @@ import { assemblyIssue, isAssemblyTarget } from "./editorAssembly.ts";
 /** Product port capabilities; model-specific input limits remain separate. */
 export function nodePorts(kind: CanvasNodeKind) {
   return {
-    source: !["group", "stack", "timeline"].includes(kind),
+    source: !["group", "stack", "timeline", "external"].includes(kind),
     target: !["group", "stack", "tool", "external"].includes(kind),
   };
 }
@@ -217,8 +217,7 @@ export function referenceIssue(
       return "target_type_unsupported";
     return null;
   }
-  if (!nodePorts(a.type).source || a.type === "external")
-    return "source_type_unsupported";
+  if (!nodePorts(a.type).source) return "source_type_unsupported";
   if (!nodePorts(b.type).target) return "target_type_unsupported";
   if (!referenceTypeAllowed(a, b.type)) return "source_type_unsupported";
   if (!canSourceReference(a)) return "source_empty";

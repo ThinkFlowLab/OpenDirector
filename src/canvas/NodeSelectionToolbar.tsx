@@ -12,7 +12,11 @@ import type { ToolGlyphName } from "./toolGlyphs";
 import { TooltipButton } from "./TooltipButton";
 import { GridSplitOptions, SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
-import type { CanvasToolId } from "./toolCatalog";
+import {
+  isStagePreviewOutput,
+  STAGE_PREVIEW_EXCLUDED_VIDEO_TOOLS,
+  type CanvasToolId,
+} from "./toolCatalog";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import "./node-selection-toolbar.css";
@@ -98,6 +102,7 @@ const editLabels: Partial<Record<CanvasNode["type"], MessageKey>> = {
   tool: "canvas.selection.edit.tool",
   external: "canvas.selection.edit.external",
 };
+const NO_VIDEO_TOOL_EXCLUSIONS: ReadonlySet<string> = new Set();
 
 /** Selection actions stay distinct from generation controls. Empty media has no post-edit toolbar.
  * Local editors and tool drafts keep their own capability constraints.
@@ -156,7 +161,7 @@ export function NodeSelectionToolbar({
     options: MenuOption[],
     glyph?: ToolGlyphName,
   ) => {
-    if (options.some((option) => !option.disabled))
+    if (options.length && options.some((option) => !option.disabled))
       editing.push({ id, label, icon, glyph, options, disabled: locked });
   };
   const addTool = (
@@ -269,47 +274,56 @@ export function NodeSelectionToolbar({
       "tools",
     );
   } else if (node.type === "video") {
+    const captureFrameOptions = (): MenuOption[] => [
+      {
+        id: "capture-first",
+        label: t("canvas.selection.firstFrame"),
+        icon: "image",
+        run: () => onCaptureFrame?.("first"),
+        disabled: !onCaptureFrame,
+      },
+      {
+        id: "capture-last",
+        label: t("canvas.selection.lastFrame"),
+        icon: "image",
+        run: () => onCaptureFrame?.("last"),
+        disabled: !onCaptureFrame,
+      },
+      {
+        id: "capture-custom",
+        label: t("canvas.selection.customFrame"),
+        icon: "camera",
+        run: () => onEdit?.("frame"),
+        disabled: !onEdit,
+      },
+    ];
+    // Stage preview outputs drop generative and audio tools per the shared
+    // exclusion set; this component never re-decides which role loses what.
+    const excluded: ReadonlySet<string> = isStagePreviewOutput(node)
+      ? STAGE_PREVIEW_EXCLUDED_VIDEO_TOOLS
+      : NO_VIDEO_TOOL_EXCLUSIONS;
+    const offered = (options: MenuOption[]) =>
+      options.filter((option) => !excluded.has(option.id));
     for (const [tool, labelKey, icon] of videoTools)
-      addTool(tool, t(labelKey), icon);
+      if (!excluded.has(tool)) addTool(tool, t(labelKey), icon);
     addMenu(
       "video-frame-capture",
       t("canvas.selection.captureFrame"),
       "image",
-      [
-        {
-          id: "capture-first",
-          label: t("canvas.selection.firstFrame"),
-          icon: "image",
-          run: () => onCaptureFrame?.("first"),
-          disabled: !onCaptureFrame,
-        },
-        {
-          id: "capture-last",
-          label: t("canvas.selection.lastFrame"),
-          icon: "image",
-          run: () => onCaptureFrame?.("last"),
-          disabled: !onCaptureFrame,
-        },
-        {
-          id: "capture-custom",
-          label: t("canvas.selection.customFrame"),
-          icon: "camera",
-          run: () => onEdit?.("frame"),
-          disabled: !onEdit,
-        },
-      ],
+      captureFrameOptions(),
     );
-    addTool(
-      "video-depth-capture",
-      t("canvas.selection.depthCapture"),
-      "subject",
-    );
+    if (!excluded.has("video-depth-capture"))
+      addTool(
+        "video-depth-capture",
+        t("canvas.selection.depthCapture"),
+        "subject",
+      );
     addEditor("video-trim", t("canvas.selection.trimVideo"), "trim", "trim");
     addMenu(
       "sound-separation",
       t("canvas.selection.audioSeparation"),
       "audio",
-      [
+      offered([
         {
           id: "extract-audio",
           label: t("canvas.selection.extractAudio"),
@@ -324,9 +338,9 @@ export function NodeSelectionToolbar({
           "sliders",
           t("canvas.selection.separateTrackHint"),
         ),
-      ],
+      ]),
     );
-    addMenu("tools", t("canvas.selection.tools"), "tool", [
+    const utilities = offered([
       toolOption(
         "video-frame-interpolation",
         t("canvas.selection.frameInterpolation"),
@@ -337,13 +351,21 @@ export function NodeSelectionToolbar({
         t("canvas.selection.subtitleErase"),
         "text",
       ),
-      toolOption(
-        "video-matting",
-        t("canvas.selection.videoMatting"),
-        "subject",
-      ),
+      toolOption("video-matting", t("canvas.selection.videoMatting"), "subject"),
       toolOption("video-crop", t("canvas.selection.videoCrop"), "crop"),
     ]);
+    if (utilities.length === 1) {
+      // A dropdown that lost every option but one is a plain button.
+      const only = utilities[0]!;
+      editing.push({
+        id: only.id,
+        label: only.label,
+        icon: only.icon,
+        run: only.run,
+        disabled: locked || only.disabled,
+      });
+    } else
+      addMenu("tools", t("canvas.selection.tools"), "tool", utilities);
   } else if (node.type === "audio") {
     addEditor("audio-trim", t("canvas.selection.trimAudio"), "trim", "trim");
     addTool("audio-separation", t("canvas.selection.separateTrack"), "audio");

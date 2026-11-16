@@ -433,6 +433,7 @@ export interface DirectorDataInput extends ContractInput {
   readonly cameraSource?: "camera" | "storyboard";
   readonly shots?: ReadonlyArray<StageShotInput>;
   readonly objects?: ReadonlyArray<StageObjectInput>;
+  readonly still?: AssetRefInput | null;
 }
 
 export interface DirectorDocumentInput extends EditorDocumentBaseInput {
@@ -805,6 +806,8 @@ export interface MediaMetadataInput extends ContractInput {
   readonly hasAudio?: boolean | null;
   readonly sampleRate?: number | null;
   readonly channels?: number | null;
+  readonly selfContained?: boolean | null;
+  readonly animationNames?: ReadonlyArray<string> | null;
 }
 
 export interface MediaPublicationOutputInput extends ContractInput {
@@ -1197,11 +1200,16 @@ export interface StageMotionInput extends ContractInput {
 
 export interface StageObjectInput extends StageTransformInput {
   readonly id: string;
-  readonly kind: "person" | "box" | "sphere";
+  readonly kind: "person" | "box" | "sphere" | "gltf";
   readonly name: string;
   readonly color: string;
   readonly keyframes?: ReadonlyArray<TransformFrameInput>;
   readonly motionClips?: ReadonlyArray<MotionClipInput>;
+  readonly asset?: AssetRefInput | null;
+  readonly role?: "character" | "scene" | null;
+  readonly format?: "glb" | "gltf" | null;
+  readonly animationNames?: ReadonlyArray<string>;
+  readonly hasAnimation?: boolean;
 }
 
 export interface StageShotInput extends ContractInput {
@@ -2013,6 +2021,7 @@ export interface DirectorData extends Contract {
   readonly cameraSource: "camera" | "storyboard";
   readonly shots: ReadonlyArray<StageShot>;
   readonly objects: ReadonlyArray<StageObject>;
+  readonly still: AssetRef | null;
 }
 
 export interface DirectorDocument extends EditorDocumentBase {
@@ -2385,6 +2394,8 @@ export interface MediaMetadata extends Contract {
   readonly hasAudio: boolean | null;
   readonly sampleRate: number | null;
   readonly channels: number | null;
+  readonly selfContained: boolean | null;
+  readonly animationNames: ReadonlyArray<string> | null;
 }
 
 export interface MediaPublicationOutput extends Contract {
@@ -2776,11 +2787,16 @@ export interface StageMotion extends Contract {
 
 export interface StageObject extends StageTransform {
   readonly id: string;
-  readonly kind: "person" | "box" | "sphere";
+  readonly kind: "person" | "box" | "sphere" | "gltf";
   readonly name: string;
   readonly color: string;
   readonly keyframes: ReadonlyArray<TransformFrame>;
   readonly motionClips: ReadonlyArray<MotionClip>;
+  readonly asset: AssetRef | null;
+  readonly role: "character" | "scene" | null;
+  readonly format: "glb" | "gltf" | null;
+  readonly animationNames: ReadonlyArray<string>;
+  readonly hasAnimation: boolean;
 }
 
 export interface StageShot extends Contract {

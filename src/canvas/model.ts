@@ -230,6 +230,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
     inputFingerprint?: string;
     editorDocumentId?: string;
     editorRevision?: number;
+    /** Derived at projection from the director execution document; drives presentation filtering. */
+    stagePreview?: boolean;
   };
   settings?: GenerationSettings;
   agentSettings?: AgentNodeSettings;
@@ -242,6 +244,10 @@ export interface CanvasNodeData extends Record<string, unknown> {
   layers?: LayerDocument;
   imageCrop?: import("./imageCrop.ts").ImageCropState;
   localStage?: LocalStageDocument;
+  /** Captured stage still: the pinned project asset, plus transient capture
+   * bytes that the next save imports and registers as a project asset. */
+  stillAsset?: AssetRef;
+  stillCapture?: string;
   taskDraft?: CanvasToolTask;
   media?: { width?: number; height?: number; durationSeconds?: number };
 }

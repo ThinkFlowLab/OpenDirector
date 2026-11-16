@@ -51,6 +51,7 @@ test("interactive reference policy enforces ports and source capabilities while 
   assert.deepEqual(nodePorts("subject"), { source: true, target: true });
   assert.deepEqual(nodePorts("tool"), { source: true, target: false });
   assert.deepEqual(nodePorts("stack"), { source: false, target: false });
+  assert.deepEqual(nodePorts("external"), { source: false, target: false });
   for (const [a, b] of [
     [image, stack],
     [stack, image],

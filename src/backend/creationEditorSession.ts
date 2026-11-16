@@ -1,6 +1,7 @@
 import type { CanvasDocument, CanvasNodeData } from "../canvas/model.ts";
 import { applyCommand } from "../canvas/model.ts";
 import { updateStack } from "../canvas/operations.ts";
+import { ApiError } from "./api.ts";
 import {
   CreationClient,
   CreationCommandError,
@@ -158,7 +159,15 @@ export class CreationEditorSession {
     } catch (error) {
       // Only a definitive rejection releases the operation. Its version basis
       // remains unchanged: retrying must not silently overwrite a newer edit.
-      if (error instanceof CreationCommandError) {
+      // A transport-level 4xx refusal is definitive too — the same bytes can
+      // never succeed — so a plan the backend refused at the HTTP boundary
+      // (for example one prepared by an older schema) must not be replayed
+      // forever from the stored delivery.
+      if (
+        error instanceof CreationCommandError ||
+        (error instanceof ApiError &&
+          [400, 401, 403, 413, 422].includes(error.status ?? 0))
+      ) {
         this.pending = undefined;
         this.storePending();
       }

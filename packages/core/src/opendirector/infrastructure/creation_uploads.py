@@ -1,5 +1,6 @@
 """Project/session-scoped streaming staging; no project facts before commit."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -14,7 +15,7 @@ from opendirector.domain.creation.assets import MediaMetadata, UploadInfo
 from opendirector.domain.creation.base import Contract, Fingerprint, MediaKind
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_files import file_identity, upload_directory
-from opendirector.ports.files import MAX_CREATION_ASSET_BYTES, MAX_CREATION_TEXT_BYTES
+from opendirector.ports.files import MAX_CREATION_ASSET_BYTES, MAX_STAGE_MODEL_BYTES, MAX_CREATION_TEXT_BYTES
 from opendirector.infrastructure.creation_projects import directory, durable_json, sync_directory
 from opendirector.infrastructure.local_projects import child, read_json
 from opendirector.infrastructure.rename import rename_path
@@ -30,8 +31,28 @@ def asset_name(value):
     return value
 
 
+STAGE_MODEL_TOO_LARGE = '舞台模型文件应不超过 100 MiB，与浏览器导入上限一致。Stage model files must not exceed 100 MiB, matching the browser import limit.'
+
+
 def upload_asset_id(project_id, handle):
     return uuid5(UUID(str(project_id)), 'upload:' + str(handle))
+
+
+def _has_external_gltf_resources(document):
+    entries = [entry for key in ('buffers', 'images') if isinstance(document.get(key), list) for entry in document[key]]
+    return any(isinstance(entry, dict) and isinstance(entry.get('uri'), str) and not entry['uri'].startswith('data:')
+               for entry in entries)
+
+
+def _gltf_animation_names(document):
+    """Names must match what a browser loader derives: declared names
+    trimmed, unnamed clips falling back to animation_{index}."""
+    animations = document.get('animations')
+    if not isinstance(animations, list):
+        return ()
+    return tuple((entry.get('name') if isinstance(entry, dict) and isinstance(entry.get('name'), str) else '').strip()
+                 or f'animation_{index}'
+                 for index, entry in enumerate(animations))
 
 
 class UploadOwner(Contract):
@@ -69,7 +90,9 @@ def inspect_file(path: Path, name: str, *, expected_kind=None):
             raise ProjectError('文件包含非文本内容，请导入 UTF-8 文本。')
         return 'text', MediaMetadata(size=size, mimeType='text/markdown' if suffix == '.md' else 'text/plain')
     with path.open('rb') as stream:
-        prefix = stream.read(16)
+        # Image and container magic detection needs only the first 12 bytes;
+        # glTF JSON heads behind longer whitespace are streamed below.
+        prefix = stream.read(4096)
     image_bytes = (prefix.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff', b'GIF87a', b'GIF89a'))
                    or prefix.startswith(b'RIFF') and prefix[8:12] == b'WEBP' or heif_type(prefix))
     if suffix in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'} or image_bytes or expected_kind == 'image':
@@ -103,6 +126,55 @@ def inspect_file(path: Path, name: str, *, expected_kind=None):
             return kind, MediaMetadata(size=size, mimeType=mime, **value)
         except ValueError:
             raise ProjectError('媒体尺寸、时长或音频信息无效，请检查文件。') from None
+    if prefix.startswith(b'glTF') and size >= 12:
+        if size > MAX_STAGE_MODEL_BYTES:
+            raise ProjectError(STAGE_MODEL_TOO_LARGE, 413)
+        version, total = int.from_bytes(prefix[4:8], 'little'), int.from_bytes(prefix[8:12], 'little')
+        if version == 2 and 12 <= total <= size:
+            document = None
+            with path.open('rb') as stream:
+                stream.seek(12)
+                while len(header := stream.read(8)) == 8:
+                    length = int.from_bytes(header[:4], 'little')
+                    payload = stream.read(length)
+                    if len(payload) < length:
+                        break
+                    if header[4:] == b'JSON':
+                        document = payload
+                        break
+            try:
+                parsed = json.loads(document) if document is not None else None
+            except (ValueError, RecursionError):
+                parsed = None
+            self_contained = (isinstance(parsed, dict) and isinstance(parsed.get('asset'), dict)
+                              and 'version' in parsed['asset'] and not _has_external_gltf_resources(parsed))
+            return 'file', MediaMetadata(size=size, mimeType='model/gltf-binary', selfContained=self_contained,
+                                         animationNames=_gltf_animation_names(parsed) if isinstance(parsed, dict) else None)
+    # Stage models are probed as whole JSON documents, so oversized files are
+    # rejected up front instead of being fully loaded into memory; oversized
+    # JSON without a .gltf suffix stays a generic file.
+    # A JSON head may sit behind any amount of leading whitespace, matching
+    # what a browser JSON.parse accepts; only files small enough to be stage
+    # models are worth scanning.
+    json_head = prefix.lstrip()[:1] == b'{'
+    if not json_head and not prefix.strip() and size <= MAX_STAGE_MODEL_BYTES:
+        with path.open('rb') as stream:
+            while chunk := stream.read(4096):
+                stripped = chunk.lstrip()
+                if stripped:
+                    json_head = stripped[:1] == b'{'
+                    break
+    if size <= MAX_STAGE_MODEL_BYTES and (json_head or suffix == '.gltf'):
+        try:
+            parsed = json.loads(path.read_text(encoding='utf-8-sig'))
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get('asset'), dict) and 'version' in parsed['asset']:
+            return 'file', MediaMetadata(size=size, mimeType='model/gltf+json',
+                                         selfContained=not _has_external_gltf_resources(parsed),
+                                         animationNames=_gltf_animation_names(parsed))
+    elif suffix == '.gltf':
+        raise ProjectError(STAGE_MODEL_TOO_LARGE, 413)
     with path.open('rb') as stream:
         mime = 'application/pdf' if stream.read(5) == b'%PDF-' else 'application/octet-stream'
     return 'file', MediaMetadata(size=size, mimeType=mime)

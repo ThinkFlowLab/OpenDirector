@@ -1,6 +1,7 @@
 import { useContext, useLayoutEffect, useRef, type ReactNode } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { CanvasNodeKind } from "./model";
+import { nodePorts } from "./connectionPolicy.ts";
 import { CanvasActionsContext } from "./CanvasActionsContext";
 import { CanvasIcon } from "./CanvasIcon";
 import { useI18n } from "../i18n/I18nProvider.tsx";
@@ -155,23 +156,23 @@ export function NodeFrame({
             <CanvasIcon name="chevronDown" size={11} />
           </button>
         )}
-      {kind !== "group" && (
-        <>
-          <Handle
-            id="in"
-            type="target"
-            position={Position.Left}
-            isConnectable={false}
-            className="cw-port cw-proxy-port"
-          />
-          <Handle
-            id="out"
-            type="source"
-            position={Position.Right}
-            isConnectable={false}
-            className="cw-port cw-proxy-port"
-          />
-        </>
+      {nodePorts(kind).target && (
+        <Handle
+          id="in"
+          type="target"
+          position={Position.Left}
+          isConnectable={false}
+          className="cw-port cw-proxy-port"
+        />
+      )}
+      {nodePorts(kind).source && (
+        <Handle
+          id="out"
+          type="source"
+          position={Position.Right}
+          isConnectable={false}
+          className="cw-port cw-proxy-port"
+        />
       )}
     </div>
   );

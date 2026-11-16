@@ -49,9 +49,10 @@ def asset(number, kind):
     return Asset(**entity(number, kind=kind, name=f'{kind} source',
         fingerprint='sha256:' + f'{number:064x}', path=f'assets/{uid(number)}',
         metadata=dict(mimeType={'text': 'text/plain', 'image': 'image/png', 'video': 'video/mp4',
-                                'audio': 'audio/wav', 'file': 'application/pdf'}[kind], size=100,
+                                'audio': 'audio/wav', 'file': 'model/gltf-binary'}[kind], size=100,
                       **({'durationSeconds': 4} if kind in {'video', 'audio'} else {}),
-                      **({'width': 128, 'height': 128} if kind == 'image' else {})),
+                      **({'width': 128, 'height': 128} if kind == 'image' else {}),
+                      **({'selfContained': True} if kind == 'file' else {})),
         provenance=dict(source='upload')))
 
 
@@ -79,7 +80,9 @@ def project_example():
             cameras=[dict(id='camera', name='Camera', pose=camera, keyframes=[dict(id='key', time=0, value=camera)])],
             cameraSource='storyboard', shots=[dict(id='cut', cameraId='camera', start=0, duration=5)],
             objects=[dict(id='actor', kind='person', name='Actor', color='#ff0000', **transform,
-                          motionClips=[dict(id='walk', start=0, duration=4, motion=dict(preset='walk', speed=1, amount=1))])])),
+                          motionClips=[dict(id='walk', start=0, duration=4, motion=dict(preset='walk', speed=1, amount=1))]),
+                     dict(id='prop', kind='gltf', name='Prop', color='#b8c5ff', keyframes=(), motionClips=(),
+                          asset=file, role='scene', format='glb', animationNames=(), hasAnimation=False, **transform)])),
         entity(35, kind='layers', data=dict(width=128, height=128, layers=[dict(id='layer', name='Original', width=128, height=128,
             content=dict(kind='image', asset=image, width=128, height=128), mask=[dict(mode='erase', size=10, points=[dict(x=1, y=2)])])])),
         entity(36, kind='media_edit', data=dict(tool='crop', sources=[image], parameters=dict(ratio='1:1'),

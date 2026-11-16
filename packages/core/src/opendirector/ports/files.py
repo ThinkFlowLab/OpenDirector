@@ -13,6 +13,7 @@ from opendirector.domain.creation.base import Contract, Fingerprint
 CHUNK_BYTES = 1024 * 1024
 MAX_CREATION_ASSET_BYTES = 512 * 1024 * 1024
 MAX_CREATION_TEXT_BYTES = 1024 * 1024
+MAX_STAGE_MODEL_BYTES = 100 * 1024 * 1024
 
 
 class AssetFileWrite(Contract):

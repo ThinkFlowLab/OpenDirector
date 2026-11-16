@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { ApiError } from "../src/backend/api.ts";
 import {
   CreationClient,
   CreationCommandError,
@@ -179,6 +180,71 @@ test("a lost delivery survives a new editor session and resolves before a change
     /上一次编辑保存已确认/,
   );
   assert.deepEqual(calls[0], calls[1]);
+  assert.equal(saved.size, 0);
+});
+
+test("a definitively refused stored delivery is replanned, never replayed forever", async (t) => {
+  const original = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "sessionStorage",
+  );
+  const saved = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string) => saved.get(k) ?? null,
+      setItem: (k: string, v: string) => saved.set(k, v),
+      removeItem: (k: string) => saved.delete(k),
+    },
+  });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, "sessionStorage", original);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  });
+  const { client, document, item } = await fixture();
+  const timeline = structuredClone(
+    document.nodes.find((n) => n.id === item.id)!.data.timeline!,
+  );
+  timeline.width += 2;
+  // A delivery stored by an older schema: its prepared operations carry a
+  // field the backend now refuses at the HTTP boundary (422 invalid_input).
+  saved.set(
+    `opendirector.editor.delivery:${client.id}:${item.id}`,
+    JSON.stringify({
+      id: crypto.randomUUID(),
+      key: JSON.stringify({ timeline }),
+      data: { timeline },
+      plan: {
+        operations: [
+          {
+            type: "editor.save",
+            payload: { document: { id: item.id, projectId: client.id, kind: "timeline", data: { legacyJunk: true } } },
+          },
+        ],
+        versions: [],
+      },
+    }),
+  );
+  const posts: { junk: boolean }[] = [];
+  client.command = async (_type, payload) => {
+    const junk = JSON.stringify(payload).includes("legacyJunk");
+    posts.push({ junk });
+    if (junk)
+      throw new ApiError(
+        "The request is invalid. Check the required fields and their formats.",
+        422,
+        "invalid_input",
+      );
+    return { status: "applied" } as CommandReceipt;
+  };
+  const session = new CreationEditorSession(client, document, item.id);
+  // The stored refusal replays once, exactly like the stuck editor session.
+  await assert.rejects(session.apply({ timeline }), /invalid/i);
+  assert.deepEqual(posts, [{ junk: true }]);
+  // The refusal is definitive, so the next attempt must replan with current
+  // code instead of replaying the poisoned operations forever.
+  await session.apply({ timeline });
+  assert.deepEqual(posts, [{ junk: true }, { junk: false }]);
   assert.equal(saved.size, 0);
 });
 

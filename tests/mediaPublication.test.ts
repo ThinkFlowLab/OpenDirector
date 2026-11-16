@@ -206,3 +206,43 @@ test("reopening a refused publication reuses prepared assets instead of importin
   assert.notEqual(calls[0]![4], calls[1]![4]);
   assert.equal(saved.size, 0);
 });
+test("a director stage publication freezes the director document as its source", async (t) => {
+  const snapshot = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/creation-project.json", import.meta.url),
+      "utf8",
+    ),
+  ) as ProjectSnapshot;
+  const document = snapshot.editorDocuments.find(
+    (candidate) => candidate.kind === "director",
+  )!;
+  const item = snapshot.canvasItems.find(
+    (candidate) => candidate.kind === "external",
+  )!;
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  t.mock.method(CreationProjection.prototype, "importResource", async () => ({
+    ...assetReference(
+      snapshot.assets.find((asset) => asset.kind === "image")!,
+    ),
+    assetId: crypto.randomUUID(),
+  }));
+  const calls: unknown[][] = [];
+  client.command = async (...args) => {
+    calls.push(structuredClone(args));
+    return { status: "applied" } as CommandReceipt;
+  };
+  const publication = new MediaPublication(client, snapshot, item.id);
+  const ids = await publication.publish(output);
+  assert.equal(ids.length, 1);
+  const payload = calls[0]![1]! as {
+    source: unknown;
+    sourceEditorId: string;
+    document: { id: string; kind: string; data: typeof document.data };
+  };
+  assert.equal(payload.source, null);
+  assert.equal(payload.sourceEditorId, document.id);
+  assert.equal(payload.document.kind, "director");
+  assert.notEqual(payload.document.id, document.id);
+  assert.deepEqual(payload.document.data, document.data);
+});
