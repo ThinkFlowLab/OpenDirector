@@ -8,6 +8,7 @@ import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { AssistantLinkInfo } from "./AssistantLinkInfo";
+import { canvasLinkClickAction } from "./assistantCanvasLink";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
 import { assistantCitationFormatter } from "./assistantCitations.ts";
@@ -212,18 +213,13 @@ export const AssistantReply = memo(function AssistantReply({
         if (!link) return <span>{children}</span>;
         return <a href="#" onClick={(event) => {
           event.preventDefault();
-          if ((link.status === "focused" || link.status === "hidden") && link.nodeId) {
-            onCanvasLink?.(link.nodeId);
+          const action = canvasLinkClickAction(link);
+          if ("focus" in action) {
+            onCanvasLink?.(action.focus);
             setCanvasHint(null);
           } else {
-            const keys: Record<string, MessageKey> = {
-              "cross-project": "assistant.reply.canvasLink.crossProject",
-              materialize: "assistant.reply.canvasLink.materialize",
-              ambiguous: "assistant.reply.canvasLink.ambiguous",
-              missing: "assistant.reply.canvasLink.missing",
-            };
-            setCanvasHint(t(keys[link.status] ?? "assistant.reply.canvasLink.missing")
-              + (link.status === "cross-project" && link.projectId ? ` · ${link.projectId}` : ""));
+            setCanvasHint(t(action.hintKey)
+              + (action.projectId ? ` · ${action.projectId}` : ""));
           }
         }}>{children}</a>;
       },

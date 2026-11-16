@@ -17,7 +17,7 @@ import pytest
 CASES = {
     'R1': ('opendirector.agent.canvas_links',
            "assets = [asset for asset in assets if _run_id(asset) == str(turn_id)]",
-           'assets = assets', 'other_turn_filename'),
+           'assets = assets', 'relative_link_uses_the_turn_provenance'),
     'R2': ('opendirector.agent.canvas_links',
            " or getattr(binding, 'materialOverride', None) is not None", '', 'material_override_links'),
     'R3a': ('opendirector.agent.canvas_links', 'raw = target.strip()',

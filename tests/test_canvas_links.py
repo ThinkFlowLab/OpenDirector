@@ -51,6 +51,24 @@ def test_relative_link_uses_the_turn_provenance_and_never_picks_an_unrelated_dup
     assert resolve_canvas_link('notes.md', project)['status'] == 'ambiguous'
 
 
+def test_directory_qualified_link_focuses_its_directory_and_never_a_basename_duplicate():
+    turn, other = uuid4(), uuid4()
+    first_asset = asset(uuid4(), 'folder1/notes.md', run=other)
+    second_asset = asset(uuid4(), 'folder2/notes.md', run=turn)
+    first = node(uuid4(), title='Folder 1 note', asset_id=first_asset.id)
+    second = node(uuid4(), title='Folder 2 note', asset_id=second_asset.id)
+    project = snapshot(assets=[first_asset, second_asset], nodes=[first, second])
+
+    # The link names its directory, so it resolves folder1's asset even though
+    # folder2's same-basename asset belongs to the current turn.
+    resolved = resolve_canvas_link('folder1/notes.md', project, turn)
+    assert resolved['nodeId'] == str(first.id)
+
+    # A directory with no such asset must not silently fall back to a
+    # same-basename file elsewhere.
+    assert resolve_canvas_link('folder3/notes.md', project, turn)['status'] == 'missing'
+
+
 def test_unique_asset_resolves_by_name_regardless_of_turn_provenance():
     turn = uuid4()
     # A user-imported asset has no agentRunId, yet it is the only notes.md.
@@ -249,7 +267,7 @@ def test_material_override_links_only_to_the_displayed_asset():
 @pytest.mark.parametrize(('target', 'name'), [
     ('report%2520final.md', 'report%20final.md'),
     ('folder%252Freport.md', 'folder%2Freport.md'),
-    ('folder%2Freport.md', 'report.md'),
+    ('folder%2Freport.md', 'folder/report.md'),
     ('report%23final.md', 'report#final.md'),
     ('report%3Ffinal.md', 'report?final.md'),
     ('100%25.md', '100%.md'),
@@ -289,6 +307,21 @@ def test_mention_trailing_punctuation_does_not_swallow_the_title(suffix):
     links = canvas_links_for_text(f'@Finished note{suffix}', snapshot(nodes=[item]), uuid4())
     assert [link['status'] for link in links] == ['focused']
     assert links[0]['nodeId'] == str(item.id)
+
+
+def test_mentions_keep_internal_punctuation_and_strip_only_trailing():
+    chapter = node(uuid4(), title='Chapter 2.1')
+    finished = node(uuid4(), title='Finished note')
+    project = snapshot(nodes=[chapter, finished])
+
+    links = canvas_links_for_text('See @Chapter 2.1 here', project)
+    assert [link['status'] for link in links] == ['focused']
+    assert links[0]['nodeId'] == str(chapter.id)
+    assert links[0]['target'] == '@Chapter 2.1'
+
+    links = canvas_links_for_text('@Finished note.', project)
+    assert links[0]['target'] == '@Finished note'
+    assert links[0]['nodeId'] == str(finished.id)
 
 
 def test_bare_title_name_is_missing_and_only_mentions_resolve_titles():

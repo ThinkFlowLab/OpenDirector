@@ -37,6 +37,9 @@ def link_targets(text: str) -> list[str]:
     return targets
 
 
+_MENTION_TRAILING = '.:"\'\uff09'
+
+
 def _mention_targets(text: str) -> list[str]:
     targets = []
     for token in MarkdownIt().parse(text):
@@ -49,8 +52,14 @@ def _mention_targets(text: str) -> list[str]:
             elif child.type == 'link_close':
                 in_link = False
             elif child.type == 'text' and not in_link:
-                targets.extend('@' + match.group(1).strip() for match in re.finditer(
-                    r"(?<!\w)@([^@\n,;!?()[\]{}<>.:\"'`\u3002\uff1b\uff0c\uff01\uff1f\uff09]+)", child.content))
+                for match in re.finditer(
+                        r"(?<!\w)@([^@\n,;!?()[\]{}<>`\u3002\uff1b\uff0c\uff01\uff1f]+)",
+                        child.content):
+                    name = match.group(1).strip()
+                    following = child.content[match.end():match.end() + 1]
+                    if not following or following.isspace():
+                        name = name.rstrip(_MENTION_TRAILING)
+                    targets.append('@' + name)
     return targets
 
 
@@ -101,8 +110,8 @@ def _identity(target: str) -> tuple[str, Any]:
     path = path.lstrip('/')
     if not path or path in {'.', '..'} or path.endswith('/'):
         return 'missing', raw
-    name = path.rsplit('/', 1)[-1]
-    if not name or name in {'.', '..'}:
+    name = path
+    if not name or name.rsplit('/', 1)[-1] in {'.', '..'}:
         return 'missing', raw
     return 'name', name
 
@@ -138,6 +147,11 @@ def _base_name(value: str) -> str:
 
 
 def _asset_matches(name: str, asset: Any) -> bool:
+    if '/' in name:
+        # A directory-qualified destination must match the full name/path; a
+        # same-basename file in another directory is a different object.
+        return name in {str(getattr(asset, 'name', '') or '').replace('\\', '/'),
+                        str(getattr(asset, 'path', '') or '').replace('\\', '/')}
     return name in {_base_name(getattr(asset, 'name', '')),
                     _base_name(getattr(asset, 'path', ''))}
 
@@ -280,13 +294,18 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
 
 
 def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
-    nodes = _unique([item for item in _items(snapshot)
-                     if str(getattr(item, 'title', '')) == name])
-    if len(nodes) == 1:
-        return _resolved_node(nodes[0], snapshot, result)
-    if len(nodes) > 1:
-        return {**result, 'status': 'ambiguous',
-                'candidates': [_node_candidate(item) for item in nodes]}
+    candidate = name
+    while candidate:
+        nodes = _unique([item for item in _items(snapshot)
+                         if str(getattr(item, 'title', '')) == candidate])
+        if len(nodes) == 1:
+            return _resolved_node(nodes[0], snapshot, {**result, 'target': '@' + candidate})
+        if len(nodes) > 1:
+            return {**result, 'target': '@' + candidate, 'status': 'ambiguous',
+                    'candidates': [_node_candidate(item) for item in nodes]}
+        # A mention in running prose can carry trailing words ("Chapter 2.1
+        # here"); resolve the longest title that is a word-prefix of the mention.
+        candidate = candidate.rsplit(' ', 1)[0] if ' ' in candidate else ''
     return {**result, 'status': 'missing'}
 
 
