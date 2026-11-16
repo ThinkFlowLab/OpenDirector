@@ -56,7 +56,7 @@ def zipped(root, extra=()):
 
 def test_install_enable_restart_disable_and_uninstall(tmp_path):
     repository = tmp_path / 'workspace'
-    source = custom_package(tmp_path)
+    source = custom_package(repository)
     registry = PluginRegistry(repository)
     assert registry.catalog()['installed'] == []
     assert registry.catalog()['examples'][0]['manifest']['id'] == 'studio-brief'
@@ -86,7 +86,7 @@ def test_install_enable_restart_disable_and_uninstall(tmp_path):
 def test_dependencies_versions_and_conflicts_preserve_state(tmp_path):
     registry = PluginRegistry(tmp_path / 'workspace')
     base = registry.install('example:studio-brief')
-    extra = registry.install(str(custom_package(tmp_path, dependencies={'studio-brief': '1.0.0'})))
+    extra = registry.install(str(custom_package(tmp_path / 'workspace', dependencies={'studio-brief': '1.0.0'})))
     with pytest.raises(ProjectError) as error:
         registry.change('custom-brief', extra['digest'], runtime='codex', enabled=True)
     assert error.value.code == 'plugin_dependency_missing'
@@ -104,7 +104,7 @@ def test_dependencies_versions_and_conflicts_preserve_state(tmp_path):
     with pytest.raises(ProjectError) as error:
         registry.change('studio-brief', '0' * 64, runtime='codex', enabled=False)
     assert error.value.code == 'plugin_changed'
-    source = custom_package(tmp_path, 'new-brief', runtimes=['codex'])
+    source = custom_package(tmp_path / 'workspace', 'new-brief', runtimes=['codex'])
     newer = registry.install(str(source))
     with pytest.raises(ProjectError) as error:
         registry.change('new-brief', newer['digest'], runtime='default', enabled=True)
@@ -161,7 +161,7 @@ def test_links_special_files_duplicate_paths_and_bombs_are_rejected(tmp_path):
     {'name': {'zh-CN': ' ', 'en-US': 'Blank Chinese'}}])
 def test_invalid_manifest_never_runs_or_registers(tmp_path, changes):
     registry = PluginRegistry(tmp_path / 'workspace')
-    source = custom_package(tmp_path, **changes)
+    source = custom_package(tmp_path / 'workspace', **changes)
     with pytest.raises(ProjectError) as error:
         registry.install(str(source))
     assert error.value.code == 'plugin_invalid'
@@ -193,9 +193,9 @@ def test_broken_registry_and_failed_commit_preserve_original(tmp_path, monkeypat
         with pytest.raises(OSError):
             registry.change('studio-brief', original['digest'], runtime='default', enabled=True)
         with pytest.raises(OSError):
-            registry.install(str(custom_package(tmp_path)))
+            registry.install(str(custom_package(tmp_path / 'workspace')))
     assert registry.path.read_bytes() == before
-    assert registry.install(str(tmp_path / 'custom-brief'))['manifest']['id'] == 'custom-brief'
+    assert registry.install(str(tmp_path / 'workspace/custom-brief'))['manifest']['id'] == 'custom-brief'
     registry.path.write_text('{broken')
     with pytest.raises(ProjectError) as error:
         registry.install('example:studio-brief')
@@ -362,13 +362,14 @@ def test_discovery_rejects_untracked_plugin_entries(tmp_path, monkeypatch, unexp
 
 
 def test_local_directory_uses_canonical_root_without_accepting_package_links(tmp_path):
-    source = custom_package(tmp_path)
-    registry = PluginRegistry(tmp_path / 'workspace')
+    workspace = tmp_path / 'workspace'
+    source = custom_package(workspace)
+    registry = PluginRegistry(workspace)
     item = registry.install(str(source / '..' / source.name))
     parent_alias = tmp_path / 'parent-alias'
-    directory_link(parent_alias, tmp_path)
+    directory_link(parent_alias, workspace)
     assert registry.install(str(parent_alias / source.name))['digest'] == item['digest']
-    root_alias = tmp_path / 'root-alias'
+    root_alias = workspace / 'root-alias'
     directory_link(root_alias, source)
     with pytest.raises(ProjectError) as error:
         registry.install(str(root_alias))
@@ -377,6 +378,142 @@ def test_local_directory_uses_canonical_root_without_accepting_package_links(tmp
     with pytest.raises(ProjectError) as error:
         registry.install(str(parent_alias / source.name))
     assert error.value.code == 'plugin_unsafe_path'
+
+
+@pytest.mark.parametrize('source_kind', ['absolute', 'traversal', 'prefix-sibling', 'parent-link'])
+def test_http_local_install_rejects_outside_workspace_before_reading(tmp_path, monkeypatch, source_kind):
+    from opendirector.agent import plugins
+    workspace = tmp_path / 'workspace'
+    workspace.mkdir()
+    outside = custom_package(tmp_path / ('workspace-private' if source_kind == 'prefix-sibling' else 'private'))
+    source = str(outside)
+    if source_kind == 'traversal':
+        source = '../private/custom-brief'
+    elif source_kind == 'parent-link':
+        directory_link(workspace / 'linked-parent', outside.parent)
+        source = 'linked-parent/custom-brief'
+    def unexpected_read(*args):
+        raise AssertionError('Out-of-scope input reached the package reader')
+    monkeypatch.setattr(plugins, 'package_files', unexpected_read)
+    with TestClient(create_app(LocalProjects(workspace)), headers=HEADERS) as client:
+        for language, message in [('en-US', 'inside the backend workspace'), ('zh-CN', '后端工作目录内')]:
+            response = client.post('/api/plugins', json={'source': source}, headers={'Accept-Language': language})
+            assert response.status_code == 403
+            assert response.json()['code'] == 'plugin_source_outside_workspace'
+            assert message in response.json()['detail']
+        assert client.get('/api/plugins').json()['installed'] == []
+
+
+def test_workspace_paths_and_uploaded_external_packages_remain_available(tmp_path):
+    workspace = tmp_path / 'workspace'
+    source = custom_package(workspace)
+    registry = PluginRegistry(workspace)
+    item = registry.install(source.name)
+    assert registry.install(str(source))['digest'] == item['digest']
+    assert registry.install(str(source / '..' / source.name))['digest'] == item['digest']
+    (workspace / 'source.zip').write_bytes(zipped(source))
+    assert registry.install('source.zip')['digest'] == item['digest']
+    outside_alias = tmp_path / 'workspace-alias'
+    directory_link(outside_alias, workspace)
+    assert registry.install(str(outside_alias / source.name))['digest'] == item['digest']
+    external = custom_package(tmp_path / 'external', 'external-brief')
+    with TestClient(create_app(LocalProjects(workspace)), headers=HEADERS) as client:
+        uploaded = client.post('/api/plugins/upload', content=zipped(external), headers={'Content-Type': 'application/zip'})
+        assert uploaded.status_code == 200
+        assert uploaded.json()['manifest']['id'] == 'external-brief'
+        assert uploaded.json()['enabledRuntimes'] == []
+
+
+@pytest.mark.parametrize('source', ['bad\x00path', 'bad\npath', 'bad\tpath', 'C:relative'])
+def test_http_local_source_rejects_invalid_path_text(tmp_path, source):
+    with TestClient(create_app(LocalProjects(tmp_path)), headers=HEADERS, raise_server_exceptions=False) as client:
+        response = client.post('/api/plugins', json={'source': source})
+        assert response.status_code == 400
+        assert response.json()['code'] == 'plugin_unsafe_path'
+        assert client.get('/api/plugins').json()['installed'] == []
+
+
+@pytest.mark.parametrize('folder', ['projects', '.opendirector', '.'])
+def test_local_source_excludes_project_storage_and_workspace_root(tmp_path, monkeypatch, folder):
+    from opendirector.agent import plugins
+    registry = PluginRegistry(tmp_path)
+    def unexpected_read(*args):
+        raise AssertionError('Internal storage reached the package reader')
+    monkeypatch.setattr(plugins, 'package_files', unexpected_read)
+    with pytest.raises(ProjectError) as error:
+        registry.install(folder if folder == '.' else folder + '/custom-brief')
+    assert error.value.code == 'plugin_source_outside_workspace'
+
+
+@pytest.mark.parametrize('kind', ['resource', 'zip'])
+def test_local_package_rejects_hardlinked_files(tmp_path, kind):
+    workspace = tmp_path / 'workspace'
+    source = custom_package(workspace)
+    outside = tmp_path / 'outside'
+    if kind == 'zip':
+        outside.write_bytes(zipped(source))
+        source = workspace / 'source.zip'
+        source.hardlink_to(outside)
+    else:
+        outside.write_bytes(b'outside secret')
+        (source / 'skills/custom-brief/private.txt').hardlink_to(outside)
+    registry = PluginRegistry(workspace)
+    with pytest.raises(ProjectError) as error:
+        registry.install(str(source))
+    assert error.value.code == 'plugin_unsafe_path'
+    assert registry.catalog()['installed'] == []
+
+
+@pytest.mark.parametrize('kind', ['resource', 'directory', 'zip'])
+def test_local_package_rejects_link_replacement_after_inspection(tmp_path, monkeypatch, kind):
+    from opendirector.agent import plugins
+    workspace = tmp_path / 'workspace'
+    source = custom_package(workspace)
+    outside = custom_package(tmp_path / 'private')
+    (outside / 'skills/custom-brief/private.txt').write_bytes(b'outside secret')
+    target = source
+    if kind == 'zip':
+        source = target = workspace / 'source.zip'
+        source.write_bytes(zipped(outside))
+        archive = tmp_path / 'private.zip'
+        archive.write_bytes(zipped(outside))
+        outside = archive
+    elif kind == 'resource':
+        target = source / 'skills/custom-brief/private.txt'
+        target.write_bytes(b'public resource')
+        outside = outside / 'skills/custom-brief/private.txt'
+    original = plugins.is_alias
+    replaced = []
+    def inspect_then_replace(path):
+        result = original(path)
+        if path == target and not replaced:
+            path.rename(path.with_name(path.name + '-saved'))
+            if kind == 'directory':
+                directory_link(path, outside)
+            else:
+                try:
+                    path.symlink_to(outside)
+                except OSError as error:
+                    if getattr(error, 'winerror', None) == 1314:
+                        pytest.skip('Windows file symlink privilege unavailable; directory junction case runs separately')
+                    raise
+            replaced.append(path)
+        return result
+    monkeypatch.setattr(plugins, 'is_alias', inspect_then_replace)
+    registry = PluginRegistry(workspace)
+    with pytest.raises(ProjectError) as error:
+        registry.install(str(source))
+    assert replaced == [target]
+    assert error.value.code == 'plugin_unsafe_path'
+    assert registry.catalog()['installed'] == []
+
+
+def test_local_package_preserves_empty_resource_files(tmp_path):
+    source = custom_package(tmp_path)
+    empty = 'skills/custom-brief/empty.txt'
+    (source / empty).touch()
+    assert package_files(source)[1][empty] == b''
+    assert package_files(source)[2] == package_files(zipped(source))[2]
 
 
 @pytest.mark.parametrize('damage', ['missing', 'changed', 'unreadable'])

@@ -105,3 +105,10 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** A package declares one Skill while the native loader scans resource directories recursively.
 - **Evidence:** [Issue #114](https://github.com/ThinkFlowLab/OpenDirector/issues/114)'s independent review reproduced nested `SKILL.md` entries being classified as workspace skills, bypassing plugin metadata and colliding during snapshot copying. The regressions in [test_plugins.py](../../tests/test_plugins.py) cover both package rejection and unexpected native discovery results.
 - **Check:** Validate all discoverable entry filenames, including case variants. Require the native catalog's exact paths and identities to match registered entries, reject duplicate names before copying, and test the discovery boundary independently of installer validation.
+
+## Local HTTP requests still need filesystem scope
+
+- **Trigger:** Accepting a local plugin path from an HTTP request.
+- **Evidence:** [PR #371](https://github.com/ThinkFlowLab/OpenDirector/pull/371)'s CodeQL gate flagged unrestricted source paths. An isolated API probe read a valid package outside the backend workspace using only the public local-request header. This demonstrated missing source scope; it did not test a separate OS user or establish a remote-network exploit.
+- **Follow-up:** Independent review reproduced replacing a checked resource with an outside symlink during installation, and a hard link bypassed the pathname check without a race. A normalized path check alone does not authorize the object eventually opened.
+- **Check:** Authorize the complete normalized candidate against the backend workspace and exclude project/internal storage. Use the existing descriptor/handle reader to pin every path component and reject hard links; do not resolve the package entry after checking it. Test absolute/relative traversal, sibling prefixes, control characters, replacements at the file/directory/ZIP boundaries and bilingual errors. Preserve empty package resources without relaxing execution-artifact defaults, and keep ZIP upload for packages elsewhere.

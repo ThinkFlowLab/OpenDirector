@@ -17,7 +17,11 @@ OpenDirector. Other harnesses' native plugin formats are not accepted as package
 
 1. In **Settings → Plugins**, choose **Install Creative brief**, select a ZIP,
    or enter a local directory/ZIP path or public HTTPS ZIP URL. Paths refer to the
-   computer running the backend. Only install packages you trust.
+   computer running the backend and must stay inside its workspace. Relative paths
+   start at that workspace; absolute paths inside it also work. Use a package
+   folder such as `plugins/my-plugin`; the workspace root, `projects/` and
+   `.opendirector/` are excluded. For packages in other locations, use
+   **Choose ZIP file**. Only install packages you trust.
 2. Enable the desired harness under **Enabled harnesses**. Dependencies must be
    installed at their declared versions and enabled for that same harness first.
 3. Choose that harness in the assistant and open **Skills**. Select the plugin
@@ -82,7 +86,10 @@ exposed as Skill resources. Publish outputs through the existing `opendirector`
 CLI or business tools, preserving command IDs, version checks, locks and receipts.
 Do not maintain a separate editable project or write the project JSON directly.
 
-Install the directory while developing. To share it, ZIP its **contents**, with
+Install a directory inside the backend workspace while developing. Parent path
+aliases are resolved before checking the workspace boundary. File reads pin every
+path component without following links, and reject hard links. Empty resource
+files are allowed. To share it, ZIP its **contents**, with
 the manifest at the archive root, and use **Choose ZIP file** or a public HTTPS
 download URL. A package permits up to 256 files/archive entries, 2 MiB per file,
 20 MiB unpacked and 10 MiB compressed. Skill text is limited to 64 KiB. Links,

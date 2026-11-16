@@ -44,6 +44,7 @@ PLUGIN_ERRORS = {
     'plugin_unsafe_path': ('插件包不能包含链接、特殊文件或不安全的路径及文件名。', 'Plugin packages cannot contain links, special files or unsafe paths and filenames.'),
     'plugin_too_large': ('插件包超过文件数量或大小限制。', 'The plugin package exceeds the file count or size limit.'),
     'plugin_source_unavailable': ('无法读取插件来源，请检查文件路径或下载地址。', 'Cannot read the plugin source. Check the file path or download URL.'),
+    'plugin_source_outside_workspace': ('本地插件必须位于后端工作目录内的独立文件夹，不能使用工程或内部数据目录；其他位置的插件请上传 ZIP 文件。', 'Local plugins must be inside the backend workspace, outside project and internal data directories. Upload a ZIP file to install from elsewhere.'),
     'plugin_url_unsafe': ('插件下载地址必须是公开 HTTPS 地址，且不能包含登录凭证。', 'Plugin downloads require a public HTTPS URL without embedded credentials.'),
     'plugin_registry_invalid': ('插件登记文件损坏或格式不受支持，原文件已保留。', 'The plugin registry is damaged or unsupported. The original file was preserved.'),
     'plugin_conflict': ('已安装不同内容的同名插件，请先停用并卸载旧包。', 'A different package with this plugin ID is installed. Disable and uninstall it first.'),

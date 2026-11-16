@@ -51,6 +51,10 @@ try {
   await saved();
   assert.equal(await installed.locator('input:checked').count(), 0);
   assert.deepEqual(await pluginSkills("default"), []);
+  await plugins.locator("#plugin-source").fill("../outside-plugin");
+  await plugins.getByRole("button", { name: "Install", exact: true }).click();
+  await plugins.getByRole("alert").filter({ hasText: "inside the backend workspace" }).waitFor();
+  await page.screenshot({ path: join(screenshots, "plugin-source-error-en.png") });
   await installed.getByRole("checkbox", { name: "DeepSeek Harness", exact: true }).click();
   await saved();
   assert.equal((await pluginSkills("deepseek"))[0].pluginId, "studio-brief");
@@ -91,6 +95,10 @@ try {
   await installed.getByRole("heading", { name: "创作简报", exact: true }).waitFor();
   assert.equal(await installed.getByRole("checkbox", { name: "DeepSeek Harness", exact: true }).isChecked(), true);
   await page.screenshot({ path: join(screenshots, "plugins-zh.png") });
+  await plugins.locator("#plugin-source").fill("../outside-plugin");
+  await plugins.getByRole("button", { name: "安装", exact: true }).click();
+  await plugins.getByRole("alert").filter({ hasText: "后端工作目录内" }).waitFor();
+  await page.screenshot({ path: join(screenshots, "plugin-source-error-zh.png") });
   await plugins.locator('input[type="file"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: Buffer.from("invalid") });
   await plugins.getByRole("alert").filter({ hasText: "插件包无效" }).waitFor();
   await plugins.locator('input[type="file"]').setInputFiles(fileURLToPath(new URL("../../plugins/examples/studio-brief.zip", import.meta.url)));

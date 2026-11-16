@@ -1,5 +1,6 @@
 """Install optional, portable Skill packages without executing their contents."""
 from contextlib import contextmanager
+import errno
 from hashlib import sha256
 from io import BytesIO
 import json
@@ -21,6 +22,7 @@ import yaml
 from opendirector.agent.context import RuntimeId
 from opendirector.domain.plugins import PLUGIN_ERRORS, InstalledPlugin, PluginManifest, PluginRegistryRecord
 from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.execution_files import execution_file
 from opendirector.infrastructure.local_projects import read_json, write_json
 from opendirector.installation import plugin_catalog, plugin_examples
 from opendirector.integrations.http_settings import public_target_sync
@@ -48,6 +50,18 @@ def safe_path(name):
 def is_alias(path):
     info = path.lstat()
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & 0x400)
+
+
+def read_package_file(path, limit):
+    try:
+        with execution_file(path.parent, path.name, allow_empty=True) as stream:
+            return stream.read(limit + 1)
+    except ProjectError:
+        raise failure('plugin_unsafe_path') from None
+    except OSError as error:
+        if error.errno in {errno.ELOOP, errno.ENOTDIR} or getattr(error, 'winerror', None) == 1920:
+            raise failure('plugin_unsafe_path') from None
+        raise
 
 
 def package_files(source):
@@ -81,7 +95,8 @@ def package_files(source):
     if isinstance(source, Path):
         if is_alias(source):
             raise failure('plugin_unsafe_path')
-        source = source.resolve(strict=True)
+        # Keep the checked pathname; resolving it could follow a replacement link.
+        source = Path(os.path.abspath(source))
     if isinstance(source, Path) and source.is_dir():
         for parent, directories, entries in os.walk(source, followlinks=False, onerror=unreadable):
             for name in directories + entries:
@@ -93,14 +108,12 @@ def package_files(source):
                     continue
                 if not stat.S_ISREG(path.stat().st_mode):
                     raise failure('plugin_unsafe_path')
-                with path.open('rb') as stream:
-                    add(path.relative_to(source).as_posix(), stream.read(MAX_FILE_BYTES + 1))
+                add(path.relative_to(source).as_posix(), read_package_file(path, MAX_FILE_BYTES))
     else:
         if isinstance(source, Path):
             if not stat.S_ISREG(source.stat().st_mode):
                 raise failure('plugin_unsafe_path')
-            with source.open('rb') as stream:
-                source = stream.read(MAX_ARCHIVE_BYTES + 1)
+            source = read_package_file(source, MAX_ARCHIVE_BYTES)
         if len(source) > MAX_ARCHIVE_BYTES:
             raise failure('plugin_too_large', 413)
         try:
@@ -187,7 +200,8 @@ def download_package(url):
 
 class PluginRegistry:
     def __init__(self, repository):
-        self.directory = Path(repository).resolve() / '.opendirector' / 'plugins'
+        self.repository = Path(repository).resolve()
+        self.directory = self.repository / '.opendirector' / 'plugins'
         self.path = self.directory / 'registry.json'
 
     @contextmanager
@@ -256,7 +270,21 @@ class PluginRegistry:
                     source = download_package(source)
                     label = str(httpx.URL(label).copy_with(query=None, fragment=None))
                 else:
-                    source = Path(source).expanduser().absolute()
+                    windows = PureWindowsPath(source)
+                    if any(ord(character) < 32 for character in source) or windows.drive and not windows.root:
+                        raise failure('plugin_unsafe_path')
+                    requested = os.path.abspath(os.path.join(self.repository, source))
+                    # Resolve parent aliases before authorizing reads; keep the entry itself for link rejection.
+                    parent = os.path.realpath(os.path.dirname(requested))
+                    candidate = os.path.normpath(os.path.join(parent, os.path.basename(requested)))
+                    root = os.fspath(self.repository)
+                    if candidate.startswith(os.path.join(root, '')):
+                        source = Path(candidate)
+                    else:
+                        raise failure('plugin_source_outside_workspace', 403)
+                    if (source == self.repository
+                            or source.relative_to(self.repository).parts[0].casefold() in {'projects', '.opendirector'}):
+                        raise failure('plugin_source_outside_workspace', 403)
             manifest, files, digest = package_files(source)
             if expected_digest is not None and digest != expected_digest:
                 raise failure('plugin_invalid')
