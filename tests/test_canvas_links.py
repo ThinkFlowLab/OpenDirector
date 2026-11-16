@@ -345,6 +345,36 @@ def test_mentions_keep_internal_punctuation_and_strip_only_trailing():
     assert links[0]['nodeId'] == str(finished.id)
 
 
+def test_nonexistent_multiword_title_never_falls_back_to_a_shorter_node():
+    shorter = node(uuid4(), title='Scene')
+    project = snapshot(nodes=[shorter])
+    # "99 does not exist" is not running prose that may be stripped off a
+    # title; resolving it to the unrelated node "Scene" references the wrong
+    # object. Only an ordinary trailing word may be dropped.
+    for text in ('@Scene 99', '@Scene 99 does not exist'):
+        link, = canvas_links_for_text(text, project, uuid4())
+        assert link['status'] == 'missing'
+        assert link['target'] == text
+
+
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('看这个@标题', '@标题'),
+    ('@标题：请看', '@标题'),
+    ('@标题：', '@标题'),
+])
+def test_cjk_mention_boundaries_and_fullwidth_colon(text, expected):
+    item = node(uuid4(), title='标题')
+    links = canvas_links_for_text(text, snapshot(nodes=[item]), uuid4())
+    assert [link['status'] for link in links] == ['focused']
+    assert links[0]['target'] == expected
+    assert links[0]['nodeId'] == str(item.id)
+
+
+def test_ascii_word_glued_to_a_cjk_mention_stays_prose():
+    item = node(uuid4(), title='标题')
+    assert canvas_links_for_text('abc@标题', snapshot(nodes=[item]), uuid4()) == []
+
+
 def test_bare_title_name_is_missing_and_only_mentions_resolve_titles():
     item = node(uuid4(), kind='group', title='Scene 1')
     project = snapshot(nodes=[item])

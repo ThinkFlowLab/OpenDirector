@@ -37,7 +37,7 @@ def link_targets(text: str) -> list[str]:
     return targets
 
 
-_MENTION_TRAILING = '.:"\'\uff09'
+_MENTION_TRAILING = '.:"\'\uff09\uff1a'
 
 
 def _mention_name(value: str) -> str:
@@ -67,8 +67,12 @@ def _mention_targets(text: str) -> list[str]:
             elif child.type == 'link_close':
                 in_link = False
             elif child.type == 'text' and not in_link:
+                # The word boundary is ASCII-only, matching JavaScript's \w:
+                # CJK prose directly before a mention is not glued to it.
+                # Full-width punctuation such as the colon ends a mention even
+                # without following whitespace.
                 for match in re.finditer(
-                        r"(?<!\w)@([^@\n,;!?()[\]{}<>`\u3002\uff1b\uff0c\uff01\uff1f]+)",
+                        r"(?<![A-Za-z0-9_])@([^@\n,;!?()[\]{}<>`\u3002\uff1b\uff0c\uff01\uff1f\uff1a]+)",
                         child.content):
                     targets.append('@' + _mention_name(match.group(1)))
     return targets
@@ -304,6 +308,9 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
     return {**result, 'status': 'missing'}
 
 
+_PROSE_WORD = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*\Z")
+
+
 def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
     candidate = name
     while candidate:
@@ -315,8 +322,13 @@ def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
             return {**result, 'target': '@' + candidate, 'status': 'ambiguous',
                     'candidates': [_node_candidate(item) for item in nodes]}
         # A mention in running prose can carry trailing words ("Chapter 2.1
-        # here"); resolve the longest title that is a word-prefix of the mention.
-        candidate = candidate.rsplit(' ', 1)[0] if ' ' in candidate else ''
+        # here"). Only strip an ordinary prose word: a number or label such as
+        # "@Scene 99 does not exist" may be part of a real title, so resolving
+        # the shorter node "Scene" would reference the wrong object.
+        head, _, tail = candidate.rpartition(' ')
+        if not head or not _PROSE_WORD.fullmatch(tail):
+            break
+        candidate = head
     return {**result, 'status': 'missing'}
 
 

@@ -25,8 +25,6 @@ function rendered(value: string, targets: string[]): HastNode[] {
 }
 
 const keys = [
-  "assistant.reply.canvasLink.open",
-  "assistant.reply.canvasLink.hidden",
   "assistant.reply.canvasLink.materialize",
   "assistant.reply.canvasLink.ambiguous",
   "assistant.reply.canvasLink.missing",
@@ -52,9 +50,9 @@ test("canvas link messages resolve in both locales without leaking the other lan
 });
 
 test("canvas link outcome copy names the user-visible action", () => {
-  assert.equal(translate("en-US", "assistant.reply.canvasLink.hidden"), "Show hidden item");
+  // Hidden links focus their node (which the workspace reveals); only
+  // outcomes that cannot focus have a hint, so there is no hidden hint key.
   assert.equal(translate("en-US", "assistant.reply.canvasLink.materialize"), "Show on canvas");
-  assert.equal(translate("zh-CN", "assistant.reply.canvasLink.hidden"), "显示隐藏对象");
   assert.equal(translate("zh-CN", "assistant.reply.canvasLink.materialize"), "在画布中显示");
 });
 
@@ -68,6 +66,15 @@ test("a mention glued to a word character stays plain prose", () => {
   assert.deepEqual(rendered("foo@Title", ["@Title"]), [text("foo@Title")]);
   assert.deepEqual(rendered("see foo@Title and @Title", ["@Title"]), [
     text("see foo@Title and "),
+    element("canvas-reference", [text("@Title")], { href: "@Title" }),
+  ]);
+});
+
+test("CJK prose directly before a mention is a boundary, like the backend", () => {
+  // JavaScript \w is ASCII-only, so the Chinese character before @ is prose,
+  // not part of the mention; the backend now uses the same boundary.
+  assert.deepEqual(rendered("看这个@Title", ["@Title"]), [
+    text("看这个"),
     element("canvas-reference", [text("@Title")], { href: "@Title" }),
   ]);
 });

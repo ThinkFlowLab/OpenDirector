@@ -19,8 +19,9 @@ export function renderCanvasMentions({ targets }: { targets: string[] }): (tree:
           let found = -1;
           let from = 0;
           while ((found = rest.indexOf(target, from)) !== -1) {
-            // Mirror the backend's (?<!\w) word boundary: a mention glued to a
-            // word character (foo@Title) is prose, not a canvas reference.
+            // Mirror the backend's (?<![A-Za-z0-9_]) word boundary: a mention
+            // glued to an ASCII word character (foo@Title) is prose, not a
+            // canvas reference. Both sides treat CJK as a boundary.
             if (found === 0 || !WORD_CHARACTER.test(rest[found - 1])) {
               break;
             }
