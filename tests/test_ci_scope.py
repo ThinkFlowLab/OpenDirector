@@ -10,9 +10,9 @@ import pytest
 import yaml
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.ready, pytest.mark.cpu]
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'scripts/ci/select_checks.py'
+SCRIPT = ROOT / 'scripts/pre-commit/select_checks.py'
 spec = importlib.util.spec_from_file_location('check_scope', SCRIPT)
 scope = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scope)
@@ -164,9 +164,23 @@ def test_real_selector_outputs_drive_real_aggregate(repository, tmp_path):
 
 def test_workflow_wires_every_heavy_lane_to_successful_static_scope():
     jobs = yaml.safe_load((ROOT / '.github/workflows/release-checks.yml').read_text(encoding='utf-8'))['jobs']
-    assert jobs['static']['steps'][-1]['id'] == 'scope'
-    assert jobs['static']['steps'][-1]['run'] == 'python scripts/ci/select_checks.py'
-    assert set(jobs['static']['outputs']) == {'run-heavy', 'scope-reason', 'changed-files'}
+    assert jobs['static'] == {'if': 'inputs.static-checks', 'uses': './.github/workflows/pre-commit.yml'}
+    workflow = yaml.safe_load((ROOT / '.github/workflows/pre-commit.yml').read_text(encoding='utf-8'))
+    static = workflow['jobs']['check']
+    assert static['steps'][-1]['id'] == 'scope'
+    assert static['steps'][-1]['run'] == 'python scripts/pre-commit/select_checks.py'
+    assert set(static['outputs']) == {'run-heavy', 'scope-reason', 'changed-files'}
+    assert set(workflow[True]) == {'workflow_call', 'workflow_dispatch'}
+    outputs = workflow[True]['workflow_call']['outputs']
+    assert set(outputs) == set(static['outputs'])
+    for name in outputs:
+        assert outputs[name]['value'] == '${{ jobs.check.outputs.' + name + ' }}'
+    assert workflow['permissions'] == {'contents': 'read'}
+    command = static['steps'][-2]['run']
+    assert 'pre_commit run --from-ref "$PR_BASE_SHA" --to-ref HEAD' in command
+    assert 'pre_commit run --from-ref "$PUSH_BASE_SHA" --to-ref HEAD' in command
+    assert 'pre_commit run --all-files' in command
+    assert not any('pre_commit' in str(job) for job in jobs.values())
     for lane in ['python', 'frontend', 'browser']:
         assert jobs[lane]['needs'] == 'static'
         assert "needs.static.result == 'success' && needs.static.outputs.run-heavy != 'false'" in jobs[lane]['if']

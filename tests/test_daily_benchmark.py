@@ -6,6 +6,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'scripts/nightly/benchmark.json'
 SCRIPT = ROOT / 'scripts/nightly/daily_benchmark.py'

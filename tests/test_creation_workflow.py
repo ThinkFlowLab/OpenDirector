@@ -18,6 +18,9 @@ from test_creation_canvas_service import project, media, send, text_material, ve
 from test_creation_generation_service import anyio_backend, Provider, runtime, configure
 
 
+pytestmark = pytest.mark.cpu
+
+
 async def submit(runner, project, spec_id, origin=None, policy='if_current', *, batch_id=None, additional=False):
     store, pid, session = project
     current = store.snapshot(pid)

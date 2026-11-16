@@ -10,6 +10,10 @@ from pathlib import Path
 
 from opendirector.infrastructure.local_projects import LocalProjects
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/bench_creation_projects.py'
 

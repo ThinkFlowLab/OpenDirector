@@ -6,6 +6,10 @@ from opendirector_api.localization import (
     wants_english,
 )
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def request(language: str):
     return SimpleNamespace(headers={"accept-language": language})

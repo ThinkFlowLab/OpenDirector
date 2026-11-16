@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.ready, pytest.mark.cpu]
 spec = importlib.util.spec_from_file_location('layer_audit',
     Path(__file__).resolve().parents[1] / 'scripts/ci/check_test_layers.py')
 audit_module = importlib.util.module_from_spec(spec)

@@ -26,6 +26,9 @@ from generation_helpers import command as generation_command, new_project, prepa
 from test_creation_canvas_service import send, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'

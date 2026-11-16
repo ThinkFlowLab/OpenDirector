@@ -6,6 +6,10 @@ import httpx
 
 from opendirector.agent.model_gateway import ModelGateway
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def test_reasoning_trace_handles_fragmented_sse_without_changing_response(tmp_path):
     chunks = [

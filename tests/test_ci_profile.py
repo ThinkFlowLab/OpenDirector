@@ -8,7 +8,7 @@ import sys
 import pytest
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.ready, pytest.mark.cpu]
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = '''import pytest
 @pytest.mark.ready

@@ -5,7 +5,7 @@ import pytest
 from opendirector.agent import cli_discovery as discovery
 from opendirector.agent import deepseek, jiuwenswarm, native, runtime
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.ready, pytest.mark.cpu]
 
 
 def test_path_has_priority(monkeypatch):

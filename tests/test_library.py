@@ -20,6 +20,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png(color='purple', size=(13, 7)):
     buffer = BytesIO()
     Image.new('RGB', size, color).save(buffer, format='PNG')

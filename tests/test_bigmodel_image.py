@@ -25,6 +25,9 @@ from opendirector.integrations.providers import GenerationProviders
 from test_creation_canvas_service import send, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 SECRET = 'bigmodel-private-test-key'
 URL = 'https://93.184.216.34/output?signature=private-result'
 CONFIG = dict(kind='image', url='https://open.bigmodel.cn/api/paas/v4', modelId='glm-image',

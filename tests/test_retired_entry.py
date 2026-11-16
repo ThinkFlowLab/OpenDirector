@@ -9,6 +9,10 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def files(root):
     return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()}

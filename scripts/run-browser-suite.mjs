@@ -11,6 +11,7 @@
  *   node scripts/run-browser-suite.mjs
  */
 import { spawnSync } from "node:child_process";
+import { browserCatalog, options, ROOT, select } from "./pre-commit/test-marks.ts";
 
 const workflows = [
   { name: "locale", script: "tests/browser/locale.mjs" },
@@ -64,9 +65,31 @@ const workflows = [
   },
 ];
 
+const { selection, list, forwarded } = options(process.argv.slice(2));
+if (forwarded.length) throw new Error("Unsupported browser arguments");
+if (selection.lane && selection.lane !== "gate") {
+  throw new Error("This runner uses gate services; inspect other lanes with list:browser-tests:browser-tests 查询");
+}
+const catalog = browserCatalog();
+const selected = new Set(select(catalog, selection).map((entry) => entry.script));
+for (const workflow of workflows) {
+  if (!catalog.some((entry) => entry.script === workflow.script)) {
+    throw new Error(`Unregistered browser workflow: ${workflow.script}`);
+  }
+}
+const scheduled = workflows.filter((workflow) => selected.has(workflow.script));
+if (list) {
+  console.log(JSON.stringify(scheduled.map((workflow) => ({
+    ...catalog.find((entry) => entry.script === workflow.script),
+    args: workflow.args ?? [], env: workflow.env ?? {},
+  })), null, 2));
+  process.exit(0);
+}
+if (!scheduled.length) throw new Error("No matching browser workflows");
+
 const failures = [];
 const started = Date.now();
-for (const workflow of workflows) {
+for (const workflow of scheduled) {
   console.log(`\n=== ${workflow.name}: ${workflow.script} ===`);
   const begin = Date.now();
   const result = spawnSync(
@@ -74,6 +97,7 @@ for (const workflow of workflows) {
     [workflow.script, ...(workflow.args ?? [])],
     {
       stdio: "inherit",
+      cwd: ROOT,
       env: { ...process.env, ...(workflow.env ?? {}) },
     },
   );
@@ -89,7 +113,7 @@ for (const workflow of workflows) {
 
 const total = ((Date.now() - started) / 1000).toFixed(1);
 console.log(
-  `\n${workflows.length - failures.length}/${workflows.length} browser workflows passed in ${total}s`,
+  `\n${scheduled.length - failures.length}/${scheduled.length} browser workflows passed in ${total}s`,
 );
 if (failures.length > 0) {
   console.error(`failed: ${failures.join(", ")}`);

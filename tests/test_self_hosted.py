@@ -20,6 +20,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_self_hosted_models_support_optional_auth_all_four_kinds(tmp_path):
     store=LocalProjects(tmp_path)
     headers={'X-OpenDirector-Request':'1','X-OpenDirector-Session':str(uuid4())}

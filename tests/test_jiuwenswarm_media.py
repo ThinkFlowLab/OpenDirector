@@ -23,6 +23,7 @@ from opendirector.infrastructure.local_projects import LocalProjects
 
 
 pytestmark = [
+    pytest.mark.cpu,
     pytest.mark.nightly,
     pytest.mark.skipif(os.getenv('JIUWENSWARM_ENGINE_TEST') != '1', reason='requires installed JiuwenSwarm and FFmpeg'),
 ]

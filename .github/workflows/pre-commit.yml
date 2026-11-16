@@ -1,0 +1,55 @@
+name: Pre-commit
+
+on:
+  workflow_call:
+    outputs:
+      run-heavy:
+        description: Whether heavy checks are required
+        value: ${{ jobs.check.outputs.run-heavy }}
+      scope-reason:
+        description: Reason for the selected scope
+        value: ${{ jobs.check.outputs.scope-reason }}
+      changed-files:
+        description: Number of changed paths
+        value: ${{ jobs.check.outputs.changed-files }}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      run-heavy: ${{ steps.scope.outputs.run-heavy }}
+      scope-reason: ${{ steps.scope.outputs.scope-reason }}
+      changed-files: ${{ steps.scope.outputs.changed-files }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.event.before && github.event.before != '0000000000000000000000000000000000000000')) && '0' || '1' }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-static.txt
+      - name: Install static tooling
+        run: python -m pip install -r requirements-static.txt
+      - name: Check static configuration
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            python -m pre_commit run --from-ref "$PR_BASE_SHA" --to-ref HEAD
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$PUSH_BASE_SHA" ] && [ "$PUSH_BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
+            python -m pre_commit run --from-ref "$PUSH_BASE_SHA" --to-ref HEAD
+          else
+            python -m pre_commit run --all-files
+          fi
+      - id: scope
+        name: Select check scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/pre-commit/select_checks.py

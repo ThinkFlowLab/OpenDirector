@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.ready, pytest.mark.cpu]
 ROOT = Path(__file__).resolve().parents[1]
 
 

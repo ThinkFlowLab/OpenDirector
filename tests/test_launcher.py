@@ -3,6 +3,10 @@ import socket
 
 from opendirector import launcher as launcher_module
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def launcher():
     return launcher_module
