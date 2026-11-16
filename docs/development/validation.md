@@ -288,6 +288,10 @@ L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭
 
 `mp4_render_probe.mjs` 与 `reference_drag_performance.mjs` 需要导入 `/src/*.ts`，只在 dev server 上运行；`vite preview` lane 只运行不导入 `/src` 的脚本。需要 `--assistant-fixture` 的浏览器脚本不属于普通隔离服务阶段。
 
+`extendedHttpFixture` 使用独立 API `:8021` 和网页 `:5181`，API 同时启用 `--http-generation-fixture --assistant-fixture`。需要 HTTP 生成适配器的脚本声明 `httpGenerationFixture: true`，需要助手替身的脚本另声明 `fixture: true`。原有 `extendedFixture` 保留 API `:8020`、网页 `:5180` 和普通生成替身。两组执行前均运行 `node scripts/check-browser-manifest.mjs --lane <lane>`；检查根据清单要求读取实际服务状态，并确认网页代理与直接 API 请求使用同一个隔离服务。
+
+The `extendedHttpFixture` lane uses a separate API on `:8021` and web server on `:5181`, with both `--http-generation-fixture --assistant-fixture` enabled. Scripts requiring HTTP generation adapters declare `httpGenerationFixture: true`; assistant scripts also declare `fixture: true`. The existing `extendedFixture` lane retains its generic provider on API `:8020` and web `:5180`. Before either lane runs, `node scripts/check-browser-manifest.mjs --lane <lane>` checks the live service flags against the manifest and verifies that the web proxy and direct API requests reach the same isolated service.
+
 ### 每日可对比基准
 
 `daily-benchmark` 在同一次 nightly 的 `perf-outputs` 之后运行，不重跑浏览器，也不进入发布门槛。固定场景与阈值在 [`scripts/nightly/benchmark.json`](../../scripts/nightly/benchmark.json)：

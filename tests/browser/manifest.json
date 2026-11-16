@@ -3,13 +3,15 @@
     {
       "file": "input_admission_review.mjs",
       "fixture": true,
-      "lanes": ["extendedFixture"],
+      "httpGenerationFixture": true,
+      "lanes": ["extendedHttpFixture"],
       "note": "Requires creation_server.py --http-generation-fixture --assistant-fixture. Bilingual image-count admission through real HTTP requests and assistant parameter rejection with preserved drafts."
     },
     {
       "file": "video_review_regressions.mjs",
+      "httpGenerationFixture": true,
       "lanes": [
-        "extendedFixture"
+        "extendedHttpFixture"
       ],
       "note": "Requires creation_server.py --http-generation-fixture. Bilingual latent continuation, endpoint closure, pause expiry and dynamic-poster admission through real adapters and loopback HTTP."
     },
