@@ -120,6 +120,10 @@ The reusable workflow's `static-checks` defaults to false and is enabled by `ci.
 
 ## PR 安全扫描 / PR security scanning
 
+CodeQL、Release checks 和 DSH plugin checks 在入口工作流按“工作流名称 + 事件 + PR 编号”设置并发组；同一 PR 更新会取消该工作流的旧运行，不同 PR 和工作流互不取消。非 PR 事件按 `run_id` 独立分组且不启用取消，保留每次 main push 的检查和扫描基线。DSH 的路径筛选保持不变。参见 [GitHub 并发控制](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
+
+CodeQL, Release checks and DSH plugin checks group entry workflows by workflow name, event and PR number. Updates cancel outdated runs of the same workflow for that PR; different PRs and workflows do not cancel each other. Non-PR events use a unique `run_id` group with cancellation disabled, retaining checks and scan baselines for every main push. DSH path filters remain unchanged. See [GitHub concurrency control](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
 [`codeql.yml`](../../.github/workflows/codeql.yml) 对每个 PR（包含 draft 和纯文档变更）独立执行 Python 与 JavaScript/TypeScript CodeQL `security-extended` 分析；不等待 Release checks 的范围筛选。main push 建立合并版本基线，另提供手动运行。两条语言任务并行且互不取消，每条上限 30 分钟，汇总上限 5 分钟；这些不是阶段总墙钟上限。
 
 [`codeql.yml`](../../.github/workflows/codeql.yml) independently runs CodeQL `security-extended` analysis for Python and JavaScript/TypeScript on every PR, including drafts and documentation-only changes. It does not depend on Release checks scope selection. Main pushes establish the merged baseline; manual dispatch is also available. Language jobs run in parallel without fail-fast cancellation, with a 30-minute limit each and a 5-minute aggregate limit, not a workflow-wide deadline.
