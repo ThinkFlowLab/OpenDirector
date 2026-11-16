@@ -9,6 +9,7 @@ import {
   GENERATION_RATIOS,
   generationDefaults,
 } from "./generationCatalog.ts";
+import type { ReferenceContent } from "./chatReferenceContent.ts";
 import { generationPrompt } from "./generationReferenceContent.ts";
 import type { CanvasNode, GenerationSettings } from "./model.ts";
 import {
@@ -77,4 +78,48 @@ export function getNodeGenerationSettings(
   return config
     ? serviceImageSettings(serviceAudioSettings(resolved, config), config)
     : resolved;
+}
+
+/** Save receipts may fill defaults and replace display labels without an edit. */
+export function generationEditSettings(node: CanvasNode) {
+  if (!["image", "video", "audio"].includes(node.type)) return node.data.settings;
+  const settings = getNodeGenerationSettings(node);
+  if (settings.videoMode !== "first-last") delete settings.frameSlotsInitialized;
+  return { ...settings, model: settings.modelConfigId ? "" : settings.model };
+}
+
+/** Server acknowledgements canonicalize labels/assets without changing intent. */
+export function generationEditIdentity(
+  node: CanvasNode,
+  content: ReferenceContent,
+) {
+  const { prompt: _projection, ...settings } = generationEditSettings(node) ?? {};
+  return JSON.stringify({
+    kind: node.type,
+    title: node.data.title,
+    src: node.data.src,
+    text: node.data.text,
+    settings: Object.fromEntries(
+      Object.entries(settings).sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    agentSettings: node.data.agentSettings
+      ? Object.fromEntries(
+          Object.entries(node.data.agentSettings).sort(([a], [b]) =>
+            a.localeCompare(b),
+          ),
+        )
+      : undefined,
+    content: content.map((part) =>
+      part.type !== "reference"
+        ? part
+        : part.binding === "asset"
+          ? {
+              binding: "asset",
+              assetId: part.assetId,
+              fingerprint: part.fingerprint,
+              referenceId: part.referenceId,
+            }
+          : { nodeId: part.nodeId, referenceId: part.referenceId },
+    ),
+  });
 }

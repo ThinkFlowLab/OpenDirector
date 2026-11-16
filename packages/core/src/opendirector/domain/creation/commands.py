@@ -397,16 +397,22 @@ def command_fingerprint(command: Command) -> str:
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
 IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+                    'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
+                    'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',
+                    'bigmodel_image_size', 'bigmodel_image_reference', 'bigmodel_image_prompt',
                     'minimax_image_reference', 'minimax_image_count', 'minimax_image_bytes',
+                    'minimax_speech_text', 'minimax_speech_voice', 'minimax_speech_reference', 'minimax_speech_model',
+                    'zhipu_speech_text', 'zhipu_speech_voice', 'zhipu_speech_reference',
                     'voice_library_unsupported', 'voice_connection_changed', 'voice_reference_required',
                     'voice_transcript_required', 'voice_transcript_too_long', 'voice_description_too_long',
                     'voice_not_found', 'voice_delete_unsupported',
                     'voice_consent_required', 'voice_name_invalid', 'voice_audio_invalid', 'voice_format',
-                    'voice_size', 'voice_duration', 'voice_provider_protocol', 'voice_provider_error', 'voice_provider_timeout', 'voice_model_unsupported']
+                    'voice_size', 'voice_duration', 'voice_provider_protocol', 'voice_provider_error', 'voice_provider_timeout', 'voice_model_unsupported',
+                    'voice_name_taken', 'voice_provider_quota']
 
 
 class ContractIssue(Contract):

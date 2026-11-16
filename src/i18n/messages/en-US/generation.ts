@@ -1,5 +1,7 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.bigmodel.watermarkWaiver":
+    "BigModel requires a signed waiver to remove watermarks. Complete it in Personal Center → Security Management → Watermark Removal Management; otherwise outputs may still contain watermarks.",
   "generation.model.unconfigured":
     "No generation model is configured yet. Add one in Settings → Model services.",
   "generation.model.unavailable": "The selected model is unavailable",
@@ -99,6 +101,8 @@ export const generation = {
     "Enter a prompt, or @ a reference and let the Agent write the text",
   "generation.prompt.reading": "Text to read",
   "generation.prompt.music": "Music style",
+  "generation.prompt.implicitTextPlaceholder":
+    "Leave blank to use the connected text reference as the prompt, or type to add to it",
   "generation.prompt.imagePlaceholder":
     "Upload a reference, type a prompt, or @ a subject to describe the image you want",
   "generation.prompt.videoPlaceholder":

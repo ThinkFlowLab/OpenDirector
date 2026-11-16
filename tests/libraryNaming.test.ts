@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { withMediaSuffix } from "../src/canvas/library/libraryClient.ts";
+import { EXTENSIONS, fileName } from "../src/backend/generation.ts";
 
 /*
  * Regression: canvas node titles ("图片 1") have no extension, and the backend
@@ -11,6 +12,10 @@ test("a bare canvas title gains the suffix implied by its media type", () => {
   assert.equal(withMediaSuffix("图片 1", "image/png"), "图片 1.png");
   assert.equal(withMediaSuffix("视频 2", "video/mp4"), "视频 2.mp4");
   assert.equal(withMediaSuffix("旁白", "audio/mpeg"), "旁白.mp3");
+  for (const suffix of ["heic", "heif"]) {
+    assert.equal(withMediaSuffix("Photo", `image/${suffix}`), `Photo.${suffix}`);
+    assert.equal(fileName("Photo", EXTENSIONS[`image/${suffix}`]!), `Photo.${suffix}`);
+  }
 });
 
 test("an existing suffix is never duplicated", () => {

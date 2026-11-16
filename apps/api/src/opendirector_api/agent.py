@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
 from opendirector.agent.context import RunContext, RuntimeId
+from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
 from opendirector.domain.projects import ProjectError
@@ -56,6 +57,47 @@ class Turn(BaseModel):
     thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
     modelSelections: dict[str, str | None] = Field(default_factory=dict)
     skills: list[str] = Field(default_factory=list, max_length=1)
+
+
+def draft_content_is_empty(content):
+    """Blank text-only structured drafts are empty; reference or skill parts are not.
+
+    Non-string text values are treated as present content so New does not raise,
+    and an accepted non-text or non-string part is not silently reused away.
+    """
+    if not content:
+        return True
+    for part in content:
+        if not isinstance(part, dict):
+            return False
+        kind = part.get('type')
+        if kind == 'text':
+            text_value = part.get('text')
+            if not isinstance(text_value, str):
+                return False
+            if text_value.strip():
+                return False
+        else:
+            return False
+    return True
+
+
+def conversation_is_empty(value):
+    """A session with no messages or unsent content can be reused by New."""
+    return (not value.get('messages')
+            and not (value.get('draft') or '').strip()
+            and not value.get('assets')
+            and not value.get('skills')
+            and draft_content_is_empty(value.get('draftContent')))
+
+
+def public_conversation(value):
+    return {key: item for key, item in value.items()
+            if key not in {'archivedConversations', 'reusedCreateIds'}}
+
+
+def reused_ids(value):
+    return [str(item) for item in (value.get('reusedCreateIds') or [])]
 
 
 class Conversations:
@@ -103,7 +145,8 @@ class Conversations:
                 changed = True
             if changed:
                 durable_json(file, value)
-            return {key: item for key, item in value.items() if key != 'archivedConversations'}
+            result = public_conversation(value)
+        return with_trace_sources(result, directory)
 
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
@@ -131,20 +174,29 @@ class Conversations:
             current = read_json(file) if file.exists() else {'messages': [], **Draft().model_dump(mode='json')}
             current['conversationId'] = current.get('conversationId') or str(uuid5(project_id, 'assistant'))
             archives = current.pop('archivedConversations', [])
-            if current['conversationId'] == str(conversation_id):
-                return current
-            target = next((item for item in archives if item['conversationId'] == str(conversation_id)), None)
+            requested = str(conversation_id)
+            if current['conversationId'] == requested or requested in reused_ids(current):
+                return with_trace_sources(public_conversation(current), directory)
+            target = next((item for item in archives
+                           if item['conversationId'] == requested or requested in reused_ids(item)), None)
             if target is None:
                 if not create:
                     raise ProjectError('对话不存在。', 404)
+                if conversation_is_empty(current):
+                    aliases = reused_ids(current)
+                    if requested not in aliases:
+                        aliases.append(requested)
+                    current['reusedCreateIds'] = aliases
+                    durable_json(file, {**current, 'archivedConversations': archives})
+                    return with_trace_sources(public_conversation(current), directory)
                 if len(archives) >= 99:
                     raise ProjectError('项目对话已达 100 个，暂不能继续新建。', 409)
                 target = {'messages': [], **Draft().model_dump(mode='json'),
                           **{key: current[key] for key in ('runtime', 'runtimeModel', 'harnessModels', 'thinking', 'builtinModelThinking', 'modelSelections') if key in current},
-                          'conversationId': str(conversation_id)}
-            archives = [item for item in archives if item['conversationId'] != str(conversation_id)]
+                          'conversationId': requested}
+            archives = [item for item in archives if item['conversationId'] != target['conversationId']]
             durable_json(file, {**target, 'archivedConversations': [current, *archives]})
-            return target
+        return with_trace_sources(public_conversation(target), directory)
 
 
 class ConversationCreate(BaseModel):
@@ -321,6 +373,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
+                sources = {}
+                previous_sources = {}
                 plan = None
                 try:
                     user = {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
@@ -333,6 +387,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                     saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user, conversation_id=value.conversationId)
                     accepted = True
                     events.put({'type': 'start', 'conversation': saved})
+                    previous_sources = {source['id']: source for message in saved['messages'][:-2]
+                                        for source in message.get('sources', [])}
                     context = []
                     for message in saved['messages'][:-1]:
                         content = message['text'] or '(empty reply)'
@@ -358,6 +414,15 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                         async for event in stream:
                             if event['type'] == 'delta':
                                 text += event['text']
+                                inherited = ([source for source in referenced_sources(text, previous_sources)
+                                              if source['id'] not in sources]
+                                             if previous_sources and '\ue201' in event['text'] else [])
+                                if inherited:
+                                    sources.update({source['id']: source for source in inherited})
+                                    events.put({'type': 'sources', 'sources': inherited})
+                            if event['type'] == 'sources':
+                                for source in event['sources']:
+                                    sources.setdefault(source['id'], source)
                             if event['type'] == 'plan':
                                 plan = event['entries']
                             if event['type'] == 'tool':
@@ -395,6 +460,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                             'id': str(uuid5(value.id, 'assistant')), 'role': 'assistant', 'text': text, 'status': status,
                             'model': model,
                             'runtime': value.runtime, 'thinking': value.thinking, 'tools': activities,
+                            'sources': list(sources.values()),
                             **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId)
                     else:
                         saved = None

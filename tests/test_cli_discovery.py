@@ -5,6 +5,8 @@ import pytest
 from opendirector.agent import cli_discovery as discovery
 from opendirector.agent import deepseek, jiuwenswarm, native, runtime
 
+pytestmark = pytest.mark.ready
+
 
 def test_path_has_priority(monkeypatch):
     monkeypatch.setattr(discovery.shutil, 'which', lambda _: '/chosen/codex')

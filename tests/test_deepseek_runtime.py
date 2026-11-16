@@ -123,6 +123,7 @@ def test_catalog_from_acp_config(cli):
 
 
 @pytest.mark.parametrize('mode', ['success', 'incomplete', 'permission'])
+@pytest.mark.merge
 def test_acp_shared_write_and_native_trace(cli, tmp_path, monkeypatch, mode):
     monkeypatch.setenv('DEEPSEEK_TEST', mode)
     local = LocalProjects(tmp_path)

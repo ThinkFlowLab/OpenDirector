@@ -1,5 +1,11 @@
 /** English assistant copy. Keys must match `zh-CN/assistant.ts`. */
 export const assistant = {
+  "assistant.reply.sourceUnavailable": "Source unavailable",
+  "assistant.reply.copyLink": "Copy link",
+  "assistant.reply.copyLinkFailed": "Copy failed; select the URL to copy it",
+  "assistant.reply.openLink": "Open link",
+  "assistant.reply.openExternalLink": "Open external link",
+  "assistant.reply.externalLinkWarning": "You are about to visit the following external website. Check the link address before opening it.",
   // Right-side assistant panel.
   "assistant.panel.aria": "AI chat",
   "assistant.panel.title": "AI chat",

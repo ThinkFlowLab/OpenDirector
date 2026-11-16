@@ -53,6 +53,42 @@ def send(client, path, conversation_id, text):
     return response
 
 
+def test_citation_metadata_streams_and_persists_without_changing_raw_text_or_offsets(assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    source = {'id': 'turn1search0', 'url': 'https://example.test/source', 'title': 'Source'}
+    prefix = '🌊结论\ue200cite\ue202turn1'
+    suffix = 'search0\ue201'
+    async def stream(self, run):
+        yield {'type': 'sources', 'sources': [source]}
+        yield {'type': 'delta', 'text': prefix}
+        yield {'type': 'delta', 'text': suffix}
+        yield {'type': 'tool', 'id': 'check', 'name': 'read_project', 'status': 'complete'}
+        yield {'type': 'delta', 'text': '\nDone'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    cid = client.get(path).json()['conversationId']
+    events = frames(send(client, path, cid, 'Search'))
+    assert next(event for event in events if event['type'] == 'sources')['sources'] == [source]
+    saved = events[-1]['conversation']['messages'][-1]
+    assert saved['sources'] == [source]
+    assert saved['text'] == prefix + suffix + '\nDone'
+    assert saved['tools'][0]['textOffset'] == len(prefix + suffix)
+    assert client.get(path).json()['messages'][-1] == saved
+    disk = next(tmp_path.glob('**/agent-runs/conversation.json'))
+    assert json.loads(disk.read_text(encoding='utf-8'))['messages'][-1] == saved
+    # Archiving and restoring the conversation retains metadata too.
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+    restored = client.post(path + f'/conversations/{cid}/activate').json()
+    assert restored['messages'][-1] == saved
+
+    # A resumed native session can cite an earlier search without running it again.
+    async def reuse(self, run):
+        yield {'type': 'delta', 'text': 'Again\ue200cite\ue202turn1search0\ue201'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', reuse)
+    again = frames(send(client, path, cid, 'Continue'))
+    assert next(event for event in again if event['type'] == 'sources')['sources'] == [source]
+    assert again[-1]['conversation']['messages'][-1]['sources'] == [source]
+
+
 def test_threads_keep_drafts_history_and_independent_context(assistant):
     client, path, contexts = assistant
     first = client.get(path).json()
@@ -74,11 +110,219 @@ def test_threads_keep_drafts_history_and_independent_context(assistant):
     assert [(item['id'], item['status'], item['textOffset']) for item in tools] == [('a', 'complete', 4), ('b', 'failed', 4)]
 
 
+def test_create_reuses_an_empty_active_session_instead_of_accumulating(assistant):
+    """#246: New conversation is idempotent while the current session is empty."""
+    client, path, _ = assistant
+    first = client.get(path).json()
+    assert first['messages'] == []
+    assert first['draft'] == ''
+    first_id = first['conversationId']
+    again = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert again.status_code == 200, again.text
+    assert again.json()['conversationId'] == first_id
+    assert again.json()['messages'] == []
+    third = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert third.status_code == 200, third.text
+    assert third.json()['conversationId'] == first_id
+    listing = client.get(path + '/conversations').json()
+    assert listing['activeId'] == first_id
+    assert listing['items'] == [
+        {'id': first_id, 'title': '新会话', 'messageCount': 0, 'hasDraft': False},
+    ]
+    # Whitespace-only draft is still an empty session and must be reused.
+    assert client.put(path + '/draft', json={'conversationId': first_id,
+        'draft': '   \n\t'}).status_code == 200
+    reused = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert reused.status_code == 200
+    assert reused.json()['conversationId'] == first_id
+    # A real draft is kept and archived when starting a new session.
+    assert client.put(path + '/draft', json={'conversationId': first_id,
+        'draft': '要保留的草稿'}).status_code == 200
+    created = client.post(path + '/conversations', json={'id': str(uuid4())}).json()
+    assert created['conversationId'] != first_id
+    items = client.get(path + '/conversations').json()['items']
+    assert [item['id'] for item in items] == [created['conversationId'], first_id]
+    assert items[1]['hasDraft'] is True
+    # After a turn, New must still open a distinct session.
+    assert frames(send(client, path, created['conversationId'], '正式提问'))[-1]['error'] is None
+    next_id = str(uuid4())
+    started = client.post(path + '/conversations', json={'id': next_id}).json()
+    assert started['conversationId'] == next_id
+    assert len(client.get(path + '/conversations').json()['items']) == 3
+
+
+
+
+
+def test_reused_create_id_stays_bound_after_draft_and_restart(tmp_path, monkeypatch):
+    """A create id that resolved to an empty session must replay to that session."""
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', lambda self, run: iter(()))
+    monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
+    monkeypatch.setattr(agent, 'skills', empty_skills)
+    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model'})
+    pid = str(uuid4())
+    path = f'/api/creation/projects/{pid}/assistant'
+    reuse_id = str(uuid4())
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}
+
+    def open_client():
+        return TestClient(create_app(LocalProjects(tmp_path)), headers=headers)
+
+    with open_client() as client:
+        assert client.post(f'/api/creation/projects/{pid}/commands', json={
+            'type': 'project.create', 'projectId': pid, 'commandId': str(uuid4()),
+            'payload': {'name': '复用幂等'}}).status_code == 200
+        assert client.post(f'/api/creation/projects/{pid}/open').status_code == 200
+        first_id = client.get(path).json()['conversationId']
+        reused = client.post(path + '/conversations', json={'id': reuse_id})
+        assert reused.status_code == 200, reused.text
+        assert reused.json()['conversationId'] == first_id
+        assert 'reusedCreateIds' not in reused.json()
+        assert client.put(path + '/draft', json={'conversationId': first_id,
+            'draft': '干预后的草稿'}).status_code == 200
+        replayed = client.post(path + '/conversations', json={'id': reuse_id})
+        assert replayed.status_code == 200, replayed.text
+        assert replayed.json()['conversationId'] == first_id
+        assert replayed.json()['draft'] == '干预后的草稿'
+        listing = client.get(path + '/conversations').json()
+        assert listing['activeId'] == first_id
+        assert [item['id'] for item in listing['items']] == [first_id]
+
+    # A new process / app reads the persisted alias after restart.
+    with open_client() as client:
+        restarted = client.post(path + '/conversations', json={'id': reuse_id})
+        assert restarted.status_code == 200, restarted.text
+        assert restarted.json()['conversationId'] == first_id
+        assert restarted.json()['draft'] == '干预后的草稿'
+        assert len(client.get(path + '/conversations').json()['items']) == 1
+        other = client.post(path + '/conversations', json={'id': str(uuid4())}).json()
+        assert other['conversationId'] != first_id
+        # Replaying the bound id still activates the original session, not a third one.
+        back = client.post(path + '/conversations', json={'id': reuse_id}).json()
+        assert back['conversationId'] == first_id
+        assert back['draft'] == '干预后的草稿'
+        assert [item['id'] for item in client.get(path + '/conversations').json()['items']] == [
+            first_id, other['conversationId']]
+
+
+def test_whitespace_only_structured_draft_is_reused(assistant):
+    """HTTP clients that persist blank text-only draftContent must not accumulate sessions."""
+    client, path, _ = assistant
+    first_id = client.get(path).json()['conversationId']
+    payload = {'conversationId': first_id, 'draft': '  \n',
+               'draftContent': [{'type': 'text', 'text': '  \n'}]}
+    assert client.put(path + '/draft', json=payload).status_code == 200
+    created = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert created.status_code == 200, created.text
+    assert created.json()['conversationId'] == first_id
+    assert len(client.get(path + '/conversations').json()['items']) == 1
+    # A reference or skill part is real unsent content and must be archived.
+    assert client.put(path + '/draft', json={'conversationId': first_id, 'draft': '  ',
+        'draftContent': [{'type': 'text', 'text': '  '},
+                         {'type': 'reference', 'assetId': 'a', 'name': 'clip'}]}).status_code == 200
+    started = client.post(path + '/conversations', json={'id': str(uuid4())}).json()
+    assert started['conversationId'] != first_id
+    items = client.get(path + '/conversations').json()['items']
+    assert [item['id'] for item in items] == [started['conversationId'], first_id]
+
+
+def test_non_string_draft_content_text_does_not_500_on_new(assistant):
+    """Accepted non-string text parts must not crash New or be treated as blank."""
+    client, path, _ = assistant
+    for value in (123, True, {'x': 1}):
+        current_id = client.get(path).json()['conversationId']
+        saved = client.put(path + '/draft', json={
+            'conversationId': current_id, 'draft': '',
+            'draftContent': [{'type': 'text', 'text': value}],
+        })
+        assert saved.status_code == 200, saved.text
+        new_id = str(uuid4())
+        created = client.post(path + '/conversations', json={'id': new_id})
+        assert created.status_code == 200, created.text
+        assert created.json()['conversationId'] == new_id
+        listing = client.get(path + '/conversations').json()
+        assert listing['activeId'] == new_id
+        assert current_id in {item['id'] for item in listing['items']}
+
+
+def test_empty_current_session_can_be_reused_when_history_is_full(assistant):
+
+    """New should not 409 when the active session is empty even at the 100-session cap."""
+    client, path, _ = assistant
+    current_id = client.get(path).json()['conversationId']
+    for index in range(99):
+        assert client.put(path + '/draft', json={'conversationId': current_id,
+            'draft': f'归档草稿{index}'}).status_code == 200
+        created = client.post(path + '/conversations', json={'id': str(uuid4())})
+        assert created.status_code == 200, created.text
+        current_id = created.json()['conversationId']
+    listing = client.get(path + '/conversations').json()
+    assert len(listing['items']) == 100
+    assert listing['activeId'] == current_id
+    reused = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert reused.status_code == 200, reused.text
+    assert reused.json()['conversationId'] == current_id
+    assert len(client.get(path + '/conversations').json()['items']) == 100
+    assert client.put(path + '/draft', json={'conversationId': current_id,
+        'draft': '不能再开'}).status_code == 200
+    blocked = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert blocked.status_code == 409, blocked.text
+
+
+def test_conversation_is_empty_ignores_runtime_settings():
+    base = {'messages': [], 'draft': '  ', 'assets': [], 'skills': [],
+            'thinking': 'high', 'runtime': 'default', 'modelSelections': {'agent': 'x'}}
+    assert agent.conversation_is_empty(base)
+    assert not agent.conversation_is_empty({**base, 'messages': [{'role': 'user', 'text': 'hi'}]})
+    assert not agent.conversation_is_empty({**base, 'draft': '还没发送'})
+    assert not agent.conversation_is_empty({**base, 'assets': [{'id': 'a'}]})
+    assert not agent.conversation_is_empty({**base, 'skills': ['s']})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': '引用'}]})
+    assert agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': '  \n'}]})
+    assert agent.conversation_is_empty({**base, 'draftContent': []})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [
+        {'type': 'text', 'text': '  '}, {'type': 'skill', 'name': 'lookup'}]})
+    assert not agent.draft_content_is_empty([{'type': 'text', 'text': 123}])
+    assert not agent.draft_content_is_empty([{'type': 'text', 'text': True}])
+    assert not agent.draft_content_is_empty([{'type': 'text', 'text': {'x': 1}}])
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': 123}]})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': True}]})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': {'x': 1}}]})
+def test_saved_citations_load_trace_sources_on_read_without_rewriting_conversation(assistant, tmp_path):
+    client, path, _ = assistant
+    cid = client.get(path).json()['conversationId']
+    frames(send(client, path, cid, 'Search'))
+    disk = next(tmp_path.glob('**/agent-runs/conversation.json'))
+    value = json.loads(disk.read_text(encoding='utf-8'))
+    turn = value['messages'][0]['id']
+    reply = value['messages'][-1]
+    reply.pop('sources')
+    reply.update(runtime='codex', text='Result\ue200cite\ue202turn1search0\ue201')
+    disk.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+    source = {'id': 'turn1search0', 'url': 'https://example.test/source', 'title': 'Source'}
+    trace = {'native': {'type': 'item.completed', 'item': {'type': 'mcp_tool_call',
+        'tool': 'search_service.web_run', 'status': 'completed', 'result': {
+            '_meta': {'raw_messages': [{'content': {'ref_id': source['id'], 'url': source['url'], 'title': source['title']}}]}}}}}
+    (disk.parent / f'{turn}.codex.jsonl').write_text(json.dumps(trace), encoding='utf-8')
+    original = disk.read_bytes()
+    loaded = client.get(path).json()['messages'][-1]
+    assert loaded['sources'] == [source] and loaded['text'] == reply['text']
+    assert disk.read_bytes() == original
+    # Activating the already active conversation uses the same projection.
+    assert client.post(path + f'/conversations/{cid}/activate').json()['messages'][-1] == loaded
+    assert disk.read_bytes() == original
+
+
 def test_stale_draft_and_stale_turn_cannot_modify_active_thread(assistant):
     client, path, contexts = assistant
     old_id = client.get(path).json()['conversationId']
+    # The first session must have content; an empty current session is reused, not archived.
+    assert client.put(path + '/draft', json={'conversationId': old_id, 'draft': '先留着'}).status_code == 200
     new_id = str(uuid4())
-    assert client.post(path + '/conversations', json={'id': new_id}).status_code == 200
+    created = client.post(path + '/conversations', json={'id': new_id})
+    assert created.status_code == 200, created.text
+    assert created.json()['conversationId'] == new_id
     for old in ({'conversationId': old_id}, {}):
         assert client.put(path + '/draft', json={**old, 'draft': '旧草稿'}).status_code == 409
     result = frames(send(client, path, old_id, '迟到的消息'))[-1]
@@ -209,7 +453,9 @@ def test_sse_disconnect_keeps_the_run_and_a_new_stream_resumes_it(assistant, mon
     """#81: leaving the project closes the stream but must not stop the Agent."""
     client, path, _ = assistant
     release, attached = threading.Event(), threading.Event()
+    source = {'id': 'turn1search0', 'url': 'https://example.test/source', 'title': 'Source'}
     async def stream(self, run):
+        yield {'type': 'sources', 'sources': [source]}
         yield {'type': 'delta', 'text': '断线前的回复'}
         await asyncio.to_thread(release.wait, 10)
         yield {'type': 'delta', 'text': '，返回后完成'}
@@ -237,8 +483,10 @@ def test_sse_disconnect_keeps_the_run_and_a_new_stream_resumes_it(assistant, mon
             release.set()
         events = frames(pending.result(timeout=10))
     assert events[0]['type'] == 'start'
+    assert next(event for event in events if event['type'] == 'sources')['sources'] == [source]
     assert [item['text'] for item in events if item['type'] == 'delta'] == ['断线前的回复', '，返回后完成']
     saved = events[-1]['conversation']['messages'][-1]
+    assert saved['sources'] == [source]
     assert events[-1]['type'] == 'end' and events[-1]['error'] is None
     assert saved['status'] == 'complete' and saved['text'] == '断线前的回复，返回后完成'
     assert 'activeTurnId' not in client.get(path).json()

@@ -13,6 +13,7 @@ import {
   backendReferenceIssue,
   backendReferences,
   backendVideoMode,
+  hasImplicitTextPrompt,
   isGenerationModel,
   type ModelConfig,
 } from "../src/backend/rules.ts";
@@ -103,6 +104,37 @@ test("text-only reference requests become text-to-video", () => {
   const references = backendReferences(settings, [image], h3);
   assert.equal(backendVideoMode(settings, references), "reference");
   assert.equal(backendBlocker(settings, [image], [h3]), null);
+});
+
+test("a connected text reference implicitly supplies a blank image or video prompt", () => {
+  const brief = createNode("text", undefined, { title: "用例", text: "雨夜街头" });
+  const blank = createNode("text", undefined, { title: "空白", text: "  " });
+  const textImage = { ...zimage, id: crypto.randomUUID() };
+  const image = { ...generationDefaults("image"), modelConfigId: textImage.id, resolution: "auto", prompt: "" };
+  for (const [settings, model] of [
+    [image, textImage],
+    [video({ prompt: "" }), h3],
+    [video({ prompt: "", videoMode: "reference" }), h3],
+  ] as const) {
+    assert.equal(hasImplicitTextPrompt(settings, [brief], model), true);
+    assert.equal(backendBlocker(settings, [brief], [model]), null);
+    assert.equal(backendBlocker(settings, [brief], [model], []), null);
+    assert.equal(backendBlocker(settings, [], [model], [brief]), null);
+    // Without usable text the prompt is still required.
+    assert.equal(hasImplicitTextPrompt(settings, [blank], model), false);
+    assert.match(backendBlocker(settings, [], [model])!, /请输入生成要求/);
+  }
+  // A media-only reference never stands in for the prompt.
+  assert.match(backendBlocker(video({ prompt: "" }), [media("image")], [h3])!, /请输入生成要求/);
+  // A model that cannot take text references keeps requiring a prompt.
+  const imageOnly = config("image", { profile: "vllm-omni-image", allowedKinds: ["image"], maxImages: 4, videoModes: [] });
+  const imageOnlySettings = { ...image, modelConfigId: imageOnly.id };
+  assert.equal(hasImplicitTextPrompt(imageOnlySettings, [brief], imageOnly), false);
+  // Speech and music never read text references.
+  const speech = config("audio", { profile: "compatible", allowedKinds: ["text"], maxImages: 0, maxAudios: 0, videoModes: [] });
+  const audio = { ...generationDefaults("audio"), modelConfigId: speech.id, prompt: "" };
+  assert.equal(hasImplicitTextPrompt(audio, [brief], speech), false);
+  assert.match(backendBlocker(audio, [brief], [speech])!, /请输入要合成的文字/);
 });
 
 test("subjects supply compatible real resources and retain source identity for evidence", () => {

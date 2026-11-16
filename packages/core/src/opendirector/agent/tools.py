@@ -432,4 +432,3 @@ class AgentTools:
         else:
             receipt = await asyncio.to_thread(self.projects.execute, command, session=session, source='agent')
         return receipt.model_dump(mode='json')
-

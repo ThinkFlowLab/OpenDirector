@@ -50,6 +50,8 @@ function extension(asset: CanvasResource): string {
     "image/gif": "gif",
     "image/svg+xml": "svg",
     "image/avif": "avif",
+    "image/heic": "heic",
+    "image/heif": "heif",
     "video/mp4": "mp4",
     "video/quicktime": "mov",
     "video/webm": "webm",
@@ -294,7 +296,7 @@ export async function createTimelineZip(
   return new Blob([...parts, ...central, tail], { type: "application/zip" });
 }
 
-async function readLocalResource(
+export async function readLocalResource(
   resource: CanvasResource,
   signal: AbortSignal,
 ): Promise<Blob> {

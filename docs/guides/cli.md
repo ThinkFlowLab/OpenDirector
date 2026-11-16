@@ -115,6 +115,10 @@ Use the previous response's `nextCursor` and `connectionId` for each following p
 
 MOSS 音色较多时，首次查询加上 `--page-size 150`。下一页沿用该参数，把上一页返回的 `nextCursor` 和 `connectionId` 分别传给 `--after` 和 `--connection`。当 `nextCursor` 为 `null` 时，已经读到最后一页。
 
+`pageSize` limits MOSS pages only. MiniMax system voices and vLLM-Omni voices return their complete native catalogue in one response with `nextCursor: null`; a supplied page size does not truncate these libraries.
+
+`pageSize` 仅限制 MOSS 的每页数量。MiniMax 系统音色和 vLLM-Omni 音色会在一次响应中返回完整目录，`nextCursor` 为 `null`；传入每页数量不会截断这些音色库。
+
 To register an authorized recording, run the following command.
 
 ```sh
@@ -124,3 +128,36 @@ opendirector voice create recording.wav --model MODEL_CONFIG_UUID --connection C
 Use the returned `voiceId` as the speech parameter `voice`, and preserve the returned selection fields as `voiceSelection` when updating the audio generation specification. Use `opendirector generation-spec update --help-field payload.spec@audio.parameters.voiceSelection` to inspect the current typed fields. Do not copy voice identities across connections. `opendirector voice delete VOICE_ID --model MODEL_CONFIG_UUID --connection CONNECTION_ID` immediately deletes the uploaded voice if the provider supports deletion. Obtain authorization for that specific voice before invoking the CLI or Agent tool. The composer asks for confirmation in the UI. These commands use the same services as the UI and Agent tools.
 
 音色库命令同样适用于中文工作流：先用 `voice list` 读取当前模型的连接身份及要求，再用 `voice create` 上传已获授权的录音；Drama3 等适配器必须填写 `--ref-text`。保存生成配置时同时保留服务端 `voiceId` 和返回的音色选择信息。不同服务之间不能直接复用音色 ID。`voice delete` 仅删除服务支持的上传音色，CLI 和 Agent 会立即执行，请先取得针对该音色的明确授权。在界面中删除时会弹出确认框。
+
+## Canvas text: Markdown and sizing / 画布文本：Markdown 与尺寸
+
+Double-click a text card (or press Enter with it selected) to edit Markdown source. Outside editing, the card renders headings, lists, quotes, emphasis, links, fenced code and tables. Select the card, then drag its bottom-right handle to resize width and height independently; the UI minimum is 200 × 120 canvas units. Long content scrolls within the card. One resize gesture is one undo step and does not change the source. Locked nodes, including nodes inside a locked group, remain read-only.
+
+Use **Expand editor** for a viewport-filling source/preview window. Both views edit the same node; source selection, caret and scroll position survive switching views and returning to the canvas. **Done**, closing and Escape finish the current surface without discarding the draft, just like inline editing; undo reverses the completed edit. Failed saves preserve the local draft for correction/retry. Links use the same confirmation card as assistant replies.
+
+双击文本卡片（或选中后按 Enter）编辑 Markdown 源码；非编辑状态显示标题、列表、引用、强调、链接、围栏代码及表格。选中卡片后，拖动右下角手柄可独立调整宽高，界面最小尺寸为 200 × 120 画布单位，长内容在卡片内部滚动。一次拖动对应一次撤销，正文不变。节点自身或父分组锁定时只读。
+
+通过「展开编辑」打开铺满应用视口的源码／预览窗口。两个界面编辑同一节点，切换视图和返回画布时保留源码选区、光标及滚动位置。「完成」、关闭和 Escape 与行内编辑一致，结束当前编辑界面但不丢弃草稿；撤销可还原完成的编辑。保存失败时保留本地草稿以便修正、重试。链接使用与助手回复相同的确认卡片。
+
+```bash
+opendirector --project PROJECT_UUID canvas text --help
+opendirector --project PROJECT_UUID --operation-id OPERATION_UUID canvas text create \
+  --file notes.md --title Notes --item-id ITEM_UUID --x 20 --y 40 --width 480 --height 320
+opendirector --project PROJECT_UUID canvas text show --id ITEM_UUID
+opendirector --project PROJECT_UUID --operation-id UPDATE_UUID canvas text update \
+  --id ITEM_UUID --file - --expected-version canvas_item:ITEM_UUID:1 < revised.md
+opendirector --project PROJECT_UUID --operation-id RESIZE_UUID canvas text resize \
+  --id ITEM_UUID --width 640 --height 400 --expected-version canvas_item:ITEM_UUID:2
+```
+
+`--file` is UTF-8 Markdown, not a JSON command document; `-` reads stdin without shell escaping. The asset limit is 1 MiB (1,048,576 UTF-8 bytes); the `manualText` field also has a 1,048,576-character schema bound. `show` returns JSON with the **complete** `text`, stable `itemId`, `revision`, dimensions and `expectedVersion`, without opening an edit session. Width and height are positive canvas coordinate units independent of zoom; the shared backend permits smaller values than the UI handle minimum. Creation defaults to 352 × 198; `--x` and `--y` are required.
+
+Updates and resizes require the `canvas_item` revision returned by `show`. Receipts include `status`, `itemId` and `canvasItems` with committed revisions and dimensions. Locks and stale revisions are rejected with exit 1 and an issue code/message; usage errors exit 2. Keep your source file, read the latest text and merge before a new attempt. Agent Shell and ordinary HTTP CLI use the same business services. Text registration and canvas publication are separate commits: if publication fails, the registered asset may remain unbound. Use the same global operation ID and identical file/options to retry without registering a duplicate; do not reuse it for a changed edit. A geometry read failure is reported as `geometryReadError` alongside the committed receipt.
+
+`--file` 接收 UTF-8 Markdown 而非 JSON 命令文档，`-` 从标准输入读取，无须对引号或代码围栏进行 Shell 转义。文本资产限制为 1 MiB（1,048,576 个 UTF-8 字节）；`manualText` 字段另有 1,048,576 字符的契约限制。`show` 不申请编辑会话，返回包含完整 `text`、稳定 `itemId`、`revision`、宽高及 `expectedVersion` 的 JSON。宽高为与缩放无关的正数画布单位，共用后端允许小于界面手柄最小尺寸的数值。创建默认 352 × 198，必须提供 `--x`、`--y`。
+
+更新和缩放必须携带 `show` 返回的 `canvas_item` 版本。回执包含 `status`、`itemId` 及带已提交版本和尺寸的 `canvasItems`。锁定或旧版本冲突返回退出码 1 及错误码、说明，参数用法错误返回 2。保留源码文件，重新读取最新正文并合并后再尝试。Agent Shell 与普通 HTTP CLI 复用相同业务服务。文本登记和画布采用是两个提交：采用失败时，已登记资产可能尚未绑定。使用相同全局操作 ID 和完全相同的文件、选项重试可复用资产，修改输入后应使用新的 ID。几何回读失败通过已提交回执中的 `geometryReadError` 单独报告。
+
+`canvas text show` reads `/api/creation/projects/{projectId}/assets/{assetId}/content` through a bounded HTTP stream on both CLI transports, retaining UTF-8 BOM and CRLF. Its cap is `MAX_CREATION_TEXT_BYTES` (1,048,576 bytes); the shared agent `read` tool still uses its original 64 KiB budget. The API address comes from `--url` or `OPENDIRECTOR_API_URL`, which the application launcher supplies to Agent Shell.
+
+`canvas text show` 在两种 CLI 传输方式下都通过有界 HTTP 流读取 `/api/creation/projects/{projectId}/assets/{assetId}/content`，保留 UTF-8 BOM 和 CRLF。上限为 `MAX_CREATION_TEXT_BYTES`（1,048,576 字节）；共用 Agent `read` 工具仍保留原有的 64 KiB 预算。API 地址来自 `--url` 或 `OPENDIRECTOR_API_URL`，应用启动器会将该环境变量传给 Agent Shell。

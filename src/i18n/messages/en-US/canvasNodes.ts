@@ -1,5 +1,7 @@
 /** Node frames, cards, versions, stacks and media controls. */
 export const canvasNodes = {
+  "canvasNodes.text.resize": "Resize text node",
+
   "canvasNodes.kind.image": "Image",
   "canvasNodes.kind.video": "Video",
   "canvasNodes.kind.audio": "Audio",

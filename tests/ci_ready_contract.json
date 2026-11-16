@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "capabilities": [
+    {
+      "id": "command-replay-and-conflicts",
+      "labels": {"zh-CN": "命令重放与版本冲突", "en-US": "Command replay and version conflicts"},
+      "tests": [
+        "tests/test_creation_api.py::test_conflicting_command_id_and_stale_version_have_distinct_outcomes",
+        "tests/test_creation_storage.py::test_idempotency_precedes_version_and_session_checks"
+      ]
+    },
+    {
+      "id": "recoverable-publication",
+      "labels": {"zh-CN": "可恢复提交", "en-US": "Recoverable publication"},
+      "tests": ["tests/test_creation_storage.py::test_creation_recovers_from_each_file_commit_checkpoint"]
+    },
+    {
+      "id": "agent-authorization-and-replay",
+      "labels": {"zh-CN": "Agent 授权与幂等", "en-US": "Agent authorization and idempotency"},
+      "tests": [
+        "tests/test_agent_gateway.py::test_concurrent_replay_executes_once_and_conflicting_input_is_rejected",
+        "tests/test_agent_gateway.py::test_rejected_receipt_and_forged_scope_are_consistent"
+      ]
+    },
+    {
+      "id": "asset-scope",
+      "labels": {"zh-CN": "素材范围与会话", "en-US": "Asset scope and sessions"},
+      "tests": ["tests/test_creation_assets.py::test_handle_scope_and_expired_sessions_are_enforced"]
+    },
+    {
+      "id": "reference-version-policy",
+      "labels": {"zh-CN": "参考身份与版本策略", "en-US": "Reference identity and version policy"},
+      "tests": [
+        "tests/test_creation_reference_editor.py::test_hidden_following_and_fixed_versions_survive_source_changes",
+        "tests/test_creation_reference_editor.py::test_inline_repeat_delete_disconnect_and_undo_are_one_business_relationship"
+      ]
+    },
+    {
+      "id": "generation-evidence-and-adoption",
+      "labels": {"zh-CN": "生成证据与候选采用", "en-US": "Generation evidence and candidate adoption"},
+      "tests": [
+        "tests/test_creation_generation_service.py::test_changed_intent_retains_candidate_without_overwriting_edits",
+        "tests/test_creation_generation_service.py::test_hidden_source_generation_frozen_history_restart_and_idempotent_command"
+      ]
+    },
+    {
+      "id": "editing-locks",
+      "labels": {"zh-CN": "编辑锁约束", "en-US": "Editing locks"},
+      "tests": ["tests/test_creation_layers.py::test_attached_layer_writes_and_detach_respect_parent_lock"]
+    },
+    {
+      "id": "undo-redo",
+      "labels": {"zh-CN": "撤销重做与冲突保护", "en-US": "Undo/redo and conflict protection"},
+      "tests": [
+        "tests/test_creation_history_service.py::test_redo_follows_undo_order_and_new_edit_discards_redo_branch",
+        "tests/test_creation_history_service.py::test_field_scoped_undo_preserves_other_fields_and_rejects_same_field_conflict"
+      ]
+    },
+    {
+      "id": "timeline-publication",
+      "labels": {"zh-CN": "时间线发布与来源", "en-US": "Timeline publication and provenance"},
+      "tests": ["tests/test_creation_timeline_render.py::test_publish_replay_reopen_and_undo"]
+    },
+    {
+      "id": "actual-media-validation",
+      "labels": {"zh-CN": "真实媒体输入校验", "en-US": "Actual media validation"},
+      "tests": ["tests/test_voice_library.py::test_invalid_actual_audio_never_calls_provider"]
+    },
+    {
+      "id": "tool-task-validation-and-output",
+      "labels": {"zh-CN": "工具任务校验与输出", "en-US": "Tool task validation and output"},
+      "tests": [
+        "tests/test_tool_tasks.py::test_submission_rejects_tools_without_a_capable_model",
+        "tests/test_tool_tasks.py::test_video_edit_rejects_out_of_bounds_selection_before_acceptance",
+        "tests/test_tool_tasks.py::test_outpaint_keeps_original_pixels_and_returns_requested_size",
+        "tests/test_tool_tasks.py::test_h3_edit_masks_follow_its_frame_and_audio_grids",
+        "tests/test_tool_tasks.py::test_cancel_drains_an_inflight_write_so_the_task_never_stays_running"
+      ]
+    },
+    {
+      "id": "timeline-package-scope",
+      "labels": {"zh-CN": "时间线包范围与来源", "en-US": "Timeline package scope and provenance"},
+      "tests": [
+        "tests/test_timeline_packages.py::test_package_exports_exact_revision_readonly_and_imports_real_resources",
+        "tests/test_timeline_packages.py::test_agent_package_tools_reject_replaced_execution_root_and_ancestors"
+      ]
+    },
+    {
+      "id": "deepseek-protocol-and-private-config",
+      "labels": {"zh-CN": "DeepSeek 协议与私有配置", "en-US": "DeepSeek protocol and private configuration"},
+      "tests": [
+        "tests/test_deepseek_runtime.py::test_rejects_incompatible_acp_version",
+        "tests/test_deepseek_runtime.py::test_native_desktop_model_overlay_is_private_and_respects_acp_overrides"
+      ]
+    },
+    {
+      "id": "jiuwenswarm-protocol-failures",
+      "labels": {"zh-CN": "JiuwenSwarm 协议失败", "en-US": "JiuwenSwarm protocol failures"},
+      "tests": [
+        "tests/test_jiuwenswarm_runtime.py::test_query_rejects_invalid_protocol",
+        "tests/test_jiuwenswarm_runtime.py::test_native_failure_reason_reaches_caller"
+      ]
+    },
+    {
+      "id": "shared-rule-contracts",
+      "labels": {"zh-CN": "共享规则契约", "en-US": "Shared rule contracts"},
+      "tests": ["tests/test_rule_facts.py"]
+    }
+  ],
+  "browser_gate": ["mp4_export.mjs"]
+}

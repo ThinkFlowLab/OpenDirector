@@ -62,7 +62,7 @@ export interface CanvasArchive {
 
 export interface CanvasArchiveOptions {
   /** Reads media bytes. Injectable so exports can be verified off-browser. */
-  read?: (src: string) => Promise<Blob>;
+  read?: (src: string, mimeType?: string) => Promise<Blob>;
   now?: Date;
 }
 
@@ -184,7 +184,7 @@ export async function buildCanvasArchive(
     const known = paths.get(src);
     if (known) return known;
     const pending = (async () => {
-      const blob = await read(src);
+      const blob = await read(src, mimeType);
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const type = blob.type || mimeType;
       const digest = await sha256(bytes);

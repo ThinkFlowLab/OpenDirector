@@ -8,6 +8,7 @@ import pytest
 from test_creation_canvas_service import project, send, ver
 from test_timeline_fonts import timeline_document
 from opendirector.domain.projects import ProjectError
+from test_creation_assets import import_asset
 
 
 def service(store):
@@ -24,6 +25,35 @@ def stage(store, pid, session, path):
             writer.write(chunk)
     info = writer.finish()
     return dict(operationId=uuid4(), uploadHandle=handle, archiveFingerprint=info.fingerprint)
+
+
+@pytest.mark.parametrize('suffix', ['heic', 'heif'])
+def test_package_keeps_heif_extensions_and_original_bytes(project, suffix):
+    from opendirector.application.creation_assets import CreationAssets
+    from opendirector.application.creation_canvas import asset_ref
+    store, pid, session = project
+    data = (Path(__file__).parent / 'fixtures' / 'heif' / f'oriented.{suffix}').read_bytes()
+    asset, _, _ = import_asset(project, f'photo.{suffix}', data)
+    document = dict(id=uuid4(), projectId=pid, kind='timeline', data=dict(width=640, height=360, fps=24,
+        importedAssets=[dict(title='Photo', asset=asset_ref(asset))], tracks=[dict(id='visual', kind='visual', title='Visual')]))
+    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
+    package = service(store).export(pid, document['id'], 1)
+    try:
+        with zipfile.ZipFile(package) as archive:
+            resource, = json.loads(archive.read('manifest.json'))['resources']
+            assert resource['path'].endswith('.' + suffix)
+            assert archive.read(resource['path']) == data
+        target, session2 = uuid4(), str(uuid4())
+        assert send(store, target, 'project.create', name='HEIF imported').status == 'applied'
+        store.open(target, session2)
+        result = service(store).import_package(target, stage(store, target, session2, package), session=session2)
+        assert result.status == 'applied', result
+        restored, = store.snapshot(target).assets
+        assert restored.metadata.mimeType == f'image/{suffix}'
+        with CreationAssets(store).open_media(target, restored.id)[0] as stream:
+            assert stream.read() == data
+    finally:
+        package.unlink()
 
 
 @pytest.mark.anyio
@@ -243,6 +273,7 @@ def test_api_cli_package_roundtrip(project, tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.merge
 async def test_live_agent_gateway_package_roundtrip_scopes_files_without_large_json(project, tmp_path):
     import asyncio
     from opendirector.agent.context import RunContext

@@ -36,6 +36,51 @@ function empty(): ProjectSnapshot {
   };
 }
 
+test("original media refuses orphaned HEIF previews and preserves ordinary drafts", async () => {
+  const snapshot = empty(), client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const original = globalThis.fetch;
+  const requested: string[] = [];
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return new Response("original", { headers: { "Content-Type": "image/heic" } });
+  };
+  try {
+    for (const suffix of ["heic", "heif"])
+      await assert.rejects(client.originalMedia("blob:display", `image/${suffix}`), /素材|media/);
+    assert.equal(requested.length, 0);
+    const asset = { id: crypto.randomUUID(), metadata: { mimeType: "image/heic" } } as Asset;
+    client.install({ ...snapshot, assets: [asset] });
+    client.rememberSource("blob:display", asset.id);
+    assert.equal(await (await client.originalMedia("blob:display", "image/heic")).text(), "original");
+    assert.ok(requested[0]!.endsWith(`/assets/${asset.id}/content`));
+    await client.originalMedia("blob:draft", "image/png");
+    assert.equal(requested[1], "blob:draft");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("HEIF file import rejects unavailable previews without returning an empty resource", async () => {
+  const snapshot = empty(), client = new CreationClient(snapshot.project.id);
+  const asset = {
+    id: crypto.randomUUID(), kind: "image", revision: 1, fingerprint: "original",
+    name: "photo.heic", metadata: { mimeType: "image/heic", size: 100, width: 10, height: 20 },
+  } as Asset;
+  client.install({ ...snapshot, assets: [asset] });
+  client.importBlob = async () => assetReference(asset);
+  const error = new Error("preview unavailable");
+  client.mediaUrl = async () => { throw error; };
+  const projection = new CreationProjection(client);
+  for (const suffix of ["heic", "heif"]) {
+    await assert.rejects(
+      projection.importFile(new File(["original"], `photo.${suffix}`, { type: "application/octet-stream" })),
+      value => value === error,
+    );
+  }
+  assert.equal(client.snapshot.assets[0], asset);
+});
+
 test("history reads coalesce per cursor, invalidate after changes and retry failures", async () => {
   const original = globalThis.fetch;
   const snapshot = empty();

@@ -55,7 +55,13 @@ export interface ChatPlanEntry {
   content: string;
   status: "pending" | "in_progress" | "completed";
 }
+export interface ChatSource {
+  id: string;
+  url: string;
+  title: string;
+}
 export interface ChatMessage {
+  sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;
   tools?: ChatTool[];
@@ -100,12 +106,35 @@ export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
 }
 
+export function draftContentIsEmpty(
+  content: Conversation["draftContent"] | undefined,
+) {
+  if (!content || content.length === 0) return true;
+  return content.every(
+    (part) =>
+      part.type === "text" &&
+      typeof part.text === "string" &&
+      !part.text.trim(),
+  );
+}
+
+export function conversationIsEmpty(value: Conversation) {
+  return (
+    value.messages.length === 0 &&
+    !value.draft.trim() &&
+    value.assets.length === 0 &&
+    !(value.skills && value.skills.length) &&
+    draftContentIsEmpty(value.draftContent)
+  );
+}
+
 export type ChatEvent =
   | { type: "start"; conversation: Conversation }
   | { type: "thinking" }
   | { type: "plan"; entries: ChatPlanEntry[] }
   | ({ type: "tool" } & ChatTool)
   | { type: "delta"; text: string }
+  | { type: "sources"; sources: ChatSource[] }
   | { type: "end"; conversation: Conversation | null; error: string | null };
 
 export interface ChatRequest {

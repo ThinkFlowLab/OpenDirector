@@ -17,6 +17,7 @@ import {
   stopChat,
   type ChatAsset,
   type Conversation,
+  conversationIsEmpty,
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { creationClient } from "../backend/creationClient.ts";
@@ -535,6 +536,16 @@ export function useAssistantChat(
                   : message,
               ),
             }));
+          } else if (event.type === "sources") {
+            setValue((previous) => ({
+              ...previous,
+              messages: previous.messages.map((message) => message.id === assistantId
+                ? { ...message, sources: Array.from(new Map([
+                    ...event.sources.map((source) => [source.id, source] as const),
+                    ...(message.sources ?? []).map((source) => [source.id, source] as const),
+                  ]).values()) }
+                : message),
+            }));
           } else if (event.type === "thinking") setThinkingNow(true);
           else if (event.type === "plan") {
             setValue((previous) => ({
@@ -586,12 +597,14 @@ export function useAssistantChat(
     }
   };
   const changeConversation = async (
-    id: string = crypto.randomUUID(),
+    id?: string,
     create = false,
   ): Promise<boolean> => {
     if (!loaded || submitting.current || uploading.current || switching.current)
       return false;
+    if (create && conversationIsEmpty(current.current)) return true;
     if (!create && current.current.conversationId === id) return true;
+    id ??= crypto.randomUUID();
     switching.current = true;
     setChanging(true);
     setLoaded(false);

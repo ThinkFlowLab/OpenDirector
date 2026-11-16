@@ -120,6 +120,7 @@ def test_catalog_cli_pipes(cli):
 @pytest.mark.parametrize(('mode', 'expected'), [('success', 'Saved.'), ('partial', 'Saved.'),
     ('final_only', 'Final answer.'), ('separate_final', 'Saved.Final answer.'),
     ('full_final', 'Saved.Final answer.')])
+@pytest.mark.merge
 def test_project_write_and_trace(cli, tmp_path, monkeypatch, mode, expected):
     monkeypatch.setenv('JIUWEN_TEST', mode)
     async def skills(*args):

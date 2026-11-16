@@ -21,8 +21,11 @@ def open_image(data: bytes) -> Image.Image:
     try:
         image = Image.open(io.BytesIO(data))
         image.load()
-    except (OSError, ValueError, Image.DecompressionBombError):
-        raise ProjectError('无法读取图片素材。', 422) from None
+    except (OSError, ValueError, EOFError, Image.DecompressionBombError):
+        raise ProjectError('无法读取图片素材。', 422, code='image_decode') from None
+    # A source profile for other channels cannot describe the converted RGB pixels.
+    if image.mode not in {'RGB', 'RGBA', 'P', 'PA'}:
+        image.info.pop('icc_profile', None)
     return ImageOps.exif_transpose(image).convert('RGBA')
 
 

@@ -6,6 +6,17 @@
       "lanes": ["extended", "production"]
     },
     {
+      "file": "heif_upload_recovery.mjs",
+      "lanes": ["extended", "production"],
+      "previewSafe": true,
+      "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
+    },
+    {
+      "file": "heif_import.mjs",
+      "lanes": ["extended"],
+      "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."
+    },
+    {
       "file": "kling_video.mjs",
       "lanes": ["extendedFixture"],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
@@ -102,6 +113,11 @@
       ]
     },
     {
+      "file": "canvas_text_markdown.mjs",
+      "lanes": ["gate"],
+      "note": "Markdown blocks, native inline composition, fullscreen selection/scroll handoff and resize commits. Uses /src through Vite."
+    },
+    {
       "file": "canvas_switch.mjs",
       "previewSafe": true,
       "lanes": [
@@ -145,6 +161,12 @@
       "file": "created_node_focus.mjs",
       "lanes": [
         "gate"
+      ]
+    },
+    {
+      "file": "creation_ripple.mjs",
+      "lanes": [
+        "extended"
       ]
     },
     {
@@ -345,6 +367,13 @@
       ]
     },
     {
+      "file": "session_lease.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "Reload after a lost lease release reopens at once; a second window is refused with project_open_elsewhere (#277)."
+    },
+    {
       "file": "project_title_enter.mjs",
       "previewSafe": true,
       "lanes": [
@@ -479,6 +508,11 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "zhipu_real.mjs",
+      "helper": true,
+      "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
     }
   ]
 }

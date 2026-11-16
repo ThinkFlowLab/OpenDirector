@@ -2,6 +2,61 @@
 
 本文说明测试与生产代码之间的边界。它不是风格建议：同一语义存在两份实现时，改动任意一侧都会让另一侧过期，而这种过期往往在 CI 里表现为"红着没人看见"或"改一处红一片"。
 
+## 测试布局与 CI 层 / Test layout and CI layers
+
+增量采用以下布局，新测试按业务领域归类；现有根目录用例和 helper 暂留原位，移动时同步修改测试发现命令、导入、watchlist 与脚本路径，不一次性重排整棵目录。
+
+Adopt this target layout incrementally, grouping tests by business area. Existing root-level tests and helpers stay in place until a move updates discovery commands, imports, watchlists and script paths together; avoid a whole-tree rewrite. Until discovery supports a new directory, add tests beside their existing peers. In particular, the current frontend command only discovers root-level `tests/*.test.ts`.
+
+该目录树是增量迁移的目标布局。测试发现尚未支持新目录时，新用例继续放在现有同类用例旁；尤其当前前端命令只发现根目录 `tests/*.test.ts`，首次迁入 `tests/frontend/` 必须同时修改该命令。
+
+```text
+tests/
+├── frontend/                  # *.test.ts, grouped by business area / 按业务领域组织
+│   ├── canvas/
+│   ├── generation/
+│   ├── agent/
+│   ├── creation/
+│   └── media/
+├── python/                    # test_*.py, grouped by business area / 按业务领域组织
+│   ├── conftest.py
+│   ├── capabilities.py        # capability skips / 能力跳过
+│   ├── helpers/               # shared fixtures and helpers / 共享夹具与辅助函数
+│   ├── creation/
+│   ├── agent/
+│   ├── providers/             # default CI uses mocked HTTP / 默认 CI 使用 HTTP 替身
+│   ├── cli/
+│   ├── media/
+│   └── bench/
+├── browser/                   # journeys and manifest.json / 浏览器旅程与车道清单
+└── fixtures/                  # shared test data / 共享测试数据
+plugins/deepseek-harness/test/  # remains outside tests/ / 保留插件独立目录
+```
+
+`frontend/` 与 `python/` 下的领域可以随实际覆盖扩展。每次迁移一个切片，同时更新测试发现、相对导入、conftest/helper、watchlist、浏览器清单和相关脚本中受影响的路径；确认用例集合没有丢失。遗留根目录浏览器脚本及未登记的 `scripts/verify_*_browser.mjs` 应登记到 manifest 并按需迁移或明确退役，不静默移除。插件测试保持独立和按路径运行，本契约不要求本季度完成整树迁移。
+
+Business areas under `frontend/` and `python/` may expand with coverage. Move one slice at a time, updating affected discovery, relative imports, conftest/helpers, watchlists, browser manifests and script paths together; verify that the collected inventory is conserved. Legacy root browser scripts and unregistered `scripts/verify_*_browser.mjs` must be registered and moved as appropriate or explicitly retired, never silently dropped. Plugin tests stay independent and path-filtered. Completing the whole tree this quarter is not required.
+
+| Axis / 维度 | Values / 取值 | Contract / 契约 |
+| --- | --- | --- |
+| Directory / 目录 | `frontend`, `python`, `creation`, `agent`, etc. | Organization and discovery only; never pytest CI-layer marks. / 仅组织与发现，不是 pytest CI 层 mark。 |
+| CI layer / CI 层 | `ready`, `merge`, `nightly` | At most one per Python case; unmarked cases remain ready during migration. PR runs ready, queue runs ready + merge, nightly runs nightly plus intentional watchlist reruns after cutover. / 每个 Python 用例至多一个；迁移期未标记仍为 ready。切换后 PR 跑 ready，队列跑 ready + merge，nightly 跑 nightly 和明确的 watchlist 重跑。 |
+| Hardware platform / 机型 | Target `cpu`; accelerators and SKUs later / 目标 `cpu`，加速器与 SKU 后续 | Independent of the CI layer. Current default cases are CPU-only; registration/tagging/selection is follow-up work. Do not infer hardware from a folder or capability skip. / 与 CI 层正交；现有默认用例只需 CPU，注册、打标和筛选后续交付，不从目录或能力跳过推断机型。 |
+| Capability / 能力 | `requires_ffmpeg`, `requires_posix` | Skip with a reason when unavailable; not lane or hardware selectors. / 缺能力时带原因跳过，不用于分车道或分机型。 |
+| Browser lane / 浏览器车道 | `gate`, `extended`, `extendedFixture`, `production`, `perf`, `manual` | Only `tests/browser/manifest.json` owns membership; these are not pytest marks. / 归属只由 manifest 管理，不是 pytest mark。 |
+
+`unit`、`integration`、`e2e` 可以描述场景，但不注册为 CI 层 mark。`gpu`、`cuda`、`rocm`、`xpu`、`npu` 与 SKU/卡数只预留后续计划；真实硬件车道需要负责人、环境和凭证方案，后续通过共享 helper 引入平台与 SKU，不要求本季度运行。
+
+`unit`, `integration` and `e2e` may describe scenarios but are not CI-layer marks. `gpu`, `cuda`, `rocm`, `xpu`, `npu`, SKUs and card counts are reserved for follow-up plans. Real-hardware lanes need owners, environments and credential arrangements; introduce platforms and SKUs through a shared helper when needed, without requiring those lanes to run this quarter.
+
+L1 包含单元、静态与构建；L2 是模型替身浏览器 E2E；L3 是 flake 分诊与扩展覆盖；L4 是生产构建、性能与输出；L5 是后续稳定性与恢复。它们表示覆盖范围，不等于目录、Python CI 层或执行阶段。切换前保留的 main HEAD 复核和 gate-parity 属于过渡执行，不是未来 nightly 永久重复门槛的要求。
+
+L1 covers unit/static/build checks; L2 covers browser E2E with model stubs; L3 covers flake triage and extended journeys; L4 covers production, performance and output; L5 is follow-up stability and recovery. They describe coverage, not directories, Python CI layers or execution stages. Retained main HEAD checks and gate parity are transitional execution, not a requirement for nightly to duplicate the future gate permanently.
+
+本地静态、PR、合并队列、main 发布证据与 nightly 的完整职责、预算、切换前置条件和当前实现边界只维护在[验证指南](../development/validation.md)。先验证并强制合并队列完整门禁，再启用 ready 子集、main 证据归集和 nightly 去重；此目录契约本身不修改工作流或搬迁用例。具体 Python 命令和迁移筛选同样由[验证指南](../development/validation.md#python-分层与迁移--python-layers-and-transition)维护。
+
+The [validation guide](../development/validation.md) owns the complete responsibilities, budgets, cutover prerequisites and current implementation boundaries for local static checks, PRs, the merge queue, main release evidence and nightly. Validate and enforce the full queue gate before enabling ready selection, main evidence collection and nightly deduplication. This layout contract changes no workflow or test location. The guide also owns [Python commands and transitional selection](../development/validation.md#python-分层与迁移--python-layers-and-transition).
+
 ## 四条规则
 
 ### 1. 一个语义只有一个所有者

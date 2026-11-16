@@ -13,6 +13,7 @@ import { MediaPublication } from "../../backend/mediaPublication";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
 import { captureEditorSource } from "../linkedResults";
 import { TimelinePackageImport, exportTimelinePackage as exportNativeTimelinePackage } from "../../backend/timelinePackages";
+import { readLocalResource } from "../timelineExport.ts";
 import { timelinePublication } from "../../backend/timelinePublication";
 import { acknowledgeToolPlacement, cancelToolTask } from "../../backend/tools.ts";
 import { createWorkspaceProject, listWorkspaceProjects, openExampleWorkspaceProject, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
@@ -35,6 +36,8 @@ import { REFERENCE_PORT_ICON_SIZE, REFERENCE_PORT_SIZE, referencePortDirection, 
 import { batchCreationKinds, SELECTION_PADDING, SELECTION_PORT_SIZE } from "../selectionReferences";
 
 import "../multi-selection.css";
+import { CreationRipples } from "../CreationRipples.tsx";
+import { canvasDotGrid } from "../creationRipples.ts";
 import "../node-reference-ports.css";
 import "../control-theme.css";
 import { CreationAssetList } from "../CreationAssetList.tsx";
@@ -55,6 +58,7 @@ import { LocalMediaEditor } from "../LocalMediaEditor";
 import { canAddReference, MAX_ZOOM, MIN_ZOOM } from "../model";
 import { gridSplitImage } from "../nodeActionWorkflow";
 import { NodeComposer } from "../NodeComposer";
+import { pinnedPrecheckNodes } from "../workspaceInteraction.ts";
 
 import { NodeInfoButton } from "../NodeInfoButton";
 import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
@@ -120,6 +124,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     composerExpanded,
     composerIncoming,
     composerNode,
+    submissionAssets,
     composerRunning,
     confirmSubjectImport,
     connect,
@@ -600,8 +605,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           >
             <Background
               variant={BackgroundVariant.Dots}
-              gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
-              size={Math.max(1, 1 / zoom)}
+              gap={canvasDotGrid(zoom).gap}
+              size={canvasDotGrid(zoom).size}
               color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
               bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
             />
@@ -612,6 +617,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               }
             />
             <ViewportPortal>
+              <CreationRipples
+                documentId={doc.id}
+                nodes={doc.nodes}
+                zoom={zoom}
+                active={ready && !switching}
+              />
               {selectionGeometry && !interacting && (
                 <div
                   className="cw-multi-selection-frame"
@@ -1611,6 +1622,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}
+                pinnedPrecheck={pinnedPrecheckNodes({
+                  node: composerNode,
+                  incoming: composerIncoming,
+                  assets: typeof submissionAssets === "function" ? submissionAssets() : [],
+                })}
                 referenceControls={generationReferenceControls(composerNode)}
                 onUpdate={(patch) =>
                   command({
@@ -1630,6 +1646,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 }}
                 running={composerRunning}
                 backendModels={backendCatalog.models}
+                removeWatermark={backendCatalog.settings?.removeWatermark}
               />
             )}
           </div>
@@ -2269,6 +2286,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           key={textWindowNode.id}
           node={textWindowNode}
           locked={lockedIds.has(textWindowNode.id)}
+          selections={actions.textSelections}
           onUpdate={(text) =>
             command({
               type: "update-node",
@@ -2276,7 +2294,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               patch: { data: { text } },
             })
           }
-          onClose={() => setTextWindowId(null)}
+          onClose={() => {
+            void persist(historyRef.current.present);
+            setTextWindowId(null);
+            if (!lockedIds.has(textWindowNode.id)) setTextEditingId(textWindowNode.id);
+            else root.current?.focus({ preventScroll: true });
+          }}
           onBeginEdit={begin}
           onEndEdit={end}
         />
@@ -2368,6 +2391,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               },
             };
           }}
+          onReadMediaResource={(resource, signal) =>
+            ["image/heic", "image/heif"].includes(resource.mimeType ?? "")
+              ? creationClient(doc.id).originalMedia(resource.src ?? "", resource.mimeType, signal)
+              : readLocalResource(resource, signal)
+          }
           onApply={(timeline) => commitEditorData({ timeline })}
           onExportEditablePackage={async (timeline) => {
             await commitEditorData({ timeline });

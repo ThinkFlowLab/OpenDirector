@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { crc32 } from "node:zlib";
+import { readFileSync } from "node:fs";
 import { createNode } from "../src/canvas/model.ts";
 import { addTimelineClip, updateTimelineClip } from "../src/canvas/timeline.ts";
 import {
@@ -42,6 +43,21 @@ function timeline() {
   });
   return data;
 }
+
+test("HEIF timeline packages keep original bytes and matching file extensions", async () => {
+  for (const suffix of ["heic", "heif"]) {
+    const bytes = readFileSync(new URL(`./fixtures/heif/oriented.${suffix}`, import.meta.url));
+    const data = addTimelineClip(createNode("timeline").data.timeline!, {
+      id: "photo", title: "Photo", kind: "image", width: 192, height: 320,
+      mimeType: `image/${suffix}`, src: `data:image/${suffix};base64,${bytes.toString("base64")}`,
+    });
+    const [asset] = timelineExportAssets(data);
+    assert.ok(asset!.path.endsWith(`.${suffix}`));
+    const blob = await exportTimelinePackage(data, "Photo", new AbortController().signal);
+    const files = unzipStored(new Uint8Array(await blob.arrayBuffer()));
+    assert.deepEqual(Buffer.from(files.get(asset!.path)!), bytes);
+  }
+});
 function unzipStored(bytes: Uint8Array) {
   const result = new Map<string, Uint8Array>();
   let cursor = 0;

@@ -7,7 +7,14 @@ keeps a grid of cards from downloading originals.
 import subprocess
 import tempfile
 from collections import OrderedDict
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
+
+from opendirector.domain.projects import ProjectError
+from opendirector.media import heif_type
+from opendirector.media.processing import open_image
 
 WIDTH = 480
 _CAPACITY = 256
@@ -47,6 +54,17 @@ def remember(key: str, rendered: bytes) -> None:
 
 
 def _render(data: bytes, kind: str) -> bytes | None:
+    if kind == 'image' and heif_type(data):
+        try:
+            image = open_image(data)
+            image.thumbnail((WIDTH, WIDTH))
+            output = BytesIO()
+            background = Image.new('RGB', image.size, 'white')
+            background.paste(image, mask=image.getchannel('A'))
+            background.save(output, 'JPEG', quality=80, icc_profile=image.info.get('icc_profile'))
+            return output.getvalue()
+        except ProjectError:
+            return None
     with tempfile.TemporaryDirectory(prefix='opendirector-preview-') as folder:
         source = Path(folder) / 'source'
         source.write_bytes(data)

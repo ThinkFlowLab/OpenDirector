@@ -193,8 +193,10 @@ def test_leases_expiry_external_moves_and_closed_rename_guards(projects):
     created = create(projects)
     session, other = str(uuid4()), str(uuid4())
     projects.open(created.projectId, session)
-    with pytest.raises(ProjectError, match='其他窗口'):
+    with pytest.raises(ProjectError, match='其他窗口') as busy:
         projects.open(created.projectId, other)
+    # Another window is not a lock timeout: it must not share the retryable code.
+    assert busy.value.code == 'project_open_elsewhere'
     with pytest.raises(ProjectError, match='关闭'):
         projects.execute(rename(created))
     (projects.root / 'Example').rename(projects.root / 'Moved outside app')
@@ -443,6 +445,7 @@ def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Commit signature caching requires POSIX change time')
+@pytest.mark.merge
 def test_long_history_is_validated_from_disk_only_once(projects, monkeypatch):
     # Each read validates the whole chain; a cache smaller than the history
     # would reparse every record on every read of a long project.

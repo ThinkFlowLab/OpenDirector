@@ -72,6 +72,16 @@ async function openEntries(blob: Blob): Promise<Entry[]> {
 
 const decode = (entry: Entry) => new TextDecoder().decode(entry.bytes);
 
+test("archive reads carry the original MIME type and propagate missing-original errors", async () => {
+  const document = createDocument("HEIF");
+  document.nodes = [createNode("image", undefined, { src: "blob:preview", mimeType: "image/heif" })];
+  await assert.rejects(buildCanvasArchive(document, { read: async (src, mimeType) => {
+    assert.equal(src, "blob:preview");
+    assert.equal(mimeType, "image/heif");
+    throw Error("original unavailable");
+  } }), /original unavailable/);
+});
+
 test("canvas archive separates media files from the document and names itself .canvas", async () => {
   const document = createDocument("断不了情根");
   const image = createNode(

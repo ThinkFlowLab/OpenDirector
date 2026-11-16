@@ -5,9 +5,12 @@ Unknown compatible services retain the adapter's fixed-size choices.
 """
 from .projects import ProjectError
 from .video_output import RATIOS
+from .bigmodel_image import BIGMODEL_IMAGE_OUTPUTS
 
 
 def image_outputs(config, profile):
+    if profile == 'bigmodel-glm-image':
+        return [dict(aspectRatio=ratio, size=size) for ratio, size in BIGMODEL_IMAGE_OUTPUTS]
     if profile == 'minimax-h3-image':
         return [dict(aspectRatio=ratio, size=size) for ratio, size in [
             ('1:1', '2048x2048'), ('4:3', '2368x1760'), ('3:4', '1760x2368'),

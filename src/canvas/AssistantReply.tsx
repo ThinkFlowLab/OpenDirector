@@ -1,11 +1,14 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Streamdown } from "streamdown";
+import type { LinkSafetyModalProps } from "streamdown";
 import type { ChatMessage, ChatTool } from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
+import { AssistantLinkInfo } from "./AssistantLinkInfo";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
+import { assistantCitationFormatter } from "./assistantCitations.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
 
 const STATUS: Record<ChatTool["status"], MessageKey> = {
@@ -99,6 +102,13 @@ export const AssistantReply = memo(function AssistantReply({
   t?: Translate;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const formatText = useMemo(() => assistantCitationFormatter(
+    message.text, message.sources, message.status === "streaming", t,
+  ), [message.text, message.sources, message.status, t]);
+  const linkSafety = useMemo(() => ({
+    enabled: true,
+    renderModal: (props: LinkSafetyModalProps) => props.isOpen ? <AssistantLinkInfo {...props} t={t} /> : null,
+  }), [t]);
   const copyLabel =
     copyState === "copied"
       ? t("assistant.reply.copied")
@@ -113,8 +123,9 @@ export const AssistantReply = memo(function AssistantReply({
         controls={false}
         mode={message.status === "streaming" ? "streaming" : "static"}
         isAnimating={message.status === "streaming"}
+        linkSafety={linkSafety}
       >
-        {text}
+        {formatText(text)}
       </Streamdown>
     );
   const sections = replySections(message);
@@ -163,7 +174,7 @@ export const AssistantReply = memo(function AssistantReply({
             title={copyLabel}
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(message.text);
+                await navigator.clipboard.writeText(formatText(message.text));
                 setCopyState("copied");
               } catch {
                 setCopyState("failed");

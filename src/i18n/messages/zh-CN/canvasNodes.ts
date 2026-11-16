@@ -1,5 +1,7 @@
 /** Node frames, cards, versions, stacks and media controls. */
 export const canvasNodes = {
+  "canvasNodes.text.resize": "调整文本节点大小",
+
   "canvasNodes.kind.image": "图片",
   "canvasNodes.kind.video": "视频",
   "canvasNodes.kind.audio": "音频",

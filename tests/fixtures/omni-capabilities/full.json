@@ -1,0 +1,568 @@
+{
+  "tier": "full",
+  "upstreamEndpoint": "/v1/omni/capabilities",
+  "scope": "A deployment that answers yes to every operation and profile upstream publishes, on a two-stage llm+diffusion topology.",
+  "cases": [
+    {
+      "id": "every-operation-and-profile",
+      "note": "All six operations supported and enabled, all twelve profiles declared. Only `text_response` grants `text.chat`, and only `lyrics_to_music` grants `audio.music`: the image/audio chat profiles, `caption_to_audio` and `text_to_audio` are reported as `no_local_capability`.",
+      "payload": {
+        "object": "omni.capabilities",
+        "schema_version": 1,
+        "observed_at": "2026-11-10T00:00:00Z",
+        "stages": [
+          {
+            "id": "7",
+            "type": "llm",
+            "depends_on": []
+          },
+          {
+            "id": "42",
+            "type": "diffusion",
+            "depends_on": [
+              "7"
+            ]
+          }
+        ],
+        "models": [
+          {
+            "id": "model-a",
+            "stage_ids": [
+              "7",
+              "42"
+            ],
+            "operations": {
+              "chat": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_response",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "text"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/chat/completions",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "image_response",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/chat/completions",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "audio_response",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/chat/completions",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "image_generation": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_to_image",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/images/generations",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "image_edit": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "image_to_image",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text",
+                      "image"
+                    ],
+                    "outputs": [
+                      "image"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/images/edits",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "video_generation": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_to_video",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "video"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "image_to_video",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text",
+                      "image"
+                    ],
+                    "outputs": [
+                      "video"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "video_to_video",
+                    "support": "supported",
+                    "required_inputs": [
+                      "video"
+                    ],
+                    "outputs": [
+                      "video"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/videos/sync",
+                        "exposure": "enabled"
+                      },
+                      {
+                        "transport": "websocket",
+                        "method": "WEBSOCKET",
+                        "path": "/v1/realtime/video",
+                        "exposure": "disabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "speech": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_to_speech",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/speech",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "lyrics_to_music",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text",
+                      "instructions"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/speech",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  },
+                  {
+                    "id": "caption_to_audio",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/speech",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_not_supported",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              },
+              "audio_generation": {
+                "support": "supported",
+                "exposure": "enabled",
+                "reason_code": "model_declared",
+                "profiles": [
+                  {
+                    "id": "text_to_audio",
+                    "support": "supported",
+                    "required_inputs": [
+                      "text"
+                    ],
+                    "outputs": [
+                      "audio"
+                    ],
+                    "routes": [
+                      {
+                        "transport": "http",
+                        "method": "POST",
+                        "path": "/v1/audio/generate",
+                        "exposure": "enabled"
+                      }
+                    ],
+                    "reason_code": "model_declared",
+                    "constraints": {}
+                  }
+                ],
+                "execution": {
+                  "state": "unpaused",
+                  "scope": "worker",
+                  "observed_at": "2026-11-10T00:00:00Z"
+                }
+              }
+            }
+          }
+        ],
+        "routes": [
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/sync",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "websocket",
+            "method": "WEBSOCKET",
+            "path": "/v1/realtime/video",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/audio/speech",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/audio/generate",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/images/segmentations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/segmentations",
+            "exposure": "enabled"
+          },
+          {
+            "transport": "http",
+            "method": "POST",
+            "path": "/v1/videos/depth",
+            "exposure": "enabled"
+          }
+        ]
+      },
+      "expected": {
+        "endpoint": "present",
+        "topology": [
+          {
+            "id": "7",
+            "type": "llm",
+            "depends_on": []
+          },
+          {
+            "id": "42",
+            "type": "diffusion",
+            "depends_on": [
+              "7"
+            ]
+          }
+        ],
+        "capabilities": {
+          "text.chat": "available",
+          "image.generate": "available",
+          "image.edit": "available",
+          "video.generate": "available",
+          "video.first_frame": "unknown",
+          "video.edit": "unknown",
+          "audio.speech": "available",
+          "audio.music": "available",
+          "image.segment": "unknown",
+          "video.matting": "unknown",
+          "video.motion_capture": "unknown",
+          "audio.score": "unknown",
+          "image.cutout": "unknown",
+          "audio.separate": "unknown"
+        },
+        "reasons": {},
+        "unresolved": [
+          {
+            "operation": "audio_generation",
+            "profile": "text_to_audio",
+            "route": null,
+            "reason": "no_local_capability"
+          },
+          {
+            "operation": "chat",
+            "profile": "audio_response",
+            "route": null,
+            "reason": "no_local_capability"
+          },
+          {
+            "operation": "chat",
+            "profile": "image_response",
+            "route": null,
+            "reason": "no_local_capability"
+          },
+          {
+            "operation": "speech",
+            "profile": "caption_to_audio",
+            "route": null,
+            "reason": "no_local_capability"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": null,
+            "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "image_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "text_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": null,
+            "reason": "role_not_declared"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/realtime/video",
+            "reason": "route_mismatch"
+          },
+          {
+            "operation": "video_generation",
+            "profile": "video_to_video",
+            "route": "/v1/videos/sync",
+            "reason": "route_mismatch"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -326,7 +326,7 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
       task,
     };
     if (resultInput.current) {
-      resultInput.current.accept = "image/*,video/*,audio/*";
+      resultInput.current.accept = "image/*,.heic,.heif,video/*,audio/*";
       resultInput.current.click();
     }
   };

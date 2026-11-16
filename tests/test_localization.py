@@ -94,3 +94,10 @@ def test_streaming_and_background_jobs_use_the_same_language_rule() -> None:
         )
         == "The item changed or is busy. Reload it and try again."
     )
+
+
+def test_another_window_is_not_reported_as_busy_storage() -> None:
+    chinese = "该项目正在其他窗口中打开，请先关闭后再试。"
+    assert localized_error(request("zh-CN"), chinese=chinese, status=409, code="project_open_elsewhere") == chinese
+    english = localized_error(request("en-US"), chinese=chinese, status=409, code="project_open_elsewhere")
+    assert "another window" in english and "busy" not in english

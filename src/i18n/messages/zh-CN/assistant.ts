@@ -1,5 +1,11 @@
 /** Assistant panel, reply activity, pickers, references and chat transport. */
 export const assistant = {
+  "assistant.reply.sourceUnavailable": "来源不可用",
+  "assistant.reply.copyLink": "复制链接",
+  "assistant.reply.copyLinkFailed": "复制失败，请选择链接地址复制",
+  "assistant.reply.openLink": "打开链接",
+  "assistant.reply.openExternalLink": "打开外部链接",
+  "assistant.reply.externalLinkWarning": "即将访问以下外部网站，请确认链接地址。",
   // Right-side assistant panel.
   "assistant.panel.aria": "AI 对话",
   "assistant.panel.title": "AI 对话",
