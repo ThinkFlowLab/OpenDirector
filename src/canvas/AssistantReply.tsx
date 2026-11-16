@@ -1,6 +1,8 @@
 import { memo, useMemo, useState } from "react";
-import { Streamdown } from "streamdown";
-import type { LinkSafetyModalProps } from "streamdown";
+import type { ComponentProps } from "react";
+import { Streamdown, defaultRehypePlugins, defaultUrlTransform } from "streamdown";
+import type { Components, LinkSafetyModalProps, StreamdownProps } from "streamdown";
+import type { Element, Root } from "hast";
 import type { ChatMessage, ChatTool } from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
@@ -17,6 +19,38 @@ const STATUS: Record<ChatTool["status"], MessageKey> = {
   failed: "assistant.reply.status.failed",
   interrupted: "assistant.reply.status.interrupted",
 };
+
+function canvasReferencePlugin({ targets, prepare }: { targets: string[]; prepare: boolean }) {
+  const placeholders = new Map(targets.map((target, index) =>
+    [target, `https://opendirector.invalid/canvas-reference/${index}`]));
+  const originals = new Map(Array.from(placeholders, ([target, placeholder]) => [placeholder, target]));
+  return (tree: Root) => {
+    const visit = (parent: Root | Element) => {
+      for (const child of parent.children) {
+        if (child.type !== "element") continue;
+        if (child.tagName === "a") {
+          const href = String(child.properties.href);
+          if (prepare && placeholders.has(href)) {
+            child.properties.href = placeholders.get(href);
+          } else if (!prepare && originals.has(href)) {
+            child.tagName = "canvas-reference";
+            child.properties.href = originals.get(href);
+          }
+        }
+        visit(child);
+      }
+    };
+    visit(tree);
+  };
+}
+
+function prepareCanvasReferences(options: { targets: string[] }) {
+  return canvasReferencePlugin({ ...options, prepare: true });
+}
+
+function renderCanvasReferences(options: { targets: string[] }) {
+  return canvasReferencePlugin({ ...options, prepare: false });
+}
 
 function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
   return (
@@ -104,6 +138,7 @@ export const AssistantReply = memo(function AssistantReply({
   t?: Translate;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [canvasHint, setCanvasHint] = useState<string | null>(null);
   const formatText = useMemo(() => assistantCitationFormatter(
     message.text, message.sources, message.status === "streaming", t,
   ), [message.text, message.sources, message.status, t]);
@@ -111,6 +146,38 @@ export const AssistantReply = memo(function AssistantReply({
     enabled: true,
     renderModal: (props: LinkSafetyModalProps) => props.isOpen ? <AssistantLinkInfo {...props} t={t} /> : null,
   }), [t]);
+  const projectLinks = useMemo(() => {
+    const links = new Map(message.canvasLinks?.map((link) => [link.target, link]));
+    // Give persisted project references their own renderer. Ordinary anchors
+    // retain Streamdown's URL transform and link-safety behavior.
+    const components: Components = {
+      "canvas-reference": ({ href, children }: ComponentProps<"a">) => {
+        const link = links.get(String(href));
+        if (!link) return <span>{children}</span>;
+        return <a href="#" onClick={(event) => {
+          event.preventDefault();
+          if ((link.status === "focused" || link.status === "hidden") && link.nodeId) {
+            onCanvasLink?.(link.nodeId);
+            setCanvasHint(null);
+          } else {
+            const keys: Record<string, MessageKey> = {
+              "cross-project": "assistant.reply.canvasLink.crossProject",
+              materialize: "assistant.reply.canvasLink.materialize",
+              ambiguous: "assistant.reply.canvasLink.ambiguous",
+              missing: "assistant.reply.canvasLink.missing",
+            };
+            setCanvasHint(t(keys[link.status] ?? "assistant.reply.canvasLink.missing")
+              + (link.status === "cross-project" && link.projectId ? ` · ${link.projectId}` : ""));
+          }
+        }}>{children}</a>;
+      },
+    };
+    const targets = Array.from(links.keys());
+    const rehypePlugins: StreamdownProps["rehypePlugins"] = [defaultRehypePlugins.raw,
+      [prepareCanvasReferences, { targets }], defaultRehypePlugins.sanitize,
+      defaultRehypePlugins.harden, [renderCanvasReferences, { targets }]];
+    return { components, rehypePlugins };
+  }, [message.canvasLinks, onCanvasLink, t]);
   const copyLabel =
     copyState === "copied"
       ? t("assistant.reply.copied")
@@ -119,21 +186,6 @@ export const AssistantReply = memo(function AssistantReply({
         : t("assistant.reply.copyReply");
   const markdown = (text: string, key: string) =>
     text && (
-      <div onClick={(event) => {
-        if (!onCanvasLink || !message.canvasLinks?.length) return;
-        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
-        if (!anchor) return;
-        const href = anchor.getAttribute("href") ?? "";
-        const link = message.canvasLinks.find((entry) => {
-          if (!entry.nodeId) return false;
-          try { return entry.target === href || entry.target === decodeURIComponent(href); }
-          catch { return entry.target === href; }
-        });
-        if (link?.nodeId) {
-          event.preventDefault();
-          onCanvasLink(link.nodeId);
-        }
-      }}>
       <Streamdown
         key={key}
         className="cw-chat-markdown"
@@ -141,10 +193,13 @@ export const AssistantReply = memo(function AssistantReply({
         mode={message.status === "streaming" ? "streaming" : "static"}
         isAnimating={message.status === "streaming"}
         linkSafety={linkSafety}
+        components={projectLinks.components}
+        rehypePlugins={projectLinks.rehypePlugins}
+        urlTransform={(url, attribute, node) => node.tagName === "canvas-reference"
+          ? url : defaultUrlTransform(url, attribute, node)}
       >
         {formatText(text)}
       </Streamdown>
-      </div>
     );
   const sections = replySections(message);
   const renderPart = (part: ReturnType<typeof replySections>["reply"][number]) => part.type === "text"
@@ -152,6 +207,7 @@ export const AssistantReply = memo(function AssistantReply({
     : <ToolGroup key={part.id} tools={part.tools} t={t} />;
   return (
     <>
+      {canvasHint && <p role="status">{canvasHint}</p>}
       {!!message.plan?.length && <details className="cw-chat-plan cw-chat-activity">
         <summary>
           <CanvasIcon name="sparkle" size={15} />

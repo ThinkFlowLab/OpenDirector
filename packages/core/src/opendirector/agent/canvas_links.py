@@ -7,12 +7,13 @@ display the asset. The result stores only stable object identities and typed
 status codes; current geometry is deliberately not stored, so moving, renaming
 or regrouping an item never invalidates a saved link.
 
-Only inline Markdown links are considered. Fenced code blocks, inline code
-spans, images and ordinary external URLs are left untouched.
+Markdown links (including reference-style links) and plain @title mentions are
+considered. Code, images and ordinary external URLs are left untouched.
 """
 from __future__ import annotations
 
 from typing import Any, Mapping
+import re
 from urllib.parse import unquote, urlsplit
 from uuid import UUID
 from markdown_it import MarkdownIt
@@ -34,6 +35,23 @@ def link_targets(text: str) -> list[str]:
     return targets
 
 
+def _mention_targets(text: str) -> list[str]:
+    targets = []
+    for token in MarkdownIt().parse(text):
+        if token.type != 'inline' or not token.children:
+            continue
+        in_link = False
+        for child in token.children:
+            if child.type == 'link_open':
+                in_link = True
+            elif child.type == 'link_close':
+                in_link = False
+            elif child.type == 'text' and not in_link:
+                targets.extend('@' + match.group(1).strip() for match in re.finditer(
+                    r'(?<!\w)@([^@\n,;!?()[\]{}<>\u3002\uff1b\uff0c\uff01\uff1f]+)', child.content))
+    return targets
+
+
 def _uuid(value: str) -> str | None:
     try:
         return str(UUID(str(value).strip()))
@@ -43,12 +61,14 @@ def _uuid(value: str) -> str | None:
 
 def _identity(target: str) -> tuple[str, Any]:
     """Classify a destination without touching project state or raising."""
-    raw = unquote(target.strip())
+    raw = target.strip()
     if raw.startswith('<') and raw.endswith('>'):
         raw = raw[1:-1].strip()
     if raw.startswith(('#', '?')):
         # In-page anchors and query-only destinations are not project objects.
         return 'external', raw
+    if raw.startswith('@'):
+        return 'title', raw[1:].strip()
     if raw.startswith('project:'):
         project, separator, remainder = raw[len('project:'):].partition('/')
         if not separator:
@@ -204,6 +224,8 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
              for spec in (getattr(snapshot, 'generationSpecs', ()) or ())}
     for item in _items(snapshot):
         binding = getattr(item, 'binding', None)
+        if getattr(binding, 'role', None) != 'generation' or getattr(binding, 'materialOverride', None) is not None:
+            continue
         spec_ref = (getattr(binding, 'spec', None) or getattr(binding, 'generationSpec', None)
                     or getattr(binding, 'objectRef', None))
         spec = specs.get(str(getattr(spec_ref, 'id', '')))
@@ -213,12 +235,12 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
         asset = next((value for value in _assets(snapshot) if str(getattr(value, 'id', '')) == str(asset_id)), None)
         if asset is not None and _asset_matches(name, asset) and asset not in assets:
             assets.append(asset)
-    if assets and turn_id is not None:
-        # The turn's own outputs take precedence over an unrelated asset that
-        # happens to share a file name. A filename alone never picks silently.
-        current = [asset for asset in assets if _run_id(asset) == str(turn_id)]
-        if current:
-            assets = current
+    if turn_id is not None:
+        # A filename in a turn identifies only that turn's output. Historical
+        # objects need an explicit stable identity (or an explicit @title).
+        assets = [asset for asset in assets if _run_id(asset) == str(turn_id)]
+        if not assets:
+            return {**result, 'status': 'missing'}
     if assets:
         asset_ids = {str(getattr(asset, 'id', '')) for asset in assets}
         result_assets: dict[str, str] = {}
@@ -228,6 +250,8 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
                  for value in (getattr(snapshot, 'generationSpecs', ()) or ())}
         for item in _items(snapshot):
             binding = getattr(item, 'binding', None)
+            if getattr(binding, 'role', None) != 'generation' or getattr(binding, 'materialOverride', None) is not None:
+                continue
             spec_ref = (getattr(binding, 'spec', None) or getattr(binding, 'generationSpec', None)
                         or getattr(binding, 'objectRef', None))
             spec = specs.get(str(getattr(spec_ref, 'id', '')))
@@ -249,6 +273,10 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
                     'action': 'materialize'}
         return {**result, 'status': 'ambiguous',
                 'candidates': [*map(_asset_candidate, assets), *map(_node_candidate, nodes)]}
+    return _resolve_title(name, snapshot, result)
+
+
+def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
     nodes = _unique([item for item in _items(snapshot)
                      if str(getattr(item, 'title', '')) == name])
     if len(nodes) == 1:
@@ -269,6 +297,8 @@ def resolve_canvas_link(target: str, snapshot: Any, turn_id: str | None = None) 
             return {**result, 'status': 'external'}
         if kind == 'missing':
             return {**result, 'status': 'missing'}
+        if kind == 'title':
+            return _resolve_title(value, snapshot, result)
         if kind == 'project':
             project_id, node_id = value
             if project_id != _project_id(snapshot):
@@ -292,7 +322,7 @@ def canvas_links_for_text(text: str, snapshot: Any, turn_id: str | None = None) 
     """Resolve each unique inline link, omitting ordinary external URLs."""
     result: list[dict] = []
     seen: set[str] = set()
-    for target in link_targets(text):
+    for target in [*link_targets(text), *_mention_targets(text)]:
         if target in seen:
             continue
         seen.add(target)

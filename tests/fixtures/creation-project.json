@@ -1034,6 +1034,7 @@
       "cancelRequested": false,
       "remoteCancellation": "not_requested",
       "originItemId": null,
+      "agentRunId": null,
       "previousJobId": null,
       "technicalCheck": null,
       "adoptionPolicy": "if_current",

@@ -193,6 +193,84 @@ def test_stable_identity_does_not_depend_on_position_or_title():
     assert resolve_canvas_link('After', after)['nodeId'] == str(item.id)
 
 
+def validated_example():
+    from test_creation_contracts import project_example
+    return project_example().model_dump(mode='json')
+
+
+def test_other_turn_filename_is_missing_but_explicit_history_identity_works():
+    from opendirector.domain.creation import ProjectSnapshot
+    data = validated_example()
+    data['assets'][0]['name'] = 'notes.md'
+    data['assets'][0]['provenance']['agentRunId'] = str(uuid4())
+    data['canvasItems'][0]['title'] = 'notes.md'
+    project = ProjectSnapshot.model_validate(data)
+    assert resolve_canvas_link('notes.md', project, uuid4())['status'] == 'missing'
+    assert resolve_canvas_link(f'canvas:{project.canvasItems[0].id}', project, uuid4())['nodeId'] == str(project.canvasItems[0].id)
+
+
+def test_material_override_links_only_to_the_displayed_asset():
+    from opendirector.application.creation_canvas import current_asset
+    from opendirector.domain.creation import ProjectSnapshot
+    from test_creation_contracts import asset_ref
+    data = validated_example()
+    data['assets'][-1]['name'] = 'original.png'
+    data['assets'][1]['name'] = 'replacement.png'
+    data['assets'][1]['provenance'] = dict(source='imported', importedFrom='generated')
+    initial = ProjectSnapshot.model_validate(data)
+    data['canvasItems'][-3]['binding']['materialOverride'] = asset_ref(initial.assets[1]).model_dump(mode='json')
+    # Avoid an unrelated material representation of replacement.png.
+    data['canvasItems'][1]['binding'] = dict(role='empty')
+    project = ProjectSnapshot.model_validate(data)
+    item = project.canvasItems[-3]
+    assert current_asset(project, item).name == 'replacement.png'
+    assert resolve_canvas_link('original.png', project)['status'] == 'materialize'
+    assert resolve_canvas_link('replacement.png', project)['nodeId'] == str(item.id)
+
+
+@pytest.mark.parametrize(('target', 'name'), [
+    ('report%2520final.md', 'report%20final.md'),
+    ('folder%252Freport.md', 'folder%2Freport.md'),
+    ('folder%2Freport.md', 'report.md'),
+    ('report%23final.md', 'report#final.md'),
+    ('report%3Ffinal.md', 'report?final.md'),
+    ('100%25.md', '100%.md'),
+])
+def test_url_path_is_decoded_once_after_structure_parsing(target, name):
+    stored = asset(uuid4(), name)
+    wrong = asset(uuid4(), 'report final.md')
+    item = node(uuid4(), asset_id=stored.id)
+    other = node(uuid4(), asset_id=wrong.id)
+    links = canvas_links_for_text(f'[file]({target})', snapshot(assets=[stored, wrong], nodes=[item, other]))
+    assert links[0]['nodeId'] == str(item.id)
+
+
+def test_plain_mentions_resolve_unique_missing_and_duplicate_titles():
+    from opendirector.domain.creation import ProjectSnapshot
+    data = validated_example()
+    data['canvasItems'][0]['title'] = 'Finished note'
+    data['canvasItems'][1]['title'] = 'Same title'
+    data['canvasItems'][2]['title'] = 'Same title'
+    project = ProjectSnapshot.model_validate(data)
+    links = canvas_links_for_text('@Finished note\n@No such item\n@Same title', project, uuid4())
+    assert [link['status'] for link in links] == ['focused', 'missing', 'ambiguous']
+    assert links[0]['nodeId'] == str(project.canvasItems[0].id)
+    assert len(links[2]['candidates']) == 2
+
+
+def test_mentions_in_code_images_and_link_labels_are_ignored():
+    item = node(uuid4(), title='Finished note')
+    text = ('```\n@Finished note\n```\n`@Finished note`\n'
+            '![\u0040Finished note](image.png)\n[label @Finished note](https://example.test)')
+    assert canvas_links_for_text(text, snapshot(nodes=[item])) == []
+
+
+def test_reference_style_markdown_links_are_supported():
+    item = node(uuid4(), title='Finished note')
+    links = canvas_links_for_text(f'[Finished note][ref]\n\n[ref]: canvas:{item.id}', snapshot(nodes=[item]))
+    assert links[0]['nodeId'] == str(item.id)
+
+
 def test_message_enrichment_only_attaches_project_references():
     item = node(uuid4(), title='Finished note')
     project = snapshot(nodes=[item])
@@ -215,7 +293,7 @@ async def empty_skills(*args):
 
 def test_finished_turn_persists_canvas_links_across_move_rename_and_reopen(tmp_path, monkeypatch):
     async def stream(self, run):
-        yield {'type': 'delta', 'text': 'Done [Finished note](notes.md)'}
+        yield {'type': 'delta', 'text': f'Done [Finished note](canvas:{item_id})'}
 
     monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
     monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
@@ -269,8 +347,11 @@ def test_finished_turn_persists_canvas_links_across_move_rename_and_reopen(tmp_p
         assert events[-1]['type'] == 'end' and events[-1]['error'] is None
         saved = events[-1]['conversation']['messages'][-1]
         assert saved['id'] == str(uuid5(turn_id, 'assistant'))
-        assert saved['canvasLinks'] == [{'target': 'notes.md', 'status': 'focused',
-                                         'nodeId': item_id, 'kind': 'text'}]
+        schema = json.loads((Path(__file__).resolve().parents[1] / 'src/contracts/creation.schema.json').read_text())
+        assert set(saved['canvasLinks'][0]) >= set(schema['output']['$defs']['ChatCanvasLink']['required'])
+        from opendirector.domain.creation.chat import ChatCanvasLink
+        assert saved['canvasLinks'] == [ChatCanvasLink(target=f'canvas:{item_id}', status='focused',
+                                                     nodeId=item_id, kind='text').model_dump(mode='json')]
 
         disk = next(tmp_path.glob('**/agent-runs/conversation.json'))
         persisted = json.loads(disk.read_text(encoding='utf-8'))['messages'][-1]
@@ -299,7 +380,7 @@ def test_finished_turn_persists_canvas_links_across_move_rename_and_reopen(tmp_p
         reread = client.get(assistant_path).json()
         assert reread['messages'][-1]['canvasLinks'] == saved['canvasLinks']
 
-    # A fresh process reads the same persisted identity after reopening.
+    # A fresh application instance reads the same persisted identity.
     with TestClient(create_app(LocalProjects(tmp_path)), headers=headers) as reopened:
         restored = reopened.get(assistant_path).json()
         assert restored['messages'][-1]['canvasLinks'] == saved['canvasLinks']

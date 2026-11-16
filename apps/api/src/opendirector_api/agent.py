@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
 from opendirector.agent.canvas_links import canvas_links_for_text
+from opendirector.domain.creation.chat import ChatCanvasLink
 from opendirector.agent.context import RunContext, RuntimeId
 from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
@@ -460,7 +461,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                         canvas_links = []
                         try:
                             final_snapshot = await asyncio.to_thread(projects.snapshot, project_id)
-                            canvas_links = canvas_links_for_text(text, final_snapshot, value.id)
+                            canvas_links = [ChatCanvasLink.model_validate(link).model_dump(mode='json')
+                                            for link in canvas_links_for_text(text, final_snapshot, value.id)]
                         except Exception:
                             # Link resolution is navigation metadata; it must not
                             # fail a turn whose accepted result is already saved.
