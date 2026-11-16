@@ -148,10 +148,14 @@ class Client:
             value = response.json()
         except ValueError:
             value = None
+        code = value.get('code') if isinstance(value, dict) else None
         if isinstance(value, dict) and isinstance(value.get('detail'), str):
-            code = value.get('code')
-            return ProjectError(value['detail'], response.status_code, code=code if isinstance(code, str) else None)
-        return ProjectError(response.text, response.status_code)
+            message = value['detail']
+        else:
+            message = response.text
+        if not message.strip():
+            message = f"HTTP {response.status_code} from {response.url}"
+        return ProjectError(message, response.status_code, code=code if isinstance(code, str) else None)
 
     def request(self, method, path, **kwargs):
         response = self.http.request(method, path, **kwargs)
@@ -461,14 +465,20 @@ def markdown_file(file):
 def text_content(client, asset_id):
     from opendirector.ports.files import MAX_CREATION_TEXT_BYTES
     content = bytearray()
-    with client.http.stream("GET", client.path(f"/assets/{asset_id}/content")) as response:
-        if not response.is_success:
-            response.read()
-            raise client.response_error(response)
-        for chunk in response.iter_bytes(chunk_size=65536):
-            if len(content) + len(chunk) > MAX_CREATION_TEXT_BYTES:
-                raise ValueError("Markdown must not exceed 1 MiB of UTF-8 bytes.")
-            content.extend(chunk)
+    try:
+        with client.http.stream("GET", client.path(f"/assets/{asset_id}/content")) as response:
+            if not response.is_success:
+                response.read()
+                raise client.response_error(response)
+            for chunk in response.iter_bytes(chunk_size=65536):
+                if len(content) + len(chunk) > MAX_CREATION_TEXT_BYTES:
+                    raise ValueError("Markdown must not exceed 1 MiB of UTF-8 bytes.")
+                content.extend(chunk)
+    except httpx.RequestError as error:
+        message = ("canvas text show 读取完整 Markdown 源码需要正在运行的 API，请启动 API 并检查 OPENDIRECTOR_API_URL。"
+                   if os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US').lower().startswith('zh') else
+                   "canvas text show requires a running API to read the complete Markdown source. Start the API and check OPENDIRECTOR_API_URL.")
+        raise ProjectError(f"{message} {error.request.url}", 503, code='asset_text_api_unavailable') from error
     return content.decode("utf-8")
 
 

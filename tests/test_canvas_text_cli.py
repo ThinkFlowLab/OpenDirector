@@ -1,4 +1,7 @@
-"""Markdown convenience commands use the real asset/canvas services on both transports."""
+"""Business-service coverage via TestClient and an in-process agent bridge.
+
+Real socket/HTTP coverage lives in test_canvas_text_cli_http.py.
+"""
 import asyncio
 import json
 from uuid import UUID, uuid4
@@ -17,7 +20,7 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
-@pytest.fixture(params=['http', 'live'])
+@pytest.fixture(params=['http', 'live'], ids=['http-testclient', 'live-bridge-only'])
 def canvas_cli(request, tmp_path, monkeypatch):
     local = LocalProjects(tmp_path)
     projects = CreationProjects(local)
