@@ -106,7 +106,7 @@ This table is an input to #266, not a replacement and not a second schema: `doma
 
 ## Feeding `requests_for()`
 
-#266's `application/model_availability.py` currently hard-codes profile names per `(kind, protocol)`; with a table the caller needs only the operation and profile it is about to use:
+`application/model_availability.py` describes the requests each configured adapter actually sends in `requests_for()`. `tool_request()` reads `candidates_for()` and selects an actual request by both operation and profile, then reads `required_roles_for()` for the required input purposes. The shared table owns these capability mappings; adapter request construction owns paths, output types, transmitted inputs and parameters.
 
 ```python
 from opendirector.domain.capability_contract import capabilities_for
@@ -127,9 +127,13 @@ role_verdict(entry, 'video_generation', required_roles_for('video.edit'))
 
 The reverse lookup is the same table read backwards (`BY_CAPABILITY`, derived from `OPERATION_PROFILES`, never a second vocabulary): a caller starting from local configuration — `requests_for()` does — holds a capability id and needs to know **which** `(operation, profile)` pairs could supply it. A candidate is not an authorisation: the adapter for the selected configuration still decides the route, the transmitted inputs and the output, and a submission must re-check that the pair it selected is the one admitted. Another profile being `available` does not vouch for it.
 
-`resolve(payload)` returns per-capability states, per-capability `reasons`, `topology` (display only) and `unresolved`; `classified_capabilities()` returns the vocabulary in table order. Whether to wire this into `requests_for()` is #266's decision; this contract only guarantees the lookup is paired, ordered and testable.
+`resolve(payload)` returns per-capability states, per-capability `reasons`, `topology` (display only) and `unresolved`; `classified_capabilities()` returns the vocabulary in table order. Application request checks use the shared candidate and required-role lookups; they do not use `resolve()` to authorize a submission.
 
 `resolve()` is **catalogue-level**: it answers "what does this deployment declare", not "may this request go through". An `available` capability only says that at least one profile declares support with an open postable route; the caller must still check its own model, inputs, output and route, and `stages[]` describes pipeline topology only — it carries no admission evidence.
+
+Application checks retain the selected model and exact HTTP method/path, including a configured proxy prefix. They evaluate input roles on that route's typed request constraints, alongside actual counts and parameters, rather than asking `role_verdict()` to choose among the profile's standard routes. Declaration expiry, endpoint closure and pause observations remain in the application capability service.
+
+`image.cutout` has no independent upstream profile. The existing RGBA adapter sends an image edit with `background=transparent`, so its request uses the shared `image.edit` candidates and keeps the ordinary editing checks. The adapter's capability list still controls whether cutout is offered; an image-edit declaration alone cannot add that feature. Cached-job continuation also retains its own request description and is not assigned the `video_to_video` profile by the shared mapping.
 
 ## Fixtures and checks
 

@@ -11,6 +11,7 @@ import hashlib
 import json
 from urllib.parse import urlsplit
 
+from opendirector.domain import capability_contract
 from opendirector.domain.image_inputs import image_input_policy
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.request_constraints import INPUT_ROLES, constraint_failure, input_details, role_evidence
@@ -134,15 +135,16 @@ def generation_request(config, spec, references, *, parameters=None):
 
 
 def tool_request(config, capability, *, actual=False):
-    profile = {'text.chat': 'text_response', 'image.generate': 'text_to_image', 'image.edit': 'image_to_image', 'image.cutout': 'image_to_image',
-               'video.generate': 'text_to_video', 'video.first_frame': 'image_to_video',
-               'video.edit': 'video_to_video',
-               'audio.speech': 'text_to_speech', 'audio.music': 'lyrics_to_music'}.get(capability)
-    request = next((item for item in requests_for(config) if item.profile == profile), None)
+    # RGBA cutout sends an image edit with background=transparent. Its adapter
+    # still decides whether cutout is offered; the contract has no cutout profile.
+    upstream_capability = 'image.edit' if capability == 'image.cutout' else capability
+    candidates = capability_contract.candidates_for(upstream_capability)
+    request = next((item for item in requests_for(config)
+                    if (item.operation, item.profile) in candidates), None)
     if request is None:
         return request
-    roles = (frozenset({'first_frame'}) if capability == 'video.first_frame' else
-             frozenset({'source_video', 'video_noise_mask', 'audio_noise_mask'}) if capability == 'video.edit' else frozenset())
+    profile = request.profile
+    roles = frozenset(capability_contract.required_roles_for(upstream_capability))
     request = replace(request, required_roles=roles)
     # These video tools always transmit the same input roles and counts, so
     # their directory entries can check those facts before a task is selected.

@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from opendirector.application.model_availability import ModelAvailability, tool_request
+from opendirector.domain.capability_contract import candidates_for, required_roles_for, resolve
 from opendirector.domain.omni_capabilities import timestamp
 from opendirector.integrations.capability_probe import CapabilityProbe
 
@@ -29,6 +30,9 @@ def test_exported_endpoint_roles(name, capability, status, reason):
         request = tool_request(config, capability, actual=True)
         result = availability.decision(config, request)
         assert (result['status'], result['reasonCode']) == (status, reason)
+        assert (request.operation, request.profile) in candidates_for(capability)
+        assert request.required_roles == frozenset(required_roles_for(capability))
+        assert resolve(raw)['capabilities'][capability] == ('missing' if status == 'unavailable' else status)
         # A positive/negative role result must actually use the exported facts;
         # after expiry those facts cannot reject or grant this request.
         clock[0] += 30
