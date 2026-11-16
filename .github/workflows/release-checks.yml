@@ -24,6 +24,10 @@ jobs:
     if: inputs.static-checks
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    outputs:
+      run-heavy: ${{ steps.scope.outputs.run-heavy }}
+      scope-reason: ${{ steps.scope.outputs.scope-reason }}
+      changed-files: ${{ steps.scope.outputs.changed-files }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -47,10 +51,15 @@ jobs:
           else
             python -m pre_commit run --all-files
           fi
+      - id: scope
+        name: Select check scope / 判断检查范围
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/ci/select_checks.py
 
   python:
     needs: static
-    if: ${{ !cancelled() && (needs.static.result == 'success' || (!inputs.static-checks && needs.static.result == 'skipped')) }}
+    if: ${{ !cancelled() && ((needs.static.result == 'success' && needs.static.outputs.run-heavy != 'false') || (!inputs.static-checks && needs.static.result == 'skipped')) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -114,7 +123,7 @@ jobs:
 
   frontend:
     needs: static
-    if: ${{ !cancelled() && (needs.static.result == 'success' || (!inputs.static-checks && needs.static.result == 'skipped')) }}
+    if: ${{ !cancelled() && ((needs.static.result == 'success' && needs.static.outputs.run-heavy != 'false') || (!inputs.static-checks && needs.static.result == 'skipped')) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -171,7 +180,7 @@ jobs:
 
   browser:
     needs: static
-    if: ${{ !cancelled() && (needs.static.result == 'success' || (!inputs.static-checks && needs.static.result == 'skipped')) }}
+    if: ${{ !cancelled() && ((needs.static.result == 'success' && needs.static.outputs.run-heavy != 'false') || (!inputs.static-checks && needs.static.result == 'skipped')) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     strategy:
