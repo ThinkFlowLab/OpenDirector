@@ -51,6 +51,22 @@ def test_relative_link_uses_the_turn_provenance_and_never_picks_an_unrelated_dup
     assert resolve_canvas_link('notes.md', project)['status'] == 'ambiguous'
 
 
+def test_unique_asset_resolves_by_name_regardless_of_turn_provenance():
+    turn = uuid4()
+    # A user-imported asset has no agentRunId, yet it is the only notes.md.
+    imported = asset(uuid4(), 'notes.md')
+    imported_item = node(uuid4(), title='Imported note', asset_id=imported.id)
+    project = snapshot(assets=[imported], nodes=[imported_item])
+    assert resolve_canvas_link('notes.md', project, turn)['nodeId'] == str(imported_item.id)
+
+    # A previous turn's output is equally unique and must not be reported as
+    # "not in this project" only because its run id differs.
+    earlier = asset(uuid4(), 'notes.md', run=uuid4())
+    earlier_item = node(uuid4(), title='Earlier note', asset_id=earlier.id)
+    project = snapshot(assets=[earlier], nodes=[earlier_item])
+    assert resolve_canvas_link('notes.md', project, turn)['nodeId'] == str(earlier_item.id)
+
+
 def test_missing_malformed_and_external_targets_are_typed_and_never_raise():
     project = snapshot()
     for target in ('', '   ', 'unknown.mp4', 'javascript:alert(1)',
@@ -122,9 +138,9 @@ def test_title_matching_covers_non_media_nodes_and_keeps_duplicates_ambiguous():
     duplicate_b = node(uuid4(), kind='text', title='Same title')
     project = snapshot(nodes=[group, text, duplicate_a, duplicate_b])
 
-    assert resolve_canvas_link('Scene 1', project)['nodeId'] == str(group.id)
-    assert resolve_canvas_link('Finished note', project)['nodeId'] == str(text.id)
-    ambiguous = resolve_canvas_link('Same title', project)
+    assert resolve_canvas_link('@Scene 1', project)['nodeId'] == str(group.id)
+    assert resolve_canvas_link('@Finished note', project)['nodeId'] == str(text.id)
+    ambiguous = resolve_canvas_link('@Same title', project)
     assert ambiguous['status'] == 'ambiguous'
     assert len(ambiguous['candidates']) == 2
 
@@ -183,14 +199,14 @@ def test_adopted_generation_asset_resolves_through_current_result():
 def test_stable_identity_does_not_depend_on_position_or_title():
     item = node(uuid4(), title='Before')
     original = snapshot(nodes=[item])
-    first = resolve_canvas_link('Before', original)
+    first = resolve_canvas_link('@Before', original)
     moved = node(item.id, title='After', parent_id=uuid4())
     moved.position = NS(x=1234, y=-500)
     after = snapshot(nodes=[moved])
     second = resolve_canvas_link(f'canvas:{item.id}', after)
     assert first['nodeId'] == second['nodeId'] == str(item.id)
-    assert resolve_canvas_link('Before', after)['status'] == 'missing'
-    assert resolve_canvas_link('After', after)['nodeId'] == str(item.id)
+    assert resolve_canvas_link('@Before', after)['status'] == 'missing'
+    assert resolve_canvas_link('@After', after)['nodeId'] == str(item.id)
 
 
 def validated_example():
@@ -198,14 +214,16 @@ def validated_example():
     return project_example().model_dump(mode='json')
 
 
-def test_other_turn_filename_is_missing_but_explicit_history_identity_works():
+def test_unique_other_turn_filename_resolves_and_explicit_history_identity_works():
     from opendirector.domain.creation import ProjectSnapshot
     data = validated_example()
     data['assets'][0]['name'] = 'notes.md'
     data['assets'][0]['provenance']['agentRunId'] = str(uuid4())
     data['canvasItems'][0]['title'] = 'notes.md'
     project = ProjectSnapshot.model_validate(data)
-    assert resolve_canvas_link('notes.md', project, uuid4())['status'] == 'missing'
+    # A unique asset keeps resolving by filename even when it belongs to an
+    # earlier turn; the turn preference only disambiguates duplicate names.
+    assert resolve_canvas_link('notes.md', project, uuid4())['nodeId'] == str(project.canvasItems[0].id)
     assert resolve_canvas_link(f'canvas:{project.canvasItems[0].id}', project, uuid4())['nodeId'] == str(project.canvasItems[0].id)
 
 
@@ -265,6 +283,24 @@ def test_mentions_in_code_images_and_link_labels_are_ignored():
     assert canvas_links_for_text(text, snapshot(nodes=[item])) == []
 
 
+@pytest.mark.parametrize('suffix', ['.', ':', '"', "'", '`', '）'])
+def test_mention_trailing_punctuation_does_not_swallow_the_title(suffix):
+    item = node(uuid4(), title='Finished note')
+    links = canvas_links_for_text(f'@Finished note{suffix}', snapshot(nodes=[item]), uuid4())
+    assert [link['status'] for link in links] == ['focused']
+    assert links[0]['nodeId'] == str(item.id)
+
+
+def test_bare_title_name_is_missing_and_only_mentions_resolve_titles():
+    item = node(uuid4(), kind='group', title='Scene 1')
+    project = snapshot(nodes=[item])
+    # A bare filename-like destination matches assets, never item titles; the
+    # production path (agent.py) always supplies a turn id, so this fallback
+    # used to be dead code.
+    assert resolve_canvas_link('Scene 1', project, uuid4())['status'] == 'missing'
+    assert resolve_canvas_link('@Scene 1', project, uuid4())['nodeId'] == str(item.id)
+
+
 def test_reference_style_markdown_links_are_supported():
     item = node(uuid4(), title='Finished note')
     links = canvas_links_for_text(f'[Finished note][ref]\n\n[ref]: canvas:{item.id}', snapshot(nodes=[item]))
@@ -275,7 +311,7 @@ def test_message_enrichment_only_attaches_project_references():
     item = node(uuid4(), title='Finished note')
     project = snapshot(nodes=[item])
     message = {'id': 'm', 'role': 'assistant',
-               'text': '[local](notes.md) [site](https://example.test) [known](<Finished note>)'}
+               'text': '[local](notes.md) [site](https://example.test) @Finished note'}
     enriched = with_canvas_links(message, project)
     assert [link['status'] for link in enriched['canvasLinks']] == ['missing', 'focused']
     assert 'canvasLinks' not in message

@@ -2254,7 +2254,16 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 const client = creationClient(doc.id);
                 const item = client.snapshot.canvasItems.find((node) => node.id === id);
                 if (!item) return;
-                await client.command("canvas.show", { item }, [objectVersion("canvas_item", item)]);
+                const versions = [objectVersion("canvas_item", item)];
+                let parentId = item.parentId;
+                while (parentId) {
+                  const parent = client.snapshot.canvasItems.find(
+                    (item) => item.id === parentId,
+                  )!;
+                  versions.push(objectVersion("canvas_item", parent));
+                  parentId = parent.parentId;
+                }
+                await client.command("canvas.show", { item }, versions);
                 await client.refresh();
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
               } else if (!doc.nodes.some((node) => node.id === id)) {

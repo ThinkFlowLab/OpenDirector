@@ -8,7 +8,9 @@ status codes; current geometry is deliberately not stored, so moving, renaming
 or regrouping an item never invalidates a saved link.
 
 Markdown links (including reference-style links) and plain @title mentions are
-considered. Code, images and ordinary external URLs are left untouched.
+considered. Code, images and ordinary external URLs are left untouched. Item
+titles resolve only through @title mentions; a bare link destination matches
+asset names, not item titles.
 """
 from __future__ import annotations
 
@@ -48,7 +50,7 @@ def _mention_targets(text: str) -> list[str]:
                 in_link = False
             elif child.type == 'text' and not in_link:
                 targets.extend('@' + match.group(1).strip() for match in re.finditer(
-                    r'(?<!\w)@([^@\n,;!?()[\]{}<>\u3002\uff1b\uff0c\uff01\uff1f]+)', child.content))
+                    r"(?<!\w)@([^@\n,;!?()[\]{}<>.:\"'`\u3002\uff1b\uff0c\uff01\uff1f\uff09]+)", child.content))
     return targets
 
 
@@ -235,9 +237,10 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
         asset = next((value for value in _assets(snapshot) if str(getattr(value, 'id', '')) == str(asset_id)), None)
         if asset is not None and _asset_matches(name, asset) and asset not in assets:
             assets.append(asset)
-    if turn_id is not None:
-        # A filename in a turn identifies only that turn's output. Historical
-        # objects need an explicit stable identity (or an explicit @title).
+    if turn_id is not None and len(assets) > 1:
+        # A filename shared by several assets in a turn identifies only that
+        # turn's output; a single asset (a user import or an earlier turn's
+        # result) still resolves by name.
         assets = [asset for asset in assets if _run_id(asset) == str(turn_id)]
         if not assets:
             return {**result, 'status': 'missing'}
@@ -273,7 +276,7 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
                     'action': 'materialize'}
         return {**result, 'status': 'ambiguous',
                 'candidates': [*map(_asset_candidate, assets), *map(_node_candidate, nodes)]}
-    return _resolve_title(name, snapshot, result)
+    return {**result, 'status': 'missing'}
 
 
 def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:

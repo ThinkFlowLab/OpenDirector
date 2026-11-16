@@ -88,4 +88,26 @@ test("cross-project links show a translated destination hint and never focus a c
   }
 });
 
+test("plain @mentions render as clickable canvas links", async () => {
+  const root = createRoot(document.getElementById("root"));
+  const calls = [];
+  try {
+    await act(async () => root.render(React.createElement(AssistantReply, {
+      message: { id: "mention", role: "assistant", status: "complete",
+        text: "Look at @Finished note for the result.",
+        canvasLinks: [{ target: "@Finished note", status: "focused", nodeId: id }] },
+      thinking: false, t: (key, params) => translate("en-US", key, params),
+      onCanvasLink: (nodeId) => calls.push(nodeId),
+    })));
+    const anchor = document.querySelector(".cw-chat-markdown a[href]");
+    assert.ok(anchor, `@mention must render as an anchor: ${document.body.innerHTML}`);
+    assert.equal(anchor.textContent, "@Finished note");
+    assert.equal(document.body.textContent.includes("[blocked]"), false);
+    await act(async () => anchor.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true })));
+    assert.deepEqual(calls, [id]);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 test.after(async () => { dom.window.close(); await rm(directory, { recursive: true, force: true }); });

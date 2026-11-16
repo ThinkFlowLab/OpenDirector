@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import type { ComponentProps } from "react";
-import { Streamdown, defaultRehypePlugins, defaultUrlTransform } from "streamdown";
+import { Streamdown, defaultRehypePlugins } from "streamdown";
 import type { Components, LinkSafetyModalProps, StreamdownProps } from "streamdown";
 import type { Element, Root } from "hast";
 import type { ChatMessage, ChatTool } from "../backend/chat";
@@ -50,6 +50,62 @@ function prepareCanvasReferences(options: { targets: string[] }) {
 
 function renderCanvasReferences(options: { targets: string[] }) {
   return canvasReferencePlugin({ ...options, prepare: false });
+}
+
+/** Turn plain @title mentions into the same clickable canvas-reference nodes. */
+function renderCanvasMentions({ targets }: { targets: string[] }) {
+  // Longer names first so a prefix mention never splits a longer one.
+  const mentions = targets.filter((target) => target.startsWith("@"))
+    .sort((a, b) => b.length - a.length);
+  return (tree: Root) => {
+    if (!mentions.length) return;
+    const split = (value: string): Element["children"] => {
+      const parts: Element["children"] = [];
+      let rest = value;
+      while (rest.length) {
+        let index = -1;
+        let mention = "";
+        for (const target of mentions) {
+          const found = rest.indexOf(target);
+          if (found !== -1 && (index === -1 || found < index)) {
+            index = found;
+            mention = target;
+          }
+        }
+        if (index === -1) {
+          parts.push({ type: "text", value: rest });
+          break;
+        }
+        if (index > 0) parts.push({ type: "text", value: rest.slice(0, index) });
+        parts.push({
+          type: "element",
+          tagName: "canvas-reference",
+          properties: { href: mention },
+          children: [{ type: "text", value: mention }],
+        });
+        rest = rest.slice(index + mention.length);
+      }
+      return parts;
+    };
+    const visit = (parent: Root | Element) => {
+      const next: Element["children"] = [];
+      for (const child of parent.children) {
+        if (child.type === "element") {
+          if (child.tagName !== "code" && child.tagName !== "pre" &&
+              child.tagName !== "a" && child.tagName !== "canvas-reference") {
+            visit(child);
+          }
+          next.push(child);
+        } else if (child.type === "text") {
+          next.push(...split(child.value));
+        } else {
+          next.push(child as Element["children"][number]);
+        }
+      }
+      parent.children = next;
+    };
+    visit(tree);
+  };
 }
 
 function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
@@ -149,7 +205,7 @@ export const AssistantReply = memo(function AssistantReply({
   const projectLinks = useMemo(() => {
     const links = new Map(message.canvasLinks?.map((link) => [link.target, link]));
     // Give persisted project references their own renderer. Ordinary anchors
-    // retain Streamdown's URL transform and link-safety behavior.
+    // keep Streamdown's sanitize and link-safety behavior.
     const components: Components = {
       "canvas-reference": ({ href, children }: ComponentProps<"a">) => {
         const link = links.get(String(href));
@@ -175,7 +231,8 @@ export const AssistantReply = memo(function AssistantReply({
     const targets = Array.from(links.keys());
     const rehypePlugins: StreamdownProps["rehypePlugins"] = [defaultRehypePlugins.raw,
       [prepareCanvasReferences, { targets }], defaultRehypePlugins.sanitize,
-      defaultRehypePlugins.harden, [renderCanvasReferences, { targets }]];
+      defaultRehypePlugins.harden, [renderCanvasReferences, { targets }],
+      [renderCanvasMentions, { targets }]];
     return { components, rehypePlugins };
   }, [message.canvasLinks, onCanvasLink, t]);
   const copyLabel =
@@ -195,8 +252,6 @@ export const AssistantReply = memo(function AssistantReply({
         linkSafety={linkSafety}
         components={projectLinks.components}
         rehypePlugins={projectLinks.rehypePlugins}
-        urlTransform={(url, attribute, node) => node.tagName === "canvas-reference"
-          ? url : defaultUrlTransform(url, attribute, node)}
       >
         {formatText(text)}
       </Streamdown>
