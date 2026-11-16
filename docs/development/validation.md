@@ -53,9 +53,9 @@ Budgets measure stage wall time, not the sum of parallel job limits, and never j
 
 ### 过渡与必需检查 / Transition and required checks
 
-当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，但机型轴、安全扫描、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，安全扫描见下方独立工作流；机型轴、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
 
-Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered; hardware tagging, security scanning, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered. Security scanning uses the independent workflow below; hardware tagging, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
 
 - 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
 - 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
@@ -117,6 +117,35 @@ The final `checks` aggregate preserves its required-check name and always runs. 
 可复用工作流的 `static-checks` 默认关闭，由 `ci.yml` 开启；nightly 不重复静态检查。CI 不提交自动修复，hook 修改文件仍视为失败。PR 阶段预算先按 30 分钟；当前 static 上限 10 分钟，Python、前端和每个浏览器 job 各 30 分钟，汇总 5 分钟。这些仍是各 job 限额，不能相加或解释为已强制的阶段总上限；后续按实际测量改进端到端耗时。
 
 The reusable workflow's `static-checks` defaults to false and is enabled by `ci.yml`; nightly does not duplicate static checks. CI never commits automatic fixes; hook edits remain failures. The PR stage budget is 30 minutes for now. Static has 10 minutes, Python/frontend/each browser job 30 minutes, and the aggregate 5 minutes. These remain per-job limits, not a summed or enforced workflow-wide deadline; improve end-to-end time using actual measurements.
+
+## PR 安全扫描 / PR security scanning
+
+[`codeql.yml`](../../.github/workflows/codeql.yml) 对每个 PR（包含 draft 和纯文档变更）独立执行 Python 与 JavaScript/TypeScript CodeQL `security-extended` 分析；不等待 Release checks 的范围筛选。main push 建立合并版本基线，另提供手动运行。两条语言任务并行且互不取消，每条上限 30 分钟，汇总上限 5 分钟；这些不是阶段总墙钟上限。
+
+[`codeql.yml`](../../.github/workflows/codeql.yml) independently runs CodeQL `security-extended` analysis for Python and JavaScript/TypeScript on every PR, including drafts and documentation-only changes. It does not depend on Release checks scope selection. Main pushes establish the merged baseline; manual dispatch is also available. Language jobs run in parallel without fail-fast cancellation, with a 30-minute limit each and a 5-minute aggregate limit, not a workflow-wide deadline.
+
+扫描使用固定提交的官方 Actions、`build-mode: none` 和不保留 Git 凭证的 checkout，不安装应用依赖、不构建应用、不调用模型。默认 token 只读内容，上传分析结果的任务额外拥有 `actions: read` 和 `security-events: write`。使用 `pull_request` 而非 `pull_request_target`，不读取仓库 secrets；fork PR 仍受 GitHub 的首次贡献者审批策略约束。这是源码安全分析，不替代依赖漏洞或容器镜像扫描，也不能证明不存在漏洞。
+
+Scanning uses pinned official Actions, `build-mode: none` and checkout without persisted Git credentials. It does not install application dependencies, build the application or call models. The default token reads contents; analysis upload jobs additionally receive `actions: read` and `security-events: write`. It uses `pull_request`, not `pull_request_target`, with no repository secrets; GitHub contributor approval policies still apply to fork PRs. Source analysis does not replace dependency or container-image scanning and cannot prove the absence of vulnerabilities.
+
+稳定汇总 job `CodeQL / checks` 只接受全部语言分析成功，失败、取消、跳过和缺失结果均失败。它证明扫描执行及上传完成，不根据告警等级自行判断是否允许合并。GitHub 的独立 **Code scanning results / CodeQL** 检查负责 PR 新增行的告警门禁；默认失败阈值包含 error 及 high/critical 安全告警，仓库设置可能覆盖阈值。参见 [PR 告警检查语义](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests)。
+
+The stable aggregate job `CodeQL / checks` accepts only successful analyses for every language; failed, cancelled, skipped and missing results fail. It proves analysis and upload completion, without deciding merge eligibility from alert severity. GitHub's separate **Code scanning results / CodeQL** check gates alerts on added PR lines; default failure thresholds include error-level and high/critical security alerts, subject to repository overrides. See [PR alert check semantics](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests).
+
+管理员需确认仓库使用 advanced setup、没有冲突的 default setup，并验证首次扫描、fork PR 上传及告警阈值；之后将执行汇总和告警结果检查一并设为 required。仅合入 YAML 不会自动配置仓库保护规则。合并队列支持在后续 PR6 添加 `merge_group`，规则强制在 PR7 处理；完成这些配置前，不宣称安全门禁不可绕过。配置方式见 [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning)。
+
+An administrator must confirm advanced setup without conflicting default setup, verify the first analysis, fork uploads and alert thresholds, then require both the execution aggregate and alert-result checks. Merging YAML does not configure repository protection rules. PR6 adds `merge_group` support and PR7 handles enforcement; security gates are not claimed to be non-bypassable before those settings are complete. See [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning).
+
+本地契约验证 / Local contract verification:
+
+```sh
+python -m pytest tests/test_ci_security.py -q
+python -m pre_commit run --files .github/workflows/codeql.yml tests/test_ci_security.py docs/development/validation.md
+```
+
+本地检查验证工作流语法、触发与权限边界，以及实际汇总命令对异常状态的拒绝；CodeQL 建库、分析和上传必须以 GitHub Actions 的真实运行结果验收。
+
+Local checks verify workflow syntax, trigger/permission boundaries and rejection of unsuccessful states by the actual aggregate command. CodeQL database creation, analysis and upload require a real GitHub Actions run for acceptance.
 
 ## Python 分层与迁移 / Python layers and transition
 
