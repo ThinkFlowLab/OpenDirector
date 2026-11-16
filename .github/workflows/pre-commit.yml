@@ -4,13 +4,13 @@ on:
   workflow_call:
     outputs:
       run-heavy:
-        description: Whether heavy checks are required / 是否需要重检查
+        description: Whether heavy checks are required
         value: ${{ jobs.check.outputs.run-heavy }}
       scope-reason:
-        description: Reason for the selected scope / 检查范围依据
+        description: Reason for the selected scope
         value: ${{ jobs.check.outputs.scope-reason }}
       changed-files:
-        description: Number of changed paths / 变更路径数量
+        description: Number of changed paths
         value: ${{ jobs.check.outputs.changed-files }}
   workflow_dispatch:
 
@@ -49,7 +49,7 @@ jobs:
             python -m pre_commit run --all-files
           fi
       - id: scope
-        name: Select check scope / 判断检查范围
+        name: Select check scope
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: python scripts/pre-commit/select_checks.py
