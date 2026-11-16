@@ -1,0 +1,28 @@
+[
+  {
+    "manifest": {
+      "schemaVersion": 1,
+      "id": "studio-brief",
+      "version": "1.0.0",
+      "name": {
+        "zh-CN": "创作简报",
+        "en-US": "Creative brief"
+      },
+      "description": {
+        "zh-CN": "结合当前工程整理创作目标、可用素材和分镜草稿，保存为可继续编辑的文本素材。",
+        "en-US": "Turn the current project's goals and assets into a creative brief and shot outline saved as an editable text asset."
+      },
+      "runtimes": [
+        "default",
+        "opencode",
+        "codex",
+        "claude",
+        "jiuwenswarm",
+        "deepseek"
+      ],
+      "dependencies": {}
+    },
+    "digest": "5c3c2e798a7fdc1ce55c74315349b621d54a7ed21170060d4394af74b79900d5",
+    "url": "https://raw.githubusercontent.com/ThinkFlowLab/OpenDirector/main/plugins/examples/studio-brief.zip"
+  }
+]

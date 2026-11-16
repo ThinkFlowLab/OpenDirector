@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { ModelSettings } from "./ModelSettings";
+import { PluginSettings } from "./PluginSettings";
 import { errorMessage } from "../backend/api";
 import type { BackendModels } from "../backend/models";
 import type { Theme, ThemeControls } from "./theme";
@@ -10,6 +11,7 @@ import type { Locale } from "../i18n/types";
 const categories = [
   { id: "models", labelKey: "settings.models", icon: "model" },
   { id: "general", labelKey: "settings.general", icon: "settings" },
+  { id: "plugins", labelKey: "plugins.title", icon: "sparkle" },
 ] as const;
 
 function GeneralSettings({
@@ -136,7 +138,7 @@ export function SettingsDialog({
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const backdropPressed = useRef(false);
-  const [category, setCategory] = useState<"general" | "models">(
+  const [category, setCategory] = useState<"general" | "models" | "plugins">(
     initialCategory,
   );
   useLayoutEffect(() => {
@@ -210,9 +212,7 @@ export function SettingsDialog({
         >
           <header className="cw-settings-header">
             <h2 id="settings-section-title">
-              {category === "general"
-                ? t("settings.general")
-                : t("settings.models")}
+              {t(categories.find((item) => item.id === category)!.labelKey)}
             </h2>
           </header>
           <div className="cw-settings-body">
@@ -227,7 +227,7 @@ export function SettingsDialog({
                 </button>
               </div>
             )}
-            {category === "general" ? (
+            {category === "plugins" ? <PluginSettings /> : category === "general" ? (
               <GeneralSettings catalog={catalog} theme={theme} />
             ) : (
               <ModelSettings catalog={catalog} onClose={onClose} />

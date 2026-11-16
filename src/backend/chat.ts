@@ -2,6 +2,7 @@ import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
 import { defaultTranslate } from "../canvas/assistantTranslate.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { headers, json, request, responseError } from "./api.ts";
+import type { Locale } from "../i18n/types.ts";
 
 export type AgentRuntime =
   | "default"
@@ -28,9 +29,12 @@ export interface RuntimeInfo {
   supportsSkills?: boolean;
 }
 export interface ChatSkill {
-  source?: "builtin" | "workspace" | "project";
+  source?: "builtin" | "workspace" | "project" | "plugin";
   name: string;
   description: string;
+  pluginId?: string;
+  displayName?: Record<Locale, string>;
+  localizedDescription?: Record<Locale, string>;
 }
 
 export interface ChatTool {
@@ -196,8 +200,8 @@ export async function conversation(
 }
 export const saveChatDraft = (id: string, draft: ChatDraft) =>
   request(path(id) + "/draft", json("PUT", draft));
-export const chatSkills = (id: string, signal?: AbortSignal) =>
-  request<ChatSkill[]>(path(id) + "/skills", { signal });
+export const chatSkills = (id: string, signal?: AbortSignal, runtime: AgentRuntime = "default") =>
+  request<ChatSkill[]>(path(id) + `/skills?runtime=${runtime}`, { signal });
 export const stopChat = (id: string, turn: string) =>
   request(path(id) + `/turns/${turn}/stop`, json("POST", {}));
 export async function streamChat(

@@ -23,6 +23,7 @@ def prepare_resources():
         shutil.rmtree(bundled)
     shutil.copytree(ROOT / 'dist', bundled / 'web')
     shutil.copytree(ROOT / 'packages/agent/skills', bundled / 'skills')
+    shutil.copy2(ROOT / 'plugins/catalog.json', bundled / 'plugin-catalog.json')
     npm_package = ROOT / 'node_modules/opencode-ai'
     metadata = json.loads((npm_package / 'package.json').read_text())
     executable = npm_package / metadata['bin']['opencode']

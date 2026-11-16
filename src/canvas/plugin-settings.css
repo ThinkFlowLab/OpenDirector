@@ -1,0 +1,20 @@
+.cw-plugin-settings { display: grid; gap: 20px; }
+.cw-plugin-settings p { line-height: 1.6; margin: 8px 0; }
+.cw-plugin-intro, .cw-plugin-empty, .cw-plugin-card small, .cw-plugin-install p { color: var(--settings-muted); }
+.cw-plugin-settings h3 { margin: 0 0 10px; font-size: 14px; }
+.cw-plugin-settings h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.cw-plugin-install { display: grid; gap: 8px; }
+.cw-plugin-install > button { justify-self: start; }
+.cw-plugin-source-row { display: flex; gap: 8px; }
+.cw-plugin-source-row input {
+  min-width: 0; flex: 1; padding: 8px 10px; border: 1px solid var(--settings-border);
+  border-radius: 8px; background: var(--settings-input); color: var(--settings-text); font: inherit;
+}
+.cw-plugin-card { padding: 16px; margin-top: 10px; border: 1px solid var(--settings-border); border-radius: 10px; }
+.cw-plugin-card header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.cw-plugin-card header > div { min-width: 0; overflow-wrap: anywhere; }
+.cw-plugin-card fieldset { display: flex; flex-wrap: wrap; gap: 10px 18px; border: 0; margin: 12px 0 0; padding: 0; }
+.cw-plugin-card legend { padding: 0; margin-bottom: 10px; color: var(--settings-muted); }
+.cw-plugin-card label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cw-plugin-card input { accent-color: var(--cw-control-accent); }
+.cw-plugin-settings button:disabled { cursor: default; opacity: .5; }

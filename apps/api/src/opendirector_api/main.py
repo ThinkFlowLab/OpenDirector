@@ -27,6 +27,7 @@ from opendirector_api.creation import creation_routes
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
 from opendirector_api.voices import voice_routes
+from opendirector_api.plugins import plugin_routes
 from opendirector_api.localization import localized_error
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
@@ -70,6 +71,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider))
     app.include_router(library_routes(creation_projects))
     app.include_router(voice_routes(creation_generation.voices))
+    app.include_router(plugin_routes(store.repository))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):

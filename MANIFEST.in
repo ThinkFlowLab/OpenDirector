@@ -4,6 +4,7 @@ recursive-include src *
 recursive-include packages/core/src *.py
 recursive-include apps/api/src *.py
 recursive-include packages/agent/skills *
+include plugins/catalog.json
 prune packages/core/src/opendirector/_bundled
 prune node_modules
 prune dist

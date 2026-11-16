@@ -99,3 +99,9 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Lesson:** [Issue #302](https://github.com/ThinkFlowLab/OpenDirector/issues/302) identified four citation groups whose Unicode private-use delimiters and internal source IDs were displayed as text. The native and persisted replies agreed byte for byte; intact text transport did not establish usable presentation.
 - **Check:** Verify the source metadata as well as reply text, multiple citations, split streaming markers, history reopening, copying and missing-source fallback. Preserve raw execution evidence and tool offsets; leave literal code examples unchanged and inspect both interface languages in the browser.
 - **Presentation follow-up:** The source-link UI in #302 initially inherited a library modal's utility classes without the corresponding CSS. Text and click checks passed while the border and close-button positioning failed. Use the supported custom renderer with repository-owned styles, and check computed styles, element geometry, long URLs, keyboard close and focus restoration as well as translated text.
+
+## Validate every entry returned by native discovery
+
+- **Trigger:** A package declares one Skill while the native loader scans resource directories recursively.
+- **Evidence:** [Issue #114](https://github.com/ThinkFlowLab/OpenDirector/issues/114)'s independent review reproduced nested `SKILL.md` entries being classified as workspace skills, bypassing plugin metadata and colliding during snapshot copying. The regressions in [test_plugins.py](../../tests/test_plugins.py) cover both package rejection and unexpected native discovery results.
+- **Check:** Validate all discoverable entry filenames, including case variants. Require the native catalog's exact paths and identities to match registered entries, reject duplicate names before copying, and test the discovery boundary independently of installer validation.

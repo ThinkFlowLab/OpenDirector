@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "my-creative-tool",
+  "version": "1.0.0",
+  "name": {"zh-CN": "我的创作工具", "en-US": "My creative tool"},
+  "description": {"zh-CN": "根据工程素材整理创作笔记。", "en-US": "Prepare creative notes from project assets."},
+  "runtimes": ["default", "opencode", "codex", "claude", "jiuwenswarm", "deepseek"],
+  "dependencies": {}
+}

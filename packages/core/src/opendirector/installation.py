@@ -21,5 +21,13 @@ def builtin_skills() -> Path:
     return SOURCE_ROOT / 'packages/agent/skills' if SOURCE_ROOT else BUNDLED / 'skills'
 
 
+def plugin_examples() -> Path:
+    return SOURCE_ROOT / 'packages/agent/plugin-examples' if SOURCE_ROOT else BUNDLED / 'plugin-examples'
+
+
+def plugin_catalog() -> Path:
+    return SOURCE_ROOT / 'plugins/catalog.json' if SOURCE_ROOT else BUNDLED / 'plugin-catalog.json'
+
+
 def default_timeline_font() -> Path:
     return (SOURCE_ROOT / 'public/fonts' if SOURCE_ROOT else web_root() / 'fonts') / 'NotoSansCJKsc-Regular.otf'

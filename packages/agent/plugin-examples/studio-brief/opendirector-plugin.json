@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "studio-brief",
+  "version": "1.0.0",
+  "name": {"zh-CN": "创作简报", "en-US": "Creative brief"},
+  "description": {"zh-CN": "结合当前工程整理创作目标、可用素材和分镜草稿，保存为可继续编辑的文本素材。", "en-US": "Turn the current project's goals and assets into a creative brief and shot outline saved as an editable text asset."},
+  "runtimes": ["default", "opencode", "codex", "claude", "jiuwenswarm", "deepseek"],
+  "dependencies": {}
+}
