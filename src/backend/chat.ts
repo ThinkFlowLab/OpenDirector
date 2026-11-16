@@ -60,7 +60,34 @@ export interface ChatSource {
   url: string;
   title: string;
 }
+/** A resolved canvas reference persisted with an assistant reply. */
+export type ChatCanvasLinkStatus =
+  | "focused"
+  | "hidden"
+  | "materialize"
+  | "ambiguous"
+  | "missing"
+  | "cross-project"
+  | "external";
+export interface ChatCanvasLinkCandidate {
+  nodeId?: string;
+  assetId?: string;
+  kind?: string;
+  title?: string;
+  hidden?: boolean;
+}
+export interface ChatCanvasLink {
+  target: string;
+  status: ChatCanvasLinkStatus;
+  nodeId?: string;
+  assetId?: string;
+  projectId?: string;
+  kind?: string;
+  action?: "reveal" | "materialize";
+  candidates?: ChatCanvasLinkCandidate[];
+}
 export interface ChatMessage {
+  canvasLinks?: ChatCanvasLink[];
   sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;
