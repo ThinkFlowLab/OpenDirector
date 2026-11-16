@@ -710,6 +710,7 @@ export function AssistantPanel({
             />
             <SkillPicker
               projectId={documentId}
+              runtime={value.runtime}
               selected={value.skills ?? []}
               slashQuery={slashQuery}
               disabled={referenceDisabled || chat.sending || chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills === false}

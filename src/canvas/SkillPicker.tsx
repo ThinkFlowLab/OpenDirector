@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
-import { chatSkills, type ChatSkill } from "../backend/chat.ts";
-import { useT } from "../i18n/I18nProvider.tsx";
+import { chatSkills, type AgentRuntime, type ChatSkill } from "../backend/chat.ts";
+import { PLUGINS_CHANGED } from "../backend/plugins.ts";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon.tsx";
 
@@ -8,22 +9,25 @@ const SOURCE_LABELS: Record<NonNullable<ChatSkill["source"]>, MessageKey> = {
   builtin: "assistant.skills.source.builtin",
   workspace: "assistant.skills.source.workspace",
   project: "assistant.skills.source.project",
+  plugin: "plugins.skillSource",
 };
 
 export function SkillPicker({
   projectId,
+  runtime = "default",
   selected,
   slashQuery,
   disabled,
   onChange,
 }: {
   projectId: string;
+  runtime?: AgentRuntime;
   selected: string[];
   slashQuery: string | null;
   disabled: boolean;
   onChange: (names: string[], fromSlash: boolean) => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [skills, setSkills] = useState<ChatSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,7 +43,7 @@ export function SkillPicker({
   const open = !disabled && (manual || slash);
   const search = slash ? (slashQuery ?? "") : query;
   const shown = skills.filter((skill) =>
-    `${skill.name} ${skill.description}`
+    `${skill.name} ${skill.displayName?.[locale] ?? ""} ${skill.localizedDescription?.[locale] ?? skill.description}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -50,7 +54,12 @@ export function SkillPicker({
     setQuery("");
     setSkills([]);
     setError("");
-  }, [projectId]);
+  }, [projectId, runtime]);
+  useEffect(() => {
+    const refresh = () => setAttempt((value) => value + 1);
+    window.addEventListener(PLUGINS_CHANGED, refresh);
+    return () => window.removeEventListener(PLUGINS_CHANGED, refresh);
+  }, []);
   useEffect(() => {
     setDismissed(false);
     setActive(0);
@@ -61,8 +70,9 @@ export function SkillPicker({
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true);
+    setSkills([]);
     setError("");
-    void chatSkills(projectId, abort.signal)
+    void chatSkills(projectId, abort.signal, runtime)
       .then((value) => {
         if (!abort.signal.aborted) setSkills(value);
       })
@@ -78,7 +88,7 @@ export function SkillPicker({
         if (!abort.signal.aborted) setLoading(false);
       });
     return () => abort.abort();
-  }, [projectId, attempt]);
+  }, [projectId, runtime, attempt]);
 
   useLayoutEffect(() => {
     if (!open || !root.current) return;
@@ -233,8 +243,8 @@ export function SkillPicker({
                 >
                   <CanvasIcon name="sparkle" size={16} />
                   <span>
-                    <span className="cw-skill-title"><strong>{skill.name}</strong>{skill.source && <em>{t(SOURCE_LABELS[skill.source])}</em>}</span>
-                    <small title={skill.description}>{skill.description}</small>
+                    <span className="cw-skill-title"><strong>{skill.displayName?.[locale] ?? skill.name}</strong>{skill.source && <em>{t(SOURCE_LABELS[skill.source])}</em>}</span>
+                    <small title={skill.localizedDescription?.[locale] ?? skill.description}>{skill.localizedDescription?.[locale] ?? skill.description}</small>
                   </span>
                   {selected.includes(skill.name) && (
                     <CanvasIcon name="check" size={14} />

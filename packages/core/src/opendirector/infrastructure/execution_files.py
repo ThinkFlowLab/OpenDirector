@@ -8,7 +8,7 @@ from opendirector.domain.projects import ProjectError
 
 
 @contextmanager
-def _posix_file(work, parts, create):
+def _posix_file(work, parts, create, *, allow_empty=False):
     if os.open not in os.supports_dir_fd or not hasattr(os, 'O_NOFOLLOW'):
         raise ProjectError('当前平台不支持安全的执行产物文件读取。', 501)
     with ExitStack() as stack:
@@ -24,7 +24,7 @@ def _posix_file(work, parts, create):
         fd = os.open(parts[-1], flags | os.O_NOFOLLOW, 0o600, dir_fd=parent)
         stack.callback(os.close, fd)
         facts = os.fstat(fd)
-        if not stat.S_ISREG(facts.st_mode) or (not create and facts.st_size == 0):
+        if not stat.S_ISREG(facts.st_mode) or (not create and not allow_empty and facts.st_size == 0):
             raise ProjectError('发布产物必须是非空普通文件。')
         duplicate = os.dup(fd)
         try:
@@ -42,7 +42,7 @@ def _posix_file(work, parts, create):
 
 
 @contextmanager
-def execution_file(execution_directory: Path, path: str, *, create=False):
+def execution_file(execution_directory: Path, path: str, *, create=False, allow_empty=False):
     """The host supplies the root; callers may only open descendants of it.
 
     Pin the execution root and user directory components for the operation.
@@ -50,6 +50,7 @@ def execution_file(execution_directory: Path, path: str, *, create=False):
     root Windows releases lookup-only ancestors to permit project commits.
     Outputs are created exclusively. Failed POSIX writes may leave a partial
     file; inspect it and use a new output name rather than overwriting on retry.
+    Empty input is allowed only when the caller's format explicitly supports it.
     """
     # Do not resolve the execution root: it is a lexical authorization boundary,
     # not permission to follow a replacement symlink/junction. Both backends
@@ -70,11 +71,12 @@ def execution_file(execution_directory: Path, path: str, *, create=False):
     parts = candidate.relative_to(work).parts
     if os.name == 'nt':
         from opendirector.infrastructure.windows_execution_files import open_file
+        opened = open_file(work, parts, create)
     else:
-        open_file = _posix_file
-    with open_file(work, parts, create) as stream:
+        opened = _posix_file(work, parts, create, allow_empty=allow_empty)
+    with opened as stream:
         facts = os.fstat(stream.fileno())
-        if not stat.S_ISREG(facts.st_mode) or (not create and facts.st_size == 0):
+        if not stat.S_ISREG(facts.st_mode) or (not create and not allow_empty and facts.st_size == 0):
             raise ProjectError('发布产物必须是非空普通文件。')
         if facts.st_nlink != 1:
             raise ProjectError('执行文件不能包含硬链接。', 403, code='execution_file_link')

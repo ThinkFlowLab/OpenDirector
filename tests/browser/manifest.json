@@ -1,6 +1,12 @@
 {
   "scripts": [
     {
+      "file": "plugins.mjs",
+      "lanes": ["extended", "production"],
+      "previewSafe": true,
+      "note": "Real package install, per-harness activation, native Skill discovery, disable, reload and uninstall in both languages; no model calls."
+    },
+    {
       "file": "heif_upload_recovery.mjs",
       "lanes": ["extended", "production"],
       "previewSafe": true,

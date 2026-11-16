@@ -27,7 +27,10 @@ class RunContext:
     conversation_id: UUID | None = None
     thinking: str = 'auto'
     runtime_model: str | None = None
-    skills: list[dict[str, str]] = field(default_factory=list)
+    skills: list[dict] = field(default_factory=list)
+
+    def plugin_versions(self) -> dict[str, str]:
+        return {item['pluginId']: item['pluginDigest'] for item in self.skills if 'pluginId' in item}
 
     def native_session_path(self) -> Path | None:
         if self.conversation_id is None:
@@ -39,7 +42,8 @@ class RunContext:
         if directory is None or not (directory / 'session.json').is_file():
             return None
         saved = json.loads((directory / 'session.json').read_text(encoding='utf-8'))
-        if saved['selection'] == selection and saved['messages'] == len(self.messages) - 1:
+        if (saved['selection'] == selection and saved['messages'] == len(self.messages) - 1
+                and saved.get('plugins', {}) == self.plugin_versions()):
             return saved
         return None
 
@@ -81,5 +85,6 @@ class RunContext:
             directory.mkdir(parents=True, exist_ok=True)
             write_json(directory / 'session.json', {'sessionId': session_id, 'selection': selection,
                 'messages': len(self.messages) + 1,
+                'plugins': self.plugin_versions(),
                 'workTurnId': str(work_turn_id) if work_turn_id else None,
                 **({'directory': str(engine_directory)} if engine_directory is not None else {})})

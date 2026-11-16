@@ -315,10 +315,11 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         return await model_choices(runtime)
 
     @router.get('/skills')
-    async def catalog(project_id: UUID):
+    async def catalog(project_id: UUID, runtime: Runtime = 'default'):
         directory = await asyncio.to_thread(conversations.path, project_id)
-        found = await skills(projects.local.repository, directory)
-        return [{key: item[key] for key in ('name', 'description', 'source')} for item in found]
+        found = await skills(projects.local.repository, directory, runtime)
+        return [{key: item[key] for key in ('name', 'description', 'source', 'pluginId', 'displayName', 'localizedDescription')
+                 if key in item} for item in found]
 
     @router.post('/turns/{turn_id}/stop')
     async def stop(project_id: UUID, turn_id: UUID, x_opendirector_session: UUID = Header()):
@@ -356,9 +357,9 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             if value.runtime == 'jiuwenswarm' and value.thinking != 'auto':
                 raise ProjectError('JiuwenSwarm 当前使用原生默认推理强度。', 409)
             config = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent') if spec.modelSource == 'settings' else None
-            available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
+            available = await skills(projects.local.repository, directory, value.runtime) if spec.supportsSkills else []
             if set(value.skills) - {item['name'] for item in available}:
-                raise ProjectError('技能已失效，请重新选择。', 409)
+                raise ProjectError('所选技能对当前引擎已不可用，请从消息中移除并重新选择。', 409, code='agent_skill_unavailable')
             snapshot = await asyncio.to_thread(projects.snapshot, project_id)
             assets = {str(asset.id): asset for asset in snapshot.assets}
             for asset_id in value.assets:

@@ -86,6 +86,12 @@ def test_empty_files_and_directories_are_rejected(tmp_path):
             with execution_file(tmp_path, name):
                 pytest.fail('Not a nonempty ordinary file')
 
+    with execution_file(tmp_path, 'empty', allow_empty=True) as stream:
+        assert stream.read() == b''
+    with pytest.raises(ProjectError):
+        with execution_file(tmp_path, 'folder', allow_empty=True):
+            pytest.fail('Allowing empty files must not allow directories')
+
 
 def test_symbolic_links_are_not_followed(tmp_path):
     work = tmp_path / 'work'; work.mkdir()

@@ -15,6 +15,7 @@ import { generation } from "./generation.ts";
 import { library } from "./library.ts";
 import { models } from "./models.ts";
 import { settings } from "./settings.ts";
+import { plugins } from "./plugins.ts";
 import { timeline } from "./timeline.ts";
 import { tools } from "./tools.ts";
 
@@ -25,6 +26,7 @@ export const enUS: Record<keyof ZhCatalog, MessageEntry> = {
   ...common,
   ...voiceLibrary,
   ...settings,
+  ...plugins,
   ...modelSetup,
   ...trace,
   ...canvas,

@@ -10,8 +10,11 @@ from fastapi import Request
 from opendirector.domain.timeline_errors import timeline_error_message
 
 from opendirector.domain.creation.commands import CommandReceipt
+from opendirector.domain.plugins import PLUGIN_ERRORS
 
 ENGLISH_BY_CODE = {
+    **{code: messages[1] for code, messages in PLUGIN_ERRORS.items()},
+    'agent_skill_unavailable': 'A selected skill is unavailable for this harness. Remove it from the message and select an available skill.',
     'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
     'bigmodel_video_output': 'Choose a supported CogVideoX-3 pixel size and a 5- or 10-second duration. The size determines the aspect ratio.',
     'bigmodel_video_image': 'CogVideoX-3 frame images must be valid PNG or JPEG files, up to 5 MB each.',
