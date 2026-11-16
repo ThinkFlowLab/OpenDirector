@@ -13,6 +13,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, send, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 def clip(seconds=2, size='64x64'):
     return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color=blue:s={size}:r=24',
         '-t', str(seconds), '-threads', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',

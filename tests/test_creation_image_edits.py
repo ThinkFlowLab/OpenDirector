@@ -18,6 +18,9 @@ from test_creation_generation_service import Provider, anyio_backend
 from test_creation_node_versions import versions
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png(color):
     out = BytesIO()
     Image.new('RGB', (64, 64), color).save(out, 'PNG')

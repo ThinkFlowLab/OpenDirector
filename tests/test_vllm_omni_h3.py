@@ -23,6 +23,9 @@ from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.vllm_omni import VllmOmniGeneration, h3_frames
 from opendirector.integrations.volcengine import VolcengineGeneration
 
+
+pytestmark = pytest.mark.cpu
+
 H3 = {'protocol': 'vllm_omni', 'kind': 'video', 'url': 'http://gpu-box:8000/v1', 'modelId': 'MiniMaxAI/MiniMax-H3', 'apiKey': 'token'}
 
 

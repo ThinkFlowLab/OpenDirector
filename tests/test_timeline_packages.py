@@ -11,6 +11,9 @@ from opendirector.domain.projects import ProjectError
 from test_creation_assets import import_asset
 
 
+pytestmark = pytest.mark.cpu
+
+
 def service(store):
     from opendirector.application.creation_timeline_packages import CreationTimelinePackages
     return CreationTimelinePackages(store)

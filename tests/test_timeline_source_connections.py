@@ -7,6 +7,10 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_assembly import upload_source
 from test_creation_canvas_service import project, send, ver
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def _clip(asset, clip_id, *, start=None):
     clip = dict(id=clip_id, resource=dict(asset=asset_ref(asset), title=asset.name),

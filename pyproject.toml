@@ -24,6 +24,11 @@ opendirector = "opendirector.cli:main"
 
 [tool.pytest.ini_options]
 markers = [
+  "cpu: tests requiring no local accelerator",
+  "cuda: reserved NVIDIA CUDA platform; no default CI lane",
+  "rocm: reserved AMD ROCm platform; no default CI lane",
+  "xpu: reserved Intel XPU platform; no default CI lane",
+  "npu: reserved NPU platform; no default CI lane",
   "ready: fast deterministic checks for PR feedback",
   "merge: broader stubbed integration checks for the pre-merge gate",
   "nightly: timing-sensitive or opt-in external-service checks",

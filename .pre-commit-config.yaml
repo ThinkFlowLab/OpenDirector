@@ -5,6 +5,15 @@ default_install_hook_types: [pre-commit]
 default_stages: [pre-commit]
 
 repos:
+  - repo: local
+    hooks:
+      - id: check-test-marks
+        name: Check explicit test marks
+        entry: python scripts/pre-commit/check_test_marks.py
+        language: python
+        pass_filenames: false
+        files: ^(tests/|scripts/pre-commit/|pyproject\.toml$|\.pre-commit-config\.yaml$)
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

@@ -41,13 +41,17 @@ Business areas under `frontend/` and `python/` may expand with coverage. Move on
 | --- | --- | --- |
 | Directory / 目录 | `frontend`, `python`, `creation`, `agent`, etc. | Organization and discovery only; never pytest CI-layer marks. / 仅组织与发现，不是 pytest CI 层 mark。 |
 | CI layer / CI 层 | `ready`, `merge`, `nightly` | At most one per Python case; unmarked cases remain ready during migration. PR runs ready, queue runs ready + merge, nightly runs nightly plus intentional watchlist reruns after cutover. / 每个 Python 用例至多一个；迁移期未标记仍为 ready。切换后 PR 跑 ready，队列跑 ready + merge，nightly 跑 nightly 和明确的 watchlist 重跑。 |
-| Hardware platform / 机型 | Target `cpu`; accelerators and SKUs later / 目标 `cpu`，加速器与 SKU 后续 | Independent of the CI layer. Current default cases are CPU-only; registration/tagging/selection is follow-up work. Do not infer hardware from a folder or capability skip. / 与 CI 层正交；现有默认用例只需 CPU，注册、打标和筛选后续交付，不从目录或能力跳过推断机型。 |
+| Hardware platform / 机型 | `cpu`; reserved `cuda`, `rocm`, `xpu`, `npu` / `cpu` 与预留平台 | Independent of the CI layer. Current Python test modules carry `pytest.mark.cpu`; missing, unknown or conflicting hardware marks fail the shared pre-commit check; runtime collection never adds marks. Workflow filters remain unchanged. Do not infer hardware from a folder or capability skip. / 与 CI 层正交；现有 Python 测试模块显式标记 `cpu`，缺失、未知或冲突的机型标记由共享 pre-commit 检查拒绝，运行时不补标；工作流筛选保持不变，不从目录或能力跳过推断机型。 |
 | Capability / 能力 | `requires_ffmpeg`, `requires_posix` | Skip with a reason when unavailable; not lane or hardware selectors. / 缺能力时带原因跳过，不用于分车道或分机型。 |
 | Browser lane / 浏览器车道 | `gate`, `extended`, `extendedFixture`, `production`, `perf`, `manual` | Only `tests/browser/manifest.json` owns membership; these are not pytest marks. / 归属只由 manifest 管理，不是 pytest mark。 |
 
-`unit`、`integration`、`e2e` 可以描述场景，但不注册为 CI 层 mark。`gpu`、`cuda`、`rocm`、`xpu`、`npu` 与 SKU/卡数只预留后续计划；真实硬件车道需要负责人、环境和凭证方案，后续通过共享 helper 引入平台与 SKU，不要求本季度运行。
+TypeScript 单元与 JavaScript 浏览器测试也使用相同的 `ready / merge / nightly`、`cpu` 及预留平台词汇。前端以 `tests/frontend-manifest.json` 按文件登记；浏览器以现有 manifest 按旅程登记 `layer` 和 `hardware`，与运行环境 lane 分开。两条轴均须显式声明，缺失或未知值拒绝；helper 不标为测试。文件内需要不同分类时先拆分，不用标题匹配模拟逐用例标记。筛选入口、清单审计与当前执行边界见[验证指南](../development/validation.md#跨语言测试标记--cross-language-test-marks)。
 
-`unit`, `integration` and `e2e` may describe scenarios but are not CI-layer marks. `gpu`, `cuda`, `rocm`, `xpu`, `npu`, SKUs and card counts are reserved for follow-up plans. Real-hardware lanes need owners, environments and credential arrangements; introduce platforms and SKUs through a shared helper when needed, without requiring those lanes to run this quarter.
+TypeScript units and JavaScript browser journeys use the same `ready / merge / nightly`, `cpu` and reserved-platform vocabulary. Register unit files in `tests/frontend-manifest.json`; register journey `layer` and `hardware` in the browser manifest, independently of environment lanes. Both axes must be explicit; missing or unknown values fail, and helpers carry no test marks. Split files when classifications differ rather than encoding per-case marks in test titles. The [validation guide](../development/validation.md#跨语言测试标记--cross-language-test-marks) owns selectors, catalog auditing and current execution boundaries.
+
+`unit`、`integration`、`e2e` 可以描述场景，但不注册为 CI 层 mark。`cuda`、`rocm`、`xpu`、`npu` 已注册为预留名称，本季度不新增对应硬件用例或 CI 车道；SKU 与 `cards_n` 暂不注册。真实硬件车道需要负责人、环境和凭证方案，后续通过共享 helper 引入平台与 SKU，不要求本季度运行。
+
+`unit`, `integration` and `e2e` may describe scenarios but are not CI-layer marks. `cuda`, `rocm`, `xpu` and `npu` are registered reserved names, with no accelerator cases or CI lanes added this quarter. SKUs and `cards_n` are not registered yet. Real-hardware lanes need owners, environments and credential arrangements; introduce platforms and SKUs through a shared helper when needed, without requiring those lanes to run this quarter.
 
 L1 包含单元、静态与构建；L2 是模型替身浏览器 E2E；L3 是 flake 分诊与扩展覆盖；L4 是生产构建、性能与输出；L5 是后续稳定性与恢复。它们表示覆盖范围，不等于目录、Python CI 层或执行阶段。切换前保留的 main HEAD 复核和 gate-parity 属于过渡执行，不是未来 nightly 永久重复门槛的要求。
 

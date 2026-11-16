@@ -11,6 +11,10 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, ver
 from opendirector.application.creation_canvas import asset_ref
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def layered_image(project):
     store, pid, session = project

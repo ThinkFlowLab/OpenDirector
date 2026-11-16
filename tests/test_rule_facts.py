@@ -14,6 +14,9 @@ from opendirector.domain.rule_facts import (
 )
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_timeline_contract_limits_are_published_as_shared_facts():
     from opendirector.domain.creation.editors import TimelineData, TimelineTextOverlay
     facts = facts_payload()

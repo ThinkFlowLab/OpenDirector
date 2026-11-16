@@ -28,6 +28,9 @@ from opendirector.integrations.providers import GenerationProviders
 from generation_helpers import command, new_project, prepared, settled
 from test_creation_canvas_service import send, ver
 
+
+pytestmark = pytest.mark.cpu
+
 SECRET = 'synthetic-bigmodel-video-secret'
 URL = 'https://cdn.test/video.mp4?signature=private-result'
 CONFIG = dict(kind='video', modelId='cogvideox-3', protocol='bigmodel_video',

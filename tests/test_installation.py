@@ -1,6 +1,10 @@
 """Installed resources and writable project storage have distinct roots."""
 from opendirector import installation
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def test_wheel_defaults_to_user_workspace_not_package(monkeypatch, tmp_path):
     monkeypatch.delenv('OPENDIRECTOR_ROOT', raising=False)

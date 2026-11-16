@@ -53,9 +53,9 @@ Budgets measure stage wall time, not the sum of parallel job limits, and never j
 
 ### 过渡与必需检查 / Transition and required checks
 
-当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，但机型轴、安全扫描、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层与机型 mark；安全扫描、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
 
-Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered; hardware tagging, security scanning, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer and hardware-platform marks are registered; security scanning, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
 
 - 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
 - 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
@@ -98,9 +98,13 @@ The range command checks committed changes from the merge base to HEAD, excludin
 
 Checks cover YAML/JSON/TOML and Python syntax, conflict markers, Python debug statements, file endings, mixed line endings, trailing whitespace and GitHub Actions workflow syntax. Markdown hard line breaks are preserved. actionlint disables optional shellcheck/pyflakes integrations to avoid extra platform toolchains. GPU/CUDA, Buildkite, model-specific checks, commit sign-off rewriting and repository-wide typing/style migrations are excluded.
 
-本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。PR 与 main push 的 Release checks 在独立 static job 中安装 `requirements-static.txt` 并执行同一配置。PR 检查 base 到测试用合并提交的差异，push 检查 before 到 HEAD 的差异；只有需要范围比较的 static checkout 拉取完整历史，其他 job 保持浅克隆。手动或首次 push 的全仓审计无需完整历史。
+本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。[`pre-commit.yml`](../../.github/workflows/pre-commit.yml) 独立维护静态检查，可通过 `workflow_dispatch` 单独运行，也通过 `workflow_call` 提供给 Release checks 的 static job。PR 与 main push 由现有 CI 调用一次，不另设重复事件触发；static 成功后才启动重检查。工作流安装 `requirements-static.txt` 并执行同一本地配置，输出范围判定供下游使用。PR 检查 base 到测试用合并提交的差异，push 检查 before 到 HEAD 的差异；只有需要范围比较的 static checkout 拉取完整历史，其他 job 保持浅克隆。手动或首次 push 的全仓审计无需完整历史。
 
-Local hooks can be absent or bypassed. PR and main Release checks run the same configuration in a separate static job. PRs compare base to tested merge HEAD; pushes compare before to HEAD. Only the static checkout needing a range comparison fetches full history; other jobs use shallow checkouts. Manual/initial-push full-file audits do not need full history.
+Local hooks can be absent or bypassed. [`pre-commit.yml`](../../.github/workflows/pre-commit.yml) owns static checks independently, supports standalone `workflow_dispatch`, and exposes `workflow_call` for the Release checks static job. Existing CI calls it once on PRs and main pushes, without duplicate event triggers; heavy checks wait for static success. It installs `requirements-static.txt`, runs the same local configuration and returns scope outputs to downstream jobs. PRs compare base to tested merge HEAD; pushes compare before to HEAD. Only the static checkout needing a range comparison fetches full history; other jobs use shallow checkouts. Manual/initial-push full-file audits do not need full history.
+
+提交前脚本集中在 `scripts/pre-commit/`：`check_test_marks.py` 执行全语言显式标记检查，`test-marks.ts` 与 `check-test-marks.mjs` 提供 Node 侧共享分类及检查入口，`select_checks.py` 在静态检查通过后判定重检查范围。`scripts/ci/check_test_layers.py` 仍负责测试收集/执行报告审计，不属于提交前静态检查；汇总回执也留在 `scripts/ci/`。移动脚本不改变原有 mark、lane、必需汇总名称、失败处理或 Nightly 的完整门槛。
+
+Pre-commit tooling lives in `scripts/pre-commit/`: `check_test_marks.py` checks explicit classifications across languages; `test-marks.ts` and `check-test-marks.mjs` provide the shared Node classification/check entry; `select_checks.py` selects the heavy-check scope after static success. `scripts/ci/check_test_layers.py` remains a post-collection/execution report audit, while receipt aggregation also stays in `scripts/ci/`. Moving scripts changes no marks, lanes, required aggregate names, failure behavior or Nightly full gate.
 
 静态通过后，范围检查仅对 PR 比较 base 与测试用合并 HEAD 的 merge-base 差异，保留整个 PR 的变更。只有非空差异全部属于根目录 `README.md`、`README.zh-CN.md`、`CONTRIBUTING.md`、`CHANGELOG.md`，或 `docs/` 内的 Markdown、PNG/JPEG/GIF/WebP，才跳过 Python、前端/构建/wheel 和全部 browser matrix。重命名同时检查旧、新路径；文档目录内的代码/配置、AGENTS/skill、工作流、测试、混合变更、空差异或比较失败都跑完整门禁。分类不会访问 PR API，路径使用 NUL 分隔，含空格或中文不会截断。
 
@@ -118,7 +122,79 @@ The final `checks` aggregate preserves its required-check name and always runs. 
 
 The reusable workflow's `static-checks` defaults to false and is enabled by `ci.yml`; nightly does not duplicate static checks. CI never commits automatic fixes; hook edits remain failures. The PR stage budget is 30 minutes for now. Static has 10 minutes, Python/frontend/each browser job 30 minutes, and the aggregate 5 minutes. These remain per-job limits, not a summed or enforced workflow-wide deadline; improve end-to-end time using actual measurements.
 
+## 跨语言测试标记 / Cross-language test marks
+
+Python、TypeScript 单元和 JavaScript 浏览器测试共用两条分类轴：CI 层为 `ready`、`merge`、`nightly`，机型为 `cpu` 与预留的 `cuda`、`rocm`、`xpu`、`npu`。每个分类单元各选一个层级与机型。`cpu` 表示不需要本地加速器，不表示快速或默认进入 PR；保留环境能力检查与真实服务授权。
+
+Python, TypeScript units and JavaScript browser tests share two independent axes: CI layer (`ready`, `merge`, `nightly`) and hardware (`cpu`, with reserved `cuda`, `rocm`, `xpu`, `npu`). Each classification unit has one layer and platform. `cpu` means no local accelerator is required, not that a test is fast or belongs on every PR. Capability checks and real-service authorization still apply.
+
+| 类型 / Kind | 标记所有者 / Mark owner | 粒度 / Granularity |
+| --- | --- | --- |
+| Python | 显式 pytest markers，由 `scripts/pre-commit/check_test_marks.py` 静态检查 / Explicit pytest markers, statically checked | 模块、类、函数或参数 / Module, class, function or parameter |
+| TypeScript 单元 / Units | [`tests/frontend-manifest.json`](../../tests/frontend-manifest.json) | 测试文件；同文件硬件或层级不同时先拆文件 / Test file; split files when requirements differ |
+| JavaScript 浏览器 / Browser | [`tests/browser/manifest.json`](../../tests/browser/manifest.json) 的 `layer`、`hardware` / `layer` and `hardware` fields | 浏览器旅程脚本 / Journey script |
+
+前端清单当前显式登记原有根目录单元测试为 `ready + cpu`，Node 原生 `test`、hooks、参数化与 skip 写法不变。默认 `npm test` 仍运行全部登记文件，不按 mark 缩减；缺失、过时、重复或越界路径登记会失败，避免静默丢失文件。新增文件与清单一起提交。清单条目必须显式声明 `layer` 和 `hardware`；缺失或未知值报错，不自动补全。
+
+The frontend catalog explicitly registers existing root-level unit files as `ready + cpu`, retaining native Node tests, hooks, parameterization and skips. Default `npm test` still runs every registered file without mark filtering. Missing, stale, duplicate or unsafe registrations fail rather than silently dropping files; register new files in the same change. Entries must explicitly declare `layer` and `hardware`; missing or unknown values fail without automatic defaults.
+
+浏览器条目仍保留 `lanes`、`fixture`、`previewSafe` 和 `args` 等环境信息，helper 不带测试标记。含 gate 的旅程标记为 `ready`，其余可执行旅程标记为 `nightly`，全部为 `cpu`；manual 仍须手动明确调用，标为 nightly 不会自动加入 CI。跨 lane 复用脚本仍可在当前工作流重复执行，标记本身不代表已完成 Nightly 去重。外部 gate 入口 `scripts/verify_creation_browser.mjs` 在 `externalScripts` 中登记。
+
+Browser entries retain environment metadata such as `lanes`, `fixture`, `previewSafe` and `args`; helpers have no test marks. Gate journeys are `ready`, other executable journeys are `nightly`, and all are `cpu`. Manual journeys still require explicit manual invocation; a nightly label does not add them to CI. Existing workflows may still reuse a script across lanes: labels do not establish nightly deduplication. The external gate entry `scripts/verify_creation_browser.mjs` is registered under `externalScripts`.
+
+```sh
+# All unit files, unchanged default / 全量单元，默认范围不变
+npm test
+# Explicit CPU selections / 显式 CPU 筛选
+npm run test:ready
+npm run test:merge   # ready + merge
+npm run test:nightly
+# Inspect without importing test bodies / 仅查看，不导入测试体
+npm test -- --layer ready,merge --hardware cpu --list
+npm run test:browser -- --layer ready --hardware cpu --list
+npm run list:browser-tests -- --layer nightly --hardware cpu --lane extendedFixture
+# Validate both catalogs / 校验两份清单
+npm run check:test-marks
+npm run check:browser-manifest
+```
+
+`--layer` 与 `--hardware` 各支持逗号分隔的并集，两条轴之间取交集；浏览器清单查询还支持 `--lane`。`--list` 和 `list:browser-tests` 只输出 JSON，不启动测试、浏览器或服务。执行时无匹配项则失败；列表查询允许空数组。当前没有前端 nightly 文件，因此对应执行命令会明确失败，不把未执行报告为成功。Node 原生选项可通过 `npm test -- --test-name-pattern=...` 继续传递。
+
+`--layer` and `--hardware` accept comma-separated unions, intersected across axes; browser inventory queries also accept `--lane`. `--list` and `list:browser-tests` emit JSON without starting tests, browsers or services. Execution fails on an empty selection; inventory queries may return an empty array. There are currently no frontend nightly files, so that execution command fails explicitly rather than reporting unexecuted tests as success. Native Node options remain available, for example `npm test -- --test-name-pattern=...`.
+
+`test:browser` 保留原来的 20 项普通 gate 流程及各自参数、环境和失败后继续的行为，可按标记筛选；voice 与 assistant fixture 阶段仍由现有工作流单独运行。其他 lane 先用 `list:browser-tests` 筛选，再由原有执行阶段准备正确的夹具、生产构建或性能环境。此入口不会将不同服务环境的所有旅程混在一次运行中，也不自动开启 manual 或真实服务。`check:browser-manifest` 同时检查两类标记，因此现有 CI 能发现清单错误；本次不修改工作流层级筛选或开启加速器车道。
+
+`test:browser` preserves the original 20 regular gate workflows, their arguments/environment and continue-after-failure behavior, with optional mark filtering. Voice and assistant-fixture phases remain separate workflow steps. Query other lanes with `list:browser-tests`, then let their existing execution phases prepare the correct fixture, production or performance environment. This runner does not combine incompatible service environments or automatically enable manual/real-service checks. `check:browser-manifest` validates both mark catalogs, so existing CI detects registration errors. Workflow layer selection and accelerator lanes are unchanged.
+
 ## Python 分层与迁移 / Python layers and transition
+
+### 机型标记 / Hardware-platform marks
+
+机型与 CI 层相互独立：`cpu` 表示测试不需要本地加速器，不表示 `ready`，也不替代 ffmpeg/POSIX 能力门禁或真实服务的环境变量开关。现有 Python 测试模块使用 `pytestmark = pytest.mark.cpu`，已有层级或 skip 标记时合并为列表；新用例可直接使用 `@pytest.mark.cpu`。同一模块的硬件需求分化时，将机型标记移到类、函数或参数上，避免从模块继承错误的 `cpu`。
+
+Hardware platform is independent of CI layer: `cpu` means no local accelerator is required, not `ready`, and does not replace capability skips or real-service environment gates. Existing Python test modules use `pytestmark = pytest.mark.cpu`, combined in a list with existing layer/skip marks. New cases may use `@pytest.mark.cpu` directly. If a module gains different hardware requirements, move platform marks to classes, functions or parameters so accelerator cases do not inherit `cpu`.
+
+pre-commit 的 `check-test-marks` hook 调用 [`scripts/pre-commit/check_test_marks.py`](../../scripts/pre-commit/check_test_marks.py)，只用 Python 标准库解析源码与 JSON，不导入测试、应用或模型依赖。每个 Python 用例必须显式声明或继承唯一机型；模块、类、函数及字面量 `pytest.param` 标记合并检查，缺失、未知或冲突均失败。动态参数矩阵应在模块、类或函数声明共同机型。Python 缺少 CI 层 mark 仍按原有 ready 迁移规则处理，但不允许冲突层级。前端及浏览器清单必须显式声明两条轴，helper 不带测试标记。
+
+The pre-commit `check-test-marks` hook runs [`scripts/pre-commit/check_test_marks.py`](../../scripts/pre-commit/check_test_marks.py), parsing source and JSON with the Python standard library, without importing tests, the application or model dependencies. Every Python test must explicitly declare or inherit exactly one platform. Module, class, function and literal `pytest.param` marks are checked together; missing, unknown or conflicting marks fail. Declare a common platform on the module, class or function for dynamic matrices. Missing Python CI layers retain the existing ready migration rule, but conflicting layers fail. Frontend and browser catalogs require both axes explicitly; helpers have no test marks.
+
+检查覆盖整个测试清单，不只看本次文件；变更测试、清单、标记注册或检查器时触发。CI 的静态门禁执行相同 pre-commit 配置，因此绕过本地 hook 后仍会失败。运行时不补标、不修改测试；漏标用例不会自动进入 `-m cpu`。可以单独运行 `python scripts/pre-commit/check_test_marks.py` 或 `python -m pre_commit run check-test-marks --all-files`。
+
+The check covers the complete test inventory and triggers on test, catalog, registry or checker changes. CI runs the same pre-commit configuration, catching local-hook bypasses. Runtime collection never adds marks or rewrites tests; missing platform marks do not automatically enter `-m cpu`. Run `python scripts/pre-commit/check_test_marks.py` or `python -m pre_commit run check-test-marks --all-files` directly.
+
+`pyproject.toml` 注册 `cpu` 及预留的 `cuda`、`rocm`、`xpu`、`npu`，本季度不新增加速器测试或车道。SKU 与 `cards_n` 等到真实硬件套件存在后再通过共享 `hardware_test` 类 helper 引入。当前工作流的 `-m` 表达式、watchlist、环境跳过和独立 CLI 回归均不变；以下是本地验证命令，不是 CI 分层切换：
+
+`pyproject.toml` registers `cpu` and reserves `cuda`, `rocm`, `xpu` and `npu`; no accelerator tests or lanes are added this quarter. Introduce SKUs and `cards_n` through a shared helper such as `hardware_test` only when real hardware suites exist. Workflow `-m` expressions, watchlists, environment skips and dedicated CLI regression remain unchanged. These are local verification commands, not a CI cutover:
+
+```sh
+python -m pytest tests --collect-only -qq --strict-markers
+python -m pytest tests --collect-only -qq --strict-markers -m cpu
+python -m pytest tests/test_ci_hardware.py tests/test_ci_profile.py tests/test_ci_layers.py -q
+```
+
+前两条命令应保留相同的现有用例身份与数量；收集成功不代表用例已执行，也不改变真实服务授权。回归检查用临时合成用例仅验证收集与筛选，不访问加速器或服务。
+
+The first two commands must retain the same existing case identities and count. Collection is not execution or real-service authorization. Regression checks use temporary synthetic cases only for collection and selection, without accelerator or service access.
 
 ### 耗时证据 / Timing evidence
 

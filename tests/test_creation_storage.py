@@ -20,6 +20,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects, read_json
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def unrecycled(monkeypatch):
     """Delete through the filesystem so tests never touch the machine recycle bin."""

@@ -33,6 +33,9 @@ from test_creation_generation_service import anyio_backend
 from test_creation_parameters import png
 
 
+pytestmark = pytest.mark.cpu
+
+
 SECRET = 'moss-private-test-key'
 VOICE = '5c8cd24a-dfd6-4fd8-8f47-93e9aec17328'
 OTHER_VOICE = 'f0827524-a19e-4e1c-859d-afc9fd17133e'

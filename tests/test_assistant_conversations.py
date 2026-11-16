@@ -12,6 +12,9 @@ from opendirector_api.main import create_app
 from opendirector_api import agent
 
 
+pytestmark = pytest.mark.cpu
+
+
 def frames(response):
     return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
 

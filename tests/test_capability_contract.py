@@ -48,6 +48,9 @@ from opendirector.domain.capability_contract import (ABSENT, AVAILABLE, BY_PAIR,
                                                      classified_capabilities, declarations, required_roles_for,
                                                      resolve, role_verdict, route_path)
 
+
+pytestmark = pytest.mark.cpu
+
 FIXTURES = Path(__file__).parent / 'fixtures' / 'omni-capabilities'
 CONTRACT_DOC = Path(__file__).resolve().parents[1] / 'docs' / 'architecture' / 'capability-contract.md'
 CONTRACT_RULE = FIXTURES / 'contract-rule.txt'

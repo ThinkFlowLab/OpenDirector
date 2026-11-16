@@ -14,6 +14,9 @@ from test_kling_video import config as kling_config, task as kling_task
 from test_openai_images import CONFIG, png
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def resolve(monkeypatch):
     calls = []

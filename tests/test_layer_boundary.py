@@ -4,6 +4,10 @@ from opendirector.ports.dispatch import command_dispatcher
 from opendirector.ports.gateway import gateway
 from opendirector.wiring import InfrastructureGateway, configure_runtime
 
+import pytest
+
+pytestmark = pytest.mark.cpu
+
 
 def test_runtime_binding_uses_application_dispatch():
     ports = configure_runtime()

@@ -23,6 +23,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def command(project_id, kind='project.create', **payload):
     return parse_command(dict(projectId=project_id, commandId=uuid4(), type=kind, payload=payload))
 

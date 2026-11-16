@@ -22,6 +22,9 @@ from opendirector.integrations.generation_errors import provider_failure
 from test_creation_generation_service import anyio_backend  # noqa: F401
 
 
+pytestmark = pytest.mark.cpu
+
+
 CHAT = {"modelId": "glm-5.3", "url": "https://open.bigmodel.cn/api/paas/v4"}
 
 

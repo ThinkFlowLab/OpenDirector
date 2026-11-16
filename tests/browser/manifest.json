@@ -4,24 +4,32 @@
       "file": "heif_upload_recovery.mjs",
       "lanes": ["extended", "production"],
       "previewSafe": true,
-      "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
+      "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "heif_import.mjs",
       "lanes": ["extended"],
-      "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."
+      "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "kling_video.mjs",
       "lanes": ["extendedFixture"],
-      "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
+      "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "assistant_activity.mjs",
       "lanes": [
         "gate"
       ],
-      "note": "Mounts /tests/browser/assistant_activity_fixture.tsx through Vite. vite preview cannot serve that module, so this script is not in the production lane."
+      "note": "Mounts /tests/browser/assistant_activity_fixture.tsx through Vite. vite preview cannot serve that module, so this script is not in the production lane.",
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "assistant_auxiliary_panels.mjs",
@@ -30,7 +38,9 @@
       "lanes": [
         "gate"
       ],
-      "note": "Controls the model-stub gate; runs on its own fixture services."
+      "note": "Controls the model-stub gate; runs on its own fixture services.",
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "assistant_run_navigation.mjs",
@@ -40,7 +50,9 @@
         "extendedFixture",
         "production"
       ],
-      "note": "Needs --assistant-fixture services; holds the fixture gate."
+      "note": "Needs --assistant-fixture services; holds the fixture gate.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "assistant_sessions.mjs",
@@ -50,27 +62,35 @@
         "extendedFixture",
         "production"
       ],
-      "note": "Needs --assistant-fixture services."
+      "note": "Needs --assistant-fixture services.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_crop.mjs",
       "previewSafe": true,
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_generation_reference.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_keyboard.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_layers.mjs",
@@ -79,91 +99,119 @@
       ],
       "args": [
         "--generated"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_node_titles.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_notifications.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_reference_sources.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_selection_history.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_switch.mjs",
       "previewSafe": true,
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "canvas_wheel.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "composer_duration.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "composer_expansion.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "context_menu_dismissal.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "control_theme.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "created_node_focus.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "creation_ripple.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "creation_asset_list.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "creation_history.mjs",
@@ -171,13 +219,17 @@
       "lanes": [
         "extended",
         "production"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "creation_journey.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "cross_canvas_paste.mjs",
@@ -185,7 +237,9 @@
       "lanes": [
         "gate",
         "production"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "default_entry.mjs",
@@ -193,26 +247,34 @@
       "lanes": [
         "extended",
         "production"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "double_shift_chat.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "edge_selection.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "editor_save.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "engine.mjs",
@@ -224,27 +286,35 @@
       "lanes": [
         "extended",
         "production"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "generation_feedback.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "generation_parameters.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "hidden_references.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "host.mjs",
@@ -256,7 +326,9 @@
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "layerApply.mjs",
@@ -267,7 +339,9 @@
       "file": "local_output_delivery.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "locale.mjs",
@@ -275,27 +349,35 @@
       "lanes": [
         "gate",
         "production"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "minimax_h3.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "model_picker.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "moss_provider.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "moss_speech.mjs",
@@ -306,39 +388,51 @@
       "file": "mp4_export.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "mp4_render_probe.mjs",
       "lanes": [
         "perf"
       ],
-      "note": "Writes the rendered MP4 to disk and verifies it with ffprobe."
+      "note": "Writes the rendered MP4 to disk and verifies it with ffprobe.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "multi_selection_references.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "new_image_node_outputs.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "node_connections.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "node_versions.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "paste_undo.mjs",
@@ -346,7 +440,9 @@
       "lanes": [
         "extended",
         "production"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "project_list_overflow.mjs",
@@ -354,21 +450,27 @@
       "lanes": [
         "gate",
         "production"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "session_lease.mjs",
       "lanes": [
         "gate"
       ],
-      "note": "Reload after a lost lease release reopens at once; a second window is refused with project_open_elsewhere (#277)."
+      "note": "Reload after a lost lease release reopens at once; a second window is refused with project_open_elsewhere (#277).",
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "project_title_enter.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "provider_settings.mjs",
@@ -376,33 +478,43 @@
       "lanes": [
         "gate",
         "production"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "reference_drag_performance.mjs",
       "lanes": [
         "perf"
       ],
-      "note": "Diagnostic CPU profiles to /tmp; no pass/fail thresholds."
+      "note": "Diagnostic CPU profiles to /tmp; no pass/fail thresholds.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "reference_parity.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "reference_picker.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "reference_reconnect.mjs",
       "lanes": [
         "gate"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "structured_editors.mjs",
@@ -411,63 +523,83 @@
       ],
       "args": [
         "--publish"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "subject_library.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "subject_node_editing.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "subject_node_media.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_text_archive.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_text_coverage.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_text_desktop.mjs",
       "lanes": [
         "manual"
       ],
-      "note": "Requires a visible desktop Chrome session and platform memory sampling; run as native platform acceptance."
+      "note": "Requires a visible desktop Chrome session and platform memory sampling; run as native platform acceptance.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_text_editing.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_text_installed.mjs",
       "lanes": [
         "manual"
       ],
-      "note": "Requires OPENDIRECTOR_INSTALLED_PYTHON from a fresh platform wheel installation."
+      "note": "Requires OPENDIRECTOR_INSTALLED_PYTHON from a fresh platform wheel installation.",
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_text_render.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "timeline_workflow.mjs",
@@ -476,13 +608,17 @@
       ],
       "args": [
         "--full-creation"
-      ]
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "tool_drafts.mjs",
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "voice_library.mjs",
@@ -490,19 +626,33 @@
       "lanes": [
         "gate"
       ],
-      "note": "Runs with voice_library_server.py in the Release checks voice library phase."
+      "note": "Runs with voice_library_server.py in the Release checks voice library phase.",
+      "layer": "ready",
+      "hardware": "cpu"
     },
     {
       "file": "zhipu_provider.mjs",
       "previewSafe": true,
       "lanes": [
         "extended"
-      ]
+      ],
+      "layer": "nightly",
+      "hardware": "cpu"
     },
     {
       "file": "zhipu_real.mjs",
       "helper": true,
       "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
+    }
+  ],
+  "externalScripts": [
+    {
+      "file": "scripts/verify_creation_browser.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "layer": "ready",
+      "hardware": "cpu"
     }
   ]
 }

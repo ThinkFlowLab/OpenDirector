@@ -12,6 +12,9 @@ from opendirector.domain.creation.schema import CreationContracts
 from opendirector.infrastructure.model_configs import ModelConfigs
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_all_registered_commands_have_explicit_metadata():
     for name, model in COMMAND_MODELS.items():
         description = model.__dict__.get('__doc__')

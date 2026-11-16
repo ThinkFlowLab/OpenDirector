@@ -30,7 +30,7 @@ from opendirector_api.main import create_app
 
 # Includes subprocess/gateway integration; retain the dedicated mocked-model
 # bundled CLI regression in Release checks independently of layer selection.
-pytestmark = pytest.mark.merge
+pytestmark = [pytest.mark.merge, pytest.mark.cpu]
 
 FAKE = '''import json, os, subprocess, sys
 from pathlib import Path

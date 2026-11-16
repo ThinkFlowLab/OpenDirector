@@ -20,6 +20,9 @@ from opendirector.domain.creation.commands import parse_command
 from test_creation_assets import import_asset, ref
 from test_creation_canvas_service import project, media, send, ver
 
+
+pytestmark = pytest.mark.cpu
+
 URL = 'https://api.minimax.cn/v1'
 RESULT = 'https://93.184.215.14/output.png'
 MODELS = ('MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed')

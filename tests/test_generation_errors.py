@@ -16,6 +16,9 @@ from opendirector.integrations.chat_completions import ChatCompletions
 from opendirector.integrations.volcengine import VolcengineGeneration
 
 
+pytestmark = pytest.mark.cpu
+
+
 SECRET = 'private-key-never-record'
 SIGNED_URL = 'https://cdn.test/output?signature=secret-signature'
 

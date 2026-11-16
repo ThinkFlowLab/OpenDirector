@@ -10,6 +10,9 @@ from opendirector.agent.tools import AgentTools, tools
 from opendirector.domain.projects import ProjectError
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_voice_list_exposes_page_options():
     function = next(tool['function'] for tool in tools() if tool['function']['name'] == 'voice_list')
     parameters = function['parameters']

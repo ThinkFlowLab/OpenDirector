@@ -1,0 +1,635 @@
+{
+  "schemaVersion": 1,
+  "tests": [
+    {
+      "file": "agentPreferences.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "archiveGenerationImport.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "assistantActivity.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "assistantCitations.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "assistantReadiness.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "assistantResume.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "assistantToolText.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "autoLabels.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "backendRules.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "backendWorkspace.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "bannerSnapshot.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "browserHost.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasArchive.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasAssembly.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasCapabilities.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasComposerPopover.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasDomains.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasGenerationResults.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasHistory.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasInteraction.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasLinkedResults.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasMediaStorage.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasModel.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasNodeTitles.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasOperations.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasPendingResults.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasPointerGesture.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasReferenceMigration.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasRemaining.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasSelectionPresentation.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasSnapping.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasStage.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasStorage.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasTimeline.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasTimelineExport.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasTimelineLibrary.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "canvasWorkspaceEntry.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "chatReferenceContent.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "chatReferenceDOM.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "chatRuntimes.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "claudeTrace.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "clipboardMedia.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "codexTrace.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "conversationEmpty.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationClient.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationContracts.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationEditorSession.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationJobs.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationLayers.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationParameters.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "creationRipples.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "deepseekTrace.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "doubleShift.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "downloadAssets.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "dragGeometry.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "edgeSelection.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "editorMedia.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "exampleDocument.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "frameReferences.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "generationActivity.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "generationCatalog.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "generationFailureText.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "generationRecovery.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "i18n.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "imageActionGeometry.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "imageCrop.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "imageSelection.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "issueLabels.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "layerDocument.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "libraryCache.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "libraryNaming.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "localMedia.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "locale.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "mediaPublication.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "modelBrands.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "modelResolution.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "node-action-workflow.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "nodeReferencePorts.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "nodeSearch.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "nodeStats.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "nodeTitle.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "nodeVersionReferences.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "pendingCanvasReferences.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "projectAssets.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "projectManagement.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "promptMentions.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "providerPresets.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "referenceFingerprint.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "referenceMentions.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "referenceParity.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "referenceSystem.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "requestCache.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "reviewerRouting.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "ruleFacts.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "rulesDerivation.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "sameJsonValue.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "saveQueue.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "selectionBarPlacement.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "selectionReferences.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "sessionClose.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "sessionLease.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "softwareAac.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "storageRequest.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "subjectLibraryImport.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "subjectMedia.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "subjectReferences.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "testMarks.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "textGeneration.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "timelineExchange.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "timelineFontBudget.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "timelinePackages.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "timelinePublication.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "timelineText.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "timelineTextLayout.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "toolCatalog.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "toolDeliveries.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "toolHistoryReads.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "toolReasonText.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "toolTaskText.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "toolTasks.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "traceCategory.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "videoActionRuntime.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "videoCapabilities.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "videoPreview.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "videoResolution.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
+      "file": "voiceLibrary.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    }
+  ]
+}

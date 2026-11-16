@@ -18,6 +18,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { browserCatalog, unitCatalog } from "./pre-commit/test-marks.ts";
+
+// Existing required CI validation also checks both classification inventories.
+browserCatalog();
+unitCatalog();
 
 const browserDir = "tests/browser";
 const manifestPath = path.join(browserDir, "manifest.json");
