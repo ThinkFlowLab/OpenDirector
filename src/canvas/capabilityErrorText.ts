@@ -67,7 +67,14 @@ export function capabilityErrorText(
 ): string | undefined {
   const key = (name: string) => `errors.capability.${name}` as MessageKey;
   if (EXACT[text]) return t(key(EXACT[text]));
-  let match = /^最多支持 (\d+) 张图片，当前为 (\d+) 张。$/.exec(text);
+  let match = /^(.+)输入数量不足：至少需要 (\d+)，当前请求提供 (\d+)。$/.exec(text);
+  if (match && LABELS[match[1]!])
+    return t(key("minimumInputCount"), {
+      input: t(key(`label.${LABELS[match[1]!]}`)),
+      limit: match[2]!,
+      current: match[3]!,
+    });
+  match = /^最多支持 (\d+) 张图片，当前为 (\d+) 张。$/.exec(text);
   if (match)
     return t(key("imageCount"), { limit: match[1]!, current: match[2]! });
   match = /^该工具需要 (\d+) 张来源图片。$/.exec(text);

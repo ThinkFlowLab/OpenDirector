@@ -931,6 +931,7 @@ export const errors = {
   "errors.capability.imageCount": "Up to {limit} images; {current} added.",
   "errors.capability.sourceCount": "This tool requires {count} source images.",
   "errors.capability.inputCount": "Up to {limit} {input} inputs; {current} added.",
+  "errors.capability.minimumInputCount": "Not enough inputs ({input}): at least {limit} required; this request provides {current}.",
   "errors.capability.inputUnsupported": "This model does not accept {label}.",
   "errors.capability.unsupported": "This model does not support {label}.",
   "errors.capability.disabled": "The service has not enabled {label}.",

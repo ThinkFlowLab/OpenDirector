@@ -5,6 +5,7 @@ import pytest
 
 from opendirector.application.model_availability import tool_request
 from opendirector.domain import capability_contract as contract
+from opendirector.domain.projects import ProjectError
 from opendirector.integrations.model_adapters import capabilities_of
 from test_model_availability import document, service
 
@@ -94,3 +95,55 @@ def test_deployment_summary_does_not_grant_a_different_selected_model(service):
     assert contract.resolve(raw)['capabilities']['image.edit'] == 'available'
     availability.prepare(private)
     assert availability.decision(private, tool_request(private, 'image.edit'))['status'] == 'unavailable'
+
+
+@pytest.mark.parametrize('capability,scenario,status,reason', [
+    ('video.first_frame', 'minimum_two', 'unavailable', 'required_inputs_missing'),
+    ('video.first_frame', 'maximum_zero', 'unavailable', 'input_count_exceeded'),
+    ('video.first_frame', 'complete', 'available', None),
+    ('video.edit', 'complete', 'available', None),
+    ('video.edit', 'split_routes', 'unknown', 'input_contract_unknown'),
+    ('video.first_frame', 'missing_roles', 'unknown', 'input_contract_unknown'),
+])
+@pytest.mark.parametrize('actual', [False, True])
+def test_catalogue_and_submission_check_counts_on_the_actual_route(
+        service, capability, scenario, status, reason, actual):
+    configs, _, state, availability = service
+    saved = configs.save('video', 'http://models.test/proxy/v1', 'MiniMaxAI/MiniMax-H3', '',
+                         protocol='vllm_omni', connection_type='self_hosted')
+    private = configs.resolve(saved['id'], 'video')
+    request = tool_request(private, capability, actual=actual)
+    raw = document(request.operation, request.profile, request.path, 'video',
+                   model=saved['modelId'], now=state['clock'])
+    profile = raw['models'][0]['operations'][request.operation]['profiles'][0]
+    roles = {role: {'support': 'supported'} for role in request.required_roles}
+    route = profile['routes'][0]
+    route.update(exposure='enabled', request={'inputs': roles})
+    if scenario == 'minimum_two':
+        roles['first_frame']['min_count'] = 2
+    elif scenario == 'maximum_zero':
+        roles['first_frame']['max_count'] = 0
+    elif scenario == 'missing_roles':
+        roles.clear()
+    elif scenario == 'split_routes':
+        second = deepcopy(route)
+        second['path'] = '/proxy/v1/videos/sync'
+        del second['request']['inputs']['source_video']
+        del roles['video_noise_mask'], roles['audio_noise_mask']
+        profile['routes'].append(second)
+    state['document'] = raw
+    availability.prepare(private)
+    decision = availability.decision(private, request)
+    assert decision['status'] == status
+    if status != 'available':
+        assert decision['reasonCode'] == reason
+    if status == 'unavailable':
+        with pytest.raises(ProjectError) as error:
+            availability.require(private, request)
+        assert error.value.code == 'capability_unavailable'
+    else:
+        availability.require(private, request)
+    # The same negative facts cannot continue rejecting after their expiry.
+    state['clock'] += 30
+    assert availability.decision(private, request)['status'] == 'unknown'
+    availability.require(private, request)

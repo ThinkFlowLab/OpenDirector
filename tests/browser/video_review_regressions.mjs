@@ -109,7 +109,9 @@ function declaration() {
                 "supported",
                 {
                   image: { support: "supported", min_count: 1, max_count: 1 },
-                  first_frame: { support: "supported", max_count: 1 },
+                  first_frame: mode === "poster_minimum"
+                    ? { support: "supported", min_count: 2 }
+                    : { support: "supported", max_count: 1 },
                 },
                 {
                   num_frames: {
@@ -353,6 +355,7 @@ try {
       "poster source",
     );
     const source = uploaded.canvasItems.find((i) => i.kind === "image");
+    const sourceAsset = uploaded.assets.find((a) => a.kind === "image");
     await page
       .getByText(en ? "Saved on this device" : "已保存到本机", { exact: true })
       .waitFor();
@@ -393,8 +396,30 @@ try {
       await panel.locator("textarea").inputValue(),
       "Animate the light",
     );
+    mode = "poster_minimum";
+    await refresh();
+    await page.reload();
+    await openPoster();
+    const minimumMessage = en
+      ? "Not enough inputs (a first-frame image): at least 2 required; this request provides 1."
+      : "首帧图片输入数量不足：至少需要 2，当前请求提供 1。";
+    assert.ok((await panel.locator(".cw-node-task-note").innerText()).includes(minimumMessage + " "));
+    assert.equal(await submit.isDisabled(), true);
+    assert.equal(await panel.locator("textarea").inputValue(), "Animate the light");
+    assert.equal((await call(path + "/tool-tasks")).tasks.length, taskCount);
+    assert.equal(posts.length, posterPosts);
+    assert.deepEqual((await call(path)).assets.find((a) => a.id === sourceAsset.id), sourceAsset);
+    if (process.env.CREATION_SCREENSHOTS) {
+      await page.screenshot({
+        path: join(process.env.CREATION_SCREENSHOTS, `minimum-${locale}.png`),
+        fullPage: true,
+      });
+    }
     mode = "open";
     await refresh();
+    await page.reload();
+    await openPoster();
+    assert.equal(await panel.locator("textarea").inputValue(), "Animate the light");
     await submit.click();
     const tasks = await until(
       () => call(path + "/tool-tasks"),
@@ -438,6 +463,9 @@ try {
       continuationUploads: 0,
       posterFrames: 124,
       posterFps: 24,
+      minimumCountMessage: minimumMessage,
+      minimumCountTasks: 0,
+      minimumCountGenerationRequests: 0,
       jobs: completed.jobs.length,
       toolTasks: tasks.tasks.length,
     });

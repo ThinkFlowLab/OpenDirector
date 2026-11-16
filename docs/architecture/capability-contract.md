@@ -133,6 +133,8 @@ The reverse lookup is the same table read backwards (`BY_CAPABILITY`, derived fr
 
 Application checks retain the selected model and exact HTTP method/path, including a configured proxy prefix. They evaluate input roles on that route's typed request constraints, alongside actual counts and parameters, rather than asking `role_verdict()` to choose among the profile's standard routes. Declaration expiry, endpoint closure and pause observations remain in the application capability service.
 
+`ModelAvailability.decision()` checks actual quantities and parameters with `constraint_failure()` before checking role support with `role_evidence()`. A tool sending one first-frame image is therefore rejected by `min_count=2` in both the tool catalogue and submission checks. A `None` result from `role_evidence()` alone is not an admission result; roles declared on other routes cannot satisfy the selected request.
+
 `image.cutout` has no independent upstream profile. The existing RGBA adapter sends an image edit with `background=transparent`, so its request uses the shared `image.edit` candidates and keeps the ordinary editing checks. The adapter's capability list still controls whether cutout is offered; an image-edit declaration alone cannot add that feature. Cached-job continuation also retains its own request description and is not assigned the `video_to_video` profile by the shared mapping.
 
 ## Fixtures and checks

@@ -541,6 +541,10 @@ The same browser workflow also covers MiniMax's mainland speech preset in both l
 
 ## 视频能力审查回归
 
+`tests/test_capability_contract_integration.py` 检查工具读取共享候选映射与必需输入角色，同时保留准确的模型、操作、接口及实际数量检查。首帧至少两张的声明必须拒绝只发送一张的工具；不同接口的角色不能组合成可用。`tests/test_cutout_capability_acceptance.py` 检查透明背景请求、输出图片和已接受任务重放。视频 HTTP 与浏览器回归另检查最低数量提示、零任务拒绝，以及限制解除后保留草稿和素材继续生成。
+
+The shared-contract integration tests exercise candidate and required-role lookups while retaining selected-model, operation, route and actual-count checks. A two-image first-frame minimum rejects a tool sending one image; roles on separate routes do not combine into availability. Cutout acceptance checks the transparent-background request, output pixels and accepted-task replay. Video HTTP and browser regressions also verify minimum-count diagnostics, rejection before task creation, and generation with preserved drafts and assets after the restriction is removed.
+
 `tests/test_continuation_availability.py` 与 `tests/continuationAvailability.test.ts` 检查续写和普通视频输入分别判断；`tests/test_endpoint_closure.py` 检查缺少模型或操作时准确接口关闭仍然有效。`tests/test_video_capability_acceptance.py` 使用实际适配器、本地 HTTP 和可解码媒体检查动态海报的 124 帧 / 24 fps、编辑蒙版、拒绝前零任务及已接受任务重放。`tests/test_omni_exported_video_capabilities.py` 消费固定版本的 Omni 完整响应，并固定原始观察时间，避免过期状态掩盖能力判断。
 
 The continuation tests keep cached-job continuation separate from uploaded video. Endpoint tests cover exact closures with absent model or operation declarations. Video acceptance tests use real adapters, loopback HTTP and decodable media to check the poster's 124-frame / 24-fps request, editing masks, rejection before acceptance, and accepted-task replay. Exported Omni response tests freeze the original observation time so expiry cannot conceal a support decision.

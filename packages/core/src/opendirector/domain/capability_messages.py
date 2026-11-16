@@ -85,6 +85,8 @@ def constraint_rejection(reason, details):
         if 'inputs' in details:
             choices = '或'.join(roles.get(role, '素材') for role in details['inputs'])
             message = f'请提供{choices}。'
+        elif 'minimum' in details and 'actual' in details:
+            message = f"{name}输入数量不足：至少需要 {details['minimum']}，当前请求提供 {details['actual']}。"
         else:
             message = f'请添加{name}。'
     else:
@@ -99,6 +101,9 @@ def constraint_rejection(reason, details):
 def english_capability_message(message):
     if message in _MESSAGES:
         return _MESSAGES[message]
+    count = re.fullmatch(r'(.+)输入数量不足：至少需要 (\d+)，当前请求提供 (\d+)。', message)
+    if count and count[1] in _INPUTS:
+        return f'Not enough inputs ({_INPUTS[count[1]]}): at least {count[2]} required; this request provides {count[3]}.'
     count = re.fullmatch(r'最多支持 (\d+) 张图片，当前为 (\d+) 张。', message)
     if count:
         return f'Up to {count[1]} images; {count[2]} added.'

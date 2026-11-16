@@ -58,7 +58,10 @@ def video_service(clip, mode):
             route['request'] = {'inputs': {
                 'image': {'support': 'supported', 'min_count': 1, 'max_count': 1},
                 'first_frame': {'support': 'supported', 'max_count': 1},
-            }, 'parameters': {'num_frames': {'type': 'integer', 'maximum': int(state['mode'].split('_')[1])}}}
+            }, 'parameters': {'num_frames': {'type': 'integer', 'maximum':
+                124 if state['mode'] == 'poster_minimum' else int(state['mode'].split('_')[1])}}}
+            if state['mode'] == 'poster_minimum':
+                route['request']['inputs']['first_frame'] = {'support': 'supported', 'min_count': 2}
         return value
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -153,6 +156,38 @@ def test_dynamic_poster_checks_124_frames_before_acceptance_and_preserves_execut
                 assert len(client.get(path).json()['tasks']) == 1
         finally:
             probe.close()
+
+
+@pytest.mark.parametrize('locale,expected', [
+    ('zh-CN', '首帧图片输入数量不足：至少需要 2，当前请求提供 1。'),
+    ('en-US', 'Not enough inputs (a first-frame image): at least 2 required; this request provides 1.'),
+], ids=['zh-CN', 'en-US'])
+def test_first_frame_minimum_rejects_before_task_or_http_generation(project, clip, locale, expected):
+    store, pid, session = project
+    with video_service(clip, 'poster_minimum') as (url, state):
+        configs = ModelConfigs(store.local.repository)
+        config = configs.save('video', url, 'MiniMaxAI/MiniMax-H3', '', connection_type='self_hosted',
+                              protocol='vllm_omni', auth_mode='none')
+        source = upload(store, pid, session, 'poster.png', png())
+        before = store.snapshot(pid)
+        probe = CapabilityProbe(transport=httpx.HTTPTransport())
+        with TestClient(create_app(store.local, capability_probe=probe), headers={
+                'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session,
+                'Accept-Language': locale}) as client:
+            client.post('/api/model-configs/availability',
+                        json={'configIds': [config['id']], 'manual': True}).raise_for_status()
+            catalog = next(t for t in client.get('/api/tools').json()['tools'] if t['id'] == 'dynamic-poster')
+            assert catalog['available'] is False and catalog['reasonCode'] == 'required_inputs_missing'
+            assert catalog['reason'] == '首帧图片输入数量不足：至少需要 2，当前请求提供 1。'
+            path = f'/api/creation/projects/{pid}/tool-tasks'
+            response = client.post(path, json={'id': str(uuid4()), 'tool': 'dynamic-poster',
+                'sourceAssetIds': [source], 'parameters': {'prompt': 'Animate the light'},
+                'modelConfigIds': {'video.first_frame': config['id']}})
+            assert response.status_code == 409, response.text
+            assert response.json() == {'code': 'capability_unavailable', 'detail': expected}
+            assert client.get(path).json()['tasks'] == [] and state['posts'] == []
+            after = store.snapshot(pid)
+            assert after.jobs == before.jobs and after.assets == before.assets
 
 
 @pytest.mark.parametrize('entry', ['service', 'http'])

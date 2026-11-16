@@ -305,7 +305,7 @@ export function NodeTaskPanel({
       <p className="cw-node-task-note">
         {runnable
           ? (errors[0] ?? t("tools.nodeTask.remoteNote"))
-          : `${toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.unavailable")}${t("tools.nodeTask.saveHint")}`}
+          : `${toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.unavailable")} ${t("tools.nodeTask.saveHint")}`}
       </p>
       <footer>
         <TooltipButton

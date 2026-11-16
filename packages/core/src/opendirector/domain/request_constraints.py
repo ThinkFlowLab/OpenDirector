@@ -10,7 +10,7 @@ INPUT_ROLES = frozenset({'text', 'image', 'video', 'audio', 'instructions', 'voi
 
 
 def role_evidence(contract, required):
-    """Required purposes must be established together on the selected route."""
+    """Check purposes on the selected route; constraint_failure checks quantities."""
     if not required:
         return None
     inputs = contract.inputs if contract is not None else {}

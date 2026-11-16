@@ -184,6 +184,14 @@ test("tools and assistant retain concrete capability and selection failures in e
     ],
     ["请提供图片或音频。", "Provide images or audio."],
     [
+      "首帧图片输入数量不足：至少需要 2，当前请求提供 1。",
+      "Not enough inputs (a first-frame image): at least 2 required; this request provides 1.",
+    ],
+    [
+      "图片输入数量不足：至少需要 2，当前请求提供 0。",
+      "Not enough inputs (images): at least 2 required; this request provides 0.",
+    ],
+    [
       "该模型不支持首帧图片输入。",
       "This model does not accept a first-frame image.",
     ],

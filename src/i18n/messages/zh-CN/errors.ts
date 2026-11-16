@@ -712,6 +712,7 @@ export const errors = {
   "errors.capability.imageCount": "最多支持 {limit} 张图片，当前为 {current} 张。",
   "errors.capability.sourceCount": "该工具需要 {count} 张来源图片。",
   "errors.capability.inputCount": "最多支持 {limit} 个{input}输入，当前为 {current} 个。",
+  "errors.capability.minimumInputCount": "{input}输入数量不足：至少需要 {limit}，当前请求提供 {current}。",
   "errors.capability.inputUnsupported": "该模型不支持{label}输入。",
   "errors.capability.unsupported": "该模型不支持{label}。",
   "errors.capability.disabled": "服务未开放{label}。",
