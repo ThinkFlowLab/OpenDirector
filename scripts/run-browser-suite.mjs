@@ -37,6 +37,7 @@ const workflows = [
   { name: "mp4 export", script: "tests/browser/mp4_export.mjs" },
   { name: "editor save", script: "tests/browser/editor_save.mjs" },
   { name: "canvas crop", script: "tests/browser/canvas_crop.mjs" },
+  { name: "canvas text Markdown", script: "tests/browser/canvas_text_markdown.mjs" },
   {
     name: "canvas layers",
     script: "tests/browser/canvas_layers.mjs",

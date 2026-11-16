@@ -128,6 +128,9 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     zoom,
   } = rt;
 
+  const textSelections = useRef<import("../TextNodeEditor").TextSelections>(new Map());
+  useEffect(() => { textSelections.current.clear(); }, [doc.id]);
+
   const clearGuides = useCallback(() => {
     flowSurface.current?.clearGuides();
   }, []);
@@ -750,7 +753,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
     bypassSnapping.current = event.metaKey || event.ctrlKey;
     if (bypassSnapping.current) clearGuides();
-    if (!ready || switchPending.current) return;
+    if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
     const el = event.target as HTMLElement;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
@@ -1178,7 +1181,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     },
     beginEdit: begin,
     endEdit: end,
-    isTextEditing: (id: string) => textEditingId === id,
+    textSelections: textSelections.current,
+    isTextEditing: (id: string) => textEditingId === id && !rt.textWindowId,
     finishTextEdit: () => {
       // Autosave is suspended while the transaction is open, so the finished
       // edit is written here instead of on a timer.

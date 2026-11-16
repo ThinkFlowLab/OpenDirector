@@ -139,6 +139,9 @@ export const canvasShell = {
   "canvas.selection.duplicate": "Duplicate",
   "canvas.selection.deleteNode": "Delete node",
 
+  "canvas.textWindow.mode": "Markdown view",
+  "canvas.textWindow.edit": "Edit source",
+  "canvas.textWindow.preview": "Preview",
   "canvas.textWindow.hint": "Edits sync to the canvas node as you type",
   "canvas.textWindow.locked": "This node is locked; viewing only",
   "canvas.textWindow.count": {

@@ -99,6 +99,7 @@ export function CanvasFlowSurface({
       }),
     [store],
   );
+  const [resizing, setResizing] = useState<{ id: string; width: number; height: number } | null>(null);
   const [preview, setPreview] = useState<Preview>(empty);
   const frame = useRef<number | null>(null);
   const session = useRef<{
@@ -117,6 +118,7 @@ export function CanvasFlowSurface({
     marquee.current = null;
     stopFrame();
     session.current = null;
+    setResizing(null);
     setPreview(empty());
     const state = store.getState();
     if (state.userSelectionRect || state.userSelectionActive) {
@@ -219,6 +221,18 @@ export function CanvasFlowSurface({
   );
   function changes(changes: NodeChange<CanvasFlowNode>[]) {
     const current = latest.current;
+    const resize = changes.find((change) => change.type === "dimensions" && change.resizing !== undefined);
+    if (resize?.type === "dimensions" && resize.dimensions &&
+      store.getState().nodeLookup.get(resize.id)?.type === "text") {
+      if (current.gesture.current.cancelled) return;
+      if (resize.resizing) {
+        setResizing({ id: resize.id, ...resize.dimensions });
+      } else {
+        setResizing(null);
+        current.props.onNodesChange?.([{ ...resize, setAttributes: true }]);
+      }
+      return;
+    }
     const ordinary: NodeChange<CanvasFlowNode>[] = [];
     let moved = false;
     for (const change of changes) {
@@ -273,7 +287,10 @@ export function CanvasFlowSurface({
   return (
     <ReactFlow<CanvasFlowNode, Edge>
       {...props}
-      nodes={projected.nodes}
+      nodes={resizing ? projected.nodes.map((node) => node.id === resizing.id ? {
+        ...node, width: resizing.width, height: resizing.height,
+        style: { ...node.style, width: resizing.width, height: resizing.height },
+      } : node) : projected.nodes}
       edges={projected.edges}
       onNodesChange={changes}
       onEdgesChange={(changes) => {
