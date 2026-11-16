@@ -13,7 +13,7 @@ from opendirector.domain.rule_facts import SERVICE_VOICE_PATTERN
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
-Protocol = Literal['openai', 'volcengine', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
+Protocol = Literal['openai', 'volcengine', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 Count = Annotated[int, Field(strict=True, ge=0)]
 
@@ -132,7 +132,7 @@ class ModelConnection(Contract):
     @model_validator(mode='after')
     def connection(self):
         allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
-                   'video': {'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
+                   'video': {'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                    'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
         if self.protocol not in allowed[self.kind]:
             raise ValueError('Protocol is incompatible with model category')

@@ -46,6 +46,18 @@ for (const locale of ["en-US", "zh-CN"] as const) {
         assert.equal(check(images.slice(0, 2)), null);
         assert.notEqual(check(images), null);
 
+        if (binding === "pinned") {
+          const brief = createNode("text", undefined, { text: "Combine these images" });
+          const implicit = { ...settings, prompt: "" };
+          for (const count of [1, 2, 3])
+            assert.equal(backendBlocker(implicit, [brief], [config], images.slice(0, count)) === null,
+              count === 2, "a text reference supplies the prompt without bypassing image counts");
+          publish([single, { ...multi, status: "unavailable", reasonCode: "route_disabled" }]);
+          assert.equal(backendBlocker(implicit, [brief], [config], images.slice(0, 2)),
+            check(images.slice(0, 2)), "implicit prompts retain the capability refusal");
+          publish([single, multi]);
+        }
+
         if (binding === "mixed") {
           const assets = images.slice(0, 2).map((image) => ({ id: image.data.backendAssetId!, kind: "image" as const }));
           const target = createNode("image", undefined, { promptContent: assets.map((asset) => ({

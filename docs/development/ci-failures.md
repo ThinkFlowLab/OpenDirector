@@ -1,4 +1,29 @@
 # CI 失败模式
+# CI failures
+
+## Release Python suite (baseline 42263495)
+
+Re-checked the eight failures reported for the release Python suite on upstream main
+(`efc9dbe9`) with the locked dependencies. All eight now pass; the development between
+the baseline and main resolved them, so no single targeted fix is responsible. The
+verification ran locally on Python 3.12.3 rather than ubuntu-22.04 CI, so a maintainer
+should confirm on a CI run before closing.
+
+| Case | Baseline failure | Status |
+| --- | --- | --- |
+| `tests/test_agent_gateway.py::test_batch_hide_is_atomic_and_replayable` | description length 161 exceeds 120 | passes |
+| `tests/test_cli.py::test_all_cli_business_commands_have_help` | `--file` / `--model` absent from rendered output | passes |
+| `tests/test_cli.py::test_parser_error_shows_specific_command_help` | `--file` / `--model` absent from rendered output | passes |
+| `tests/test_creation_generation_service.py::test_hidden_source_generation_frozen_history_restart_and_idempotent_command` | `IndexError: tuple index out of range` | passes |
+| `tests/test_creation_storage.py::test_byte_verified_cache_detects_rewrites_with_unchanged_file_signature[head]` | expected `ProjectError` was not raised | passes |
+| `tests/test_creation_storage.py::test_byte_verified_cache_detects_rewrites_with_unchanged_file_signature[ancestor]` | expected `ProjectError` was not raised | passes |
+| `tests/test_runtime_readiness.py::test_runtime_catalog_can_skip_probes_and_check_one_harness` | `not_installed` instead of `checking` | passes |
+| `tests/test_self_hosted.py::test_video_reference_acceptance_follows_model_rules` | expected `ProjectError` was not raised | passes |
+
+The extra tool-lifecycle assertion from PR #158 run 42224427798 did not reproduce in
+three consecutive local runs and is recorded as a separate follow-up.
+
+The OpenCode hang tracked as #162 is unrelated and was not verified here.
 
 本文件记录 Release checks 与 nightly 中已知的环境或时序敏感失败模式，以及区分偶发失败与真实回归的判别方法。修复一个模式后应更新本文件；出现新模式时补入新条目。已知时序敏感用例的清单见 [`scripts/nightly/flaky-watchlist.txt`](../../scripts/nightly/flaky-watchlist.txt)，nightly 的 flake triage lane 会按它输出波动率。
 

@@ -33,6 +33,7 @@ import {
   isGenerationModel,
   isMusicModel,
   hasMusicReference,
+  hasImplicitTextPrompt,
   MUSIC_SECONDS,
   type ModelConfig,
 } from "../backend/rules.ts";
@@ -137,6 +138,15 @@ export function NodeComposer({
       ? backendBlocker(settings, incomingNodes, backendModels, pinnedPrecheck)
       : generationBlocker(settings, incomingNodes, t);
   const canRun = !blocker;
+  // A blank prompt falls back to connected text references.
+  const implicitTextPrompt = Boolean(
+    config &&
+      hasImplicitTextPrompt(
+        settings,
+        [...incomingNodes, ...(pinnedPrecheck ?? [])],
+        config,
+      ),
+  );
   const model = backend ? undefined : generationModel(settings);
   const resolutions = backend
     ? backendResolutions(settings, config, incomingNodes)
@@ -433,7 +443,9 @@ export function NodeComposer({
           }}
           label={reading ? t("generation.prompt.reading") : music ? t("generation.prompt.music") : t("generation.prompt.image")}
           placeholder={
-            mode === "image"
+            implicitTextPrompt
+              ? t("generation.prompt.implicitTextPlaceholder")
+              : mode === "image"
               ? t("generation.prompt.imagePlaceholder")
               : mode === "video"
                 ? firstLast

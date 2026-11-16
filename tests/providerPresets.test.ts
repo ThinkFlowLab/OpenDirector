@@ -5,6 +5,29 @@ import type { ModelConfig } from "../src/backend/rules.ts";
 import { modelDescription } from "../src/canvas/modelDescriptions.ts";
 import { getActiveLocale, setActiveLocale } from "../src/i18n/messages.ts";
 
+test("BigModel video uses its native endpoint and preserves its identity in both locales", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "bigmodel-video")!;
+  assert.ok(preset);
+  assert.deepEqual(preset.kinds, ["video"]);
+  assert.deepEqual(preset.modelsByKind, { video: ["cogvideox-3"] });
+  assert.equal(preset.protocol, "bigmodel_video");
+  assert.equal(preset.url, "https://open.bigmodel.cn/api/paas/v4");
+  assert.equal(preset.authMode, "bearer");
+  const previous = getActiveLocale();
+  try {
+    for (const [locale, name] of [["zh-CN", "智谱 BigModel 视频"], ["en-US", "Zhipu BigModel video"]] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("video").find((item) => item.id === preset.id)?.name, name);
+      assert.ok(!providerOptions("image").some((item) => item.id === preset.id));
+      const model: ModelConfig = { ...preset, id: "saved-video", kind: "video", modelId: "cogvideox-3", url: `${preset.url}/`,
+        inputRules: { profile: "bigmodel-cogvideox-3", allowedKinds: ["text", "image"], maxImages: 2,
+          maxVideos: 0, maxAudios: 0, videoModes: ["first_frame"] } };
+      assert.equal(providerPresetFor(model), preset.id);
+      assert.equal(providerPresetFor({ ...model, kind: "image" }), "custom");
+    }
+  } finally { setActiveLocale(previous); }
+});
+
 test("OpenAI compatible remains first in the image provider dropdown", () => {
   assert.equal(providerOptions("image")[0]?.id, "custom");
 });

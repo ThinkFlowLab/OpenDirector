@@ -84,6 +84,8 @@ The canvas saves automatically. Before closing it or switching projects, check t
 
 After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
 
+When an image or video node is connected to a text node with content, the prompt may stay blank: generation uses the text as is as the prompt, and anything typed in the prompt is added to it. Connected text carries no "Reference N: title" label; only text inserted with `@` keeps its label so the inline mention points at it. One text node can feed several generation nodes that use different models, and they all pick up edits to the text. Speech and music never read text references and still need their own text or style.
+
 An empty node must first receive an upload, saved text, or generated content before it can serve as a valid reference for other nodes. When uploading a node's own content, the file type must match the node. To add references, use connections, `@`, or the reference controls in the generation panel.
 
 **MiniMax-H3-Image / MiniMax-H3-Image-Highspeed** can mix HEIC, HEIF, PNG, JPEG and WebP references in the selected order, through the canvas or Agent commands. Both use the original project assets. Each edge must be 128–8192 pixels, the long-to-short edge ratio at most 4:1, and there can be at most 16 images. The complete Base64-encoded request must fit within 64 MiB; oversized inputs are rejected without automatic compression. Other models retain their own format restrictions.
