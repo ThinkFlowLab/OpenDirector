@@ -30,9 +30,12 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     flowSurface,
     frameCapabilities,
     historyRef,
+    historyWriteVersion,
+    historyRenderVersion,
     historyReplayQueue,
     historyReplaying,
     importAbort,
+    mounted,
     notify,
     pointerGesture,
     projectRenaming,
@@ -512,7 +515,9 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       token = 0,
       waitingForSave = false;
     const update = () => {
-      if (!active) return;
+      // historyRef describes the last render. A queued write already owns the
+      // next document, even before that ref changes. Resume after it renders.
+      if (!active || historyWriteVersion.current !== historyRenderVersion) return;
       // A pending paste can make a later local delete look clean against
       // the old baseline until the paste receipt reaches the save queue.
       if (queue.busy) {
@@ -548,6 +553,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
           // including when its visible content happens to be unchanged.
           if (
             !active ||
+            historyWriteVersion.current !== historyRenderVersion ||
             ticket !== token ||
             editorSaving.current ||
             client.snapshot !== snapshot ||
@@ -578,7 +584,9 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
           setHistory((history) => ({ ...history, present: merged }));
           const created = next.nodes.filter((node) => !known.has(node.id));
           if (created.length) requestAnimationFrame(() => {
-            if (active && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
+            // Installing the refresh restarts this listener. Its viewport work
+            // still belongs to the mounted project, not the old subscription.
+            if (mounted.current && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
           });
         })
         .catch((error) => active && notify(errorMessage(error)));
@@ -589,7 +597,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       active = false;
       unsubscribe();
     };
-  }, [doc.id, ready, notify]);
+  }, [doc.id, ready, notify, historyRenderVersion]);
   useEffect(() => {
     if (!ready) return;
     let active = true,
