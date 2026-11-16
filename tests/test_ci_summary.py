@@ -72,8 +72,9 @@ DOC_SCOPE = {'run-heavy': 'false', 'scope-reason': 'docs_only', 'changed-files':
 DOC_RESULTS = {'static': 'success', 'python': 'skipped', 'frontend': 'skipped', 'browser': 'skipped'}
 
 
-def test_proven_docs_only_skip_succeeds_and_reports_reason(tmp_path):
-    result, summary = run_summary(tmp_path, DOC_RESULTS, scope=DOC_SCOPE)
+@pytest.mark.parametrize('event', ['pull_request', 'merge_group'])
+def test_proven_docs_only_skip_succeeds_and_reports_reason(tmp_path, event):
+    result, summary = run_summary(tmp_path, DOC_RESULTS, scope=DOC_SCOPE, event=event)
     assert result.returncode == 0, result.stderr
     text = summary.read_text(encoding='utf-8')
     assert 'Documentation-only PR' in text and 'docs_only' in text
@@ -82,8 +83,9 @@ def test_proven_docs_only_skip_succeeds_and_reports_reason(tmp_path):
 
 @pytest.mark.parametrize('lane', ['static', 'python', 'frontend', 'browser'])
 @pytest.mark.parametrize('status', ['failure', 'cancelled'])
-def test_docs_only_never_hides_failed_or_cancelled_jobs(tmp_path, lane, status):
-    result, _ = run_summary(tmp_path, {**DOC_RESULTS, lane: status}, scope=DOC_SCOPE)
+@pytest.mark.parametrize('event', ['pull_request', 'merge_group'])
+def test_docs_only_never_hides_failed_or_cancelled_jobs(tmp_path, lane, status, event):
+    result, _ = run_summary(tmp_path, {**DOC_RESULTS, lane: status}, scope=DOC_SCOPE, event=event)
     assert result.returncode != 0
 
 
@@ -97,7 +99,7 @@ def test_missing_or_invalid_skip_evidence_fails_closed(tmp_path, scope):
     assert result.returncode != 0
 
 
-@pytest.mark.parametrize('event', ['push', 'schedule', 'workflow_dispatch', 'merge_group'])
+@pytest.mark.parametrize('event', ['push', 'schedule', 'workflow_dispatch'])
 def test_other_events_cannot_claim_docs_only_skip(tmp_path, event):
     result, _ = run_summary(tmp_path, DOC_RESULTS, scope=DOC_SCOPE, event=event)
     assert result.returncode != 0

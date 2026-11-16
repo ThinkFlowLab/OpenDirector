@@ -2,6 +2,9 @@ name: CodeQL
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -36,11 +39,22 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: none
           queries: security-extended
-      - name: Analyze and upload results / 扫描并上传结果
+      - name: Analyze and record results / 扫描并记录结果
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: /language:${{ matrix.language }}
+          output: ${{ runner.temp }}/codeql-results
+          # Code scanning does not report its PR alert check on merge groups.
+          upload: ${{ github.event_name == 'merge_group' && 'never' || 'always' }}
           wait-for-processing: true
+      - name: Save queue scan evidence / 保存队列扫描证据
+        if: github.event_name == 'merge_group'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codeql-merge-group-${{ matrix.language }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/codeql-results/*.sarif
+          retention-days: 14
+          if-no-files-found: error
 
   # Stable required-check candidate, independent of docs-only release skips.
   checks:
