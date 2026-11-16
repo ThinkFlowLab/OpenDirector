@@ -1,18 +1,18 @@
 /* Large text editing surface. It borrows the modal backdrop so the canvas keeps
    its own dimmed frame, but the panel is sized for reading a whole script. */
-.cw-text-window-backdrop {
-  padding: 40px;
+.cw-modal-backdrop.cw-text-window-backdrop {
+  padding: 0;
 }
 .cw-text-window {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(1080px, 100%);
-  height: min(760px, 100%);
+  width: 100%;
+  height: 100%;
   box-sizing: border-box;
   padding: 16px 18px 14px;
   border: 1px solid #ffffff15;
-  border-radius: 16px;
+  border-radius: 0;
   background: #242427;
   box-shadow: 0 30px 100px #0007;
   color: #ececf1;
@@ -99,7 +99,7 @@
   border-color: #6b6690;
   box-shadow: 0 0 0 1px #6b669033;
 }
-.cw-text-window-input:read-only {
+textarea.cw-text-window-input:read-only {
   color: #8f8f9b;
 }
 .cw-text-window-footer {
@@ -141,8 +141,8 @@
   outline-offset: 2px;
 }
 @media (max-width: 700px) {
-  .cw-text-window-backdrop {
-    padding: 12px;
+  .cw-modal-backdrop.cw-text-window-backdrop {
+    padding: 0;
   }
   .cw-text-window {
     height: 100%;
@@ -153,4 +153,29 @@
     padding: 10px 12px;
     font-size: 14px;
   }
+}
+
+.cw-text-window-modes {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.cw-text-window-modes button {
+  border: 1px solid #8886;
+  border-radius: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cw-text-window-modes button[aria-pressed="true"] {
+  background: #7568db;
+  color: white;
+}
+.cw-text-window-controls {
+  margin-left: 0;
+}
+.cw-text-window-preview {
+  white-space: normal;
 }

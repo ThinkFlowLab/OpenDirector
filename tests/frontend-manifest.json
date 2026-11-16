@@ -167,6 +167,11 @@
       "hardware": "cpu"
     },
     {
+      "file": "canvasText.test.ts",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
       "file": "canvasTimeline.test.ts",
       "layer": "ready",
       "hardware": "cpu"

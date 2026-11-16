@@ -80,6 +80,24 @@ def test_text_image_publication_replay_and_content_conflict(publication):
     assert image['asset']['provenance']['sources'] == [result['reference']]
 
 
+def test_agent_text_read_keeps_64_kib_budget_and_bom_decoding(publication):
+    business, run, work = publication
+    source = work / 'notes.md'
+    source.write_bytes(b'\xef\xbb\xbf# Notes\r\n' + b'a' * (65536 - 12))
+    small = publish(publication, 'notes.md')
+    source.write_bytes(b'a' * 65537)
+    large = publish(publication, 'notes.md')
+    async def read(asset):
+        return await business.execute(run.project_id, run.turn_id, run.session, str(uuid4()),
+            'read', {'path': f"asset:{asset['asset']['id']}"}, roots=[], config=None)
+    assert asyncio.run(read(small)) == '# Notes\r\n' + 'a' * (65536 - 12)
+    with pytest.raises(ProjectError, match='64 KB'):
+        asyncio.run(read(large))
+    with pytest.raises(ProjectError, match='64 KB'):
+        asyncio.run(business.execute(run.project_id, run.turn_id, run.session, str(uuid4()),
+            'read', {'path': str(source)}, roots=[work], config=None))
+
+
 def test_file_scope_links_empty_and_other_turn_are_rejected(publication, tmp_path):
     _, _, work = publication
     outside = tmp_path / 'outside.md'

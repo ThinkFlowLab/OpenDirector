@@ -60,6 +60,7 @@ ENGLISH_BY_CODE = {
     "moss_prompt_limit": "MOSS requires a nonempty prompt of at most 4,000 characters, including text references.",
     "image_decode": "The image could not be decoded. Check its actual format and file integrity.",
     "asset_preview_unsupported": "This asset type does not support this preview format.",
+    "asset_text_api_unavailable": "canvas text show requires a running API to read the complete Markdown source. Start the API and check OPENDIRECTOR_API_URL.",
     "image_pixel_limit": "Images must contain no more than 25 million pixels.",
     "minimax_image_reference": "MiniMax H3 references must be PNG, JPEG, WebP, HEIC, or HEIF, with edges of 128–8192 pixels and a long-to-short edge ratio of at most 4:1.",
     "minimax_image_count": "MiniMax H3 image editing accepts up to 16 reference images.",

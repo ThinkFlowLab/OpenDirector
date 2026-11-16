@@ -1,5 +1,8 @@
 import { memo, useContext, type MouseEvent } from "react";
-import type { Node, NodeProps } from "@xyflow/react";
+import { NodeResizeControl, type Node, type NodeProps } from "@xyflow/react";
+import { TEXT_NODE_MIN_SIZE } from "./model";
+import { TextNodeEditor } from "./TextNodeEditor";
+import { TextMarkdown } from "./TextMarkdown";
 import { NodeFrame } from "./NodeFrame";
 import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
@@ -77,19 +80,17 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         <DomainCard id={id} data={data} actions={actions} />
       ) : kind === "text" ? (
         actions?.isTextEditing(id) ? (
-          <textarea
+          <TextNodeEditor
+            id={id}
+            defaultValue={data.text ?? ""}
+            locked={locked}
+            selections={actions.textSelections}
             className="cw-text-editor nodrag nopan nowheel"
             aria-label={t("canvasNodes.text.content", { title: data.title })}
             placeholder={t("canvasNodes.text.placeholder")}
-            spellCheck={false}
-            readOnly={locked}
-            autoFocus
-            defaultValue={data.text ?? ""}
             onFocus={() => actions?.beginEdit?.(id)}
             onBlur={() => actions?.finishTextEdit()}
-            onChange={(event) =>
-              actions?.update(id, { text: event.target.value })
-            }
+            onUpdate={(text) => actions?.update(id, { text })}
             onKeyDown={(event) => {
               if (event.key !== "Escape" || event.nativeEvent.isComposing)
                 event.stopPropagation();
@@ -97,10 +98,12 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
           />
         ) : (
           <div
-            className="cw-text-display"
+            className="cw-text-display nowheel"
             aria-label={t("canvasNodes.text.content", { title: data.title })}
           >
-            {data.text || (
+            {data.text ? (
+              <TextMarkdown text={data.text} />
+            ) : (
               <span className="cw-text-placeholder">
                 {t("canvasNodes.text.editHint")}
               </span>
@@ -222,6 +225,24 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         </div>
       )}
 
+      {kind === "text" && selected && !locked && (
+        <NodeResizeControl
+          position="bottom-right"
+          className="cw-text-resize nodrag nopan"
+          minWidth={TEXT_NODE_MIN_SIZE.width}
+          minHeight={TEXT_NODE_MIN_SIZE.height}
+          onResizeStart={() => actions?.beginResize()}
+          // XYFlow emits the final dimensions after its resize-end callback.
+          onResizeEnd={() => queueMicrotask(() => actions?.endResize())}
+        >
+          <span
+            aria-label={t("canvasNodes.text.resize")}
+            title={t("canvasNodes.text.resize")}
+          >
+            ◢
+          </span>
+        </NodeResizeControl>
+      )}
       {activity && (
         <GeneratingOverlay
           activity={activity}

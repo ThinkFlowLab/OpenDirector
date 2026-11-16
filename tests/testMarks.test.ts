@@ -82,7 +82,7 @@ test("live catalogs conserve unit discovery and the default browser gate schedul
   const listing = spawnSync(process.execPath, ["scripts/run-browser-suite.mjs", "--list"], { cwd: ROOT, encoding: "utf8" });
   assert.equal(listing.status, 0, listing.stderr);
   const scheduled = JSON.parse(listing.stdout);
-  assert.equal(scheduled.length, 20);
+  assert.equal(scheduled.length, 21);
   assert.deepEqual(scheduled.find((entry: Entry) => entry.file === "timeline_workflow.mjs").env, { PYTHON: "python" });
   assert.deepEqual(scheduled.find((entry: Entry) => entry.file === "canvas_layers.mjs").args, ["--generated"]);
 });

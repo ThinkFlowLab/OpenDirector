@@ -53,9 +53,9 @@ Budgets measure stage wall time, not the sum of parallel job limits, and never j
 
 ### 过渡与必需检查 / Transition and required checks
 
-当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层与机型 mark；安全扫描、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层与机型 mark；安全扫描见下方独立工作流，合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
 
-Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer and hardware-platform marks are registered; security scanning, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer and hardware-platform marks are registered. Security scanning uses the independent workflow below; the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
 
 - 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
 - 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
@@ -162,9 +162,42 @@ npm run check:browser-manifest
 
 `--layer` and `--hardware` accept comma-separated unions, intersected across axes; browser inventory queries also accept `--lane`. `--list` and `list:browser-tests` emit JSON without starting tests, browsers or services. Execution fails on an empty selection; inventory queries may return an empty array. There are currently no frontend nightly files, so that execution command fails explicitly rather than reporting unexecuted tests as success. Native Node options remain available, for example `npm test -- --test-name-pattern=...`.
 
-`test:browser` 保留原来的 20 项普通 gate 流程及各自参数、环境和失败后继续的行为，可按标记筛选；voice 与 assistant fixture 阶段仍由现有工作流单独运行。其他 lane 先用 `list:browser-tests` 筛选，再由原有执行阶段准备正确的夹具、生产构建或性能环境。此入口不会将不同服务环境的所有旅程混在一次运行中，也不自动开启 manual 或真实服务。`check:browser-manifest` 同时检查两类标记，因此现有 CI 能发现清单错误；本次不修改工作流层级筛选或开启加速器车道。
+`test:browser` 保留当前的 21 项普通 gate 流程及各自参数、环境和失败后继续的行为，可按标记筛选；voice 与 assistant fixture 阶段仍由现有工作流单独运行。其他 lane 先用 `list:browser-tests` 筛选，再由原有执行阶段准备正确的夹具、生产构建或性能环境。此入口不会将不同服务环境的所有旅程混在一次运行中，也不自动开启 manual 或真实服务。`check:browser-manifest` 同时检查两类标记，因此现有 CI 能发现清单错误；本次不修改工作流层级筛选或开启加速器车道。
 
-`test:browser` preserves the original 20 regular gate workflows, their arguments/environment and continue-after-failure behavior, with optional mark filtering. Voice and assistant-fixture phases remain separate workflow steps. Query other lanes with `list:browser-tests`, then let their existing execution phases prepare the correct fixture, production or performance environment. This runner does not combine incompatible service environments or automatically enable manual/real-service checks. `check:browser-manifest` validates both mark catalogs, so existing CI detects registration errors. Workflow layer selection and accelerator lanes are unchanged.
+`test:browser` preserves the original 21 regular gate workflows, their arguments/environment and continue-after-failure behavior, with optional mark filtering. Voice and assistant-fixture phases remain separate workflow steps. Query other lanes with `list:browser-tests`, then let their existing execution phases prepare the correct fixture, production or performance environment. This runner does not combine incompatible service environments or automatically enable manual/real-service checks. `check:browser-manifest` validates both mark catalogs, so existing CI detects registration errors. Workflow layer selection and accelerator lanes are unchanged.
+
+## PR 安全扫描 / PR security scanning
+
+CodeQL、Release checks 和 DSH plugin checks 在入口工作流按“工作流名称 + 事件 + PR 编号”设置并发组；同一 PR 更新会取消该工作流的旧运行，不同 PR 和工作流互不取消。非 PR 事件按 `run_id` 独立分组且不启用取消，保留每次 main push 的检查和扫描基线。DSH 的路径筛选保持不变。参见 [GitHub 并发控制](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
+
+CodeQL, Release checks and DSH plugin checks group entry workflows by workflow name, event and PR number. Updates cancel outdated runs of the same workflow for that PR; different PRs and workflows do not cancel each other. Non-PR events use a unique `run_id` group with cancellation disabled, retaining checks and scan baselines for every main push. DSH path filters remain unchanged. See [GitHub concurrency control](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+[`codeql.yml`](../../.github/workflows/codeql.yml) 对每个 PR（包含 draft 和纯文档变更）独立执行 Python 与 JavaScript/TypeScript CodeQL `security-extended` 分析；不等待 Release checks 的范围筛选。main push 建立合并版本基线，另提供手动运行。两条语言任务并行且互不取消，每条上限 30 分钟，汇总上限 5 分钟；这些不是阶段总墙钟上限。
+
+[`codeql.yml`](../../.github/workflows/codeql.yml) independently runs CodeQL `security-extended` analysis for Python and JavaScript/TypeScript on every PR, including drafts and documentation-only changes. It does not depend on Release checks scope selection. Main pushes establish the merged baseline; manual dispatch is also available. Language jobs run in parallel without fail-fast cancellation, with a 30-minute limit each and a 5-minute aggregate limit, not a workflow-wide deadline.
+
+扫描使用固定提交的官方 Actions、`build-mode: none` 和不保留 Git 凭证的 checkout，不安装应用依赖、不构建应用、不调用模型。默认 token 只读内容，上传分析结果的任务额外拥有 `actions: read` 和 `security-events: write`。使用 `pull_request` 而非 `pull_request_target`，不读取仓库 secrets；fork PR 仍受 GitHub 的首次贡献者审批策略约束。这是源码安全分析，不替代依赖漏洞或容器镜像扫描，也不能证明不存在漏洞。
+
+Scanning uses pinned official Actions, `build-mode: none` and checkout without persisted Git credentials. It does not install application dependencies, build the application or call models. The default token reads contents; analysis upload jobs additionally receive `actions: read` and `security-events: write`. It uses `pull_request`, not `pull_request_target`, with no repository secrets; GitHub contributor approval policies still apply to fork PRs. Source analysis does not replace dependency or container-image scanning and cannot prove the absence of vulnerabilities.
+
+稳定汇总 job `CodeQL / checks` 只接受全部语言分析成功，失败、取消、跳过和缺失结果均失败。它证明扫描执行及上传完成，不根据告警等级自行判断是否允许合并。GitHub 的独立 **Code scanning results / CodeQL** 检查负责 PR 新增行的告警门禁；默认失败阈值包含 error 及 high/critical 安全告警，仓库设置可能覆盖阈值。参见 [PR 告警检查语义](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests)。
+
+The stable aggregate job `CodeQL / checks` accepts only successful analyses for every language; failed, cancelled, skipped and missing results fail. It proves analysis and upload completion, without deciding merge eligibility from alert severity. GitHub's separate **Code scanning results / CodeQL** check gates alerts on added PR lines; default failure thresholds include error-level and high/critical security alerts, subject to repository overrides. See [PR alert check semantics](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests).
+
+管理员需确认仓库使用 advanced setup、没有冲突的 default setup，并验证首次扫描、fork PR 上传及告警阈值；之后将执行汇总和告警结果检查一并设为 required。仅合入 YAML 不会自动配置仓库保护规则。合并队列支持在后续 PR6 添加 `merge_group`，规则强制在 PR7 处理；完成这些配置前，不宣称安全门禁不可绕过。配置方式见 [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning)。
+
+An administrator must confirm advanced setup without conflicting default setup, verify the first analysis, fork uploads and alert thresholds, then require both the execution aggregate and alert-result checks. Merging YAML does not configure repository protection rules. PR6 adds `merge_group` support and PR7 handles enforcement; security gates are not claimed to be non-bypassable before those settings are complete. See [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning).
+
+本地契约验证 / Local contract verification:
+
+```sh
+python -m pytest tests/test_ci_security.py -q
+python -m pre_commit run --files .github/workflows/codeql.yml tests/test_ci_security.py docs/development/validation.md
+```
+
+本地检查验证工作流语法、触发与权限边界，以及实际汇总命令对异常状态的拒绝；CodeQL 建库、分析和上传必须以 GitHub Actions 的真实运行结果验收。
+
+Local checks verify workflow syntax, trigger/permission boundaries and rejection of unsuccessful states by the actual aggregate command. CodeQL database creation, analysis and upload require a real GitHub Actions run for acceptance.
 
 ## Python 分层与迁移 / Python layers and transition
 
@@ -507,6 +540,37 @@ node tests/browser/provider_settings.mjs
 ```
 
 浏览器用例使用隔离服务验证提供商预设、手动添加、逐模型图片输入能力、保存不推理、已有连接复用及取消草稿。不会向外部提供商发送请求或保存真实密钥。
+
+## 画布 Markdown 文本节点（#336）
+
+使用隔离的 API 和 Vite 运行已注册到浏览器门禁的回归；在三个终端分别执行：
+
+```sh
+# 终端 1：隔离工程存储与模型替身
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python tests/browser/creation_server.py --port 8027
+
+# 终端 2：前端代理到隔离 API
+OPENDIRECTOR_API_URL=http://127.0.0.1:8027 npm run dev -- --port 5187
+
+# 终端 3：文本节点回归
+CREATION_WEB_URL=http://127.0.0.1:5187 node tests/browser/canvas_text_markdown.mjs
+```
+
+如使用本机安装的浏览器或 Playwright 模块，通过 `BROWSER_PATH`、`PLAYWRIGHT_MODULE` 指定路径。完整浏览器门禁使用 `npm run test:browser`，并将 `CREATION_API_URL`、`CREATION_WEB_URL` 指向同一组隔离服务。
+
+该回归验证：
+
+- 在 zoom 0.8 和 1.3 下，从未选中卡片的角落拖动并选中后立即拖拽缩放手柄，不等待选中后的视口动画结束。指针按住期间视口 transform 字符串保持不变；保存的宽高等于原尺寸加上屏幕位移除以手势开始时的 zoom，允许不超过 1 个画布单位的整数舍入误差。
+- 缩放期间没有业务写入，释放指针后只有一次提交；释放位置在手柄外也能结束交互。Escape 和 pointercancel 丢弃临时尺寸、结束历史事务并清除交互保护。正常选中仍可调整视口，手势开始会停止进行中的自动调整；手势后工具栏、生成器和键盘快捷键恢复可用。
+- 缩放只修改展示尺寸，保持文本素材不变，一次撤销／重做覆盖整个手势，重新打开工程后宽高保留。锁定文本节点不提供手柄且拒绝编辑。
+- Markdown 标题、列表、引用、强调、链接、代码块和表格的渲染，代码块语言标签的展示，以及行内输入缓冲区、全屏源码／预览、选区／光标／滚动交接和中英界面。
+
+自动化必须遵守两个运行条件：
+
+- `canvas text show` 的有界完整源码读取需要正在监听的 HTTP API，即使其他命令使用进程内或 live agent 桥接；没有监听 API 时会返回 `asset_text_api_unavailable`，提示启动 API 并检查 `OPENDIRECTOR_API_URL`。
+- 工程租约在 15 秒后过期。跨 agent 轮次的脚本必须续租，否则写入会被拒绝，错误为 `工程已关闭或会话已过期`。
+
+CLI 命令、参数和示例见 [CLI 使用说明](../guides/cli.md)。每个拉取请求的媒体、实测结果和验证范围记录在该拉取请求描述中。
 
 ## 定时文字与可移植时间线
 

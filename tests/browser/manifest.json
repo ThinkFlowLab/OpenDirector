@@ -138,6 +138,13 @@
       "hardware": "cpu"
     },
     {
+      "file": "canvas_text_markdown.mjs",
+      "lanes": ["gate"],
+      "note": "Markdown blocks, native inline composition, fullscreen selection/scroll handoff and resize commits. Uses /src through Vite.",
+      "layer": "ready",
+      "hardware": "cpu"
+    },
+    {
       "file": "canvas_switch.mjs",
       "previewSafe": true,
       "lanes": [
