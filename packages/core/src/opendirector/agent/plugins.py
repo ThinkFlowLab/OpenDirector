@@ -253,43 +253,55 @@ class PluginRegistry:
                 examples.append({**item, 'manifest': manifest.model_dump(by_alias=True), 'source': f'example:{manifest.id}'})
         return {'installed': installed, 'examples': examples, 'runtimes': list(get_args(RuntimeId))}
 
-    def install(self, source):
-        label = 'upload'
+    def install(self, source: str):
+        if not isinstance(source, str):
+            raise failure('plugin_invalid')
+        label = source
         expected_digest = None
         try:
-            if isinstance(source, str):
-                label = source
-                if source.startswith('example:'):
-                    example = next((item for item in self.catalog()['examples'] if item['source'] == source), None)
-                    if example is None:
-                        raise failure('plugin_source_unavailable', 404)
-                    expected_digest = example['digest']
-                    path = plugin_examples() / example['manifest']['id']
-                    source = path if path.is_dir() else download_package(example['url'])
-                elif '://' in source:
-                    source = download_package(source)
-                    label = str(httpx.URL(label).copy_with(query=None, fragment=None))
+            if source.startswith('example:'):
+                example = next((item for item in self.catalog()['examples'] if item['source'] == source), None)
+                if example is None:
+                    raise failure('plugin_source_unavailable', 404)
+                expected_digest = example['digest']
+                path = plugin_examples() / example['manifest']['id']
+                package = path if path.is_dir() else download_package(example['url'])
+            elif '://' in source:
+                package = download_package(source)
+                label = str(httpx.URL(label).copy_with(query=None, fragment=None))
+            else:
+                windows = PureWindowsPath(source)
+                if any(ord(character) < 32 for character in source) or windows.drive and not windows.root:
+                    raise failure('plugin_unsafe_path')
+                requested = os.path.abspath(os.path.join(self.repository, source))
+                # Resolve parent aliases before authorizing reads; keep the entry itself for link rejection.
+                parent = os.path.realpath(os.path.dirname(requested))
+                candidate = os.path.normpath(os.path.join(parent, os.path.basename(requested)))
+                root = os.fspath(self.repository)
+                if candidate.startswith(os.path.join(root, '')):
+                    package = Path(candidate)
                 else:
-                    windows = PureWindowsPath(source)
-                    if any(ord(character) < 32 for character in source) or windows.drive and not windows.root:
-                        raise failure('plugin_unsafe_path')
-                    requested = os.path.abspath(os.path.join(self.repository, source))
-                    # Resolve parent aliases before authorizing reads; keep the entry itself for link rejection.
-                    parent = os.path.realpath(os.path.dirname(requested))
-                    candidate = os.path.normpath(os.path.join(parent, os.path.basename(requested)))
-                    root = os.fspath(self.repository)
-                    if candidate.startswith(os.path.join(root, '')):
-                        source = Path(candidate)
-                    else:
-                        raise failure('plugin_source_outside_workspace', 403)
-                    if (source == self.repository
-                            or source.relative_to(self.repository).parts[0].casefold() in {'projects', '.opendirector'}):
-                        raise failure('plugin_source_outside_workspace', 403)
-            manifest, files, digest = package_files(source)
+                    raise failure('plugin_source_outside_workspace', 403)
+                if (package == self.repository
+                        or package.relative_to(self.repository).parts[0].casefold() in {'projects', '.opendirector'}):
+                    raise failure('plugin_source_outside_workspace', 403)
+            manifest, files, digest = package_files(package)
             if expected_digest is not None and digest != expected_digest:
                 raise failure('plugin_invalid')
         except OSError:
             raise failure('plugin_source_unavailable') from None
+        return self._register(manifest, files, digest, label)
+
+    def install_archive(self, content: bytes):
+        if not isinstance(content, bytes):
+            raise failure('plugin_invalid')
+        try:
+            manifest, files, digest = package_files(content)
+        except OSError:
+            raise failure('plugin_source_unavailable') from None
+        return self._register(manifest, files, digest, 'upload')
+
+    def _register(self, manifest, files, digest, label):
         with self.locked():
             state = self.read()
             previous = state.plugins.get(manifest.id)

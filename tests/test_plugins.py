@@ -64,7 +64,7 @@ def test_install_enable_restart_disable_and_uninstall(tmp_path):
     assert item['enabledRuntimes'] == []
     assert registry.skills('default') == []
     registry.change('custom-brief', item['digest'], runtime='codex', enabled=True)
-    replay = registry.install(zipped(source))
+    replay = registry.install_archive(zipped(source))
     assert replay['digest'] == item['digest']
     assert replay['enabledRuntimes'] == ['codex']
     restarted = PluginRegistry(repository)
@@ -122,7 +122,7 @@ def test_archive_paths_cannot_escape_or_alias(tmp_path, name):
     registry = PluginRegistry(tmp_path / 'workspace')
     source = custom_package(tmp_path)
     with pytest.raises(ProjectError) as error:
-        registry.install(zipped(source, [(name, b'bad')]))
+        registry.install_archive(zipped(source, [(name, b'bad')]))
     assert error.value.code == 'plugin_unsafe_path'
     assert registry.catalog()['installed'] == []
     assert not (tmp_path / 'outside').exists()
@@ -211,6 +211,7 @@ def test_http_optional_installation_and_bilingual_errors(tmp_path):
         installed = client.post('/api/plugins/upload', content=zipped(root), headers={'Content-Type': 'application/zip'})
         assert installed.status_code == 200, installed.text
         row = installed.json()
+        assert row['source'] == 'upload'
         assert row['enabledRuntimes'] == []
         assert client.put('/api/plugins/custom-brief/runtimes/codex', json={'digest': row['digest'], 'enabled': True}).status_code == 200
         invalid = {'digest': '0' * 64, 'enabled': False}
@@ -237,16 +238,19 @@ def test_public_download_rejects_private_hosts_and_rechecks_redirects(tmp_path, 
     assert download_package('https://8.8.8.8/package.zip') == package
     assert requests[0].headers['host'] == '8.8.8.8'
     assert 'authorization' not in requests[0].headers
+    installed = PluginRegistry(tmp_path / 'workspace').install('https://8.8.8.8/package.zip?token=secret#section')
+    assert installed['manifest']['id'] == 'custom-brief'
+    assert installed['source'] == 'https://8.8.8.8/package.zip'
     mode = 'redirect'
     with pytest.raises(ProjectError) as error:
         download_package('https://8.8.8.8/package.zip')
     assert error.value.code == 'plugin_url_unsafe'
-    assert len(requests) == 2
+    assert len(requests) == 3
     for url in ('http://8.8.8.8/package.zip', 'https://127.0.0.1/a', 'https://user:secret@8.8.8.8/a', 'https://[::1]/a'):
         with pytest.raises(ProjectError) as error:
             download_package(url)
         assert error.value.code == 'plugin_url_unsafe'
-    assert len(requests) == 2
+    assert len(requests) == 3
 
 
 def test_native_skill_discovery_respects_harness_and_disable(tmp_path):
@@ -330,7 +334,7 @@ def test_package_rejects_every_extra_native_skill_entry(tmp_path, entry):
     registry = PluginRegistry(tmp_path / 'workspace')
     source = custom_package(tmp_path)
     with pytest.raises(ProjectError) as error:
-        registry.install(zipped(source, [(entry, b'---\nname: character-replacement\ndescription: Hidden\n---\nHidden')]))
+        registry.install_archive(zipped(source, [(entry, b'---\nname: character-replacement\ndescription: Hidden\n---\nHidden')]))
     assert error.value.code == 'plugin_invalid'
     assert registry.catalog()['installed'] == []
 
@@ -422,6 +426,21 @@ def test_workspace_paths_and_uploaded_external_packages_remain_available(tmp_pat
         assert uploaded.status_code == 200
         assert uploaded.json()['manifest']['id'] == 'external-brief'
         assert uploaded.json()['enabledRuntimes'] == []
+
+
+@pytest.mark.parametrize('entry, kind', [
+    ('install', 'path'), ('install', 'archive'), ('install', 'missing'),
+    ('install_archive', 'path'), ('install_archive', 'text'), ('install_archive', 'missing'),
+])
+def test_install_entry_types_cannot_bypass_source_scope(tmp_path, entry, kind):
+    source = custom_package(tmp_path / 'outside')
+    registry = PluginRegistry(tmp_path / 'workspace')
+    value = {'path': source, 'archive': zipped(source), 'text': str(source), 'missing': None}[kind]
+    with pytest.raises(ProjectError) as error:
+        getattr(registry, entry)(value)
+    assert error.value.code == 'plugin_invalid'
+    assert not registry.path.exists()
+    assert not (registry.directory / 'packages').exists()
 
 
 @pytest.mark.parametrize('source', ['bad\x00path', 'bad\npath', 'bad\tpath', 'C:relative'])

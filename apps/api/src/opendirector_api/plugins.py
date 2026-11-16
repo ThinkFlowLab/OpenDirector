@@ -43,7 +43,7 @@ def plugin_routes(repository):
             content.extend(chunk)
             if len(content) > MAX_ARCHIVE_BYTES:
                 raise failure('plugin_too_large', 413)
-        return await asyncio.to_thread(registry.install, bytes(content))
+        return await asyncio.to_thread(registry.install_archive, bytes(content))
 
     @router.put('/{plugin_id}/runtimes/{runtime}')
     def enable(plugin_id: Annotated[PluginId, Path()], runtime: RuntimeId, value: PluginEnabled):
