@@ -30,7 +30,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [BigModel video](guides/bigmodel-video.md) ([中文](guides/bigmodel-video.zh-CN.md)) | CogVideoX-3 text, single-image and first/last-frame generation, task recovery and adoption | BigModel protocol, inputs, output sizes or recovery behavior change |
 | [BigModel GLM-Image](guides/bigmodel-image.md) ([中文](guides/bigmodel-image.zh-CN.md)) | Account setup, text-to-image generation, adoption and recovery | BigModel integration fields or behavior change |
 | [GLM-Image validation](development/glm-image-validation.md) | Real provider workflow screenshots and automated checks | GLM-Image acceptance is repeated |
-| [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture | Runtime architecture changes |
+| [Agent runtime](architecture/agent-runtime.md) | Agent runtime architecture and Job origin tracing | Runtime architecture or Job origin semantics change |
 
 The root [README](../README.md) introduces the product and examples and links to quick-start and documentation. See [installation and updates](guides/installation.md) ([中文](guides/installation.zh-CN.md)) for installation, and the [user guide](guides/user-guide.md) ([中文](guides/user-guide.zh-CN.md)) for configuration, creation, and troubleshooting. The README does not contain the full manual, implementation architecture, development tests, research sources, or iteration history. Source code and generated contracts describe the implementation; architecture and roadmap documents describe goals and do not establish that a capability is already available.
 
