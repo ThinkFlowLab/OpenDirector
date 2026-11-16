@@ -8,6 +8,7 @@ import asyncio
 import json
 from uuid import UUID, uuid4, uuid5
 
+from fastapi.testclient import TestClient
 import pytest
 
 from opendirector.agent.tools import AgentTools
@@ -19,6 +20,8 @@ from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.agent import Conversations
+from opendirector_api.main import create_app
 from test_creation_canvas_service import media, project, send, ver  # noqa: F401  (project is a fixture)
 
 
@@ -67,6 +70,25 @@ async def submit(tools, project, config, turn, call, before=None):
     if before:
         before()
     return await tools.execute(pid, turn, session, call, 'execute_command', arguments, [], None)
+
+
+def lineage_client(store):
+    # The real application, so ProjectError and the other handlers apply. No `with`: lifespan (job recovery) never starts.
+    return TestClient(create_app(store.local), headers={'X-OpenDirector-Request': '1'})
+
+
+def jobs_url(pid, turn):
+    return f'/api/creation/projects/{pid}/assistant/turns/{turn}/jobs'
+
+
+def turn_jobs(client, pid, turn):
+    response = client.get(jobs_url(pid, turn))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def commit_files(store):
+    return sorted((f.name, f.stat().st_mtime_ns) for f in store.local.root.rglob('commits/*.json'))
 
 
 async def settled(runner):
@@ -206,3 +228,92 @@ async def test_origin_is_recorded_whole_or_not_at_all_and_old_records_still_vali
 def test_origin_can_only_be_written_by_submit_never_by_an_agent_checkpoint():
     from opendirector.agent.tools import COMMANDS
     assert 'job.checkpoint' not in COMMANDS and 'generation.submit' in COMMANDS
+
+
+@pytest.mark.anyio
+async def test_turn_jobs_route_resolves_job_receipt_and_failure_without_the_trace(project):
+    store, pid, session = project
+    runner, tools, config = stack(project, Provider())
+    turn, call = uuid4(), 'cli:' + str(uuid4())
+    receipt = await submit(tools, project, config, turn, call)
+    await settled(runner)
+    await runner.close()
+    failing, failing_tools, failing_config = stack(project, Provider('fail'))
+    failed_turn = uuid4()
+    failed_receipt = await submit(failing_tools, project, failing_config, failed_turn, 'call-1')
+    await settled(failing)
+    await failing.close()
+    client = lineage_client(store)
+    [row] = turn_jobs(client, pid, turn)
+    assert (row['jobId'], row['commandId'], row['callId'], row['status']) == (receipt['jobIds'][0], receipt['commandId'], call, 'succeeded')
+    assert row['asset']['assetId'] and row['errorDetails'] is None
+    assert turn_jobs(client, pid, uuid4()) == []
+    [bad] = turn_jobs(client, pid, failed_turn)
+    assert bad['jobId'] == failed_receipt['jobIds'][0] and bad['status'] == 'failed'
+    assert bad['errorDetails']['message'] == 'provider exploded' and bad['asset'] is None
+    assert (bad['recovery'], bad['resumeAllowed']) == ('review', False)
+
+
+@pytest.mark.anyio
+async def test_job_is_still_traced_after_the_agent_trace_file_is_deleted(project):
+    store, pid, session = project
+    runner, tools, config = stack(project, Provider())
+    turn = uuid4()
+    receipt = await submit(tools, project, config, turn, 'call-1')
+    await settled(runner)
+    await runner.close()
+    trace = Conversations(store).path(pid) / 'agent-runs' / f'{turn}.opencode.jsonl'
+    trace.parent.mkdir(parents=True, exist_ok=True)
+    trace.write_text('{"debug": "tool call"}\n', encoding='utf-8')
+    client = lineage_client(store)
+    assert client.get(f'/api/creation/projects/{pid}/assistant/traces/{turn}/opencode').status_code == 200
+    trace.unlink()
+    assert client.get(f'/api/creation/projects/{pid}/assistant/traces/{turn}/opencode').status_code == 404
+    [row] = turn_jobs(client, pid, turn)
+    assert (row['jobId'], row['callId'], row['commandId']) == (receipt['jobIds'][0], 'call-1', receipt['commandId'])
+    job = store.snapshot(pid).jobs[0]
+    assert (job.agentRunId, job.agentCallId) == (turn, 'call-1')
+    assert store.receipt(pid, agent_command_id(turn, 'call-1')).jobIds == (job.id,)
+
+
+@pytest.mark.anyio
+async def test_turn_jobs_route_order_does_not_depend_on_stored_order(project, monkeypatch):
+    store, pid, session = project
+    runner, tools, config = stack(project, Provider())
+    turn = uuid4()
+    for call in ('call-a', 'call-b', 'call-c'):
+        await submit(tools, project, config, turn, call)
+    await settled(runner)
+    await runner.close()
+    client = lineage_client(store)
+    expected = [row['callId'] for row in turn_jobs(client, pid, turn)]
+    assert expected == ['call-a', 'call-b', 'call-c']      # creation order
+    original = CreationProjects.snapshot
+    monkeypatch.setattr(CreationProjects, 'snapshot',
+                        lambda self, project_id: (lambda s: s.model_copy(update={'jobs': tuple(reversed(s.jobs))}))(original(self, project_id)))
+    assert [row['callId'] for row in turn_jobs(client, pid, turn)] == expected
+
+
+def test_turn_jobs_route_uses_the_application_error_for_an_unknown_project(project):
+    store, pid, session = project
+    response = lineage_client(store).get(jobs_url(uuid4(), uuid4()))
+    assert response.status_code == 404
+    assert response.json()['code']
+
+
+@pytest.mark.anyio
+async def test_lineage_reads_never_write_or_start_work(project):
+    store, pid, session = project
+    provider = Provider()
+    runner, tools, config = stack(project, provider)
+    turn = uuid4()
+    await submit(tools, project, config, turn, 'call-1')
+    await settled(runner)
+    await runner.close()
+    client = lineage_client(store)
+    before, calls, cursor = commit_files(store), len(provider.calls), store.snapshot(pid).eventCursor
+    for _ in range(3):
+        turn_jobs(client, pid, turn)
+        store.receipt(pid, agent_command_id(turn, 'call-1'))
+    assert (commit_files(store), len(provider.calls), store.snapshot(pid).eventCursor) == (before, calls, cursor)
+    assert runner.jobs == {}

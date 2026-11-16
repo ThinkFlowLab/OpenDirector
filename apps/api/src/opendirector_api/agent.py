@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
 from opendirector.agent.context import RunContext, RuntimeId
+from opendirector.domain.creation.base import agent_command_id
 from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
@@ -256,6 +257,18 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         if not file.is_file():
             raise ProjectError('轨迹文件不存在。', 404)
         return FileResponse(file, media_type='text/plain', headers={'Cache-Control': 'no-store'})
+
+    @router.get('/turns/{turn_id}/jobs')
+    def turn_jobs(project_id: UUID, turn_id: UUID):
+        # Read-only like the trace routes: no session lease, and the Agent trace is not consulted.
+        # It reads the committed snapshot and never starts, resumes or replays a command.
+        jobs = sorted((job for job in projects.snapshot(project_id).jobs if job.agentRunId == turn_id),
+                      key=lambda job: (job.createdAt, str(job.id)))
+        return [dict(jobId=job.id, callId=job.agentCallId, commandId=agent_command_id(turn_id, job.agentCallId),
+                     status=job.status, phase=job.phase, recovery=job.recovery, resumeAllowed=job.resumeAllowed,
+                     cancelRequested=job.cancelRequested, remoteCancellation=job.remoteCancellation,
+                     errorDetails=job.errorDetails, asset=job.asset, adopted=job.adopted)
+                for job in jobs]
 
     active: dict[UUID, tuple[UUID, asyncio.Task, RunEvents]] = {}
     admission: dict[UUID, asyncio.Lock] = {}
