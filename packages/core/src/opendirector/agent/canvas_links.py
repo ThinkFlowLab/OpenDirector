@@ -12,121 +12,25 @@ spans, images and ordinary external URLs are left untouched.
 """
 from __future__ import annotations
 
-import re
 from typing import Any, Mapping
 from urllib.parse import unquote, urlsplit
 from uuid import UUID
+from markdown_it import MarkdownIt
 
 LINK_STATUSES = ('focused', 'hidden', 'materialize', 'ambiguous', 'missing',
                  'cross-project', 'external')
 
-_INLINE_CODE = re.compile(r'(`+)(?:(?!\1).)*?\1', re.DOTALL)
-_FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
-
-
-def _ignored_ranges(text: str) -> list[tuple[int, int]]:
-    """Fenced blocks and code spans are examples, never navigable links."""
-    ranges: list[tuple[int, int]] = []
-    fence = None
-    fence_start = 0
-    offset = 0
-    for line in text.splitlines(keepends=True):
-        match = _FENCE.match(line)
-        if fence is None:
-            if match is not None:
-                fence = match.group(1)[0]
-                fence_start = offset
-        elif match is not None and match.group(1)[0] == fence:
-            ranges.append((fence_start, offset + len(line)))
-            fence = None
-        offset += len(line)
-    if fence is not None:
-        ranges.append((fence_start, len(text)))
-    for match in _INLINE_CODE.finditer(text):
-        if not any(start <= match.start() < end for start, end in ranges):
-            ranges.append((match.start(), match.end()))
-    return sorted(ranges)
-
-
-def _inside(position: int, ranges: list[tuple[int, int]]) -> bool:
-    return any(start <= position < end for start, end in ranges)
-
-
-def _matching_bracket(text: str, start: int) -> int | None:
-    depth = 0
-    index = start
-    while index < len(text):
-        char = text[index]
-        if char == '\\':
-            index += 2
-            continue
-        if char == '[':
-            depth += 1
-        elif char == ']':
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return None
-
-
-def _destination(text: str, start: int) -> tuple[str | None, int]:
-    """Return the link destination and the offset just after the closing paren."""
-    length = len(text)
-    index = start
-    while index < length and text[index] in ' \t\r\n':
-        index += 1
-    if index < length and text[index] == '<':
-        end = text.find('>', index + 1)
-        if end == -1:
-            return None, length
-        close = text.find(')', end + 1)
-        return text[index + 1:end], (close + 1 if close != -1 else length)
-    depth = 0
-    cursor = index
-    while cursor < length:
-        char = text[cursor]
-        if char == '\\':
-            cursor += 2
-            continue
-        if char == '(':
-            depth += 1
-        elif char == ')':
-            if depth == 0:
-                return text[index:cursor], cursor + 1
-            depth -= 1
-        elif char in ' \t\r\n' and depth == 0:
-            close = text.find(')', cursor)
-            return text[index:cursor], (close + 1 if close != -1 else length)
-        cursor += 1
-    return None, length
-
-
 def link_targets(text: str) -> list[str]:
-    """Extract inline Markdown link destinations outside code and images."""
-    ignored = _ignored_ranges(text)
+    """Extract renderer-compatible link destinations, excluding images/code."""
     targets: list[str] = []
-    index = 0
-    length = len(text)
-    while index < length:
-        if _inside(index, ignored):
-            index = next((end for start, end in ignored if start <= index < end), length)
+    for token in MarkdownIt().parse(text):
+        if token.type != 'inline' or not token.children:
             continue
-        if text[index] == '\\':
-            index += 2
-            continue
-        if text[index] == '!' and index + 1 < length and text[index + 1] == '[':
-            index += 2
-            continue
-        if text[index] == '[':
-            close = _matching_bracket(text, index)
-            if close is not None and close + 1 < length and text[close + 1] == '(':
-                destination, end = _destination(text, close + 2)
-                if destination is not None:
-                    targets.append(destination)
-                index = max(end, close + 2)
-                continue
-        index += 1
+        for child in token.children:
+            if child.type == 'link_open' and child.attrs:
+                href = child.attrs.get('href')
+                if href is not None:
+                    targets.append(str(href))
     return targets
 
 
@@ -139,7 +43,7 @@ def _uuid(value: str) -> str | None:
 
 def _identity(target: str) -> tuple[str, Any]:
     """Classify a destination without touching project state or raising."""
-    raw = target.strip()
+    raw = unquote(target.strip())
     if raw.startswith('<') and raw.endswith('>'):
         raw = raw[1:-1].strip()
     if raw.startswith(('#', '?')):
@@ -248,6 +152,31 @@ def _node_candidate(item: Any) -> dict:
             'hidden': not visible}
 
 
+def _effective_visibility(item: Any, items: tuple[Any, ...]) -> bool:
+    by_id = {str(getattr(value, 'id', '')): value for value in items}
+    current = item
+    seen: set[str] = set()
+    while current is not None:
+        identity = str(getattr(current, 'id', ''))
+        if identity in seen or not bool(getattr(current, 'visible', True)):
+            return False
+        seen.add(identity)
+        parent = getattr(current, 'parentId', None)
+        current = by_id.get(str(parent)) if parent else None
+    return True
+
+
+def _resolved_node(item: Any, snapshot: Any, result: dict) -> dict:
+    output = _node_result(item, result)
+    visible = _effective_visibility(item, _items(snapshot))
+    output['status'] = 'focused' if visible else 'hidden'
+    if visible:
+        output.pop('action', None)
+    else:
+        output['action'] = 'reveal'
+    return output
+
+
 def _asset_candidate(asset: Any) -> dict:
     return {'assetId': str(getattr(asset, 'id', '')),
             'kind': str(getattr(asset, 'kind', '')),
@@ -267,6 +196,23 @@ def _unique(items: list[Any]) -> list[Any]:
 
 def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -> dict:
     assets = [asset for asset in _assets(snapshot) if _asset_matches(name, asset)]
+    # An adopted generation node displays the asset selected by its current
+    # result even though its binding remains a generation spec.
+    results = {str(getattr(result_version, 'id', '')): result_version
+               for result_version in (getattr(snapshot, 'results', ()) or ())}
+    specs = {str(getattr(spec, 'id', '')): spec
+             for spec in (getattr(snapshot, 'generationSpecs', ()) or ())}
+    for item in _items(snapshot):
+        binding = getattr(item, 'binding', None)
+        spec_ref = (getattr(binding, 'spec', None) or getattr(binding, 'generationSpec', None)
+                    or getattr(binding, 'objectRef', None))
+        spec = specs.get(str(getattr(spec_ref, 'id', '')))
+        selected = results.get(str(getattr(spec, 'currentResultId', '')))
+        asset_ref = getattr(selected, 'asset', None)
+        asset_id = getattr(asset_ref, 'assetId', None)
+        asset = next((value for value in _assets(snapshot) if str(getattr(value, 'id', '')) == str(asset_id)), None)
+        if asset is not None and _asset_matches(name, asset) and asset not in assets:
+            assets.append(asset)
     if assets and turn_id is not None:
         # The turn's own outputs take precedence over an unrelated asset that
         # happens to share a file name. A filename alone never picks silently.
@@ -275,10 +221,26 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
             assets = current
     if assets:
         asset_ids = {str(getattr(asset, 'id', '')) for asset in assets}
+        result_assets: dict[str, str] = {}
+        results = {str(getattr(value, 'id', '')): value
+                   for value in (getattr(snapshot, 'results', ()) or ())}
+        specs = {str(getattr(value, 'id', '')): value
+                 for value in (getattr(snapshot, 'generationSpecs', ()) or ())}
+        for item in _items(snapshot):
+            binding = getattr(item, 'binding', None)
+            spec_ref = (getattr(binding, 'spec', None) or getattr(binding, 'generationSpec', None)
+                        or getattr(binding, 'objectRef', None))
+            spec = specs.get(str(getattr(spec_ref, 'id', '')))
+            selected = results.get(str(getattr(spec, 'currentResultId', '')))
+            asset_ref = getattr(selected, 'asset', None)
+            selected_id = getattr(asset_ref, 'assetId', None)
+            if selected_id is not None:
+                result_assets[str(getattr(item, 'id', ''))] = str(selected_id)
         nodes = _unique([item for item in _items(snapshot)
-                         if asset_ids.intersection(_binding_asset_ids(item))])
+                         if asset_ids.intersection(_binding_asset_ids(item)) or
+                         result_assets.get(str(getattr(item, 'id', ''))) in asset_ids])
         if len(assets) == 1 and len(nodes) == 1:
-            return _node_result(nodes[0], result)
+            return _resolved_node(nodes[0], snapshot, result)
         if len(assets) == 1 and not nodes:
             asset = assets[0]
             return {**result, 'status': 'materialize',
@@ -290,7 +252,7 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
     nodes = _unique([item for item in _items(snapshot)
                      if str(getattr(item, 'title', '')) == name])
     if len(nodes) == 1:
-        return _node_result(nodes[0], result)
+        return _resolved_node(nodes[0], snapshot, result)
     if len(nodes) > 1:
         return {**result, 'status': 'ambiguous',
                 'candidates': [_node_candidate(item) for item in nodes]}
@@ -314,11 +276,11 @@ def resolve_canvas_link(target: str, snapshot: Any, turn_id: str | None = None) 
                         'projectId': project_id, 'nodeId': node_id}
             item = next((item for item in _items(snapshot)
                          if str(getattr(item, 'id', '')) == node_id), None)
-            return _node_result(item, result) if item is not None else {**result, 'status': 'missing'}
+            return _resolved_node(item, snapshot, result) if item is not None else {**result, 'status': 'missing'}
         if kind == 'node':
             item = next((item for item in _items(snapshot)
                          if str(getattr(item, 'id', '')) == value), None)
-            return _node_result(item, result) if item is not None else {**result, 'status': 'missing'}
+            return _resolved_node(item, snapshot, result) if item is not None else {**result, 'status': 'missing'}
         return _resolve_name(value, snapshot, turn_id, result)
     except Exception:
         # A malformed project fact or an unexpected snapshot shape must not

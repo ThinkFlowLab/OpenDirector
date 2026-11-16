@@ -396,6 +396,8 @@ class CreationGeneration(GenerationRuntime):
                 originItemId=origin, previousJobId=command.payload.previousJobId,
                 adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
                 batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
+            if source == 'agent' and command.payload.agentRunId is not None:
+                stub = stub.model_copy(update={'agentRunId': command.payload.agentRunId})
             task = self.task(stub)
             records = {str(a.id): media_record(a) for a in before.assets}
             try:
@@ -561,6 +563,7 @@ class CreationGeneration(GenerationRuntime):
                 'canvasItems': (*tuple(adopted_item if item and i.id == item.id else i for i in current.canvasItems), *([additional] if additional else [])),
                 'generationSpecs': tuple(adopted_spec if s.id == spec.id else s for s in current.generationSpecs)})
         provenance = AssetProvenance(source='generated', jobId=job.id, inputFingerprint=job.inputFingerprint,
+            agentRunId=job.agentRunId,
             sources=tuple({r.asset.assetId: r.asset for r in job.inputSnapshot.references}.values()))
         receipt = self.assets.register(command, source='background', provenance=provenance, apply=apply)
         if receipt.status == 'rejected':

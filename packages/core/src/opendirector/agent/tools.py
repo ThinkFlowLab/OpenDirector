@@ -408,6 +408,9 @@ class AgentTools:
             raise ProjectError('未知业务工具。')
         command = parse_command({**arguments, 'projectId': str(project_id),
             'commandId': str(uuid5(turn_id, call_id))})
+        if command.type == 'generation.submit':
+            command = command.model_copy(update={
+                'payload': command.payload.model_copy(update={'agentRunId': turn_id})})
         if command.type == 'creation.batch' and any(operation.type not in COMMANDS for operation in command.payload.operations):
             raise ProjectError('批量命令包含未开放的 Agent 操作。', 403)
         if command.type in {'generation.submit', 'job.cancel', 'job.recover'}:

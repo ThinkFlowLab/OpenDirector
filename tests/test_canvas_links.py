@@ -142,6 +142,44 @@ def test_code_examples_are_not_navigable_links():
     assert links[0]['nodeId'] == str(item.id)
 
 
+def test_markdown_parser_ignores_nested_image_labels_and_malformed_destinations():
+    text = ('````markdown\n```\n[example](notes.md)\n````\n'
+            '![alt [nested](notes.md)](image.png)\n'
+            '[bad](notes.md unquoted junk) [open](<notes.md>')
+    assert link_targets(text) == []
+
+
+def test_markdown_escaped_filename_resolves_to_real_asset():
+    stored = asset(uuid4(), 'notes.md')
+    item = node(uuid4(), title='Finished note', asset_id=stored.id)
+    resolved, = canvas_links_for_text(r'[note](notes\.md)', snapshot(assets=[stored], nodes=[item]))
+    assert resolved['status'] == 'focused'
+    assert resolved['nodeId'] == str(item.id)
+
+
+def test_child_under_hidden_group_is_hidden():
+    group = node(uuid4(), kind='group', visible=False)
+    child = node(uuid4(), title='Child', parent_id=group.id)
+    resolved = resolve_canvas_link(f'canvas:{child.id}', snapshot(nodes=[group, child]))
+    assert resolved['status'] == 'hidden'
+    assert resolved['action'] == 'reveal'
+
+
+def test_adopted_generation_asset_resolves_through_current_result():
+    asset_id, spec_id, result_id, item_id = (uuid4() for _ in range(4))
+    stored = asset(asset_id, 'adopted.png', kind='image')
+    item = node(item_id, kind='image', parent_id=None)
+    item.binding = NS(role='generation', objectRef=NS(id=spec_id))
+    result = NS(id=result_id, asset=NS(assetId=asset_id))
+    spec = NS(id=spec_id, currentResultId=result_id)
+    project = snapshot(assets=[stored], nodes=[item])
+    project.results = (result,)
+    project.generationSpecs = (spec,)
+    resolved = resolve_canvas_link('adopted.png', project)
+    assert resolved['status'] == 'focused'
+    assert resolved['nodeId'] == str(item_id)
+
+
 def test_stable_identity_does_not_depend_on_position_or_title():
     item = node(uuid4(), title='Before')
     original = snapshot(nodes=[item])

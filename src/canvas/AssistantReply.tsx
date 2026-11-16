@@ -94,10 +94,12 @@ function ToolGroup({ tools, t }: { tools: ChatTool[]; t: Translate }) {
 export const AssistantReply = memo(function AssistantReply({
   message,
   thinking,
+  onCanvasLink,
   t = defaultTranslate,
 }: {
   message: ChatMessage;
   thinking: boolean;
+  onCanvasLink?: (nodeId: string) => void;
   /** Injected by the panel; standalone mounts fall back to the active locale. */
   t?: Translate;
 }) {
@@ -117,6 +119,21 @@ export const AssistantReply = memo(function AssistantReply({
         : t("assistant.reply.copyReply");
   const markdown = (text: string, key: string) =>
     text && (
+      <div onClick={(event) => {
+        if (!onCanvasLink || !message.canvasLinks?.length) return;
+        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+        if (!anchor) return;
+        const href = anchor.getAttribute("href") ?? "";
+        const link = message.canvasLinks.find((entry) => {
+          if (!entry.nodeId) return false;
+          try { return entry.target === href || entry.target === decodeURIComponent(href); }
+          catch { return entry.target === href; }
+        });
+        if (link?.nodeId) {
+          event.preventDefault();
+          onCanvasLink(link.nodeId);
+        }
+      }}>
       <Streamdown
         key={key}
         className="cw-chat-markdown"
@@ -127,6 +144,7 @@ export const AssistantReply = memo(function AssistantReply({
       >
         {formatText(text)}
       </Streamdown>
+      </div>
     );
   const sections = replySections(message);
   const renderPart = (part: ReturnType<typeof replySections>["reply"][number]) => part.type === "text"

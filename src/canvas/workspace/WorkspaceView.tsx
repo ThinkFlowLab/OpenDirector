@@ -2248,6 +2248,22 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             );
           }}
           onTurnEnd={() => void syncServiceResults()}
+          onFocusCanvasNode={(id) => {
+            void (async () => {
+              if ((doc.hiddenNodes ?? []).some((node) => node.id === id)) {
+                const client = creationClient(doc.id);
+                const item = client.snapshot.canvasItems.find((node) => node.id === id);
+                if (!item) return;
+                await client.command("canvas.show", { item }, [objectVersion("canvas_item", item)]);
+                await client.refresh();
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+              } else if (!doc.nodes.some((node) => node.id === id)) {
+                return;
+              }
+              setSelected([id]);
+              void flow.fitView({ nodes: [{ id }], padding: 0.35, duration: 250, maxZoom: 1.2 });
+            })().catch((error) => notify(errorMessage(error)));
+          }}
           onModelSelections={setAssistantModels}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
