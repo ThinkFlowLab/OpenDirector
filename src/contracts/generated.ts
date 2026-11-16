@@ -720,6 +720,8 @@ export interface JobInput extends ProjectEntityInput {
   readonly adoptionMaterial?: AssetRefInput | null;
   readonly adopted?: boolean;
   readonly adapterParameters?: Readonly<Record<string, JsonValueInput>>;
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
 }
 
 export interface JobCancelCommandInput extends CommandBaseInput {
@@ -2295,6 +2297,8 @@ export interface Job extends ProjectEntity {
   readonly adoptionMaterial: AssetRef | null;
   readonly adopted: boolean;
   readonly adapterParameters: Readonly<Record<string, JsonValue>>;
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
 }
 
 export interface JobCancelCommand extends CommandBase {

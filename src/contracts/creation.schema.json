@@ -7182,6 +7182,35 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that submitted this job; omitted for jobs not submitted by an Agent.",
+            "title": "Agentrunid"
+          },
+          "agentCallId": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tool call within that turn that submitted this job; the command ID derives from both.",
+            "title": "Agentcallid"
           }
         },
         "required": [
@@ -22551,6 +22580,35 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that submitted this job; omitted for jobs not submitted by an Agent.",
+            "title": "Agentrunid"
+          },
+          "agentCallId": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tool call within that turn that submitted this job; the command ID derives from both.",
+            "title": "Agentcallid"
           }
         },
         "required": [

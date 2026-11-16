@@ -318,7 +318,7 @@ class CreationGeneration(GenerationRuntime):
                 remote.release()
             claim.release()
 
-    def prepare(self, command, *, session=None, source='ui'):
+    def prepare(self, command, *, session=None, source='ui', agent_origin=None):
         replay = self.projects.replay(command)
         if replay is not None:
             return replay
@@ -394,6 +394,7 @@ class CreationGeneration(GenerationRuntime):
                 createdAt=datetime.now(timezone.utc),
                 inputFingerprint=snapshot.fingerprint(), execution={'kind': spec.kind, **({'size': '2K'} if spec.kind == 'image' else {'format': 'mp3', 'sampleRate': 24000} if spec.kind == 'audio' else {})},
                 originItemId=origin, previousJobId=command.payload.previousJobId,
+                **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
                 adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
                 batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
             task = self.task(stub)
@@ -409,9 +410,9 @@ class CreationGeneration(GenerationRuntime):
             return ProjectSnapshot.model_validate(data)
         return self.projects.commit(command, accept, session=session, source=source)
 
-    async def execute(self, command, *, session=None, source='ui'):
+    async def execute(self, command, *, session=None, source='ui', agent_origin=None):
         if command.type == 'generation.submit':
-            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source))
+            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source, agent_origin=agent_origin))
             async def finish():
                 try:
                     receipt = await pending

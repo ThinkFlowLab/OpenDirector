@@ -7,6 +7,7 @@ from typing import get_args
 from uuid import UUID, uuid5
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from opendirector.domain.creation.base import agent_command_id
 from opendirector.application.creation_artifacts import publish_artifact
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_timeline_packages import CreationTimelinePackages
@@ -407,10 +408,12 @@ class AgentTools:
         if name != 'execute_command':
             raise ProjectError('未知业务工具。')
         command = parse_command({**arguments, 'projectId': str(project_id),
-            'commandId': str(uuid5(turn_id, call_id))})
+            'commandId': str(agent_command_id(turn_id, call_id))})
         if command.type == 'creation.batch' and any(operation.type not in COMMANDS for operation in command.payload.operations):
             raise ProjectError('批量命令包含未开放的 Agent 操作。', 403)
-        if command.type in {'generation.submit', 'job.cancel', 'job.recover'}:
+        if command.type == 'generation.submit':
+            receipt = await self.generation.execute(command, session=session, source='agent', agent_origin=(turn_id, call_id))
+        elif command.type in {'job.cancel', 'job.recover'}:
             receipt = await self.generation.execute(command, session=session, source='agent')
         elif command.type in {'asset.writeText', 'artifact.publish'}:
             if config is not None:
