@@ -231,9 +231,9 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
           className="cw-text-resize nodrag nopan"
           minWidth={TEXT_NODE_MIN_SIZE.width}
           minHeight={TEXT_NODE_MIN_SIZE.height}
-          onResizeStart={() => actions?.beginEdit?.(id)}
+          onResizeStart={() => actions?.beginResize()}
           // XYFlow emits the final dimensions after its resize-end callback.
-          onResizeEnd={() => queueMicrotask(() => actions?.endEdit?.(id))}
+          onResizeEnd={() => queueMicrotask(() => actions?.endResize())}
         >
           <span
             aria-label={t("canvasNodes.text.resize")}

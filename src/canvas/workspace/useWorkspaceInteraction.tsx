@@ -151,10 +151,11 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     pointerGesture.current.cancel();
     flowSurface.current?.cancel();
     connectionStarted.current = null;
+    if (dragging.current) end();
     dragging.current = false;
     setInteracting(false);
     clearGuides();
-  }, [clearGuides]);
+  }, [clearGuides, end]);
   useEffect(() => {
     const move = (event: PointerEvent) =>
       pointerGesture.current.move(
@@ -1181,6 +1182,14 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     },
     beginEdit: begin,
     endEdit: end,
+    beginResize: () => {
+      beginDrag();
+      begin();
+    },
+    endResize: () => {
+      endDrag();
+      end();
+    },
     textSelections: textSelections.current,
     isTextEditing: (id: string) => textEditingId === id && !rt.textWindowId,
     finishTextEdit: () => {

@@ -21,6 +21,8 @@ export interface CanvasActions {
   contextMenu: (id: string, event: MouseEvent) => void;
   beginEdit?: (id: string) => void;
   endEdit?: (id: string) => void;
+  beginResize: () => void;
+  endResize: () => void;
   textSelections: TextSelections;
   isTextEditing: (id: string) => boolean;
   finishTextEdit: () => void;

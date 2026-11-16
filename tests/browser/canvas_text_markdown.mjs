@@ -10,7 +10,7 @@ const health = await fetch(`${base}/api/creation-test-health`, { headers });
 assert.equal(health.ok, true, "Requires isolated creation_server.py and Vite");
 assert.equal((await health.json()).isolated, true);
 const browser = await launchBrowser();
-try {
+async function checkTextNode(resizeZoom) {
   const page = await browser.newPage({ locale: "en-US", viewport: { width: 1500, height: 1000 } });
   page.setDefaultTimeout(15000);
   await page.addInitScript(() => {
@@ -22,20 +22,21 @@ try {
   const bootstrap = (url) => url.origin === new URL(base).origin && url.pathname === "/";
   await page.route(bootstrap, (route) => route.fulfill({ contentType: "text/html", body: "<html></html>" }));
   await page.goto(base);
-  const fixture = await page.evaluate(async () => {
+  const fixture = await page.evaluate(async (zoom) => {
     const { createDocument, createNode } = await import("/src/canvas/model.ts");
     const { importWorkspaceDocument } = await import("/src/backend/workspace.ts");
     const { releaseBackendProject } = await import("/src/backend/projects.ts");
     const markdown = '# Heading 标题\n\n- **Bold** and *italic*\n\n> Quote\n\n[External](https://example.com)\n\n```js\nconst x = `hello`;\n```\n\n| A | B |\n| - | - |\n| x | y |\n' + "\nParagraph 中文\n".repeat(80);
     const node = createNode("text", { x: 180, y: 120 }, { title: "Markdown notes", text: markdown });
+    node.width = node.height = 300;
     const saved = await importWorkspaceDocument({
       ...createDocument("Text regression " + crypto.randomUUID().slice(0, 8)),
-      nodes: [node], viewport: { x: 0, y: 0, zoom: 0.8 },
+      nodes: [node], viewport: { x: 0, y: 0, zoom },
     });
     (await import("/src/backend/creationClient.ts")).creationClient(saved.id).close();
     await releaseBackendProject();
     return { id: saved.id, itemId: node.id, markdown };
-  });
+  }, resizeZoom);
   await page.unroute(bootstrap);
   await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}`);
   const node = page.locator(`.react-flow__node[data-id="${fixture.itemId}"]`);
@@ -88,7 +89,6 @@ try {
   const dragged = await waitItem((item) => item.position.x !== beforeDrag.position.x);
   assert.deepEqual([dragged.width, dragged.height], [beforeDrag.width, beforeDrag.height]);
   await handle.waitFor();
-  await page.waitForTimeout(600);
   const before = await readItem();
   let writes = 0;
   page.on("request", (request) => {
@@ -97,11 +97,24 @@ try {
   const grip = await handle.boundingBox();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
+  const resizingViewport = await page.locator(".react-flow__viewport").evaluate((element) => ({
+    transform: element.style.transform, zoom: Number(element.style.transform.match(/scale\(([^)]+)\)/)[1]),
+  }));
+  const workspace = page.locator(".cw-workspace");
+  assert.equal(await workspace.getAttribute("data-canvas-interacting"), "true");
   await page.mouse.move(grip.x + grip.width / 2 + 130, grip.y + grip.height / 2 + 65, { steps: 12 });
   await page.waitForTimeout(650);
+  assert.equal(await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform),
+    resizingViewport.transform, "Viewport must stay unchanged while the resize pointer is held");
   assert.equal(writes, 0, "No persistence during resize");
   await page.mouse.up();
+  assert.equal(await workspace.getAttribute("data-canvas-interacting"), "false");
   const resized = await waitItem((item) => item.width !== before.width && item.height !== before.height);
+  console.log("Resize geometry", { resizeZoom, zoom: resizingViewport.zoom, before: [before.width, before.height],
+    after: [resized.width, resized.height], expected: [before.width + 130 / resizingViewport.zoom, before.height + 65 / resizingViewport.zoom] });
+  // XYFlow rounds canvas dimensions to whole units; allow at most one unit.
+  assert.ok(Math.abs(resized.width - (before.width + 130 / resizingViewport.zoom)) <= 1, "Width equals screen delta / zoom");
+  assert.ok(Math.abs(resized.height - (before.height + 65 / resizingViewport.zoom)) <= 1, "Height equals screen delta / zoom");
   assert.equal(resized.binding.objectRef.assetId, before.binding.objectRef.assetId, "Resize preserves source");
   assert.equal(writes, 1, "One write after releasing the resize grip");
   console.log("Resize persisted", { before: [before.width, before.height], after: [resized.width, resized.height], writes });
@@ -111,6 +124,65 @@ try {
   await waitItem((item) => item.width === before.width && item.height === before.height);
   await page.keyboard.press(`${modifier}+Shift+z`);
   await waitItem((item) => item.width === resized.width && item.height === resized.height);
+
+  // Normal selection can still fit before the next resize begins.
+  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 80 } });
+  const fitBox = await node.boundingBox();
+  await page.mouse.move(1000, 800);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(1000 + 100 - fitBox.x, 800 + 140 - fitBox.y, { steps: 8 });
+  await page.mouse.up({ button: "middle" });
+  const beforeFit = await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform);
+  await node.click({ position: { x: 30, y: 40 } });
+  await page.waitForFunction((transform) => document.querySelector(".react-flow__viewport").style.transform !== transform, beforeFit);
+
+  for (const interruption of ["Escape", "pointercancel"]) {
+    await workspace.focus();
+    const cancelWrites = writes;
+    const cancelGrip = await handle.boundingBox();
+    await page.mouse.move(cancelGrip.x + cancelGrip.width / 2, cancelGrip.y + cancelGrip.height / 2);
+    await page.mouse.down();
+    assert.equal(await workspace.getAttribute("data-canvas-interacting"), "true");
+    const cancelViewport = await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform);
+    await page.mouse.move(cancelGrip.x + 60, cancelGrip.y + 40, { steps: 4 });
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform), cancelViewport,
+      "Grabbing the grip stops a selection fit already in progress");
+    if (interruption === "Escape") await page.keyboard.press("Escape");
+    else await page.evaluate(() => window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1, bubbles: true })));
+    assert.equal(await workspace.getAttribute("data-canvas-interacting"), "false", `${interruption} releases the guard`);
+    await page.mouse.move(cancelGrip.x + 90, cancelGrip.y + 70, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(650);
+    const cancelled = await readItem();
+    assert.deepEqual([cancelled.width, cancelled.height], [resized.width, resized.height], `${interruption} discards transient dimensions`);
+    assert.equal(writes, cancelWrites, `${interruption} neither saves nor leaves a pending history transaction`);
+    await page.getByRole("button", { name: "Expand editor", exact: true }).waitFor();
+    assert.equal(await page.locator(".cw-composer-dock").getAttribute("data-interacting"), "false");
+    await page.keyboard.press(`${modifier}+z`);
+    await waitItem((item) => item.width === before.width && item.height === before.height);
+    await page.keyboard.press(`${modifier}+Shift+z`);
+    await waitItem((item) => item.width === resized.width && item.height === resized.height);
+  }
+
+  // Clamping at the minimum lets the pointer leave the grip before release.
+  const outsideWrites = writes;
+  const outsideGrip = await handle.boundingBox();
+  const outsideNode = await node.boundingBox();
+  await page.mouse.move(outsideGrip.x + outsideGrip.width / 2, outsideGrip.y + outsideGrip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(outsideNode.x - 20, outsideNode.y - 20, { steps: 10 });
+  assert.equal(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest(".cw-text-resize")),
+    { x: outsideNode.x - 20, y: outsideNode.y - 20 }), false, "Release target is outside the grip");
+  await page.waitForTimeout(650);
+  assert.equal(writes, outsideWrites);
+  await page.mouse.up();
+  assert.equal(await workspace.getAttribute("data-canvas-interacting"), "false");
+  await waitItem((item) => item.width < resized.width && item.height < resized.height);
+  assert.equal(writes, outsideWrites + 1, "Outside release commits once");
+  await page.keyboard.press(`${modifier}+z`);
+  await waitItem((item) => item.width === resized.width && item.height === resized.height);
+  console.log("Selection fitting, Escape/pointercancel, outside release and resumed controls passed", resizeZoom);
   await page.screenshot({ path: join(tmpdir(), "issue336-canvas-en.png") });
 
   await display.dblclick({ position: { x: 60, y: 35 } });
@@ -183,7 +255,8 @@ try {
   await inline.press("Escape");
   await page.reload();
   await node.locator("h1").waitFor();
-  assert.equal((await readItem()).width, resized.width);
+  const reopened = await readItem();
+  assert.deepEqual([reopened.width, reopened.height], [resized.width, resized.height]);
   const content = await page.request.get(`${base}/api/creation/projects/${fixture.id}/assets/${changed.binding.objectRef.assetId}/content`, { headers });
   assert.equal(await content.text(), edited.text);
   console.log("Markdown code blocks, uncontrolled composition, fullscreen text/range/scroll, undo and reopen passed");
@@ -214,6 +287,10 @@ try {
   assert.deepEqual(errors, []);
   console.log("Unselected corner drag, locked surfaces and both locales passed", fixture.id);
   console.log("Screenshots:", ["issue336-canvas-en.png", "issue336-fullscreen-en.png", "issue336-fullscreen-zh.png"].map((name) => join(tmpdir(), name)));
+  await page.close();
+}
+try {
+  for (const zoom of [0.8, 1.3]) await checkTextNode(zoom);
 } finally {
   await browser.close();
 }
