@@ -258,6 +258,29 @@ class Conversations:
                 return UUID(item['conversationId'])
         return None
 
+    def retract(self, project_id: UUID, session: str, message_id: UUID) -> dict:
+        """Take a message back while it is still waiting in the queue.
+
+        A message that already started belongs to the conversation now: it can
+        be stopped, but removing it would leave the reply it produced without
+        the words that asked for it.
+        """
+        with self.projects.local.transaction() as db:
+            self.projects._recover()
+            directory, _, _ = self.projects._load(db, project_id)
+            self.projects._lease(db, project_id, directory, session)
+            file = child(child(directory, 'agent-runs'), 'conversation.json')
+            value = read_json(file) if file.exists() else {'messages': [], **Draft().model_dump()}
+            found = next((item for item in value['messages'] if item['id'] == str(message_id)), None)
+            if found is None:
+                raise ProjectError('这条消息不在当前对话里，请重新加载。', 404)
+            if found.get('status') != 'queued':
+                raise ProjectError('这条消息已经开始执行，停止回复后才能撤回。', 409)
+            value['messages'] = [item for item in value['messages'] if item['id'] != str(message_id)]
+            durable_json(file, value)
+            result = public_conversation(value)
+        return {'retracted': str(message_id), 'conversation': with_trace_sources(result, directory)}
+
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
         file = child(child(directory, 'agent-runs'), 'conversation.json')
@@ -808,5 +831,40 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             started = await plan_for(project_id, dispatched['message'], session, accept_language)
             started['start'] = dispatched['conversation']
             return launch(project_id, started, UUID(dispatched['conversation']['conversationId']))
+
+    @router.delete('/messages/{message_id}')
+    async def retract(project_id: UUID, message_id: UUID, x_opendirector_session: UUID = Header()):
+        """Take back a message that has not started yet.
+
+        Retracting under the admission lock is what keeps it from being picked
+        up in the same instant: the message is either still waiting and goes
+        away, or it has started and the caller is told to stop it instead.
+        """
+        session = str(x_opendirector_session)
+        async with admission.setdefault(project_id, asyncio.Lock()):
+            result = await asyncio.to_thread(conversations.retract, project_id, session, message_id)
+            chain = active.get(project_id)
+            if chain is not None:
+                chain.events.put({'type': 'retracted', 'messageId': str(message_id)})
+        return result
+
+    @router.post('/queue/dispatch')
+    async def dispatch(project_id: UUID, x_opendirector_session: UUID = Header(),
+                       accept_language: str | None = Header(default=None, alias='Accept-Language')):
+        """Continue the queue when nothing is running.
+
+        Messages outlive a restart, and a turn that failed leaves them waiting;
+        this starts the oldest one so the user does not have to retype it.
+        """
+        session = str(x_opendirector_session)
+        async with admission.setdefault(project_id, asyncio.Lock()):
+            if project_id in active:
+                raise ProjectError('当前工程已有回复正在执行。', 409)
+            dispatched = await asyncio.to_thread(conversations.dispatch, project_id, session)
+            if dispatched is None:
+                raise ProjectError('没有等待执行的排队消息。', 409)
+            plan = await plan_for(project_id, dispatched['message'], session, accept_language)
+            plan['start'] = dispatched['conversation']
+            return launch(project_id, plan, UUID(dispatched['conversation']['conversationId']))
 
     return router
