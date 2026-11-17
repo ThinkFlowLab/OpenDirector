@@ -1,0 +1,135 @@
+/* Example canvas picker: download progress, failure reason and manual fallback. */
+.cw-example-dialog {
+  width: min(680px, calc(100vw - 48px));
+  max-height: min(78vh, 720px);
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--cw-control-border);
+  background: var(--cw-control-surface);
+  color: var(--cw-control-fg);
+  box-shadow: var(--cw-control-shadow);
+  overflow: auto;
+}
+
+.cw-example-dialog::backdrop {
+  background: #0007;
+}
+
+.cw-example-dialog header h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cw-example-dialog header p {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--cw-control-muted, #9d9da6);
+}
+
+.cw-example-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-example-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--cw-control-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cw-control-surface) 88%, #fff 12%);
+}
+
+.cw-example-item-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cw-example-item-heading strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cw-example-item-heading small,
+.cw-example-summary {
+  font-size: 12px;
+  color: var(--cw-control-muted, #9d9da6);
+}
+
+.cw-example-summary {
+  margin: 0;
+}
+
+.cw-example-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.cw-example-actions button {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--cw-control-border);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cw-example-actions button:hover {
+  background: color-mix(in srgb, var(--cw-control-fg) 8%, transparent);
+}
+
+.cw-example-error {
+  margin: 0;
+  font-size: 12px;
+  color: #e08a8a;
+}
+
+.cw-example-manual {
+  font-size: 12px;
+}
+
+.cw-example-manual summary {
+  color: var(--cw-control-muted, #9d9da6);
+  cursor: pointer;
+}
+
+.cw-example-manual p {
+  margin: 6px 0;
+}
+
+.cw-example-manual a {
+  color: #8daed4;
+}
+
+.cw-example-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.cw-example-dialog-actions button {
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--cw-control-border);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cw-example-dialog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

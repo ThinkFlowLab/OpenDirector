@@ -15,6 +15,7 @@ export type ExampleErrorCode =
   | "html"
   | "notArchive"
   | "ambiguous"
+  | "notCanvas"
   | "integrity";
 
 /** A classified failure; the UI owns the wording for each code. */
