@@ -45,6 +45,18 @@ _MENTION_END_ANY = '\u3001\u201d\u2026\u2014\uff09\u300d\u300f\u3011\u300b\u3009
 _MENTION_END_AFTER_SPACE = '.:"\'\uff1a'
 
 
+def _boundary_indexes(value: str) -> list[int]:
+    """Indexes where sentence punctuation ends a mention."""
+    indexes = []
+    for index, char in enumerate(value):
+        if char in _MENTION_END_ANY:
+            indexes.append(index)
+        elif char in _MENTION_END_AFTER_SPACE and (
+                index + 1 == len(value) or value[index + 1].isspace()):
+            indexes.append(index)
+    return indexes
+
+
 def _mention_base(value: str) -> str:
     """Trim a mention at the first sentence punctuation that ends it.
 
@@ -55,13 +67,8 @@ def _mention_base(value: str) -> str:
     mention wherever it appears.
     """
     value = value.strip()
-    for index, char in enumerate(value):
-        if char in _MENTION_END_ANY:
-            return value[:index].rstrip()
-        if char in _MENTION_END_AFTER_SPACE and (
-                index + 1 == len(value) or value[index + 1].isspace()):
-            return value[:index].rstrip()
-    return value.rstrip()
+    indexes = _boundary_indexes(value)
+    return value[:indexes[0]].rstrip() if indexes else value.rstrip()
 
 
 def _mention_targets(text: str) -> list[str]:
@@ -324,34 +331,65 @@ _CJK_CHARACTER = re.compile('[㐀-䶿一-鿿豈-﫿'
                             '぀-ヿ가-힯]')
 
 
+def _prose_drops(value: str) -> list[str]:
+    """Trailing ordinary prose words removed one at a time, longest first.
+
+    A number or label such as "@Scene 99 does not exist" may be part of a real
+    title, so only an ordinary word is dropped; resolving the shorter node
+    "Scene" would reference the wrong object.
+    """
+    drops = []
+    candidate = value
+    while candidate:
+        head, _, tail = candidate.rpartition(' ')
+        if not head or not _PROSE_WORD.fullmatch(tail):
+            break
+        candidate = head
+        drops.append(candidate)
+    return drops
+
+
+def _punctuation_prefixes(value: str) -> list[str]:
+    """Mention prefixes cut at every sentence-punctuation boundary, longest first.
+
+    Trying the longest first keeps an internal punctuation mark that belongs
+    to the title: ``@Dr. Smith.`` must try ``Dr. Smith`` before ``Dr``.
+    """
+    value = value.strip()
+    prefixes: list[str] = []
+    for index in _boundary_indexes(value):
+        prefix = value[:index].rstrip()
+        if prefix and prefix not in prefixes:
+            prefixes.append(prefix)
+    return sorted(prefixes, key=len, reverse=True)
+
+
 def _title_candidates(value: str) -> list[str]:
     """Ordered title candidates for a raw mention, most specific first.
 
     The untrimmed mention is tried first so an exact title that itself
     contains sentence punctuation ("@Dr. Smith", "@Note: Intro") is never
-    truncated to a shorter, different node. Only when no exact title matches
-    does resolution fall back to punctuation and trailing-prose trimming.
+    truncated to a shorter, different node. Trailing prose is dropped before
+    punctuation trimming: in "@Dr. Smith says hello" the period after "Dr" is
+    part of the title, so the full "Dr. Smith" candidate must be tried before
+    the shorter "Dr" boundary prefix.
     """
     candidates: list[str] = []
 
-    def add(candidate: str) -> str:
+    def add(candidate: str) -> None:
         candidate = candidate.strip()
         if candidate and candidate not in candidates:
             candidates.append(candidate)
-        return candidate
 
     add(value)
-    base = add(_mention_base(value))
-    # A mention in running prose can carry trailing words ("Chapter 2.1
-    # here"). Only strip an ordinary prose word: a number or label such as
-    # "@Scene 99 does not exist" may be part of a real title, so resolving
-    # the shorter node "Scene" would reference the wrong object.
-    candidate = base
-    while candidate:
-        head, _, tail = candidate.rpartition(' ')
-        if not head or not _PROSE_WORD.fullmatch(tail):
-            break
-        candidate = add(head)
+    for candidate in _prose_drops(value):
+        add(candidate)
+    prefixes = _punctuation_prefixes(value)
+    for prefix in prefixes:
+        add(prefix)
+    for prefix in prefixes:
+        for candidate in _prose_drops(prefix):
+            add(candidate)
     return candidates
 
 
@@ -388,7 +426,12 @@ def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
         if len(nodes) > 1:
             return {**result, 'target': '@' + candidate, 'status': 'ambiguous',
                     'candidates': [_node_candidate(item) for item in nodes]}
-    return {**result, 'status': 'missing'}
+    # Keep the persisted target on the mention itself so the renderer never
+    # turns the rest of the sentence ("@No such item. Next step") into one
+    # clickable reference. A raw mention with no boundary keeps its full text.
+    base = _mention_base(name)
+    return {**result, 'target': '@' + base if base else result['target'],
+            'status': 'missing'}
 
 
 def resolve_canvas_link(target: str, snapshot: Any, turn_id: str | None = None) -> dict:

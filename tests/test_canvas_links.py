@@ -383,11 +383,30 @@ def test_exact_title_wins_before_sentence_punctuation_is_trimmed():
     note = node(uuid4(), title='Note')
     intro = node(uuid4(), title='Note: Intro')
     project = snapshot(nodes=[short, full, note, intro])
-    for text, expected in (('@Dr. Smith', full), ('@Note: Intro', intro)):
+    for text, expected, target in (
+            ('@Dr. Smith', full, '@Dr. Smith'),
+            ('@Dr. Smith.', full, '@Dr. Smith'),
+            ('@Dr. Smith says hello', full, '@Dr. Smith'),
+            ('@Note: Intro', intro, '@Note: Intro'),
+            ('@Note: Intro details', intro, '@Note: Intro')):
         link, = canvas_links_for_text(text, project, uuid4())
         assert link['status'] == 'focused'
-        assert link['target'] == text
+        assert link['target'] == target
         assert link['nodeId'] == str(expected.id)
+
+
+def test_missing_mentions_keep_the_target_off_following_prose():
+    # A missing mention must not wrap the rest of the sentence into the
+    # clickable reference; the persisted target stops at the mention boundary.
+    project = snapshot()
+    for text, target in (
+            ('@No such item. Next step', '@No such item'),
+            ('@No such item.', '@No such item'),
+            ('@Unknown 标题、继续', '@Unknown 标题')):
+        link, = canvas_links_for_text(text, project, uuid4())
+        assert link['status'] == 'missing'
+        assert link['target'] == target
+        assert 'nodeId' not in link
 
 
 @pytest.mark.parametrize(('text', 'title', 'expected_target'), [
