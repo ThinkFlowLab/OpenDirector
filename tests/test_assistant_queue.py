@@ -70,8 +70,46 @@ def assistant(tmp_path, monkeypatch):
         assert client.post(root + '/commands', json={'type': 'project.create', 'projectId': pid,
             'commandId': str(uuid4()), 'payload': {'name': '排队'}}).status_code == 200
         assert client.post(root + '/open').status_code == 200
-        yield client, root + '/assistant', contexts, gate
+        try:
+            yield client, root + '/assistant', contexts, gate
+        finally:
+            # A cancelled run is still waiting on this gate in a worker thread;
+            # releasing it lets the client shut down without waiting out the wait.
+            gate['release'].set()
 
+
+
+@pytest.fixture
+def gated(tmp_path, monkeypatch):
+    """A project whose every turn waits for a release of its own."""
+    contexts = []
+    gates = {}
+
+    async def stream(self, run):
+        text = run.messages[-1]['content']
+        contexts.append(text)
+        gates.setdefault(text, threading.Event())
+        yield {'type': 'delta', 'text': '收到：' + text}
+        await asyncio.to_thread(gates[text].wait, 10)
+        yield {'type': 'delta', 'text': '｜完'}
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
+    monkeypatch.setattr(agent, 'skills', empty_skills)
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model'})
+    with TestClient(create_app(LocalProjects(tmp_path)), headers={
+        'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
+        pid = str(uuid4())
+        root = f'/api/creation/projects/{pid}'
+        assert client.post(root + '/commands', json={'type': 'project.create', 'projectId': pid,
+            'commandId': str(uuid4()), 'payload': {'name': '续读'}}).status_code == 200
+        assert client.post(root + '/open').status_code == 200
+        try:
+            yield client, root + '/assistant', contexts, gates
+        finally:
+            for waiting in gates.values():
+                waiting.set()
 
 def test_supplementary_message_waits_for_the_running_turn_and_then_runs(assistant):
     client, path, contexts, gate = assistant
@@ -216,3 +254,35 @@ def test_idle_message_endpoint_starts_a_turn_and_keeps_message_ids_unique(assist
     duplicate = client.post(path + '/messages', json={
         'id': turn, 'runtime': 'default', 'conversationId': cid, 'text': '重复发送'})
     assert duplicate.status_code == 409
+
+
+def test_a_viewer_that_lost_the_stream_resumes_through_the_turn_it_remembers(gated):
+    """Reconnecting between two turns still finds the chain.
+
+    The viewer knows the turn it was watching, not the one that started while it
+    was away. Refusing that turn would leave it with a frozen conversation until
+    it thought to reload.
+    """
+    client, path, contexts, gates = gated
+    cid = client.get(path).json()['conversationId']
+    first, second = str(uuid4()), str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        running = pool.submit(client.post, path + '/turns', json={
+            'id': first, 'runtime': 'default', 'conversationId': cid, 'text': '先做这个'})
+        assert wait_until(lambda: '先做这个' in gates)
+        assert client.post(path + '/messages', json={
+            'id': second, 'runtime': 'default', 'conversationId': cid, 'text': '再补一句'}).status_code == 202
+        gates['先做这个'].set()
+        assert wait_until(lambda: '再补一句' in gates), contexts
+        # A turn from somewhere else is still refused: only this chain's own
+        # finished turn is enough to find this chain.
+        assert client.get(path + f'/turns/{uuid4()}/events').status_code == 404
+        with client.stream('GET', path + f'/turns/{first}/events') as response:
+            assert response.status_code == 200
+            gates['再补一句'].set()
+            lines = [line for line in response.iter_lines() if line.startswith('data: ')]
+        resumed = [json.loads(line[6:]) for line in lines]
+        whole = frames(running.result(timeout=10))
+
+    assert resumed == whole
+    assert [context for context in contexts] == ['先做这个', '再补一句']

@@ -225,6 +225,23 @@ class Conversations:
             durable_json(file, value)
         return cancelled
 
+    def conversation_of(self, project_id: UUID, message_id: UUID) -> UUID | None:
+        """Find the conversation a message belongs to.
+
+        A viewer that lost the connection keeps the turn it saw last. Once the
+        chain has moved on, that turn is over, but the conversation it belongs to
+        is still the one being written into, and that is how the stream can be
+        found again.
+        """
+        directory = self.path(project_id)
+        file = child(child(directory, 'agent-runs'), 'conversation.json')
+        with self.projects.local.transaction():
+            current = read_json(file) if file.exists() else {'messages': []}
+        for item in [current, *(current.get('archivedConversations') or [])]:
+            if any(message.get('id') == str(message_id) for message in item.get('messages') or []):
+                return UUID(item['conversationId'])
+        return None
+
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
         file = child(child(directory, 'agent-runs'), 'conversation.json')
@@ -679,7 +696,13 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
     async def turn_events(project_id: UUID, turn_id: UUID, after: int = 0):
         await asyncio.to_thread(conversations.path, project_id)
         chain = active.get(project_id)
-        if chain is None or turn_id not in (chain.turn, chain.id):
+        if chain is not None and turn_id not in (chain.turn, chain.id):
+            # A viewer that lost the stream between two turns remembers the turn
+            # it saw last, which is already over while its chain keeps running.
+            settled = await asyncio.to_thread(conversations.conversation_of, project_id, turn_id)
+            if settled is None or settled != chain.conversation_id:
+                chain = None
+        if chain is None:
             raise ProjectError('这轮回复已结束，请重新读取对话。', 404)
         return StreamingResponse(chain.events.follow(after), media_type='text/event-stream')
 
