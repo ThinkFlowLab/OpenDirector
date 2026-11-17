@@ -395,6 +395,30 @@ def test_exact_title_wins_before_sentence_punctuation_is_trimmed():
         assert link['nodeId'] == str(expected.id)
 
 
+def test_glued_cjk_prose_after_a_full_title_resolves_the_full_title():
+    # The CJK prefix fallback must prefer the longer known title even though
+    # the shorter one is also a prefix.
+    short = node(uuid4(), title='Dr')
+    full = node(uuid4(), title='Dr. Smith')
+    link, = canvas_links_for_text('（@Dr. Smith后续',
+                                  snapshot(nodes=[short, full]), uuid4())
+    assert link['target'] == '@Dr. Smith'
+    assert link['nodeId'] == str(full.id)
+
+
+def test_a_longer_known_title_with_an_unusable_boundary_shadows_shorter_nodes():
+    # The longer title exists, but the mention continues with a number that
+    # may belong to a longer title. Resolving "Dr" / "标题" would reference a
+    # different object, so the mention stays missing.
+    nodes = [node(uuid4(), title='Dr'), node(uuid4(), title='Dr. Smith'),
+             node(uuid4(), title='标题'), node(uuid4(), title='标题生成')]
+    project = snapshot(nodes=nodes)
+    for text in ('@Dr. Smith 99', '@标题生成 99'):
+        link, = canvas_links_for_text(text, project, uuid4())
+        assert link['status'] == 'missing'
+        assert 'nodeId' not in link
+
+
 def test_missing_mentions_keep_the_target_off_following_prose():
     # A missing mention must not wrap the rest of the sentence into the
     # clickable reference; the persisted target stops at the mention boundary.

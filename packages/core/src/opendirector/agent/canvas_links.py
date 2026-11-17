@@ -331,101 +331,56 @@ _CJK_CHARACTER = re.compile('[㐀-䶿一-鿿豈-﫿'
                             '぀-ヿ가-힯]')
 
 
-def _prose_drops(value: str) -> list[str]:
-    """Trailing ordinary prose words removed one at a time, longest first.
-
-    A number or label such as "@Scene 99 does not exist" may be part of a real
-    title, so only an ordinary word is dropped; resolving the shorter node
-    "Scene" would reference the wrong object.
-    """
-    drops = []
-    candidate = value
-    while candidate:
-        head, _, tail = candidate.rpartition(' ')
-        if not head or not _PROSE_WORD.fullmatch(tail):
-            break
-        candidate = head
-        drops.append(candidate)
-    return drops
-
-
-def _punctuation_prefixes(value: str) -> list[str]:
-    """Mention prefixes cut at every sentence-punctuation boundary, longest first.
-
-    Trying the longest first keeps an internal punctuation mark that belongs
-    to the title: ``@Dr. Smith.`` must try ``Dr. Smith`` before ``Dr``.
-    """
-    value = value.strip()
-    prefixes: list[str] = []
-    for index in _boundary_indexes(value):
-        prefix = value[:index].rstrip()
-        if prefix and prefix not in prefixes:
-            prefixes.append(prefix)
-    return sorted(prefixes, key=len, reverse=True)
-
-
-def _title_candidates(value: str) -> list[str]:
-    """Ordered title candidates for a raw mention, most specific first.
-
-    The untrimmed mention is tried first so an exact title that itself
-    contains sentence punctuation ("@Dr. Smith", "@Note: Intro") is never
-    truncated to a shorter, different node. Trailing prose is dropped before
-    punctuation trimming: in "@Dr. Smith says hello" the period after "Dr" is
-    part of the title, so the full "Dr. Smith" candidate must be tried before
-    the shorter "Dr" boundary prefix.
-    """
-    candidates: list[str] = []
-
-    def add(candidate: str) -> None:
-        candidate = candidate.strip()
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-
-    add(value)
-    for candidate in _prose_drops(value):
-        add(candidate)
-    prefixes = _punctuation_prefixes(value)
-    for prefix in prefixes:
-        add(prefix)
-    for prefix in prefixes:
-        for candidate in _prose_drops(prefix):
-            add(candidate)
-    return candidates
-
-
-def _known_title_prefix(name: str, snapshot: Any) -> str | None:
-    """Longest known title that starts a mention running into CJK prose.
-
-    Chinese prose has no spaces, so ``用@标题生成视频`` swallows the following
-    sentence into the mention. Only a CJK continuation enables this fallback;
-    an ASCII continuation (``@Scene 99``) stays unresolved rather than
-    referencing the unrelated shorter node ``Scene``.
-    """
-    best = None
+def _known_titles(snapshot: Any) -> list[str]:
+    titles: list[str] = []
     for item in _items(snapshot):
         title = str(getattr(item, 'title', '') or '')
-        if not title or len(title) >= len(name) or not name.startswith(title):
-            continue
-        if not _CJK_CHARACTER.match(name[len(title):]):
-            continue
-        if best is None or len(title) > len(best):
-            best = title
-    return best
+        if title and title not in titles:
+            titles.append(title)
+    return titles
+
+
+def _title_prefix_accepts(remainder: str) -> bool:
+    """Whether the text after a known title still lets the mention end there.
+
+    An exact match has no remainder. Sentence punctuation ends the mention;
+    an ASCII period/colon must be followed by whitespace or the end, so the
+    internal period of ``Chapter 2.1`` is not a boundary. Trailing prose words
+    ("Dr. Smith says hello") are allowed, but a number or label is not
+    ("@Scene 99" may be part of a longer title, so it must not reference the
+    unrelated shorter node "Scene"). Glued CJK prose ("@标题生成视频") is
+    allowed because Chinese has no word separator.
+    """
+    if not remainder:
+        return True
+    first = remainder[0]
+    if first in _MENTION_END_ANY:
+        return True
+    if first in _MENTION_END_AFTER_SPACE:
+        return len(remainder) == 1 or remainder[1].isspace()
+    if first.isspace():
+        rest = remainder.strip()
+        return bool(rest) and all(
+            _PROSE_WORD.fullmatch(word) for word in rest.split())
+    return bool(_CJK_CHARACTER.match(remainder))
 
 
 def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
-    candidates = _title_candidates(name)
-    prefix = _known_title_prefix(name, snapshot)
-    if prefix is not None and prefix not in candidates:
-        candidates.append(prefix)
-    for candidate in candidates:
-        nodes = _unique([item for item in _items(snapshot)
-                         if str(getattr(item, 'title', '')) == candidate])
-        if len(nodes) == 1:
-            return _resolved_node(nodes[0], snapshot, {**result, 'target': '@' + candidate})
-        if len(nodes) > 1:
-            return {**result, 'target': '@' + candidate, 'status': 'ambiguous',
-                    'candidates': [_node_candidate(item) for item in nodes]}
+    # Choose the longest known title that prefixes the mention, then require a
+    # clean mention boundary after it. A longer unusable prefix shadows every
+    # shorter one: resolving "Dr" for "@Dr. Smith 99" would reference a
+    # different object, so the safer outcome is "missing".
+    prefixes = [title for title in _known_titles(snapshot) if name.startswith(title)]
+    if prefixes:
+        title = max(prefixes, key=len)
+        if _title_prefix_accepts(name[len(title):]):
+            nodes = _unique([item for item in _items(snapshot)
+                             if str(getattr(item, 'title', '')) == title])
+            if len(nodes) == 1:
+                return _resolved_node(nodes[0], snapshot, {**result, 'target': '@' + title})
+            if len(nodes) > 1:
+                return {**result, 'target': '@' + title, 'status': 'ambiguous',
+                        'candidates': [_node_candidate(item) for item in nodes]}
     # Keep the persisted target on the mention itself so the renderer never
     # turns the rest of the sentence ("@No such item. Next step") into one
     # clickable reference. A raw mention with no boundary keeps its full text.
