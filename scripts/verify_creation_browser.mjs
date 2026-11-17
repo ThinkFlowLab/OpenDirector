@@ -232,8 +232,8 @@ try {
       (value) => value.jobs[0].status === "succeeded",
       "background completion",
     );
-    assert.equal(snapshot.jobs[0].adopted, false);
-    assert.equal(snapshot.generationSpecs.find((spec) => spec.id === targetSpecId).currentResultId, null);
+    assert.equal(snapshot.jobs[0].adopted, true);
+    assert.equal(snapshot.generationSpecs.find((spec) => spec.id === targetSpecId).currentResultId, snapshot.results[0].id);
     assert.equal(
       snapshot.jobs[0].inputSnapshot.references[0].asset.assetId,
       sourceAsset.id,
@@ -248,17 +248,8 @@ try {
     );
     assert.equal(snapshot.canvasItems.length, 2);
     assert.equal(snapshot.generationSpecs.length, 2);
-    // The source was hidden after submission, so explicitly adopt the candidate.
-    await page.evaluate(async ({ projectId, targetId, specId, resultId }) => {
-      const { creationClient, objectVersion } = await import("/src/backend/creationClient.ts");
-      const client = creationClient(projectId);
-      await client.refresh();
-      const spec = client.snapshot.generationSpecs.find((item) => item.id === specId);
-      const target = client.snapshot.canvasItems.find((item) => item.id === targetId);
-      await client.command("result.select", { specId, resultId }, [
-        objectVersion("generation_spec", spec), objectVersion("canvas_item", target),
-      ]);
-    }, { projectId, targetId, specId: targetSpecId, resultId: snapshot.results[0].id });
+    // Hiding a source changes its display, not the accepted creative intent.
+    // Normal if_current adoption remains valid and needs no extra selection.
     await page
       .getByText(/Fixture generated:/)
       .first()

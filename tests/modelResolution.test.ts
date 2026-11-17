@@ -294,6 +294,21 @@ test("MOSS layout JSON rejects text references with a localized explanation", ()
   }
 });
 
+test("a published default voice prefills a required selection without naming the provider", () => {
+  const model = config("audio", "glm-tts", {
+    inputRules: { profile: "zhipu-speech", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0,
+      videoModes: [], voiceRequired: true, referencesAllowed: false, defaultVoice: "tongtong" },
+  });
+  const settings = { ...newNodeGenerationSettings("audio", [model]), prompt: "Read this text." };
+  assert.equal(settings.voiceName, "tongtong");
+  // A library selection always wins over the published default.
+  const chosen = { ...settings, voiceName: "b7f05169-b935-522f-9b0a-b49336783d42" };
+  assert.equal(serviceAudioSettings(chosen, model).voiceName, "b7f05169-b935-522f-9b0a-b49336783d42");
+  // The same profile without a published default must not invent one.
+  const { defaultVoice, ...withoutDefault } = model.inputRules;
+  assert.equal(newNodeGenerationSettings("audio", [{ ...model, inputRules: withoutDefault }]).voiceName, undefined);
+});
+
 test("MOSS speech prefills a valid Voice ID and preserves selected or cleared voices", () => {
   const model = config("audio", "moss-tts-1.5-flash", {
     inputRules: { profile: "moss-speech", allowedKinds: [], maxImages: 0,

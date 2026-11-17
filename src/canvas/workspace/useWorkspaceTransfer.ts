@@ -18,8 +18,7 @@ import { importWorkspaceDocument, workspaceProjection } from "../../backend/work
 import { downloadFile, downloadFilename } from "../assets";
 import { referenceIssueText, referenceIssue } from "../connectionPolicy";
 
-import { sameNodeData } from "../dataBoundary.ts";
-import { classifyImportFile, readEditorResource } from "../editorMedia";
+import { classifyImportFile } from "../editorMedia";
 import { lockedNodeIds } from "../hierarchy";
 import { readImportBatch } from "../importBatch";
 import {
@@ -48,7 +47,7 @@ import {
   subjectTargetIdentity,
 } from "../subjectLibraryImport.ts";
 import { subjectWithResource, type SubjectMediaSlot } from "../subjectMedia.ts";
-import { importedNodeIds, uploadPickerPlan } from "./entryPoints.ts";
+import { importedNodeIds, uploadPickerPlan, uploadTargetUnchanged } from "./entryPoints.ts";
 
 import { assertUpload } from "../uploadPolicy.ts";
 import { prefetchLibrary } from "../library/libraryPrefetch";
@@ -440,6 +439,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     const projectId = historyRef.current.present.id;
     const client = creationClient(projectId);
     return captureClipboardMedia(projectId, fragment, {
+      read: (src, mimeType) => client.originalMedia(src, mimeType),
       resolve: (src, assetId) => {
         // A just-imported node may show its upload before it records the asset.
         const asset = assetId
@@ -561,11 +561,13 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     setSelected([]);
     setMenu(null);
   };
-  const downloadNode = (node: CanvasNode) => {
+  const downloadNode = async (node: CanvasNode) => {
     try {
       if (node.data.src)
         downloadFile(
-          node.data.src,
+          ["image/heic", "image/heif"].includes(node.data.mimeType ?? "")
+            ? await creationClient(historyRef.current.present.id).originalMedia(node.data.src, node.data.mimeType)
+            : node.data.src,
           downloadFilename(node.data.title, node.data.mimeType),
         );
       else if (node.type === "text")
@@ -582,7 +584,10 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   };
   const exportDocument = async () => {
     try {
-      const archive = await buildCanvasArchive(historyRef.current.present);
+      const document = historyRef.current.present;
+      const archive = await buildCanvasArchive(document, {
+        read: (src, mimeType) => creationClient(document.id).originalMedia(src, mimeType),
+      });
       downloadFile(archive.blob, archive.filename);
     } catch (error) {
       notify(errorMessage(error));
@@ -687,7 +692,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
               expected?.node.type,
             );
           validate(classifyImportFile(file).kind);
-          let resource = await readEditorResource(file, signal);
+          let resource = await workspaceProjection(importDocumentId).importFile(file, signal);
           validate(resource.kind);
           if (expected?.node.type === "subject") {
             // Validate the slot before registering, then retain the canonical
@@ -697,14 +702,13 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
               resource,
               expected.subjectSlot,
             );
-            {
+            if (!resource.assetId) {
               const ref = await creationClient(importDocumentId).importBlob(
                 file,
                 file.name,
                 resource.kind,
               );
-              resource =
-                await workspaceProjection(importDocumentId).resource(ref);
+              resource = await workspaceProjection(importDocumentId).resource(ref);
               subjectWithResource(
                 expected.node.data.subject,
                 resource,
@@ -763,8 +767,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
         );
         if (
           !latest ||
-          latest.type !== expected.node.type ||
-          !sameNodeData(latest.data, expected.node.data) ||
+          !uploadTargetUnchanged(latest, expected.node) ||
           lockedNodeIds(historyRef.current.present.nodes).has(target)
         )
           throw new Error(t("canvas.workspace.error.uploadNodeChanged"));

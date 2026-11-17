@@ -232,8 +232,10 @@ try {
     assert.ok(flash);
     assert.deepEqual(flash.inputRules.frameRoles, ["first_frame"]);
     assert.deepEqual(flash.inputRules.outputResolutions, ["720P"]);
-    assert.deepEqual(flash.inputRules.videoCapabilities.outputs[0].durations,
-      Array.from({ length: 18 }, (_, index) => index + 3));
+    assert.deepEqual(
+      flash.inputRules.videoCapabilities.outputs[0].durations,
+      Array.from({ length: 18 }, (_, index) => index + 3),
+    );
     const png = await page.evaluate(() => {
       const canvas = document.createElement("canvas");
       canvas.width = canvas.height = 400;
@@ -466,26 +468,94 @@ try {
       localStorage.setItem("opendirector.locale.v1", locale);
       localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
     }, locale);
-    await unopened.goto(
-      `${base}/ai-tool/ai-canvas/${unopenedId}?creation=unified`,
+    const assistantPath = `/api/creation/projects/${unopenedId}/assistant`;
+    let releaseAssistant;
+    const assistantGate = new Promise((resolve) => {
+      releaseAssistant = resolve;
+    });
+    let assistantHeld = false;
+    await unopened.route(`**${assistantPath}`, async (route) => {
+      if (route.request().method() === "GET") {
+        assistantHeld = true;
+        await assistantGate;
+      }
+      await route.continue();
+    });
+    const available = (await call("/api/model-configs"))
+      .filter((model) => model.kind === "video")
+      .sort(
+        (a, b) =>
+          a.modelId.localeCompare(b.modelId) || a.id.localeCompare(b.id),
+      );
+    const expectedDefault = available[0].id;
+    // Force the API-first row to differ from the declared deterministic
+    // fallback, so restoring the old picker rule cannot pass by coincidence.
+    assert.notEqual(
+      (await call("/api/model-configs")).find((model) => model.kind === "video")
+        .id,
+      expectedDefault,
     );
-    await unopened.getByText(text.saved, { exact: true }).waitFor();
-    assert.equal(
-      await unopened.locator(".cw-chat-button").getAttribute("aria-expanded"),
-      "false",
-    );
-    await unopened
-      .getByRole("button", { name: text.addVideo, exact: true })
-      .click();
-    const defaultAfterAdding = await until(
-      () => call(`/api/creation/projects/${unopenedId}`),
-      (value) => value.generationSpecs.length === 1,
-      "unopened assistant default after adding Kling",
-    );
-    assert.equal(
-      defaultAfterAdding.generationSpecs[0].modelConfigId,
-      initialSpec.modelConfigId,
-    );
+    try {
+      await unopened.goto(
+        `${base}/ai-tool/ai-canvas/${unopenedId}?creation=unified`,
+      );
+      await unopened.getByText(text.saved, { exact: true }).waitFor();
+      await until(async () => assistantHeld, Boolean, "assistant read held");
+      assert.equal(
+        await unopened.locator(".cw-chat-button").getAttribute("aria-expanded"),
+        "false",
+      );
+      await unopened
+        .getByRole("button", { name: text.addVideo, exact: true })
+        .click();
+      const defaultAfterAdding = await until(
+        () => call(`/api/creation/projects/${unopenedId}`),
+        (value) => value.generationSpecs.length === 1,
+        "unopened assistant default after adding Kling",
+      );
+      assert.equal(
+        defaultAfterAdding.generationSpecs[0].modelConfigId,
+        expectedDefault,
+      );
+      releaseAssistant();
+      // Draft persistence confirms that the actual hook has resolved and saved
+      // its picker selection; merely waiting for the response is insufficient.
+      await until(
+        () => call(assistantPath),
+        (value) => Boolean(value.modelSelections?.video),
+        "assistant picker persisted",
+      );
+      await unopened
+        .getByRole("button", { name: text.addVideo, exact: true })
+        .click();
+      const afterLoading = await until(
+        () => call(`/api/creation/projects/${unopenedId}`),
+        (value) => value.generationSpecs.length === 2,
+        "default after assistant loads",
+      );
+      assert.ok(
+        afterLoading.generationSpecs.every(
+          (spec) => spec.modelConfigId === expectedDefault,
+        ),
+      );
+      assert.equal(
+        (await call(assistantPath)).modelSelections.video,
+        expectedDefault,
+      );
+      console.log(
+        JSON.stringify({
+          event: "kling-default-loading",
+          locale,
+          expectedDefault,
+          before: defaultAfterAdding.generationSpecs.map(
+            (spec) => spec.modelConfigId,
+          ),
+          after: afterLoading.generationSpecs.map((spec) => spec.modelConfigId),
+        }),
+      );
+    } finally {
+      releaseAssistant();
+    }
     await unopened.close();
     assert.deepEqual(errors, []);
     await page.close();

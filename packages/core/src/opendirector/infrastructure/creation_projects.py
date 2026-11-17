@@ -213,7 +213,7 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
             except ContractError as error:
                 issue = error.issue
             except (ValueError, ProjectError) as error:
-                issue = dict(code='invalid_input', message=str(error)[:500])
+                issue = ContractError.from_error(error).issue.model_copy(update={'message': str(error)[:500]})
             if issue is not None:
                 # Publishing a rejected receipt moves the head and marks it
                 # validated, and a journal left by a failed publication would

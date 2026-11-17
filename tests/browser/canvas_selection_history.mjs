@@ -77,12 +77,19 @@ try {
       .getByRole("button", { name: `添加${kind}`, exact: true })
       .click();
     const original = (await count(1)).canvasItems[0];
+    const specId =
+      original.binding.draftSpec?.id ?? original.binding.objectRef?.id;
     if (kind === "图片") {
       const model = (await get("/api/model-configs")).find(
         (model) => model.modelId === "Qwen/Qwen-Image-2.1",
       );
       assert.ok(model);
       await chooseGenerationModel(page, `config:${model.id}`);
+      await until(async () =>
+        (await state()).generationSpecs.some(
+          (spec) => spec.id === specId && spec.modelConfigId === model.id,
+        ),
+      );
       await saved();
     }
     const node = page.locator(`.react-flow__node[data-id="${original.id}"]`);
@@ -157,13 +164,14 @@ try {
           .evaluate((el) => document.activeElement === el),
         true,
       );
+      // The old saved label can still be visible before this edit is committed.
+      const assetId = await until(async () => {
+        const binding = (await state()).canvasItems.find(
+          (item) => item.id === original.id,
+        ).binding;
+        return binding.materialOverride?.assetId ?? binding.objectRef?.assetId;
+      });
       await saved();
-      const binding = (await state()).canvasItems.find(
-        (item) => item.id === original.id,
-      ).binding;
-      const assetId =
-        binding.materialOverride?.assetId ?? binding.objectRef?.assetId;
-      assert.ok(assetId);
       const content = await page.request.get(
         base + path + `/assets/${assetId}/content`,
         { headers },
@@ -195,23 +203,24 @@ try {
     await page.keyboard.press("Escape");
     assert.equal(await dock.getAttribute("data-expanded"), "false");
     await body.click({ position: { x: 8, y: 8 } });
+    await until(async () =>
+      (await state()).generationSpecs.some(
+        (spec) => spec.id === specId && spec.prompt === "promp",
+      ),
+    );
     await saved();
 
     if (kind === "文本") {
       // Hold one save in flight while several debounce windows elapse.
-      let release, started;
+      let release;
       const gate = new Promise((resolve) => {
         release = resolve;
-      });
-      const held = new Promise((resolve) => {
-        started = resolve;
       });
       const writes = [];
       const routePattern = `**${path}/commands`;
       await page.route(routePattern, async (route) => {
         writes.push(route.request().postDataJSON());
         if (writes.length === 1) {
-          started();
           await gate;
         }
         await route.continue();
@@ -219,19 +228,23 @@ try {
       const x = (await state()).canvasItems.find(
         (item) => item.id === original.id,
       ).position.x;
-      await page.keyboard.press("ArrowRight");
-      await held;
-      for (let i = 0; i < 4; i++) {
+      try {
         await page.keyboard.press("ArrowRight");
-        await page.waitForTimeout(600);
+        await until(() => writes.length > 0);
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press("ArrowRight");
+          await page.waitForTimeout(600);
+        }
+      } finally {
+        release();
       }
-      release();
-      await saved();
-      assert.equal(
-        (await state()).canvasItems.find((item) => item.id === original.id)
-          .position.x,
-        x + 5,
+      await until(
+        async () =>
+          (await state()).canvasItems.find((item) => item.id === original.id)
+            .position.x ===
+          x + 5,
       );
+      await saved();
       assert.equal(
         writes.length,
         2,
@@ -255,14 +268,15 @@ try {
         else await route.continue();
       });
       await page.keyboard.press("ArrowRight");
+      await until(
+        async () =>
+          (await state()).canvasItems.find((item) => item.id === original.id)
+            .position.x ===
+          x + 6,
+      );
       await saved();
       assert.equal(retries.length, 2);
       assert.equal(retries[0], retries[1]);
-      assert.equal(
-        (await state()).canvasItems.find((item) => item.id === original.id)
-          .position.x,
-        x + 6,
-      );
       assert.equal(await page.getByText(/保存失败/).count(), 0);
       await page.unroute(routePattern);
     }

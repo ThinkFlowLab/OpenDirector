@@ -125,11 +125,15 @@ for (const message of [
 test("voice_not_found identifies the voice before generic 404 or input failures", () => {
   try {
     setActiveLocale("en-US");
-    assert.equal(generationFailureMessage(failure({ providerCode: "voice_not_found", httpStatus: 404 })),
-      "The voice was not found or is unavailable to this account. Check the Voice ID in the MOSS voice library.");
+    const english = "The voice was not found or is unavailable to this account. Select an available voice in the voice library.";
+    const chinese = "该音色不存在或当前账户无权使用，请在音色库重新选择可用音色。";
+    // MOSS reports a voice_not_found code; Zhipu reports code 1214 with this backend message.
+    const zhipu = failure({ providerCode: "1214", httpStatus: 400, category: "input", message: "所选音色不存在或不可用。" });
+    assert.equal(generationFailureMessage(failure({ providerCode: "voice_not_found", httpStatus: 404 })), english);
+    assert.equal(generationFailureMessage(zhipu), english);
     setActiveLocale("zh-CN");
-    assert.equal(generationFailureMessage(failure({ providerCode: "voice_not_found", httpStatus: 404 })),
-      "该音色不存在或当前账户无权使用，请在 MOSS 音色库核对音色 ID。");
+    assert.equal(generationFailureMessage(failure({ providerCode: "voice_not_found", httpStatus: 404 })), chinese);
+    assert.equal(generationFailureMessage(zhipu), chinese);
   } finally {
     setActiveLocale("zh-CN");
   }
@@ -152,4 +156,16 @@ test("provider moderation verdicts are explained in both languages", () => {
     generationFailureMessage(moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。")),
     /生成内容涉及敏感信息/,
   );
+});
+
+test("MiniMax missing voices use the shared localized message", () => {
+  const value = failure({ providerCode: "2054", httpStatus: 200, message: "所选音色不存在或不可用。" });
+  try {
+    setActiveLocale("en-US");
+    assert.match(generationFailureMessage(value), /voice library/);
+    assert.doesNotMatch(generationFailureMessage(value), /MOSS|[\u3400-\u9fff]/);
+    setActiveLocale("zh-CN");
+    assert.match(generationFailureMessage(value), /音色库/);
+    assert.doesNotMatch(generationFailureMessage(value), /MOSS/);
+  } finally { setActiveLocale("zh-CN"); }
 });

@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 
 const workflows = [
+  { name: "timeline node output", script: "tests/browser/timeline_node_output.mjs" },
   { name: "locale", script: "tests/browser/locale.mjs" },
   { name: "creation closure", script: "scripts/verify_creation_browser.mjs" },
   { name: "assistant activity", script: "tests/browser/assistant_activity.mjs" },
@@ -33,9 +34,11 @@ const workflows = [
     name: "project list overflow",
     script: "tests/browser/project_list_overflow.mjs",
   },
+  { name: "session lease", script: "tests/browser/session_lease.mjs" },
   { name: "mp4 export", script: "tests/browser/mp4_export.mjs" },
   { name: "editor save", script: "tests/browser/editor_save.mjs" },
   { name: "canvas crop", script: "tests/browser/canvas_crop.mjs" },
+  { name: "canvas text Markdown", script: "tests/browser/canvas_text_markdown.mjs" },
   {
     name: "canvas layers",
     script: "tests/browser/canvas_layers.mjs",

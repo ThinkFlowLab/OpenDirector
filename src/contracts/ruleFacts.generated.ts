@@ -5,6 +5,13 @@
 // pre-check uses serviceVoicePattern and must not compile storedVoicePattern.
 
 export const RULE_FACTS = {
+  "timelineFontLimit": 16,
+  "timelineOverlayLimit": 2000,
+  "timelineTextMaxLength": 4096,
+  "timelineTextTotalLength": 200000,
+  "timelineFontBytes": 33554432,
+  "timelineFontTotalBytes": 67108864,
+  "timelineDurationEpsilon": 0.0005,
   "maxReferences": 64,
   "textReferenceBytes": 65536,
   "agentImageBytes": 33554432,
@@ -69,7 +76,14 @@ export function aspectRatioChoices(input: {
   return ["auto"];
 }
 
+export function durationMatches(seconds: number, durations: readonly number[], fractional = false): boolean {
+  return fractional
+    ? durations.length > 0 && seconds >= Math.min(...durations) && seconds <= Math.max(...durations)
+    : durations.includes(seconds);
+}
+
 export function resolutionChoices(input: {
+  readonly fractionalDuration?: boolean;
   readonly kind: string;
   readonly videoMode?: string | null;
   readonly aspectRatio?: string | null;
@@ -113,7 +127,7 @@ export function resolutionChoices(input: {
       ? choices.filter((label) =>
           outputs.some(
             (item) =>
-              item.resolution === label && item.durations.includes(duration),
+              item.resolution === label && durationMatches(duration, item.durations, input.fractionalDuration),
           ),
         )
       : choices;

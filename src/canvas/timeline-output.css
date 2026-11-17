@@ -1,0 +1,3 @@
+.cw-timeline-pending { width: 100%; height: 100%; }
+.cw-timeline-pending-action { position: absolute; z-index: 4; top: 12px; right: 12px; border: 1px solid #ffffff24; border-radius: 8px; background: #19191dcc; color: #eee; padding: 5px 10px; font: inherit; font-size: 11px; cursor: pointer; }
+.cw-timeline-pending-error { padding: 44px 18px 16px; color: #ffb1b1; font-size: 12px; overflow: auto; height: 100%; }

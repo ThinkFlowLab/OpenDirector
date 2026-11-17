@@ -55,6 +55,32 @@ def timed(operation):
     return (time.perf_counter() - start) * 1000, value
 
 
+# Preparing fixtures at the configured 600-commit / 200-node scale can outlast the
+# production edit lease (``LocalProjects.LEASE_SECONDS``, 60 s). An expired session
+# then aborts the scenario before anything is measured. Renewal runs only while
+# building fixtures and never inside a ``timed`` region, so it cannot inflate a
+# measurement.
+LEASE_RENEWAL = 0.5
+
+
+def keep_alive(projects, project_id, session):
+    """Return a callback that renews the fixture's edit lease before it expires."""
+    interval = getattr(projects.local, "LEASE_SECONDS", 60) * LEASE_RENEWAL
+    renewed = []
+
+    def renew():
+        now = time.monotonic()
+        # The first call renews. A fixture can already be some way into its lease
+        # when its write loop starts, so the window is anchored to a fresh lease
+        # rather than to whichever moment the loop happened to begin.
+        if renewed and now - renewed[0] < interval:
+            return
+        projects.heartbeat(session, project_id)
+        renewed[:] = [now]
+
+    return renew
+
+
 def create_project(projects, name, node_count):
     project_id = uuid4()
     projects.execute(command("project.create", project_id, {"name": name}))
@@ -65,7 +91,9 @@ def create_project(projects, name, node_count):
         session=session,
     )
     asset = projects.snapshot(project_id).assets[0]
+    renew = keep_alive(projects, project_id, session)
     for index in range(node_count):
+        renew()
         projects.execute(
             command(
                 "canvas.show",
@@ -100,7 +128,9 @@ def add_saves(projects, project_id, session, commits, nodes):
         item.id: item.revision for item in projects.snapshot(project_id).canvasItems
     }
     item_ids = list(revisions)[:nodes]
+    renew = keep_alive(projects, project_id, session)
     for index in range(commits):
+        renew()
         item_id = item_ids[index % len(item_ids)]
         projects.execute(
             command(

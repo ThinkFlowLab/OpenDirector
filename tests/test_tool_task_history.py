@@ -39,8 +39,8 @@ def tool_project(tmp_path):
         payload=dict(item=dict(id=node_id, projectId=project_id, kind='image', binding=dict(role='material', objectRef=asset_ref(material)))))), session=session)
     assert receipt.status == 'applied'
     configs = ModelConfigs(store.repository)
-    def service():
-        return ToolTasks(store, configs, assets, projects=projects)
+    def service(**kwargs):
+        return ToolTasks(store, configs, assets, projects=projects, **kwargs)
     value = dict(id=str(uuid4()), tool='image-hd', sourceAssetIds=[source['id']],
         parameters={'kind': 'normal', 'resolution': '2K'}, boxes=[],
         canvas=dict(nodeId=node_id, sourceNodeIds=[node_id]))

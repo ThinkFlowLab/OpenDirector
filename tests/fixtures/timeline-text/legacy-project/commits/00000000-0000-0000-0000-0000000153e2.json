@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "command": {
+    "commandId": "00000000-0000-0000-0000-0000000153e2",
+    "projectId": "00000000-0000-0000-0000-0000000153d9",
+    "type": "project.create",
+    "expectedVersions": [],
+    "expectedPreview": null,
+    "payload": {
+      "name": "Timeline baseline"
+    }
+  },
+  "previousHead": null,
+  "snapshot": {
+    "format": "opendirector-project",
+    "formatVersion": 2,
+    "project": {
+      "id": "00000000-0000-0000-0000-0000000153d9",
+      "revision": 1,
+      "name": "Timeline baseline"
+    },
+    "assets": [],
+    "generationSpecs": [],
+    "references": [],
+    "canvasItems": [],
+    "editorDocuments": [],
+    "jobs": [],
+    "results": [],
+    "eventCursor": 1,
+    "undoClearedThrough": 0
+  },
+  "receipt": {
+    "commandId": "00000000-0000-0000-0000-0000000153e2",
+    "projectId": "00000000-0000-0000-0000-0000000153d9",
+    "inputFingerprint": "883bce761f6f4a91940f112a974f4719b22c7f4c34c848406f7971d9c070632a",
+    "status": "applied",
+    "changed": [
+      {
+        "objectType": "project",
+        "id": "00000000-0000-0000-0000-0000000153d9",
+        "revision": 1
+      }
+    ],
+    "jobIds": [],
+    "issues": [],
+    "eventCursor": 1
+  },
+  "event": {
+    "schemaVersion": 1,
+    "projectId": "00000000-0000-0000-0000-0000000153d9",
+    "cursor": 1,
+    "commandId": "00000000-0000-0000-0000-0000000153e2",
+    "source": "ui",
+    "changed": [
+      {
+        "version": {
+          "objectType": "project",
+          "id": "00000000-0000-0000-0000-0000000153d9",
+          "revision": 1
+        },
+        "change": "created"
+      }
+    ],
+    "jobIds": []
+  }
+}

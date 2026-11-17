@@ -44,6 +44,7 @@ const mediaExtensions: Record<string, readonly string[]> = {
   "image/png": ["png"], "image/jpeg": ["jpg", "jpeg"],
   "image/svg+xml": ["svg"], "image/webp": ["webp"],
   "image/gif": ["gif"], "image/avif": ["avif"],
+  "image/heic": ["heic"], "image/heif": ["heif"],
   "image/bmp": ["bmp"], "image/tiff": ["tiff", "tif"],
   "video/webm": ["webm"], "video/mp4": ["mp4", "m4v"],
   "video/quicktime": ["mov"], "video/ogg": ["ogv", "ogg"],

@@ -1,18 +1,16 @@
 import type { ProjectSnapshot } from "../contracts/generated.ts";
-import { isCurrentCanvasReference } from "../backend/creationClient.ts";
 import type { ReferenceAsset } from "./chatReferenceContent.ts";
 
 /** Presentation metadata only: the reference continues to bind its fixed asset. */
 export function pinnedReferenceAssets(
   snapshot: ProjectSnapshot,
   specId: string,
-  visible: ReadonlySet<string>,
 ): ReferenceAsset[] {
   return snapshot.references.flatMap((ref) => {
     if (
       ref.binding !== "pinned" ||
       ref.targetSpecId !== specId ||
-      !isCurrentCanvasReference(ref, visible)
+      !ref.active
     )
       return [];
     const asset = snapshot.assets.find(

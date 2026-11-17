@@ -111,7 +111,7 @@ def test_create_uses_provider_fields_and_returned_id(provider):
     assert result['source'] == 'uploaded'
 
 
-@pytest.mark.parametrize('data,filename,code', [(b'not audio', 'sample.wav', 'voice_audio_invalid'), (wav(.2), 'sample.wav', 'voice_duration'), (wav(), 'sample.exe', 'voice_format')])
+@pytest.mark.parametrize('data,filename,code', [(b'not audio', 'sample.wav', 'voice_audio_invalid'), (wav(.2), 'sample.wav', 'voice_duration'), (wav(), 'sample.exe', 'voice_format')], ids=['invalid-audio', 'too-short', 'invalid-extension'])
 def test_invalid_actual_audio_never_calls_provider(data, filename, code):
     value = config()
     service = library(value, lambda request: pytest.fail('invalid upload reached provider'))

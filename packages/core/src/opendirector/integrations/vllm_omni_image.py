@@ -16,6 +16,14 @@ from opendirector.integrations.model_adapters import adapter_for
 from opendirector.integrations.reference_inputs import generation_references
 
 WIDTH, HEIGHT = 1344, 768
+# Z-Image-Turbo is a few-step distilled model meant to run without CFG; vLLM-Omni's recipe uses 9 steps
+# and guidance 0. Left out, vLLM-Omni runs 50 steps with CFG at 1.0, about ten times the work.
+# Fixed into a job's parameters when it is accepted; see CreationGeneration._parameters.
+# Every new job sends these, which is safe only while the vllm-omni-image profile takes no reference images
+# (domain/input_rules.py): vLLM-Omni starts an edit at step int(steps * (1 - strength)), so 9 steps would
+# start a strong edit from almost pure noise.
+SAMPLING = {'num_inference_steps': 9, 'guidance_scale': 0.0}
+SAMPLING_FIELDS = ('num_inference_steps', 'guidance_scale')
 
 
 class VllmOmniImageGeneration:
@@ -34,10 +42,14 @@ class VllmOmniImageGeneration:
         prepared = await asyncio.to_thread(generation_references, self.store, task, config)
         references = tuple(base64.b64decode(uri.split(',', 1)[1]) for uri in prepared['images'])
         adapter = adapter_for(config, self.transport)
-        size = task.get('parameters', {}).get('size', '')
+        parameters = task.get('parameters', {})
+        size = parameters.get('size', '')
         width, height = map(int, size.split('x')) if 'x' in size else (WIDTH, HEIGHT)
+        # Only what the job fixed at acceptance: a job accepted without sampling keeps the service defaults.
+        sampling = {key: parameters[key] for key in SAMPLING_FIELDS if key in parameters}
         result = await adapter.image(config, ImageRequest(prompt=prepared['prompt'], width=width, height=height,
-                                                          image=references[0] if references else None, references=references[1:]))
+                                                          image=references[0] if references else None, references=references[1:]),
+                                     extra=sampling)
         if result.suffix != 'png':
             raise protocol_failure('submit')
         return 'png', result.data

@@ -7,24 +7,32 @@ Adding a model means adding or extending an adapter; operations stay unchanged.
 
 import asyncio
 import base64
+import io
 import json
 import math
 import re
+from io import BytesIO
 from urllib.parse import quote, urlsplit
 
 import httpx
+from PIL import Image, UnidentifiedImageError
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthRequest, EditMask, ImageRequest, MediaResult, MusicRequest,
                                           ScoreRequest, Segment, SegmentRequest, SpeechRequest, TrackRequest, Tracks, VideoEditRequest,
                                           VideoRequest)
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.bigmodel_image import validate_bigmodel_image
+from opendirector.domain.minimax_image import validate_minimax_image_reference
+from opendirector.domain.minimax_speech import validate_minimax_speech_input
+from opendirector.media import heif_type
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
+from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
-from opendirector.integrations.reference_inputs import data_uri, image_type
+from opendirector.integrations.reference_inputs import data_uri, image_type, request_size
 from opendirector.integrations.volcengine import VolcengineGeneration, bounded, endpoint
 from opendirector.media import processing as media
 from opendirector.media.async_work import blocking
@@ -74,7 +82,7 @@ def _decoded(data):
     raise protocol_failure('submit')
 
 
-def _moss_result_url(value, stage):
+def _result_url(value, stage):
     if not isinstance(value, str) or len(value) > 16384:
         raise protocol_failure(stage)
     url = urlsplit(value)
@@ -86,7 +94,7 @@ def _moss_result_url(value, stage):
 
 async def _download_moss_result(adapter, config, url):
     async def read():
-        _moss_result_url(url, 'download')
+        _result_url(url, 'download')
         base, target = urlsplit(config['url']), urlsplit(url)
         headers = auth_headers(config) if (base.scheme, base.netloc) == (target.scheme, target.netloc) else {}
         async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=adapter.transport,
@@ -144,6 +152,58 @@ class ModelAdapter:
         raise ProjectError('所选模型不支持深度动作捕捉。', 409)
 
 
+class BigModelImages(ModelAdapter):
+    """BigModel's synchronous GLM-Image API, with a recoverable result locator."""
+
+    capabilities = frozenset({'image.generate'})
+
+    async def image(self, config, request: ImageRequest, *, result_ready=None, watermark=True) -> MediaResult:
+        validate_bigmodel_image(request.prompt, request.width, request.height,
+                                has_images=request.image is not None or bool(request.references))
+        payload = dict(model=config['modelId'], prompt=request.prompt, size=f'{request.width}x{request.height}',
+                       watermark_enabled=watermark)
+
+        async def submit():
+            secrets = (config.get('apiKey', ''),)
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/images/generations'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets))
+            if value.get('error'):
+                raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
+            if not isinstance(value['data'], list) or len(value['data']) != 1:
+                raise protocol_failure('submit')
+            return _result_url(value['data'][0]['url'], 'submit')
+
+        # A timed-out paid submission is never retried automatically.
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('png', url)
+        return MediaResult(await self.download(config, url), 'png')
+
+    async def download(self, config, url):
+        # Pin public destinations and recheck redirects; never send the API key to a CDN.
+        _, data = await VolcengineGeneration(None, self.transport).resume_result(config, 'png', url, public_only=True)
+        return await blocking(self._png, data)
+
+    @staticmethod
+    def _png(data):
+        try:
+            with Image.open(BytesIO(data)) as image:
+                if image.format not in {'PNG', 'JPEG', 'WEBP'} or image.width * image.height > 2 ** 22:
+                    raise protocol_failure('download')
+                image.verify()
+            with Image.open(BytesIO(data)) as image:
+                output = BytesIO()
+                image.convert('RGBA' if image.mode in {'RGBA', 'LA', 'P'} else 'RGB').save(output, format='PNG')
+                data = output.getvalue()
+            if len(data) > MAX_ASSET_BYTES:
+                raise protocol_failure('download')
+            return data
+        except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
+            raise protocol_failure('download') from None
+
+
 class MossImages(ModelAdapter):
     capabilities = frozenset({'image.generate'})
 
@@ -163,7 +223,7 @@ class MossImages(ModelAdapter):
             results = value['data']
             if not isinstance(results, list) or len(results) != 1:
                 raise protocol_failure('submit')
-            return _moss_result_url(results[0]['url'], 'submit')
+            return _result_url(results[0]['url'], 'submit')
 
         url = await _call('submit', submit)
         if result_ready:
@@ -195,7 +255,7 @@ class MossSpeech(ModelAdapter):
                 raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
             if value.get('object', 'audio.speech') != 'audio.speech' or value.get('response_format', 'mp3') != 'mp3':
                 raise protocol_failure('submit')
-            return _moss_result_url(value['url'], 'submit')
+            return _result_url(value['url'], 'submit')
 
         url = await _call('submit', submit)
         if result_ready:
@@ -204,10 +264,152 @@ class MossSpeech(ModelAdapter):
 
     async def download(self, config, url):
         data = await _download_moss_result(self, config, url)
-        mpeg_frame = len(data) >= 4 and data[0] == 0xff and data[1] & 0xe0 == 0xe0 and data[1] & 0x06
-        if not data.startswith(b'ID3') and not mpeg_frame:
+        if not _is_mp3(data):
             raise protocol_failure('download')
         return data
+
+
+def _is_mp3(data):
+    mpeg_frame = len(data) >= 4 and data[0] == 0xff and data[1] & 0xe0 == 0xe0 and data[1] & 0x06
+    return data.startswith(b'ID3') or bool(mpeg_frame)
+
+
+class MinimaxSpeech(ModelAdapter):
+    """MiniMax synchronous T2A v2, non-streaming, answering with a result URL."""
+    capabilities = frozenset({'audio.speech'})
+
+    async def speech(self, config, request: SpeechRequest, *, result_ready=None) -> MediaResult:
+        validate_minimax_speech_input(request.text, request.voice)
+        payload = {'model': config['modelId'], 'text': request.text, 'stream': False,
+                   'voice_setting': {'voice_id': request.voice}, 'audio_setting': {'format': 'mp3'},
+                   'output_format': 'url'}
+
+        async def submit():
+            secrets = (config.get('apiKey', ''),)
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/t2a_v2'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets, limit=1024 * 1024))
+            # Errors arrive as HTTP 200 with a nonzero base_resp.status_code.
+            status = value['base_resp']['status_code']
+            if type(status) is not int:
+                raise protocol_failure('submit')
+            if status != 0:
+                raise provider_failure({'code': status, 'request_id': value.get('trace_id')}, stage='submit',
+                                       http_status=200, secrets=secrets, provider='minimax')
+            if type(value['data']['status']) is not int or value['data']['status'] != 2:
+                raise protocol_failure('submit')
+            return _result_url(value['data']['audio'], 'submit')
+
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('mp3', url)
+        return await self.download(config, url)
+
+    async def download(self, config, url):
+        # The signed result URL is public storage: it never receives the API key.
+        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(
+            config, 'mp3', url, public_only=True)
+        if not _is_mp3(data):
+            raise protocol_failure('download')
+        return MediaResult(data, 'mp3')
+
+
+class MinimaxH3Images(ModelAdapter):
+    capabilities = frozenset({'image.generate', 'image.edit'})
+    max_images = 16
+
+    async def image(self, config, request: ImageRequest) -> MediaResult:
+        images = [*([request.image] if request.image is not None else []), *request.references]
+        if len(images) > self.max_images:
+            raise ProjectError('MiniMax H3 图片编辑最多接受 16 张参考图。', 422, code='minimax_image_count')
+        encoded = []
+        for data in images:
+            if len(data) > 64 * 1024 * 1024:
+                raise ProjectError('MiniMax H3 图片参考请求超过 64 MiB。', 413, code='minimax_image_bytes')
+            mime = image_type(data) or heif_type(data)
+            try:
+                with Image.open(io.BytesIO(data)) as image:
+                    dimensions = image.size
+                    validate_minimax_image_reference(mime, *dimensions)
+                    image.load()
+            except (OSError, ValueError, EOFError, Image.DecompressionBombError):
+                dimensions = (None, None)
+            validate_minimax_image_reference(mime, *dimensions)
+            encoded.append(data_uri(data, mime))
+        width, height = request.width, request.height
+        ratio = min(3, max(1 / 3, width / height))
+        scale = 2048 / math.sqrt(ratio)
+        width, height = round(scale * ratio), round(scale)
+        size = f'{min(width, 3 * height)}x{min(height, 3 * width)}'
+        return await self.generate(config, request.prompt, size, encoded)
+
+    async def generate(self, config, prompt, size, images, *, result_ready=None):
+        payload = {'model': config['modelId'], 'prompt': prompt, 'size': size, 'n': 1,
+                   'output_format': 'png', 'response_format': 'url'}
+        route = '/images/generations'
+        if images:
+            route = '/images/edits'
+            payload['images'] = [{'image_url': image} for image in images]
+        request_size(payload, 64 * 1024 * 1024)
+
+        async def submit():
+            async with _client(self, config, timeout=600) as client:
+                secrets = (config.get('apiKey', ''),)
+                async with client.stream('POST', endpoint(config['url'], route),
+                                         headers=auth_headers(config), json=payload) as response:
+                    value = json.loads(await bounded(response, stage='submit', secrets=secrets, limit=1024 * 1024))
+                result = value['data'][0]
+                if result.get('error'):
+                    raise provider_failure(result, stage='submit', http_status=200, secrets=secrets)
+                return _result_url(result['url'], 'submit')
+
+        url = await _call('submit', submit)
+        if result_ready:
+            await result_ready('png', url)
+        return await self.download(config, url)
+
+    async def download(self, config, url):
+        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(
+            config, 'png', url, public_only=True)
+        if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            raise protocol_failure('download')
+        return MediaResult(data, 'png')
+
+
+class ZhipuSpeech(ModelAdapter):
+    """Zhipu BigModel GLM-TTS on /audio/speech.
+
+    The service only offers WAV or raw PCM, and its streaming mode returns PCM
+    chunks over SSE, so a non-streaming WAV request is the only complete
+    container. A 200 response is accepted only when the body is a RIFF/WAVE file:
+    the service also reports some errors as JSON with HTTP 200.
+    """
+
+    capabilities = frozenset({'audio.speech'})
+
+    async def speech(self, config, request: SpeechRequest, *, result_ready=None, watermark=True) -> MediaResult:
+        validate_zhipu_speech_input(request.text, request.voice)
+        payload = dict(model=config['modelId'], input=request.text, voice=request.voice,
+                       response_format='wav', stream=False, watermark_enabled=watermark)
+        secrets = (config.get('apiKey', ''),)
+
+        async def submit():
+            async with _client(self, config) as client:
+                async with client.stream('POST', endpoint(config['url'], '/audio/speech'),
+                                         headers=auth_headers(config), json=payload) as response:
+                    return await bounded(response, stage='submit', secrets=secrets)
+
+        data = await _call('submit', submit)
+        if not (data[:4] == b'RIFF' and data[8:12] == b'WAVE'):
+            try:
+                value = json.loads(data)
+            except (ValueError, UnicodeError):
+                value = None
+            if isinstance(value, dict) and value.get('error'):
+                raise provider_failure(value, stage='submit', http_status=200, secrets=secrets)
+            raise protocol_failure('submit')
+        return MediaResult(bytes(data), 'wav')
 
 
 class OpenAIImages(ModelAdapter):
@@ -524,6 +726,8 @@ class VllmOmniMusic(ModelAdapter):
         payload = {'model': config['modelId'], 'input': request.lyrics.strip() or self.INSTRUMENTAL,
                    'instructions': request.style, 'response_format': 'mp3',
                    'max_new_tokens': round(request.max_seconds * self.FRAMES_PER_SECOND)}
+        if request.seed is not None:
+            payload['seed'] = request.seed
         if request.score:
             # YuE2 renders the supplied score: cot=melody follows its melody, cot=full also its chords.
             payload['extra_params'] = {'cot': request.score_mode, 'abc': request.score}
@@ -670,10 +874,18 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return VllmOmniScore(transport, poll_interval)
     if kind == 'agent':
         return OpenAIChat(transport, poll_interval)
+    if profile == 'bigmodel-glm-image':
+        return BigModelImages(transport, poll_interval)
+    if profile == 'minimax-h3-image':
+        return MinimaxH3Images(transport, poll_interval)
     if profile == 'moss-image':
         return MossImages(transport, poll_interval)
     if profile == 'moss-speech':
         return MossSpeech(transport, poll_interval)
+    if profile == 'minimax-speech':
+        return MinimaxSpeech(transport, poll_interval)
+    if profile == 'zhipu-speech':
+        return ZhipuSpeech(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':
         return OpenAIImages(transport, poll_interval, free_size=True, strength=True)
     if kind == 'image' and profile == 'vllm-omni-qwen-image':

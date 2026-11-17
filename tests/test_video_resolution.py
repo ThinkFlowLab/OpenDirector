@@ -39,11 +39,12 @@ def prepare(tmp_path, *, resolution=None, model='FastH3-Omni-3090', references=(
     return runner.store, task, private
 
 
-@pytest.mark.parametrize('seconds', [4, 7, 10, 15])
+@pytest.mark.parametrize('seconds', [4, 4.33, 107 / 24, 7, 10, 15])
 def test_panel_duration_survives_api_receipt_and_actual_video_request(tmp_path, seconds):
     store, task, config = prepare(tmp_path, resolution='480P', duration_seconds=seconds)
     assert task['parameters']['duration'] == seconds
-    assert task['parameters']['seconds'] == str(seconds)
+    assert task['parameters']['num_frames'] == round(seconds * 24)
+    assert task['parameters']['fps'] == 24
     posts = []
     def handle(request):
         if request.method == 'POST':
@@ -52,8 +53,10 @@ def test_panel_duration_survives_api_receipt_and_actual_video_request(tmp_path, 
                 ('Content-Type: ' + request.headers['content-type'] + '\r\n\r\n').encode() + request.content)
             fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True).decode()
                       for part in content.iter_parts() if part.get_filename() is None}
-            assert fields['seconds'] == str(seconds)
-            assert json.loads(fields['extra_params'])['duration'] == seconds
+            assert fields['num_frames'] == str(round(seconds * 24))
+            assert fields['fps'] == '24'
+            assert 'seconds' not in fields
+            assert 'duration' not in json.loads(fields['extra_params'])
             posts.append(fields)
             return httpx.Response(200, json={'id': 'original-duration-task'})
         if request.url.path.endswith('/content'): return httpx.Response(200, content=b'fixture-video')

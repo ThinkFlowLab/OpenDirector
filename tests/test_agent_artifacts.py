@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -76,6 +77,24 @@ def test_text_image_publication_replay_and_content_conflict(publication):
     assert image['asset']['provenance']['sources'] == [result['reference']]
 
 
+def test_agent_text_read_keeps_64_kib_budget_and_bom_decoding(publication):
+    business, run, work = publication
+    source = work / 'notes.md'
+    source.write_bytes(b'\xef\xbb\xbf# Notes\r\n' + b'a' * (65536 - 12))
+    small = publish(publication, 'notes.md')
+    source.write_bytes(b'a' * 65537)
+    large = publish(publication, 'notes.md')
+    async def read(asset):
+        return await business.execute(run.project_id, run.turn_id, run.session, str(uuid4()),
+            'read', {'path': f"asset:{asset['asset']['id']}"}, roots=[], config=None)
+    assert asyncio.run(read(small)) == '# Notes\r\n' + 'a' * (65536 - 12)
+    with pytest.raises(ProjectError, match='64 KB'):
+        asyncio.run(read(large))
+    with pytest.raises(ProjectError, match='64 KB'):
+        asyncio.run(business.execute(run.project_id, run.turn_id, run.session, str(uuid4()),
+            'read', {'path': str(source)}, roots=[work], config=None))
+
+
 def test_file_scope_links_empty_and_other_turn_are_rejected(publication, tmp_path):
     _, _, work = publication
     outside = tmp_path / 'outside.md'
@@ -83,11 +102,21 @@ def test_file_scope_links_empty_and_other_turn_are_rejected(publication, tmp_pat
     for path in [str(outside), '../outside.md']:
         with pytest.raises(ProjectError, match='本轮执行目录'):
             publish(publication, path)
-    (work / 'link.md').symlink_to(outside)
-    (work / 'directory').symlink_to(tmp_path, target_is_directory=True)
-    for path in ['link.md', 'directory/outside.md']:
-        with pytest.raises(OSError):
-            publish(publication, path)
+    if os.name == 'nt':
+        import _winapi
+        alias = work / 'directory'
+        _winapi.CreateJunction(str(tmp_path), str(alias))
+        paths = ['directory/outside.md']
+    else:
+        (work / 'link.md').symlink_to(outside)
+        (work / 'directory').symlink_to(tmp_path, target_is_directory=True)
+        paths = ['link.md', 'directory/outside.md']
+    try:
+        for path in paths:
+            with pytest.raises(OSError):
+                publish(publication, path)
+    finally:
+        if os.name == 'nt': alias.rmdir()
     (work / 'empty.md').touch()
     with pytest.raises(ProjectError, match='非空普通文件'):
         publish(publication, 'empty.md')
@@ -216,6 +245,7 @@ def test_asset_id_preview_is_bounded_and_preserves_project(publication, kind):
     assert not result.error, result
     preview = Path(result.value['preview']['path'])
     assert preview.is_relative_to(work / 'previews') and preview.stat().st_size > 0
+    assert preview.stem == asset_id.hex  # Keep Windows execution paths bounded.
     if kind != 'audio':
         with Image.open(preview) as image:
             assert max(image.size) <= (480 if kind == 'image' else 960)
@@ -229,7 +259,7 @@ def test_asset_id_preview_is_bounded_and_preserves_project(publication, kind):
 
 
 @pytest.mark.anyio
-async def test_public_queries_share_http_and_agent_results(publication):
+async def test_public_queries_share_http_and_agent_results(publication, tmp_path):
     business, run, work = publication
     source = work / 'query-source.png'
     Image.new('RGB', (24, 32), 'blue').save(source)
@@ -270,10 +300,21 @@ async def test_public_queries_share_http_and_agent_results(publication):
     assert missing.error and 'objectId' in missing.error
     destination = Path(preview.value['preview']['path'])
     destination.unlink()
-    destination.symlink_to(source)
+    if os.name == 'nt':
+        import _winapi
+        outside = tmp_path / 'outside-previews'; outside.mkdir()
+        protected_file = outside / destination.name
+        protected_file.write_bytes(b'outside preview must not be overwritten')
+        destination.parent.rmdir()
+        _winapi.CreateJunction(str(outside), str(destination.parent))
+    else:
+        destination.symlink_to(source)
     original = source.read_bytes()
     protected = await gateway.call('preview-symlink', 'query', {'type': 'asset.preview', 'objectId': asset['id']})
     assert protected.error and source.read_bytes() == original
+    if os.name == 'nt':
+        assert protected_file.read_bytes() == b'outside preview must not be overwritten'
+        destination.parent.rmdir()
     scoped = await gateway.call('wrong-scope', 'query', {'type': 'project.get', 'projectId': str(uuid4())})
     assert scoped.error
     assert business.projects.snapshot(run.project_id) == before

@@ -11,6 +11,7 @@ import { ComposerPopover } from "./ComposerPopover";
 import { DurationControl } from "./DurationControl";
 import { ReferenceThumbnail } from "./ReferenceThumbnail";
 import {
+  h3FrameCount,
   changeGenerationSettings,
   generationBlocker,
   generationModel,
@@ -32,6 +33,7 @@ import {
   isGenerationModel,
   isMusicModel,
   hasMusicReference,
+  hasImplicitTextPrompt,
   MUSIC_SECONDS,
   type ModelConfig,
 } from "../backend/rules.ts";
@@ -54,6 +56,8 @@ import {
 export interface NodeComposerProps {
   selectedNode: CanvasNode | null;
   incomingNodes: CanvasNode[];
+  /** Pinned assets included in run-before reference checks, not frame-slot limits. */
+  pinnedPrecheck?: CanvasNode[];
   onUpdate: (data: Partial<CanvasNodeData>) => void;
   onRun: () => void;
   onCancel: () => void;
@@ -61,6 +65,7 @@ export interface NodeComposerProps {
   running?: boolean;
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
+  removeWatermark?: boolean;
   referenceControls?: GenerationReferenceControls;
 }
 
@@ -79,12 +84,14 @@ const DEMO_VOICE = "动漫海绵";
 export function NodeComposer({
   selectedNode,
   incomingNodes,
+  pinnedPrecheck,
   onUpdate,
   onRun,
   onCancel,
   onPickReference,
   running = false,
   backendModels = [],
+  removeWatermark = false,
   referenceControls,
 }: NodeComposerProps) {
   const { t } = useI18n();
@@ -108,6 +115,8 @@ export function NodeComposer({
   const config = backendModel(settings, backendModels);
   const voiceRequired = Boolean(config?.inputRules.voiceRequired);
   const voiceLibrary = config?.inputRules.voiceLibrary;
+  const imageQualities =
+    mode === "image" ? config?.inputRules.imageQualities : undefined;
   const serviceModels = backendModels.filter(
     (item) => item.kind === mode && isGenerationModel(item),
   );
@@ -122,9 +131,18 @@ export function NodeComposer({
   const blocker = unconfigured
     ? t("generation.model.unconfigured")
     : backend
-      ? backendBlocker(settings, incomingNodes, backendModels)
+      ? backendBlocker(settings, incomingNodes, backendModels, pinnedPrecheck)
       : generationBlocker(settings, incomingNodes, t);
   const canRun = !blocker;
+  // A blank prompt falls back to connected text references.
+  const implicitTextPrompt = Boolean(
+    config &&
+      hasImplicitTextPrompt(
+        settings,
+        [...incomingNodes, ...(pinnedPrecheck ?? [])],
+        config,
+      ),
+  );
   const model = backend ? undefined : generationModel(settings);
   const resolutions = backend
     ? backendResolutions(settings, config, incomingNodes)
@@ -421,7 +439,9 @@ export function NodeComposer({
           }}
           label={reading ? t("generation.prompt.reading") : music ? t("generation.prompt.music") : t("generation.prompt.image")}
           placeholder={
-            mode === "image"
+            implicitTextPrompt
+              ? t("generation.prompt.implicitTextPlaceholder")
+              : mode === "image"
               ? t("generation.prompt.imagePlaceholder")
               : mode === "video"
                 ? firstLast
@@ -452,6 +472,12 @@ export function NodeComposer({
         )}
       </div>
 
+      {removeWatermark &&
+        ["bigmodel-glm-image", "bigmodel-cogvideox-3"].includes(config?.inputRules.profile ?? "") && (
+          <p className="cw-composer-provider-note" role="note">
+            {t("generation.bigmodel.watermarkWaiver")}
+          </p>
+        )}
       <div className="cw-composer-footer">
         <div className="cw-composer-options">
           <SearchableSelect
@@ -765,6 +791,8 @@ export function NodeComposer({
           placement="above-anchor"
         >
           <DurationControl
+            fractional={!!config?.inputRules.fractionalDuration}
+            outputFrames={config?.inputRules.profile === "vllm-omni-h3" ? h3FrameCount(settings.durationSeconds) : undefined}
             values={durationValues}
             value={settings.durationSeconds}
             disabled={running}
@@ -860,6 +888,31 @@ export function NodeComposer({
                     {t("generation.field.waitCapabilities")}
                   </span>
                 )}
+              </div>
+            </div>
+          )}
+          {Boolean(imageQualities?.length) && (
+            <div className="cw-parameter-section">
+              <span className="cw-field-label">{t("generation.field.quality")}</span>
+              <div className="cw-segment-options">
+                {imageQualities?.map((quality) => (
+                  <button
+                    type="button"
+                    key={quality}
+                    aria-label={t("generation.field.qualityAria", {
+                      value: t(`generation.quality.${quality}`),
+                    })}
+                    className={
+                      (settings.imageQuality ?? "auto") === quality
+                        ? "cw-is-active"
+                        : ""
+                    }
+                    onClick={() => updateSettings({ imageQuality: quality })}
+                    aria-pressed={(settings.imageQuality ?? "auto") === quality}
+                  >
+                    {t(`generation.quality.${quality}`)}
+                  </button>
+                ))}
               </div>
             </div>
           )}

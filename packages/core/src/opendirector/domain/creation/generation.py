@@ -9,15 +9,16 @@ from pydantic import Field, JsonValue, model_validator
 
 from opendirector.domain.minimax_models import MINIMAX_MODELS
 from opendirector.domain.generation import GenerationFailure, ResultCheck
+from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import (
     FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
     MUSIC_SECONDS_INITIAL, MUSIC_SECONDS_MAX, MUSIC_SECONDS_MIN, PROMPT_MAX_LENGTH,
     REFERENCE_MEDIA_SECONDS, STORED_VOICE_PATTERN, TEXT_DEFAULT_MAX_TOKENS, TEXT_MAX_TOKENS,
-    effective_video_mode, generate_audio_options,
+    duration_matches, effective_video_mode, generate_audio_options,
 )
 from .assets import AssetRef, MediaMetadata
 from .base import CanvasItemVersion, Contract, Digest, GenerationKind, NonNegative, ObjectVersion, PositiveInt, ProjectEntity, Revision, digest, unique
-from .models import ModelConfigPublic, ModelSnapshot, VideoMode
+from .models import ImageQuality, ModelConfigPublic, ModelSnapshot, VideoMode
 
 
 class TextParameters(Contract):
@@ -26,6 +27,8 @@ class TextParameters(Contract):
 
 
 class ImageParameters(Contract):
+    quality: ImageQuality = Field(default='auto', exclude_if=lambda value: value == 'auto',
+        description='Image rendering quality; auto leaves the provider request unchanged.')
     size: str = Field(default='auto', pattern=r'^(?:auto|2K|[1-9]\d{2,3}x[1-9]\d{2,3})$', description='Requested image dimensions or size preset.')
     aspectRatio: str | None = Field(default=None, pattern=r'^[1-9]\d?:[1-9]\d?$', description='Output width-to-height ratio.')
     preset: Literal['none', 'product-views'] = Field(default='none', description='Selected generation or motion preset.')
@@ -36,7 +39,7 @@ class ImageParameters(Contract):
 class VideoParameters(Contract):
     generateAudio: bool = Field(default=True, description='Include audio; value must be allowed by model inputRules.generateAudioOptions.')
     videoMode: VideoMode = Field(default='first_frame', description='Video generation input mode.')
-    durationSeconds: Annotated[float, Field(strict=True, ge=1, le=60)] | None = Field(default=None, description='Duration in seconds.')
+    durationSeconds: Annotated[float, Field(strict=True, ge=1, le=60)] | None = Field(default=None, description='Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.')
     aspectRatio: str | None = Field(default=None, pattern=r'^[1-9]\d?:[1-9]\d?$', description='Output width-to-height ratio.')
     resolution: str = Field(default='auto', pattern=r'^(?:auto|[A-Z0-9][A-Z0-9_.-]{0,23})$', description='Requested output resolution.')
 
@@ -243,10 +246,15 @@ class VideoExecution(Contract):
 
 class ImageExecution(Contract):
     kind: Literal['image'] = Field(description='Business object or media type.')
+    quality: ImageQuality = Field(default='auto', exclude_if=lambda value: value == 'auto',
+        description='Image rendering quality fixed for this execution; auto omits the provider field.')
     size: str = Field(description='Effective image dimensions sent to the provider.')
     responseFormat: Literal['url', 'b64_json'] | None = Field(default=None, description='Provider response representation.')
     outputFormat: Literal['png'] = Field(default='png', description='Generated image encoding.')
     watermark: bool | None = Field(default=None, description='Whether provider watermarking is enabled.')
+    # Set only when the profile fixes diffusion sampling at acceptance (Z-Image-Turbo).
+    numInferenceSteps: PositiveInt | None = Field(default=None, exclude_if=lambda value: value is None, description='Diffusion sampling step count.')
+    guidanceScale: NonNegative | None = Field(default=None, exclude_if=lambda value: value is None, description='Diffusion guidance scale.')
 
 
 class AudioExecution(Contract):
@@ -263,6 +271,7 @@ class AudioExecution(Contract):
         default=None, exclude_if=lambda value: value is None, description='Maximum generated audio duration in seconds.')
     # Set when the piece follows a reference recording's transcribed score.
     scoreMode: Literal['melody', 'full'] | None = Field(default=None, exclude_if=lambda value: value is None, description='Whether reference music supplies melody or full accompaniment.')
+    seed: int | None = Field(default=None, strict=True, exclude_if=lambda value: value is None, description='Random seed fixed when the job was accepted.')
 
 
 class TextExecution(TextParameters):
@@ -350,6 +359,18 @@ def execution_spec(spec, references, rules):
     return spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': mode})})
 
 
+def implicit_text_prompt(spec: GenerationSpec, references: tuple[ResolvedReference, ...] = ()) -> bool:
+    """A connected text reference implicitly supplies an image or video prompt.
+
+    Its body is already appended to the provider prompt, so a blank prompt that
+    is backed by transmitted text still carries a creative instruction. Speech
+    and music never read text references, and text generation keeps its own
+    instruction requirement.
+    """
+    return spec.kind in {'image', 'video'} and any(
+        ref.asset.kind == 'text' and ref.transmission == 'content' for ref in references)
+
+
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = ()):
     """Pure shared validation; it never submits, uploads or changes a project."""
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
@@ -360,15 +381,23 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         raise ValueError('视频深度模型仅用于深度动作捕捉，请选择生成模型。')
     if model.inputRules.profile == 'vllm-omni-score':
         raise ValueError('扒谱模型仅用于参照音乐生成，请选择音乐生成模型。')
-    if (spec.promptContent is not None and not any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)) or (spec.promptContent is None and not spec.prompt.strip()):
+    written = (any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)
+               if spec.promptContent is not None else bool(spec.prompt.strip()))
+    if not written and not implicit_text_prompt(spec, references):
         raise ValueError('请填写生成提示词。')
     rules = model.inputRules
     if rules.referencesAllowed is False and references:
         raise ValueError('当前模型不支持参考素材，请移除参考后重试。')
-    if rules.profile == 'moss-speech':
+    if rules.profile in {'moss-speech', 'minimax-speech'}:
+        from opendirector.domain.minimax_speech import validate_minimax_speech_input
         from opendirector.domain.moss_speech import validate_moss_speech_input
         text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
-        validate_moss_speech_input(text, spec.parameters.voice)
+        validate = validate_moss_speech_input if rules.profile == 'moss-speech' else validate_minimax_speech_input
+        validate(text, spec.parameters.voice)
+    elif rules.profile == 'zhipu-speech':
+        from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
+        text = spec.prompt if spec.promptContent is None else ''.join(part.text for part in spec.promptContent if part.type == 'text')
+        validate_zhipu_speech_input(text, spec.parameters.voice)
     elif spec.kind == 'audio' and rules.voiceRequired and not spec.parameters.voice:
         raise ValueError('请填写服务音色 ID。')
     if len(references) > MAX_REFERENCES:
@@ -401,6 +430,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             raise ValueError(f'{label}参考素材数量超过上限。')
     if spec.kind == 'image':
         from opendirector.domain.image_output import resolve_image_output
+        if spec.parameters.quality != 'auto' and spec.parameters.quality not in (rules.imageQualities or ()):
+            raise ProjectError('当前模型不支持所选图片质量，请选择自动或切换模型。', 422, code='image_quality_unsupported')
         if spec.parameters.preset != 'none':
             raise ValueError('当前服务不支持产品三视图预设，请使用自由创作。')
         resolve_image_output(model.model_dump(), rules.model_dump(), spec.parameters.model_dump())
@@ -466,5 +497,5 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     caps = rules.videoCapabilities
     if caps and params.durationSeconds is not None:
         choices = [output for output in caps.outputs if params.resolution == 'auto' or output.resolution == params.resolution]
-        if not any(params.durationSeconds in output.durations for output in choices):
+        if not any(duration_matches(params.durationSeconds, output.durations, rules.fractionalDuration) for output in choices):
             raise ValueError('当前时长与分辨率组合不受支持。')

@@ -40,6 +40,8 @@ try {
     locale: "zh-CN",
     viewport: { width: 1700, height: 1100 },
   });
+  // Skip the first-run model setup welcome; it covers the canvas.
+  await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -298,7 +300,7 @@ try {
     ".cw-duration-popover",
     "portaled duration picker",
   );
-  await light(duration.getByRole("spinbutton"), "duration input");
+  await light(duration.locator(".cw-duration-number input"), "duration input");
   const slider = duration.getByRole("slider");
   const trackAccent = await slider.evaluate((el) =>
     getComputedStyle(el).getPropertyValue("--cw-control-accent").trim(),

@@ -220,3 +220,143 @@ test("dissolving a stack prepares one atomic edit and keeps its draft after reje
   assert.deepEqual(document, original);
   assert.deepEqual(session.projection.baseline, original);
 });
+
+test("timeline text fonts and immutable sources project both ways through the shared editor.save command", async () => {
+  const { client, projection, document, item, snapshot } = await fixture();
+  const font = snapshot.assets.find((a) => a.kind === "file")!,
+    source = snapshot.assets.find((a) => a.kind === "text")!;
+  const ref = (a: typeof font) => ({
+    assetId: a.id,
+    revision: a.revision,
+    fingerprint: a.fingerprint,
+    kind: a.kind,
+  });
+  const saved = snapshot.editorDocuments.find((d) => d.kind === "timeline")!;
+  const enriched = {
+    ...saved,
+    data: {
+      ...saved.data,
+      fonts: [{ id: "font", title: "Fixture font", asset: ref(font) }],
+      overlays: [
+        {
+          id: "a",
+          start: 1,
+          end: 3,
+          text: "中文\nMixed",
+          x: 0.1,
+          y: 0.8,
+          maxWidth: 0.8,
+          fontId: "font",
+          style: {
+            fontSize: 18,
+            color: "#FFFFFF",
+            align: "center",
+            lineHeight: 1.2,
+            background: null,
+            stroke: null,
+          },
+          sourceAsset: ref(source),
+        },
+      ],
+    },
+  };
+  const view = await projection.editorData(enriched as never);
+  assert.equal(view.timeline!.fonts![0]!.src, `blob:${font.id}`);
+  assert.deepEqual(view.timeline!.overlays![0]!.source!.asset, ref(source));
+  const node = document.nodes.find((n) => n.id === item.id)!;
+  Object.assign(node.data, view);
+  projection.baseline = structuredClone(document);
+  const session = new CreationEditorSession(client, document, item.id);
+  const edited = structuredClone(view.timeline!);
+  edited.overlays![0]!.text = "Agent 与 UI 继续编辑";
+  const operations: unknown[] = [];
+  client.command = async (type, payload) => {
+    operations.push({ type, payload });
+    return { status: "applied" } as CommandReceipt;
+  };
+  await session.apply({ timeline: edited });
+  const batch = operations[0] as {
+    type: string;
+    payload: {
+      operations: {
+        type: string;
+        payload: { document: { data: Record<string, unknown> } };
+      }[];
+    };
+  };
+  const command =
+    batch.type === "creation.batch"
+      ? batch.payload.operations.find((o) => o.type === "editor.save")!
+      : (operations[0] as (typeof batch.payload.operations)[number]);
+  assert.equal(command.type, "editor.save");
+  const data = command.payload.document.data as {
+    fonts: { asset: unknown }[];
+    overlays: { text: string; sourceAsset: unknown }[];
+  };
+  assert.equal(data.overlays[0]!.text, "Agent 与 UI 继续编辑");
+  assert.deepEqual(data.fonts[0]!.asset, ref(font));
+  assert.deepEqual(data.overlays[0]!.sourceAsset, ref(source));
+  assert.ok(!JSON.stringify(data).includes("blob:"));
+});
+
+test("unavailable text source keeps its immutable identity and fails saving rather than rewriting empty text", async () => {
+  const { client, projection, snapshot } = await fixture();
+  const saved = snapshot.editorDocuments.find((d) => d.kind === "timeline")!;
+  const missing = {
+    assetId: "00000000-0000-0000-0000-000000087999",
+    revision: 1,
+    fingerprint: "sha256:" + "b".repeat(64),
+    kind: "text",
+  };
+  const font = snapshot.assets.find((a) => a.kind === "file")!;
+  const formal = {
+    ...saved,
+    data: {
+      ...saved.data,
+      fonts: [
+        {
+          id: "font",
+          title: "Fixture",
+          asset: {
+            assetId: font.id,
+            revision: font.revision,
+            fingerprint: font.fingerprint,
+            kind: font.kind,
+          },
+        },
+      ],
+      overlays: [
+        {
+          id: "a",
+          start: 1,
+          end: 3,
+          text: "Keep this",
+          x: 0.1,
+          y: 0.8,
+          maxWidth: 0.8,
+          fontId: "font",
+          style: {
+            fontSize: 18,
+            color: "#FFFFFF",
+            align: "center",
+            lineHeight: 1.2,
+            background: null,
+            stroke: null,
+          },
+          sourceAsset: missing,
+        },
+      ],
+    },
+  };
+  const view = await projection.editorData(formal as never);
+  assert.deepEqual(view.timeline!.overlays![0]!.source!.asset, missing);
+  assert.equal(view.timeline!.overlays![0]!.source!.src, undefined);
+  client.writeText = async () => {
+    throw new Error("must not create empty source");
+  };
+  const doc = await projection.read();
+  projection.baseline = structuredClone(doc);
+  const item = doc.nodes.find((n) => n.type === "timeline")!;
+  const session = new CreationEditorSession(client, doc, item.id);
+  await assert.rejects(session.apply({ timeline: view.timeline! }));
+});

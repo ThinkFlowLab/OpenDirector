@@ -652,3 +652,98 @@
     flex: 1;
   }
 }
+
+.cw-timeline-text-actions {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 14px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--cw-timeline-border);
+}
+.cw-timeline-text-inspector h3 {
+  margin: 0 0 12px;
+}
+.cw-timeline-text-inspector textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 75px;
+}
+.cw-timeline-text-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.cw-timeline-text-position {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cw-timeline-text-position button {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  padding: 0;
+}
+.cw-timeline-text-position button.selected {
+  border-color: var(--cw-timeline-accent) !important;
+}
+.cw-timeline-text-row {
+  min-height: 40px;
+}
+.cw-timeline-text-item {
+  display: flex;
+  position: absolute;
+  top: 5px;
+  height: 30px;
+  min-width: 30px;
+  background: var(--cw-timeline-clip);
+  border: 1px solid var(--cw-timeline-clip-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cw-timeline-text-item.selected {
+  border-color: var(--cw-timeline-accent);
+  box-shadow: 0 0 0 1px var(--cw-timeline-accent);
+}
+.cw-timeline-text-item button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-width: 0;
+  touch-action: none;
+}
+.cw-timeline-text-move {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+  padding: 3px;
+  cursor: move;
+}
+.cw-timeline-text-trim {
+  flex: 0 0 16px;
+  padding: 0 !important;
+  cursor: ew-resize;
+}
+/* The media and transparent text canvas share the exact output rectangle. */
+.cw-timeline-picture-area {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  flex: 1;
+  min-height: 100px;
+  max-height: 350px;
+}
+.cw-timeline-picture-area .cw-timeline-screen {
+  flex: none;
+  height: auto;
+  max-height: none;
+}

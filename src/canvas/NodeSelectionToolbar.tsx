@@ -34,6 +34,8 @@ export interface NodeSelectionToolbarProps {
   presets?: readonly { value: string | number; label: string }[];
   onPreset?: (preset: string) => void;
   onEdit?: (mode: SelectionEditorMode) => void;
+  onOutput?: () => void;
+  outputBusy?: boolean;
   onCaptureFrame?: (position: "first" | "last") => void;
   onGridSplit?: (rows: number, columns: number) => void;
   onPreview?: () => void;
@@ -109,6 +111,8 @@ export function NodeSelectionToolbar({
   presets = [],
   onPreset,
   onEdit,
+  onOutput,
+  outputBusy = false,
   onCaptureFrame,
   onGridSplit,
   onPreview,
@@ -129,6 +133,9 @@ export function NodeSelectionToolbar({
   if (mediaKind && !hasMedia) return null;
 
   const editing: Action[] = [];
+  if (node.type === "timeline" && onOutput) {
+    editing.push({ id: "output", label: t("timeline.output.title"), icon: "arrowUp", run: onOutput, disabled: locked || outputBusy });
+  }
   const toolOption = (
     tool: CanvasToolId,
     label: string,
@@ -486,6 +493,7 @@ export function NodeSelectionToolbar({
                 aria-controls={
                   menuAction?.id === action.id ? menuId : undefined
                 }
+                shortcut={action.id === "output" ? (navigator.platform.includes("Mac") ? "⌘ Enter" : "Ctrl Enter") : undefined}
                 label={
                   action.disabled
                     ? t("canvas.selection.locked", { label: action.label })

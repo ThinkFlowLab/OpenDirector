@@ -6,9 +6,20 @@ English, so a missing translation never leaks Chinese into an English UI.
 """
 from fastapi import Request
 
+
+from opendirector.domain.timeline_errors import timeline_error_message
+
 from opendirector.domain.creation.commands import CommandReceipt
 
 ENGLISH_BY_CODE = {
+    'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
+    'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
+    'bigmodel_video_output': 'Choose a supported CogVideoX-3 pixel size and a 5- or 10-second duration. The size determines the aspect ratio.',
+    'bigmodel_video_image': 'CogVideoX-3 frame images must be valid PNG or JPEG files, up to 5 MB each.',
+    'bigmodel_video_frames': 'Use text, one first-frame image, or an explicit first/last pair. Each frame slot accepts one image; a last frame requires a first frame. Reference and continuation modes are not supported.',
+    'bigmodel_video_prompt': 'CogVideoX-3 prompts allow up to 512 characters. Provide a prompt or frame image.',
+    'bigmodel_video_cancel': 'Remote BigModel video cancellation is not connected. The task may continue running and incur charges.',
+    'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',
     'kling_image': 'Kling requires valid PNG or JPEG images up to 30 MB, at least 300 pixels on each edge, with an aspect ratio of 0.4–2.5. Video and audio references are not supported here.',
@@ -39,12 +50,31 @@ ENGLISH_BY_CODE = {
     'voice_provider_protocol': 'The voice service returned an invalid response or pagination did not finish. Check its API version.',
     'voice_provider_error': 'The voice service request failed. Check the connection and account permissions.',
     'voice_provider_timeout': 'The voice service timed out. Check its status and try again.',
+    'voice_name_taken': 'This account already has a voice with that name. Choose another name.',
+    'voice_provider_quota': 'The voice service account has insufficient balance or resource packages. Top up and try again.',
     "moss_speech_text": "Enter the text to read aloud.",
     "moss_speech_voice": "Enter a Voice ID available to your MOSS account.",
     "moss_speech_reference": "MOSS speech generation does not accept references. Enter speech text and a Voice ID.",
+    "zhipu_speech_text": "Enter the text to read aloud, at most 1,024 characters per GLM-TTS request.",
+    "zhipu_speech_voice": "Select a voice available to your Zhipu account.",
+    "zhipu_speech_reference": "GLM-TTS does not accept references. Enter speech text and select a voice.",
     "moss_prompt_limit": "MOSS requires a nonempty prompt of at most 4,000 characters, including text references.",
+    "image_decode": "The image could not be decoded. Check its actual format and file integrity.",
+    "asset_preview_unsupported": "This asset type does not support this preview format.",
+    "asset_text_api_unavailable": "canvas text show requires a running API to read the complete Markdown source. Start the API and check OPENDIRECTOR_API_URL.",
+    "image_pixel_limit": "Images must contain no more than 25 million pixels.",
+    "minimax_image_reference": "MiniMax H3 references must be PNG, JPEG, WebP, HEIC, or HEIF, with edges of 128–8192 pixels and a long-to-short edge ratio of at most 4:1.",
+    "minimax_image_count": "MiniMax H3 image editing accepts up to 16 reference images.",
+    "minimax_image_bytes": "MiniMax H3 image reference requests cannot exceed 64 MiB.",
+    "minimax_speech_text": "Enter the text to read aloud, up to 3,000 characters.",
+    "minimax_speech_model": "Unsupported MiniMax speech model. Choose a model from the preset.",
+    "minimax_speech_voice": "Choose a voice available to your MiniMax account from the voice library.",
+    "minimax_speech_reference": "MiniMax speech synthesis does not accept references. Enter the text to read aloud and choose a voice.",
     "moss_image_size": "MOSS image dimensions must be 256–2048, multiples of 16, and no more than 2,097,152 pixels in total.",
     "moss_image_reference": "MOSS image generation does not accept image references or editing inputs.",
+    "bigmodel_image_reference": "GLM-Image accepts text-to-image requests only. Remove image references or editing inputs.",
+    "bigmodel_image_prompt": "Enter a GLM-Image prompt.",
+    "bigmodel_image_size": "GLM-Image requires a preset size, or dimensions of 1024–2048 in multiples of 32.",
     "moss_layout_reference": "MOSS layout JSON does not accept additional text references. Put the requirements in the JSON or remove the text references.",
     "agent_dependency_unavailable": "Bundled Agent is unavailable. Reinstall with pip install --force-reinstall opendirector; for a source checkout, use pip install -e .",
     "invalid_input": "The request is invalid. Check the required fields and their formats.",
@@ -59,6 +89,7 @@ ENGLISH_BY_CODE = {
     "capability_unsupported": "This capability is not supported yet.",
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",
+    "project_open_elsewhere": "This project is open in another window. Close it there and try again.",
     "local_only": "Only this computer can access the project service.",
     "cross_origin": "File access from another site is not allowed.",
     "invalid_local_request": "This is not a valid local app request.",
@@ -100,6 +131,9 @@ def localized_error_for_language(
     status: int,
     code: str = "operation_rejected",
 ) -> str:
+    specific = timeline_error_message(code, language)
+    if specific is not None:
+        return specific
     if not wants_english_language(language):
         return chinese
     # A generic operation code must not hide a more specific HTTP status.

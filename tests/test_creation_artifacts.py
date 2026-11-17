@@ -1,5 +1,6 @@
 """Execution files become real project assets through ordinary command receipts."""
 from pathlib import Path
+import os
 import shutil
 import subprocess
 from uuid import uuid4
@@ -107,16 +108,32 @@ def test_file_boundary_links_empty_and_directory_are_rejected(publication, tmp_p
     for path in [str(outside), '../outside.md']:
         with pytest.raises(ProjectError, match='本轮执行目录'):
             publish(publication, command(publication, path))
-    (work / 'link.md').symlink_to(outside)
-    (work / 'link-directory').symlink_to(tmp_path, target_is_directory=True)
-    for path in ['link.md', 'link-directory/outside.md']:
-        with pytest.raises(OSError):
-            publish(publication, command(publication, path))
     (work / 'empty.md').touch()
     (work / 'folder').mkdir()
     for path in ['empty.md', 'folder']:
         with pytest.raises(ProjectError, match='非空普通文件'):
             publish(publication, command(publication, path))
+    assert not assets.projects.snapshot(project_id).assets
+
+
+def test_publication_rejects_linked_inputs(publication, tmp_path):
+    assets, project_id, _, work, _ = publication
+    outside = tmp_path / 'outside.md'; outside.write_text('outside')
+    if os.name == 'nt':
+        import _winapi
+        alias = work / 'link-directory'
+        _winapi.CreateJunction(str(tmp_path), str(alias))
+        paths = ['link-directory/outside.md']
+    else:
+        (work / 'link.md').symlink_to(outside)
+        (work / 'link-directory').symlink_to(tmp_path, target_is_directory=True)
+        paths = ['link.md', 'link-directory/outside.md']
+    try:
+        for path in paths:
+            with pytest.raises(OSError):
+                publish(publication, command(publication, path))
+    finally:
+        if os.name == 'nt': alias.rmdir()
     assert not assets.projects.snapshot(project_id).assets
 
 

@@ -1,4 +1,7 @@
+import type { AssetRef, TimelineTextOverlay } from "../contracts/generated.ts";
+
 import type { VoiceSelection } from "../backend/voices.ts";
+import type { ImageParameters } from "../contracts/generated.ts";
 import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
@@ -72,6 +75,7 @@ export interface GenerationSettings {
   /** Music with a reference recording: cap the length at the recording's own (unset follows it). */
   durationFromReference?: boolean;
   imagePreset?: "none" | "product-views";
+  imageQuality?: ImageParameters["quality"];
   /** A model configured in the local API; catalog models leave it unset. */
   modelConfigId?: string;
 }
@@ -113,7 +117,44 @@ export interface TimelineTrack {
   clips: TimelineClip[];
 }
 
+export interface TimelineFontView {
+  id: string;
+  title: string;
+  asset?: AssetRef;
+  src?: string;
+  mimeType: string;
+  /** Stable logical registration key for restored archive bytes; never an AssetRef. */
+  importIdentity?: string;
+}
+export interface TimelineTextSourceView {
+  /** View-only registration identity retained when foreign AssetRefs are cleared. */
+  importIdentity?: string;
+  title: string;
+  asset?: AssetRef;
+  src?: string;
+  mimeType: string;
+}
+type MutableTextFields = {
+  -readonly [K in keyof Omit<
+    TimelineTextOverlay,
+    "sourceAsset" | "style"
+  >]: TimelineTextOverlay[K];
+};
+export interface TimelineTextOverlayView extends MutableTextFields {
+  source?: TimelineTextSourceView;
+  style: {
+    fontSize: number;
+    color: string;
+    align: "left" | "center" | "right";
+    lineHeight: number;
+    background?: { color: string; opacity: number; padding: number } | null;
+    stroke?: { color: string; width: number } | null;
+  };
+}
+
 export interface TimelineData {
+  fonts?: TimelineFontView[];
+  overlays?: TimelineTextOverlayView[];
   tracks: TimelineTrack[];
   /** Retained independently of clip use; omitted only by older documents. */
   importedAssets?: CanvasResource[];
@@ -435,6 +476,8 @@ export function createNode(
 export type NodePatch = Partial<Omit<CanvasNode, "id" | "data">> & {
   data?: Partial<CanvasNodeData>;
 };
+export const TEXT_NODE_MIN_SIZE = { width: 200, height: 120 };
+
 export type CanvasCommand =
   | {
       type: "add-nodes";
@@ -690,13 +733,17 @@ function applyCanvasCommand(
       command.height <= 0
     )
       throw new Error(tNow("errors.model.nodeSize"));
+    const width = source.type === "text"
+      ? Math.max(TEXT_NODE_MIN_SIZE.width, command.width) : command.width;
+    const height = source.type === "text"
+      ? Math.max(TEXT_NODE_MIN_SIZE.height, command.height) : command.height;
     const dx = source.position.x - position.x,
       dy = source.position.y - position.y;
     if (
       !dx &&
       !dy &&
-      source.width === command.width &&
-      source.height === command.height
+      source.width === width &&
+      source.height === height
     )
       return document;
     return {
@@ -706,8 +753,8 @@ function applyCanvasCommand(
           return {
             ...node,
             position: { ...position },
-            width: command.width,
-            height: command.height,
+            width,
+            height,
           };
         // Resizing the frame changes its local origin, not its children's world positions.
         // This coordinate compensation also applies to locked children.

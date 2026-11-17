@@ -8,7 +8,9 @@ from opendirector.domain.rule_facts import (
     FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES,
 )
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.references import project_content
+from opendirector.media import heif_type
 
 
 def reference_text(data):
@@ -107,6 +109,10 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         return result
     if kind == 'audio':
         if rules.get('referencesAllowed') is False and task['referenceIds']:
+            if rules['profile'] == 'minimax-speech':
+                raise ProjectError('MiniMax 语音合成不支持参考素材，请直接填写朗读文本并选择音色。', 422, code='minimax_speech_reference')
+            if rules['profile'] == 'zhipu-speech':
+                raise ProjectError('GLM-TTS 不支持参考素材，请直接填写朗读文本并选择音色。', 422, code='zhipu_speech_reference')
             raise ProjectError('MOSS 语音生成不支持参考素材，请直接填写朗读文本和音色 ID。', 422, code='moss_speech_reference')
         # Historical context remains recorded; it is never appended to speech.
         result['manifest'] = [{'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'context_only'}
@@ -117,6 +123,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                            else '当前模型接口尚未接通素材参考模式，请选择该模型支持的生成方式。')
     total_audio_ms, total_video_ms, media_bytes = 0, 0, 0
     source_metadata, text_context = [], []
+    mentioned = {str(part['assetId']) for part in task.get('promptContent') or () if part['type'] == 'reference'}
     role_by_asset = {str(value['assetId']): value['role'] for value in task.get('referenceRoles') or []}
     slot_roles = set()
     for index, (data, meta, source_kind) in enumerate(references(store, task['projectId'], task['referenceIds'], overrides), 1):
@@ -142,11 +149,17 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                     layout = None
                 if isinstance(layout, dict):
                     raise ProjectError('MOSS 布局 JSON 不支持附加文本参考，请将要求写入 JSON 或移除文本参考。', 422, code='moss_layout_reference')
-            result['prompt'] += f'\n\n参考{index}：{meta["name"]}\n{reference_text(data)}'
-            text_context.append(f'\n\n参考{index}：{meta["name"]}\n{reference_text(data)}')
+            # Only an @-mentioned text keeps its label, so the inline mention
+            # still points at its body; a connected text joins the prompt as is.
+            body = reference_text(data)
+            context = f'\n\n参考{index}：{meta["name"]}\n{body}' if str(meta['id']) in mentioned else f'\n\n{body}'
+            result['prompt'] += context
+            text_context.append(context)
             entry['role'] = 'text'
         elif source_kind == 'image':
             mime = image_type(data)
+            if rules['profile'] == 'minimax-h3-image':
+                mime = mime or heif_type(data)
             if mime is None:
                 raise ProjectError(f'“{meta["name"]}”不是已支持的参考图片格式。')
             if len(data) > rules['imageBytes']:
@@ -156,6 +169,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                 raise ProjectError(f'“{meta["name"]}”不符合视频参考图片尺寸要求：边长 300—6000 像素，宽高比 0.4—2.5。')
             if rules['profile'] == 'seedream-5.0-pro' and (width is None or height is None or min(width, height) <= 14 or not 196 <= width * height <= 36000000 or not 1 / 16 <= width / height <= 16):
                 raise ProjectError(f'“{meta["name"]}”不符合当前图片模型的参考尺寸要求。')
+            if rules['profile'] == 'minimax-h3-image':
+                validate_minimax_image_reference(mime, width, height)
             role = 'reference_image'
             if kind == 'video' and mode == 'first_frame':
                 # Frame slots are per-slot: one image each, and the slot the
@@ -221,6 +236,9 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     if rules['profile'] == 'fasth3-omni':
         from opendirector.integrations.fasth3 import native_prompt
         result['prompt'] = native_prompt(task, source_metadata) + ''.join(text_context)
+    if not prompt.strip():
+        # A blank prompt is implicitly the connected text reference itself.
+        result['prompt'] = result['prompt'].lstrip()
     if rules['profile'] == 'moss-image':
         from opendirector.domain.moss_image import validate_moss_image_prompt
         validate_moss_image_prompt(result['prompt'])

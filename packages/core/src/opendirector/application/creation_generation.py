@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
 import re
+import secrets
 from uuid import uuid4, uuid5
 
 from filelock import FileLock, Timeout
@@ -26,11 +27,14 @@ from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
+from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
 from opendirector.integrations.model_adapters import capabilities_of
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.media.filenames import with_extension
@@ -79,6 +83,15 @@ class ProviderMedia:
         return config
 
 
+def new_seed():
+    """A sampling seed for one job, drawn when it is accepted and kept with it.
+
+    Without one, a self-hosted model can fall back to a fixed seed and return
+    the same take whenever the same request is generated again.
+    """
+    return secrets.randbelow(2**31)
+
+
 class CreationGeneration(GenerationRuntime):
     def __init__(self, projects, configs, provider=None):
         super().__init__()
@@ -99,6 +112,9 @@ class CreationGeneration(GenerationRuntime):
 
     def task(self, job):
         spec, model = job.inputSnapshot.spec, job.inputSnapshot.model
+        config = model.model_dump()
+        # Project accepted jobs without revalidating the current speech catalog.
+        profile = 'minimax-speech' if is_minimax_speech(config) else input_rules(config)['profile']
         assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
         reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only'))
         content = None
@@ -128,7 +144,7 @@ class CreationGeneration(GenerationRuntime):
             modelConfigId=str(model.modelConfigId), model=model.modelId, baseURL=model.url, protocol=model.protocol,
             title=spec.prompt[:80] or spec.kind, prompt=spec.prompt, promptContent=content, referenceIds=reference_ids,
             referenceRoles=[{'assetId': str(r.asset.assetId), 'role': r.role} for r in job.inputSnapshot.references if r.transmission != 'context_only'],
-            referenceInputs={'profile': input_rules({**model.model_dump(), 'kind': model.kind})['profile']},
+            referenceInputs={'profile': profile},
             videoMode=spec.parameters.videoMode if spec.kind == 'video' else 'first_frame', parameters=job.adapterParameters,
             externalTaskId=job.externalTaskId, assetId=str(job.asset.assetId) if job.asset else None,
             adopted=job.adopted, error=None, errorDetails=job.errorDetails.model_dump(mode='json') if job.errorDetails else None,
@@ -141,6 +157,9 @@ class CreationGeneration(GenerationRuntime):
             'video': {'duration': 5, 'ratio': 'adaptive', 'generate_audio': True},
             'audio': {'speaker': 'zh_female_vv_uranus_bigtts', 'audio_params': {'format': 'mp3', 'sample_rate': 24000}}}[spec.kind]
         intent = spec.parameters.model_dump(exclude_none=True)
+        if spec.kind == 'video' and config['protocol'] == 'bigmodel_video':
+            from opendirector.domain.bigmodel_video import cogvideo_parameters
+            return {**cogvideo_parameters(config, intent), 'watermark': not self.settings.get()['removeWatermark']}
         if spec.kind == 'video' and config['protocol'] == 'kling_video':
             from opendirector.domain.kling_models import kling_parameters
             return kling_parameters(config, intent, any(records[key]['kind'] == 'image' for key in node['referenceIds']))
@@ -149,10 +168,17 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
+            if input_rules(config)['profile'] == 'openai-gpt-image' and spec.parameters.quality != 'auto':
+                params['quality'] = spec.parameters.quality
+            if input_rules(config)['profile'] == 'vllm-omni-image':
+                from opendirector.integrations.vllm_omni_image import SAMPLING
+                params.update(SAMPLING)
         if spec.kind == 'audio' and intent['creationType'] == 'music':
-            # The adapter snapshot fixes what is sent: style (prompt), lyrics and length cap.
+            # The adapter snapshot fixes what is sent: style (prompt), lyrics, length cap
+            # and seed. MiniMax Music 3 uses seed 0 when none is sent, so every job
+            # would otherwise return the same song for the same request.
             params = {'creation_type': 'music', 'lyrics': intent.get('lyrics', ''),
-                      'duration': intent.get('durationSeconds') or DEFAULT_MUSIC_SECONDS}
+                      'duration': intent.get('durationSeconds') or DEFAULT_MUSIC_SECONDS, 'seed': new_seed()}
             if node['referenceIds']:
                 # The reference recording is transcribed into a score first, by
                 # the transcription model chosen now, not one configured later.
@@ -173,9 +199,7 @@ class CreationGeneration(GenerationRuntime):
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
-                # FastH3's wire contract sends duration; its derived frame
-                # estimate is not an explicitly submitted execution parameter.
-                params.pop('num_frames', None)
+                params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
             if seconds is None and config.get('videoCapabilities'):
@@ -189,7 +213,7 @@ class CreationGeneration(GenerationRuntime):
                 if node.get('videoMode') == 'continuation':
                     raise ProjectError('接续沿用上一段视频的画幅，请将比例设为自动。', 422)
                 caps = rules.get('videoCapabilities') or {}
-                choices = [item for item in caps.get('outputs', []) if seconds is None or seconds in item['durations']]
+                choices = [item for item in caps.get('outputs', []) if seconds is None or duration_matches(seconds, item['durations'], rules.get('fractionalDuration', False))]
                 if not choices:
                     raise ProjectError('指定视频比例前，请在模型接入中配置输出规格。', 422)
                 preferred = next((item for item in choices if item['resolution'] == caps.get('defaultResolution')), choices[0])
@@ -203,15 +227,21 @@ class CreationGeneration(GenerationRuntime):
                     params['ratio'] = '16:9'
             else:
                 apply_video_resolution(params, node, records, config, output)
-            if rules['profile'] == 'vllm-omni-h3':
-                from opendirector.integrations.vllm_omni import FPS, h3_frames
-                params.update(fps=FPS, num_frames=h3_frames(params['duration']))
+            if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'} and 'duration' in params:
+                params.update(video_frame_parameters(params['duration'], params.get('fps', FPS)))
         if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
         if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
             params.update(prompt_enhance=False, watermark=not self.settings.get()['removeWatermark'])
+        if spec.kind == 'image' and input_rules(config)['profile'] == 'bigmodel-glm-image':
+            params = dict(size=params['size'], watermark_enabled=not self.settings.get()['removeWatermark'])
         if spec.kind == 'audio' and input_rules(config)['profile'] == 'moss-speech':
             params = dict(voice=intent['voice'], response_format='mp3', delivery_method='url', stream=False)
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'minimax-speech':
+            params = dict(voice=intent['voice'], format='mp3', output_format='url', stream=False)
+        if spec.kind == 'audio' and input_rules(config)['profile'] == 'zhipu-speech':
+            params = dict(voice=intent['voice'], response_format='wav', stream=False,
+                          watermark_enabled=not self.settings.get()['removeWatermark'])
         return params
 
     @staticmethod
@@ -221,14 +251,18 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
-                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile == 'moss-image' else None,
-                outputFormat='png', watermark=parameters.get('watermark'))
+                quality=parameters.get('quality', 'auto'),
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image', 'bigmodel-glm-image'} else None,
+                outputFormat='png', watermark=parameters.get('watermark_enabled', parameters.get('watermark')),
+                numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
         if kind == 'audio' and parameters.get('creation_type') == 'music':
             return dict(kind=kind, creationType='music', format='mp3', maxDurationSeconds=parameters['duration'],
-                        scoreMode=parameters.get('score_mode'))
+                        scoreMode=parameters.get('score_mode'), seed=parameters.get('seed'))
         if kind == 'audio':
-            if input_rules(config)['profile'] == 'moss-speech':
+            if input_rules(config)['profile'] in {'moss-speech', 'minimax-speech'}:
                 return dict(kind=kind, voice=parameters['voice'], format='mp3')
+            if input_rules(config)['profile'] == 'zhipu-speech':
+                return dict(kind=kind, voice=parameters['voice'], format='wav', sampleRate=24000)
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
                 speaker=parameters.get('speaker') if config['protocol'] != 'openai' else None,
                 format='mp3', sampleRate=24000 if config['protocol'] != 'openai' else None)
@@ -596,10 +630,8 @@ class CreationGeneration(GenerationRuntime):
                 valid = False
             if not valid:
                 if mode == 'download':
-                    # The private locator belongs to the accepted result, not
-                    # the current model selection. Never attach another model's
-                    # credentials or turn this read into a new submission.
-                    config = None
+                    # Keep the accepted adapter and download policy without current credentials.
+                    config = {**job.inputSnapshot.model.model_dump(mode='json'), 'apiKey': '', 'authMode': 'none'}
                 else:
                     task.update(status='interrupted', recovery='review', resumeAllowed=False)
                     await asyncio.to_thread(self.checkpoint, project_id, task, pinned)

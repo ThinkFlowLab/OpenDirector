@@ -1,7 +1,8 @@
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, type CSSProperties } from "react";
+import { Suspense, useEffect, type CSSProperties } from "react";
+import { createNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
@@ -10,6 +11,10 @@ import { creationClient, objectVersion, visibleItems } from "../../backend/creat
 
 import { previewImageSelection } from "../../backend/imageSelections";
 import { MediaPublication } from "../../backend/mediaPublication";
+import { CreationEditorSession } from "../../backend/creationEditorSession";
+import { captureEditorSource } from "../linkedResults";
+import { TimelinePackageImport, exportTimelinePackage as exportNativeTimelinePackage } from "../../backend/timelinePackages";
+import { readLocalResource } from "../timelineExport.ts";
 import { timelinePublication } from "../../backend/timelinePublication";
 import { acknowledgeToolPlacement, cancelToolTask } from "../../backend/tools.ts";
 import { createWorkspaceProject, listWorkspaceProjects, openExampleWorkspaceProject, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
@@ -32,6 +37,8 @@ import { REFERENCE_PORT_ICON_SIZE, REFERENCE_PORT_SIZE, referencePortDirection, 
 import { batchCreationKinds, SELECTION_PADDING, SELECTION_PORT_SIZE } from "../selectionReferences";
 
 import "../multi-selection.css";
+import { CreationRipples } from "../CreationRipples.tsx";
+import { canvasDotGrid } from "../creationRipples.ts";
 import "../node-reference-ports.css";
 import "../control-theme.css";
 import { CreationAssetList } from "../CreationAssetList.tsx";
@@ -52,6 +59,7 @@ import { LocalMediaEditor } from "../LocalMediaEditor";
 import { canAddReference, MAX_ZOOM, MIN_ZOOM } from "../model";
 import { gridSplitImage } from "../nodeActionWorkflow";
 import { NodeComposer } from "../NodeComposer";
+import { pinnedPrecheckNodes } from "../workspaceInteraction.ts";
 
 import { NodeInfoButton } from "../NodeInfoButton";
 import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
@@ -73,6 +81,7 @@ import { subjectImportSelection, subjectTargetIdentity } from "../subjectLibrary
 import { TextNodeComposer } from "../TextNodeComposer";
 import "../themes.css";
 import { TimelineEditor } from "../TimelineEditor";
+import { TimelineOutputShortcut, useTimelineOutput } from "../TimelineOutput";
 import { CANVAS_TOOLS, createCanvasToolTask, initialToolParameters } from "../toolCatalog";
 
 import { translateToolText } from "../toolText.ts";
@@ -87,6 +96,7 @@ import { DirectorStage, IconButton, helpShortcuts, nodeTypes, edgeTypes, referen
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
+  const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
   const {
     actionMedia,
     actionNode,
@@ -117,6 +127,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     composerExpanded,
     composerIncoming,
     composerNode,
+    submissionAssets,
     composerRunning,
     confirmSubjectImport,
     connect,
@@ -134,6 +145,10 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     editorOrigin,
     editorOutputs,
     editorSession,
+    editorSaving,
+    invalidateScheduledAutosave,
+    saveQueue,
+    setEditing,
     end,
     endDrag,
     exportDocument,
@@ -286,6 +301,39 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   } = rt;
 
 
+  const outputState = timelineOutput.state;
+  const outputSource = outputState ? doc.nodes.find((node) => node.id === outputState.itemId) : undefined;
+  const existingOutput = outputState ? projected.nodes.find((node: { id: string }) => node.id === outputState.output.id) : undefined;
+  const pendingOutput = outputSource && outputState && outputState.phase !== "done"
+    ? {
+        id: outputState.output.id,
+        type: "video" as const,
+        position: outputState.output.position,
+        width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198,
+        style: { width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198 },
+        selectable: false, draggable: false, connectable: false, deletable: false, focusable: false,
+        data: {
+          kind: "video" as const, title: outputState.output.title,
+          timelineOutput: {
+            title: outputState.output.title, phase: outputState.phase,
+            progress: outputState.progress, error: outputState.error,
+            onCancel: timelineOutput.cancel,
+            onRetry: () => {
+              const source = doc.nodes.find((node) => node.id === outputState.itemId);
+              if (source) void timelineOutput.run(source, () => persist(doc, false));
+            },
+          },
+        },
+      }
+    : null;
+
+  useEffect(() => {
+    if (!outputSource || !outputState || outputState.phase === "done") return;
+    const output = createNode("video", outputState.output.position, { title: outputState.output.title });
+    output.id = outputState.output.id;
+    rt.revealCreatedNodes.current([output], doc.nodes.some((node) => node.id === output.id) ? doc.nodes : [...doc.nodes, output]);
+  }, [outputState?.output.id]);
+
   const workspace = (
     <div
       inert={!ready || switching}
@@ -431,11 +479,20 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             gesture={pointerGesture}
             bypassSnapping={bypassSnapping}
             proOptions={{ hideAttribution: true }}
-            nodes={projected.nodes}
-            edges={projected.edges}
+            nodes={pendingOutput ? existingOutput ? projected.nodes.map((node: { id: string }) => node.id === pendingOutput.id ? pendingOutput : node) : [...projected.nodes, pendingOutput] : projected.nodes}
+            edges={pendingOutput && outputSource && outputState && !projected.edges.some((edge: { source: string; target: string }) => edge.source === outputState.itemId && edge.target === pendingOutput.id)
+              ? [...projected.edges, {
+                  id: `timeline-pending:${pendingOutput.id}`, source: outputState.itemId, target: pendingOutput.id,
+                  type: "reference", hidden: !showEdges, selectable: false, deletable: false,
+                  data: { state: "provenance", description: t("errors.refEvidence.editSource"),
+                    sourceBounds: { ...outputSource.position, width: outputSource.width, height: outputSource.height },
+                    targetBounds: { ...pendingOutput.position, width: pendingOutput.width, height: pendingOutput.height },
+                  },
+                }]
+              : projected.edges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={(changes) => onNodesChange(changes.filter((change) => !(pendingOutput && "id" in change && change.id === pendingOutput.id)))}
             onEdgesChange={(changes) => {
               for (const c of changes)
                 if (c.type === "select")
@@ -593,8 +650,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           >
             <Background
               variant={BackgroundVariant.Dots}
-              gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
-              size={Math.max(1, 1 / zoom)}
+              gap={canvasDotGrid(zoom).gap}
+              size={canvasDotGrid(zoom).size}
               color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
               bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
             />
@@ -605,6 +662,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               }
             />
             <ViewportPortal>
+              <CreationRipples
+                documentId={doc.id}
+                nodes={doc.nodes}
+                zoom={zoom}
+                active={ready && !switching}
+              />
               {selectionGeometry && !interacting && (
                 <div
                   className="cw-multi-selection-frame"
@@ -1231,6 +1294,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             node={single}
             locked={lockedIds.has(single.id)}
             style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
+            onOutput={single.type === "timeline" ? () => void timelineOutput.run(single, () => persist(doc, false)) : undefined}
+            outputBusy={timelineOutput.busy || !!(timelineOutput.blockedItemId && timelineOutput.blockedItemId !== single.id)}
             onTool={openNodeAction}
             presets={toolCatalog.capabilities["image-presets"]?.fields
               ?.find((field) => field.key === "preset")?.options
@@ -1461,7 +1526,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           </div>
         </>
       )}
-      {hasComposer && composerNode && (
+      {hasToolbar && single?.type === "timeline" && !lockedIds.has(single.id) && (
+        <TimelineOutputShortcut node={single} state={timelineOutput.state}
+          blocked={timelineOutput.busy && timelineOutput.state?.itemId !== single.id || !!(timelineOutput.blockedItemId && timelineOutput.blockedItemId !== single.id)}
+          onRun={() => void timelineOutput.run(single, () => persist(doc, false))} />
+      )}
+      {hasComposer && composerNode && composerNode.type !== "timeline" && (
         <>
           {composerExpanded && (
             <div
@@ -1604,6 +1674,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}
+                pinnedPrecheck={pinnedPrecheckNodes({
+                  node: composerNode,
+                  incoming: composerIncoming,
+                  assets: typeof submissionAssets === "function" ? submissionAssets() : [],
+                })}
                 referenceControls={generationReferenceControls(composerNode)}
                 onUpdate={(patch) =>
                   command({
@@ -1623,6 +1698,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 }}
                 running={composerRunning}
                 backendModels={backendCatalog.models}
+                removeWatermark={backendCatalog.settings?.removeWatermark}
               />
             )}
           </div>
@@ -2262,6 +2338,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           key={textWindowNode.id}
           node={textWindowNode}
           locked={lockedIds.has(textWindowNode.id)}
+          selections={actions.textSelections}
           onUpdate={(text) =>
             command({
               type: "update-node",
@@ -2269,7 +2346,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               patch: { data: { text } },
             })
           }
-          onClose={() => setTextWindowId(null)}
+          onClose={() => {
+            void persist(historyRef.current.present);
+            setTextWindowId(null);
+            if (!lockedIds.has(textWindowNode.id)) setTextEditingId(textWindowNode.id);
+            else root.current?.focus({ preventScroll: true });
+          }}
           onBeginEdit={begin}
           onEndEdit={end}
         />
@@ -2315,8 +2397,152 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       {editing && editorMode === "default" && editing.type === "timeline" && (
         <TimelineEditor
           node={editing}
-          resources={resources}
+          latestNode={doc.nodes.find((node) => node.id === editing.id)}
+          onRefreshFromProject={() => {
+            const current = historyRef.current.present;
+            const node = current.nodes.find((node) => node.id === editing.id);
+            if (node) {
+              editorSession.current = new CreationEditorSession(
+                creationClient(current.id),
+                current,
+                node.id,
+              );
+              editorOrigin.current = captureEditorSource(current.id, node);
+              setEditing(node);
+            }
+          }}
+          resources={[
+            ...resources,
+            ...doc.nodes
+              .filter((node) => node.type === "text")
+              .map((node) => ({
+                id: `node:${node.id}`,
+                nodeId: node.id,
+                kind: "text" as const,
+                title: node.data.title,
+                text: node.data.text ?? "",
+                assetId: node.data.backendAssetId,
+                mimeType: "text/plain",
+              })),
+          ]}
+          onReadTextResource={async (resource) => {
+            const client = creationClient(doc.id);
+            const asset = client.snapshot.assets.find(
+              (asset) => asset.id === resource.assetId && asset.kind === "text",
+            );
+            if (!asset) throw new Error(t("timeline.text.sourceError"));
+            return {
+              title: resource.title,
+              mimeType: "text/plain",
+              src: await client.mediaUrl(asset.id),
+              asset: {
+                assetId: asset.id,
+                revision: asset.revision,
+                fingerprint: asset.fingerprint,
+                kind: "text",
+              },
+            };
+          }}
+          onReadMediaResource={(resource, signal) =>
+            ["image/heic", "image/heif"].includes(resource.mimeType ?? "")
+              ? creationClient(doc.id).originalMedia(resource.src ?? "", resource.mimeType, signal)
+              : readLocalResource(resource, signal)
+          }
           onApply={(timeline) => commitEditorData({ timeline })}
+          onExportEditablePackage={async (timeline) => {
+            await commitEditorData({ timeline });
+            const session: CreationEditorSession = editorSession.current!;
+            const basis = session.projection.basis;
+            const item = basis.canvasItems.find(
+              (item) => item.id === editing.id,
+            );
+            if (!item || item.binding.role !== "editor")
+              throw new Error(t("timeline.package.targetMissing"));
+            const editorId = item.binding.objectRef.id;
+            const document = basis.editorDocuments.find(
+              (document) => document.id === editorId,
+            );
+            if (!document) throw new Error(t("timeline.package.targetMissing"));
+            return exportNativeTimelinePackage(
+              session.projection.client,
+              document.id,
+              document.revision,
+            );
+          }}
+          onPreparePackageImport={(file, replace) => {
+            const session: CreationEditorSession | null = editorSession.current;
+            if (!session) throw new Error(t("timeline.package.targetMissing"));
+            const client = session.projection.client;
+            const item = session.projection.basis.canvasItems.find(
+              (item) => item.id === session.itemId,
+            );
+            const editorId =
+              item?.binding.role === "editor"
+                ? item.binding.objectRef.id
+                : null;
+            const document = session.projection.basis.editorDocuments.find(
+              (document) => document.id === editorId,
+            );
+            if (replace && !document)
+              throw new Error(t("timeline.package.targetMissing"));
+            const operation = new TimelinePackageImport(
+              client,
+              file,
+              replace
+                ? { editorId: document!.id, revision: document!.revision }
+                : undefined,
+            );
+            return async () => {
+              if (
+                historyRef.current.present.id !== client.id ||
+                editorSaving.current
+              )
+                throw new Error(t("canvas.workspace.error.editorUnavailable"));
+              invalidateScheduledAutosave();
+              editorSaving.current = true;
+              try {
+                await saveQueue.current!.wait();
+                if (!(await persist(historyRef.current.present)))
+                  throw new Error(
+                    t("canvas.workspace.error.editorDraftSaveFailed"),
+                  );
+                await operation.run();
+                const projection = workspaceProjection(client.id);
+                const next = await projection.read(client.snapshot);
+                if (historyRef.current.present.id !== client.id)
+                  throw new Error(
+                    t("canvas.workspace.error.editorUnavailable"),
+                  );
+                const current = historyRef.current.present;
+                const merged = {
+                  ...next,
+                  viewport: current.viewport,
+                  settings: current.settings,
+                };
+                projection.baseline = merged;
+                projection.basis = client.snapshot;
+                setHistory((history) => ({ ...history, present: merged }));
+                if (replace) {
+                  const node = merged.nodes.find(
+                    (node) => node.id === session.itemId,
+                  );
+                  if (!node?.data.timeline)
+                    throw new Error(t("timeline.package.targetMissing"));
+                  editorSession.current = new CreationEditorSession(
+                    client,
+                    merged,
+                    node.id,
+                  );
+                  editorOrigin.current = captureEditorSource(client.id, node);
+                  setEditing(node);
+                  return node.data.timeline;
+                }
+              } finally {
+                editorSaving.current = false;
+                client.install(client.snapshot);
+              }
+            };
+          }}
           onPrepareRender={async (timeline) => {
             if ((await commitEditorData({ timeline })) === false)
               throw new Error(t("canvas.workspace.error.timelineUnsaved"));

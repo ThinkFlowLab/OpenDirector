@@ -1,14 +1,11 @@
 import json
-from pathlib import Path
-import shutil
-import subprocess
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from opendirector.domain.projects import ProjectError
-from opendirector.integrations.fasth3 import native_prompt, video_parameters, finalize_video_edit
+from opendirector.integrations.fasth3 import native_prompt, video_parameters
 
 
 def source(kind, name, **extra):
@@ -30,30 +27,26 @@ def test_native_tags_bind_exact_chip_positions_and_share_ordinals_on_repeat():
     assert json.dumps(content, ensure_ascii=False) == before
 
 
-@pytest.mark.parametrize('text,duration,seconds,frames,preserve', [
-    ('替换视频人物，保持镜头不变', 15000, '15', 362, True),
-    ('替换视频人物', 3000, '4', 107, True),
-    ('替换视频人物，输出 5 秒', 15000, '5', 124, False),
-    ('Replace the person; generate a 6-second clip', 15000, '6', 158, False),
-    ('参考这个视频制作全新短片', 15000, '5', 124, None),
+@pytest.mark.parametrize('text,duration,seconds,frames', [
+    ('替换视频人物，保持镜头不变', 15000, '15', 362),
+    ('替换视频人物', 3000, '4', 107),
+    ('替换视频人物，输出 5 秒', 15000, '5', 124),
+    ('Replace the person; generate a 6-second clip', 15000, '6', 158),
+    ('参考这个视频制作全新短片', 15000, '5', 124),
 ])
-def test_video_edit_duration_is_not_silently_five_seconds(text, duration, seconds, frames, preserve):
+def test_video_edit_duration_is_not_silently_five_seconds(text, duration, seconds, frames):
     video = source('video', '原片.mp4', durationMs=duration, width=480, height=832)
     node = {'referenceIds': [video['id']], 'prompt': text}
     params = video_parameters(node, {video['id']: video})
     assert params['seconds'] == seconds and params['num_frames'] == frames
     assert params['size'] == '480x832'
-    if preserve is None:
-        assert 'videoEdit' not in params
-    else:
-        assert params['videoEdit']['preserveDuration'] is preserve
-        assert params['videoEdit']['sourceAssetId'] == video['id']
+    assert 'videoEdit' not in params
 
 
 def test_explicit_audio_edit_is_not_overwritten_and_invalid_duration_is_rejected():
     video = source('video', '原片.mp4', durationMs=15000)
     node = {'referenceIds': [video['id']], 'prompt': '替换人物并更换背景音乐'}
-    assert video_parameters(node, {video['id']: video})['videoEdit']['preserveAudio'] is False
+    assert 'videoEdit' not in video_parameters(node, {video['id']: video})
     with pytest.raises(ProjectError, match='4—15 秒'):
         video_parameters({**node, 'prompt': '替换人物，输出 20 秒'}, {video['id']: video})
 
@@ -67,249 +60,18 @@ def test_panel_duration_overrides_default_and_conflicting_prompt(seconds, frames
         assert parameters['num_frames'] == frames
 
 
-def test_panel_duration_overrides_source_edit_length_without_losing_audio_policy():
+def test_panel_duration_overrides_source_edit_length_without_postprocessing():
     video = source('video', '原片.mp4', durationMs=5000, width=480, height=832)
     node = {'referenceIds': [video['id']], 'prompt': '替换视频中的人物'}
     parameters = video_parameters(node, {video['id']: video}, duration_seconds=7)
     assert parameters['duration'] == 7 and parameters['seconds'] == '7'
-    assert parameters['videoEdit']['sourceDurationMs'] == 5000
-    assert parameters['videoEdit']['preserveDuration'] is False
-    assert parameters['videoEdit']['preserveAudio'] is True
+    assert 'videoEdit' not in parameters
 
 
 @pytest.mark.parametrize('seconds', [3, 16, float('nan'), float('inf')])
 def test_panel_duration_outside_supported_range_is_rejected(seconds):
     with pytest.raises(ProjectError, match='4—15 秒'):
         video_parameters({'referenceIds': [], 'prompt': '人物动作'}, {}, duration_seconds=seconds)
-
-
-@pytest.mark.parametrize('has_audio', [True, False])
-def test_real_finalization_preserves_source_soundtrack_or_silence_and_duration(tmp_path, has_audio):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    original, generated = tmp_path/'source.mp4', tmp_path/'generated.mp4'
-    def make(path, duration, frequency):
-        cmd = ['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24']
-        if frequency:
-            cmd += ['-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000']
-        cmd += ['-t', str(duration), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)]
-        subprocess.run(cmd, check=True, capture_output=True)
-    make(original, 1, 440 if has_audio else None)
-    make(generated, 2, 880)
-    meta = source('video', 'source.mp4', fingerprint='fixture', hasAudio=has_audio)
-    store = SimpleNamespace(asset=lambda *args: (original.read_bytes(), meta))
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test',
-            'inputSnapshot': {'references': {meta['id']: 'fixture'}},
-            'parameters': {'videoEdit': {'sourceAssetId': meta['id'], 'sourceDurationMs': 1000,
-                                        'preserveAudio': True, 'preserveDuration': True}}}
-    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    def probe(path):
-        return json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)]))
-    info = probe(output)
-    assert suffix == 'mp4' and .99 <= float(info['format']['duration']) <= 1.1
-    assert any(s['codec_type'] == 'audio' for s in info['streams']) is has_audio
-    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
-    assert not decoded.stderr.strip()
-    if has_audio:
-        def packets(path):
-            value = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a',
-                '-show_packets', '-show_data_hash', 'sha256', '-show_entries', 'packet=data_hash', '-of', 'json', str(path)]))
-            return [p['data_hash'] for p in value['packets']]
-        assert packets(output) == packets(original)
-        assert packets(output) != packets(generated)
-    changed = {**task, 'inputSnapshot': {'references': {meta['id']: 'changed'}}}
-    with pytest.raises(ProjectError, match='原视频已变化'):
-        finalize_video_edit(store, changed, 'mp4', generated.read_bytes())
-
-
-def test_preserved_soundtrack_does_not_extend_an_explicit_shorter_output(tmp_path, monkeypatch):
-    original = source('video', 'source.mp4', fingerprint='fixture')
-    store = SimpleNamespace(asset=lambda *args: (b'original', original))
-    commands = []
-    monkeypatch.setattr(shutil, 'which', lambda _: 'ffmpeg')
-    def run(command, **kwargs):
-        commands.append(command)
-        if command[0] == 'ffprobe':
-            return SimpleNamespace(stdout=b'aac\n')
-        Path(command[-1]).write_bytes(b'final')
-    monkeypatch.setattr(subprocess, 'run', run)
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'owner',
-            'parameters': {'duration': 5, 'videoEdit': {'sourceAssetId': original['id'],
-                'sourceDurationMs': 15000, 'preserveDuration': False, 'preserveAudio': True}}}
-    assert finalize_video_edit(store, task, 'mp4', b'generated') == ('mp4', b'final')
-    command = commands[-1]
-    assert command[command.index('-t') + 1] == '5.0'
-
-
-@pytest.mark.parametrize('preserve_audio', [True, False])
-def test_real_shorter_output_trims_reordered_video_and_keeps_the_selected_audio(tmp_path, preserve_audio):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    original, generated = tmp_path/'source.mp4', tmp_path/'generated.mp4'
-    for path, seconds, frequency in [(original, 6 if preserve_audio else 4, 440), (generated, 5, 880)]:
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24',
-            '-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000', '-t', str(seconds),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)], check=True, capture_output=True)
-    video_info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-        '-show_entries', 'stream=has_b_frames', '-of', 'json', str(generated)]))
-    assert video_info['streams'][0]['has_b_frames'] > 0
-    meta = source('video', 'source.mp4', fingerprint='fixture', hasAudio=True)
-    store = SimpleNamespace(asset=lambda *args: (original.read_bytes(), meta))
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test',
-            'inputSnapshot': {'references': {meta['id']: 'fixture'}},
-            'parameters': {'duration': 4, 'videoEdit': {'sourceAssetId': meta['id'], 'sourceDurationMs': 4000,
-                'preserveAudio': preserve_audio, 'preserveDuration': not preserve_audio}}}
-    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(output)]))
-    assert suffix == 'mp4' and 3.95 <= float(info['format']['duration']) <= 4.1
-    assert 3.95 <= float(next(stream for stream in info['streams'] if stream['codec_type'] == 'video')['duration']) <= 4.05
-    def packets(path):
-        value = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a',
-            '-show_packets', '-show_data_hash', 'sha256', '-show_entries', 'packet=data_hash', '-of', 'json', str(path)]))
-        return [packet['data_hash'] for packet in value['packets']]
-    selected = packets(original if preserve_audio else generated)
-    actual = packets(output)
-    assert actual and actual == selected[:len(actual)]
-    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
-    assert not decoded.stderr.strip()
-
-
-def test_real_pcm_source_soundtrack_is_transcoded_for_the_mp4_output(tmp_path):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    original, generated = tmp_path/'source.mov', tmp_path/'generated.mp4'
-    for path, seconds, frequency, audio in [(original, 5, 440, 'pcm_s16le'), (generated, 8, 880, 'aac')]:
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24',
-            '-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000', '-t', str(seconds),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', audio, str(path)], check=True, capture_output=True)
-    meta = source('video', 'source.mov', fingerprint='fixture', durationMs=5000, hasAudio=True)
-    meta['type'] = 'video/quicktime'
-    store = SimpleNamespace(asset=lambda *args: (original.read_bytes(), meta))
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test',
-            'inputSnapshot': {'references': {meta['id']: 'fixture'}},
-            'parameters': {'duration': 7, 'videoEdit': {'sourceAssetId': meta['id'], 'sourceDurationMs': 5000,
-                'preserveAudio': True, 'preserveDuration': False}}}
-    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(output)]))
-    audio = next(stream for stream in info['streams'] if stream['codec_type'] == 'audio')
-    assert suffix == 'mp4' and audio['codec_name'] == 'aac'
-    assert 4.9 <= float(audio['duration']) <= 5.1
-    assert 6.95 <= float(info['format']['duration']) <= 7.1
-    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
-    assert not decoded.stderr.strip()
-
-
-def test_explicit_seven_second_edit_is_not_trimmed_back_to_five_second_source(tmp_path):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    original, generated = tmp_path/'source.mp4', tmp_path/'generated.mp4'
-    for path, seconds, frequency in [(original, 5, 440), (generated, 8, 880)]:
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24',
-            '-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000', '-t', str(seconds),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)], check=True, capture_output=True)
-    meta = source('video', 'source.mp4', fingerprint='fixture', durationMs=5000, hasAudio=True)
-    parameters = video_parameters({'referenceIds': [meta['id']], 'prompt': '替换人物'},
-                                 {meta['id']: meta}, duration_seconds=7)
-    store = SimpleNamespace(asset=lambda *args: (original.read_bytes(), meta))
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test', 'parameters': parameters,
-            'inputSnapshot': {'references': {meta['id']: 'fixture'}}}
-    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format', '-of', 'json', str(output)]))
-    assert suffix == 'mp4' and 6.95 <= float(info['format']['duration']) <= 7.1
-    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
-    assert not decoded.stderr.strip()
-
-
-def test_real_audio_change_with_explicit_duration_trims_without_reading_the_source(tmp_path):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    meta = source('video', 'source.mp4', durationMs=5000)
-    parameters = video_parameters({'referenceIds': [meta['id']], 'prompt': '替换人物并更换背景音乐'},
-                                  {meta['id']: meta}, duration_seconds=7)
-    assert parameters['num_frames'] == 175
-    assert not parameters['videoEdit']['preserveAudio'] and not parameters['videoEdit']['preserveDuration']
-    generated = tmp_path/'generated.mp4'
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24',
-        '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000', '-frames:v', '175', '-shortest',
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(generated)], check=True, capture_output=True)
-    # The source may have changed since submission; this edit does not use it.
-    store = SimpleNamespace(asset=lambda *args: pytest.fail('source must not be read'))
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test', 'parameters': parameters,
-            'inputSnapshot': {'references': {meta['id']: 'changed-since-submission'}}}
-    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(output)]))
-    assert suffix == 'mp4' and 6.95 <= float(info['format']['duration']) <= 7.05
-    assert any(s['codec_type'] == 'audio' for s in info['streams'])
-    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
-    assert not decoded.stderr.strip()
-
-
-@pytest.mark.parametrize('pixel_format', ['yuv420p10le', 'yuv444p'])
-def test_real_output_is_always_8_bit_420(tmp_path, pixel_format):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    generated = tmp_path/'generated.mp4'
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24', '-t', '5',
-        '-c:v', 'libx264', '-pix_fmt', pixel_format, str(generated)], check=True, capture_output=True)
-    meta = source('video', 'source.mp4')
-    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test', 'parameters': {'duration': 4, 'seconds': '4',
-            'videoEdit': {'sourceAssetId': meta['id'], 'sourceDurationMs': 4000, 'preserveAudio': False, 'preserveDuration': False}}}
-    _, data = finalize_video_edit(SimpleNamespace(), task, 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    stream = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-        '-show_entries', 'stream=pix_fmt,profile', '-of', 'json', str(output)]))['streams'][0]
-    assert stream == {'pix_fmt': 'yuv420p', 'profile': 'High'}
-
-
-def generated_clip(path, frames):
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24',
-        '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000', '-frames:v', str(frames), '-t', str(frames / 24),
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)], check=True, capture_output=True)
-
-
-def plain_task(profile='fasth3-omni', seconds=7):
-    return {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test', 'referenceInputs': {'profile': profile},
-            'parameters': {'duration': seconds, 'seconds': str(seconds)}}
-
-
-def test_real_plain_fasth3_output_is_trimmed_to_the_requested_duration(tmp_path):
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    generated = tmp_path/'generated.mp4'
-    generated_clip(generated, 175)  # 7 s rounded up to the 17n+5 frame grid.
-    store = SimpleNamespace(asset=lambda *args: pytest.fail('a plain generation has no source to read'))
-    suffix, data = finalize_video_edit(store, plain_task(), 'mp4', generated.read_bytes())
-    output = tmp_path/'output.mp4'
-    output.write_bytes(data)
-    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', str(output)]))
-    video = next(stream for stream in info['streams'] if stream['codec_type'] == 'video')
-    assert suffix == 'mp4' and int(video['nb_read_frames']) == 168
-    assert 6.95 <= float(info['format']['duration']) <= 7.05
-    assert any(stream['codec_type'] == 'audio' for stream in info['streams'])
-    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
-    assert not decoded.stderr.strip()
-
-
-@pytest.mark.parametrize('profile,frames', [('fasth3-omni', 168), ('vllm-omni-h3', 175)])
-def test_real_exact_or_continuable_output_is_returned_unchanged(tmp_path, profile, frames):
-    # Native H3 continues from the server's untrimmed clip, so trimming it would break the seam.
-    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-        pytest.skip('FFmpeg required')
-    generated = tmp_path/'generated.mp4'
-    generated_clip(generated, frames)
-    store = SimpleNamespace(asset=lambda *args: pytest.fail('no source read expected'))
-    assert finalize_video_edit(store, plain_task(profile), 'mp4', generated.read_bytes()) == ('mp4', generated.read_bytes())
 
 
 def test_native_prompt_and_full_duration_reach_actual_video_multipart():
@@ -336,8 +98,9 @@ def test_native_prompt_and_full_duration_reach_actual_video_multipart():
             fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True)
                       for part in message.iter_parts() if part.get_filename() is None}
             assert fields['prompt'].decode() == '替换<Video 1>的人物为<Picture 1>'
-            assert fields['seconds'] == b'15'
-            assert json.loads(fields['extra_params'])['duration'] == 15
+            assert fields['num_frames'] == b'362'
+            assert fields['fps'] == b'24' and 'seconds' not in fields
+            assert 'duration' not in json.loads(fields['extra_params'])
             assert request.content.count(b'name="input_references"') == 2
             assert b'video-bytes' in request.content
             return httpx.Response(200, json={'id': 'verified-wire'})

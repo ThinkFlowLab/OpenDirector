@@ -86,12 +86,17 @@ function ProgressRing({ progress }: { progress: number }) {
 export function GeneratingOverlay({
   activity,
   hasAsset,
+  progress: actualProgress,
+  label,
 }: {
   activity: NodeGenerationActivity;
   hasAsset: boolean;
+  progress?: number;
+  label?: string;
 }) {
   const t = useT();
-  const progress = useProgress(activity);
+  const estimate = useProgress(activity);
+  const progress = actualProgress ?? estimate;
   return (
     <div
       className={`cw-generating${hasAsset ? " cw-generating-with-asset" : ""}`}
@@ -110,7 +115,7 @@ export function GeneratingOverlay({
       {progress !== null && <ProgressRing progress={progress} />}
       <div className="cw-generating-caption" role="status" aria-atomic="true">
         <span className="cw-generating-indicator" aria-hidden="true" />
-        <span>{t(GENERATION_LABELS[activity.phase])}</span>
+        <span>{label ?? t(GENERATION_LABELS[activity.phase])}</span>
         {activity.count > 1 && (
           <span className="cw-generating-count">
             {t("generation.overlay.tasks", { count: activity.count })}

@@ -173,7 +173,96 @@ try {
     );
   }
   if (process.argv.includes("--publish")) {
+    // Retain a real due autosave across an editor acknowledgement. No payloads
+    // or versions are forged: invoking its original closure at this boundary
+    // must not write the pre-render stage back into the project.
+    await page.evaluate(async ({ id, stageId }) => {
+      const { workspaceProjection } = await import("/src/backend/workspace.ts");
+      const projection = workspaceProjection(id);
+      const nativeSetTimeout = window.setTimeout;
+      const descriptor = Object.getOwnPropertyDescriptor(projection, "baseline");
+      if (!descriptor || !("value" in descriptor) || !descriptor.configurable)
+        throw new Error("Expected an own, configurable projection baseline");
+      let baseline = descriptor.value, due, invoked = 0, restored = false;
+      const timers = new Set();
+      const duration = (document) => document?.nodes
+        .find((node) => node.id === stageId)?.data.localStage?.duration;
+      const wrappedSetTimeout = function (callback, delay, ...args) {
+        if (typeof callback !== "function" || ![450, 900].includes(Number(delay)) ||
+            !(new Error().stack ?? "").includes("useWorkspaceDocument.ts"))
+          return nativeSetTimeout.call(window, callback, delay, ...args);
+        const timer = nativeSetTimeout.call(window, () => {
+          timers.delete(timer);
+          due = () => callback.apply(window, args);
+        }, delay);
+        timers.add(timer);
+        return timer;
+      };
+      window.setTimeout = wrappedSetTimeout;
+      const restore = () => {
+        if (restored) return;
+        restored = true;
+        window.setTimeout = nativeSetTimeout;
+        for (const timer of timers) clearTimeout(timer);
+        Object.defineProperty(projection, "baseline", { ...descriptor, value: baseline });
+      };
+      Object.defineProperty(projection, "baseline", {
+        configurable: true,
+        enumerable: descriptor.enumerable,
+        get: () => baseline,
+        set: (next) => {
+          baseline = next;
+          if (duration(next) !== 0.5 || !due) return;
+          const callback = due;
+          due = undefined;
+          restore();
+          queueMicrotask(() => { invoked++; callback(); });
+        },
+      });
+      window.__stageAutosave = { ready: () => !!due, invoked: () => invoked, restore };
+    }, { id: f.id, stageId: f.stage });
     await open(f.stage);
+    await page.waitForFunction(() => window.__stageAutosave.ready());
+    // Only the explicitly injected snapshot may be held. The read at the
+    // acknowledged render version releases it before React installs history;
+    // subsequent foreground reads are never held. Cleanup is also unconditional.
+    await page.evaluate(async ({ id, stageId }) => {
+      const { workspaceProjection } = await import("/src/backend/workspace.ts");
+      const projection = workspaceProjection(id), client = projection.client;
+      const read = projection.read, injected = { ...client.snapshot };
+      const item = injected.canvasItems.find((item) => item.id === stageId);
+      const editorId = item?.binding?.objectRef?.id;
+      const original = injected.editorDocuments.find((doc) => doc.id === editorId);
+      if (original?.kind !== "director" || original.data.duration !== 6)
+        throw new Error("Expected the acknowledged six-second director fixture");
+      let resume, held = 0, released = 0, returned = false;
+      const gate = new Promise((resolve) => { resume = resolve; });
+      const release = () => {
+        if (released) return;
+        projection.read = read;
+        released++;
+        resume();
+      };
+      window.__stageProjection = {
+        held: () => held,
+        report: () => ({ held, released, returned, restored: projection.read === read }),
+        release,
+      };
+      projection.read = async (snapshot) => {
+        const next = await read.call(projection, snapshot);
+        const director = snapshot.editorDocuments.find((doc) => doc.id === editorId);
+        if (snapshot === injected && held === 0) {
+          held++;
+          await gate;
+          returned = true;
+        } else if (held && director?.revision > original.revision && director?.data.duration === 0.5) {
+          queueMicrotask(release);
+        }
+        return next;
+      };
+      client.install(injected);
+    }, { id: f.id, stageId: f.stage });
+    await page.waitForFunction(() => window.__stageProjection.held() === 1);
     await page.getByLabel("Stage duration", { exact: true }).fill("0.5");
     await page
       .getByRole("button", { name: "Render preview MP4", exact: true })
@@ -181,7 +270,12 @@ try {
     await page
       .getByRole("button", { name: "Add preview video to canvas", exact: true })
       .waitFor({ timeout: 60000 });
+    assert.deepEqual(await page.evaluate(() => window.__stageProjection.report()),
+      { held: 1, released: 1, returned: true, restored: true });
+    assert.equal(await page.evaluate(() => window.__stageAutosave.invoked()), 1);
     const before = await state();
+    assert.equal(before.editorDocuments.find((doc) => doc.kind === "director").revision, 3,
+      "An expired autosave must not rewrite the acknowledged stage");
     let reject = true;
     const route = async (r) => {
       if (reject && r.request().postDataJSON().type === "canvas.publishMedia")
@@ -198,7 +292,7 @@ try {
     await page
       .getByRole("button", { name: "Add preview video to canvas", exact: true })
       .click();
-    await page.getByRole("alert").waitFor();
+    await page.getByRole("alert").filter({ hasText: "fixture: stage publication refused" }).waitFor();
     assert.equal((await state()).canvasItems.length, before.canvasItems.length);
     reject = false;
     await page
@@ -286,5 +380,9 @@ try {
   console.error((await page.locator("body").innerText()).slice(-2500));
   throw error;
 } finally {
+  await page.evaluate(() => {
+    window.__stageProjection?.release();
+    window.__stageAutosave?.restore();
+  }).catch(() => {}); // Navigation/closed pages have already discarded their hooks.
   await browser.close();
 }

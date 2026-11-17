@@ -84,7 +84,7 @@ class CommitPublication:
                              message='; '.join(f"{path}: {failure['msg']}" if path else failure['msg']
                                                for path, failure in zip(paths, failures))[:500])
             except (ValueError, ProjectError) as error:
-                issue = dict(code='invalid_input', message=str(error)[:500])
+                issue = ContractError.from_error(error).issue.model_copy(update={'message': str(error)[:500]})
             if issue is not None:
                 snapshot, changed = before, []
             elif changed:

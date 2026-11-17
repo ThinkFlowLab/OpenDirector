@@ -12,6 +12,7 @@ export function modelBrand(modelId: string, explicitOrganization?: string) {
   if (exact) return exact;
   const aliases: [RegExp, string][] = [
     [/^(minimax|fasth3|fastvideo-fasth3)/i, "MiniMaxAI"],
+    [/^speech-(?:2\.[68]|0[12])-(?:hd|turbo)$/i, "MiniMaxAI"],
     [/^kling(?:-|$)/i, "KlingAI"],
     [/^(deepseek)/i, "deepseek-ai"],
     [/^(qwen|qwq)/i, "Qwen"],

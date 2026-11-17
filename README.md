@@ -89,6 +89,7 @@ Use Chrome or Edge for MP4 export, and keep the page and editor open while rende
 - [User guide](docs/guides/user-guide.md): Model connections, AI collaboration, canvas, media editing, and export.
 - [Troubleshooting](docs/guides/user-guide.md#troubleshooting): Installation, generation, saving, and export issues.
 - [Business CLI (Chinese)](docs/guides/cli.md): Work with projects through a terminal or Agent Shell.
+- [DeepSeek Harness plugin](plugins/deepseek-harness/README.md): Generate media from DSH, track jobs, and continue editing in OpenDirector.
 - [Documentation index (Chinese)](docs/README.md): Architecture, development, and validation documents.
 
 ## Community

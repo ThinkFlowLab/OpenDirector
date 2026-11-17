@@ -108,6 +108,10 @@ Skill 提供规划方法与领域知识，由 harness 按需加载；技能内�
 
 隐藏展示对象保留逻辑来源和历史。删除素材前检查参考、编辑文档、生成任务、工具任务、结果、历史与来源依赖；依赖无法确认时不能报告素材未使用。
 
+隐藏来源或其展示分组不改变活动参考、结构化提示词、生成输入、引用数量限制或结果采用依据。移除生成参考使用明确的参考操作；可见性仅影响画布投影。任务接受后继续保留当时的精确输入版本与内容指纹。
+
+Hiding a source display or its group does not change active references, structured prompts, generation inputs, reference limits, or result adoption. Change creative references through explicit reference operations; visibility only affects the canvas projection. Accepted jobs retain their exact input versions and content fingerprints.
+
 ## 存储、通知和交互
 
 工程文件是权威数据。对象、文件、回执和变更记录通过明确的提交顺序与恢复机制协调；SQLite 可用于租约等运行协调。凭证不进入普通工程、公开回执或模型快照。
@@ -143,5 +147,7 @@ UI、Agent 和后台完成写入共享可恢复变更通道。通知提示对象
 ## 模型与渲染边界
 
 模型接入使用能力契约和协议适配器，参数依次贯穿表单、生成配置、实际执行和历史依据。无法支持的参数明确限制，不静默忽略或降级。
+
+生成结果保留服务端返回的原始文件，不自动裁剪、丢帧、重编码或替换音轨。请求时长与帧数属于执行输入，输出媒体事实依据实际文件记录；模型对齐产生的差异如实保留。片段范围通过时间线显式编辑，转码和音轨调整产生独立派生素材，保留原始结果及来源关系。首次下载、失败恢复及各操作入口遵循同一规则。
 
 浏览器与后台的执行职责必须明确。Agent 可以修改时间线，不代表后台已经能够导出视频；只有存在可调用渲染服务并验证真实输出，才可声称支持关闭浏览器后的自主导出。浏览器合成也可以作为明确需要客户端参与的能力保留。

@@ -1,5 +1,9 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.duration.fractionalHint": "H3 accepts fractional seconds and aligns output frames upward to 17k+5 at 24 fps.",
+  "generation.duration.aligned": "Output: {frames} frames · {seconds} s",
+  "generation.bigmodel.watermarkWaiver":
+    "BigModel requires a signed waiver to remove watermarks. Complete it in Personal Center → Security Management → Watermark Removal Management; otherwise outputs may still contain watermarks.",
   "generation.model.unconfigured":
     "No generation model is configured yet. Add one in Settings → Model services.",
   "generation.model.unavailable": "The selected model is unavailable",
@@ -47,6 +51,12 @@ export const generation = {
 
   "generation.field.ratio": "Aspect ratio",
   "generation.field.resolution": "Resolution",
+  "generation.field.quality": "Quality",
+  "generation.field.qualityAria": "Image quality {value}",
+  "generation.quality.auto": "Auto",
+  "generation.quality.low": "Low",
+  "generation.quality.medium": "Medium",
+  "generation.quality.high": "High",
   "generation.field.count": "Count",
   "generation.field.audio": "Generate audio",
   "generation.field.audioPending": "Request audio (service support unconfirmed)",
@@ -93,6 +103,8 @@ export const generation = {
     "Enter a prompt, or @ a reference and let the Agent write the text",
   "generation.prompt.reading": "Text to read",
   "generation.prompt.music": "Music style",
+  "generation.prompt.implicitTextPlaceholder":
+    "Leave blank to use the connected text reference as the prompt, or type to add to it",
   "generation.prompt.imagePlaceholder":
     "Upload a reference, type a prompt, or @ a subject to describe the image you want",
   "generation.prompt.videoPlaceholder":

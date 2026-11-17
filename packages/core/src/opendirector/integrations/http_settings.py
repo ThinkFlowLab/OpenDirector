@@ -1,8 +1,11 @@
 """Connect directly to configured self-hosted origins; retain API/CDN proxies."""
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as LookupTimeout
 from contextvars import ContextVar
 from ipaddress import ip_address
 import json
 import logging
+import socket
 import time
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -101,3 +104,86 @@ async def model_response(response: httpx.Response) -> None:
 
 
 MODEL_HTTP_HOOKS = {'request': [model_request], 'response': [model_response]}
+
+
+# Unconfigured download hosts (result CDNs, voice previews) are resolved once,
+# checked, and the request is pinned to the checked address so a second DNS
+# answer cannot redirect it. Keep every such download on these helpers.
+PUBLIC_LOOKUP_SECONDS = 15
+_LOOKUPS = ThreadPoolExecutor(max_workers=4, thread_name_prefix='public-dns')
+
+
+def _public_candidate(url, schemes):
+    """Return (target, host, port) for a syntactically acceptable URL, or None."""
+    try:
+        target = httpx.URL(url)
+        port = target.port
+    except (httpx.InvalidURL, ValueError, TypeError):
+        return None
+    host = target.host.rstrip('.').lower()
+    if (target.scheme not in schemes or not host or target.userinfo
+            or '%' in host or host == 'localhost' or host.endswith('.localhost')
+            or port is not None and not 0 < port < 65536):
+        return None
+    return target, host, port or (443 if target.scheme == 'https' else 80)
+
+
+def _public_pin(target, answers):
+    """Check every answer; pin to the first. None when any answer is not public."""
+    addresses = [ip_address(answer) for answer in answers]
+    if not addresses:
+        return None
+    for address in addresses:
+        checked = getattr(address, 'ipv4_mapped', None) or address
+        if not checked.is_global or checked.is_multicast or checked.is_reserved:
+            return None
+    # A pooled connection to one IP must not reuse another hostname's TLS identity.
+    headers = {'Host': target.netloc.decode('ascii'), 'Connection': 'close'}
+    return target.copy_with(host=str(addresses[0])), headers, {'sni_hostname': target.host}
+
+
+def _literal(host):
+    try:
+        return [str(ip_address(host))]
+    except ValueError:
+        return None
+
+
+def _lookup(host, port):
+    return [answer[4][0] for answer in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)]
+
+
+async def public_target(url, *, unsafe, unresolved, schemes=('http', 'https')):
+    """Async: pin url to checked public addresses, or raise unsafe()/unresolved()."""
+    candidate = _public_candidate(url, schemes)
+    if candidate is None:
+        raise unsafe()
+    target, host, port = candidate
+    answers = _literal(host)
+    if answers is None:
+        try:
+            answers = await asyncio.wait_for(asyncio.to_thread(_lookup, host, port), timeout=PUBLIC_LOOKUP_SECONDS)
+        except (OSError, UnicodeError, asyncio.TimeoutError):
+            raise unresolved() from None
+    pinned = _public_pin(target, answers)
+    if pinned is None:
+        raise unsafe()
+    return pinned
+
+
+def public_target_sync(url, *, unsafe, unresolved, schemes=('http', 'https')):
+    """Worker-thread variant with the same DNS deadline as public_target."""
+    candidate = _public_candidate(url, schemes)
+    if candidate is None:
+        raise unsafe()
+    target, host, port = candidate
+    answers = _literal(host)
+    if answers is None:
+        try:
+            answers = _LOOKUPS.submit(_lookup, host, port).result(timeout=PUBLIC_LOOKUP_SECONDS)
+        except (OSError, UnicodeError, LookupTimeout):
+            raise unresolved() from None
+    pinned = _public_pin(target, answers)
+    if pinned is None:
+        raise unsafe()
+    return pinned

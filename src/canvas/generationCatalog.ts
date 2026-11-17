@@ -473,3 +473,11 @@ export function observedGenerationPrice(
   }
   return null;
 }
+
+/** Match H3's round-to-even frame conversion, then align upward to 17k+5. */
+export function h3FrameCount(seconds: number): number {
+  const frames = seconds * 24;
+  const nearest = Math.round(frames);
+  const rounded = frames % 1 === 0.5 && nearest % 2 !== 0 ? nearest - 1 : nearest;
+  return rounded + ((5 - rounded) % 17 + 17) % 17;
+}

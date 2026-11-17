@@ -8,6 +8,100 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
+@pytest.mark.parametrize('transition', ['undo', 'redo'])
+@pytest.mark.parametrize('locked_owner', ['node', 'parent', 'second_owner'])
+@pytest.mark.parametrize('actor', ['ui', 'agent'])
+def test_timeline_text_history_rechecks_all_current_owner_locks(project, tmp_path, transition, locked_owner, actor):
+    from test_timeline_fonts import timeline_document
+    store, pid, session = project
+    document, _, _ = timeline_document(project, tmp_path)
+    owner_id, second_id, parent_id = uuid4(), uuid4(), uuid4()
+    assert send(store, pid, 'creation.batch', session=session, operations=[
+        dict(type='editor.create', payload=dict(document=document)),
+        dict(type='canvas.show', payload=dict(item=dict(id=parent_id, projectId=pid, kind='group'))),
+        *[dict(type='canvas.show', payload=dict(item=dict(id=item_id, projectId=pid, kind='timeline', parentId=parent_id,
+            binding=dict(role='editor', objectRef=dict(id=document['id'], kind='timeline'))))) for item_id in [owner_id, second_id]],
+    ]).status == 'applied'
+    doc = store.snapshot(pid).editorDocuments[0]
+    changed = doc.model_dump(mode='json'); changed['data']['overlays'][0]['text'] = 'B中'
+    edit = send(store, pid, 'editor.save', session=session, versions=[ver('editor_document', doc)], document=changed)
+    assert edit.status == 'applied'
+    if transition == 'redo':
+        doc = store.snapshot(pid).editorDocuments[0]
+        assert send(store, pid, 'history.undo', session=session, versions=[ver('editor_document', doc)],
+                    targetCommandId=edit.commandId).status == 'applied'
+    locked_id = {'node': owner_id, 'parent': parent_id, 'second_owner': second_id}[locked_owner]
+    locked = next(i for i in store.snapshot(pid).canvasItems if i.id == locked_id)
+    # An independently accepted lock must not invalidate the redo branch before
+    # the history service can enforce its current authorization constraints.
+    lock = parse_command(dict(commandId=uuid4(), projectId=pid, type='canvas.update',
+        expectedVersions=[ver('canvas_item', locked)], payload=dict(itemId=locked.id, locked=True)))
+    assert store.execute(lock, session=session, source='background').status == 'applied'
+    before = store.snapshot(pid)
+    doc = before.editorDocuments[0]
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type=f'history.{transition}',
+        expectedVersions=[ver('editor_document', doc)], payload=dict(targetCommandId=edit.commandId)))
+    receipt = store.execute(command, session=session, source=actor)
+    assert receipt.status == 'rejected', receipt
+    assert receipt.issues[0].code == 'role_restricted'
+    assert store.snapshot(pid) == before
+
+
+def test_history_allows_lock_unlock_and_unrelated_edits_with_locked_timeline(project, tmp_path):
+    from test_timeline_fonts import timeline_document
+    store, pid, session = project
+    document, _, _ = timeline_document(project, tmp_path)
+    item_id = uuid4()
+    assert send(store, pid, 'creation.batch', session=session, operations=[
+        dict(type='editor.create', payload=dict(document=document)),
+        dict(type='canvas.show', payload=dict(item=dict(id=item_id, projectId=pid, kind='timeline',
+            binding=dict(role='editor', objectRef=dict(id=document['id'], kind='timeline'))))),
+    ]).status == 'applied'
+    def owner():
+        return next(i for i in store.snapshot(pid).canvasItems if i.id == item_id)
+    lock = send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', owner())], itemId=item_id, locked=True)
+    assert lock.status == 'applied'
+    for transition in ['undo', 'redo']:
+        assert send(store, pid, f'history.{transition}', session=session, versions=[ver('canvas_item', owner())],
+                    targetCommandId=lock.commandId).status == 'applied'
+    unlocked = send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', owner())], itemId=item_id, locked=False)
+    assert unlocked.status == 'applied'
+    assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', owner())],
+                targetCommandId=unlocked.commandId).status == 'applied'
+    assert owner().locked
+    unrelated, _ = media(project)
+    moved = send(store, pid, 'canvas.move', session=session, versions=[ver('canvas_item', unrelated)],
+        items=[dict(itemId=unrelated.id, position=dict(x=25, y=0))])
+    unrelated = next(i for i in store.snapshot(pid).canvasItems if i.id == unrelated.id)
+    assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', unrelated)],
+                targetCommandId=moved.commandId).status == 'applied'
+    assert owner().locked
+
+
+def test_shared_editor_history_checks_attached_media_owner_lock(project):
+    store, pid, session = project
+    item, _ = media(project, kind='image')
+    doc_id = uuid4()
+    assert send(store, pid, 'creation.batch', session=session, versions=[ver('canvas_item', item)], operations=[
+        dict(type='editor.create', payload=dict(document=dict(id=doc_id, projectId=pid, kind='layers',
+            data=dict(width=64, height=64, layers=[])))),
+        dict(type='canvas.attachEditor', payload=dict(itemId=item.id, editorId=doc_id)),
+    ]).status == 'applied'
+    doc = store.snapshot(pid).editorDocuments[0]
+    changed = doc.model_dump(mode='json'); changed['data']['background'] = '#FFFFFF'
+    edit = send(store, pid, 'editor.save', session=session, versions=[ver('editor_document', doc)], document=changed)
+    assert edit.status == 'applied'
+    item = store.snapshot(pid).canvasItems[0]
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', item)],
+                itemId=item.id, locked=True).status == 'applied'
+    before = store.snapshot(pid)
+    receipt = send(store, pid, 'history.undo', session=session, versions=[ver('editor_document', before.editorDocuments[0])],
+                   targetCommandId=edit.commandId)
+    assert receipt.status == 'rejected'
+    assert receipt.issues[0].code == 'role_restricted'
+    assert store.snapshot(pid) == before
+
+
 def test_history_reads_take_the_catalog_lock_only_to_resolve_the_head(project, monkeypatch):
     store, pid, session = project
     item, _ = media(project)

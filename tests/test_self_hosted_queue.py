@@ -99,12 +99,8 @@ def test_timeout_keeps_remote_id_and_explains_cloud_execution_continues(context,
     asyncio.run(run())
 
 
-def test_failed_video_finalization_keeps_remote_task_for_recovery_without_resubmission(context, monkeypatch):
+def test_failed_video_download_keeps_remote_task_for_recovery_without_resubmission(context):
     store, _, project, configs, _ = context
-
-    def fail(*args):
-        raise ProjectError('保留原片音轨或时长失败；请检查 FFmpeg，稍后继续下载原任务，无需重新生成。', 409)
-    monkeypatch.setattr('opendirector.application.generation_runtime.finalize_video_edit', fail)
 
     class Provider:
         calls = 0
@@ -112,7 +108,7 @@ def test_failed_video_finalization_keeps_remote_task_for_recovery_without_resubm
         async def generate(self, config, task, submitted):
             self.calls += 1
             await submitted('paid-remote-job')
-            return 'mp4', mp4()
+            raise ProjectError('Download failed', 502)
 
     async def run():
         provider = Provider()
@@ -128,45 +124,46 @@ def test_failed_video_finalization_keeps_remote_task_for_recovery_without_resubm
     asyncio.run(run())
 
 
-def test_recovering_failed_finalization_downloads_again_without_a_second_submission(context, monkeypatch):
+@pytest.mark.parametrize('fail_first', [False, True])
+def test_video_download_preserves_original_bytes_and_recovers_without_resubmission(context, fail_first):
     store, session, project, configs, _ = context
     requests = []
+    original = mp4(seconds=107 / 24)
 
     def respond(request):
         requests.append((request.method, request.url.path))
         if request.method == 'POST':
             return httpx.Response(200, json={'id': 'paid-remote-job', 'status': 'queued'})
         if request.url.path.endswith('/content'):
-            return httpx.Response(200, content=mp4(), headers={'content-type': 'video/mp4'})
+            if fail_first and sum(path.endswith('/content') for _, path in requests) == 1:
+                return httpx.Response(500, text='Download failed')
+            return httpx.Response(200, content=original, headers={'content-type': 'video/mp4'})
         return httpx.Response(200, json={'status': 'completed'})
-
-    attempts = []
-    def finalize(store, task, suffix, data):
-        attempts.append(data)
-        if len(attempts) == 1:
-            raise ProjectError('保留原片音轨或时长失败；请检查 FFmpeg，稍后继续下载原任务，无需重新生成。', 409)
-        return suffix, data
-    monkeypatch.setattr('opendirector.application.generation_runtime.finalize_video_edit', finalize)
 
     async def run():
         manager = CreationGeneration(store, configs)
         manager.provider = GenerationProviders(manager.store, httpx.MockTransport(respond), .001)
         try:
-            manager._launch(*prepare(manager, context))
+            manager._launch(*prepared(manager, (store, project['id'], session), context[4],
+                parameters={'videoMode': 'reference', 'durationSeconds': 4.33}))
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            failed = tasks(manager, project['id'])[0]
-            assert failed['status'] == 'failed' and failed['recovery'] == 'remote' and failed['resumeAllowed'] is True
-            await manager.recover(project['id'], failed['id'])
-            await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
+            initial = tasks(manager, project['id'])[0]
+            if fail_first:
+                assert initial['status'] == 'failed' and initial['recovery'] == 'remote' and initial['resumeAllowed'] is True
+                await manager.recover(project['id'], initial['id'])
+                await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
             task = tasks(manager, project['id'])[0]
-            assert task['status'] == 'succeeded' and task['id'] == failed['id']
+            assert task['status'] == 'succeeded' and task['id'] == initial['id']
             assert task['externalTaskId'] == 'paid-remote-job' and task['assetId']
+            stream, asset = manager.assets.open_media(project['id'], task['assetId'])
+            with stream:
+                assert stream.read() == original
+            assert asset.metadata.durationSeconds > 4.4
         finally:
             await manager.close()
     asyncio.run(run())
-    assert attempts == [mp4(), mp4()]
     assert [path for method, path in requests if method == 'POST'] == ['/v1/videos']
-    assert sum(path.endswith('/content') for _, path in requests) == 2
+    assert sum(path.endswith('/content') for _, path in requests) == (2 if fail_first else 1)
 
 
 @pytest.mark.parametrize('state', ['interrupted', 'failed'])

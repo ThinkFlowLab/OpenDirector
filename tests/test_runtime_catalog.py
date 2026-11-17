@@ -3,6 +3,7 @@ import json
 import sys
 
 import pytest
+from process_helpers import python_cli
 
 from opendirector.agent import catalog
 from opendirector.domain.projects import ProjectError
@@ -11,7 +12,7 @@ from opendirector.domain.projects import ProjectError
 @pytest.mark.parametrize('engine', ['codex', 'claude'])
 def test_native_model_catalog(tmp_path, monkeypatch, engine):
     script = tmp_path / 'cli'
-    script.write_text(f'''#!{sys.executable}
+    script = python_cli(script, f'''#!{sys.executable}
 import json, sys
 for line in sys.stdin:
     request = json.loads(line)
@@ -42,7 +43,7 @@ def test_uninstalled_catalog(monkeypatch):
 
 def test_opencode_native_catalog(tmp_path, monkeypatch):
     script = tmp_path / 'opencode'
-    script.write_text(f'#!{sys.executable}\nimport sys\nif sys.argv[1:] == ["debug", "config"]: print("{{}}")\nelse: print("local/my-model\\nopencode/free-model")\n')
+    script = python_cli(script, f'#!{sys.executable}\nimport sys\nif sys.argv[1:] == ["debug", "config"]: print("{{}}")\nelse: print("local/my-model\\nopencode/free-model")\n')
     script.chmod(0o755)
     monkeypatch.setattr(catalog, 'executable', lambda _: str(script))
     assert asyncio.run(catalog.model_choices('opencode')) == [
@@ -53,7 +54,7 @@ def test_opencode_native_catalog(tmp_path, monkeypatch):
 @pytest.mark.parametrize('engine', ['codex', 'claude'])
 def test_catalog_marks_the_configured_default(tmp_path, monkeypatch, engine):
     script = tmp_path / 'cli'
-    script.write_text(f'''#!{sys.executable}
+    script = python_cli(script, f'''#!{sys.executable}
 import sys,json
 for line in sys.stdin:
     request=json.loads(line)
@@ -79,7 +80,7 @@ for line in sys.stdin:
 
 def test_opencode_default_prefers_config_over_recent(tmp_path, monkeypatch):
     script = tmp_path / 'cli'
-    script.write_text(f'''#!{sys.executable}
+    script = python_cli(script, f'''#!{sys.executable}
 import sys,json
 print(json.dumps({{'model':'local/configured'}}) if sys.argv[1:]==['debug','config'] else 'local/recent\\nlocal/configured')
 ''')
@@ -118,7 +119,7 @@ def test_codex_default_is_forwarded_to_isolated_launch(tmp_path, monkeypatch):
     ([], 'native/ranked-model'), (['local'], 'local/local-default')])
 def test_opencode_fallback_uses_native_provider_defaults(tmp_path, monkeypatch, configured_providers, expected):
     script = tmp_path / 'cli'
-    script.write_text(f'''#!{sys.executable}
+    script = python_cli(script, f'''#!{sys.executable}
 import json, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 if sys.argv[1] == 'models':

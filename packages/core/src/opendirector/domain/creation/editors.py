@@ -1,9 +1,13 @@
 """Typed retained editors. AssetRef replaces transient src/data/blob URLs."""
-from math import floor
+from math import ceil, floor, isfinite
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
+from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator, model_validator
+
+from opendirector.domain.rule_facts import (
+    TIMELINE_FONT_LIMIT, TIMELINE_OVERLAY_LIMIT, TIMELINE_TEXT_MAX_LENGTH, TIMELINE_TEXT_TOTAL_LENGTH,
+)
 
 from .assets import AssetRef
 from .base import Contract, Identifier, NonNegative, Number, Point, Positive, PositiveInt, ProjectEntity, unique
@@ -73,6 +77,81 @@ class TimelineTrack(Contract):
         return self
 
 
+def timeline_text_frame_range(start: float, end: float, fps: int) -> tuple[int, int]:
+    """Half-open output frame range, independent of UI snapping."""
+    if (not isfinite(start) or not isfinite(end) or start < 0 or end <= start
+            or isinstance(fps, bool) or not isinstance(fps, int) or fps <= 0
+            or not isfinite(start * fps) or not isfinite(end * fps)):
+        raise ValueError('Invalid timeline text interval')
+    first, last = ceil(start * fps - 1e-9), ceil(end * fps - 1e-9)
+    if first >= last:
+        raise ValueError('Timeline text must cover an output frame')
+    return first, last
+
+
+class TimelineTextBackground(Contract):
+    color: Color = Field(description='Background color in #RRGGBB format.')
+    opacity: Unit = Field(description='Background opacity.')
+    padding: Annotated[float, Field(strict=True, ge=0, le=128)] = Field(description='Background padding in output pixels.')
+
+
+class TimelineTextStroke(Contract):
+    color: Color = Field(description='Stroke color in #RRGGBB format.')
+    width: Annotated[float, Field(strict=True, ge=0, le=32)] = Field(description='Stroke width in output pixels.')
+
+
+class TimelineTextStyle(Contract):
+    fontSize: Annotated[float, Field(strict=True, ge=1, le=512)] = Field(description='Font size in output pixels.')
+    color: Color = Field(description='Text color in #RRGGBB format.')
+    align: Literal['left', 'center', 'right'] = Field(description='Horizontal text alignment.')
+    lineHeight: Annotated[float, Field(strict=True, ge=0.8, le=3)] = Field(description='Line height as a font size multiplier.')
+    background: TimelineTextBackground | None = Field(default=None, description='Optional text background.')
+    stroke: TimelineTextStroke | None = Field(default=None, description='Optional text stroke.')
+
+
+class TimelineFontResource(Contract):
+    id: Identifier = Field(description='Stable document-local font ID.')
+    title: str = Field(max_length=255, description='Display title of the font.')
+    asset: AssetRef = Field(description='Immutable registered font asset version.')
+
+    @model_validator(mode='after')
+    def font_kind(self):
+        if self.asset.kind != 'file':
+            raise ValueError('Timeline fonts require file assets')
+        return self
+
+
+class TimelineTextOverlay(Contract):
+    id: Identifier = Field(description='Stable document-local text ID.')
+    start: NonNegative = Field(description='Absolute start time in seconds.')
+    end: Positive = Field(description='Exclusive absolute end time in seconds.')
+    text: str = Field(min_length=1, max_length=TIMELINE_TEXT_MAX_LENGTH, description='Plain text normalized to LF, counted in Unicode code points.')
+    x: Unit = Field(description='Normalized text box left position.')
+    y: Unit = Field(description='Normalized text box top position.')
+    maxWidth: Annotated[float, Field(strict=True, gt=0, le=1)] = Field(description='Text box width as a fraction of output width.')
+    fontId: Identifier = Field(description='Font resource ID in this document.')
+    style: TimelineTextStyle = Field(description='Output-space text styling.')
+    sourceAsset: AssetRef | None = Field(default=None, description='Frozen source text asset, independent of subsequent edits.')
+
+    @field_validator('text', mode='before')
+    @classmethod
+    def normalize_text(cls, value):
+        if not isinstance(value, str):
+            return value
+        value = value.replace('\r\n', '\n').replace('\r', '\n')
+        if not value.strip() or any(ord(c) < 32 and c not in '\n\t' or 127 <= ord(c) <= 159 for c in value):
+            raise ValueError('Timeline text must contain visible text and no non-layout controls')
+        return value
+
+    @model_validator(mode='after')
+    def placement(self):
+        if self.end <= self.start or self.x + self.maxWidth > 1 + 1e-9:
+            raise ValueError('Invalid timeline text placement')
+        if self.sourceAsset and self.sourceAsset.kind != 'text':
+            raise ValueError('Timeline text sources require text assets')
+        return self
+
+
 class TimelineData(Contract):
     fps: PositiveInt = Field(description='Frames per second.')
     width: PositiveInt = Field(description='Width in pixels.')
@@ -80,13 +159,40 @@ class TimelineData(Contract):
     tracks: tuple[TimelineTrack, ...] = Field(min_length=1, description='Ordered timeline tracks.')
     importedAssets: tuple[TimelineResource, ...] = Field(default=(), description='Source assets available to timeline clips.')
 
+    fonts: tuple[TimelineFontResource, ...] = Field(default=(), max_length=TIMELINE_FONT_LIMIT, exclude_if=lambda v: not v, description='Document-local registered font resources; omitted when empty.')
+    overlays: tuple[TimelineTextOverlay, ...] = Field(default=(), max_length=TIMELINE_OVERLAY_LIMIT, exclude_if=lambda v: not v, description='Timed text ordered from bottom to top; omitted when empty.')
+
     @model_validator(mode='after')
     def tracks_and_clips(self):
         unique([track.id for track in self.tracks], 'timeline track IDs')
         unique([clip.id for track in self.tracks for clip in track.clips], 'timeline clip IDs')
         if sum(track.kind == 'visual' for track in self.tracks) != 1:
             raise ValueError('A timeline requires exactly one visual track')
+        unique([font.id for font in self.fonts], 'timeline font IDs')
+        unique([overlay.id for overlay in self.overlays], 'timeline text IDs')
+        text_ids = [font.id for font in self.fonts] + [overlay.id for overlay in self.overlays]
+        occupied = {track.id for track in self.tracks} | {clip.id for track in self.tracks for clip in track.clips}
+        if len(set(text_ids)) != len(text_ids) or occupied.intersection(text_ids):
+            raise ValueError('Timeline text and font IDs must be distinct within the document')
+        fonts = {font.id for font in self.fonts}
+        for overlay in self.overlays:
+            if overlay.fontId not in fonts:
+                raise ValueError('Timeline text references an unknown font')
+            timeline_text_frame_range(overlay.start, overlay.end, self.fps)
+        if sum(len(overlay.text) for overlay in self.overlays) > TIMELINE_TEXT_TOTAL_LENGTH:
+            raise ValueError('Timeline total text exceeds the code point limit')
         return self
+
+
+def timeline_duration(data: TimelineData) -> float:
+    ends = [overlay.end for overlay in data.overlays]
+    for track in data.tracks:
+        cursor = 0.0
+        for clip in track.clips:
+            start = cursor if track.kind == 'visual' else clip.start
+            cursor = start + clip.duration()
+            ends.append(cursor)
+    return max(ends, default=0.0)
 
 
 class SubjectLibrarySource(Contract):

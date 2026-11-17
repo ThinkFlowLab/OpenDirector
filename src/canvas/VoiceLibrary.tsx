@@ -180,6 +180,8 @@ export function VoiceLibrary({
       }
     }
   };
+  const isSelectedVoice = (voice: VoiceRecord) =>
+    selected?.connectionId === voice.connectionId && selected.voiceId === voice.voiceId;
   const relevant = voices.filter(
     (voice) =>
       tab === "all" ||
@@ -427,7 +429,7 @@ export function VoiceLibrary({
           {createButton}
           {shown.map((voice) => (
             <div
-              className={`cw-voice-entry${selected?.connectionId === voice.connectionId && selected.voiceId === voice.voiceId ? " cw-is-active" : ""}`}
+              className={`cw-voice-entry${isSelectedVoice(voice) ? " cw-is-active" : ""}`}
               key={voice.voiceId}
             >
               {voice.previewUrl ? (
@@ -458,6 +460,7 @@ export function VoiceLibrary({
               <button
                 type="button"
                 className="cw-voice-name"
+                aria-pressed={isSelectedVoice(voice)}
                 disabled={!voice.compatible}
                 title={
                   !voice.compatible

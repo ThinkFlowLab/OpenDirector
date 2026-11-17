@@ -1,0 +1,20 @@
+{
+  "reviewers": {
+    "area:ci": ["yenuo26", "wangtiance"],
+    "area:agent": ["FayeSpica", "wuzhf9"],
+    "area:canvas": ["allendyu", "Probiotics5333"],
+    "area:timeline": ["allendyu", "Probiotics5333"],
+    "area:assets": ["princepride", "FayeSpica"],
+    "area:performance": ["kunkunblueberry"],
+    "area:provider": ["FayeSpica", "nikiwang-125"],
+    "area:docs": ["wuzhf9"],
+    "area:install": ["david6666666"],
+    "area:desktop": ["david6666666", "wangtiance"]
+  },
+  "fallback": ["hsliuustc0106", "princepride"],
+  "labels": [
+    {"name":"area:performance", "color":"94a3b8", "description":"Performance and responsiveness / 性能与响应速度"},
+    {"name":"area:docs", "color":"94a3b8", "description":"Documentation / 文档"},
+    {"name":"area:desktop", "color":"94a3b8", "description":"Desktop integration / 桌面集成"}
+  ]
+}

@@ -1,5 +1,9 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.duration.fractionalHint": "H3 支持小数秒，输出帧数向上对齐至 17k+5，帧率为 24 fps。",
+  "generation.duration.aligned": "实际输出：{frames} 帧 · {seconds} 秒",
+  "generation.bigmodel.watermarkWaiver":
+    "BigModel 去水印需先签署免责声明，请前往个人中心 → 安全管理 → 去水印管理完成签署，否则生成结果仍可能带有水印。",
   "generation.model.unconfigured":
     "尚未配置可用的生成模型，请到“设置 → 模型接入”添加。",
   "generation.model.unavailable": "所选模型配置不可用",
@@ -44,6 +48,12 @@ export const generation = {
 
   "generation.field.ratio": "比例",
   "generation.field.resolution": "分辨率",
+  "generation.field.quality": "质量",
+  "generation.field.qualityAria": "图片质量 {value}",
+  "generation.quality.auto": "自动",
+  "generation.quality.low": "低",
+  "generation.quality.medium": "中",
+  "generation.quality.high": "高",
   "generation.field.count": "数量",
   "generation.field.audio": "生成音频",
   "generation.field.audioPending": "请求包含音频（服务能力待确认）",
@@ -89,6 +99,8 @@ export const generation = {
     "输入生成要求，或 @ 引用素材，让 Agent 帮你创作文本",
   "generation.prompt.reading": "朗读文本",
   "generation.prompt.music": "音乐风格",
+  "generation.prompt.implicitTextPlaceholder":
+    "留空则直接使用已连接的文本参考作为提示词，也可以继续补充",
   "generation.prompt.imagePlaceholder":
     "上传参考图、输入文字或 @ 主体，描述你想要生成的图片",
   "generation.prompt.videoPlaceholder":

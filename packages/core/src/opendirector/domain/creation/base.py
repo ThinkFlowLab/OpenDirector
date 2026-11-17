@@ -23,6 +23,19 @@ class Contract(BaseModel):
                              json_schema_serialization_defaults_required=True)
 
     @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        schema = handler(core_schema)
+        if handler.mode == 'serialization':
+            schema = handler.resolve_ref_schema(schema)
+            # Conditional omission is supported by our minimum Pydantic, but
+            # 2.12 still marks these fields as required in serialization schemas.
+            required = schema.get('required')
+            if required:
+                schema['required'] = [name for name in required
+                    if name not in cls.model_fields or cls.model_fields[name].exclude_if is None]
+        return schema
+
+    @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
         super().__pydantic_init_subclass__(**kwargs)
         missing = [name for name, field in cls.model_fields.items()

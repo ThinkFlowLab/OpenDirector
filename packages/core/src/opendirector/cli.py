@@ -22,6 +22,7 @@ from typer._click.exceptions import UsageError
 from opendirector.agent.tools import COMMANDS, command_help
 from opendirector.domain.creation.commands import COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 from opendirector.vllm_cli import app as vllm_omni_app
 
 app = typer.Typer(no_args_is_help=True, help="Start OpenDirector and create or edit projects.",
@@ -42,6 +43,7 @@ GROUP_HELP = {
     "generation": "Submit a configured generation task.",
     "result": "Select a generated result for adoption.",
     "editor": "Create and save editable media documents.",
+    "timeline": "Discover resources for editable timelines.",
     "history": "Undo or redo reversible project operations.",
     "creation": "Apply multiple project operations atomically.",
 }
@@ -59,6 +61,75 @@ def group(name: str) -> typer.Typer:
     return groups[name]
 
 
+@group("timeline").command("default-font", help="Find the bundled timeline font without opening a project.")
+def timeline_default_font():
+    from opendirector.installation import default_timeline_font
+    path = default_timeline_font()
+    try:
+        manifest = json.loads((path.parent / "manifest.json").read_text(encoding="utf-8"))
+        fingerprint = "sha256:" + sha256(path.read_bytes()).hexdigest()
+        if fingerprint != manifest["fingerprint"]:
+            raise timeline_error('timeline_bundled_font_fingerprint', 409)
+    except (OSError, ValueError, KeyError):
+        raise timeline_error('timeline_bundled_font_unavailable', 409) from None
+    emit(dict(path=str(path), version=manifest["version"], fingerprint=fingerprint))
+
+
+@group("timeline").command("export", help="Export an exact saved revision as a portable editable .timeline.zip.")
+def timeline_export(ctx: typer.Context, editor_id: Annotated[UUID, typer.Option()],
+                    revision: Annotated[int, typer.Option(min=1)], output: Annotated[Path, typer.Option()]):
+    client = ctx.obj
+    client.command = ctx.command_path
+    if client.live:
+        emit(client.call("timeline_package_export", dict(editorId=str(editor_id), revision=revision, path=str(output))))
+        return
+    with client.http.stream("GET", client.path(f"/timelines/{editor_id}/package"), params={"revision": revision}) as response:
+        if not response.is_success:
+            response.read()
+            raise client.response_error(response)
+        # Exclusive creation keeps a failed download from overwriting a user's file.
+        try:
+            with output.open("xb") as stream:
+                for chunk in response.iter_bytes(): stream.write(chunk)
+        except BaseException:
+            # An existing destination is never ours to remove.
+            if not isinstance(sys.exc_info()[1], FileExistsError): output.unlink(missing_ok=True)
+            raise
+    emit(dict(path=str(output), editorId=str(editor_id), revision=revision))
+
+
+@group("timeline").command("import", help="Import an editable bundle; default creates a new timeline.")
+def timeline_import(ctx: typer.Context, file: Path, operation_id: Annotated[UUID, typer.Option()],
+                    replace_editor: Annotated[UUID | None, typer.Option()] = None,
+                    expected_revision: Annotated[int | None, typer.Option(min=1)] = None):
+    from opendirector.domain.creation.timeline_packages import TimelinePackageImportRequest
+    from opendirector.infrastructure.creation_files import file_identity
+    client = ctx.obj
+    client.command = ctx.command_path
+    fingerprint, _ = file_identity(file)
+    arguments = dict(operationId=str(operation_id), archiveFingerprint=fingerprint,
+        replaceEditorId=str(replace_editor) if replace_editor else None, expectedRevision=expected_revision)
+    handle = uuid5(operation_id, "archive-upload")
+    request = TimelinePackageImportRequest.model_validate({**arguments, 'uploadHandle': handle})
+    if client.live:
+        value = client.call("timeline_package_import", {**arguments, 'path': str(file)}, identity=operation_id)
+    else:
+        client.open()
+        try:
+            client.request("GET", client.path(f"/timeline-package-imports/{operation_id}"))
+            existing = True
+        except ProjectError as error:
+            if error.status != 404: raise
+            existing = False
+        if not existing:
+            with file.open('rb') as stream:
+                client.request("PUT", client.path(f"/uploads/{handle}"), content=stream,
+                    headers={"X-Asset-Name": quote(file.name, safe=''), "X-Asset-Kind": "file"})
+        value = client.request("POST", client.path("/timeline-package-imports"), json=request.model_dump(mode='json'))
+    emit(value)
+    if value['status'] != 'applied': raise typer.Exit(1)
+
+
 class Client:
     def __init__(self, project, url, session, operation_id):
         self.project = project
@@ -70,12 +141,28 @@ class Client:
         self.opened = False
         self.owns_session = session is None
         self.http = httpx.Client(base_url=url, trust_env=False, timeout=120,
-            headers={"X-OpenDirector-Request": "1", "X-OpenDirector-Session": self.session})
+            headers={"X-OpenDirector-Request": "1", "X-OpenDirector-Session": self.session,
+                     "Accept-Language": os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US')})
+
+    @staticmethod
+    def response_error(response):
+        try:
+            value = response.json()
+        except ValueError:
+            value = None
+        code = value.get('code') if isinstance(value, dict) else None
+        if isinstance(value, dict) and isinstance(value.get('detail'), str):
+            message = value['detail']
+        else:
+            message = response.text
+        if not message.strip():
+            message = f"HTTP {response.status_code} from {response.url}"
+        return ProjectError(message, response.status_code, code=code if isinstance(code, str) else None)
 
     def request(self, method, path, **kwargs):
         response = self.http.request(method, path, **kwargs)
         if not response.is_success:
-            raise ProjectError(response.text, response.status_code)
+            raise self.response_error(response)
         return response.json()
 
     def path(self, suffix=""):
@@ -99,7 +186,7 @@ class Client:
             with connection.makefile("rb") as reader:
                 response = json.loads(reader.readline(64 * 1024 * 1024))
         if response.get("error"):
-            raise ProjectError(response["error"])
+            raise ProjectError(response["error"], code=response.get('code'))
         return response["value"]
 
     def models(self):
@@ -349,11 +436,160 @@ def add_material(ctx: typer.Context, asset: Annotated[UUID, typer.Option(help="R
     }}))
 
 
+text_app = typer.Typer(no_args_is_help=True,
+    help="Create, read, edit and resize UTF-8 Markdown text nodes. Dimensions use canvas coordinate units, independent of zoom.",
+    epilog="Text assets are limited to 1 MiB of UTF-8 bytes (manualText also has a 1,048,576-character bound). "
+           "Output is JSON; show includes complete source in text. Writes return status, itemId and canvasItems "
+           "with committed revisions and dimensions. Rejected locks/conflicts exit 1; usage errors exit 2. "
+           "Use show to read the latest revision before updating; keep your file on a conflict. "
+           "Text registration and canvas publication have separate receipts: a failed publication can leave an "
+           "unbound asset. Retry identical input with the same global --operation-id to reuse it.")
+group("canvas").add_typer(text_app, name="text")
+
+MarkdownFile = Annotated[Path, typer.Option(help="UTF-8 Markdown file, not JSON; - reads standard input. Maximum 1 MiB.")]
+TextWidth = Annotated[float, typer.Option(help="Width in canvas coordinate units, independent of viewport zoom; must be positive.")]
+TextHeight = Annotated[float, typer.Option(help="Height in canvas coordinate units, independent of viewport zoom; must be positive.")]
+TextVersion = Annotated[str, typer.Option(help="Required canvas_item:UUID:revision from text show. Stale revisions are rejected; read again and merge your file.")]
+
+
+def markdown_file(file):
+    from opendirector.ports.files import MAX_CREATION_TEXT_BYTES
+    if str(file) == "-":
+        content = sys.stdin.buffer.read(MAX_CREATION_TEXT_BYTES + 1)
+    else:
+        with file.open("rb") as stream:
+            content = stream.read(MAX_CREATION_TEXT_BYTES + 1)
+    if len(content) > MAX_CREATION_TEXT_BYTES:
+        raise ValueError("Markdown must not exceed 1 MiB of UTF-8 bytes.")
+    return content.decode("utf-8")
+
+
+def text_content(client, asset_id):
+    from opendirector.ports.files import MAX_CREATION_TEXT_BYTES
+    content = bytearray()
+    try:
+        with client.http.stream("GET", client.path(f"/assets/{asset_id}/content")) as response:
+            if not response.is_success:
+                response.read()
+                raise client.response_error(response)
+            for chunk in response.iter_bytes(chunk_size=65536):
+                if len(content) + len(chunk) > MAX_CREATION_TEXT_BYTES:
+                    raise ValueError("Markdown must not exceed 1 MiB of UTF-8 bytes.")
+                content.extend(chunk)
+    except httpx.RequestError as error:
+        message = ("canvas text show 读取完整 Markdown 源码需要正在运行的 API，请启动 API 并检查 OPENDIRECTOR_API_URL。"
+                   if os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US').lower().startswith('zh') else
+                   "canvas text show requires a running API to read the complete Markdown source. Start the API and check OPENDIRECTOR_API_URL.")
+        raise ProjectError(f"{message} {error.request.url}", 503, code='asset_text_api_unavailable') from error
+    return content.decode("utf-8")
+
+
+def text_item(client, item_id, revision=None):
+    item = client.query("object.get", objectId=str(item_id), **({"revision": revision} if revision else {}))
+    if item.get("kind") != "text" or "binding" not in item:
+        raise ValueError("--id must identify a text canvas item.")
+    return item
+
+
+def text_version(item_id, expected_version):
+    try:
+        kind, identity, revision = expected_version.split(":")
+        if kind != "canvas_item" or UUID(identity) != item_id or int(revision) < 1:
+            raise ValueError()
+    except (ValueError, AttributeError):
+        raise ValueError("--expected-version must be canvas_item:<same item ID>:<positive revision>.") from None
+    return dict(objectType=kind, id=str(item_id), revision=int(revision))
+
+
+def text_asset(client, item):
+    binding = item["binding"]
+    if binding["role"] == "material":
+        return binding["objectRef"]
+    if binding["role"] == "generation":
+        if binding.get("materialOverride"):
+            return binding["materialOverride"]
+        spec = client.query("object.get", objectId=binding["objectRef"]["id"])
+        if spec.get("currentResultId"):
+            return client.query("object.get", objectId=spec["currentResultId"])["asset"]
+    return None
+
+
+def write_markdown(client, text, operation, *, previous=None, versions=()):
+    receipt = client.execute("asset.writeText", {"name": "text.md", "text": text,
+        "previousAsset": previous}, [*versions, *([dict(objectType="asset", id=previous["assetId"],
+            revision=previous["revision"])] if previous else [])], identity=uuid5(operation, "text-asset"))
+    asset_version = next(item for item in receipt["changed"] if item["objectType"] == "asset")
+    asset = client.query("object.get", objectId=asset_version["id"], revision=asset_version["revision"])
+    return {"assetId": asset["id"], **{key: asset[key] for key in ("kind", "fingerprint", "revision")}}
+
+
+@text_app.command("create", help="Create an editable text node from a Markdown file or stdin.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text create --file notes.md --x 20 --y 40 --width 480 --height 320")
+def text_create(ctx: typer.Context, file: MarkdownFile,
+                x: Annotated[float, typer.Option(help="Canvas X coordinate, independent of viewport zoom.")],
+                y: Annotated[float, typer.Option(help="Canvas Y coordinate, independent of viewport zoom.")],
+                width: TextWidth = 352, height: TextHeight = 198,
+                title: Annotated[str | None, typer.Option(help="Optional text node title.")] = None,
+                item_id: Annotated[UUID | None, typer.Option(help="Optional stable canvas item UUID.")] = None):
+    from opendirector.domain.creation.canvas import TextCanvasItem
+    client = ctx.obj
+    client.command = ctx.command_path
+    operation = client.operation_id or uuid4()
+    item = TextCanvasItem.model_validate(dict(id=str(item_id or uuid5(operation, "text-item")),
+        projectId=client.project, kind="text", title=title or "", position=dict(x=x, y=y),
+        width=width, height=height, binding=dict(role="empty"))).model_dump(mode="json")
+    asset = write_markdown(client, markdown_file(file), operation)
+    item["binding"] = dict(role="material", objectRef=asset)
+    emit(client.execute("canvas.show", {"item": item}, identity=operation))
+
+
+@text_app.command("show", help="Read complete Markdown source, dimensions and canvas_item revision as JSON; no editing lease.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text show --id ITEM_UUID")
+def text_show(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")]):
+    client = ctx.obj
+    client.command = ctx.command_path
+    item = text_item(client, id)
+    asset = text_asset(client, item)
+    text = item["binding"].get("manualText") or ""
+    if asset:
+        text = text_content(client, asset["assetId"])
+    emit(dict(status="ok", itemId=item["id"], revision=item["revision"],
+        expectedVersion=f"canvas_item:{item['id']}:{item['revision']}",
+        width=item["width"], height=item["height"], coordinateSpace="canvas", text=text))
+
+
+@text_app.command("update", help="Replace Markdown source via asset.writeText and canvas.materialize, preserving dimensions.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text update --id ITEM_UUID --file - --expected-version canvas_item:ITEM_UUID:1")
+def text_update(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")],
+                file: MarkdownFile, expected_version: TextVersion):
+    client = ctx.obj
+    client.command = ctx.command_path
+    version = text_version(id, expected_version)
+    item = text_item(client, id, version["revision"])
+    operation = client.operation_id or uuid4()
+    previous = text_asset(client, item)
+    # shortcut: asset registration is a separate commit, use a shared atomic command if rollback across publication becomes required.
+    asset = write_markdown(client, markdown_file(file), operation, previous=previous, versions=[version])
+    emit(client.execute("canvas.materialize", dict(itemId=str(id), asset=asset,
+        discardGenerationDraft=True), [version], identity=operation))
+
+
+@text_app.command("resize", help="Resize a text node through canvas.update without changing Markdown.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text resize --id ITEM_UUID --width 640 --height 400 --expected-version canvas_item:ITEM_UUID:2")
+def text_resize(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")],
+                width: TextWidth, height: TextHeight, expected_version: TextVersion):
+    client = ctx.obj
+    client.command = ctx.command_path
+    version = text_version(id, expected_version)
+    text_item(client, id, version["revision"])
+    emit(client.execute("canvas.update", dict(itemId=str(id), width=width, height=height), [version]))
+
+
 @group("video").command("create", help="Create a visible, editable video generation node with its input references.")
 def video_create(ctx: typer.Context,
                  model: Annotated[str, typer.Option(help="Video model configuration UUID or unique exact model name from opendirector model list.")],
                  prompt: Annotated[str, typer.Option(help="Video generation prompt.")],
-                 duration: Annotated[float, typer.Option(min=0, help="Video duration in seconds.")],
+                 duration: Annotated[float, typer.Option(min=0, help="Video duration in seconds, e.g. 6.583333. Fractional values require model inputRules.fractionalDuration; inspect model list for supported ranges. Native H3 accepts 4-15 seconds and aligns frames upward to 17k+5 at 24 fps (15 seconds becomes 362 frames).")],
                  x: Annotated[float, typer.Option(help="Canvas X coordinate. Choose using the current item positions and sizes.")],
                  y: Annotated[float, typer.Option(help="Canvas Y coordinate. Choose using the current item positions and sizes.")],
                  first_frame: Annotated[UUID | None, typer.Option(help="Source image canvas item for first-frame mode.")] = None,
@@ -543,7 +779,11 @@ def main():
                        for item in error.errors(include_input=False, include_url=False, include_context=False)]})
         raise SystemExit(1)
     except (ProjectError, OSError, ValueError, httpx.HTTPError) as error:
-        emit({"error": str(error)})
+        value = {"error": str(error)}
+        if isinstance(error, ProjectError):
+            value['code'] = error.code
+            value['error'] = timeline_error_message(error.code, os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US')) or str(error)
+        emit(value)
         raise SystemExit(1)
 
 

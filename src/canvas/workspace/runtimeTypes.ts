@@ -59,6 +59,7 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
     saveView?: boolean,
     automatic?: boolean,
   ) => Promise<boolean>;
+  invalidateScheduledAutosave: () => void;
   installDocument: (next: CanvasDocument, fit?: boolean) => void;
   switchDocument: (
     read: () => CanvasDocument | Promise<CanvasDocument>,

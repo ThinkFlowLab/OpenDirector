@@ -90,6 +90,8 @@ export const EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/webp": "webp",
   "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
   "video/mp4": "mp4",
   "video/webm": "webm",
   "video/quicktime": "mov",

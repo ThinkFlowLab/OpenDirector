@@ -16,6 +16,8 @@ const BY_MESSAGE: Record<string, MessageKey> = {
   "技能资源必须是不超过 64 KB 的文本文件。":
     "assistant.reply.toolSkillLimit",
   "所选模型不可用。": "assistant.reply.toolModelUnavailable",
+  "当前模型不支持所选图片质量，请选择自动或切换模型。":
+    "errors.rules.imageQualityUnsupported",
   "未知业务工具。": "assistant.reply.toolUnknown",
   "批量命令包含未开放的 Agent 操作。": "assistant.reply.toolForbidden",
 };

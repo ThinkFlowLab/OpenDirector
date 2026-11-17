@@ -20,6 +20,18 @@ def test_all_registered_commands_have_explicit_metadata():
     assert set(COMMANDS) <= set(COMMAND_MODELS)
 
 
+def test_compact_discovery_preserves_detailed_write_constraints():
+    for model in COMMANDS.values():
+        assert len(model.__doc__) <= 120
+    references = COMMAND_MODELS['canvas.createGeneration'].model_fields['payload'].annotation.model_fields['references']
+    assert 'sourceVersion for pinned' in references.description
+    assert 'Never replace a canvas reference with an asset-only binding' in references.description
+    spec = COMMAND_MODELS['generationSpec.update'].model_fields['payload'].annotation.model_fields['spec']
+    assert 'preserve unedited fields' in spec.description
+    assert 'current expected version' in spec.description
+    assert 'Accepted job snapshots never change' in spec.description
+
+
 def test_all_exposed_tools_have_metadata():
     for tool in tools():
         function = tool['function']

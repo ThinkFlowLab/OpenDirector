@@ -13,6 +13,7 @@ from opendirector.domain.creation.assets import Asset, AssetProvenance
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.projects import ProjectError
+from opendirector.media.processing import open_image, png
 from opendirector.ports.files import (
     AssetFileWrite, CHUNK_BYTES, MAX_CREATION_TEXT_BYTES, stream_identity,
 )
@@ -96,10 +97,11 @@ class CreationAssets:
             raise ContractError('reference_invalid', 'Asset reference differs from its content', asset.id)
         return asset
 
-    def register(self, command, *, session=None, source='ui', provenance=None, apply=None, upload_handle=None):
+    def register(self, command, *, session=None, source='ui', provenance=None, apply=None, upload_handle=None, trusted_upload=False):
         """Trusted services may supply provenance and atomically update jobs/editors.
 
-        HTTP never accepts these extra arguments. Generated/edited outputs
+        HTTP never accepts these extra arguments. trusted_upload selects a server-owned
+        staged file while commit still validates the caller's editing session. Generated/edited outputs
         must have real job/document evidence validated by ProjectSnapshot.
         """
         replay = self.projects.replay(command)
@@ -110,7 +112,7 @@ class CreationAssets:
             raise ProjectError('文件登记需要素材导入命令。')
         handle = payload.uploadHandle if command.type == 'asset.import' else upload_handle
         with self.uploads.lock(command.projectId, handle):
-            _, owner, record = self.uploads.ready(command.projectId, handle, session)
+            _, owner, record = self.uploads.ready(command.projectId, handle, None if trusted_upload else session)
             asset = Asset(id=gateway().upload_asset_id(command.projectId, handle), projectId=command.projectId,
                 kind=record.kind, name=gateway().asset_name(payload.name), fingerprint=record.fingerprint,
                 path=f'assets/{gateway().upload_asset_id(command.projectId, handle)}', metadata=record.metadata,
@@ -249,7 +251,10 @@ class CreationAssets:
         with stream:
             target = gateway().directory(target)
             target.mkdir(parents=True, exist_ok=True)
-            stem = f'{asset.id}-{asset.fingerprint.removeprefix("sha256:")}'
+            # open_media verifies immutable bytes before every preview. The
+            # stable asset ID is sufficient to name this disposable projection;
+            # repeating its fingerprint pushes Windows paths over MAX_PATH.
+            stem = asset.id.hex
             if asset.kind == 'image':
                 content, _ = self.thumbnail(project_id, asset_id)
                 output, mime = gateway().child(target, stem + '.webp'), 'image/webp'
@@ -281,6 +286,16 @@ class CreationAssets:
             'preview': {'path': str(output.resolve()), 'mimeType': mime,
                 'scope': 'first_frame' if asset.kind == 'video' else 'first_30_seconds' if asset.kind == 'audio' else 'thumbnail'}}
 
+    def browser_image(self, project_id, asset_id, *, known_fingerprint=None):
+        """Original-sized display bytes, or None when the verified source is unchanged."""
+        stream, asset = self.open_media(project_id, asset_id)
+        with stream:
+            if asset.metadata.mimeType not in {'image/heic', 'image/heif'}:
+                raise ProjectError('该素材类型不支持预览。', 422, code='asset_preview_unsupported')
+            if asset.fingerprint == known_fingerprint:
+                return None, asset
+            return png(open_image(stream.read())), asset
+
     def thumbnail(self, project_id, asset_id):
         """A bounded, disposable image preview; always verify its source first."""
         from PIL import Image, ImageOps
@@ -294,12 +309,17 @@ class CreationAssets:
                 if cached is not None:
                     self._thumbnails.move_to_end(key)
                     return cached, asset
-            with Image.open(stream) as source:
-                source.thumbnail((480, 480))
-                image = ImageOps.exif_transpose(source).convert('RGBA')
-                output = BytesIO()
-                image.save(output, format='WEBP', quality=80)
-                value = output.getvalue()
+            try:
+                with Image.open(stream) as source:
+                    source.thumbnail((480, 480))
+                    image = ImageOps.exif_transpose(source).convert('RGBA')
+                    output = BytesIO()
+                    # A non-RGB source profile cannot describe the converted RGB pixels.
+                    image.save(output, format='WEBP', quality=80,
+                        icc_profile=source.info.get('icc_profile') if source.mode in {'RGB', 'RGBA', 'P', 'PA'} else None)
+                    value = output.getvalue()
+            except (OSError, ValueError, EOFError, Image.DecompressionBombError):
+                raise ProjectError('无法读取图片素材。', 422, code='image_decode') from None
             with self._verification_lock:
                 self._thumbnails[key] = value
                 while len(self._thumbnails) > 64:

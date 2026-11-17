@@ -9,7 +9,9 @@ from pathlib import Path
 from opendirector.application.creation_commands import register_creation_commands
 from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.infrastructure.creation_files import file_identity as read_file_identity
-from opendirector.infrastructure.directories import directory as ensure_directory
+from opendirector.infrastructure.directories import directory as ensure_directory, sync_directory
+from opendirector.infrastructure.execution_files import execution_file
+from opendirector.infrastructure.timeline_package_imports import TimelinePackageImports
 from opendirector.infrastructure.creation_uploads import (
     CreationUploads, asset_name as normalize_asset_name, inspect_file as inspect_media_file,
     upload_asset_id as stable_upload_asset_id,
@@ -42,6 +44,15 @@ class InfrastructureGateway:
 
     def file_identity(self, path: Path):
         return read_file_identity(path)
+
+    def execution_file(self, directory: Path, path: str, *, create=False):
+        return execution_file(directory, path, create=create)
+
+    def sync_directory(self, path: Path) -> None:
+        sync_directory(path)
+
+    def timeline_package_imports(self, projects):
+        return TimelinePackageImports(projects)
 
     def asset_name(self, value: str) -> str:
         return normalize_asset_name(value)

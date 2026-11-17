@@ -1,0 +1,20 @@
+{
+  "id": "noto-sans-cjk-sc-regular",
+  "family": "Noto Sans CJK SC",
+  "version": "2.004",
+  "filename": "NotoSansCJKsc-Regular.otf",
+  "source": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+  "release": "https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004",
+  "commit": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+  "fingerprint": "sha256:2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+  "size": 16437364,
+  "mimeType": "font/otf",
+  "license": "OFL-1.1",
+  "licenseSource": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/LICENSE",
+  "parser": {
+    "package": "fonttools",
+    "version": "4.68.0",
+    "source": "https://github.com/fonttools/fonttools/releases/tag/4.68.0",
+    "securityNotes": "Static SFNT only; no XML, designspace, variable fonts, collections, or system fallback. Updates require review of upstream security advisories."
+  }
+}

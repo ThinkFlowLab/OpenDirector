@@ -109,7 +109,7 @@
   background: #fafbfc;
   color: #30343c;
 }
-:root[data-theme="light"] .cw-text-window-input:read-only {
+:root[data-theme="light"] textarea.cw-text-window-input:read-only {
   color: #757b86;
 }
 :root[data-theme="light"] .cw-text-window-input:focus-visible {

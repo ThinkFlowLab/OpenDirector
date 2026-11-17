@@ -44,15 +44,20 @@ const fastConfig = await call("/api/model-configs", {
     dimensionStep: 32,
   },
 });
+const h3Config = await call("/api/model-configs", {
+  kind: "video", modelId: "MiniMaxAI/MiniMax-H3",
+  url: "http://127.0.0.1:12345/v1", apiKey: "",
+  connectionType: "self_hosted", protocol: "vllm_omni", authMode: "none",
+  videoAdapter: "minimax_h3", videoCapabilities: fastConfig.videoCapabilities,
+});
 const config = await call("/api/model-configs", {
   kind: "video",
   modelId: "fixture-duration-sparse",
   url: "http://127.0.0.1:12345/v1",
-  apiKey: "",
-  connectionType: "self_hosted",
+  apiKey: "fixture-only",
+  connectionType: "api",
   protocol: "vllm_omni",
-  authMode: "none",
-  videoAdapter: "standard",
+  authMode: "bearer",
   videoCapabilities: {
     outputs: [
       { resolution: "480P", width: 832, height: 480, durations: [3, 5, 7] },
@@ -139,8 +144,7 @@ try {
     exact: true,
   });
   const slider = popup.getByRole("slider", { name: "创作时长", exact: true });
-  const select = popup.getByRole("spinbutton", {
-    name: "精确创作时长",
+  const select = popup.getByLabel("精确创作时长", {
     exact: true,
   });
   await trigger.click();
@@ -170,10 +174,7 @@ try {
     0,
     "No close cross or heading",
   );
-  await popup
-    .getByRole("status")
-    .getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true })
-    .waitFor();
+  assert.equal(await popup.locator(".cw-duration-notice").count(), 0);
   await select.fill("10");
   await select.press("Enter");
   assert.equal(await slider.getAttribute("aria-valuetext"), "10 秒");
@@ -193,17 +194,11 @@ try {
   await clickSeconds(2);
   assert.equal(await slider.inputValue(), "4");
   assert.equal(await trigger.innerText(), "4 秒");
-  await popup
-    .getByRole("status")
-    .getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true })
-    .waitFor();
+  await popup.getByRole("status").getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true }).waitFor();
   await clickSeconds(25);
   assert.equal(await slider.inputValue(), "15");
   assert.equal(await trigger.innerText(), "15 秒");
-  await popup
-    .getByRole("status")
-    .getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true })
-    .waitFor();
+  await popup.getByRole("status").getByText("当前模型支持的时长在 4 到 15 秒之间", { exact: true }).waitFor();
   const box = await slider.boundingBox();
   if (process.env.DURATION_SCREENSHOT_DIR)
     await page.screenshot({
@@ -290,6 +285,47 @@ try {
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   await page.locator(".react-flow__node").click();
   assert.equal(await trigger.innerText(), "7 秒");
+  for (const decimalConfig of [fastConfig, h3Config]) {
+    await chooseGenerationModel(page, `config:${decimalConfig.id}`);
+    for (const [locale, language, triggerName, dialogName, inputName] of [
+      ["zh-CN", "中文", "视频生成时长", "视频生成时长设置", "精确创作时长"],
+      ["en-US", "EN", "Video duration", "Video duration settings", "Exact creation duration"],
+    ]) {
+      await page.getByRole("button", { name: language, exact: true }).click();
+      const decimalTrigger = page.getByRole("button", { name: triggerName, exact: true });
+      await decimalTrigger.click();
+      const decimalPopup = page.getByRole("dialog", { name: dialogName, exact: true });
+      const decimalInput = decimalPopup.getByLabel(inputName, { exact: true });
+      await decimalInput.fill("15");
+      await decimalInput.press("Enter");
+      if (decimalConfig.id === h3Config.id)
+        assert.match(await decimalPopup.locator(".cw-duration-output").innerText(), /362.*15\.083333/);
+      assert.equal(await decimalPopup.locator(".cw-duration-notice").count(), 0);
+      const decimalSlider = decimalPopup.getByRole("slider");
+      assert.equal(await decimalSlider.getAttribute("step"), "1");
+      const dragBox = await decimalSlider.boundingBox();
+      await page.mouse.move(dragBox.x + dragBox.width / 2, dragBox.y + dragBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(dragBox.x + dragBox.width * 0.437, dragBox.y + dragBox.height / 2, { steps: 5 });
+      await page.mouse.up();
+      assert.ok(Number.isInteger(Number(await decimalInput.inputValue())), locale);
+      await decimalInput.fill("8");
+      await decimalInput.press("End");
+      await decimalInput.pressSequentially(".");
+      assert.equal(await decimalInput.inputValue(), "8.", locale);
+      await decimalInput.pressSequentially("25", { delay: 100 });
+      assert.equal(await decimalInput.inputValue(), "8.25", locale);
+      await decimalInput.fill("6.583333");
+      await decimalInput.press("Enter");
+      assert.equal(await decimalInput.inputValue(), "6.583333", locale);
+      assert.equal(await decimalInput.getAttribute("step"), "any");
+      await decimalInput.press("Escape");
+      await page.waitForTimeout(500);
+      const saved = await call(`/api/creation/projects/${projectId}`);
+      assert.equal(saved.generationSpecs.find(spec => spec.kind === "video").parameters.durationSeconds, 6.583333);
+    }
+  }
+  await page.getByRole("button", { name: "中文", exact: true }).click();
   // The picker only lists configured services; one without published
   // durations must not offer invented choices.
   await chooseGenerationModel(page, `config:${unknown.id}`);

@@ -4,7 +4,7 @@ Mutations work on a private draft. The repository validates and publishes the
 entire transaction once, including versions, receipt and outbox event.
 """
 import asyncio
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
@@ -171,30 +171,22 @@ def reference_source_visible(ref, visible):
 
 
 def current_generation_inputs(snapshot, spec, rules, visible=None):
-    """Project current inputs while preserving saved references and history."""
-    if visible is None:
-        visible = visible_item_ids(snapshot)
-    excluded = {ref.id for ref in snapshot.references
-                if ref.active and ref.targetSpecId == spec.id and not reference_source_visible(ref, visible)}
-    references = resolved_inputs(snapshot, spec.id, rules, excluded_ids=excluded)
-    if spec.promptContent is not None and excluded:
-        parts = tuple(part for part in spec.promptContent if part.type == 'text' or part.referenceId not in excluded)
-        if parts != spec.promptContent:
-            data = snapshot.model_dump(mode='json', include={'references', 'canvasItems', 'assets'})
-            spec = spec.model_copy(update={'promptContent': parts})
-            spec = spec.model_copy(update={'prompt': prompt_projection(data, spec.model_dump(mode='json'))})
-    return spec, references
+    """Resolve active business references independently of canvas visibility.
+
+    ``visible`` remains a projection hint for callers; hiding a display object
+    does not deactivate references, remove prompt parts, or change adoption.
+    """
+    return spec, resolved_inputs(snapshot, spec.id, rules)
 
 
 def validate_frame_reference_limit(snapshot):
     items = {item.id: item for item in snapshot.canvasItems}
-    visible = visible_item_ids(snapshot)
     for spec in snapshot.generationSpecs:
         if spec.kind != 'video' or spec.parameters.videoMode != 'first_frame':
             continue
         images = set()
         for ref in snapshot.references:
-            if not ref.active or ref.targetSpecId != spec.id or not reference_source_visible(ref, visible):
+            if not ref.active or ref.targetSpecId != spec.id:
                 continue
             if ref.binding == 'pinned' and ref.source.kind == 'image' and ref.subjectRole is None:
                 images.add(('asset', ref.source.assetId))
@@ -244,6 +236,59 @@ def reference_evidence(snapshot, spec, reference):
     return 'used' if old and identity(old) == identity(now) else 'pending'
 
 
+def _timeline_clip_ids(document):
+    if not document or document.get('kind') != 'timeline':
+        return set()
+    return {clip['id'] for track in document['data']['tracks'] for clip in track['clips']}
+
+
+def _asset_key(ref):
+    return (str(ref.assetId), ref.revision, ref.fingerprint, ref.kind)
+
+
+def bind_unique_timeline_sources(data, document, *, new_slot_ids):
+    """Attach assembly provenance for new timeline clips with one visible source.
+
+    Multiple visible nodes that share the same asset are left unconnected. Existing
+    connections and already saved clips are left unchanged. External imports with
+    no canvas node stay unconnected.
+    """
+    if document.get('kind') != 'timeline' or not new_slot_ids:
+        return
+    snapshot = ProjectSnapshot.model_validate(data)
+    visible = visible_item_ids(snapshot)
+    connections = list(document.get('inputConnections') or [])
+    used_sources = {str(value['sourceId']) for value in connections}
+    used_slots = {value['slotId'] for value in connections}
+    by_asset = {}
+    for item in snapshot.canvasItems:
+        if item.id not in visible:
+            continue
+        asset = current_asset(snapshot, item)
+        if asset is None or item.kind != asset.kind or 'timeline' not in downstream_kinds(snapshot, item):
+            continue
+        try:
+            CreationCanvas._editable(data, item.id)
+        except ContractError:
+            continue
+        by_asset.setdefault(_asset_key(asset_ref(asset)), []).append(item)
+    for track in document['data']['tracks']:
+        for clip in track['clips']:
+            if clip['id'] not in new_slot_ids or clip['id'] in used_slots:
+                continue
+            candidates = by_asset.get(_asset_key(AssetRef.model_validate(clip['resource']['asset'])), [])
+            if len(candidates) != 1:
+                continue
+            source = candidates[0]
+            if str(source.id) in used_sources:
+                continue
+            connections.append(dict(id=str(uuid4()), sourceId=str(source.id), slotId=clip['id'],
+                                    asset=asset_ref(current_asset(snapshot, source)).model_dump(mode='json')))
+            used_sources.add(str(source.id))
+            used_slots.add(clip['id'])
+    document['inputConnections'] = connections
+
+
 class CreationCanvas:
     def __init__(self, projects):
         self.projects = projects
@@ -275,6 +320,15 @@ class CreationCanvas:
             previous = previous_specs.get(spec['id'])
             if spec['promptContent'] is not None and (previous is None or any(spec[key] != previous[key] for key in ('prompt', 'promptContent'))):
                 spec['prompt'] = prompt_projection(data, spec)
+        # Bind after every mutation in this transaction so a later canvas.show
+        # in the same batch can still identify a unique visible source.
+        previous_docs = {str(doc.id): doc.model_dump(mode='json') for doc in before.editorDocuments}
+        for document in data['editorDocuments']:
+            prior = previous_docs.get(str(document['id']))
+            bind_unique_timeline_sources(
+                data, document,
+                new_slot_ids=_timeline_clip_ids(document) - _timeline_clip_ids(prior or {}),
+            )
         # One revision per object per atomic transaction, regardless of how many
         # semantic operations touch it. New objects always begin at revision 1.
         for collection in COLLECTIONS.values():
@@ -384,17 +438,12 @@ class CreationCanvas:
         return item
 
     def _validate_timeline(self, document, snapshot):
-        sources = {clip.resource.asset.assetId: clip.resource.asset for track in document.data.tracks for clip in track.clips}
-        for ref in sources.values():
-            self._available(self.assets._reference(snapshot, ref))
-        for track in document.data.tracks:
-            for clip in track.clips:
-                asset = self.assets._reference(snapshot, clip.resource.asset)
-                duration = asset.metadata.durationSeconds
-                if asset.kind != 'image' and (duration is None or clip.outPoint > duration + 1e-6):
-                    raise ContractError('invalid_input', '时间线片段超出实际素材时长。', asset.id)
+        from .creation_timeline import validate_timeline_resources
+        validate_timeline_resources(document.data, snapshot, self.assets)
 
     def _publish_render(self, data, payload):
+        from .creation_timeline import timeline_source_refs
+        from opendirector.domain.creation.editors import timeline_duration
         item = self._editable(data, payload.itemId)
         if item['kind'] != 'timeline' or item['binding']['objectRef']['id'] != str(payload.editorId):
             raise ContractError('reference_invalid', '合成来源不是当前时间线。', payload.itemId)
@@ -406,27 +455,32 @@ class CreationCanvas:
             raise ContractError('role_restricted', '合成输出必须是尚未发布的视频素材。', output.id)
         if any(r.assetId == output.id for record in self.projects.history(snapshot.project.id) for r in asset_references(record.snapshot)):
             raise ContractError('role_restricted', '合成输出已有历史用途，不能改写来源。', output.id)
-        duration = 0
-        for track in doc.data.tracks:
-            cursor = 0
-            for clip in track.clips:
-                start = cursor if track.kind == 'visual' else (clip.start or 0)
-                cursor = start + clip.duration()
-                duration = max(duration, cursor)
+        duration = timeline_duration(doc.data)
         meta = output.metadata
         if (meta.width, meta.height) != (doc.data.width, doc.data.height) or meta.durationSeconds is None or abs(meta.durationSeconds - duration) > max(.15, 2 / doc.data.fps):
             raise ContractError('invalid_input', '合成视频的实际尺寸或时长与时间线不一致。', output.id)
-        sources = {clip.resource.asset.assetId: clip.resource.asset for track in doc.data.tracks for clip in track.clips}
-        for ref in (*sources.values(), payload.asset):
+        sources = timeline_source_refs(doc.data)
+        for ref in (*sources, payload.asset):
             self._available(self.assets._reference(snapshot, ref))
         asset = self._get(data, 'asset', output.id)
-        asset['provenance'] = dict(source='rendered', editorDocumentId=str(doc.id), editorRevision=doc.revision,
-                                  sources=[ref.model_dump(mode='json') for ref in sources.values()])
-        if any(i['id'] == str(payload.outputId) for i in data['canvasItems']):
-            raise ContractError('invalid_input', '输出节点标识已存在。', payload.outputId)
-        result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,
-            position=payload.position, binding=dict(role='material', objectRef=payload.asset))
-        data['canvasItems'].append(result.model_dump(mode='json'))
+        existing = next((i for i in snapshot.canvasItems if i.id == payload.outputId), None)
+        if existing is not None:
+            if payload.expectedOutputRevision is None:
+                raise ContractError('revision_conflict', '输出节点已存在，请提供其当前版本。', payload.outputId)
+            target = self._editable(data, payload.outputId)
+            previous = current_asset(snapshot, existing)
+            if (existing.kind != 'video' or existing.binding.role != 'material' or previous is None
+                    or previous.provenance.source != 'rendered' or previous.provenance.editorDocumentId != doc.id
+                    or previous.provenance.sourceItemId not in {None, payload.itemId}):
+                raise ContractError('role_restricted', '输出节点不属于当前时间线。', payload.outputId)
+            target['binding'] = dict(role='material', objectRef=payload.asset.model_dump(mode='json'))
+        else:
+            result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,
+                position=payload.position, binding=dict(role='material', objectRef=payload.asset))
+            data['canvasItems'].append(result.model_dump(mode='json'))
+        asset['provenance'] = dict(source='rendered', sourceItemId=str(payload.itemId),
+                                  editorDocumentId=str(doc.id), editorRevision=doc.revision,
+                                  sources=[ref.model_dump(mode='json') for ref in sources])
 
     def _mutate(self, data, kind, payload):
         value = payload.model_dump(mode='json', exclude_unset=True)

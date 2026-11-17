@@ -236,8 +236,27 @@ class CreationHistory:
                         if at(actual, path) != expected_value:
                             raise ContractError('revision_conflict', '相关字段已被后续编辑修改，未覆盖新内容。', UUID(key))
                         put(actual, path, restore)
+            self._validate_editor_locks(before, data)
             return self._revisions(before, data)
         return self.projects.commit(command, apply, session=session, source=source, with_history=True)
+
+    @staticmethod
+    def _validate_editor_locks(before, data):
+        """History uses the same current owner locks as a direct editor save.
+
+        Check only documents actually restored, so lock/unlock history and
+        unrelated changes retain their existing field-scoped semantics.
+        """
+        previous = {str(doc.id): doc.model_dump(mode='json') for doc in before.editorDocuments}
+        changed = {doc['id'] for doc in data['editorDocuments'] if previous.get(doc['id']) != doc}
+        if not changed:
+            return
+        current = {'canvasItems': [item.model_dump(mode='json') for item in before.canvasItems]}
+        for item in current['canvasItems']:
+            binding = item['binding']
+            owner = binding.get('objectRef') if binding['role'] == 'editor' else None
+            if (owner and owner['id'] in changed) or any(editor['id'] in changed for editor in item.get('editors', [])):
+                CreationCanvas._editable(current, item['id'])
 
     def version_counts(self, project_id):
         # Counting only reads snapshots; copying every record here made the

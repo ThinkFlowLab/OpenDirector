@@ -9,7 +9,11 @@ export function DurationControl({
   disabled,
   onChange,
   scale,
+  fractional = false,
+  outputFrames,
 }: {
+  fractional?: boolean;
+  outputFrames?: number;
   values: readonly number[];
   value: number;
   disabled: boolean;
@@ -50,16 +54,16 @@ export function DurationControl({
       ? t("canvasNodes.duration.only", { minimum })
       : t("canvasNodes.duration.range", { minimum, maximum });
   const hint = (seconds: number) =>
-    seconds <= minimum || seconds >= maximum
+    seconds < minimum || seconds > maximum
       ? limit
-      : !values.includes(seconds)
+      : !fractional && !values.includes(seconds)
         ? t("canvasNodes.duration.unsupported", {
             values: values.join(t("canvasNodes.duration.separator")),
           })
         : "";
   const choose = (seconds: number) => {
     if (!Number.isFinite(seconds) || !values.length || disabled) return;
-    const allowed = values.reduce((nearest, candidate) =>
+    const allowed = fractional ? Math.max(minimum, Math.min(maximum, seconds)) : values.reduce((nearest, candidate) =>
       Math.abs(candidate - seconds) < Math.abs(nearest - seconds)
         ? candidate
         : nearest,
@@ -92,6 +96,11 @@ export function DurationControl({
           {notice}
         </span>
       )}
+      {outputFrames !== undefined && (
+        <span className="cw-duration-output" role="status">
+          {t("generation.duration.aligned", { frames: outputFrames, seconds: Number((outputFrames / 24).toFixed(6)) })}
+        </span>
+      )}
       <div className="cw-duration-slider">
         <ControlSlider
           aria-label={t("canvasNodes.duration.aria")}
@@ -116,9 +125,9 @@ export function DurationControl({
                 : event.key === "End"
                   ? maximum
                   : ["ArrowLeft", "ArrowDown"].includes(event.key)
-                    ? values[Math.max(0, index - 1)]
+                    ? (fractional ? Math.ceil(value) - 1 : values[Math.max(0, index - 1)])
                     : ["ArrowRight", "ArrowUp"].includes(event.key)
-                      ? values[Math.min(values.length - 1, index + 1)]
+                      ? (fractional ? Math.floor(value) + 1 : values[Math.min(values.length - 1, index + 1)])
                       : undefined;
             if (next !== undefined) {
               event.preventDefault();
@@ -140,11 +149,13 @@ export function DurationControl({
       </div>
       <label className="cw-duration-number">
         <input
-          type="number"
+          type={fractional ? "text" : "number"}
+          inputMode={fractional ? "decimal" : undefined}
           aria-label={t("canvasNodes.duration.exactAria")}
+          title={fractional ? t("generation.duration.fractionalHint") : undefined}
           min={minimum}
           max={maximum}
-          step={1}
+          step={fractional ? "any" : 1}
           aria-description={limit}
           aria-describedby={notice ? noticeId : undefined}
           value={draft}
@@ -154,8 +165,12 @@ export function DurationControl({
             setDraft(next);
             // Persist a complete valid number immediately, so dismissing the
             // popover cannot discard it before a native blur is delivered.
-            if (next.trim() && values.includes(Number(next)))
-              choose(Number(next));
+            if (next.trim() && Number.isFinite(Number(next)) && (values.includes(Number(next)) || fractional && Number(next) >= minimum && Number(next) <= maximum)) {
+              if (fractional) {
+                setNotice("");
+                if (Number(next) !== value) onChange(Number(next));
+              } else choose(Number(next));
+            }
           }}
           onBlur={commit}
           onKeyDown={(event) => {
