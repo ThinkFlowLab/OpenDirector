@@ -33,7 +33,8 @@ function failureText(t: Translate, status: ExampleStatus): string {
     case "aborted":
       return t("canvas.example.error.aborted");
     default:
-      return t("canvas.example.error.unknown");
+      // Archive validation fails with an already-localized message.
+      return status.message || t("canvas.example.error.unknown");
   }
 }
 

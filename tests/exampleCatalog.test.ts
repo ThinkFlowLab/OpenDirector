@@ -108,6 +108,16 @@ test("newer samples stay out of older builds", () => {
   );
 });
 
+test("an unknown app version skips the gate instead of hiding every sample", () => {
+  const catalog = parseExampleCatalog(
+    catalogWith([validItem, { ...validItem, id: "future", minAppVersion: "0.2.0" }]),
+  ).catalog;
+  assert.deepEqual(
+    availableExamples(catalog).map((item) => item.id),
+    ["image-canvas", "future"],
+  );
+});
+
 function stubFetch(
   responses: Record<string, () => Promise<Response> | Response>,
 ): typeof fetch {

@@ -1,7 +1,7 @@
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, useEffect, type CSSProperties } from "react";
+import { Suspense, useEffect, useState, type CSSProperties } from "react";
 import { createNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
@@ -17,8 +17,14 @@ import { TimelinePackageImport, exportTimelinePackage as exportNativeTimelinePac
 import { readLocalResource } from "../timelineExport.ts";
 import { timelinePublication } from "../../backend/timelinePublication";
 import { acknowledgeToolPlacement, cancelToolTask } from "../../backend/tools.ts";
-import { createWorkspaceProject, listWorkspaceProjects, openExampleWorkspaceProject, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
-import { exampleDocument, exampleProjectTitle, studyImage } from "../assets";
+import { createWorkspaceProject, listWorkspaceProjects, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
+import { studyImage } from "../assets";
+import { ExampleCanvasDialog } from "./example/ExampleCanvasDialog.tsx";
+import {
+  availableExamples,
+  loadExampleCatalog,
+  type ExampleEntry,
+} from "./example/exampleCatalog.ts";
 
 import { AssistantPanel } from "../AssistantPanel";
 import { CanvasActionsContext } from "../CanvasActionsContext";
@@ -167,6 +173,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     historyReplaying,
     importActionResultFiles,
     importActionResults,
+    importCanvasArchive,
     importCanvasSource,
     importDocument,
     importFiles,
@@ -299,6 +306,21 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     zoom,
     zoomMenu,
   } = rt;
+
+
+  /** Example picker: open immediately, then fill from the catalog. */
+  const [exampleEntries, setExampleEntries] = useState<ExampleEntry[] | null>(null);
+  const [exampleLoading, setExampleLoading] = useState(false);
+  const openExamplePicker = async () => {
+    if (exampleLoading) return;
+    setExampleLoading(true);
+    try {
+      const result = await loadExampleCatalog();
+      setExampleEntries(availableExamples(result.catalog));
+    } finally {
+      setExampleLoading(false);
+    }
+  };
 
 
   const outputState = timelineOutput.state;
@@ -1009,16 +1031,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               {t("canvas.workspace.empty.configureModels")}
             </button>
             <button
-              onClick={() => {
-                void switchDocument(
-                  () =>
-                    openExampleWorkspaceProject(
-                      exampleProjectTitle(locale),
-                      () => exampleDocument(locale),
-                    ),
-                  true,
-                );
-              }}
+              disabled={exampleLoading}
+              onClick={() => void openExamplePicker()}
             >
               {t("canvas.workspace.empty.example")} <span>↗</span>
             </button>
@@ -2726,6 +2740,13 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           theme={theme}
           initialCategory={settingsCategory}
           onClose={() => { dismissModelSetup(); setSettingsOpen(false); }}
+        />
+      )}
+      {exampleEntries && (
+        <ExampleCanvasDialog
+          entries={exampleEntries}
+          onClose={() => setExampleEntries(null)}
+          onImport={(archive) => importCanvasArchive(archive)}
         />
       )}
       {help && (

@@ -593,19 +593,28 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
       notify(errorMessage(error));
     }
   };
+  /** Reads an archive and lands it as a new project. Throws so callers can classify. */
+  const importCanvasArchive = async (archive: Blob) => {
+    const contents = await readCanvasArchive(archive);
+    const switched = await switchDocument(
+      () => importWorkspaceDocument(contents.document),
+      true,
+      true,
+    );
+    return {
+      title: contents.document.title,
+      assets: contents.assets,
+      switched,
+    };
+  };
   const importDocument = async (file: File) => {
     try {
-      const contents = await readCanvasArchive(file);
-      const switched = await switchDocument(
-        () => importWorkspaceDocument(contents.document),
-        true,
-        true,
-      );
-      if (switched)
+      const result = await importCanvasArchive(file);
+      if (result.switched)
         notify(
           t("canvas.workspace.toast.archiveImported", {
-            title: contents.document.title,
-            count: contents.assets,
+            title: result.title,
+            count: result.assets,
           }),
         );
     } catch (error) {
@@ -879,6 +888,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   rt.downloadNode = downloadNode;
   rt.exportDocument = exportDocument;
   rt.importDocument = importDocument;
+  rt.importCanvasArchive = importCanvasArchive;
   rt.openFilePicker = openFilePicker;
   rt.importFiles = importFiles;
 }

@@ -22,6 +22,8 @@ export interface ExampleStatus {
   httpStatus?: number;
   /** The imported title, when `phase` is `done`. */
   title?: string;
+  /** The original message, for failures the codes cannot describe. */
+  message?: string;
 }
 
 export interface ExampleImportDeps {
@@ -33,7 +35,13 @@ export interface ExampleImportDeps {
 function failure(error: unknown): ExampleStatus {
   if (error instanceof ExampleError)
     return { phase: "failed", code: error.code, httpStatus: error.status };
-  return { phase: "failed", code: "unknown" };
+  // Archive validation (version too new, damaged manifest) arrives as a plain
+  // localized Error; keep its wording instead of flattening it to "unknown".
+  return {
+    phase: "failed",
+    code: "unknown",
+    message: error instanceof Error ? error.message : undefined,
+  };
 }
 
 /**

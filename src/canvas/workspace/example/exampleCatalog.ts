@@ -318,14 +318,20 @@ export function compareAppVersions(left: string, right: string): number {
   return 0;
 }
 
-/** Entries this build can import; `minAppVersion` keeps newer samples out of older apps. */
+/**
+ * Entries this build can import. `minAppVersion` keeps newer samples out of
+ * older apps; when the running version is unknown the gate is skipped rather
+ * than hiding every sample.
+ */
 export function availableExamples(
   catalog: ExampleCatalog,
-  appVersion: string,
+  appVersion?: string,
 ): ExampleEntry[] {
   return catalog.items.filter(
     (item) =>
-      !item.minAppVersion || compareAppVersions(appVersion, item.minAppVersion) >= 0,
+      !item.minAppVersion ||
+      !appVersion ||
+      compareAppVersions(appVersion, item.minAppVersion) >= 0,
   );
 }
 
