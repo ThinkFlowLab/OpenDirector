@@ -32,6 +32,28 @@ with tempfile.TemporaryDirectory(prefix='opendirector-installed-') as temporary:
         "import subprocess; assert any(builtin_skills().rglob('SKILL.md')); "
         "subprocess.run([executable('default'), '--version'], check=True)"],
         cwd=temporary, env=env, check=True)
+    for command, expected in [(['vllm-omni'], 'verify'), (['vllm-omni', 'deploy'], '--download-backend'),
+                              (['vllm-omni', 'verify'], '--audio-file')]:
+        result = subprocess.run([str(cli), *command, '--help'], cwd=temporary, env=env,
+                                capture_output=True, text=True, check=True)
+        assert expected in result.stdout
+    model_root = Path(temporary) / 'model-data'
+    for profile in ('zimage-bf16', 'qwen3-tts-06b', 'qwen3-asr-06b'):
+        result = subprocess.run([str(cli), 'vllm-omni', 'deploy', '--root', str(model_root),
+                                 '--profile', profile, 'status'], cwd=temporary, env=env,
+                                capture_output=True, text=True, check=True)
+        assert json.loads(result.stdout)['status'] == 'stopped'
+    assert not model_root.exists()
+    # Exercise the packaged downloader in its standalone, model-environment form.
+    subprocess.run([str(python), '-c',
+        "import json, subprocess, sys; from pathlib import Path; "
+        "from opendirector.vllm_omni.deploy import load_profile; "
+        "from opendirector._fasth3 import download_models; "
+        "p=load_profile('qwen3-tts-06b'); "
+        "f=Path(sys.argv[1])/'manifest.json'; "
+        "f.write_text(json.dumps([dict(repo=p['modelId'],sha=p['revision'],files=p['files'])])); "
+        "subprocess.run([sys.executable,download_models.__file__,'--manifest',str(f),'--all-files','--plan'],check=True)", temporary],
+        cwd=temporary, env=env, check=True, capture_output=True)
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -63,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='opendirector-installed-') as temporary:
             subprocess.run([*command, 'project', 'create', '--name', 'Installed smoke'], cwd=temporary, env=env, check=True, capture_output=True)
             result = subprocess.run([*command, 'project', 'show'], cwd=temporary, env=env, check=True, capture_output=True, text=True)
             assert json.loads(result.stdout)['project']['name'] == 'Installed smoke'
-            print('PASS installed CLI, OpenCode, skills, health, web assets and persisted project (no Node on PATH)')
+            print('PASS installed CLI, deployment profiles and downloader, OpenCode, skills, health, web assets and persisted project (no Node on PATH)')
         except BaseException:
             log.seek(0)
             print(log.read())

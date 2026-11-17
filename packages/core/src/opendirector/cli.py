@@ -23,10 +23,12 @@ from opendirector.agent.tools import COMMANDS, command_help
 from opendirector.domain.creation.commands import COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
+from opendirector.vllm_cli import app as vllm_omni_app
 
 app = typer.Typer(no_args_is_help=True, help="Start OpenDirector and create or edit projects.",
     epilog="Run opendirector COMMAND --help for subcommands and usage. "
            "Place --project, --url and other global options before the command.")
+app.add_typer(vllm_omni_app, name='vllm-omni')
 GROUP_HELP = {
     "project": "List, inspect, create, rename, trash or restore projects.",
     "model": "Inspect available model configurations and input capabilities.",
@@ -429,7 +431,7 @@ def add_material(ctx: typer.Context, asset: Annotated[UUID, typer.Option(help="R
     reference["assetId"] = source["id"]
     emit(client.execute("canvas.show", {"item": {
         "id": str(item_id or client.operation_id or uuid4()), "projectId": snapshot["project"]["id"],
-        "kind": source["kind"], "position": {"x": x, "y": y},
+        "kind": source["kind"], "title": source["name"], "position": {"x": x, "y": y},
         "binding": {"role": "material", "objectRef": reference},
     }}))
 

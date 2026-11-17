@@ -14,12 +14,14 @@ PREFIXES = ('transformer_ref/', 'text_encoder/', 'vae/', 'audio_vae/',
 CHUNK = 4 * 1024 * 1024
 
 
-def selected_files(manifest):
+def selected_files(manifest, *, all_files=False):
     native=any(info['repo']=='MiniMaxAI/MiniMax-H3' for info in manifest)
     for info in manifest:
         for item in info['files']:
             name = item['path']
-            if info['repo']=='MiniMaxAI/MiniMax-H3':
+            if all_files:
+                selected=True
+            elif info['repo']=='MiniMaxAI/MiniMax-H3':
                 selected=name.startswith(('Ref2VA/video_vae/','Ref2VA/audio_vae/'))
             elif 'QAD' in info['repo']:
                 selected=name.startswith(PREFIXES) or '/' not in name and name.endswith('.json')
@@ -50,12 +52,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path('/root/autodl-tmp/fasth3/models'))
     parser.add_argument('--manifest', type=Path, default=Path(__file__).with_name('model-manifest.json'))
+    parser.add_argument('--all-files', action='store_true', help='Select every file in an explicitly supplied pinned manifest instead of the FastH3 component subset')
     parser.add_argument('--plan', action='store_true')
     parser.add_argument('--progress', action='store_true', help='Show completed bytes from local resume records, without downloading or hashing')
     parser.add_argument('--verify-only', action='store_true')
     parser.add_argument('--exclude-path', action='append', default=[], help='Download only: exclude a path relative to model root')
     args = parser.parse_args()
-    entries = list(selected_files(json.loads(args.manifest.read_text(encoding='utf-8-sig'))))
+    entries = list(selected_files(json.loads(args.manifest.read_text(encoding='utf-8-sig')), all_files=args.all_files))
     if args.exclude_path:
         if args.verify_only:
             parser.error('Verification must include the full pipeline')

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Deploy vLLM-Omni"
+  short_description: "Deploy GPU models and verify OpenDirector integration"

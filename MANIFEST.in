@@ -4,6 +4,8 @@ recursive-include src *
 recursive-include packages/core/src *.py
 recursive-include apps/api/src *.py
 recursive-include packages/agent/skills *
+recursive-include tools/vllm_omni *.py *.json
+include tools/fasth3/__init__.py tools/fasth3/download_models.py
 prune packages/core/src/opendirector/_bundled
 prune node_modules
 prune dist

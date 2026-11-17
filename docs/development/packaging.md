@@ -42,4 +42,4 @@ python -m pip check
 python scripts/verify_install.py --python /absolute/path/to/venv/bin/python
 ```
 
-Windows 对应传入 `venv/Scripts/python.exe`。验证脚本在临时工作目录运行，移除 `PYTHONPATH` 并收窄 PATH，检查内置 OpenCode、技能、正式 serve 入口、健康接口、首页与静态资源、CLI 创建和重读工程，最后清理自己启动的进程。它不调用真实模型，也不覆盖媒体处理或所有平台验收。
+Windows 对应传入 `venv/Scripts/python.exe`。验证脚本在临时工作目录运行，移除 `PYTHONPATH` 并收窄 PATH，检查部署命令帮助、全部配方、分段下载器计划、内置 OpenCode、技能、正式 serve 入口、健康接口、首页与静态资源、CLI 创建和重读工程，最后清理自己启动的进程。它不调用真实模型，也不覆盖媒体处理或所有平台验收。
