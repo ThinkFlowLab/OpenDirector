@@ -134,6 +134,31 @@ export function useBackendModels() {
       epoch.current += 1;
     };
   }, []);
+  const refresh = useCallback(async () => {
+    const initialEpoch = ++epoch.current;
+    try {
+      const [list, general] = await Promise.all([
+        request<ModelConfig[]>("/model-configs").then((list) => {
+          list.forEach((model) => {
+            if (model.availability) receiveAvailability(model.availability);
+          });
+          return list;
+        }),
+        request<GeneralSettings>("/settings"),
+      ]);
+      if (!alive.current || initialEpoch !== epoch.current) return;
+      storeModels(list);
+      setSettings(general);
+      setConnected(true);
+      setError("");
+    } catch (failure) {
+      if (!alive.current || initialEpoch !== epoch.current) return;
+      setConnected(false);
+      setError(errorMessage(failure));
+    } finally {
+      if (alive.current) setLoading(false);
+    }
+  }, [storeModels]);
   const refreshAvailability = useCallback(
     async (ids: readonly string[], manual = false) => {
       if (!ids.length) return;
@@ -163,6 +188,30 @@ export function useBackendModels() {
         const received = new Map(
           result.models.map((item) => [item.configId, item]),
         );
+        setAvailabilityError("");
+        const identityChanged = modelsRef.current.some((model) => {
+          const expected = initial.get(model.id);
+          const observation = received.get(model.id);
+          return (
+            expected?.key === availabilityModelKey(model) &&
+            latestQuery.current.get(model.id) === serial &&
+            observation &&
+            !availabilityMatchesModel(model, observation, expected.identity)
+          );
+        });
+        if (identityChanged) {
+          // A restart or an external credential edit invalidates the captured
+          // identity. Only a fresh catalogue can establish the current config;
+          // never install the mismatched observation directly.
+          storeModels(
+            modelsRef.current.map((model) => ({
+              ...model,
+              availability: undefined,
+            })),
+          );
+          await refresh();
+          return;
+        }
         storeModels(
           modelsRef.current.map((model) => {
             const observation = received.get(model.id);
@@ -175,7 +224,6 @@ export function useBackendModels() {
               : model;
           }),
         );
-        setAvailabilityError("");
       } catch (failure) {
         if (!alive.current || epoch.current !== initialEpoch) return;
         // An unsuccessful check cannot keep an earlier denial active.
@@ -206,33 +254,8 @@ export function useBackendModels() {
           );
       }
     },
-    [storeModels],
+    [refresh, storeModels],
   );
-  const refresh = useCallback(async () => {
-    const initialEpoch = ++epoch.current;
-    try {
-      const [list, general] = await Promise.all([
-        request<ModelConfig[]>("/model-configs").then((list) => {
-          list.forEach((model) => {
-            if (model.availability) receiveAvailability(model.availability);
-          });
-          return list;
-        }),
-        request<GeneralSettings>("/settings"),
-      ]);
-      if (!alive.current || initialEpoch !== epoch.current) return;
-      storeModels(list);
-      setSettings(general);
-      setConnected(true);
-      setError("");
-    } catch (failure) {
-      if (!alive.current || initialEpoch !== epoch.current) return;
-      setConnected(false);
-      setError(errorMessage(failure));
-    } finally {
-      if (alive.current) setLoading(false);
-    }
-  }, [storeModels]);
   useEffect(() => {
     void refresh();
   }, [refresh]);

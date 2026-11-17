@@ -205,7 +205,7 @@ async function reloadAfterRenewal() {
   );
   await page.reload();
 }
-let saved;
+let saved, releaseLate;
 try {
   const projectId = crypto.randomUUID();
   const projectPath = `/api/creation/projects/${projectId}`;
@@ -244,6 +244,8 @@ try {
   await page
     .getByLabel("Service URL (Base URL)", { exact: true })
     .fill(serviceUrl);
+  await page.getByLabel("No key required", { exact: true }).uncheck();
+  await page.getByLabel("API Key", { exact: true }).fill("synthetic-original-key");
   await page.getByRole("button", { name: "Add manually", exact: true }).click();
   assert.equal(
     await page
@@ -733,6 +735,95 @@ try {
     .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
     .click();
   await serviceCard.getByText("Supported").first().waitFor();
+  // A credential-only change in another client changes the opaque identity,
+  // while every public connection field stays the same. Refresh must reread
+  // the catalogue, then show the new observation without reloading the page.
+  const previousIdentity = (await call("/api/model-configs")).find(
+    (item) => item.id === saved.id,
+  ).availability.identity;
+  await call(`/api/model-configs/${saved.id}`, {
+    kind: saved.kind,
+    url: saved.url,
+    modelId: saved.modelId,
+    connectionType: saved.connectionType,
+    protocol: saved.protocol,
+    authMode: saved.authMode,
+    apiKey: "synthetic-capability-key",
+  }, "PATCH");
+  const changedIdentity = (await call("/api/model-configs")).find(
+    (item) => item.id === saved.id,
+  ).availability.identity;
+  assert.notEqual(previousIdentity, changedIdentity);
+  mode = "unsupported";
+  await serviceCard
+    .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
+    .click();
+  await serviceCard.getByText("Not supported").first().waitFor();
+  assert.equal((await call(projectPath)).generationSpecs[0].prompt, "Preserve this prompt");
+
+  // If the catalogue reread fails, discard the previous denial and retain
+  // the saved model. Another explicit check can reconcile the identity.
+  await call(`/api/model-configs/${saved.id}`, {
+    kind: saved.kind, url: saved.url, modelId: saved.modelId,
+    connectionType: saved.connectionType, protocol: saved.protocol,
+    authMode: saved.authMode, apiKey: "synthetic-second-key",
+  }, "PATCH");
+  await page.route("**/api/model-configs", (route) => route.fulfill({
+    status: 503, contentType: "application/json",
+    body: JSON.stringify({ detail: "Fixture catalogue unavailable" }),
+  }), { times: 1 });
+  mode = "supported";
+  await serviceCard.getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true }).click();
+  await page.getByLabel("Model connections", { exact: true })
+    .getByText("Fixture catalogue unavailable", { exact: true }).waitFor();
+  await page.unroute("**/api/model-configs");
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  await page.locator(`.react-flow__node[data-id="${itemId}"]`).click();
+  assert.equal(await page.locator(".cw-generation-composer button.cw-run-button").isEnabled(), true);
+  assert.match(await page.locator(".cw-generation-composer").innerText(), /Preserve this prompt/);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Model connections", exact: true }).click();
+  const reloadModels = page.getByRole("button", { name: "Reload", exact: true });
+  // Opening the composer may already have refreshed its selected model.
+  if (await reloadModels.isVisible()) await reloadModels.click();
+  await page.locator(".cw-model-setup-row").filter({ hasText: "Image model" }).getByRole("button").click();
+  await serviceCard.locator("summary").first().click();
+  await serviceCard.getByText("Supported", { exact: true }).first().waitFor();
+  mode = "unsupported";
+  await serviceCard.getByRole("button", { name: "Refresh", exact: true }).click();
+  await serviceCard.getByText("Not supported", { exact: true }).first().waitFor();
+
+  // Hold an old response after the server has completed it. Saving another
+  // credential must install its new catalogue and ignore this late refusal.
+  let capturedLate, oldBrowserRequest;
+  const lateCaptured = new Promise((resolve) => { capturedLate = resolve; });
+  const lateGate = new Promise((resolve) => { releaseLate = resolve; });
+  await page.route(refreshUrl, async (route) => {
+    oldBrowserRequest = route.request();
+    const response = await route.fetch();
+    capturedLate();
+    await lateGate;
+    await route.fulfill({ response });
+  }, { times: 1 });
+  await serviceCard
+    .getByRole("button", { name: /^(Check|Refresh|Retry)$/, exact: true })
+    .click();
+  await lateCaptured;
+  const lateResponse = page.waitForResponse((response) =>
+    response.request() === oldBrowserRequest);
+  await serviceCard.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByLabel("API Key", { exact: true }).fill("synthetic-third-key");
+  mode = "supported";
+  await page.getByRole("button", { name: "Save service", exact: true }).click();
+  await serviceCard.locator("summary").first().click();
+  await serviceCard.getByText("Supported", { exact: true }).first().waitFor();
+  releaseLate();
+  await lateResponse;
+  await page.unroute(refreshUrl);
+  await page.waitForTimeout(100);
+  assert.equal(await serviceCard.getByText("Not supported", { exact: true }).count(), 0);
+  assert.equal(await serviceCard.locator("[data-availability=available]").count(), 3);
+
   // A remote negative declaration already 21 days old must not block this
   // saved selection or the actual generation performed below.
   mode = "stale";
@@ -931,6 +1022,9 @@ try {
       checks: [
         "draft isolation",
         "stale draft response",
+        "credential identity refresh",
+        "failed catalogue reread clears obsolete denial",
+        "late response after credential save",
         "no query on typing",
         "save unsupported configuration",
         "zero-job rejection",
@@ -963,6 +1057,7 @@ try {
   );
   throw failure;
 } finally {
+  releaseLate?.();
   if (saved) await call(`/api/model-configs/${saved.id}`, undefined, "DELETE");
   await browser.close();
   service.closeAllConnections();

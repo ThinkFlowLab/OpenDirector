@@ -88,12 +88,18 @@ def test_missing_required_input_is_rejected_before_job_acceptance(project):
         probe.close()
 
 
-def test_generation_identity_change_during_query_is_rejected_under_commit(project):
+@pytest.mark.parametrize('change', ['url', 'apiKey'])
+def test_generation_identity_change_during_query_is_rejected_under_commit(project, change):
     store, pid, session = project
     runner, config = runtime(project, Provider())
+    if change == 'apiKey':
+        config = runner.configs.save('agent', config['url'], 'test-agent', 'synthetic-old-key', config['id'],
+                                     connection_type='self_hosted', auth_mode='bearer')
     def respond(request):
         # This save must complete while the HTTP query is in progress.
-        runner.configs.save('agent', 'http://changed.test/v1', 'test-agent', '', config['id'], connection_type='self_hosted')
+        runner.configs.save('agent', 'http://changed.test/v1' if change == 'url' else config['url'],
+                            'test-agent', 'synthetic-new-key' if change == 'apiKey' else '', config['id'],
+                            connection_type='self_hosted', auth_mode='bearer' if change == 'apiKey' else 'none')
         return httpx.Response(200, json=document(model='test-agent'))
     probe = CapabilityProbe(transport=httpx.MockTransport(respond))
     runner.availability = ModelAvailability(runner.configs, probe)
@@ -106,7 +112,7 @@ def test_generation_identity_change_during_query_is_rejected_under_commit(projec
         probe.close()
 
 
-def test_generation_replay_precedes_changed_declaration_and_preserves_snapshot(project):
+def test_generation_replay_precedes_changed_declaration_and_preserves_snapshot(project, monkeypatch):
     store, pid, session = project
     runner, config = runtime(project, Provider())
     state = {'support': 'supported', 'calls': 0}
@@ -123,6 +129,8 @@ def test_generation_replay_precedes_changed_declaration_and_preserves_snapshot(p
         state['support'] = 'unsupported'
         runner.availability.refresh([config['id']], manual=True)
         calls = state['calls']
+        from opendirector.integrations import capability_probe
+        monkeypatch.setattr(capability_probe, '_IDENTITY_KEY', b'restarted-generation-test-key' * 2)
         replay = runner.prepare(command, session=session)
         assert replay.jobIds == receipt.jobIds and state['calls'] == calls
         assert store.snapshot(pid).jobs[0].inputSnapshot.model_dump() == frozen
@@ -296,7 +304,7 @@ def test_accepted_generation_keeps_original_remote_work_after_capability_change(
 
 
 @pytest.mark.parametrize('denial', ['unsupported', 'paused'])
-def test_remote_tool_frozen_execution_recovery_and_replay_ignore_new_capabilities(project, denial):
+def test_remote_tool_frozen_execution_recovery_and_replay_ignore_new_capabilities(project, denial, monkeypatch):
     store, project_id, session = project
     pid = str(project_id)
     configs = configure_tools(store, H3)
@@ -323,6 +331,10 @@ def test_remote_tool_frozen_execution_recovery_and_replay_ignore_new_capabilitie
                 while ('GET', '/v1/videos/video_1') not in calls:
                     await asyncio.sleep(.01)
             await first.close()
+            from opendirector.integrations import capability_probe
+            old_identity = capability_probe.identity(config)
+            monkeypatch.setattr(capability_probe, '_IDENTITY_KEY', b'restarted-process-test-key' * 2)
+            assert capability_probe.identity(config) != old_identity
             second = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store,
                 transport=transport, poll_interval=0, availability=availability)
             before = len(calls)

@@ -68,6 +68,10 @@ opendirector model availability --refresh --manual --model MODEL_CONFIG_UUID
 
 Responses include a `revision` and model observations containing `identity`, `status`, `reasonCode`, `checkedAt`, `expiresAt` and exact operation decisions. Times use Unix milliseconds. `configId` is null for drafts. `capabilityAutoCheck` and runtime observations are excluded from accepted job execution snapshots.
 
+Capability `identity` uses HMAC-SHA256 with a server-only random process key. It changes when credentials or request configuration change, and after an API process restart. It is neither a persisted account identifier nor an authentication token. If a refresh returns a different identity, the browser discards cached observations and rereads the saved model catalogue before displaying current capabilities. Pending responses from before that reread cannot overwrite it. The refresh preserves model choices, media and drafts; accepted task snapshots and recovery do not depend on these transient identities.
+
+能力 `identity` 使用 HMAC-SHA256 和仅服务端持有的进程级随机密钥。凭据、请求配置变化或 API 进程重启后，标识会变化；它不用于保存账号身份或进行身份认证。刷新收到不同标识时，页面会清除旧观测并重新读取已保存的模型目录，再显示当前能力。重新读取之前发出的迟到响应不能覆盖新目录。刷新保留模型选择、素材和草稿；已接受任务的快照和恢复不依赖这些临时标识。
+
 When a tool needs an unconfigured model, its HTTP request returns 409 with `code="tool_model_missing"` and `requiredCapability`, such as `image.edit`. The localized `detail` names the required operation and directs the user to Model connections. No tool task or provider request is created.
 
 工具缺少所需模型时，HTTP 返回 409、`code="tool_model_missing"` 和 `requiredCapability`（例如 `image.edit`）。`detail` 按界面语言说明需要的操作和添加模型的位置，不创建工具任务或发送模型请求。

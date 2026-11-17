@@ -6,8 +6,9 @@ each HTTP request; callers share its future with a total two-second deadline.
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
-import hashlib
+import hmac
 import json
+import secrets
 import threading
 import time
 
@@ -22,6 +23,9 @@ PAUSE_SECONDS = 5
 QUERY_SECONDS = 2
 FAILURE_SECONDS = 2
 FUTURE_TOLERANCE_SECONDS = 2
+# These identifiers and the observations they address live only in this process.
+# A public identity must not provide an offline verifier for guessable API keys.
+_IDENTITY_KEY = secrets.token_bytes(32)
 
 
 def remaining_lifetime(observed_at, checked, maximum):
@@ -38,7 +42,7 @@ def identity(config, *, service=False):
                  'videoCapabilities', 'capabilityAutoCheck')
     value = {key: config.get(key) for key in keys}
     value['serviceId'] = config.get('providerId') or config.get('id')
-    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    return hmac.digest(_IDENTITY_KEY, json.dumps(value, sort_keys=True).encode(), 'sha256').hex()
 
 
 def automatic(config):
