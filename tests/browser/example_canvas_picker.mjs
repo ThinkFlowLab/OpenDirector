@@ -111,6 +111,16 @@ try {
   await dialog.getByText(document.title, { exact: true }).waitFor();
   assert.match(await dialog.locator(".cw-example-item small").first().innerText(), /MB|KB/);
 
+  // 1b. The project menu reaches the same picker without returning to an empty canvas.
+  await dialog.getByRole("button", { name: "关闭", exact: true }).first().click();
+  await page.getByRole("button", { name: "切换项目", exact: true }).click();
+  await page.getByRole("menuitem", { name: /示例画布/ }).click();
+  await page.locator(".cw-example-dialog").waitFor();
+  await page
+    .locator(".cw-example-dialog")
+    .getByText(document.title, { exact: true })
+    .waitFor();
+
   // 2. Downloading the wrapped archive imports it and switches the canvas.
   await dialog.getByRole("button", { name: "下载并导入" }).click();
   await dialog.getByText(/已导入/).waitFor();

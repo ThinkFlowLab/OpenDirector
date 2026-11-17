@@ -867,6 +867,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 return document;
               }).then(success => { if (success) setEditProjectNameId(id); });
             }}
+            onExamples={() => void openExamplePicker()}
             onRename={renameCurrentProject}
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}

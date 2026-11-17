@@ -21,6 +21,7 @@ export function ProjectSelector({
   disabled,
   onSelect,
   onCreate,
+  onExamples,
   onRename,
   onRenameProject,
   onDeleteProject,
@@ -31,6 +32,8 @@ export function ProjectSelector({
   disabled: boolean;
   onSelect: (project: WorkspaceProject) => Promise<boolean>;
   onCreate: () => void;
+  /** Opens the example canvas picker; omitted where it is not offered. */
+  onExamples?: () => void;
   onRename: (name: string) => Promise<void>;
   onRenameProject: (project: WorkspaceProject, name: string) => Promise<void>;
   onDeleteProject: (project: WorkspaceProject) => Promise<void>;
@@ -460,6 +463,20 @@ export function ProjectSelector({
                 {t("canvas.project.cleanup", { count: unreadable.length })}
               </span>
               <CanvasIcon name="trash" size={18} />
+            </button>
+          )}
+          {onExamples && (
+            <button
+              className="cw-project-examples"
+              role="menuitem"
+              disabled={busy || loading || disabled}
+              onClick={() => {
+                setOpen(false);
+                onExamples();
+              }}
+            >
+              <span>{t("canvas.project.examples")}</span>
+              <CanvasIcon name="clapperboard" size={18} />
             </button>
           )}
           <button

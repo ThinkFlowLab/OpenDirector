@@ -611,6 +611,7 @@
   flex-shrink: 0;
 }
 .cw-project-create,
+.cw-project-examples,
 .cw-project-cleanup {
   display: flex;
   align-items: center;
@@ -623,6 +624,7 @@
   text-align: left;
 }
 .cw-project-create:hover,
+.cw-project-examples:hover,
 .cw-project-cleanup:hover {
   color: #fff;
 }

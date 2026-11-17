@@ -148,4 +148,5 @@ export const canvasShell = {
     one: "{count} character",
     other: "{count} characters",
   },
+  "canvas.project.examples": "Example canvases",
 } as const;
