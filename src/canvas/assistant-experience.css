@@ -193,6 +193,39 @@
 .cw-assistant-queue-hint {
   display: block;
 }
+
+.cw-assistant-message-action {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cw-assistant-queue-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--chat-border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.cw-assistant-queue-banner button {
+  padding: 2px 8px;
+  border: 1px solid var(--chat-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 .cw-chat-markdown strong {
   font-weight: 600;
 }

@@ -17,10 +17,13 @@ import {
   streamChat,
   stopChat,
   type ChatAsset,
+  type ChatMessage,
   type Conversation,
   type ChatRequest,
   conversationIsEmpty,
   sendChat,
+  retractChatMessage,
+  continueQueue,
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { creationClient } from "../backend/creationClient.ts";
@@ -630,6 +633,13 @@ export function useAssistantChat(
                 ? previous
                 : { ...previous, messages: [...previous.messages, event.message] },
             );
+          } else if (event.type === "retracted") {
+            setValue((previous) => ({
+              ...previous,
+              messages: previous.messages.filter(
+                (message) => message.id !== event.messageId,
+              ),
+            }));
           } else if (event.type === "end") {
             // The chain moves on to the next queued message; stop must follow it.
             if (event.nextTurnId) turnId.current = event.nextTurnId;
@@ -696,6 +706,42 @@ export function useAssistantChat(
       }
     }
   };
+  /** Withdraw a message that has not started yet. */
+  const retract = async (messageId: string) => {
+    const before = current.current;
+    setValue((previous) => ({
+      ...previous,
+      messages: previous.messages.filter((message) => message.id !== messageId),
+    }));
+    try {
+      const result = await retractChatMessage(projectId, messageId);
+      if (!alive.current) return;
+      setValue((previous) => ({ ...previous, messages: result.conversation.messages }));
+    } catch (reason) {
+      if (!alive.current) return;
+      setValue(before);
+      setError(displayError(errorMessage(reason)));
+    }
+  };
+  /** Put a cancelled message back in the composer so it can be sent again. */
+  const refill = (message: ChatMessage) => {
+    setValue((previous) => ({
+      ...previous,
+      draft: message.text,
+      draftContent: message.content ?? null,
+      assets: message.assets ?? [],
+    }));
+  };
+  /** Start the oldest waiting message when nothing is running. */
+  const proceed = async () => {
+    if (!loaded || switching.current || submitting.current) return;
+    const next = current.current.messages.find(
+      (message) => message.status === "queued",
+    );
+    await follow(next?.id ?? crypto.randomUUID(), async (_id, signal, onEvent) => {
+      await continueQueue(projectId, signal, onEvent, t);
+    });
+  };
   const stop = async () => {
     if (!turnId.current || stopping) return;
     setStopping(true);
@@ -747,6 +793,9 @@ export function useAssistantChat(
     addNodes,
     addAssets,
     send,
+    retract,
+    refill,
+    proceed,
     stop,
     reload: () => setLoadAttempt((n) => n + 1),
   };

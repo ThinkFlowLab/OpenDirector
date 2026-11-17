@@ -494,11 +494,27 @@ export function AssistantPanel({
                       .filter((item) => item.status === "queued")
                       .findIndex((item) => item.id === message.id) + 1,
                 })}
+                <button
+                  type="button"
+                  className="cw-assistant-message-action"
+                  title={t("assistant.panel.retractHint")}
+                  onClick={() => void chat.retract(message.id)}
+                >
+                  {t("assistant.panel.retract")}
+                </button>
               </small>
             )}
             {message.status === "cancelled" && (
               <small className="cw-assistant-message-status">
                 {t("assistant.panel.cancelled")}
+                <button
+                  type="button"
+                  className="cw-assistant-message-action"
+                  title={t("assistant.panel.refillHint")}
+                  onClick={() => chat.refill(message)}
+                >
+                  {t("assistant.panel.refill")}
+                </button>
               </small>
             )}
             {(message.status === "stopped" ||
@@ -539,6 +555,25 @@ export function AssistantPanel({
             </button>
           </div>
         )}
+        {!chat.sending &&
+          value.messages.some((message) => message.status === "queued") && (
+            <div className="cw-assistant-queue-banner" role="status">
+              <span>
+                {t("assistant.panel.waiting", {
+                  count: value.messages.filter(
+                    (message) => message.status === "queued",
+                  ).length,
+                })}
+              </span>
+              <button
+                type="button"
+                onClick={() => void chat.proceed()}
+                disabled={!chat.canSend}
+              >
+                {t("assistant.panel.proceed")}
+              </button>
+            </div>
+          )}
         <form
           className="cw-assistant-composer"
           aria-label={t("assistant.panel.composer")}
