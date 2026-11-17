@@ -61,6 +61,8 @@ Image cards keep **Adopt**, **Edit** and **More actions** in view. **Animate**, 
 
 Each node's results show V1, V2 and so on in registration order, unchanged by search or pagination. Cards also show the job time and an identified source version when available. An edit creates a separate node, so its numbering starts at V1 and can point back to the source node's version.
 
+If a project list or model catalog cannot be loaded, reload it in the same dialog. After adding a model in OpenDirector, reload an empty catalog to continue. Your description, action names and chosen reference stay in place; reloading only reads data.
+
 ## Examples and a short demo
 
 Open **Try an example** in a creation form to start with a studio image, character reference, product cover or voiceover. Saved-image actions offer examples for edits and motion; continuation has its own example. Read the description, then choose **Use this description** or **Replace current description**. Your model, image size, reference order and candidate count stay as selected. Filling an example does not generate media.

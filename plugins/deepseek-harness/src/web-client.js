@@ -5,6 +5,7 @@ window.__ModuleLoader__.load({
     const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
+      reloadData: 'Reload',
       recentRestored: 'Using your recent settings.', forgetRecent: 'Forget recent settings', recentForgotten: 'Recent settings cleared.',
       versionLabel: 'V{number}', sourceVersionLabel: 'From {title} · V{number}',
       examples: 'Try an example', exampleChoose: 'Example', exampleApply: 'Use this description',
@@ -112,7 +113,7 @@ window.__ModuleLoader__.load({
       reuseSettings: 'Reuse settings', resetTemplate: 'Reset to this version', keepOriginalOutput: 'Keep original size',
       reuseHint: 'Uses this version’s saved settings in a new node. Review the candidate before adopting.',
       reuseReferences: 'References kept from this version', referenceMedia: 'Reference media',
-      reuseUnavailable: 'Could not reuse these settings. Open the canvas to check the model and references.',
+      reuseUnavailable: 'Could not load the saved settings. Reload them, or check the model and references in OpenDirector.',
       draftRestored: 'Unsubmitted draft restored.', clearDraft: 'Clear draft',
       modelUnavailable: 'The saved model is unavailable. Choose another model.',
       projectUnavailable: 'The saved project is unavailable. Choose another project.',
@@ -175,6 +176,7 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      reloadData: '重新读取',
       recentRestored: '已沿用上次设置。', forgetRecent: '清除最近设置', recentForgotten: '最近设置已清除。',
       versionLabel: 'V{number}', sourceVersionLabel: '来源：{title} · V{number}',
       examples: '试一个例子', exampleChoose: '创作示例', exampleApply: '填入这份描述',
@@ -282,7 +284,7 @@ window.__ModuleLoader__.load({
       reuseSettings: '复用设置', resetTemplate: '恢复这版设置', keepOriginalOutput: '沿用原尺寸',
       reuseHint: '沿用所选版本的设置，在同一工程的新节点中生成候选，审阅后再采用。',
       reuseReferences: '沿用这版的参考素材', referenceMedia: '参考素材',
-      reuseUnavailable: '暂时无法复用这些设置，请在画布检查模型连接和参考素材。',
+      reuseUnavailable: '暂时无法读取已保存的设置。可以重新读取，或在 OpenDirector 中检查模型与参考素材。',
       draftRestored: '已恢复未提交的草稿。', clearDraft: '清空草稿',
       modelUnavailable: '草稿中的模型暂不可用，请重新选择。',
       projectUnavailable: '草稿中的工程暂不可用，请重新选择。',
@@ -1100,6 +1102,8 @@ window.__ModuleLoader__.load({
       const dialog = useRef(null)
       const [projects, setProjects] = useState([])
       const [scope, setScope] = useState('')
+      const [projectsRun, setProjectsRun] = useState(0)
+      const [projectsLoading, setProjectsLoading] = useState(true)
       const [projectId, setProjectId] = useState('')
       const [packs, setPacks] = useState(null)
       const [sourcePicker, setSourcePicker] = useState(false)
@@ -1112,6 +1116,7 @@ window.__ModuleLoader__.load({
       useEffect(() => { dialog.current.showModal() }, [])
       useEffect(() => {
         const controller = new AbortController()
+        setProjectsLoading(true); setError(false)
         readLibrary(null, controller.signal).then(value => {
           if (controller.signal.aborted) return
           setProjects(value.projects); setScope(value.scope)
@@ -1119,8 +1124,9 @@ window.__ModuleLoader__.load({
           if (value.projects.some(project => project.id === recent.projectId)) setProjectId(recent.projectId)
         })
           .catch(() => { if (!controller.signal.aborted) setError(true) })
+          .finally(() => { if (!controller.signal.aborted) setProjectsLoading(false) })
         return () => controller.abort()
-      }, [])
+      }, [projectsRun])
       useEffect(() => {
         if (!projectId) return
         const controller = new AbortController()
@@ -1147,9 +1153,11 @@ window.__ModuleLoader__.load({
         }, h('option', { value: '' }, t('chooseProject')), ...projects.map(project =>
           h('option', { key: project.id, value: project.id }, project.name)))),
         (error || imageError) && h('p', { role: 'alert' }, t('libraryError')),
-        projectId && h('div', { style: row },
-          button(t('newActionPack'), () => setSourcePicker(value => !value), { primary: true }),
-          button(t('refresh'), () => setVersion(value => value + 1))),
+        !projectId && projectsLoading && h('p', { role: 'status' }, t('loading')),
+        !projectsLoading && !error && !projects.length && h('p', null, t('projectsEmpty')),
+        h('div', { style: row },
+          projectId && button(t('newActionPack'), () => setSourcePicker(value => !value), { primary: true }),
+          button(t(projectId ? 'refresh' : 'reloadData'), () => projectId ? setVersion(value => value + 1) : setProjectsRun(value => value + 1), { disabled: projectsLoading })),
         projectId && !packs && !error && h('p', null, t('loading')),
         packs && !packs.length && h('p', null, t('packEmpty')),
         ...(packs ?? []).map(pack => h('article', { key: pack.packId, className: 'od-pack-summary' },
@@ -1178,6 +1186,8 @@ window.__ModuleLoader__.load({
       const [pack, setPack] = useState(null)
       const [catalog, setCatalog] = useState(null)
       const [initialDraft] = useState(() => readMediaDraft(draftKey))
+      const catalogInitialized = useRef(Boolean(initialDraft))
+      const [dirty, setDirty] = useState(Boolean(initialDraft))
       const [form, setForm] = useState(() => initialDraft?.form ?? {
         title: t('packDefaultTitle'), prompt: '', kind: 'image', modelId: '', output: null,
         durationSeconds: null, actions: [
@@ -1208,24 +1218,26 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (packId || !source || pendingItem) return
         const controller = new AbortController()
+        setCatalog(null)
         fetch('/api/opendirector/creation', { signal: controller.signal }).then(response => {
           if (!response.ok) throw new Error('Catalog unavailable')
           return response.json()
         }).then(value => {
           if (controller.signal.aborted) return
           setCatalog(value)
-          if (!initialDraft) {
+          if (!catalogInitialized.current) {
             const kind = ['image', 'video'].includes(readRecent(value.scope).packKind) ? readRecent(value.scope).packKind : 'image'
             setForm(previous => ({ ...previous, kind,
               ...recentSetup(value, 'pack:' + kind, kind, kind === 'video' ? 'first_frame' : undefined),
             }))
           }
-        }).catch(() => { if (!controller.signal.aborted) setFeedback('libraryError') })
+          catalogInitialized.current = true
+        }).catch(() => { if (!controller.signal.aborted) setCatalog({ error: true, models: [] }) })
         return () => controller.abort()
       }, [packId, Boolean(pendingItem), version])
       useEffect(() => {
-        if (!packId && !locked) saveMediaDraft(draftKey, { form })
-      }, [packId, locked, form, draftKey])
+        if (!packId && !locked) saveMediaDraft(draftKey, dirty ? { form } : null)
+      }, [packId, locked, form, draftKey, dirty])
       useEffect(() => {
         if (!packId) return
         const controller = new AbortController()
@@ -1259,6 +1271,8 @@ window.__ModuleLoader__.load({
         output.size === form.output.size && output.aspectRatio === form.output.aspectRatio) : 0
       const video = model?.videoChoices?.first_frame
       function change(key, value) {
+        setDirty(true)
+        if (['kind', 'modelId', 'output', 'durationSeconds'].includes(key)) catalogInitialized.current = true
         setForm(previous => ({ ...previous, [key]: value,
           ...(['kind', 'modelId'].includes(key) && { output: null, durationSeconds: null }),
           ...(key === 'kind' && { modelId: '',
@@ -1378,6 +1392,8 @@ window.__ModuleLoader__.load({
         feedback && h('p', { role: 'status' }, t(feedback)),
         pendingItem?.packAction === 'generate' && button(t('packContinue'),
           () => generate(pendingItem.packItemIds, pendingItem.packRedo, pendingItem), { disabled: submitting }),
+        !packId && !pendingItem && !catalog && h('p', { role: 'status' }, t('loading')),
+        !packId && !pendingItem && catalog?.error && h('p', { role: 'alert' }, t('libraryError')),
         !packId && !pendingItem && h('form', { onSubmit: prepare, className: 'od-pack-form' },
           h('fieldset', { disabled: locked },
             h('label', null, t('packTitle'), h('input', { required: true, maxLength: 100, value: form.title, onChange: e => change('title', e.target.value) })),
@@ -1395,7 +1411,9 @@ window.__ModuleLoader__.load({
                 'aria-label': t('videoDuration'), value: form.durationSeconds ?? video.defaultDuration ?? video.durations[0],
                 onChange: e => change('durationSeconds', Number(e.target.value)),
               }, ...video.durations.map(seconds => h('option', { key: seconds, value: seconds }, t('duration').replace('{seconds}', seconds)))))),
-            catalog && !choices.length && h('p', null, t('noModels')),
+            catalog && !choices.length && h('div', { style: row },
+              !catalog.error && h('p', null, t('noModels')),
+              button(t('reloadData'), refresh, { disabled: locked })),
             !locked && h(ActionExamples, { t, onApply: actions => change('actions', actions) }),
             ...form.actions.map((action, index) => h('div', { key: index, className: 'od-pack-action-input' },
               h('label', null, t('packActionName'), h('input', { required: true, maxLength: 80, value: action.name,
@@ -1515,6 +1533,8 @@ window.__ModuleLoader__.load({
         prompt: '', output: null, voice: '', durationSeconds: null, candidateCount: 1,
       }
       const [saved] = useState(() => existingJob ? null : readMediaDraft(draftKey))
+      const catalogInitialized = useRef(Boolean(saved))
+      const [catalogRun, setCatalogRun] = useState(0)
       const [restored, setRestored] = useState(Boolean(saved))
       const [recentRestored, setRecentRestored] = useState(false)
       const [recentBase, setRecentBase] = useState(null)
@@ -1595,6 +1615,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (existingJob || restoringPending || recoveredJob) return
         const controller = new AbortController()
+        setCatalog(null)
         Promise.all([
           (fromResult || templateOf) ? Promise.resolve({ projects: [] }) : readLibrary(null, controller.signal),
           fetch('/api/opendirector/creation', { signal: controller.signal }).then(response => {
@@ -1610,11 +1631,12 @@ window.__ModuleLoader__.load({
         ]).then(([projects, models, template]) => {
           if (controller.signal.aborted) return
           setCatalog({ ...projects, ...models, ...(template && { template }) })
+          const initialize = !catalogInitialized.current
           if (template) setForm(previous => ({ ...previous,
             kind: template.kind, projectId: templateOf.projectId, modelId: template.modelConfigId,
-            ...(!saved && { prompt: template.prompt, voice: template.voice }),
+            ...(initialize && { prompt: template.prompt, voice: template.voice }),
           }))
-          else if (!saved) {
+          else if (initialize) {
             const recent = readRecent(models.scope)
             const kind = !source && ['image', 'audio'].includes(recent.kind) ? recent.kind : defaults.kind
             const preferred = videoMode === 'continuation' ? {} : recentSetup(models, videoMode ?? (source ? 'edit' : kind), kind, videoMode)
@@ -1624,11 +1646,12 @@ window.__ModuleLoader__.load({
             setForm(restoredForm)
             setRecentRestored(Boolean(preferred.modelId || preferredProject))
           }
+          catalogInitialized.current = true
         }).catch(() => {
           if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
         })
         return () => controller.abort()
-      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId, restoringPending, recoveredJob])
+      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId, restoringPending, recoveredJob, catalogRun])
       useEffect(() => {
         if (existingJob?.recovery && (!existingJob.groupId || existingJob.groupComplete)) forgetSubmission(existingJob.recovery)
       }, [existingJob?.recovery])
@@ -1814,11 +1837,13 @@ window.__ModuleLoader__.load({
         !existingJob && !restoringPending && !locked && h('div', { style: row },
           restored && h('small', { role: 'status' }, t('draftRestored')),
           !restored && recentRestored && h('small', { role: 'status' }, t('recentRestored')),
-          dirty && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
+          dirty && catalog && !catalog.error && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
         projectUnavailable && h('p', { role: 'alert' }, t('projectUnavailable')),
         modelUnavailable && h('p', { role: 'alert' }, t('modelUnavailable')),
         existingJob && h('p', { style: { overflowWrap: 'anywhere' } }, existingJob.prompt),
-        catalog?.error && h('p', { role: 'alert' }, t(templateOf ? 'reuseUnavailable' : 'libraryError')),
+        catalog?.error && h('div', { style: row },
+          h('p', { role: 'alert' }, t(templateOf ? 'reuseUnavailable' : 'libraryError')),
+          button(t('reloadData'), () => setCatalogRun(value => value + 1))),
         restoringPending && h(PendingSubmissions, { context: draftKey, t, onRecovered: setRecoveredJob }),
         restoringPending && !existingJob && button(t('startSeparateCreation'), () => setStartFresh(true)),
         !restoringPending && pending.length > 0 && !pendingDurable && h('p', { role: 'alert' }, t('pendingStorageUnavailable')),
@@ -1842,7 +1867,8 @@ window.__ModuleLoader__.load({
           }, h('option', { value: '' }, t('model')),
           ...choices.map(item => h('option', { key: item.id, value: item.id },
             `${item.modelId} · ${t(item.connectionType === 'self_hosted' ? 'local' : 'hosted')}`)))),
-          choices.length === 0 && h('p', null, t('noModels')),
+          choices.length === 0 && h('div', { style: row }, h('p', null, t('noModels')),
+            !locked && button(t('reloadData'), () => setCatalogRun(value => value + 1))),
           video?.durations.length > 0 && field('videoDuration', h('select', {
             disabled: locked, value: durationUnavailable ? '' : durationSeconds,
             onChange: event => update('durationSeconds', Number(event.target.value)),
