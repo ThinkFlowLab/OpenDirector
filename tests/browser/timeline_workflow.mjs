@@ -337,21 +337,44 @@ try {
   await page.goto(full ? base + "/" : url);
   await saved();
   if (full) {
-    await page.getByRole("button", { name: "Switch project", exact: true }).click();
-    const [response] = await Promise.all([
-      page.waitForResponse((r) => r.url().endsWith("/commands") &&
-        r.request().postDataJSON()?.type === "project.create"),
-      page.getByRole("menuitem", { name: "New canvas project", exact: true }).click(),
-    ]);
-    assert.equal((await response.json()).status, "applied");
-    pid = response.request().postDataJSON().projectId;
-    url = base + `/ai-tool/ai-canvas/${pid}`;
-    const projectName = page.getByRole("textbox", { name: "Project name", exact: true });
-    const name = "Full creation " + crypto.randomUUID().slice(0, 8);
-    await projectName.fill(name);
-    await projectName.press("Enter");
-    await page.getByRole("button", { name, exact: true }).waitFor();
-    await saved();
+    await page.waitForFunction(() => document.querySelector('#canvas-assistant [role="textbox"]')?.isContentEditable);
+    // The new project's chat can load after its name editor has already opened.
+    let releaseAssistant;
+    const assistantGate = new Promise(resolve => { releaseAssistant = resolve; });
+    const assistantPath = /\/creation\/projects\/[^/]+\/assistant$/;
+    await page.route(assistantPath, async route => {
+      const response = await route.fetch();
+      await assistantGate;
+      await route.fulfill({ response });
+    }, { times: 1 });
+    const releaseDeadline = setTimeout(() => releaseAssistant(), 20000);
+    try {
+      await page.getByRole("button", { name: "Switch project", exact: true }).click();
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().endsWith("/commands") &&
+          r.request().postDataJSON()?.type === "project.create"),
+        page.getByRole("menuitem", { name: "New canvas project", exact: true }).click(),
+      ]);
+      assert.equal((await response.json()).status, "applied");
+      pid = response.request().postDataJSON().projectId;
+      url = base + `/ai-tool/ai-canvas/${pid}`;
+      const projectName = page.getByRole("textbox", { name: "Project name", exact: true });
+      await projectName.waitFor();
+      releaseAssistant();
+      await page.waitForFunction(() => document.querySelector('#canvas-assistant [role="textbox"]')?.isContentEditable);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await projectName.isVisible(), true, "chat loading must keep the new project's name editor open");
+      assert.equal(await projectName.evaluate(element => element === document.activeElement), true);
+      const name = "Full creation " + crypto.randomUUID().slice(0, 8);
+      await projectName.fill(name);
+      await projectName.press("Enter");
+      await page.getByRole("button", { name, exact: true }).waitFor();
+      await saved();
+    } finally {
+      clearTimeout(releaseDeadline);
+      releaseAssistant();
+      await page.unroute(assistantPath);
+    }
     await page
       .getByRole("toolbar", { name: "Canvas creation tools" })
       .getByRole("button", { name: "Add Timeline", exact: true })

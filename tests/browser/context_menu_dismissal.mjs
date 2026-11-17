@@ -55,6 +55,17 @@ try {
     await page.getByText("Saved on this device", { exact: true }).waitFor();
     const node = page.locator(`.react-flow__node[data-id="${fixture.node}"]`);
     const menu = page.locator(".cw-context-menu");
+    const canvasPoint = async () => {
+      const point = await page.locator(".react-flow__pane").evaluate((pane) => {
+        const rect = pane.getBoundingClientRect();
+        return [
+          { x: rect.right - 100, y: rect.bottom - 180 },
+          { x: rect.left + 100, y: rect.bottom - 180 },
+        ].find(({ x, y }) => document.elementFromPoint(x, y) === pane);
+      });
+      assert.ok(point, "Dismissal starts on the visible canvas outside menus and nodes");
+      return point;
+    };
     const openNodeMenu = async () => {
       await node.click({ button: "right" });
       await menu.waitFor();
@@ -67,10 +78,11 @@ try {
     const before = await page
       .locator(".react-flow__viewport")
       .getAttribute("style");
-    await page.mouse.move(1100, 750);
+    const dragStart = await canvasPoint();
+    await page.mouse.move(dragStart.x, dragStart.y);
     await page.mouse.down();
     await menu.waitFor({ state: "detached" });
-    await page.mouse.move(1170, 800, { steps: 10 });
+    await page.mouse.move(dragStart.x + 70, dragStart.y + 50, { steps: 10 });
     await page.mouse.up();
     assert.notEqual(
       await page.locator(".react-flow__viewport").getAttribute("style"),
@@ -80,16 +92,25 @@ try {
       (await node.getAttribute("class")).split(" ").includes("selected"),
     );
     await openNodeMenu();
-    await page.mouse.click(1100, 750);
+    const clickPoint = await canvasPoint();
+    await page.mouse.click(clickPoint.x, clickPoint.y);
     await menu.waitFor({ state: "detached" });
     await openNodeMenu();
     const menuItem = menu.getByRole("menuitem").first();
+    const pending = page.locator("[data-pending-references]");
+    await pending.waitFor();
     await menuItem.focus();
     await page.keyboard.press("Escape");
     await menu.waitFor({ state: "detached" });
+    assert.equal(await pending.isVisible(), true, "Menu Escape preserves staged chat references");
     assert.ok(
       (await node.getAttribute("class")).split(" ").includes("selected"),
     );
+    await page.locator("#canvas-assistant [contenteditable=true]").focus();
+    await page.keyboard.press("Escape");
+    await pending.waitFor({ state: "detached" });
+    assert.equal(await page.locator("#canvas-assistant").isVisible(), true,
+      "Chat Escape clears staged references while keeping the conversation open");
     // The node composer stops pointerdown propagation; clicking it must still
     // dismiss the menu instead of leaving it stuck open over the canvas. The
     // menu can cover the composer, so send the pointerdown straight at it.
@@ -125,7 +146,8 @@ try {
     await page.keyboard.press("Escape");
     await menu.waitFor({ state: "detached" });
     await openPortMenu();
-    await page.mouse.click(1100, 750);
+    const portClickPoint = await canvasPoint();
+    await page.mouse.click(portClickPoint.x, portClickPoint.y);
     await menu.waitFor({ state: "detached" });
     console.log(JSON.stringify({ mode: "unified", passed: true }));
   }

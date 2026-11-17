@@ -164,6 +164,9 @@ try {
     await prompt.fill("Based on @");
     await prompt.press("Enter");
     await prompt.locator("[data-reference]").waitFor();
+    // Selecting the target can pan the source outside the visible canvas.
+    await page.getByRole("button", { name: "Zoom options", exact: true }).click();
+    await page.getByRole("button", { name: /^Fit all content/ }).click();
     await source.locator(".cw-node-title").dblclick();
     await page
       .getByRole("textbox", { name: "Node name", exact: true })

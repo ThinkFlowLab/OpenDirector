@@ -175,8 +175,24 @@ export function AssistantPanel({
       chat.setContent(content, projectReferences.assets);
   }, [projectReferences.assets]);
 
+  const previouslyOpen = useRef(open);
+  const openFocusTarget = useRef<Element | null>(null);
   useEffect(() => {
-    if (open && chat.loaded) editor.current?.focus();
+    if (open && !previouslyOpen.current)
+      openFocusTarget.current = document.activeElement;
+    previouslyOpen.current = open;
+    if (!open) {
+      openFocusTarget.current = null;
+      return;
+    }
+    if (!chat.loaded) return;
+    const active = document.activeElement;
+    // Loading a default-open chat must not dismiss a project menu or rename.
+    // An explicit open retains focus intent until the user chooses another control.
+    if (active === document.body || active?.closest("#canvas-assistant") ||
+        active === openFocusTarget.current)
+      editor.current?.focus();
+    openFocusTarget.current = null;
   }, [open, chat.loaded, value.conversationId]);
   const displayedAssets = [
     ...new Map(
