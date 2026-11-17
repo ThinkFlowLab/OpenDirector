@@ -271,6 +271,29 @@ class Conversations:
             result = public_conversation(value)
         return {'retracted': str(message_id), 'conversation': with_trace_sources(result, directory)}
 
+    def retract(self, project_id: UUID, session: str, message_id: UUID) -> dict:
+        """Take a message back while it is still waiting in the queue.
+
+        A message that already started belongs to the conversation now: it can
+        be stopped, but removing it would leave the reply it produced without
+        the words that asked for it.
+        """
+        with self.projects.local.transaction() as db:
+            self.projects._recover()
+            directory, _, _ = self.projects._load(db, project_id)
+            self.projects._lease(db, project_id, directory, session)
+            file = child(child(directory, 'agent-runs'), 'conversation.json')
+            value = read_json(file) if file.exists() else {'messages': [], **Draft().model_dump()}
+            found = next((item for item in value['messages'] if item['id'] == str(message_id)), None)
+            if found is None:
+                raise ProjectError('这条消息不在当前对话里，请重新加载。', 404)
+            if found.get('status') != 'queued':
+                raise ProjectError('这条消息已经开始执行，停止回复后才能撤回。', 409)
+            value['messages'] = [item for item in value['messages'] if item['id'] != str(message_id)]
+            durable_json(file, value)
+            result = public_conversation(value)
+        return {'retracted': str(message_id), 'conversation': with_trace_sources(result, directory)}
+
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
         file = child(child(directory, 'agent-runs'), 'conversation.json')
