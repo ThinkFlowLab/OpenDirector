@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  continueQueue,
+  retractChatMessage,
   sendChat,
   type ChatEvent,
   type ChatRequest,
@@ -99,4 +101,54 @@ test("an idle project answers on the same endpoint with the running reply", asyn
   const ends = events.filter((event) => event.type === "end");
   assert.equal(ends[0]!.type === "end" && ends[0]!.nextTurnId, "turn-2");
   assert.equal(ends[1]!.type === "end" && ends[1]!.nextTurnId, null);
+});
+
+test("a queued message is withdrawn through the message itself", async (t) => {
+  const fetch = t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string, init?: RequestInit) => {
+      assert.ok(url.endsWith("/assistant/messages/message-2"));
+      assert.equal(init?.method, "DELETE");
+      return new Response(
+        JSON.stringify({
+          retracted: "message-2",
+          conversation: { messages: [], draft: "", assets: [], thinking: "auto", modelSelections: {} },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  );
+  const result = await retractChatMessage("project", "message-2");
+  assert.equal(result.retracted, "message-2");
+  assert.equal(fetch.mock.calls.length, 1);
+});
+
+test("a stalled queue is continued and its reply read from the same stream", async (t) => {
+  const saved = {
+    messages: [],
+    draft: "",
+    assets: [],
+    thinking: "auto",
+    modelSelections: {},
+  };
+  const fetch = t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string) => {
+      assert.ok(url.endsWith("/assistant/queue/dispatch"));
+      return sse([
+        { type: "start", conversation: saved },
+        { type: "delta", text: "继续" },
+        { type: "end", turnId: "turn-2", nextTurnId: null, conversation: saved, error: null },
+      ]);
+    },
+  );
+  const events: ChatEvent[] = [];
+  await continueQueue("project", new AbortController().signal, (event) => events.push(event));
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ["start", "delta", "end"],
+  );
+  assert.equal(fetch.mock.calls.length, 1);
 });

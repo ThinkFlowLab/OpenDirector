@@ -155,6 +155,8 @@ export type ChatEvent =
   | { type: "sources"; sources: ChatSource[] }
   /** A message accepted while a reply runs; it starts when that reply ends. */
   | { type: "queued"; message: ChatMessage }
+  /** A queued message was withdrawn before it started. */
+  | { type: "retracted"; messageId: string }
   | {
       type: "end";
       turnId?: string;
@@ -344,6 +346,40 @@ export async function sendChat(
   if (response.status === 202) return (await response.json()) as QueuedReply;
   await readChatEvents(response, onEvent, t);
   return null;
+}
+
+/**
+ * Take back a message that is still waiting behind the running reply.
+ *
+ * A message that has already started is part of the record: the server
+ * refuses it with 409 and the caller still has to stop the reply instead.
+ */
+export async function retractChatMessage(
+  id: string,
+  message: string,
+): Promise<{ retracted: string; conversation: Conversation }> {
+  return request<{ retracted: string; conversation: Conversation }>(
+    path(id) + `/messages/${message}`,
+    { method: "DELETE", headers },
+  );
+}
+
+/**
+ * Continue a queue that nothing is draining, for example after a restart
+ * or after a reply failed with messages still waiting behind it.
+ */
+export async function continueQueue(
+  id: string,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+) {
+  const response = await fetch("/api" + path(id) + "/queue/dispatch", {
+    ...json("POST", {}),
+    headers: { ...headers, "Content-Type": "application/json" },
+    signal,
+  });
+  await readChatEvents(response, onEvent, t);
 }
 
 export interface RuntimeModel {

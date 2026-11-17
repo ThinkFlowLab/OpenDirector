@@ -66,6 +66,12 @@ export const assistant = {
   "assistant.panel.queueWhileRunning":
     "Press Enter to queue this behind the running reply",
   "assistant.panel.cancelled": "Queued message cancelled",
+  "assistant.panel.retract": "Withdraw",
+  "assistant.panel.retractHint": "Withdraw this queued message before it starts",
+  "assistant.panel.refill": "Edit again",
+  "assistant.panel.refillHint": "Put this message back in the composer to send it again",
+  "assistant.panel.waiting": "{count} message(s) waiting to run",
+  "assistant.panel.proceed": "Continue",
   "assistant.panel.stop": "Stop reply",
   "assistant.panel.upload": "Upload reference",
   "assistant.panel.uploadHint": "Upload images, video, audio or text",
