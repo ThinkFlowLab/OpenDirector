@@ -131,6 +131,7 @@ class TimelinePublishRender(Contract):
     editorId: UUID = Field(description='Editable document ID.')
     asset: AssetRef = Field(description='Immutable asset version.')
     outputId: UUID = Field(description='Published canvas output ID.')
+    expectedOutputRevision: Revision | None = Field(default=None, exclude_if=lambda value: value is None, description='Current output node revision when appending a rendered version.')
     title: str = Field(default='合成视频', max_length=255, description='User-visible title.')
     position: Point = Field(default_factory=Point, description='Position in the owning canvas or stage.')
 
@@ -269,6 +270,8 @@ class CommandBase(Contract):
             raise ValueError('expectedVersions missing current versions for ' + ', '.join(missing))
         if self.type == 'generation.submit' and versions[('generation_spec', payload.specId)] != payload.expectedSpecRevision:
             raise ValueError('Submission version differs from expected spec version')
+        if self.type == 'timeline.publishRender' and payload.expectedOutputRevision is not None and versions[('canvas_item', payload.outputId)] != payload.expectedOutputRevision:
+            raise ValueError('Output revision differs from its expected version')
         if self.type in {'generationSpec.update', 'editor.save', 'reference.update', 'reference.restore'}:
             obj = (payload.spec if self.type == 'generationSpec.update' else
                    payload.document if self.type == 'editor.save' else payload.reference)
@@ -288,6 +291,8 @@ class CommandBase(Contract):
                 required.append(('editor_document', payload.sourceEditorId))
         elif self.type in {'canvas.applyEdit', 'timeline.publishRender'}:
             required = [('canvas_item', payload.itemId), ('asset', payload.asset.assetId), ('editor_document', payload.editorId)]
+            if self.type == 'timeline.publishRender' and payload.expectedOutputRevision is not None:
+                required.append(('canvas_item', payload.outputId))
         elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit', 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
         elif self.type == 'canvas.move':
@@ -396,7 +401,7 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',

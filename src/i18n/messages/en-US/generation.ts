@@ -1,5 +1,7 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.duration.fractionalHint": "H3 accepts fractional seconds and aligns output frames upward to 17k+5 at 24 fps.",
+  "generation.duration.aligned": "Output: {frames} frames · {seconds} s",
   "generation.bigmodel.watermarkWaiver":
     "BigModel requires a signed waiver to remove watermarks. Complete it in Personal Center → Security Management → Watermark Removal Management; otherwise outputs may still contain watermarks.",
   "generation.model.unconfigured":
@@ -49,6 +51,12 @@ export const generation = {
 
   "generation.field.ratio": "Aspect ratio",
   "generation.field.resolution": "Resolution",
+  "generation.field.quality": "Quality",
+  "generation.field.qualityAria": "Image quality {value}",
+  "generation.quality.auto": "Auto",
+  "generation.quality.low": "Low",
+  "generation.quality.medium": "Medium",
+  "generation.quality.high": "High",
   "generation.field.count": "Count",
   "generation.field.audio": "Generate audio",
   "generation.field.audioPending": "Request audio (service support unconfirmed)",

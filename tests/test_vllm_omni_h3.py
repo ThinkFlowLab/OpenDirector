@@ -23,7 +23,7 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.capability_probe import CapabilityProbe
-from opendirector.integrations.vllm_omni import VllmOmniGeneration, h3_frames
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, video_frame_parameters
 from opendirector.integrations.volcengine import VolcengineGeneration
 from test_model_availability import document
 from opendirector_api.main import create_app
@@ -73,9 +73,9 @@ def test_h3_profile_follows_the_served_model_on_any_host():
     assert providers._profile_adapter({**H3, 'url': 'https://ark.cn-beijing.volces.com/api/plan/v3', 'modelId': 'doubao-seedance-2.0'}) is None
 
 
-@pytest.mark.parametrize('seconds,frames', [(5, 124), (1, 107), (4, 107), (10, 243), (60, 345)])
-def test_lengths_snap_to_the_h3_frame_grid(seconds, frames):
-    assert h3_frames(seconds) == frames
+@pytest.mark.parametrize('seconds,frames', [(4, 96), (107 / 24, 107), (4.5, 108), (5, 120), (10, 240), (14.375, 345), (15, 360), (124.5 / 24, 124)])
+def test_seconds_convert_to_requested_frames(seconds, frames):
+    assert video_frame_parameters(seconds) == {'fps': 24, 'num_frames': frames}
 
 
 def prepared(images=(), audios=(), continue_from=None, size=None):
@@ -96,7 +96,7 @@ def test_request_form_per_mode(mode, refs, extra, files):
     assert json.loads(fields['extra_params']) == extra
     assert fields['model'] == 'MiniMaxAI/MiniMax-H3' and fields['fps'] == '24'
     assert [(name, upload[0], upload[2]) for name, upload in uploads] == files
-    assert fields['num_frames'] == '124' and 'quality' not in fields
+    assert fields['num_frames'] == '120' and 'quality' not in fields
     assert fields.get('size') == ('1344x768' if mode == 'continuation' else None)
 
 
@@ -199,7 +199,7 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
         assert second['status'] == 'succeeded' and second['videoMode'] == 'continuation', (second['error'], second['errorDetails'])
         fields, files = server.posts[1]
         assert json.loads(fields['extra_params']) == {'task': 't2va', 'continue_from': 'video_gen_1'}
-        assert (fields['size'], fields['num_frames']) == ('64x48', '124') and files == []
+        assert (fields['size'], fields['num_frames']) == ('64x48', '120') and files == []
         reference = store.snapshot(value['id']).jobs[-1].inputSnapshot.references[0]
         assert reference.role == 'continuation' and reference.transmission == 'latent'
         assert str(reference.asset.assetId) == first['assetId']
@@ -252,7 +252,7 @@ def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
         intent = store.snapshot(value['id']).generationSpecs[-1]
         assert intent.parameters.durationSeconds == 10 and intent.prompt == '雨夜街头'
         fields, _ = server.posts[0]
-        assert fields['num_frames'] == str(h3_frames(10))
+        assert fields['num_frames'] == '240'
         assert fields['size'] == '480x832' and json.loads(fields['extra_params']) == {'task': 't2va'}
         await manager.close()
     asyncio.run(run())

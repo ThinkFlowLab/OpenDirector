@@ -23,6 +23,11 @@
       "note": "Bilingual video-role declarations, tool directory decisions, preserved generation inputs and substitute video results through local HTTP discovery."
     },
     {
+      "file": "image_quality_test.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"]
+    },
+    {
       "file": "heif_upload_recovery.mjs",
       "lanes": [
         "extended",
@@ -137,6 +142,11 @@
       ]
     },
     {
+      "file": "canvas_text_markdown.mjs",
+      "lanes": ["gate"],
+      "note": "Markdown blocks, native inline composition, fullscreen selection/scroll handoff and resize commits. Uses /src through Vite."
+    },
+    {
       "file": "canvas_switch.mjs",
       "previewSafe": true,
       "lanes": [
@@ -206,10 +216,7 @@
     {
       "file": "creation_history.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "creation_journey.mjs",
@@ -228,10 +235,7 @@
     {
       "file": "default_entry.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "double_shift_chat.mjs",
@@ -259,10 +263,7 @@
     {
       "file": "first_last_frame_connections.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "generation_feedback.mjs",
@@ -381,10 +382,7 @@
     {
       "file": "paste_undo.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "project_list_overflow.mjs",
@@ -538,9 +536,22 @@
       ]
     },
     {
+      "file": "kimi_real.mjs",
+      "helper": true,
+      "note": "Manual acceptance against a real Kimi chat endpoint; KIMI_ROUTE=open needs MOONSHOT_API_KEY, KIMI_ROUTE=coding needs KIMI_CODING_API_KEY. Both incur charges, so no lane runs it."
+    },
+    {
       "file": "zhipu_real.mjs",
       "helper": true,
       "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
+    },
+    {
+      "file": "timeline_node_output.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "previewSafe": false,
+      "note": "Canvas timeline output button and shortcut publish real MP4 results in both locales without opening the editor."
     }
   ]
 }

@@ -132,7 +132,7 @@ try {
         await page
           .getByRole("button", { name: "视频生成时长", exact: true })
           .click();
-        await page.getByRole("spinbutton", { name: "精确创作时长" }).fill("8");
+        await page.getByLabel("精确创作时长", { exact: true }).fill("8");
         await page
           .getByRole("button", { name: "视频生成时长", exact: true })
           .click();

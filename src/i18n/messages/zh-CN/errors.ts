@@ -1,5 +1,6 @@
 /** Shared validation and storage errors. */
 export const errors = {
+  "errors.rules.imageQualityUnsupported": "当前模型不支持所选图片质量，请选择自动或切换模型。",
   "errors.generationFailure.policy": "供应商因内容政策拒绝了提示词或参考图片，请调整输入后再生成。",
   "errors.archive.identityConflict":
     "同一时间线逻辑资源引用了冲突的文件或元数据。",

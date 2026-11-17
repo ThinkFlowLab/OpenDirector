@@ -9,7 +9,6 @@ from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationError, GenerationFailure
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
-from opendirector.integrations.fasth3 import finalize_video_edit
 from opendirector.integrations.generation_errors import transport_failure
 
 def _self_hosted_video(task):
@@ -152,7 +151,6 @@ class GenerationRuntime(ABC):
                             suffix, data = await self.provider.generate(config, task, submitted, result_ready=result_ready)
                         else:
                             suffix, data = await self.provider.generate(config, task, submitted)
-                    suffix, data = await asyncio.to_thread(finalize_video_edit, self.store, task, suffix, data)
                 elif cached:
                     suffix, data = cached
                 # Preserve complete bytes before catalog/link writes. Cancellation

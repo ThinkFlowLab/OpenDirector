@@ -51,14 +51,17 @@ def test_tool_request_describes_all_uploaded_roles_including_default_masks(servi
     ('first_frame', False, False), ('first_frame', True, False), ('reference', True, True),
     ('continuation', False, False), ('continuation', True, False), ('continuation', False, True),
 ])
-def test_node_checked_parameters_equal_the_prepared_multipart_form(service, mode, has_images, has_audio):
+@pytest.mark.parametrize('frozen_frames', [None, 124])
+def test_node_checked_parameters_equal_the_prepared_multipart_form(service, mode, has_images, has_audio, frozen_frames):
     from opendirector.integrations.vllm_omni import VllmOmniGeneration
     configs, saved, _, _ = service
     config = video_config(configs, saved)
     refs = ([reference('image')] if has_images else []) + ([reference('audio')] if has_audio else [])
     if mode == 'continuation':
         refs.append(reference('video', 'continuation', 'latent'))
-    parameters = {'duration': 7, 'ratio': '9:16', 'resolution': '720P', 'size': '768x1344'}
+    parameters = {'duration': 5, 'ratio': '9:16', 'resolution': '720P', 'size': '768x1344'}
+    if frozen_frames is not None:
+        parameters['num_frames'] = frozen_frames  # An accepted job keeps its explicit frame count.
     request = generation_request(config, spec(mode), refs, parameters=parameters)
     prepared = {'prompt': 'test', 'images': ['data:image/png;base64,YQ=='] if has_images else [],
                 'audios': ['data:audio/wav;base64,YQ=='] if has_audio else [],
@@ -70,6 +73,7 @@ def test_node_checked_parameters_equal_the_prepared_multipart_form(service, mode
     assert {key: str(value) for key, value in checked.items() if key not in {'width', 'height'}} == {
         key: str(value) for key, value in sent.items()}
     assert fields['size'] == f"{checked['width']}x{checked['height']}"
+    assert fields['num_frames'] == str(frozen_frames if frozen_frames is not None else 120)
 
 
 @pytest.mark.parametrize('editing', [False, True])

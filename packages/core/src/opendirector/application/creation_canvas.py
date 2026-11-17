@@ -463,13 +463,24 @@ class CreationCanvas:
         for ref in (*sources, payload.asset):
             self._available(self.assets._reference(snapshot, ref))
         asset = self._get(data, 'asset', output.id)
-        asset['provenance'] = dict(source='rendered', editorDocumentId=str(doc.id), editorRevision=doc.revision,
+        existing = next((i for i in snapshot.canvasItems if i.id == payload.outputId), None)
+        if existing is not None:
+            if payload.expectedOutputRevision is None:
+                raise ContractError('revision_conflict', '输出节点已存在，请提供其当前版本。', payload.outputId)
+            target = self._editable(data, payload.outputId)
+            previous = current_asset(snapshot, existing)
+            if (existing.kind != 'video' or existing.binding.role != 'material' or previous is None
+                    or previous.provenance.source != 'rendered' or previous.provenance.editorDocumentId != doc.id
+                    or previous.provenance.sourceItemId not in {None, payload.itemId}):
+                raise ContractError('role_restricted', '输出节点不属于当前时间线。', payload.outputId)
+            target['binding'] = dict(role='material', objectRef=payload.asset.model_dump(mode='json'))
+        else:
+            result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,
+                position=payload.position, binding=dict(role='material', objectRef=payload.asset))
+            data['canvasItems'].append(result.model_dump(mode='json'))
+        asset['provenance'] = dict(source='rendered', sourceItemId=str(payload.itemId),
+                                  editorDocumentId=str(doc.id), editorRevision=doc.revision,
                                   sources=[ref.model_dump(mode='json') for ref in sources])
-        if any(i['id'] == str(payload.outputId) for i in data['canvasItems']):
-            raise ContractError('invalid_input', '输出节点标识已存在。', payload.outputId)
-        result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,
-            position=payload.position, binding=dict(role='material', objectRef=payload.asset))
-        data['canvasItems'].append(result.model_dump(mode='json'))
 
     def _mutate(self, data, kind, payload):
         value = payload.model_dump(mode='json', exclude_unset=True)

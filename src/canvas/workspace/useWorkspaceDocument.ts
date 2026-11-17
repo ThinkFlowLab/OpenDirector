@@ -183,7 +183,10 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       setHistory((h) => recordChange(h, fn(h.present))),
     [],
   );
-  const begin = useCallback(() => setHistory(beginTransaction), []);
+  const begin = useCallback(() => {
+    invalidateScheduledAutosave();
+    setHistory(beginTransaction);
+  }, [invalidateScheduledAutosave]);
   const end = useCallback(() => setHistory(commitTransaction), []);
 
   if (!saveQueue.current) {
@@ -505,7 +508,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
         void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
-  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId]);
+  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId, rt.history.transaction]);
   useEffect(() => {
     if (!ready) return;
     const client = creationClient(doc.id),

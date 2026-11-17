@@ -135,6 +135,9 @@ export const canvasShell = {
   "canvas.selection.duplicate": "创建副本",
   "canvas.selection.deleteNode": "删除节点",
 
+  "canvas.textWindow.mode": "Markdown 视图",
+  "canvas.textWindow.edit": "编辑源码",
+  "canvas.textWindow.preview": "预览",
   "canvas.textWindow.hint": "编辑内容会实时同步到画布节点",
   "canvas.textWindow.locked": "节点已锁定，仅可查看",
   "canvas.textWindow.count": "{count} 字",

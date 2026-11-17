@@ -25,16 +25,13 @@ FPS = 24
 RATIOS = {'16:9', '9:16', '1:1', '4:3', '3:4'}
 
 
-def h3_frames(seconds):
-    """Nearest H3 length on the 17n+5 frame grid, within 4-15 seconds."""
-    steps = round((seconds * FPS - 5) / 17)
-    return 17 * min(max(steps, 6), 20) + 5
+def video_frame_parameters(seconds: float, fps: int = FPS, num_frames: int | None = None) -> dict[str, int]:
+    return {'fps': fps, 'num_frames': num_frames if num_frames is not None else round(seconds * fps)}
 
 
 def generation_fields(parameters, mode, *, has_images=False, has_audio=False, continue_size=None):
     """Prepare the same non-media fields for admission and multipart execution."""
-    fields = {'fps': parameters.get('fps', FPS),
-              'num_frames': parameters.get('num_frames', h3_frames(parameters.get('duration', 5)))}
+    fields = video_frame_parameters(parameters.get('duration', 5), parameters.get('fps', FPS), parameters.get('num_frames'))
     if parameters.get('resolution') and parameters.get('size'):
         fields['size'] = parameters['size']
     extra = {}

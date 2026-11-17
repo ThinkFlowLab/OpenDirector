@@ -1,7 +1,8 @@
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, type CSSProperties } from "react";
+import { Suspense, useEffect, type CSSProperties } from "react";
+import { createNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
@@ -80,6 +81,7 @@ import { subjectImportSelection, subjectTargetIdentity } from "../subjectLibrary
 import { TextNodeComposer } from "../TextNodeComposer";
 import "../themes.css";
 import { TimelineEditor } from "../TimelineEditor";
+import { TimelineOutputShortcut, useTimelineOutput } from "../TimelineOutput";
 import { CANVAS_TOOLS, createCanvasToolTask, initialToolParameters } from "../toolCatalog";
 
 import { translateToolText } from "../toolText.ts";
@@ -94,6 +96,7 @@ import { DirectorStage, IconButton, helpShortcuts, nodeTypes, edgeTypes, referen
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
+  const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
   const {
     actionMedia,
     actionNode,
@@ -299,6 +302,39 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   } = rt;
 
 
+  const outputState = timelineOutput.state;
+  const outputSource = outputState ? doc.nodes.find((node) => node.id === outputState.itemId) : undefined;
+  const existingOutput = outputState ? projected.nodes.find((node: { id: string }) => node.id === outputState.output.id) : undefined;
+  const pendingOutput = outputSource && outputState && outputState.phase !== "done"
+    ? {
+        id: outputState.output.id,
+        type: "video" as const,
+        position: outputState.output.position,
+        width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198,
+        style: { width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198 },
+        selectable: false, draggable: false, connectable: false, deletable: false, focusable: false,
+        data: {
+          kind: "video" as const, title: outputState.output.title,
+          timelineOutput: {
+            title: outputState.output.title, phase: outputState.phase,
+            progress: outputState.progress, error: outputState.error,
+            onCancel: timelineOutput.cancel,
+            onRetry: () => {
+              const source = doc.nodes.find((node) => node.id === outputState.itemId);
+              if (source) void timelineOutput.run(source, () => persist(doc, false));
+            },
+          },
+        },
+      }
+    : null;
+
+  useEffect(() => {
+    if (!outputSource || !outputState || outputState.phase === "done") return;
+    const output = createNode("video", outputState.output.position, { title: outputState.output.title });
+    output.id = outputState.output.id;
+    rt.revealCreatedNodes.current([output], doc.nodes.some((node) => node.id === output.id) ? doc.nodes : [...doc.nodes, output]);
+  }, [outputState?.output.id]);
+
   const workspace = (
     <div
       inert={!ready || switching}
@@ -444,11 +480,20 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             gesture={pointerGesture}
             bypassSnapping={bypassSnapping}
             proOptions={{ hideAttribution: true }}
-            nodes={projected.nodes}
-            edges={projected.edges}
+            nodes={pendingOutput ? existingOutput ? projected.nodes.map((node: { id: string }) => node.id === pendingOutput.id ? pendingOutput : node) : [...projected.nodes, pendingOutput] : projected.nodes}
+            edges={pendingOutput && outputSource && outputState && !projected.edges.some((edge: { source: string; target: string }) => edge.source === outputState.itemId && edge.target === pendingOutput.id)
+              ? [...projected.edges, {
+                  id: `timeline-pending:${pendingOutput.id}`, source: outputState.itemId, target: pendingOutput.id,
+                  type: "reference", hidden: !showEdges, selectable: false, deletable: false,
+                  data: { state: "provenance", description: t("errors.refEvidence.editSource"),
+                    sourceBounds: { ...outputSource.position, width: outputSource.width, height: outputSource.height },
+                    targetBounds: { ...pendingOutput.position, width: pendingOutput.width, height: pendingOutput.height },
+                  },
+                }]
+              : projected.edges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={(changes) => onNodesChange(changes.filter((change) => !(pendingOutput && "id" in change && change.id === pendingOutput.id)))}
             onEdgesChange={(changes) => {
               for (const c of changes)
                 if (c.type === "select")
@@ -1250,6 +1295,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             node={single}
             locked={lockedIds.has(single.id)}
             style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
+            onOutput={single.type === "timeline" ? () => void timelineOutput.run(single, () => persist(doc, false)) : undefined}
+            outputBusy={timelineOutput.busy || !!(timelineOutput.blockedItemId && timelineOutput.blockedItemId !== single.id)}
             onTool={openNodeAction}
             presets={toolCatalog.capabilities["image-presets"]?.fields
               ?.find((field) => field.key === "preset")?.options
@@ -1480,7 +1527,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           </div>
         </>
       )}
-      {hasComposer && composerNode && (
+      {hasToolbar && single?.type === "timeline" && !lockedIds.has(single.id) && (
+        <TimelineOutputShortcut node={single} state={timelineOutput.state}
+          blocked={timelineOutput.busy && timelineOutput.state?.itemId !== single.id || !!(timelineOutput.blockedItemId && timelineOutput.blockedItemId !== single.id)}
+          onRun={() => void timelineOutput.run(single, () => persist(doc, false))} />
+      )}
+      {hasComposer && composerNode && composerNode.type !== "timeline" && (
         <>
           {composerExpanded && (
             <div
@@ -2287,6 +2339,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           key={textWindowNode.id}
           node={textWindowNode}
           locked={lockedIds.has(textWindowNode.id)}
+          selections={actions.textSelections}
           onUpdate={(text) =>
             command({
               type: "update-node",
@@ -2294,7 +2347,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               patch: { data: { text } },
             })
           }
-          onClose={() => setTextWindowId(null)}
+          onClose={() => {
+            void persist(historyRef.current.present);
+            setTextWindowId(null);
+            if (!lockedIds.has(textWindowNode.id)) setTextEditingId(textWindowNode.id);
+            else root.current?.focus({ preventScroll: true });
+          }}
           onBeginEdit={begin}
           onEndEdit={end}
         />

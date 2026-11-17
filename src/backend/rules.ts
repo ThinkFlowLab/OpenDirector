@@ -2,8 +2,10 @@ import { availabilityBlocker, availabilityInputLimit } from "./availability.ts";
 import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
+import type { InputRules as CreationInputRules } from "../contracts/generated.ts";
 import {
   RULE_FACTS,
+  durationMatches,
   aspectRatioChoices,
   effectiveVideoMode,
   generateAudioOptions,
@@ -35,6 +37,7 @@ export interface VideoCapabilities {
 }
 
 export interface InputRules {
+  fractionalDuration?: boolean;
   profile: string;
   allowedKinds: string[];
   maxImages: number;
@@ -54,6 +57,7 @@ export interface InputRules {
   audioReferenceStandalone?: boolean | null;
   generateAudioOptions?: boolean[] | null;
   imageOutputs?: { aspectRatio: string; size: string }[];
+  imageQualities?: CreationInputRules["imageQualities"];
   outputResolutions?: string[];
   referenceImageResolutions?: string[];
   videoCapabilities?: VideoCapabilities | null;
@@ -373,6 +377,7 @@ export function backendResolutions(
 ): string[] {
   const rules = config?.inputRules;
   return resolutionChoices({
+    fractionalDuration: rules?.fractionalDuration,
     kind: settings.mode,
     videoMode: settings.videoMode,
     aspectRatio: settings.aspectRatio,
@@ -441,7 +446,7 @@ export function serviceGenerationSettings(
     )
       next.resolution = "auto";
   }
-  next = serviceAudioSettings(next, config);
+  next = serviceImageSettings(serviceAudioSettings(next, config), config);
   if (modelChanged) {
     next.imagePreset = "none";
     if (next.voiceSelection) {
@@ -477,6 +482,20 @@ export function serviceGenerationSettings(
   return next;
 }
 
+/** Drop a quality selection when the resolved service no longer supports it. */
+export function serviceImageSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+): GenerationSettings {
+  if (
+    settings.mode !== "image" ||
+    settings.imageQuality === undefined ||
+    config.inputRules.imageQualities?.includes(settings.imageQuality)
+  )
+    return settings;
+  return { ...settings, imageQuality: undefined };
+}
+
 /** Normalize a deliberate model/time change before persisting it to the canvas. */
 export function serviceVideoSettings(
   settings: GenerationSettings,
@@ -487,7 +506,7 @@ export function serviceVideoSettings(
   const next = { ...settings };
   const caps = config.inputRules.videoCapabilities;
   const durations = backendDurations(config);
-  if (durations.length && !durations.includes(next.durationSeconds))
+  if (durations.length && !durationMatches(next.durationSeconds, durations, config.inputRules.fractionalDuration))
     next.durationSeconds = caps!.defaultDuration;
   if (
     next.videoMode === "continuation" &&
@@ -649,7 +668,7 @@ export function backendBlocker(
     return tNow("errors.rules.audioDisable");
   if (settings.mode === "video") {
     const durations = backendDurations(config);
-    if (durations.length && !durations.includes(settings.durationSeconds))
+    if (durations.length && !durationMatches(settings.durationSeconds, durations, rules.fractionalDuration))
       return tNow("errors.rules.duration");
     if (
       rules.outputResolutions &&

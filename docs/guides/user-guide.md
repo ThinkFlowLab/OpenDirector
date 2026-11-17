@@ -29,11 +29,15 @@ A service can provide multiple models within the same category. After entering i
 
 The service URL and Model ID must match your model service. Self-hosted service URLs typically include `/v1`; use the model name actually exposed by the service as the Model ID. For third-party services, follow the information provided by the service.
 
+Kimi assistant chat is billed in two separate ways, each with its own key and base URL, so pick the row that matches your account. **Moonshot Kimi Open Platform** is pay-per-token: enter a mainland key from the Moonshot open platform and the preset fills `https://api.moonshot.cn/v1`. **Moonshot Kimi Code subscription** draws on a Kimi Code Plan quota instead: enter the key issued with that subscription and the preset fills `https://api.kimi.com/coding/v1`. Keys are not interchangeable between the two. In both cases **Fetch models** lists the models that key can reach, such as `kimi-k3` and `kimi-k3.1-pro`. Neither preset covers the international endpoint; add that one as a custom OpenAI-compatible service with its own base URL. [Moonshot platform documentation](https://platform.kimi.com/docs), [Kimi Code provider configuration](https://moonshotai.github.io/kimi-cli/en/configuration/providers.html)
+
 For Qwen assistant chat, choose **Alibaba Cloud Model Studio (Beijing)** and enter a Beijing API key. The preset selects `qwen3.8-max`. You can keep the shared Beijing URL or enter your Beijing workspace's OpenAI-compatible Base URL ending in `/compatible-mode/v1`. [Alibaba Cloud endpoint guide](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope)
 
 For a self-hosted chat service, allow at least 8192 tokens of context: the
 application sends `max_tokens: 8192`, so a smaller `--max-model-len` (for
 example vLLM's 4096 default) rejects every request with HTTP 400.
+
+For vLLM-Omni video connections, enter fractional seconds directly, for example `6.583333`. The CLI accepts `opendirector video create --duration 6.583333` together with the other required options. Read `opendirector video create --help` and `opendirector model list` first; `inputRules.fractionalDuration` identifies support, and each output's duration list defines the allowed range. H3 can align output to its supported frame count, so inspect the actual result duration before assembling segments.
 
 For detailed video settings, see [Video model capability configuration (Chinese)](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
 
@@ -81,6 +85,8 @@ The canvas saves automatically. Before closing it or switching projects, check t
 2. Choose a model, enter a prompt, and set the available parameters.
 3. Connect a source node that has content to the target node, or type `@` in the input field to select reference assets.
 4. Check the references and parameters, then generate. When the task finishes, view its result in the node or **Generation history**.
+
+For GPT Image models, open **Generation settings** and choose **Quality** from **Auto**, **Low**, **Medium**, or **High**. **Auto** keeps the service default. The choice is saved with the project and frozen when a task is submitted. Changing it later affects subsequent tasks. Other image services do not show this option. Standalone image tools retain their service default. The Agent can set the same value through `parameters.quality` in the image generation spec.
 
 After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
 
@@ -193,3 +199,7 @@ Saving projects locally does not imply offline inference. Generation prompts and
 | A video cannot be rendered or exported | Check your browser's encoding support and whether the assets can be read and played correctly. Keep the page and editor open while rendering |
 | A task is interrupted, or its submission status is unknown | Check **Generation history**. Use **Continue checking the original task** for recoverable tasks. If the status is unknown, check whether the server accepted the task before submitting again |
 | Changes have not been saved | Keep the page open, check the **Saved locally** status and any error messages, and resolve the save failure before closing or switching |
+
+### Output a timeline from the canvas
+
+Select an unlocked timeline node and use **Output video** in its toolbar. **⌘Enter** on macOS or **Ctrl+Enter** on Windows/Linux performs the same action when focus is outside a text field or dialog. The saved timeline supplies the output size, frame rate, clips and audio. A pending video node appears below the timeline immediately, with rendering progress and a cancel control. Successful publication replaces that preview with the playable MP4 under the same node identity, connected to its timeline by an output-source line. Repeated output adds a version to that video node; use its version picker to preview or restore earlier outputs. The editable timeline remains available. Failed output can be retried from the pending node. Keep the page open while rendering. Cancel stops rendering; retrying a failed publication reuses the rendered video and operation identity.

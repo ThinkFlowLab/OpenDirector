@@ -300,7 +300,7 @@ try {
     ".cw-duration-popover",
     "portaled duration picker",
   );
-  await light(duration.getByRole("spinbutton"), "duration input");
+  await light(duration.locator(".cw-duration-number input"), "duration input");
   const slider = duration.getByRole("slider");
   const trackAccent = await slider.evaluate((el) =>
     getComputedStyle(el).getPropertyValue("--cw-control-accent").trim(),

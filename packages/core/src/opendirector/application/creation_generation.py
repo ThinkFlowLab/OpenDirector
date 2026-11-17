@@ -30,10 +30,12 @@ from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
+from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
 from opendirector.integrations.model_adapters import capabilities_of
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.media.filenames import with_extension
@@ -168,6 +170,8 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
+            if input_rules(config)['profile'] == 'openai-gpt-image' and spec.parameters.quality != 'auto':
+                params['quality'] = spec.parameters.quality
             if (input_rules(config)['profile'] == 'vllm-omni-image'
                     and not any(records[key]['kind'] == 'image' for key in node['referenceIds'])):
                 from opendirector.integrations.vllm_omni_image import SAMPLING
@@ -198,9 +202,6 @@ class CreationGeneration(GenerationRuntime):
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
-                # FastH3's wire contract sends duration; its derived frame
-                # estimate is not an explicitly submitted execution parameter.
-                params.pop('num_frames', None)
                 params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
@@ -215,7 +216,7 @@ class CreationGeneration(GenerationRuntime):
                 if node.get('videoMode') == 'continuation':
                     raise ProjectError('接续沿用上一段视频的画幅，请将比例设为自动。', 422)
                 caps = rules.get('videoCapabilities') or {}
-                choices = [item for item in caps.get('outputs', []) if seconds is None or seconds in item['durations']]
+                choices = [item for item in caps.get('outputs', []) if seconds is None or duration_matches(seconds, item['durations'], rules.get('fractionalDuration', False))]
                 if not choices:
                     raise ProjectError('指定视频比例前，请在模型接入中配置输出规格。', 422)
                 preferred = next((item for item in choices if item['resolution'] == caps.get('defaultResolution')), choices[0])
@@ -229,9 +230,8 @@ class CreationGeneration(GenerationRuntime):
                     params['ratio'] = '16:9'
             else:
                 apply_video_resolution(params, node, records, config, output)
-            if rules['profile'] == 'vllm-omni-h3':
-                from opendirector.integrations.vllm_omni import FPS, h3_frames
-                params.update(fps=FPS, num_frames=h3_frames(params['duration']))
+            if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'} and 'duration' in params:
+                params.update(video_frame_parameters(params['duration'], params.get('fps', FPS)))
         if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
         if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
@@ -254,6 +254,7 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
+                quality=parameters.get('quality', 'auto'),
                 responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image', 'bigmodel-glm-image'} else None,
                 outputFormat='png', watermark=parameters.get('watermark_enabled', parameters.get('watermark')),
                 numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))

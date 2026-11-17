@@ -102,6 +102,12 @@ def aspect_ratio_choices(spec):
     return ['auto']
 
 
+def duration_matches(seconds: float, durations: list[int] | tuple[int, ...], fractional: bool = False) -> bool:
+    if fractional:
+        return bool(durations) and min(durations) <= seconds <= max(durations)
+    return seconds in durations
+
+
 def resolution_choices(spec):
     """Sizes offered before submit. Callers report whether an image reference is connected."""
     kind = spec['kind']
@@ -122,7 +128,7 @@ def resolution_choices(spec):
     duration = spec.get('durationSeconds')
     if outputs is not None and duration is not None:
         choices = [label for label in choices
-                   if any(item['resolution'] == label and duration in item['durations'] for item in outputs)]
+                   if any(item['resolution'] == label and duration_matches(duration, item['durations'], spec.get('fractionalDuration', False)) for item in outputs)]
     return ['auto', *choices]
 
 
@@ -336,7 +342,14 @@ export function aspectRatioChoices(input: {
   return ["auto"];
 }
 
+export function durationMatches(seconds: number, durations: readonly number[], fractional = false): boolean {
+  return fractional
+    ? durations.length > 0 && seconds >= Math.min(...durations) && seconds <= Math.max(...durations)
+    : durations.includes(seconds);
+}
+
 export function resolutionChoices(input: {
+  readonly fractionalDuration?: boolean;
   readonly kind: string;
   readonly videoMode?: string | null;
   readonly aspectRatio?: string | null;
@@ -380,7 +393,7 @@ export function resolutionChoices(input: {
       ? choices.filter((label) =>
           outputs.some(
             (item) =>
-              item.resolution === label && item.durations.includes(duration),
+              item.resolution === label && durationMatches(duration, item.durations, input.fractionalDuration),
           ),
         )
       : choices;

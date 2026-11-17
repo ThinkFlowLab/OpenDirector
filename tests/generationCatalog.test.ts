@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createNode } from "../src/canvas/model.ts";
 import {
+  h3FrameCount,
   changeGenerationSettings,
   generationActiveReferences,
   generationBlocker,
@@ -268,4 +269,10 @@ test("image discounts and music observations are references, with unknown combin
     }),
     null,
   );
+});
+
+test("H3 output preview matches upward frame alignment and round-to-even ties", () => {
+  for (const [seconds, frames] of [[4, 107], [107 / 24, 107], [4.5, 124], [5, 124], [15, 362], [124.5 / 24, 124]]) {
+    assert.equal(h3FrameCount(seconds), frames);
+  }
 });

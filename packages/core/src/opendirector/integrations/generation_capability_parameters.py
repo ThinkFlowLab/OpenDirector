@@ -29,6 +29,8 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
             # The generic OpenAI generation provider does not transmit its
             # internal response_format/output_format preparation defaults.
             result = dict(size=size if 'x' in size else '1024x1024')
+            if profile == 'openai-gpt-image' and parameters.get('quality', 'auto') != 'auto':
+                result['quality'] = parameters['quality']
             if profile == 'moss-image':
                 result.update(response_format='url', prompt_enhance=False)
         if not has_images:
@@ -50,8 +52,13 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
             result = capability_parameters(*generation_fields(parameters, video_mode, has_images=has_images,
                 has_audio=has_audio, continue_size=continue_size))
         elif profile == 'fasth3-omni':
-            result = dict(seconds=float(parameters.get('seconds', 5)), size=parameters.get('size', '832x480'),
-                          num_inference_steps=8, guidance_scale=1, fps=24, seed=parameters.get('seed', 1234))
+            from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
+            result = {}
+            if any(key in parameters for key in ('duration', 'seconds', 'num_frames')):
+                result.update(video_frame_parameters(float(parameters.get('duration', parameters.get('seconds', 5))),
+                    parameters.get('fps', FPS), parameters.get('num_frames')))
+            result.update(size=parameters.get('size', '832x480'), num_inference_steps=8, guidance_scale=1,
+                          fps=24, seed=parameters.get('seed', 1234), task='ref2va', audio_flow_shift=3)
         else:
             result = {key: parameters[key] for key in ('size',) if key in parameters}
             if 'duration' in parameters:

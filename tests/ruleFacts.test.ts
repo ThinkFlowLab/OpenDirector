@@ -7,6 +7,7 @@ import { GENERATION_RATIOS } from "../src/canvas/generationCatalog.ts";
 import {
   RULE_DERIVATION_VECTORS,
   RULE_FACTS,
+  durationMatches,
   aspectRatioChoices,
   effectiveVideoMode,
   generateAudioOptions,
@@ -127,4 +128,17 @@ test("one function assigns persisted reference roles from canvas slots", () => {
     }),
     "reference",
   );
+});
+
+
+test("fractional video duration follows the published capability", () => {
+  assert.equal(durationMatches(6.583333, [4, 15], true), true);
+  assert.equal(durationMatches(6.583333, [4, 15]), false);
+  assert.equal(durationMatches(15.001, [4, 15], true), false);
+  assert.deepEqual(resolutionChoices({
+    kind: "video", videoMode: "reference", hasImageReference: false,
+    imageOutputs: [], outputResolutions: ["480P"], referenceImageResolutions: null,
+    durationSeconds: 6.583333, fractionalDuration: true,
+    capabilityOutputs: [{ resolution: "480P", durations: [4, 15] }],
+  }), ["auto", "480P"]);
 });

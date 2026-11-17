@@ -13,8 +13,8 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, send, ver
 
 
-def clip(seconds=2, size='64x64'):
-    return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color=blue:s={size}:r=24',
+def clip(seconds=2, size='64x64', color='blue'):
+    return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color={color}:s={size}:r=24',
         '-t', str(seconds), '-threads', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
         '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1'], check=True, capture_output=True).stdout
 
@@ -295,3 +295,62 @@ def test_atomic_text_save_and_publication_is_rejected_before_it_can_change_rende
         ])
     assert store.snapshot(pid) == before
     assert next(a for a in before.assets if a.id == output.id).provenance.source == 'upload'
+
+
+@pytest.mark.parametrize('actor', ['ui', 'agent'])
+def test_repeat_render_keeps_output_identity_and_versions(project, actor):
+    from opendirector.application.creation_history import CreationHistory
+    from opendirector.domain.creation.commands import parse_command
+    store, pid, session = project
+    _, first, versions, payload = prepared(project)
+    assert send(store, pid, 'timeline.publishRender', session=session, versions=versions, **payload).status == 'applied'
+    before = store.snapshot(pid)
+    target = before.canvasItems[-1]
+    record = CreationToolAssets(store).import_file(pid, uuid4(), 'second-render.mp4', clip(color='red'), session,
+                                                  provenance=AssetProvenance(source='upload'))
+    second = CreationToolAssets(store).assets.get(pid, record['id'])
+    source, editor = before.canvasItems[0], before.editorDocuments[0]
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='timeline.publishRender',
+        expectedVersions=[ver('canvas_item', source), ver('editor_document', editor), ver('asset', second), ver('canvas_item', target)],
+        payload={**payload, 'asset': asset_ref(second), 'expectedOutputRevision': target.revision}))
+    receipt = store.execute(command, session=session, source=actor)
+    assert receipt.status == 'applied', receipt
+    snapshot = store.snapshot(pid)
+    outputs = [item for item in snapshot.canvasItems if item.kind == 'video']
+    assert len(outputs) == 1
+    assert outputs[0].id == target.id
+    assert outputs[0].binding.objectRef.assetId == second.id
+    assert outputs[0].revision == target.revision + 1
+    assert outputs[0].position == target.position
+    assert snapshot.assets[-1].provenance.sourceItemId == source.id
+    history = CreationHistory(store)
+    listing = history.node_versions(pid, target.id)
+    assert {row['asset'].id for row in listing['versions']} == {first.id, second.id}
+    assert CreationProjects(LocalProjects(store.local.repository)).snapshot(pid) == snapshot
+    assert store.execute(command, session=session, source=actor) == receipt
+
+    restored = send(store, pid, 'canvas.applyVersion', session=session,
+                    versions=listing['expectedVersions'], itemId=target.id, asset=asset_ref(first))
+    assert restored.status == 'applied', restored
+    assert store.snapshot(pid).canvasItems[-1].binding.objectRef.assetId == first.id
+
+
+@pytest.mark.parametrize('change', ['locked', 'stale'])
+def test_repeat_render_respects_output_lock_and_revision(project, change):
+    store, pid, session = project
+    _, _, versions, payload = prepared(project)
+    assert send(store, pid, 'timeline.publishRender', session=session, versions=versions, **payload).status == 'applied'
+    target = store.snapshot(pid).canvasItems[-1]
+    record = CreationToolAssets(store).import_file(pid, uuid4(), 'next-render.mp4', clip(color='red'), session,
+                                                  provenance=AssetProvenance(source='upload'))
+    output = CreationToolAssets(store).assets.get(pid, record['id'])
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', target)],
+                itemId=target.id, **({'locked': True} if change == 'locked' else {'title': 'Renamed'})).status == 'applied'
+    snapshot = store.snapshot(pid)
+    expected = snapshot.canvasItems[-1] if change == 'locked' else target
+    receipt = send(store, pid, 'timeline.publishRender', session=session,
+        versions=[ver('canvas_item', snapshot.canvasItems[0]), ver('editor_document', snapshot.editorDocuments[0]),
+                  ver('asset', output), ver('canvas_item', expected)],
+        **{**payload, 'asset': asset_ref(output), 'expectedOutputRevision': expected.revision})
+    assert receipt.status == 'rejected'
+    assert store.snapshot(pid) == snapshot

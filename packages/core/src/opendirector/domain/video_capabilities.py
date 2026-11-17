@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.minimax_models import MINIMAX_MODELS, minimax_capabilities
 from opendirector.domain.kling_models import kling_capabilities
 from opendirector.domain.bigmodel_video import cogvideo_capabilities, validate_cogvideo_outputs
@@ -97,6 +98,8 @@ def capability_fields(config, rules):
         validate_cogvideo_outputs(capabilities)
     if rules['profile'] == 'kling-official':
         validate_kling_outputs(capabilities, config['modelId'])
+    if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'}:
+        rules['fractionalDuration'] = True
     rules['videoCapabilities'] = capabilities
     rules['outputResolutions'] = [item['resolution'] for item in capabilities['outputs']] if capabilities else []
     return rules
@@ -153,9 +156,12 @@ def check_video_config(kind, protocol, adapter, capabilities):
 
 def validate_video_duration(config, seconds, resolution=None):
     from opendirector.domain.input_rules import input_rules
-    capabilities = input_rules(config).get('videoCapabilities')
+    rules = input_rules(config)
+    if config.get('protocol') == 'vllm_omni' and not rules.get('fractionalDuration', False) and not float(seconds).is_integer():
+        raise ProjectError('当前模型的分辨率与时长组合不受支持，请重新选择；未提交生成。')
+    capabilities = rules.get('videoCapabilities')
     if capabilities:
         choices = [item for item in capabilities['outputs']
                    if not resolution or resolution in {'auto', '自动'} or item['resolution'] == resolution.upper()]
-        if not any(seconds in item['durations'] for item in choices):
+        if not any(duration_matches(seconds, item['durations'], rules.get('fractionalDuration', False)) for item in choices):
             raise ProjectError('当前模型的分辨率与时长组合不受支持，请重新选择；未提交生成。')

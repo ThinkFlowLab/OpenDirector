@@ -30,11 +30,11 @@ def clip():
 
 
 @contextmanager
-def video_service(clip, mode):
+def video_service(clip, mode, *, model='MiniMaxAI/MiniMax-H3', generation_limit=None):
     state = {'mode': mode, 'queries': 0, 'posts': []}
     def declaration():
         value = document('video_generation', 'video_to_video', '/v1/videos', 'video',
-                         model='MiniMaxAI/MiniMax-H3', now=time.time())
+                         model=model, now=time.time())
         operation = value['models'][0]['operations']['video_generation']
         profile = operation['profiles'][0]
         profile['required_inputs'] = ['video']
@@ -49,6 +49,11 @@ def video_service(clip, mode):
             profile['support'] = 'unknown'
         route = profile['routes'][0]
         route.update(exposure='enabled', request={'inputs': roles, 'parameters': {}})
+        if generation_limit is not None:
+            profile.update(id='text_to_video', required_inputs=['text'])
+            route['request'] = {'parameters': {
+                'num_frames': {'type': 'integer', 'maximum': generation_limit},
+                'seconds': {'support': 'unsupported'}, 'duration': {'support': 'unsupported'}}}
         if state['mode'] == 'task_denied':
             route['request']['parameters']['task'] = {'type': 'string', 'enum': ['ref2va']}
         if state['mode'] == 'frames_denied':
@@ -96,6 +101,55 @@ def video_service(clip, mode):
         server.shutdown()
         server.server_close()
         worker.join()
+
+
+@pytest.mark.parametrize('model', ['MiniMaxAI/MiniMax-H3', 'FastH3-Omni'])
+@pytest.mark.parametrize('seconds,frames,maximum', [(4.33, 104, 103), (4.33, 104, 104), (5, 120, 120), (107 / 24, 107, 107)])
+def test_generation_frame_limit_matches_http_and_saved_execution(generation_project, clip, model, seconds, frames, maximum):
+    from generation_helpers import command
+    from opendirector.application.creation_generation import CreationGeneration
+    from opendirector.integrations.generation_capability_parameters import generation_capability_parameters
+    from opendirector.integrations.providers import GenerationProviders
+    from test_request_capability_acceptance import submit
+
+    store, pid, session = generation_project
+    with video_service(clip, 'generation', model=model, generation_limit=maximum) as (url, state):
+        configs = ModelConfigs(store.local.repository)
+        config = configs.save('video', url, model, '', connection_type='self_hosted', protocol='vllm_omni', auth_mode='none')
+        probe = CapabilityProbe(transport=httpx.HTTPTransport())
+        runner = CreationGeneration(store, configs, availability=ModelAvailability(configs, probe))
+        runner.provider = GenerationProviders(runner.store, poll_interval=0)
+        mode = 'reference' if model == 'FastH3-Omni' else 'first_frame'
+        request = command(generation_project, config, parameters={'durationSeconds': seconds, 'videoMode': mode})
+        before = store.snapshot(pid)
+        try:
+            receipt = submit('http', generation_project, runner, probe, request)
+            after = store.snapshot(pid)
+            assert receipt['status'] == ('accepted' if frames <= maximum else 'rejected'), receipt
+            if frames > maximum:
+                assert receipt['issues'][0]['code'] == 'capability_unavailable'
+                assert receipt['issues'][0]['message'] == '帧数不符合服务要求。'
+                assert not after.jobs and not state['posts'] and after.assets == before.assets
+                return
+            job = after.jobs[0]
+            assert job.status == 'succeeded' and len(state['posts']) == 1
+            fields, _ = state['posts'][0]
+            checked = generation_capability_parameters(config, 'video', job.adapterParameters, video_mode=mode)
+            assert fields['num_frames'] == str(checked['num_frames']) == str(job.adapterParameters['num_frames']) == str(frames)
+            assert fields['fps'] == str(checked['fps']) == '24'
+            assert job.inputSnapshot.spec.parameters.durationSeconds == seconds
+            assert job.execution.numFrames == frames
+            assert 'seconds' not in checked and 'duration' not in checked
+            sent = {**fields, **json.loads(fields['extra_params'])}
+            assert {key: str(value) for key, value in checked.items() if key not in {'width', 'height'}} == {
+                key: str(value) for key, value in sent.items() if key not in {'model', 'prompt', 'extra_params', '_multipart'}}
+            # The returned five-second clip must retain its bytes even for a 4.33-second request.
+            assert runner.store.asset(str(pid), str(job.asset.assetId))[0] == clip
+            replay = submit('http', generation_project, runner, probe, request)
+            assert replay['jobIds'] == receipt['jobIds'] and len(state['posts']) == 1
+            assert store.snapshot(pid).jobs == after.jobs
+        finally:
+            probe.close()
 
 
 @pytest.mark.parametrize('maximum', [10, 124])

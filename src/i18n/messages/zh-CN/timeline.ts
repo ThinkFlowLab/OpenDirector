@@ -1,5 +1,11 @@
 /** Timeline editor, rendering, export and track labels. */
 export const timeline = {
+  "timeline.output.retry": "重试输出",
+  "timeline.output.title": "输出视频",
+  "timeline.output.shortcut": "输出视频 · ⌘Enter / Ctrl+Enter",
+  "timeline.output.keepOpen": "沿用已保存时间线的画幅和帧率。输出期间请保持页面打开。",
+  "timeline.output.publishing": "正在将视频加入画布…",
+  "timeline.output.otherPending": "请先完成或重试另一条时间线的输出。",
   "timeline.text.unsupportedExchange": "FCPXML 和 XML + 素材 ZIP 无法保留文字或字体。请使用可编辑包继续编辑，或使用 MP4 导出渲染视频。",
   "timeline.player.sourceUnavailable": "当前媒体来源不可用，请恢复素材文件后重试。",
   "timeline.package.export": "导出可编辑包",

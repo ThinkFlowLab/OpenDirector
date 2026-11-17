@@ -3,7 +3,7 @@ import asyncio
 import base64
 import json
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 import httpx
@@ -26,7 +26,7 @@ from test_voice_library import wav
 
 
 def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True, sampling_maximum=None,
-                  observation_age=0, pause_age=None, support='supported', minimum=None):
+                  observation_age=0, pause_age=None, support='supported', minimum=None, quality_enum=None):
     store, _, _ = project
     configs = ModelConfigs(store.local.repository)
     config = configs.save('image', 'http://images.test/v1', model, '',
@@ -49,6 +49,8 @@ def image_runtime(project, maximum, model='served-image-alias', *, declared_mode
     if sampling_maximum is not None:
         profile['routes'][0]['request']['parameters']['num_inference_steps'] = {
             'support': 'supported', 'type': 'integer', 'maximum': sampling_maximum}
+    if quality_enum is not None:
+        profile['routes'][0]['request']['parameters']['quality'] = {'type': 'string', 'enum': quality_enum}
     queries, posts = [], []
     def discover(request):
         queries.append(request)
@@ -144,6 +146,44 @@ def test_checked_image_parameters_match_serialized_request(project, model, editi
         assert {key: str(value) for key, value in checked.items() if key not in {'width', 'height'}} == {
             key: str(value) for key, value in wire.items() if key not in {'model', 'prompt'}}
         assert wire['size'] == f"{checked['width']}x{checked['height']}"
+    finally:
+        probe.close()
+
+
+@pytest.mark.parametrize('entry', ['http', 'agent'])
+@pytest.mark.parametrize('editing', [False, True])
+@pytest.mark.parametrize('quality,allowed,accepted', [('auto', ['low'], True), ('high', ['low'], False), ('high', ['high'], True)])
+def test_gpt_quality_checks_actual_request_and_keeps_accepted_execution(project, entry, editing, quality, allowed, accepted):
+    store, pid, session = project
+    allowed = list(allowed)
+    runner, config, probe, _, posts = image_runtime(project, 4, 'gpt-image-2', editing=editing, quality_enum=allowed)
+    sources = [upload(store, str(pid), session, 'source.png', png())] if editing else []
+    command = generation_command(project, config, parameters={'quality': quality}, references=sources)
+    before = store.snapshot(pid)
+    try:
+        receipt = submit(entry, project, runner, probe, command)
+        after = store.snapshot(pid)
+        assert receipt['status'] == ('accepted' if accepted else 'rejected'), receipt
+        if not accepted:
+            assert receipt['issues'][0]['code'] == 'capability_unavailable'
+            assert not after.jobs and not posts
+            assert after.assets == before.assets
+            return
+        job = after.jobs[0]
+        assert job.status == 'succeeded' and len(posts) == 1
+        checked = generation_capability_parameters(config, 'image', job.adapterParameters, has_images=editing)
+        wire, images = posts[0]
+        assert checked.get('quality') == wire.get('quality') == job.adapterParameters.get('quality')
+        assert wire.get('quality') == (None if quality == 'auto' else quality)
+        assert job.inputSnapshot.spec.parameters.quality == job.execution.quality == quality
+        assert len(images) == int(editing)
+        assert runner.store.asset(str(pid), str(job.asset.assetId))[0] == png()
+        # A new refusal cannot change the original receipt or repeat generation.
+        allowed[:] = ['low']
+        replay_command = command.model_copy(update={'commandId': UUID(receipt['commandId'])})
+        replay = submit('http', project, runner, probe, replay_command)
+        assert replay['jobIds'] == receipt['jobIds'] and len(posts) == 1
+        assert store.snapshot(pid).jobs == after.jobs
     finally:
         probe.close()
 

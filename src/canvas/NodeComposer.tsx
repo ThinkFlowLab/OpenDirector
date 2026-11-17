@@ -12,6 +12,7 @@ import { ComposerPopover } from "./ComposerPopover";
 import { DurationControl } from "./DurationControl";
 import { ReferenceThumbnail } from "./ReferenceThumbnail";
 import {
+  h3FrameCount,
   changeGenerationSettings,
   generationBlocker,
   generationModel,
@@ -121,6 +122,8 @@ export function NodeComposer({
   const config = backendModel(settings, backendModels);
   const voiceRequired = Boolean(config?.inputRules.voiceRequired);
   const voiceLibrary = config?.inputRules.voiceLibrary;
+  const imageQualities =
+    mode === "image" ? config?.inputRules.imageQualities : undefined;
   const serviceModels = backendModels.filter(
     (item) => item.kind === mode && isGenerationModel(item),
   );
@@ -795,6 +798,8 @@ export function NodeComposer({
           placement="above-anchor"
         >
           <DurationControl
+            fractional={!!config?.inputRules.fractionalDuration}
+            outputFrames={config?.inputRules.profile === "vllm-omni-h3" ? h3FrameCount(settings.durationSeconds) : undefined}
             values={durationValues}
             value={settings.durationSeconds}
             disabled={running}
@@ -890,6 +895,31 @@ export function NodeComposer({
                     {t("generation.field.waitCapabilities")}
                   </span>
                 )}
+              </div>
+            </div>
+          )}
+          {Boolean(imageQualities?.length) && (
+            <div className="cw-parameter-section">
+              <span className="cw-field-label">{t("generation.field.quality")}</span>
+              <div className="cw-segment-options">
+                {imageQualities?.map((quality) => (
+                  <button
+                    type="button"
+                    key={quality}
+                    aria-label={t("generation.field.qualityAria", {
+                      value: t(`generation.quality.${quality}`),
+                    })}
+                    className={
+                      (settings.imageQuality ?? "auto") === quality
+                        ? "cw-is-active"
+                        : ""
+                    }
+                    onClick={() => updateSettings({ imageQuality: quality })}
+                    aria-pressed={(settings.imageQuality ?? "auto") === quality}
+                  >
+                    {t(`generation.quality.${quality}`)}
+                  </button>
+                ))}
               </div>
             </div>
           )}

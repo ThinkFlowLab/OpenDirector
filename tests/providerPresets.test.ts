@@ -107,6 +107,69 @@ test("saved Beijing workspace connections retain their preset", () => {
   assert.equal(providerPresetFor({ ...model, kind: "image", url: workspace }), "custom");
 });
 
+test("both Kimi billing routes are offered as separate chat presets", () => {
+  // Token billing and the Kimi Code subscription use different base URLs and
+  // different keys, so one row cannot serve both.
+  const rows = [
+    ["kimi", "https://api.moonshot.cn/v1", "月之暗面 Kimi 开放平台", "Moonshot Kimi Open Platform"],
+    ["kimi-coding", "https://api.kimi.com/coding/v1", "月之暗面 Kimi Code 订阅", "Moonshot Kimi Code subscription"],
+  ] as const;
+  for (const [id, url, zh, en] of rows) {
+    const preset = PROVIDER_PRESETS.find((item) => item.id === id);
+    assert.ok(preset, id);
+    assert.deepEqual(preset.kinds, ["agent"]);
+    assert.equal(preset.url, url);
+    assert.equal(preset.connectionType, "api");
+    assert.equal(preset.protocol, "openai");
+    assert.equal(preset.authMode, "bearer");
+    assert.equal(preset.logoOrganization, "moonshotai");
+    // Omitting modelsByKind keeps live /models discovery, so the picker lists the
+    // models the entered key can actually reach instead of a hardcoded snapshot.
+    assert.equal(preset.modelsByKind, undefined);
+    const previous = getActiveLocale();
+    try {
+      for (const [locale, label] of [["zh-CN", zh], ["en-US", en]] as const) {
+        setActiveLocale(locale);
+        assert.equal(providerOptions("agent").find((item) => item.id === id)?.name, label);
+      }
+    } finally {
+      setActiveLocale(previous);
+    }
+    for (const kind of ["image", "video", "audio"] as const)
+      assert.equal(providerOptions(kind).some((item) => item.id === id), false);
+  }
+  // Distinct names keep the two routes distinguishable in the picker.
+  assert.notEqual(
+    PROVIDER_PRESETS.find((item) => item.id === "kimi")?.name,
+    PROVIDER_PRESETS.find((item) => item.id === "kimi-coding")?.name,
+  );
+});
+
+test("saved Moonshot connections retain their preset on the mainland endpoint only", () => {
+  const model: ModelConfig = {
+    id: "saved-kimi", kind: "agent", modelId: "kimi-k3", connectionType: "api",
+    protocol: "openai", authMode: "bearer", url: "https://api.moonshot.cn/v1",
+    inputRules: { profile: "agent", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] },
+  };
+  assert.equal(providerPresetFor(model), "kimi");
+  assert.equal(providerPresetFor({ ...model, url: "https://api.moonshot.cn/v1/" }), "kimi");
+  // A saved Kimi Code connection must not fall back to the open-platform row.
+  assert.equal(providerPresetFor({ ...model, url: "https://api.kimi.com/coding/v1" }), "kimi-coding");
+  assert.equal(providerPresetFor({ ...model, url: "https://api.kimi.com/coding/v1/" }), "kimi-coding");
+  for (const url of [
+    // Kimi Code is matched on its own base URL only.
+    "https://api.kimi.com/v1",
+    "https://api.kimi.com/coding/v1/chat/completions",
+    // The international endpoint is a separately tracked row in #240.
+    "https://api.moonshot.ai/v1",
+    "https://api.moonshot.cn/v1/chat/completions",
+    "https://proxy.example.org/v1",
+  ]) {
+    assert.equal(providerPresetFor({ ...model, url }), "custom");
+  }
+  assert.equal(providerPresetFor({ ...model, kind: "image", url: "https://api.moonshot.cn/v1" }), "custom");
+});
+
 test("MOSS presets offer the supported image and speech models by kind", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "moss");
   assert.ok(preset);

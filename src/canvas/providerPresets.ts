@@ -9,6 +9,8 @@ const EN_NAMES: Record<string, string> = {
   "MiniMax 官方视频": "MiniMax official video",
   "智谱 BigModel": "Zhipu BigModel",
   "阿里云百炼（北京）": "Alibaba Cloud Model Studio (Beijing)",
+  "月之暗面 Kimi 开放平台": "Moonshot Kimi Open Platform",
+  "月之暗面 Kimi Code 订阅": "Moonshot Kimi Code subscription",
   "可灵官方视频": "Kling official video",
   "MiniMax 官方图片": "MiniMax Official Images",
   "MiniMax 官方语音": "MiniMax Official Speech",
@@ -179,6 +181,28 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     connectionType: "api",
     authMode: "bearer",
     modelsByKind: { agent: ["qwen3.8-max"] },
+  },
+  {
+    // Token billing on the open platform; keys come from platform.kimi.com.
+    id: "kimi",
+    logoOrganization: "moonshotai",
+    name: "月之暗面 Kimi 开放平台",
+    kinds: ["agent"],
+    url: "https://api.moonshot.cn/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+  },
+  {
+    // Subscription quota on Kimi Code; a separate key from the open platform one.
+    id: "kimi-coding",
+    logoOrganization: "moonshotai",
+    name: "月之暗面 Kimi Code 订阅",
+    kinds: ["agent"],
+    url: "https://api.kimi.com/coding/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
   },
   {
     id: "zhipu",
