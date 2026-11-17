@@ -18,6 +18,7 @@ export function AssistantConversations({
   onRefresh,
   onChange,
   onClose,
+  collapsible = true,
 }: {
   activeId?: string;
   hasMessages: boolean;
@@ -30,6 +31,7 @@ export function AssistantConversations({
   onRefresh: () => void;
   onChange: (id?: string, create?: boolean) => Promise<boolean>;
   onClose: () => void;
+  collapsible?: boolean;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -148,7 +150,7 @@ export function AssistantConversations({
           >
             <CanvasIcon name="history" size={18} />
           </TooltipButton>
-          <TooltipButton
+          {collapsible && <TooltipButton
             className="cw-assistant-collapse"
             label={t("assistant.sessions.collapse")}
             tooltipSide="bottom"
@@ -157,7 +159,7 @@ export function AssistantConversations({
             onClick={onClose}
           >
             <CanvasIcon name="collapse" size={18} />
-          </TooltipButton>
+          </TooltipButton>}
         </div>
       </header>
       {open && (

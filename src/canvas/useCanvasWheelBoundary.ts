@@ -6,6 +6,7 @@ import { MIN_ZOOM, MAX_ZOOM } from "./model.ts";
 export function useCanvasWheelBoundary(
   root: RefObject<HTMLElement | null>,
   onNavigate: () => void,
+  enabled = true,
 ) {
   const flow = useReactFlow();
   const navigate = useRef(onNavigate);
@@ -19,6 +20,7 @@ export function useCanvasWheelBoundary(
     let pointer = { x: 0, y: 0 };
     const wheel = (event: WheelEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
+      if (!enabled || !(event.target instanceof Node) || !root.current?.contains(event.target)) return;
       // A React wheel handler can be passive. Capture natively so browser page
       // zoom is cancelled even over controls rendered through a portal.
       event.preventDefault();
@@ -68,5 +70,5 @@ export function useCanvasWheelBoundary(
       document.removeEventListener("wheel", wheel, true);
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [root, flow]);
+  }, [root, flow, enabled]);
 }

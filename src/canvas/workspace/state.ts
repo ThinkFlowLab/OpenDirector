@@ -250,7 +250,7 @@ export function createWorkspaceState(): WorkspaceState {
     welcomeOpen: false,
     activeGenerations: [],
     arrivingNodes: new Set(),
-    assistantOpen: false,
+    assistantOpen: true,
     assistantSelectionRequest: 0,
     presentationFocus: 0,
     zoom: 1,

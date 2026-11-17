@@ -281,15 +281,22 @@ export function AgentPicker({
   }, [open, editing, editingModel, setup]);
   useLayoutEffect(() => {
     if ((!editing && !editingModel) || !submenu.current || !menu.current) return;
-    const bounds = menu.current.getBoundingClientRect();
     const layer = submenu.current;
-    layer.style.left = `${Math.max(8, bounds.left - 310)}px`;
-    layer.style.bottom = `${window.innerHeight - bounds.bottom}px`;
+    const position = () => {
+      const bounds = menu.current!.getBoundingClientRect();
+      const left = bounds.right + 310 <= window.innerWidth - 8 ? bounds.right + 10 : bounds.left - 310;
+      layer.style.left = `${Math.max(8, Math.min(left, window.innerWidth - 308))}px`;
+      layer.style.bottom = `${window.innerHeight - bounds.bottom}px`;
+    };
+    position();
     layer.showPopover();
-    const reposition = () => { setEditing(null); setEditingModel(null); };
-    window.addEventListener("resize", reposition);
+    const observer = new ResizeObserver(position);
+    const host = menu.current.closest(".cw-assistant-panel");
+    if (host) observer.observe(host);
+    window.addEventListener("resize", position);
     return () => {
-      window.removeEventListener("resize", reposition);
+      observer.disconnect();
+      window.removeEventListener("resize", position);
     };
   }, [editing, editingModel]);
   function keys(event: KeyboardEvent<HTMLDivElement>) {

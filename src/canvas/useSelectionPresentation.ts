@@ -28,6 +28,7 @@ export function useSelectionPresentation({
   controlsKey,
   preferredZoom,
   scaleComposer = false,
+  preserveViewportKey = "",
 }: {
   root: RefObject<HTMLDivElement | null>;
   toolbar: RefObject<HTMLDivElement | null>;
@@ -42,6 +43,8 @@ export function useSelectionPresentation({
   /** Dedicated media editing may enlarge its source; ordinary selection preserves zoom. */
   preferredZoom?: number;
   scaleComposer?: boolean;
+  /** Layout changes update control placement while preserving the user's viewport. */
+  preserveViewportKey?: string;
 }) {
   const flow = useReactFlow();
   const viewport = useViewport();
@@ -127,6 +130,8 @@ export function useSelectionPresentation({
   }, [root, toolbar, composer, measurementKey, scaleComposer]);
 
   const lastLayout = useRef("");
+  const lastPresentation = useRef({ layout: preserveViewportKey, intent: "" });
+  const preservedIntent = useRef<string | null>(null);
   const origin = useRef<{ key: string; viewport: Viewport } | null>(null);
   const animation = useRef<symbol | null>(null);
   const stopPresentation = useCallback(() => {
@@ -150,6 +155,12 @@ export function useSelectionPresentation({
   };
   useLayoutEffect(() => stopPresentation, [stopPresentation]);
   useLayoutEffect(() => {
+    const intent = JSON.stringify([nodeId, focusRequest, panel]);
+    if (lastPresentation.current.layout !== preserveViewportKey) {
+      preservedIntent.current = intent;
+      lastPresentation.current = { layout: preserveViewportKey, intent };
+      origin.current = { key: intent, viewport: flow.getViewport() };
+    }
     if (!bounds || blocked || obscured) stopPresentation();
     // A new node must not be fitted using the previous node's generator height.
     if (measurement.key !== measurementKey) return;
@@ -164,7 +175,11 @@ export function useSelectionPresentation({
     if (!bounds || blocked || obscured || chrome.safe.width === 0) return;
     lastLayout.current = key;
     const current = flow.getViewport();
-    const intent = JSON.stringify([nodeId, focusRequest, panel]);
+    if (preservedIntent.current === intent) {
+      stopPresentation();
+      return;
+    }
+    preservedIntent.current = null;
     if (origin.current?.key !== intent)
       origin.current = {
         key: intent,
@@ -202,6 +217,7 @@ export function useSelectionPresentation({
     measurement.key,
     measurementKey,
     preferredZoom,
+    preserveViewportKey,
   ]);
 
   const placement = bounds

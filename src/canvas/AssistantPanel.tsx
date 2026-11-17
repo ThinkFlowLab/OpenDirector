@@ -61,6 +61,7 @@ export function AssistantPanel({
   visibleNodes,
   selectedNodes,
   open,
+  collapsible = true,
   layout,
   selectionRequest,
   onClose,
@@ -76,6 +77,7 @@ export function AssistantPanel({
   visibleNodes: CanvasNode[];
   selectedNodes: CanvasNode[];
   open: boolean;
+  collapsible?: boolean;
   layout: AssistantLayout;
   selectionRequest: number;
   onClose: () => void;
@@ -346,7 +348,7 @@ export function AssistantPanel({
           event.preventDefault();
           event.stopPropagation();
           if (mediaPreview) setMediaPreview(null);
-          else onClose();
+          else if (collapsible) onClose();
         }
       }}
       onDragOver={(event) => {
@@ -385,6 +387,7 @@ export function AssistantPanel({
         }
         onChange={changeConversation}
         onClose={onClose}
+        collapsible={collapsible}
       />
       <div
         className="cw-assistant-log"
@@ -782,7 +785,7 @@ export function AssistantPanel({
           )}
         </div>
       </div>
-      {!layout.mobile && (
+      {collapsible && !layout.mobile && (
         <div
           className="cw-assistant-resizer"
           role="separator"

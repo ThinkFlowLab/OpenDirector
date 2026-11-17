@@ -27,10 +27,14 @@ export function SelectionBarAnchor({
   const viewport = useViewport();
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [region, setRegion] = useState({ width: window.innerWidth, height: window.innerHeight });
   useLayoutEffect(() => {
     if (!element) return;
     const measure = () => {
       const rect = element.getBoundingClientRect();
+      const host = element.closest(".cw-canvas-region")?.getBoundingClientRect();
+      if (host) setRegion(current => current.width === host.width && current.height === host.height
+        ? current : { width: host.width, height: host.height });
       setSize((current) =>
         current.width === rect.width && current.height === rect.height
           ? current
@@ -40,17 +44,19 @@ export function SelectionBarAnchor({
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    const host = element.closest(".cw-canvas-region");
+    if (host) observer.observe(host);
     return () => observer.disconnect();
   }, [element]);
   const bounds = boundsOfNodes(nodes, allNodes);
   if (!bounds) return null;
-  const narrow = window.innerWidth < 700;
+  const narrow = region.width < 700;
   const left = narrow ? SAFE_LEFT_NARROW : SAFE_LEFT;
   const safe = {
     x: left,
     y: SAFE_TOP,
-    width: Math.max(1, window.innerWidth - left - SAFE_RIGHT),
-    height: Math.max(1, window.innerHeight - SAFE_TOP - SAFE_BOTTOM),
+    width: Math.max(1, region.width - left - SAFE_RIGHT),
+    height: Math.max(1, region.height - SAFE_TOP - SAFE_BOTTOM),
   };
   // Node coordinates start at the media frame; the title sits above it.
   const envelope = {
