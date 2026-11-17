@@ -49,11 +49,17 @@ test("canvas link messages resolve in both locales without leaking the other lan
   }
 });
 
-test("canvas link outcome copy names the user-visible action", () => {
+test("canvas link outcome copy states the condition without promising an action", () => {
   // Hidden links focus their node (which the workspace reveals); only
   // outcomes that cannot focus have a hint, so there is no hidden hint key.
-  assert.equal(translate("en-US", "assistant.reply.canvasLink.materialize"), "Show on canvas");
-  assert.equal(translate("zh-CN", "assistant.reply.canvasLink.materialize"), "在画布中显示");
+  // Clicking does not materialize an item or open a candidate picker, so the
+  // copy must not instruct the user to "show" or "choose".
+  assert.equal(translate("en-US", "assistant.reply.canvasLink.materialize"),
+    "This item is not on the canvas yet.");
+  assert.equal(translate("zh-CN", "assistant.reply.canvasLink.materialize"),
+    "该对象尚未放置在画布中。");
+  assert.doesNotMatch(translate("en-US", "assistant.reply.canvasLink.ambiguous"), /choose/i);
+  assert.doesNotMatch(translate("zh-CN", "assistant.reply.canvasLink.ambiguous"), /请选择/);
 });
 
 test("a standalone mention renders as a clickable canvas reference", () => {

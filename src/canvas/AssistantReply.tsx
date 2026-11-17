@@ -2,13 +2,13 @@ import { memo, useMemo, useState } from "react";
 import type { ComponentProps } from "react";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
 import type { Components, LinkSafetyModalProps, StreamdownProps } from "streamdown";
-import type { Element, Root } from "hast";
 import type { ChatMessage, ChatTool } from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { AssistantLinkInfo } from "./AssistantLinkInfo";
-import { canvasLinkClickAction } from "./assistantCanvasLink";
+import { applyCanvasLinkClick } from "./assistantCanvasLink";
+import { prepareCanvasReferences, renderCanvasReferences } from "./canvasReferences.ts";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
 import { assistantCitationFormatter } from "./assistantCitations.ts";
@@ -21,38 +21,6 @@ const STATUS: Record<ChatTool["status"], MessageKey> = {
   failed: "assistant.reply.status.failed",
   interrupted: "assistant.reply.status.interrupted",
 };
-
-function canvasReferencePlugin({ targets, prepare }: { targets: string[]; prepare: boolean }) {
-  const placeholders = new Map(targets.map((target, index) =>
-    [target, `https://opendirector.invalid/canvas-reference/${index}`]));
-  const originals = new Map(Array.from(placeholders, ([target, placeholder]) => [placeholder, target]));
-  return (tree: Root) => {
-    const visit = (parent: Root | Element) => {
-      for (const child of parent.children) {
-        if (child.type !== "element") continue;
-        if (child.tagName === "a") {
-          const href = String(child.properties.href);
-          if (prepare && placeholders.has(href)) {
-            child.properties.href = placeholders.get(href);
-          } else if (!prepare && originals.has(href)) {
-            child.tagName = "canvas-reference";
-            child.properties.href = originals.get(href);
-          }
-        }
-        visit(child);
-      }
-    };
-    visit(tree);
-  };
-}
-
-function prepareCanvasReferences(options: { targets: string[] }) {
-  return canvasReferencePlugin({ ...options, prepare: true });
-}
-
-function renderCanvasReferences(options: { targets: string[] }) {
-  return canvasReferencePlugin({ ...options, prepare: false });
-}
 
 function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
   return (
@@ -158,14 +126,10 @@ export const AssistantReply = memo(function AssistantReply({
         if (!link) return <span>{children}</span>;
         return <a href="#" onClick={(event) => {
           event.preventDefault();
-          const action = canvasLinkClickAction(link);
-          if ("focus" in action) {
-            onCanvasLink?.(action.focus);
-            setCanvasHint(null);
-          } else {
-            setCanvasHint(t(action.hintKey)
-              + (action.projectId ? ` · ${action.projectId}` : ""));
-          }
+          const hint = applyCanvasLinkClick(link, (nodeId) => onCanvasLink?.(nodeId));
+          setCanvasHint(hint
+            ? t(hint.hintKey) + (hint.projectId ? ` · ${hint.projectId}` : "")
+            : null);
         }}>{children}</a>;
       },
     };

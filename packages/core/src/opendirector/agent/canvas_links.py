@@ -37,20 +37,29 @@ def link_targets(text: str) -> list[str]:
     return targets
 
 
-_MENTION_TRAILING = '.:"\'\uff09\uff1a'
+# Full-width punctuation that always ends a mention, even mid-sentence:
+# "\u53c2\u89c1@\u6807\u9898\u3001\u7136\u540e\u7ee7\u7eed", "\u201c@\u6807\u9898\u201d\u6548\u679c\u4e0d\u9519", "\uff08@\u6807\u9898\uff09\u8bf7\u7ee7\u7eed".
+_MENTION_END_ANY = '\u3001\u201d\u2026\u2014\uff09\u300d\u300f\u3011\u300b\u3009'
+# ASCII sentence punctuation only ends a mention at the end of the text or
+# before whitespace, so a title such as ``Chapter 2.1`` keeps its punctuation.
+_MENTION_END_AFTER_SPACE = '.:"\'\uff1a'
 
 
-def _mention_name(value: str) -> str:
+def _mention_base(value: str) -> str:
     """Trim a mention at the first sentence punctuation that ends it.
 
     A period or colon followed by whitespace (or the end of the text) ends the
     mention, so ``@Finished note. Next step`` resolves ``Finished note``. An
     internal period such as ``Chapter 2.1`` stays part of the title because it
-    is not followed by whitespace.
+    is not followed by whitespace. Full-width closing punctuation ends the
+    mention wherever it appears.
     """
     value = value.strip()
     for index, char in enumerate(value):
-        if char in _MENTION_TRAILING and (index + 1 == len(value) or value[index + 1].isspace()):
+        if char in _MENTION_END_ANY:
+            return value[:index].rstrip()
+        if char in _MENTION_END_AFTER_SPACE and (
+                index + 1 == len(value) or value[index + 1].isspace()):
             return value[:index].rstrip()
     return value.rstrip()
 
@@ -69,12 +78,14 @@ def _mention_targets(text: str) -> list[str]:
             elif child.type == 'text' and not in_link:
                 # The word boundary is ASCII-only, matching JavaScript's \w:
                 # CJK prose directly before a mention is not glued to it.
-                # Full-width punctuation such as the colon ends a mention even
-                # without following whitespace.
+                # Hard sentence punctuation ends the run here; softer trailing
+                # punctuation (period/colon/full-width closers) is kept in the
+                # raw mention so an exact title such as "@Dr. Smith" can win
+                # before the resolver trims it.
                 for match in re.finditer(
                         r"(?<![A-Za-z0-9_])@([^@\n,;!?()[\]{}<>`\u3002\uff1b\uff0c\uff01\uff1f\uff1a]+)",
                         child.content):
-                    targets.append('@' + _mention_name(match.group(1)))
+                    targets.append('@' + match.group(1).strip())
     return targets
 
 
@@ -309,11 +320,67 @@ def _resolve_name(name: str, snapshot: Any, turn_id: str | None, result: dict) -
 
 
 _PROSE_WORD = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*\Z")
+_CJK_CHARACTER = re.compile('[㐀-䶿一-鿿豈-﫿'
+                            '぀-ヿ가-힯]')
+
+
+def _title_candidates(value: str) -> list[str]:
+    """Ordered title candidates for a raw mention, most specific first.
+
+    The untrimmed mention is tried first so an exact title that itself
+    contains sentence punctuation ("@Dr. Smith", "@Note: Intro") is never
+    truncated to a shorter, different node. Only when no exact title matches
+    does resolution fall back to punctuation and trailing-prose trimming.
+    """
+    candidates: list[str] = []
+
+    def add(candidate: str) -> str:
+        candidate = candidate.strip()
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+        return candidate
+
+    add(value)
+    base = add(_mention_base(value))
+    # A mention in running prose can carry trailing words ("Chapter 2.1
+    # here"). Only strip an ordinary prose word: a number or label such as
+    # "@Scene 99 does not exist" may be part of a real title, so resolving
+    # the shorter node "Scene" would reference the wrong object.
+    candidate = base
+    while candidate:
+        head, _, tail = candidate.rpartition(' ')
+        if not head or not _PROSE_WORD.fullmatch(tail):
+            break
+        candidate = add(head)
+    return candidates
+
+
+def _known_title_prefix(name: str, snapshot: Any) -> str | None:
+    """Longest known title that starts a mention running into CJK prose.
+
+    Chinese prose has no spaces, so ``用@标题生成视频`` swallows the following
+    sentence into the mention. Only a CJK continuation enables this fallback;
+    an ASCII continuation (``@Scene 99``) stays unresolved rather than
+    referencing the unrelated shorter node ``Scene``.
+    """
+    best = None
+    for item in _items(snapshot):
+        title = str(getattr(item, 'title', '') or '')
+        if not title or len(title) >= len(name) or not name.startswith(title):
+            continue
+        if not _CJK_CHARACTER.match(name[len(title):]):
+            continue
+        if best is None or len(title) > len(best):
+            best = title
+    return best
 
 
 def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
-    candidate = name
-    while candidate:
+    candidates = _title_candidates(name)
+    prefix = _known_title_prefix(name, snapshot)
+    if prefix is not None and prefix not in candidates:
+        candidates.append(prefix)
+    for candidate in candidates:
         nodes = _unique([item for item in _items(snapshot)
                          if str(getattr(item, 'title', '')) == candidate])
         if len(nodes) == 1:
@@ -321,14 +388,6 @@ def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
         if len(nodes) > 1:
             return {**result, 'target': '@' + candidate, 'status': 'ambiguous',
                     'candidates': [_node_candidate(item) for item in nodes]}
-        # A mention in running prose can carry trailing words ("Chapter 2.1
-        # here"). Only strip an ordinary prose word: a number or label such as
-        # "@Scene 99 does not exist" may be part of a real title, so resolving
-        # the shorter node "Scene" would reference the wrong object.
-        head, _, tail = candidate.rpartition(' ')
-        if not head or not _PROSE_WORD.fullmatch(tail):
-            break
-        candidate = head
     return {**result, 'status': 'missing'}
 
 

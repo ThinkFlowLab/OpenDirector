@@ -6,6 +6,8 @@ export type CanvasLinkClick =
   | { focus: string }
   | { hintKey: MessageKey; projectId?: string };
 
+export type CanvasLinkHint = { hintKey: MessageKey; projectId?: string };
+
 /** Map a resolved link to its click behavior, split out for logic-level tests. */
 export function canvasLinkClickAction(link: ChatCanvasLink): CanvasLinkClick {
   if ((link.status === "focused" || link.status === "hidden") && link.nodeId) {
@@ -23,4 +25,20 @@ export function canvasLinkClickAction(link: ChatCanvasLink): CanvasLinkClick {
       ? { projectId: link.projectId }
       : {}),
   };
+}
+
+/**
+ * Apply a click: focus the referenced node, or return the hint to display.
+ * Split from the React handler so the rendered-reference path can be tested.
+ */
+export function applyCanvasLinkClick(
+  link: ChatCanvasLink,
+  focus: (nodeId: string) => void,
+): CanvasLinkHint | null {
+  const action = canvasLinkClickAction(link);
+  if ("focus" in action) {
+    focus(action.focus);
+    return null;
+  }
+  return action;
 }

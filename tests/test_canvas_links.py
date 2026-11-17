@@ -375,6 +375,67 @@ def test_ascii_word_glued_to_a_cjk_mention_stays_prose():
     assert canvas_links_for_text('abc@标题', snapshot(nodes=[item]), uuid4()) == []
 
 
+def test_exact_title_wins_before_sentence_punctuation_is_trimmed():
+    # "@Dr. Smith" must resolve the full title even when the shorter "Dr"
+    # exists; trimming first would persist the wrong node id.
+    short = node(uuid4(), title='Dr')
+    full = node(uuid4(), title='Dr. Smith')
+    note = node(uuid4(), title='Note')
+    intro = node(uuid4(), title='Note: Intro')
+    project = snapshot(nodes=[short, full, note, intro])
+    for text, expected in (('@Dr. Smith', full), ('@Note: Intro', intro)):
+        link, = canvas_links_for_text(text, project, uuid4())
+        assert link['status'] == 'focused'
+        assert link['target'] == text
+        assert link['nodeId'] == str(expected.id)
+
+
+@pytest.mark.parametrize(('text', 'title', 'expected_target'), [
+    ('参见@标题、然后继续', '标题', '@标题'),
+    ('“@标题”效果不错', '标题', '@标题'),
+    ('（@标题）请继续', '标题', '@标题'),
+    ('@标题…继续', '标题', '@标题'),
+    ('@标题—继续', '标题', '@标题'),
+    ('@标题」继续', '标题', '@标题'),
+    ('@标题】继续', '标题', '@标题'),
+    ('@Finished note）后续', 'Finished note', '@Finished note'),
+])
+def test_fullwidth_punctuation_ends_a_mention_mid_sentence(text, title, expected_target):
+    item = node(uuid4(), title=title)
+    link, = canvas_links_for_text(text, snapshot(nodes=[item]), uuid4())
+    assert link['status'] == 'focused'
+    assert link['target'] == expected_target
+    assert link['nodeId'] == str(item.id)
+
+
+@pytest.mark.parametrize('text', ['用@标题生成视频', '把@标题改一下'])
+def test_cjk_prose_after_a_mention_resolves_a_known_title_prefix(text):
+    # Chinese prose has no word separator, so the mention swallows the rest
+    # of the phrase; the longest known title prefix still resolves it.
+    item = node(uuid4(), title='标题')
+    link, = canvas_links_for_text(text, snapshot(nodes=[item]), uuid4())
+    assert link['status'] == 'focused'
+    assert link['target'] == '@标题'
+    assert link['nodeId'] == str(item.id)
+
+
+def test_cjk_prefix_fallback_uses_the_longest_known_title():
+    short = node(uuid4(), title='标题')
+    longer = node(uuid4(), title='标题生成')
+    link, = canvas_links_for_text('用@标题生成视频', snapshot(nodes=[short, longer]), uuid4())
+    assert link['target'] == '@标题生成'
+    assert link['nodeId'] == str(longer.id)
+
+
+def test_ascii_continuation_does_not_use_the_cjk_prefix_fallback():
+    # "Scene" is a prefix of "Scene2", but the continuation is not CJK prose;
+    # silently referencing "Scene" would be the wrong object.
+    item = node(uuid4(), title='Scene')
+    link, = canvas_links_for_text('@Scene2', snapshot(nodes=[item]), uuid4())
+    assert link['status'] == 'missing'
+    assert 'nodeId' not in link
+
+
 def test_bare_title_name_is_missing_and_only_mentions_resolve_titles():
     item = node(uuid4(), kind='group', title='Scene 1')
     project = snapshot(nodes=[item])
