@@ -23,6 +23,27 @@ import {
 
 setActiveLocale("zh-CN");
 
+test("image quality defaults from save receipts preserve upload and edit identity", () => {
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    setActiveLocale(locale);
+    const draft = createNode("image", undefined, {
+      settings: { ...generationDefaults("image"), modelConfigId: "image-model" },
+    });
+    const saved = { ...draft, data: { ...draft.data,
+      settings: { ...draft.data.settings!, imageQuality: "auto" as const } } };
+    assert.equal(uploadTargetUnchanged(saved, draft), true, locale);
+    assert.equal(uploadTargetUnchanged(draft, saved), true, locale);
+    assert.equal(generationEditIdentity(saved, []), generationEditIdentity(draft, []), locale);
+    for (const imageQuality of ["low", "medium", "high"] as const) {
+      const edited = { ...saved, data: { ...saved.data,
+        settings: { ...saved.data.settings, imageQuality } } };
+      assert.equal(uploadTargetUnchanged(edited, draft), false, imageQuality);
+      assert.notEqual(generationEditIdentity(edited, []), generationEditIdentity(draft, []));
+    }
+  }
+  setActiveLocale("zh-CN");
+});
+
 test("upload guards accept saved defaults but reject edits to content and settings", () => {
   const draft = createNode("image", undefined, {
     settings: { ...generationDefaults("image"), model: "Configured image model", modelConfigId: "image-model", resolution: "auto", voiceName: undefined },
