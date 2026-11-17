@@ -15,10 +15,13 @@ class PlatformWheel(bdist_wheel):
 
 
 setup(
-    packages=find_packages('packages/core/src') + find_packages('apps/api/src'),
+    packages=find_packages('packages/core/src') + find_packages('apps/api/src') +
+             ['opendirector.vllm_omni', 'opendirector._fasth3'],
     package_dir={'opendirector': 'packages/core/src/opendirector',
-                 'opendirector_api': 'apps/api/src/opendirector_api'},
-    package_data={'opendirector': ['_bundled/**/*']},
+                 'opendirector_api': 'apps/api/src/opendirector_api',
+                 'opendirector.vllm_omni': 'tools/vllm_omni',
+                 'opendirector._fasth3': 'tools/fasth3'},
+    package_data={'opendirector': ['_bundled/**/*'], 'opendirector.vllm_omni': ['profiles/*.json']},
     include_package_data=True,
     distclass=BundledDistribution,
     cmdclass={'bdist_wheel': PlatformWheel},

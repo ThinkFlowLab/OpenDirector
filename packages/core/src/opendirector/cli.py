@@ -22,10 +22,12 @@ from typer._click.exceptions import UsageError
 from opendirector.agent.tools import COMMANDS, command_help
 from opendirector.domain.creation.commands import COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.projects import ProjectError
+from opendirector.vllm_cli import app as vllm_omni_app
 
 app = typer.Typer(no_args_is_help=True, help="Start OpenDirector and create or edit projects.",
     epilog="Run opendirector COMMAND --help for subcommands and usage. "
            "Place --project, --url and other global options before the command.")
+app.add_typer(vllm_omni_app, name='vllm-omni')
 GROUP_HELP = {
     "project": "List, inspect, create, rename, trash or restore projects.",
     "model": "Inspect available model configurations and input capabilities.",

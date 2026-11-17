@@ -303,7 +303,11 @@ def download(args, profile):
     prepare(args.root)
     env = environment(args.root, hf_endpoint=args.hf_endpoint)
     if args.download_backend == 'ranges':
-        downloader = HERE.parent / 'fasth3/download_models.py'
+        if __package__ and __package__.startswith('opendirector.'):
+            from opendirector._fasth3 import download_models
+            downloader = Path(download_models.__file__).resolve()
+        else:
+            downloader = HERE.parent / 'fasth3/download_models.py'
         if not downloader.is_file():
             raise DeploymentError('ranged_downloader_unavailable')
         directory = args.root / 'range-models' / profile['id']
@@ -518,7 +522,7 @@ def stop(args, profile):
     return dict(status='stopped')
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--profile', default='zimage-bf16')
@@ -530,7 +534,7 @@ def main():
     parser.add_argument('--port', type=int, default=8091)
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('command', choices=['doctor', 'plan', 'install', 'download', 'start', 'status', 'stop'])
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.root = args.root.resolve()
     try:
         if args.command == 'doctor':

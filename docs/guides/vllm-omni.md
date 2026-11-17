@@ -5,33 +5,31 @@
 Use these optional tools on a Linux x86_64 GPU host with Python 3.12. OpenDirector
 and the model server have separate environments. Install OpenDirector using the
 [installation guide](installation.md); installing the application does not deploy
-models. See [validation evidence](../development/vllm-omni-validation.md) for the
-configurations actually exercised. Eligibility is not a claim that an untested
-GPU is supported.
+models. Eligibility is not a claim that an untested GPU is supported.
 The host needs an existing C++ compiler for CUDA JIT compilation, and `ffmpeg` /
 `ffprobe` for media checks. The helpers do not install system packages.
 
 For Agent assistance, load the repository's
 [deployment skill](../../.agents/skills/deploy-vllm-omni/SKILL.md) in an external
-coding Agent with authorized shell/SSH access. It follows the existing
-installation skill's source-checkout workflow. The deployment helpers and this
-skill are repository resources, separate from the application's bundled creative
-skills; installing the Python application alone does not ship these helpers.
+coding Agent with authorized shell/SSH access. The deployment tools and profiles
+are included in the OpenDirector package; model dependencies remain isolated.
 
 ## Inspect and select
 
-Run from the checkout. Choose a data disk with room for weights, the CUDA environment,
+After installing OpenDirector, use `opendirector vllm-omni --help`,
+`opendirector vllm-omni deploy --help` and `opendirector vllm-omni verify --help`
+to discover the commands. Choose a data disk with room for weights, the CUDA environment,
 caches and outputs. `doctor`, `plan` and `status` do not create directories or submit
 inference. An index refers to a physical device in `nvidia-smi`; use the returned
 UUID for subsequent operations. Respect the server's resource allocation and inherited
 `CUDA_VISIBLE_DEVICES`. Free memory alone does not allocate a shared GPU to you.
-If Python 3.12 is installed outside PATH, replace `python3.12` in these commands
-with that interpreter's absolute path. The model venv uses that interpreter by default.
+The model environment defaults to the interpreter running OpenDirector. If it is
+not Python 3.12, pass `--python /path/to/python3.12` to deployment commands.
 
 ```sh
 OMNI_ROOT=/path/to/data/opendirector-models
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" doctor
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID plan
+opendirector vllm-omni deploy --root "$OMNI_ROOT" doctor
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID plan
 ```
 
 The bundled `zimage-bf16` profile fixes a Z-Image-Turbo snapshot and the matching
@@ -56,10 +54,10 @@ use Hugging Face's cache/locks/resume support, a fixed revision and file hashes.
 No model service starts during installation or downloading.
 
 ```sh
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID install
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID download
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID start
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" status
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID install
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID download
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID start
+opendirector vllm-omni deploy --root "$OMNI_ROOT" status
 ```
 
 To select a mirror, add `--hf-endpoint https://your-trusted-mirror` before the
@@ -71,9 +69,8 @@ The SDK chooses its transfer backend. If your selected network cannot access Xet
 set `HF_HUB_DISABLE_XET=1` for that process; the tool preserves this setting.
 For a network with persistently slow or failing long transfers, add
 `--download-backend ranges` to `download`. This reuses
-`tools/fasth3/download_models.py` with an explicit complete manifest, preserving
-its original FastH3 defaults. Keep that file alongside `tools/vllm_omni` when
-copying tools to a remote host. `DOWNLOAD_WORKERS=16` bounds concurrent ranges;
+the packaged FastH3 range downloader with an explicit complete manifest, preserving
+its original FastH3 defaults. `DOWNLOAD_WORKERS=16` bounds concurrent ranges;
 proxy settings and the selected endpoint remain scoped to this process. Completed
 files and range journals are preserved. Do not run two transports concurrently
 for the same model. Existing weights may be copied into the selected profile's
@@ -93,7 +90,7 @@ Compilation caches for vLLM, TorchInductor, Triton and FlashInfer also stay unde
 the selected data directory; no shared home-directory cache is required.
 
 ```sh
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" stop
+opendirector vllm-omni deploy --root "$OMNI_ROOT" stop
 ```
 
 For TTS add `--profile qwen3-tts-06b` to the commands and use `--port 8092` for
@@ -110,10 +107,10 @@ original process before another action.
 
 ```sh
 # Health and model identity only; no inference or output files.
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT"
+opendirector vllm-omni verify --root "$OMNI_ROOT"
 # One real request, saved output, decoding and a verification receipt.
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --infer
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-tts-06b --infer
+opendirector vllm-omni verify --root "$OMNI_ROOT" --infer
+opendirector vllm-omni verify --root "$OMNI_ROOT" --profile qwen3-tts-06b --infer
 ```
 
 Inspect the PNG and listen to the MP3. Technical validation leaves creative review
@@ -160,8 +157,8 @@ memory utilization to 0.10, sequence length to 4096 and concurrent sequences to 
 The pinned image and TTS recipes continue using `--omni`.
 
 ```sh
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b \
+opendirector vllm-omni verify --root "$OMNI_ROOT" --profile qwen3-asr-06b
+opendirector vllm-omni verify --root "$OMNI_ROOT" --profile qwen3-asr-06b \
   --infer --audio-file /path/to/authorized-recording.mp3 \
   --expected-text 'The known recording transcript'
 ```
@@ -221,7 +218,7 @@ Commands emit JSON and exit 1 on a blocked plan or failure; argument errors exit
 | `server_exited`, `startup_pending` | Inspect the reported log and original process; do not start duplicate model loads. |
 | `cuda_linker_conflict` | Inspect the reported private runtime-library alias; preserve the conflicting file before correcting its target. |
 | `served_model_mismatch` | Correct the endpoint or served model identity; health alone does not establish compatibility. |
-| `service_not_started` | Run `status`/`start`, or supply `verify.py --url` for an existing service. |
+| `service_not_started` | Run `status`/`start`, or supply `opendirector vllm-omni verify --url` for an existing service. |
 | `audio_input_required`, `audio_input_unreadable`, `unsupported_audio_format`, `invalid_audio_input_size` | Supply a readable ASR input in a supported format, nonempty and at most 25 MiB. |
 | `invalid_comparison_text`, `comparison_requires_transcription` | Use a nonempty ASR reference with at most 4096 normalized characters; the option is only for transcription. |
 | `inference_result_unknown` | Inspect the saved receipt and server before deciding whether to start a new attempt. |

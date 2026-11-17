@@ -217,7 +217,7 @@ def verify(root, profile, *, infer=False, url=None, timeout=240, audio_file=None
     return report
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--profile', default='zimage-bf16')
@@ -226,7 +226,7 @@ def main():
     parser.add_argument('--timeout', type=int, default=240)
     parser.add_argument('--audio-file', type=Path, help='ASR input, at most 25 MiB. Required only for transcription --infer.')
     parser.add_argument('--expected-text', help='Optional reference for a character error measurement; never sent to the model.')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         result = verify(args.root.resolve(), load_profile(args.profile), infer=args.infer, url=args.url, timeout=args.timeout,
                         audio_file=args.audio_file, expected_text=args.expected_text)

@@ -4,24 +4,25 @@
 
 本流程面向 Linux x86_64、Python 3.12 的 GPU 主机。OpenDirector 与模型服务使用独立环境。
 应用安装参见[安装指南](installation.zh-CN.md)；安装应用本身不会部署模型。
-[验收记录](../development/vllm-omni-validation.md)列出实际测试组合。通过资源预检不代表未测试硬件已获支持。
+通过资源预检不代表未测试硬件已获支持。
 主机需已有用于 CUDA JIT 编译的 C++ 编译器，以及媒体检查所需的 `ffmpeg` / `ffprobe`；工具不安装系统软件包。
 
 需要 Agent 协助时，在具备已授权 shell/SSH 访问的外部编程 Agent 中加载仓库的
-[部署技能](../../.agents/skills/deploy-vllm-omni/SKILL.md)，沿用已有安装技能的源码流程。
-该技能与部署脚本作为仓库资源交付，与应用内置创作技能分开；仅安装 Python 应用不会附带这些脚本。
+[部署技能](../../.agents/skills/deploy-vllm-omni/SKILL.md)。部署工具与配方已包含在 OpenDirector 安装包中，
+无需源码目录；模型依赖仍安装在独立环境。
 
 ## 探测与选择
 
-在源码根目录执行。数据目录应能容纳权重、CUDA 环境、下载缓存、临时文件和输出。
+安装 OpenDirector 后，在目标主机执行 `opendirector vllm-omni --help` 查看命令，
+通过 `opendirector vllm-omni deploy --help` 和 `opendirector vllm-omni verify --help` 查看参数。数据目录应能容纳权重、CUDA 环境、下载缓存、临时文件和输出。
 `doctor`、`plan`、`status` 不创建目录，也不调用生成模型。索引对应 `nvidia-smi` 的物理设备，
 后续操作建议使用返回的 UUID。遵守共享服务器的资源分配和已有 `CUDA_VISIBLE_DEVICES`，空闲显存不等于已分配资源。
-如果 Python 3.12 已安装但不在 PATH 中，将命令里的 `python3.12` 换成该解释器的绝对路径；模型虚拟环境默认使用这个解释器。
+模型虚拟环境默认使用运行 OpenDirector 的 Python；若不是 3.12，使用 `--python /path/to/python3.12` 指定模型环境解释器。
 
 ```sh
 OMNI_ROOT=/path/to/data/opendirector-models
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" doctor
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID plan
+opendirector vllm-omni deploy --root "$OMNI_ROOT" doctor
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID plan
 ```
 
 默认 `zimage-bf16` 配方固定 Z-Image-Turbo 快照和配套的 vLLM / vLLM-Omni 0.32.0，
@@ -39,10 +40,10 @@ python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID plan
 下载复用 Hugging Face 的缓存、锁和续传机制，固定 revision 并核对文件哈希。安装和下载阶段不启动模型服务。
 
 ```sh
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID install
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID download
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" --gpu GPU-UUID start
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" status
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID install
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID download
+opendirector vllm-omni deploy --root "$OMNI_ROOT" --gpu GPU-UUID start
+opendirector vllm-omni deploy --root "$OMNI_ROOT" status
 ```
 
 如果需要镜像，在命令前添加 `--hf-endpoint https://your-trusted-mirror`，只对本次部署生效。
@@ -50,8 +51,8 @@ python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" status
 工具不修改全局包索引、驱动或系统 CUDA。
 传输方式由 SDK 选择；如果当前网络无法访问 Xet，可为该进程设置 `HF_HUB_DISABLE_XET=1`，工具会保留这个设置。
 长连接持续过慢或失败时，可为 `download` 增加 `--download-backend ranges`，复用
-`tools/fasth3/download_models.py` 的完整清单下载模式，保留它原来的 FastH3 默认行为。
-向远端复制工具时，也应保留这个文件。通过 `DOWNLOAD_WORKERS=16` 限定并行分段数，
+安装包内的 FastH3 分段下载器和完整清单下载模式，保留它原来的 FastH3 默认行为。
+通过 `DOWNLOAD_WORKERS=16` 限定并行分段数，
 代理和端点仍只对当前进程生效。保留已完成文件和分段日志，同一模型不要并发运行两种传输。
 已有权重可复制到该配方的分段下载目录，通过校验后复用；不能把其他检查点改名冒充当前模型。
 
@@ -63,7 +64,7 @@ python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" status
 vLLM、TorchInductor、Triton 和 FlashInfer 的编译缓存也保存在所选数据目录下。
 
 ```sh
-python3.12 tools/vllm_omni/deploy.py --root "$OMNI_ROOT" stop
+opendirector vllm-omni deploy --root "$OMNI_ROOT" stop
 ```
 
 部署 TTS 时，各命令增加 `--profile qwen3-tts-06b`，启动使用 `--port 8092`。
@@ -76,10 +77,10 @@ CustomVoice 使用 `vivian` 等内置音色；声音克隆需要不同的 Base �
 
 ```sh
 # 只检查服务健康与模型身份，不推理、不写输出。
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT"
+opendirector vllm-omni verify --root "$OMNI_ROOT"
 # 提交一次真实生成，保存产物、解码并记录验证回执。
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --infer
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-tts-06b --infer
+opendirector vllm-omni verify --root "$OMNI_ROOT" --infer
+opendirector vllm-omni verify --root "$OMNI_ROOT" --profile qwen3-tts-06b --infer
 ```
 
 请查看 PNG、试听 MP3。技术校验通过后，创作品质仍标为待审。
@@ -114,8 +115,8 @@ Z-Image 采样参数对齐见 [#230](https://github.com/ThinkFlowLab/OpenDirecto
 并发序列数为 4。图像和 TTS 配方仍使用 `--omni`。
 
 ```sh
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b
-python3.12 tools/vllm_omni/verify.py --root "$OMNI_ROOT" --profile qwen3-asr-06b \
+opendirector vllm-omni verify --root "$OMNI_ROOT" --profile qwen3-asr-06b
+opendirector vllm-omni verify --root "$OMNI_ROOT" --profile qwen3-asr-06b \
   --infer --audio-file /path/to/authorized-recording.mp3 \
   --expected-text '录音的已知逐字稿'
 ```
@@ -164,7 +165,7 @@ OpenDirector 当前没有语音转文字模型预设或自动 ASR 工具。不�
 | `server_exited`、`startup_pending` | 检查回执中的日志与原进程，不重复加载模型。 |
 | `cuda_linker_conflict` | 检查回执中的私有运行库链接，保留冲突文件，再纠正链接目标。 |
 | `served_model_mismatch` | 核对地址与模型身份；健康检查不能证明模型匹配。 |
-| `service_not_started` | 先运行 `status`/`start`，或为现有服务指定 `verify.py --url`。 |
+| `service_not_started` | 先运行 `status`/`start`，或为现有服务指定 `opendirector vllm-omni verify --url`。 |
 | `audio_input_required`、`audio_input_unreadable`、`unsupported_audio_format`、`invalid_audio_input_size` | 提供可读、格式受支持、非空且不超过 25 MiB 的 ASR 输入。 |
 | `invalid_comparison_text`、`comparison_requires_transcription` | 对照文本仅用于转录，应非空，规范化后不超过 4096 字符。 |
 | `inference_result_unknown` | 查阅保存的回执和服务端情况，再决定是否发起新尝试。 |

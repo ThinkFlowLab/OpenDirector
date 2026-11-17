@@ -11,17 +11,16 @@ A discussion or plan alone does not authorize installation or inference; an
 authorized deployment-and-validation request does not require confirmation at
 each routine step.
 
-Locate the requested OpenDirector checkout and revision. The executable tooling
-lives in `tools/vllm_omni/`, independent of application dependencies. Read the
-matching [English guide](../../../docs/guides/vllm-omni.md) or
-[Chinese guide](../../../docs/guides/vllm-omni.zh-CN.md) from that checkout. If the
-skill was installed separately, locate or obtain the source before referring to
-these repository resources. Installation of OpenDirector itself remains the
-existing installation workflow; do not add GPU dependencies to its environment.
+Use the installed `opendirector vllm-omni` CLI on the target host. Discover its
+options with `opendirector vllm-omni deploy --help` and
+`opendirector vllm-omni verify --help`. The application package includes the
+profiles and deployment tools; model dependencies belong to an isolated environment.
+Read the matching [English guide](../../../docs/guides/vllm-omni.md) or
+[Chinese guide](../../../docs/guides/vllm-omni.zh-CN.md) when available.
 
 ## Inspect before changing anything
 
-Run `deploy.py --root DATA_DIRECTORY doctor` with Python 3.12 on the target host.
+Run `opendirector vllm-omni deploy --root DATA_DIRECTORY doctor` with a Python 3.12 model interpreter on the target host.
 The helper is read-only. Resolve SSH aliases using actual SSH configuration, and
 record the detected hardware rather than inferring it from an alias. Respect
 assigned resources, inherited device visibility and other workloads.
@@ -54,7 +53,7 @@ evidence supports it; continued failure requires diagnosis or changed conditions
 
 ## Prove delivery through OpenDirector
 
-Use `verify.py` for read-only health/model identity and `verify.py --infer` for
+Use `opendirector vllm-omni verify` for read-only health/model identity and `opendirector vllm-omni verify --infer` for
 one authorized real request. Inspect the PNG or listen to the audio, and report
 technical validity separately from creative review. Preserve verification
 receipts, exact versions, parameters, artifacts and resource sampling scope.
@@ -70,7 +69,7 @@ commands: create generation intent, submit, wait by returned job identity, inspe
 the registered asset and adoption state, reopen and continue. Use CLI discovery
 and returned next commands; never edit project files or credential storage to
 bypass business rules. The `qwen3-asr-06b` companion uses native vLLM in the same
-environment; use `verify.py --infer --audio-file` for transcription. Reference
+environment; use `opendirector vllm-omni verify --infer --audio-file` for transcription. Reference
 text is only a local comparison, never a model hint. OpenDirector has no automatic
 ASR tool: register transcripts through existing text-asset commands and describe
 this handoff explicitly. Do not treat music-to-score as ASR or invent capabilities
@@ -78,6 +77,6 @@ from the provider name. Record unavailable integrations explicitly. Follow the
 guide's first-use protocol for a real participant; keep unobserved human feedback
 pending and distinguish cached setup from clean installation.
 
-Hand off copyable restart/status/stop commands for the actual host, source and
+Hand off copyable restart/status/stop commands for the actual host and
 data directory, the model connection, measured results and remaining limitations.
 Stop test processes you created unless the user requested a running service.
