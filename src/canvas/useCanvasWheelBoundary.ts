@@ -21,8 +21,8 @@ export function useCanvasWheelBoundary(
     const wheel = (event: WheelEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
       if (!enabled || !(event.target instanceof Node) || !root.current?.contains(event.target)) return;
-      // A React wheel handler can be passive. Capture natively so browser page
-      // zoom is cancelled even over controls rendered through a portal.
+      // A React wheel handler can be passive. Capture natively so canvas
+      // controls zoom the canvas without also zooming the browser page.
       event.preventDefault();
       // Own every modified wheel, including those over inputs and portals, so
       // React Flow cannot apply a second zoom or pan the underlying canvas.

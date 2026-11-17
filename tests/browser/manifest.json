@@ -58,6 +58,13 @@
       "note": "Needs --assistant-fixture services."
     },
     {
+      "file": "workspace_modes.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": ["extendedFixture", "production"],
+      "note": "Mode layout, drafts, references, viewport and active turn/job preservation in both languages; needs --assistant-fixture services."
+    },
+    {
       "file": "canvas_crop.mjs",
       "previewSafe": true,
       "lanes": [

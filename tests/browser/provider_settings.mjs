@@ -175,7 +175,8 @@ try {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal((await call("/api/model-configs")).length, models.length);
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
-  await page.locator(".cw-chat-button").click();
+  const chatToggle = page.locator(".cw-chat-button");
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
   await page.getByRole("button", { name: "Model settings: Multimodal", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Model settings", exact: true });
   await picker.getByRole("tab", { name: /Video/ }).click();

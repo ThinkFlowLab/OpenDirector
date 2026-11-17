@@ -24,6 +24,9 @@ try {
   const trigger = page.locator(".cw-project-chevron");
   await trigger.waitFor();
   await page.locator('.cw-workspace[aria-busy="false"]').waitFor();
+  // Canvas mode now starts with chat expanded; establish the closed state
+  // before testing the shortcut's open/focus/close cycle.
+  await page.getByRole("button", { name: "Collapse AI chat", exact: true }).click();
   await trigger.focus();
   const tap = async () => { await page.keyboard.press("Shift"); await page.keyboard.press("Shift"); };
   await tap();

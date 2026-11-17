@@ -126,6 +126,8 @@ try {
     });
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
     await page.getByText(text.saved, { exact: true }).waitFor();
+    const chatToggle = page.locator(".cw-chat-button");
+    if (await chatToggle.getAttribute("aria-expanded") === "true") await chatToggle.click();
     assert.equal(
       await page.locator(".cw-chat-button").getAttribute("aria-expanded"),
       "false",
@@ -501,6 +503,9 @@ try {
       );
       await unopened.getByText(text.saved, { exact: true }).waitFor();
       await until(async () => assistantHeld, Boolean, "assistant read held");
+      // Keep the canvas-only path while the assistant's model selection is loading.
+      const chatToggle = unopened.locator(".cw-chat-button");
+      if (await chatToggle.getAttribute("aria-expanded") === "true") await chatToggle.click();
       assert.equal(
         await unopened.locator(".cw-chat-button").getAttribute("aria-expanded"),
         "false",

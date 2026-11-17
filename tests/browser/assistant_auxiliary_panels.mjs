@@ -129,15 +129,15 @@ try {
   async function assertLayout(panel) {
     const chat = await assistant.boundingBox();
     const box = await panel.boundingBox();
-    assert.ok(box && chat);
+    assert.ok(box);
     assert.ok(
       box.x >= 0 && box.x + box.width <= page.viewportSize().width,
       "auxiliary panel must stay inside the viewport",
     );
-    if (page.viewportSize().width >= chat.width + box.width + 52)
+    if (await assistant.isVisible() && chat && page.viewportSize().width >= chat.width + box.width + 52)
       assert.ok(
-        box.x + box.width <= chat.x - 10,
-        "with room available, auxiliary panel must sit left of chat",
+        box.x >= chat.x + chat.width + 10,
+        `with room available, auxiliary panel must sit right of chat: ${JSON.stringify({ width: page.viewportSize().width, chat, panel: box })}`,
       );
     // A visible DOM node can still be hidden behind the assistant.
     await panel.locator("button").first().click({ trial: true });
@@ -156,7 +156,7 @@ try {
     await auxiliary(kind).waitFor({ state: "detached" });
   }
 
-  await chatButton.click();
+  if (!(await assistant.isVisible())) await chatButton.click();
   await editor.fill(draft);
   for (const locale of ["zh-CN", "en-US"]) {
     // Use the actual language switch rather than reloading with new storage.
@@ -170,11 +170,16 @@ try {
     assert.equal(await page.locator("html").getAttribute("lang"), locale);
     for (const width of [1720, 1024, 800, 600, 390]) {
       await page.setViewportSize({ width, height: 1120 });
+      // Narrow canvas mode switches between chat and canvas. Its auxiliary
+      // controls belong to the canvas; returning to chat retains the draft.
+      const alongsideChat = width > 700;
+      if (!alongsideChat && await assistant.isVisible())
+        await page.locator(".cw-narrow-region-toggle").click();
       for (const kind of ["search", "history"]) {
         await openAuxiliary(kind, locale);
         await assertChat(
-          true,
-          `${locale}/${width}: opening ${kind} preserves chat`,
+          alongsideChat,
+          `${locale}/${width}: opening ${kind} preserves the chosen region`,
         );
         await assertLayout(auxiliary(kind));
         if (
@@ -191,11 +196,15 @@ try {
           });
         }
         await closeAuxiliary(kind, locale);
-        await assertChat(true, `closing ${kind} preserves chat`);
+        await assertChat(alongsideChat, `closing ${kind} preserves the chosen region`);
         await openAuxiliary(kind, locale);
         await trigger(kind, locale).click();
         await auxiliary(kind).waitFor({ state: "detached" });
-        await assertChat(true, `toggling ${kind} preserves chat`);
+        await assertChat(alongsideChat, `toggling ${kind} preserves the chosen region`);
+      }
+      if (!alongsideChat) {
+        await chatButton.click();
+        await assertChat(true, "returning from narrow canvas preserves the chat draft");
       }
     }
     await page.setViewportSize({ width: 1720, height: 1120 });

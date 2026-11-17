@@ -2302,10 +2302,14 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       )}
 
       </div>
-      {workspaceMode === "canvas" && assistantLayout.mobile && <button
-        className="cw-narrow-region-toggle"
-        onClick={() => setAssistantOpen((value: boolean) => !value)}
-      >{t(assistantOpen ? "workspaceModes.showCanvas" : "canvas.workspace.toolbar.chat")}</button>}
+      {workspaceMode === "canvas" && assistantLayout.mobile && assistantOpen && (
+        <button
+          className="cw-narrow-region-toggle"
+          onClick={() => setAssistantOpen(false)}
+        >
+          {t("workspaceModes.showCanvas")}
+        </button>
+      )}
 
       {ready && (
         <AssistantPanel
