@@ -60,6 +60,12 @@ export const assistant = {
   "assistant.panel.stopped": "Reply stopped",
   "assistant.panel.interrupted": "Reply interrupted",
   "assistant.panel.send": "Send message",
+  "assistant.panel.queue": "Queue message",
+  "assistant.panel.queueHint": "Send it when the current reply finishes",
+  "assistant.panel.queued": "Queued · position {position}",
+  "assistant.panel.queueWhileRunning":
+    "Press Enter to queue this behind the running reply",
+  "assistant.panel.cancelled": "Queued message cancelled",
   "assistant.panel.stop": "Stop reply",
   "assistant.panel.upload": "Upload reference",
   "assistant.panel.uploadHint": "Upload images, video, audio or text",
