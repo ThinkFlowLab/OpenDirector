@@ -55,6 +55,11 @@ export interface NormalizedCanvas {
 export interface ExampleDownload extends NormalizedCanvas {
   /** Size of the response body before unwrapping. */
   outerBytes: number;
+  /**
+   * Zeroes the downloaded buffers and drops this object's claim on them.
+   * Idempotent, so a failure path and a success path can both call it.
+   */
+  release: () => void;
 }
 
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
@@ -249,5 +254,14 @@ export async function fetchExampleCanvas(
     if (digest && digest !== entry.inner.sha256)
       throw new ExampleError("integrity");
   }
-  return { ...normalized, outerBytes: outer.byteLength };
+  // Both buffers are ours: the wrapper's bytes and, when unwrapped, the inner
+  // entry copy. Zeroing them is the only copy this module ever creates.
+  const buffers = [outer, normalized.bytes];
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    for (const buffer of buffers) buffer.fill(0);
+  };
+  return { ...normalized, outerBytes: outer.byteLength, release };
 }

@@ -44,8 +44,15 @@ function failure(error: unknown): ExampleStatus {
   };
 }
 
+export interface ExampleImportResult {
+  kind: ExampleDownload["kind"];
+  innerEntry?: string;
+  outerBytes: number;
+}
+
 /**
- * Runs one import and reports every phase transition.
+ * Runs one import, reports every phase transition, and always releases the
+ * downloaded buffers afterwards.
  *
  * Throws after reporting `failed`, so a caller can decide whether to surface a
  * toast in addition to the inline status.
@@ -55,35 +62,36 @@ export async function runExampleImport(
   deps: ExampleImportDeps,
   signal: AbortSignal,
   report: (status: ExampleStatus) => void,
-): Promise<ExampleDownload> {
+): Promise<ExampleImportResult> {
   report({ phase: "downloading" });
   let download: ExampleDownload;
   try {
     download = await (deps.fetchCanvas ?? fetchExampleCanvas)(entry, { signal });
   } catch (error) {
-    const status = failure(error);
-    report(status);
+    report(failure(error));
     throw error;
   }
-  if (signal.aborted) {
-    const aborted = new ExampleError("aborted");
-    report({ phase: "failed", code: "aborted" });
-    throw aborted;
-  }
-  report({ phase: "importing" });
   try {
+    if (signal.aborted) throw new ExampleError("aborted");
+    report({ phase: "importing" });
     await deps.importCanvas(
       new Blob([download.bytes as unknown as BlobPart], {
         type: "application/octet-stream",
       }),
     );
+    report({ phase: "done", title: entry.title["zh-CN"] });
+    return {
+      kind: download.kind,
+      innerEntry: download.innerEntry,
+      outerBytes: download.outerBytes,
+    };
   } catch (error) {
-    const status = failure(error);
-    report(status);
+    report(failure(error));
     throw error;
+  } finally {
+    // No download survives the call: this is the cache release the feature needs.
+    download.release();
   }
-  report({ phase: "done", title: entry.title["zh-CN"] });
-  return download;
 }
 
 /** Per-entry status plus the controls the dialog needs. */

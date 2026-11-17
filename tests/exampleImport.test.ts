@@ -24,10 +24,18 @@ function recorder(): { phases: string[]; statuses: ExampleStatus[] } {
 test("a successful import reports every phase and hands over the archive", async () => {
   const statuses: ExampleStatus[] = [];
   let received: Blob | undefined;
+  let released = false;
   const result = await runExampleImport(
     entry,
     {
-      fetchCanvas: async () => ({ bytes: archive, kind: "zip-wrapper", outerBytes: 9 }),
+      fetchCanvas: async () => ({
+        bytes: archive,
+        kind: "zip-wrapper",
+        outerBytes: 9,
+        release: () => {
+          released = true;
+        },
+      }),
       importCanvas: async (blob) => {
         received = blob;
       },
@@ -41,8 +49,11 @@ test("a successful import reports every phase and hands over the archive", async
   );
   assert.equal(statuses[2]?.title, entry.title["zh-CN"]);
   assert.equal(result.kind, "zip-wrapper");
+  assert.equal(result.outerBytes, 9);
   assert.ok(received instanceof Blob);
   assert.deepEqual(new Uint8Array(await received!.arrayBuffer()), archive);
+  // The download is released once the import settles.
+  assert.equal(released, true);
 });
 
 test("a download failure is classified and rethrown", async () => {
@@ -93,7 +104,12 @@ test("an unexpected import failure is reported as unknown", async () => {
     runExampleImport(
       entry,
       {
-        fetchCanvas: async () => ({ bytes: archive, kind: "canvas", outerBytes: 7 }),
+        fetchCanvas: async () => ({
+          bytes: archive,
+          kind: "canvas",
+          outerBytes: 7,
+          release: () => {},
+        }),
         importCanvas: async () => {
           throw new Error("switch failed");
         },
@@ -110,6 +126,31 @@ test("an unexpected import failure is reported as unknown", async () => {
   assert.equal(statuses.at(-1)?.code, "unknown");
 });
 
+test("a failed import still releases the download", async () => {
+  let released = false;
+  await assert.rejects(
+    runExampleImport(
+      entry,
+      {
+        fetchCanvas: async () => ({
+          bytes: archive,
+          kind: "canvas",
+          outerBytes: 7,
+          release: () => {
+            released = true;
+          },
+        }),
+        importCanvas: async () => {
+          throw new Error("boom");
+        },
+      },
+      new AbortController().signal,
+      () => {},
+    ),
+  );
+  assert.equal(released, true);
+});
+
 test("cancelling after the download skips the import entirely", async () => {
   const controller = new AbortController();
   const statuses: ExampleStatus[] = [];
@@ -120,7 +161,12 @@ test("cancelling after the download skips the import entirely", async () => {
       {
         fetchCanvas: async () => {
           controller.abort();
-          return { bytes: archive, kind: "canvas", outerBytes: 7 };
+          return {
+            bytes: archive,
+            kind: "canvas",
+            outerBytes: 7,
+            release: () => {},
+          };
         },
         importCanvas: async () => {
           imported = true;

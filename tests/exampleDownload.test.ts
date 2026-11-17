@@ -226,6 +226,18 @@ test("the inner digest is checked after unwrapping", async () => {
   assert.equal(failure.code, "integrity");
 });
 
+test("release zeroes the downloaded buffers and is idempotent", async () => {
+  const outer = await wrappedArchive();
+  const result = await fetchExampleCanvas(entry(), {
+    fetchImpl: (async () => respond(outer)()) as typeof fetch,
+  });
+  assert.ok(result.bytes.some((byte) => byte !== 0), "expected a real archive");
+  result.release();
+  assert.ok(result.bytes.every((byte) => byte === 0));
+  result.release();
+  assert.ok(result.bytes.every((byte) => byte === 0));
+});
+
 test("cancellation and the deadline both surface as aborted", async () => {
   const hanging = ((_url: string, init?: RequestInit) =>
     new Promise<Response>((_resolve, rejectPlaceholder) => {

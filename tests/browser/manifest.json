@@ -514,6 +514,14 @@
       ],
       "previewSafe": false,
       "note": "Canvas timeline output button and shortcut publish real MP4 results in both locales without opening the editor."
+    },
+    {
+      "file": "example_canvas_picker.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "previewSafe": false,
+      "note": "Empty-canvas example picker: a wrapped .canvas download imports through the shared archive path, and an HTML page is reported without creating a project. The catalog and the sample are routed in-page, so no external host is needed."
     }
   ]
 }

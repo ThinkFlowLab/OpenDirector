@@ -14,6 +14,10 @@ import { spawnSync } from "node:child_process";
 
 const workflows = [
   { name: "timeline node output", script: "tests/browser/timeline_node_output.mjs" },
+  {
+    name: "example canvas picker",
+    script: "tests/browser/example_canvas_picker.mjs",
+  },
   { name: "locale", script: "tests/browser/locale.mjs" },
   { name: "creation closure", script: "scripts/verify_creation_browser.mjs" },
   { name: "assistant activity", script: "tests/browser/assistant_activity.mjs" },
