@@ -126,6 +126,37 @@ test("an unexpected import failure is reported as unknown", async () => {
   assert.equal(statuses.at(-1)?.code, "unknown");
 });
 
+test("download progress reaches the status before the import starts", async () => {
+  const statuses: ExampleStatus[] = [];
+  await runExampleImport(
+    entry,
+    {
+      fetchCanvas: async (_entry, options) => {
+        options?.onProgress?.(64, 256);
+        options?.onProgress?.(256, 256);
+        return {
+          bytes: archive,
+          kind: "canvas",
+          outerBytes: 256,
+          release: () => {},
+        };
+      },
+      importCanvas: async () => {},
+    },
+    new AbortController().signal,
+    (status) => statuses.push(status),
+  );
+  const downloading = statuses.filter((status) => status.phase === "downloading");
+  assert.deepEqual(
+    downloading.map((status) => [status.received, status.total]),
+    [
+      [undefined, undefined],
+      [64, 256],
+      [256, 256],
+    ],
+  );
+});
+
 test("a failed import still releases the download", async () => {
   let released = false;
   await assert.rejects(

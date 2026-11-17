@@ -226,6 +226,38 @@ test("the inner digest is checked after unwrapping", async () => {
   assert.equal(failure.code, "integrity");
 });
 
+test("progress reports received bytes against the declared total", async () => {
+  const outer = await wrappedArchive();
+  const bytes = new Uint8Array(await outer.arrayBuffer());
+  const response = {
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-length": String(bytes.byteLength) }),
+    body: new Blob([bytes]).stream(),
+  } as unknown as Response;
+  const events: [number, number | null][] = [];
+  const received = await fetchExampleBytes(entry(), {
+    fetchImpl: (async () => response) as typeof fetch,
+    onProgress: (progress, total) => events.push([progress, total]),
+  });
+  assert.equal(received.byteLength, bytes.byteLength);
+  assert.equal(events[0]?.[0], 0);
+  assert.equal(events[0]?.[1], bytes.byteLength);
+  assert.equal(events.at(-1)?.[0], bytes.byteLength);
+  assert.equal(events.at(-1)?.[1], bytes.byteLength);
+});
+
+test("progress falls back to an unknown total without content-length", async () => {
+  const outer = await wrappedArchive();
+  const events: (number | null)[] = [];
+  await fetchExampleBytes(entry(), {
+    fetchImpl: (async () => respond(outer)()) as typeof fetch,
+    onProgress: (_received, total) => events.push(total),
+  });
+  assert.ok(events.length > 0);
+  assert.equal(events.at(-1), null);
+});
+
 test("release zeroes the downloaded buffers and is idempotent", async () => {
   const outer = await wrappedArchive();
   const result = await fetchExampleCanvas(entry(), {

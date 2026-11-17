@@ -9,6 +9,12 @@ function megabytes(bytes: number | undefined): string | null {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** Completion percentage, or null while the server has not declared a size. */
+function percentOf(status: ExampleStatus): number | null {
+  if (!status.total || !status.received) return null;
+  return Math.min(100, Math.round((status.received / status.total) * 100));
+}
+
 /** One sentence per failure, chosen by code so the cause stays recognizable. */
 function failureText(t: Translate, status: ExampleStatus): string {
   switch (status.code) {
@@ -91,26 +97,32 @@ export function ExampleCanvasDialog({
             const status = statuses[entry.id] ?? { phase: "idle" as const };
             const running = isRunning(entry.id);
             const size = megabytes(entry.bytes);
-            const version = entry.inner?.archiveVersion ?? entry.archiveVersion;
+            const percent = percentOf(status);
             return (
               <li key={entry.id} className="cw-example-item" data-example-id={entry.id}>
                 <div className="cw-example-item-heading">
                   <strong>{entry.title[locale]}</strong>
-                  <small>
-                    {t("canvas.example.item.meta", {
-                      size: size ?? t("canvas.example.item.metaUnknown"),
-                      version: version ?? "-",
-                    })}
-                  </small>
+                  {size && <small>{size}</small>}
                 </div>
                 {entry.summary && <p className="cw-example-summary">{entry.summary[locale]}</p>}
                 <div className="cw-example-actions">
                   {running ? (
                     <>
+                      {status.phase === "downloading" && (
+                        <progress
+                          className="cw-example-progress"
+                          aria-label={t("canvas.example.progress.label")}
+                          {...(percent === null
+                            ? {}
+                            : { value: status.received ?? 0, max: status.total ?? 1 })}
+                        />
+                      )}
                       <span role="status" aria-live="polite">
                         {status.phase === "importing"
                           ? t("canvas.example.state.importing")
-                          : t("canvas.example.state.downloading")}
+                          : percent === null
+                            ? t("canvas.example.state.downloading")
+                            : t("canvas.example.state.downloadingPercent", { percent })}
                       </span>
                       <button type="button" onClick={() => cancel(entry.id)}>
                         {t("canvas.example.action.cancelDownload")}

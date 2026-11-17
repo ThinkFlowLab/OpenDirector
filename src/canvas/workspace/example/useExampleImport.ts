@@ -24,6 +24,10 @@ export interface ExampleStatus {
   title?: string;
   /** The original message, for failures the codes cannot describe. */
   message?: string;
+  /** Bytes received while `phase` is `downloading`. */
+  received?: number;
+  /** Declared download size, when the server sent a `content-length`. */
+  total?: number | null;
 }
 
 export interface ExampleImportDeps {
@@ -66,7 +70,11 @@ export async function runExampleImport(
   report({ phase: "downloading" });
   let download: ExampleDownload;
   try {
-    download = await (deps.fetchCanvas ?? fetchExampleCanvas)(entry, { signal });
+    download = await (deps.fetchCanvas ?? fetchExampleCanvas)(entry, {
+      signal,
+      onProgress: (received, total) =>
+        report({ phase: "downloading", received, total }),
+    });
   } catch (error) {
     report(failure(error));
     throw error;

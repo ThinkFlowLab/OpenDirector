@@ -42,6 +42,8 @@ export interface ExampleDownloadOptions {
   signal?: AbortSignal;
   maxBytes?: number;
   timeoutMs?: number;
+  /** Bytes received so far, plus the declared total when the server sent one. */
+  onProgress?: (received: number, total: number | null) => void;
 }
 
 export interface NormalizedCanvas {
@@ -130,31 +132,37 @@ function transportError(cause: unknown, cancelled: boolean): ExampleError {
 async function readLimited(
   response: Response,
   maxBytes: number,
+  onProgress?: (received: number, total: number | null) => void,
 ): Promise<Uint8Array> {
+  const declared = Number(response.headers.get("content-length") ?? "");
+  const total = Number.isFinite(declared) && declared > 0 ? declared : null;
   if (!response.body) {
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength > maxBytes) throw new ExampleError("tooLarge");
+    onProgress?.(buffer.byteLength, total);
     return new Uint8Array(buffer);
   }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
-  let total = 0;
+  let received = 0;
+  onProgress?.(0, total);
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       if (!value) continue;
-      total += value.byteLength;
-      if (total > maxBytes) {
+      received += value.byteLength;
+      if (received > maxBytes) {
         await reader.cancel().catch(() => undefined);
         throw new ExampleError("tooLarge");
       }
       chunks.push(value);
+      onProgress?.(received, total);
     }
   } finally {
     reader.releaseLock();
   }
-  const bytes = new Uint8Array(total);
+  const bytes = new Uint8Array(received);
   let offset = 0;
   for (const chunk of chunks) {
     bytes.set(chunk, offset);
@@ -196,7 +204,7 @@ export async function fetchExampleBytes(
       throw new ExampleError("tooLarge");
     let bytes: Uint8Array;
     try {
-      bytes = await readLimited(response, maxBytes);
+      bytes = await readLimited(response, maxBytes, options.onProgress);
     } catch (cause) {
       throw transportError(cause, deadline.signal.aborted);
     }

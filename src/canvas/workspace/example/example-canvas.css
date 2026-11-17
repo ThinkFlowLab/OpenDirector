@@ -1,18 +1,20 @@
-/* Example canvas picker: download progress, failure reason and manual fallback. */
+/* Example canvas picker: download progress, failure reason and manual fallback.
+   Dark is the base theme here; `--cw-control-*` only exists under [data-theme="light"]. */
 .cw-example-dialog {
   width: min(680px, calc(100vw - 48px));
   max-height: min(78vh, 720px);
   padding: 20px;
   border-radius: 16px;
-  border: 1px solid var(--cw-control-border);
-  background: var(--cw-control-surface);
-  color: var(--cw-control-fg);
-  box-shadow: var(--cw-control-shadow);
+  /* Opaque: the empty canvas state behind must not show through. */
+  border: 1px solid #ffffff1f;
+  background: #23242b;
+  color: #ececee;
+  box-shadow: 0 18px 48px #000000b3;
   overflow: auto;
 }
 
 .cw-example-dialog::backdrop {
-  background: #0007;
+  background: #000000a6;
 }
 
 .cw-example-dialog header h2 {
@@ -24,7 +26,7 @@
 .cw-example-dialog header p {
   margin: 0 0 14px;
   font-size: 12px;
-  color: var(--cw-control-muted, #9d9da6);
+  color: #9d9da6;
 }
 
 .cw-example-list {
@@ -41,9 +43,9 @@
   flex-direction: column;
   gap: 6px;
   padding: 12px 14px;
-  border: 1px solid var(--cw-control-border);
+  border: 1px solid #ffffff14;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--cw-control-surface) 88%, #fff 12%);
+  background: #2a2b33;
 }
 
 .cw-example-item-heading {
@@ -61,7 +63,7 @@
 .cw-example-item-heading small,
 .cw-example-summary {
   font-size: 12px;
-  color: var(--cw-control-muted, #9d9da6);
+  color: #9d9da6;
 }
 
 .cw-example-summary {
@@ -76,18 +78,53 @@
   font-size: 12px;
 }
 
-.cw-example-actions button {
+.cw-example-actions button,
+.cw-example-dialog-actions button {
   padding: 5px 12px;
   border-radius: 8px;
-  border: 1px solid var(--cw-control-border);
+  border: 1px solid #ffffff26;
   background: transparent;
   color: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 
-.cw-example-actions button:hover {
-  background: color-mix(in srgb, var(--cw-control-fg) 8%, transparent);
+.cw-example-actions button:hover:not(:disabled),
+.cw-example-dialog-actions button:hover:not(:disabled) {
+  background: #ffffff14;
+}
+
+.cw-example-actions button:disabled,
+.cw-example-dialog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cw-example-progress {
+  flex: 1;
+  min-width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  border: 0;
+  background: #ffffff1f;
+  appearance: none;
+  overflow: hidden;
+}
+
+.cw-example-progress::-webkit-progress-bar {
+  background: #ffffff1f;
+  border-radius: 3px;
+}
+
+.cw-example-progress::-webkit-progress-value {
+  background: #a78bd4;
+  border-radius: 3px;
+  transition: width 120ms linear;
+}
+
+.cw-example-progress::-moz-progress-bar {
+  background: #a78bd4;
+  border-radius: 3px;
 }
 
 .cw-example-error {
@@ -101,7 +138,7 @@
 }
 
 .cw-example-manual summary {
-  color: var(--cw-control-muted, #9d9da6);
+  color: #9d9da6;
   cursor: pointer;
 }
 
@@ -121,15 +158,52 @@
 
 .cw-example-dialog-actions button {
   padding: 6px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--cw-control-border);
-  background: transparent;
-  color: inherit;
   font-size: 13px;
-  cursor: pointer;
 }
 
-.cw-example-dialog-actions button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Light theme: the page ships dark defaults, so every colour needs an override. */
+:root[data-theme="light"] .cw-example-dialog {
+  border-color: #dfe2e7;
+  background: #fff;
+  color: #30343c;
+  box-shadow: 0 18px 48px #30374426;
+}
+
+:root[data-theme="light"] .cw-example-dialog::backdrop {
+  background: #1a1c2266;
+}
+
+:root[data-theme="light"] .cw-example-dialog header p,
+:root[data-theme="light"] .cw-example-item-heading small,
+:root[data-theme="light"] .cw-example-summary,
+:root[data-theme="light"] .cw-example-manual summary {
+  color: #6b7280;
+}
+
+:root[data-theme="light"] .cw-example-item {
+  border-color: #e6e8ec;
+  background: #f7f8fa;
+}
+
+:root[data-theme="light"] .cw-example-actions button,
+:root[data-theme="light"] .cw-example-dialog-actions button {
+  border-color: #d6dae1;
+}
+
+:root[data-theme="light"] .cw-example-actions button:hover:not(:disabled),
+:root[data-theme="light"] .cw-example-dialog-actions button:hover:not(:disabled) {
+  background: #eef1f5;
+}
+
+:root[data-theme="light"] .cw-example-progress,
+:root[data-theme="light"] .cw-example-progress::-webkit-progress-bar {
+  background: #e3e6ec;
+}
+
+:root[data-theme="light"] .cw-example-error {
+  color: #b4453f;
+}
+
+:root[data-theme="light"] .cw-example-manual a {
+  color: #2f5fbf;
 }

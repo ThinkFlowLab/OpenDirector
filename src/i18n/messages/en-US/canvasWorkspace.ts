@@ -427,8 +427,6 @@ export const canvasWorkspace = {
   "canvas.example.dialog.title": "Choose an example canvas",
   "canvas.example.dialog.hint": "The canvas is downloaded and imported locally; keep editing once it opens.",
   "canvas.example.dialog.empty": "No example canvas is available right now.",
-  "canvas.example.item.meta": "{size} · v{version}",
-  "canvas.example.item.metaUnknown": "Size unknown",
   "canvas.example.action.import": "Download and import",
   "canvas.example.action.retry": "Retry",
   "canvas.example.action.cancelDownload": "Cancel download",
@@ -451,4 +449,7 @@ export const canvasWorkspace = {
   "canvas.example.error.unknown": "The import failed. Try again, or import it manually.",
   "canvas.example.manual.steps": "After downloading, drop the .canvas file on the canvas or use Import canvas.",
   "canvas.example.manual.share": "Open the share link (code {code})",
+  // The download reports live progress; sizes render as plain data.
+  "canvas.example.state.downloadingPercent": "Downloading… {percent}%",
+  "canvas.example.progress.label": "Download progress",
 } as const;

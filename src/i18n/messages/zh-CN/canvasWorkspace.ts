@@ -382,8 +382,6 @@ export const canvasWorkspace = {
   "canvas.example.dialog.title": "选择示例画布",
   "canvas.example.dialog.hint": "选中后会下载并导入到你的本机，导入完成即可继续编辑。",
   "canvas.example.dialog.empty": "暂时没有可用的示例画布。",
-  "canvas.example.item.meta": "{size} · 版本 {version}",
-  "canvas.example.item.metaUnknown": "大小未知",
   "canvas.example.action.import": "下载并导入",
   "canvas.example.action.retry": "重试",
   "canvas.example.action.cancelDownload": "取消下载",
@@ -406,4 +404,7 @@ export const canvasWorkspace = {
   "canvas.example.error.unknown": "导入失败，请重试或手动导入。",
   "canvas.example.manual.steps": "下载后把 .canvas 文件拖入画布，或使用「导入画布」。",
   "canvas.example.manual.share": "打开分享链接（提取码 {code}）",
+  // The download reports live progress; sizes render as plain data.
+  "canvas.example.state.downloadingPercent": "正在下载… {percent}%",
+  "canvas.example.progress.label": "下载进度",
 } as const;
