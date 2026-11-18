@@ -30,8 +30,8 @@ def clip():
 
 
 @contextmanager
-def video_service(clip, mode, *, model='MiniMaxAI/MiniMax-H3', generation_limit=None):
-    state = {'mode': mode, 'queries': 0, 'posts': []}
+def video_service(clip, mode, *, model='MiniMaxAI/MiniMax-H3', generation_limit=None, generation_contract=None):
+    state = {'mode': mode, 'queries': 0, 'posts': [], 'downloads': 0, 'fail_downloads': 0}
     def declaration():
         value = document('video_generation', 'video_to_video', '/v1/videos', 'video',
                          model=model, now=time.time())
@@ -67,6 +67,9 @@ def video_service(clip, mode, *, model='MiniMaxAI/MiniMax-H3', generation_limit=
                 124 if state['mode'] == 'poster_minimum' else int(state['mode'].split('_')[1])}}}
             if state['mode'] == 'poster_minimum':
                 route['request']['inputs']['first_frame'] = {'support': 'supported', 'min_count': 2}
+        if generation_contract is not None:
+            profile.update(id='image_to_video', required_inputs=['text', 'image'])
+            route['request'] = generation_contract
         return value
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -83,6 +86,10 @@ def video_service(clip, mode, *, model='MiniMaxAI/MiniMax-H3', generation_limit=
                 state['queries'] += 1
                 self.reply(declaration())
             elif self.path.endswith('/content'):
+                state['downloads'] += 1
+                if state['downloads'] <= state['fail_downloads']:
+                    self.send_error(500, 'Download failed')
+                    return
                 self.reply(clip, 'video/mp4')
             else:
                 self.reply({'id': 'remote-video', 'status': 'completed'})

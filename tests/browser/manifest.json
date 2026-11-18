@@ -1,6 +1,10 @@
 {
   "scripts": [
     {
+      "file": "fasth3_capability_flow.mjs",
+      "helper": true
+    },
+    {
       "file": "input_admission_review.mjs",
       "fixture": true,
       "httpGenerationFixture": true,

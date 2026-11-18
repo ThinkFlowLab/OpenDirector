@@ -39,7 +39,7 @@ class RequestOperation:
     # None is a directory projection; an actual request fixes transmitted inputs.
     inputs: frozenset[str] | None = None
     input_counts: tuple[tuple[str, int], ...] | None = None
-    parameters: tuple[tuple[str, str | int | float | bool], ...] = ()
+    parameters: tuple[tuple[str, str | int | float | bool | tuple[int, ...]], ...] = ()
     # Purposes this particular adapter request needs, in addition to media kinds.
     required_roles: frozenset[str] = frozenset()
 
@@ -122,9 +122,15 @@ def generation_request(config, spec, references, *, parameters=None):
         counts['instructions'] = 1
     continuation = next((item for item in references if item.transmission == 'latent'), None)
     metadata = getattr(continuation, 'metadata', None)
+    frame_indices = None
+    if spec.kind == 'video' and config.get('videoAdapter') == 'fasth3_dual' and mode == 'first_frame':
+        # The adapter sends first anchors before last anchors, including one
+        # asset used in both slots. Counts describe uploads, not unique assets.
+        frame_indices = (0,) * roles['first_frame'] + (-1,) * roles['last_frame']
     actual = generation_capability_parameters(config, spec.kind, parameters, has_images='image' in kinds,
         video_mode=mode if spec.kind == 'video' else 'first_frame', has_audio='audio' in kinds,
-        continue_size=(metadata.width, metadata.height) if metadata is not None else None) if parameters is not None else {}
+        continue_size=(metadata.width, metadata.height) if metadata is not None else None,
+        frame_indices=frame_indices) if parameters is not None else {}
     if profile == 'text_to_speech':
         voice = effective_speech_voice(config, getattr(getattr(spec, 'parameters', None), 'voice', None))
         counts['voice'] = 1

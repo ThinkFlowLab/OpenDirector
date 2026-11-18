@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launchBrowser } from "./engine.mjs";
+import { fastH3CapabilityFlow } from "./fasth3_capability_flow.mjs";
 
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 const api = process.env.CREATION_API_URL ?? "http://127.0.0.1:8019";
@@ -62,7 +63,8 @@ assert.equal(media.status, 0, media.stderr.toString());
 const modelId = "MiniMaxAI/MiniMax-H3",
   posts = [];
 let mode = "open",
-  pauseTime;
+  pauseTime,
+  fastLimit = 10;
 function declaration() {
   const route = {
     transport: "http",
@@ -123,6 +125,16 @@ function declaration() {
             ],
           },
         },
+      },
+      {
+        id: "FastH3-Omni-INT8",
+        operations: { video_generation: { support: "supported", exposure: "enabled", profiles: [
+          profile("image_to_video", "supported", {
+            image: { support: "supported", min_count: 2, max_count: 2 },
+            first_frame: { support: "supported", min_count: 1, max_count: 1 },
+            last_frame: { support: "supported", min_count: 1, max_count: 1 },
+          }, { num_inference_steps: { type: "integer", maximum: fastLimit } }),
+        ] } },
       },
     ],
   };
@@ -457,8 +469,12 @@ try {
         fullPage: true,
       });
     }
+    const fastH3 = await fastH3CapabilityFlow({ page, call, until, projectId, sourceAsset,
+      url: `http://127.0.0.1:${service.address().port}/v1`, posts, setLimit: (value) => { fastLimit = value; }, locale });
+    assert.deepEqual(errors, []);
     evidence.push({
       locale,
+      fastH3,
       continuationRemoteId: remoteId,
       continuationUploads: 0,
       posterFrames: 124,

@@ -9,7 +9,7 @@ from opendirector.domain.voices import effective_speech_voice
 
 
 def generation_capability_parameters(config, kind, parameters, *, has_images=False,
-                                     video_mode='first_frame', has_audio=False, continue_size=None):
+                                     video_mode='first_frame', has_audio=False, continue_size=None, frame_indices=None):
     profile = input_rules(config)['profile']
     if kind == 'image':
         size = parameters.get('size', '')
@@ -52,13 +52,9 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
             result = capability_parameters(*generation_fields(parameters, video_mode, has_images=has_images,
                 has_audio=has_audio, continue_size=continue_size))
         elif profile == 'fasth3-omni':
-            from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
-            result = {}
-            if any(key in parameters for key in ('duration', 'seconds', 'num_frames')):
-                result.update(video_frame_parameters(float(parameters.get('duration', parameters.get('seconds', 5))),
-                    parameters.get('fps', FPS), parameters.get('num_frames')))
-            result.update(size=parameters.get('size', '832x480'), num_inference_steps=8, guidance_scale=1,
-                          fps=24, seed=parameters.get('seed', 1234), task='ref2va', audio_flow_shift=3)
+            from opendirector.integrations.fasth3 import generation_fields
+            fields, extra = generation_fields(parameters, frame_indices=frame_indices)
+            result = {**fields, **extra}
         else:
             result = {key: parameters[key] for key in ('size',) if key in parameters}
             if 'duration' in parameters:
@@ -71,4 +67,6 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
             result['width'], result['height'] = map(int, size.split('x'))
         except ValueError:
             pass
-    return {key: value for key, value in result.items() if type(value) in {str, int, float, bool}}
+    # Keep frame-index presence so an explicit refusal applies to that upload
+    # mode too. The remote declaration's parameter schema remains scalar-only.
+    return {key: value for key, value in result.items() if type(value) in {str, int, float, bool} or key == 'frame_indices'}
