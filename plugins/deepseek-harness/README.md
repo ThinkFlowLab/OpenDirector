@@ -63,6 +63,8 @@ Each node's results show V1, V2 and so on in registration order, unchanged by se
 
 If a project list or model catalog cannot be loaded, reload it in the same dialog. After adding a model in OpenDirector, reload an empty catalog to continue. Your description, action names and chosen reference stay in place; reloading only reads data.
 
+If a preview fails to load, choose **Reload preview** on the same card. The original-image viewer also offers a reload button.
+
 ## Examples and a short demo
 
 Open **Try an example** in a creation form to start with a studio image, character reference, product cover or voiceover. Saved-image actions offer examples for edits and motion; continuation has its own example. Read the description, then choose **Use this description** or **Replace current description**. Your model, image size, reference order and candidate count stay as selected. Filling an example does not generate media.

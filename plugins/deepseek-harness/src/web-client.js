@@ -76,7 +76,7 @@ window.__ModuleLoader__.load({
       images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
       viewOriginal: 'View original image', fitImage: 'Fit to window', actualImageSize: 'Actual size',
       originalUnavailable: 'Could not load the original image.', duration: '{seconds} s',
-      candidate: 'Candidate', unavailable: 'Preview unavailable. Open the canvas to view this result.',
+      candidate: 'Candidate', unavailable: 'Could not load the preview.', retryMedia: 'Reload preview',
       canvas: 'Open canvas', edit: 'Edit', firstFrame: 'Animate', continue: 'Continue', adopt: 'Adopt', adopted: 'Result adopted',
       createHint: 'Create an image or voiceover, then choose the version you want to keep.',
       libraryHint: 'Find your work, compare versions and pick up where you left off.',
@@ -247,7 +247,7 @@ window.__ModuleLoader__.load({
       images: '图片结果', videos: '视频结果', original: '原图', sourceClip: '源片段',
       viewOriginal: '查看原图', fitImage: '适应窗口', actualImageSize: '实际大小',
       originalUnavailable: '暂时无法加载原图。', duration: '{seconds} 秒',
-      candidate: '候选', unavailable: '暂时无法预览。可在画布查看。',
+      candidate: '候选', unavailable: '暂时无法加载预览。', retryMedia: '重新加载预览',
       canvas: '打开画布', edit: '改图', firstFrame: '转成视频', continue: '续写', adopt: '采用', adopted: '已采用结果',
       createHint: '生成图片或配音，比较候选后再选用。',
       libraryHint: '找回作品、对比版本，继续上次的创作。',
@@ -2155,7 +2155,9 @@ window.__ModuleLoader__.load({
               { disabled: status !== 'ready' }),
             button(t('close'), () => dialog.current.close(), { autoFocus: true }))),
         status === 'loading' && h('p', { role: 'status' }, t('loading')),
-        status === 'failed' ? h('p', { role: 'alert' }, t('originalUnavailable'))
+        status === 'failed' ? h('div', { style: row },
+          h('span', { role: 'alert' }, t('originalUnavailable')),
+          button(t('reloadData'), () => setStatus('loading')))
           : h('div', { style: { maxHeight: '62vh', overflow: 'auto', background: surface, borderRadius: '.55rem' } },
             h('img', {
               src: url, alt: title, onLoad: () => setStatus('ready'), onError: () => setStatus('failed'),
@@ -2258,7 +2260,11 @@ window.__ModuleLoader__.load({
           created && h('time', { dateTime: createdAt, title: created.toLocaleString() },
             created.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })),
           sourceText && h('span', { 'data-opendirector-source-version': sourceVersion }, sourceText)),
-        failed ? h('div', { style: row }, h('span', null, t('unavailable')),
+        failed ? h('div', { style: row }, h('span', { role: 'alert' }, t('unavailable')),
+          button(t('retryMedia'), () => {
+            setFailed(false)
+            setStatus(previous => previous === t('playbackFailed') ? '' : previous)
+          }),
           image && button(t('viewOriginal'), () => setViewingOriginal(true), { 'aria-haspopup': 'dialog' })) : media,
         buffering && h('small', { role: 'status' }, t('buffering')),
         onCompare && h('label', { style: row },

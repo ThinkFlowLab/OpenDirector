@@ -51,6 +51,8 @@ export function apply(ctx, config) {
     ctx.tools.register(tool)
   }
   ctx.inject(['connection'], (scope) => {
+    const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
+
     scope.effect(() => scope.connection.fetch.register({
       path: '/api/opendirector/media',
       methods: ['GET'],
@@ -60,7 +62,7 @@ export function apply(ctx, config) {
         try {
           ({ searchParams } = new URL(request.url, 'http://localhost'))
         } catch {
-          return new Response(null, { status: 400 })
+          return new Response(null, { status: 400, headers })
         }
         try {
           const media = await client.media(
@@ -69,22 +71,20 @@ export function apply(ctx, config) {
               range: request.headers.get('range'), signal: request.signal,
             },
           )
-          const headers = new Headers({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' })
+          const mediaHeaders = new Headers(headers)
           for (const name of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']) {
             const value = media.headers.get(name)
-            if (value !== null) headers.set(name, value)
+            if (value !== null) mediaHeaders.set(name, value)
           }
-          return new Response(media.body, { status: media.status, headers })
+          return new Response(media.body, { status: media.status, headers: mediaHeaders })
         } catch (error) {
           const status = error instanceof InputError ? 400
             : error instanceof HttpError && error.status === 404 ? 404
               : 502
-          return new Response(null, { status })
+          return new Response(null, { status, headers })
         }
       },
     }), 'OpenDirector media previews')
-
-    const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
 
     scope.effect(() => scope.connection.fetch.register({
       path: '/api/opendirector/connection',

@@ -61,6 +61,10 @@ test('media route accepts relative URLs, forwards ranges, and ends a stalled bod
     assert.equal(await original.text(), 'original')
     assert.equal((await request('invalid-id', 'video')).status, 400)
 
+    const missing = await request(randomUUID(), 'image', undefined, true)
+    assert.equal(missing.status, 404)
+    assert.equal(missing.headers.get('cache-control'), 'private, no-store')
+
     const waiting = await request(stalled, 'video')
     assert.equal(waiting.status, 200)
     const reader = waiting.body.getReader()
