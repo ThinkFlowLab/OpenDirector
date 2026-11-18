@@ -23,7 +23,7 @@ import type { ModelAvailability } from "../contracts/generated.ts";
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
 export type BackendVideoMode = "first_frame" | "reference" | "continuation";
-export type VideoAdapter = "auto" | "fasth3" | "minimax_h3" | "standard";
+export type VideoAdapter = "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
 export interface VideoCapabilities {
   outputs: {
     resolution: string;

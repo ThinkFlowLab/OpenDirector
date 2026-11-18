@@ -243,7 +243,7 @@ def node_capabilities(item: CanvasItem, *, spec: GenerationSpec | None = None,
     generate = False
     if configure and matching and model is not None:
         try:
-            validate_generation(spec, model, references)
+            validate_generation(spec, model, references, submitting=True)
             generate = True
         except (ValueError, ProjectError):
             pass

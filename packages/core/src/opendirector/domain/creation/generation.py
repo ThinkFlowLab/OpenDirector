@@ -372,7 +372,8 @@ def implicit_text_prompt(spec: GenerationSpec, references: tuple[ResolvedReferen
         ref.asset.kind == 'text' and ref.transmission == 'content' for ref in references)
 
 
-def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = ()):
+def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = (),
+                        *, submitting: bool = False):
     """Pure shared validation; it never submits, uploads or changes a project."""
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
         raise ValueError('所选模型与生成类型不匹配。')
@@ -465,6 +466,15 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         raise ValueError(f'首尾帧模式最多连接 {FRAME_IMAGE_LIMIT} 个图片节点，请先断开多余连线。')
     if params.videoMode not in rules.videoModes:
         raise ValueError(f"当前模型不支持视频模式 {params.videoMode}；允许值：{', '.join(rules.videoModes)}。")
+    if submitting and model.videoAdapter == 'fasth3_dual' and params.videoMode == 'first_frame':
+        # Both anchors are the point of this adapter; a lone anchor or a
+        # text-to-video request belongs to another adapter or mode. Auxiliary
+        # media would otherwise be filtered to context_only without a word.
+        if any(ref.asset.kind in {'audio', 'video'} for ref in references):
+            raise ValueError('FastH3 首尾帧模式不接受音频或视频参考，请移除后再生成。')
+        slots = {ref.role for ref in references if ref.asset.kind == 'image'}
+        if slots != {'first_frame', 'last_frame'}:
+            raise ValueError('FastH3 首尾帧需要同时提供首帧和尾帧，请补齐两个槽位后再生成。')
     if params.videoMode == 'continuation':
         continuation = [ref for ref in references if ref.role == 'continuation']
         if len(continuation) != 1 or continuation[0].asset.kind != 'video' or kinds.count('video') != 1:

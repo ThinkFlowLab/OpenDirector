@@ -121,10 +121,13 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     if kind == 'video' and mode not in rules['videoModes']:
         raise ProjectError('当前模型不支持接续生成，请选择 vLLM-Omni MiniMax-H3。' if mode == 'continuation'
                            else '当前模型接口尚未接通素材参考模式，请选择该模型支持的生成方式。')
+    dual_frames = kind == 'video' and mode == 'first_frame' and config.get('videoAdapter') == 'fasth3_dual'
     total_audio_ms, total_video_ms, media_bytes = 0, 0, 0
     source_metadata, text_context = [], []
     mentioned = {str(part['assetId']) for part in task.get('promptContent') or () if part['type'] == 'reference'}
-    role_by_asset = {str(value['assetId']): value['role'] for value in task.get('referenceRoles') or []}
+    roles_by_asset: dict[str, list[str]] = {}
+    for value in task.get('referenceRoles') or []:
+        roles_by_asset.setdefault(str(value['assetId']), []).append(value['role'])
     slot_roles = set()
     for index, (data, meta, source_kind) in enumerate(references(store, task['projectId'], task['referenceIds'], overrides), 1):
         entry = {'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'content'}
@@ -171,23 +174,31 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                 raise ProjectError(f'“{meta["name"]}”不符合当前图片模型的参考尺寸要求。')
             if rules['profile'] == 'minimax-h3-image':
                 validate_minimax_image_reference(mime, width, height)
-            role = 'reference_image'
+            roles = ['reference_image']
             if kind == 'video' and mode == 'first_frame':
                 # Frame slots are per-slot: one image each, and the slot the
                 # caller asked for is kept so Ark receives last_frame as such.
                 # A plain 'reference' role is a first frame, matching what a
                 # single image meant before last_frame existed; it never turns
-                # into a last frame implicitly.
-                requested = role_by_asset.get(str(meta['id']))
-                role = requested if requested in {'first_frame', 'last_frame'} else 'first_frame'
-                if role in slot_roles:
-                    raise ProjectError('首尾帧每个槽位只能使用一张图片，请在画布上明确指定首帧和尾帧。')
-                slot_roles.add(role)
-            result['images'].append(data_uri(data, mime))
-            result['imageRoles'].append(role)
-            number = len(result['images'])
-            result['prompt'] += f'\n参考{index}：{meta["name"]}，对应第{number}张参考图片（图片{number}，<Picture {number}>）。'
-            entry.update(role=role, number=number)
+                # into a last frame implicitly. One asset may fill both slots,
+                # so every requested role is emitted as its own anchor.
+                requested = [role for role in roles_by_asset.get(str(meta['id']), ())
+                             if role in {'first_frame', 'last_frame'}]
+                roles = requested or ['first_frame']
+            uri = data_uri(data, mime)
+            for role in roles:
+                if kind == 'video' and mode == 'first_frame':
+                    if role in slot_roles:
+                        raise ProjectError('首尾帧每个槽位只能使用一张图片，请在画布上明确指定首帧和尾帧。')
+                    slot_roles.add(role)
+                result['images'].append(uri)
+                result['imageRoles'].append(role)
+                number = len(result['images'])
+                # Dual-frame anchors travel as uploads, so the prompt stays plain.
+                if not dual_frames:
+                    result['prompt'] += f'\n参考{index}：{meta["name"]}，对应第{number}张参考图片（图片{number}，<Picture {number}>）。'
+                result['manifest'].append({**entry, 'role': role, 'number': number})
+            continue
         elif source_kind == 'video':
             duration = meta.get('durationMs')
             if meta['type'] not in {'video/mp4', 'video/quicktime'} or len(data) > rules['videoBytes']:
@@ -217,6 +228,14 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     # first frame stay at one.
     frame_limit = 2 if 'last_frame' in (rules.get('frameRoles') or ()) else 1
     maximum = frame_limit if kind == 'video' and mode == 'first_frame' else rules['maxImages']
+    if dual_frames:
+        # The service takes the anchors in first/last order whatever order the
+        # canvas listed them, and records which upload is the tail anchor.
+        order = [i for i, role in enumerate(result['imageRoles']) if role == 'first_frame']
+        order += [i for i, role in enumerate(result['imageRoles']) if role != 'first_frame']
+        result['images'] = [result['images'][i] for i in order]
+        result['imageRoles'] = [result['imageRoles'][i] for i in order]
+        result['frameIndices'] = [0 if role == 'first_frame' else -1 for role in result['imageRoles']]
     if result['images'] and not maximum:
         raise ProjectError('当前模型只按文字生成，不支持参考图片；请移除图片参考，或把外观要求写进提示词。当前输入已保留。')
     if len(result['images']) > maximum:
@@ -233,7 +252,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         raise ProjectError('参考素材合计超过 100 MB，请缩小文件。', 413)
     if complete and result['audios'] and not (result['images'] or result['videos']) and mode != 'continuation':
         raise ProjectError('音频参考须搭配至少一张参考图片或一段参考视频。')
-    if rules['profile'] == 'fasth3-omni':
+    if rules['profile'] == 'fasth3-omni' and not dual_frames:
         from opendirector.integrations.fasth3 import native_prompt
         result['prompt'] = native_prompt(task, source_metadata) + ''.join(text_context)
     if not prompt.strip():

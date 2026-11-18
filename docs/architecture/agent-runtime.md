@@ -69,4 +69,8 @@ Default 的模型网关在 `agent-runs/<turn-id>.model.jsonl` 记录实际转发
 
 工具允许列表与操作系统沙箱提供不同约束。业务工具独立校验工程范围和输入；原生文件访问权限不授予直接改写工程存储的业务权限。
 
+Windows 上的 Codex 启动显式设置 `windows.sandbox="elevated"`，避免隔离启动忽略用户配置后，`workspace-write` 降为只读并拦截 Shell。保留沙箱约束，不绕过审批或沙箱。PowerShell 使用 `Get-Command opendirector` 发现 CLI，POSIX Shell 使用 `command -v opendirector`。
+
+On Windows, Codex explicitly sets `windows.sandbox="elevated"` so ignoring user configuration does not downgrade `workspace-write` to read-only and block Shell execution. Sandbox restrictions remain enabled. Discover the CLI with `Get-Command opendirector` in PowerShell or `command -v opendirector` in POSIX shells.
+
 CLI 通过环境变量中的本轮本地 Socket 地址连接业务网关，不使用连接令牌或凭据文件。网关继续校验工程范围、轮次生命周期及业务输入。

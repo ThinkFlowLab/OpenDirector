@@ -580,6 +580,14 @@ OPENDIRECTOR_URL=http://127.0.0.1:18238 ZHIPU_API_KEY=... ZHIPU_SAMPLE=/path/to/
 
 Python 用例使用按真实服务响应录制的模拟 HTTP，检查 `/audio/speech` 只请求非流式 WAV 并按 RIFF/WAVE 字节验收（服务默认返回裸 PCM，且部分错误以 HTTP 200 + JSON 返回）、`1113` 余额不足归为额度而非限流、音色库只列出文档中的 7 个预置音色加 `PRIVATE` 复刻音色、复刻前的真实音频校验（mp3/wav、3–30 秒、10 MB）、复刻成功或失败后都删除上传的样本文件、`POST /voice/delete` 删除及重名/不存在的错误映射、试听只从公网 HTTPS 下载且不带凭据，以及统一生成服务的音色预检与执行快照。真实验收需要已充值且开通 GLM-TTS 的 BigModel 账户；保留预置音色与复刻音色生成的实际音频、复刻到删除的完整流程截图，并确认账户中没有遗留的 `voice-clone-input` 文件。
 
+Atlas Cloud chat access uses the following checks. The preset has no fixed model list: the provider form discovers models from the gateway's public `/v1/models` endpoint, like the DeepSeek preset.
+
+```sh
+.venv/bin/python -m pytest tests/test_atlascloud.py -q
+node --test tests/providerPresets.test.ts
+```
+
+The Python cases check that only the high thinking level sends reasoning_effort. The gateway serves several model families and some reject low and medium with a 400, so the other levels use the model default. The Node cases check the preset shape, the label in both display languages and the saved connection identity. Neither calls api.atlascloud.ai. Real streaming and model discovery additionally require network access, and chat requires an Atlas Cloud API key; keep the discovered model count, the reply and the status codes as evidence.
 
 ### Voice library / 音色库
 

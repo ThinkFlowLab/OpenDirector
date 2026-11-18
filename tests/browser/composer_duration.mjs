@@ -296,12 +296,31 @@ try {
       await decimalTrigger.click();
       const decimalPopup = page.getByRole("dialog", { name: dialogName, exact: true });
       const decimalInput = decimalPopup.getByLabel(inputName, { exact: true });
+      const decimalSlider = decimalPopup.getByRole("slider");
+      const minimum = Number(await decimalInput.getAttribute("min"));
+      const maximum = Number(await decimalInput.getAttribute("max"));
+      assert.ok(Number.isFinite(minimum) && maximum > minimum);
+      const notice = decimalPopup.locator(".cw-duration-notice");
+      for (const [key, endpoint, outside] of [
+        ["Home", minimum, minimum - 1],
+        ["End", maximum, maximum + 1],
+      ]) {
+        await decimalSlider.press(key);
+        assert.equal(await decimalInput.inputValue(), String(endpoint), locale);
+        assert.equal(await notice.count(), 0, locale);
+        await decimalInput.fill(String(outside));
+        await decimalInput.press("Enter");
+        await notice.waitFor({ state: "visible" });
+        assert.equal(await decimalInput.inputValue(), String(endpoint), locale);
+        // A valid endpoint clears an existing warning immediately.
+        await decimalSlider.press(key);
+        assert.equal(await notice.count(), 0, locale);
+      }
       await decimalInput.fill("15");
       await decimalInput.press("Enter");
       if (decimalConfig.id === h3Config.id)
         assert.match(await decimalPopup.locator(".cw-duration-output").innerText(), /362.*15\.083333/);
       assert.equal(await decimalPopup.locator(".cw-duration-notice").count(), 0);
-      const decimalSlider = decimalPopup.getByRole("slider");
       assert.equal(await decimalSlider.getAttribute("step"), "1");
       const dragBox = await decimalSlider.boundingBox();
       await page.mouse.move(dragBox.x + dragBox.width / 2, dragBox.y + dragBox.height / 2);

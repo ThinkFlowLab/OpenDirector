@@ -202,6 +202,8 @@ class CreationGeneration(GenerationRuntime):
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
+                if config.get('videoAdapter') == 'fasth3_dual' and node.get('videoMode') == 'first_frame':
+                    params['num_inference_steps'] = 20
                 params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
@@ -385,7 +387,7 @@ class CreationGeneration(GenerationRuntime):
             spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
             spec = execution_spec(spec, resolved, public.inputRules)
             try:
-                validate_generation(spec, public, resolved)
+                validate_generation(spec, public, resolved, submitting=True)
                 if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
                     if old != voice_spec or config != voice_config:
                         raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)

@@ -39,7 +39,7 @@ example vLLM's 4096 default) rejects every request with HTTP 400.
 
 For vLLM-Omni video connections, enter fractional seconds directly, for example `6.583333`. The CLI accepts `opendirector video create --duration 6.583333` together with the other required options. Read `opendirector video create --help` and `opendirector model list` first; `inputRules.fractionalDuration` identifies support, and each output's duration list defines the allowed range. H3 can align output to its supported frame count, so inspect the actual result duration before assembling segments.
 
-For detailed video settings, see [Video model capability configuration (Chinese)](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
+For detailed video settings, see [Video model capability configuration](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
 
 Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
 

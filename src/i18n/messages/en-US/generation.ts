@@ -187,6 +187,8 @@ export const generation = {
   "generation.history.empty": "No generation history of this type.",
   "generation.history.selectJob": "Select history {title}",
   "generation.history.readingPreview": "Reading result preview…",
+  "generation.history.requestedDuration": "Requested duration: {seconds} s",
+  "generation.history.resultDuration": "Result duration: {seconds} s",
   "generation.history.query": "Check the original task again",
   "generation.history.cancelCloud": "Cancel cloud task",
   "generation.history.cancelTool": "Stop tool task",

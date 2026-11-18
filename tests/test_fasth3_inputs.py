@@ -4,6 +4,11 @@ from uuid import uuid4
 
 import pytest
 
+from opendirector.domain.creation.assets import AssetRef, MediaMetadata
+from opendirector.domain.creation.generation import (ResolvedReference, VideoGenerationSpec, VideoParameters,
+                                                     validate_generation)
+from opendirector.domain.creation.models import ModelConfigPublic
+from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.fasth3 import native_prompt, video_parameters
 
@@ -111,3 +116,145 @@ def test_native_prompt_and_full_duration_reach_actual_video_multipart():
         assert value == 'verified-wire'
     provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
     assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+
+
+@pytest.mark.parametrize('slots,indices', [
+    (('first_frame',), [0]),
+    (('last_frame',), [-1]),
+    (('last_frame', 'first_frame'), [0, -1]),
+])
+def test_dual_h3_frame_slots_bind_actual_multipart(slots, indices):
+    import asyncio
+    from email.parser import BytesParser
+    from email.policy import default
+    import httpx
+    from opendirector.integrations.providers import GenerationProviders
+
+    images = {role: source('image', role + '.png', fingerprint='fixture') for role in slots}
+    data = {image['id']: (b'\x89PNG\r\n\x1a\n' + role.encode(), image) for role, image in images.items()}
+    store = SimpleNamespace(asset=lambda owner, key: data[key])
+    task = {'kind': 'video', 'projectId': 'owner', 'prompt': 'Animate the transition',
+            'referenceIds': list(data), 'videoMode': 'first_frame', 'parameters': {'duration': 4},
+            'referenceRoles': [{'assetId': image['id'], 'role': role} for role, image in images.items()]}
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1',
+              'modelId': 'FastH3-Omni-INT8', 'videoAdapter': 'fasth3_dual', 'apiKey': '', 'authMode': 'none'}
+
+    def handle(request):
+        if request.method == 'POST':
+            prefix = 'Content-Type: ' + request.headers['content-type'] + '\r\n\r\n'
+            message = BytesParser(policy=default).parsebytes(prefix.encode() + request.content)
+            fields, uploads = {}, []
+            for part in message.iter_parts():
+                field = part.get_param('name', header='content-disposition')
+                payload = part.get_payload(decode=True)
+                if part.get_filename():
+                    assert field == 'input_references'
+                    uploads.append((part.get_filename(), payload.split(b'\n')[-1].decode()))
+                else:
+                    fields[field] = payload
+            # The uploaded filename states the slot, so it must agree with the
+            # frame index recorded in extra_params, including a lone tail anchor.
+            assert uploads == [(role + '.png', role) for role in ('first_frame', 'last_frame') if role in slots]
+            assert fields['prompt'] == b'Animate the transition'
+            assert fields['num_inference_steps'] == b'20'
+            extra = json.loads(fields['extra_params'])
+            assert (extra['task'], extra['frame_indices'], extra['sampler']) == ('fl2va', indices, 'res_multistep')
+            return httpx.Response(200, json={'id': 'verified-frame-job'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=b'generated')
+        return httpx.Response(200, json={'status': 'completed'})
+
+    async def submitted(value):
+        assert value == 'verified-frame-job'
+
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+    assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+
+
+def test_dual_h3_same_asset_fills_both_frame_slots():
+    import asyncio
+    from email.parser import BytesParser
+    from email.policy import default
+    import httpx
+    from opendirector.integrations.providers import GenerationProviders
+
+    asset_id = str(uuid4())
+    image = source('image', 'anchor.png', fingerprint='fixture')
+    image['id'] = asset_id
+    store = SimpleNamespace(asset=lambda owner, key: (b'\x89PNG\r\n\x1a\n', image))
+    task = {'kind': 'video', 'projectId': 'owner', 'prompt': 'Loop the still',
+            'referenceIds': [asset_id], 'videoMode': 'first_frame', 'parameters': {'duration': 4},
+            'referenceRoles': [{'assetId': asset_id, 'role': 'first_frame'},
+                               {'assetId': asset_id, 'role': 'last_frame'}]}
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1',
+              'modelId': 'FastH3-Omni-INT8', 'videoAdapter': 'fasth3_dual', 'apiKey': '', 'authMode': 'none'}
+
+    def handle(request):
+        if request.method == 'POST':
+            prefix = 'Content-Type: ' + request.headers['content-type'] + '\r\n\r\n'
+            message = BytesParser(policy=default).parsebytes(prefix.encode() + request.content)
+            fields, uploads = {}, []
+            for part in message.iter_parts():
+                if part.get_filename():
+                    assert part.get_param('name', header='content-disposition') == 'input_references'
+                    uploads.append(part.get_filename())
+                else:
+                    fields[part.get_param('name', header='content-disposition')] = part.get_payload(decode=True)
+            # One asset may fill both slots; both roles still reach the wire.
+            assert uploads == ['first_frame.png', 'last_frame.png']
+            extra = json.loads(fields['extra_params'])
+            assert (extra['task'], extra['frame_indices'], extra['sampler']) == ('fl2va', [0, -1], 'res_multistep')
+            return httpx.Response(200, json={'id': 'verified-same-asset-job'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=b'generated')
+        return httpx.Response(200, json={'status': 'completed'})
+
+    async def submitted(value):
+        assert value == 'verified-same-asset-job'
+
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+    assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+
+
+def dual_model():
+    config = {'kind': 'video', 'url': 'http://model.test/v1', 'modelId': 'FastH3-Omni-INT8',
+              'connectionType': 'self_hosted', 'protocol': 'vllm_omni', 'authMode': 'none',
+              'videoAdapter': 'fasth3_dual'}
+    return ModelConfigPublic(id=uuid4(), inputRules=input_rules(config), **config)
+
+
+def dual_spec(model, mode='first_frame'):
+    return VideoGenerationSpec(id=uuid4(), projectId=uuid4(), kind='video', purpose='generation',
+        modelConfigId=model.id, prompt='Animate the transition',
+        parameters=VideoParameters(videoMode=mode, durationSeconds=4))
+
+
+def frame_reference(role, kind='image', duration=None):
+    return ResolvedReference(referenceId=uuid4(), role=role,
+        asset=AssetRef(assetId=uuid4(), revision=1, fingerprint='sha256:' + '0' * 64, kind=kind),
+        metadata=MediaMetadata(mimeType='image/png', size=10, width=32, height=24, durationSeconds=duration))
+
+
+def test_dual_h3_requires_both_anchors_at_submission():
+    model = dual_model()
+    spec = dual_spec(model)
+    anchors = (frame_reference('first_frame'), frame_reference('last_frame'))
+    validate_generation(spec, model, anchors, submitting=True)
+    for references in ((), (frame_reference('first_frame'),), (frame_reference('last_frame'),)):
+        with pytest.raises(ValueError, match='首帧和尾帧'):
+            validate_generation(spec, model, references, submitting=True)
+    # Editing a draft still allows the mode before both anchors exist.
+    validate_generation(spec, model, (), submitting=False)
+
+
+def test_dual_h3_rejects_auxiliary_media_at_submission():
+    model = dual_model()
+    spec = dual_spec(model)
+    references = (frame_reference('first_frame'), frame_reference('last_frame'),
+                  frame_reference('reference', kind='audio'))
+    with pytest.raises(ValueError, match='不接受音频或视频参考'):
+        validate_generation(spec, model, references, submitting=True)
+    # Reference mode keeps its existing omnimodal semantics.
+    validate_generation(dual_spec(model, 'reference'), model,
+                        (frame_reference('reference'), frame_reference('reference', kind='audio', duration=3)),
+                        submitting=True)

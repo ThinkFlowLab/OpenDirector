@@ -56,6 +56,14 @@ export function creationJobs(
       createdAt: job.createdAt ? Date.parse(job.createdAt) : undefined,
       durationKey: `generate:${spec.kind}:${job.inputSnapshot.model.modelConfigId}`,
       outputKind: spec.kind,
+      videoDuration: job.execution.kind === "video"
+        ? {
+            requestedSeconds: job.execution.durationSeconds ?? undefined,
+            resultSeconds: asset?.kind === "video"
+              ? asset.metadata.durationSeconds ?? undefined
+              : undefined,
+          }
+        : undefined,
       activityPhase: phase ?? undefined,
       preview:
         preview ??
