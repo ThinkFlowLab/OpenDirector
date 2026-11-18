@@ -93,8 +93,11 @@ def conversation_is_empty(value):
 
 
 def public_conversation(value):
+    # Keys starting with an underscore are bookkeeping the client never sends
+    # back; Draft forbids extra members, so they must not reach the payload.
     return {key: item for key, item in value.items()
-            if key not in {'archivedConversations', 'reusedCreateIds'}}
+            if key not in {'archivedConversations', 'reusedCreateIds', 'queueSeq'}
+            and not key.startswith('_')}
 
 
 def reused_ids(value):
@@ -169,8 +172,10 @@ class Conversations:
                 raise ProjectError('当前对话已切换，请重新加载后重试；原对话未覆盖。', 409)
             if any(item['id'] == message['id'] for item in value['messages']):
                 raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
-            value['queueSeq'] = value.get('queueSeq', 0) + 1
-            queued = {**message, 'status': 'queued', 'queueSeq': value['queueSeq']}
+            if 'queueSeq' in value:
+                value['_queueSeq'] = value.pop('queueSeq')
+            value['_queueSeq'] = value.get('_queueSeq', 0) + 1
+            queued = {**message, 'status': 'queued', 'queueSeq': value['_queueSeq']}
             value['messages'].append(queued)
             durable_json(file, value)
         return queued

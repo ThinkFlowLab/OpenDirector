@@ -128,6 +128,10 @@ def test_supplementary_message_waits_for_the_running_turn_and_then_runs(assistan
         waiting = client.get(path).json()
         assert [item['status'] for item in waiting['messages']] == ['complete', 'streaming', 'queued']
         assert waiting['activeTurnId'] == first
+        # The ordering counter stays server-side: a view echoes the read model
+        # back as a draft, and Draft forbids members it does not declare.
+        assert 'queueSeq' not in waiting
+        assert waiting['messages'][-1]['queueSeq'] == 1
         gate['release'].set()
         events = frames(running.result(timeout=10))
 
