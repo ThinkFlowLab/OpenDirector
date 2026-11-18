@@ -263,6 +263,13 @@ export const assistant = {
   "assistant.activity.thinking": "正在思考…",
   "assistant.activity.plan": "正在执行计划：{step}",
   "assistant.activity.replying": "思考中…",
+  // Job-wait receipts stored by the agent transport. `{message}` is provider text.
+  "assistant.activity.jobWaitFailed": "任务失败。",
+  "assistant.activity.jobWaitFailedDetail": "任务失败：{message}",
+  "assistant.activity.jobWaitCancelled": "任务已取消。",
+  "assistant.activity.jobWaitCancelledDetail": "任务已取消：{message}",
+  "assistant.activity.jobWaitInterrupted": "任务已中断。",
+  "assistant.activity.jobWaitInterruptedDetail": "任务已中断：{message}",
 
   // Agent tool names, kept separate from tool arguments and results.
   "assistant.tool.query": "查询工程",
