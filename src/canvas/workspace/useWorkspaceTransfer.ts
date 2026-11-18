@@ -832,7 +832,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   };
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (event.defaultPrevented || !ready || switchPending.current) return;
+      if (!rt.canvasVisible || event.defaultPrevented || !ready || switchPending.current) return;
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (

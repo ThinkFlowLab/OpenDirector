@@ -9,82 +9,64 @@ import {
 } from "react";
 
 const KEY = "opendirector.assistant-layout.v1";
-const DEFAULT_WIDTH = 420;
 const MAX_WIDTH = 720;
 const COLLAPSE_AT = 200;
+const GUTTER = 28;
 
-function readWidth() {
+function readWidth(): number | null {
   try {
     const width = JSON.parse(localStorage.getItem(KEY) ?? "null")?.width;
     return typeof width === "number" &&
       Number.isFinite(width) &&
       width > COLLAPSE_AT
-      ? Math.min(width, MAX_WIDTH)
-      : DEFAULT_WIDTH;
+      ? width
+      : null;
   } catch {
-    return DEFAULT_WIDTH;
+    return null;
   }
 }
 
-/** OpenDirector's drag, keyboard, reset and collapse behavior, with room for the canvas header. */
+/** A left conversation column; the default column occupies one third of the workspace. */
 export function useAssistantLayout(
   root: RefObject<HTMLDivElement | null>,
   open: boolean,
   onCollapse: () => void,
 ) {
   const [preferredWidth, setPreferredWidth] = useState(readWidth);
-  const [bounds, setBounds] = useState({
-    viewport: window.innerWidth,
-    heading: 260,
-    actions: 200,
-  });
+  const [viewport, setViewport] = useState(window.innerWidth);
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ x: number; width: number; restore: number } | null>(
-    null,
-  );
-  const mobile = bounds.viewport <= 700;
-  const headerSpace = bounds.viewport - bounds.heading - bounds.actions - 72;
-  const belowHeader = mobile || headerSpace <= COLLAPSE_AT;
+  const drag = useRef<{
+    x: number;
+    width: number;
+    restore: number | null;
+  } | null>(null);
+  const mobile = viewport <= 700;
+  const defaultWidth = Math.max(COLLAPSE_AT + 1, viewport / 3 - GUTTER);
   const maxWidth = Math.min(
-    MAX_WIDTH,
-    belowHeader ? bounds.viewport - (mobile ? 20 : 28) : headerSpace,
+    Math.max(MAX_WIDTH, defaultWidth),
+    Math.max(COLLAPSE_AT + 1, viewport - 360 - GUTTER),
   );
-  const width = mobile ? maxWidth : Math.min(preferredWidth, maxWidth);
-
+  const width = mobile
+    ? Math.max(1, viewport - GUTTER)
+    : Math.min(preferredWidth ?? defaultWidth, maxWidth);
   const stop = () => {
     drag.current = null;
     setDragging(false);
   };
   useLayoutEffect(() => {
-    const heading = root.current?.querySelector<HTMLElement>(
-      ".cw-project-heading",
-    );
-    const actions = root.current?.querySelector<HTMLElement>(".cw-top-actions");
-    const measure = () =>
-      setBounds({
-        viewport: window.innerWidth,
-        heading: heading?.offsetWidth ?? 260,
-        actions: actions?.offsetWidth ?? 200,
-      });
-    const resize = () => {
-      stop();
-      measure();
-    };
+    const host = root.current;
+    if (!host) return;
+    const measure = () => setViewport(host.clientWidth);
     const observer = new ResizeObserver(measure);
-    if (heading) observer.observe(heading);
-    if (actions) observer.observe(actions);
-    window.addEventListener("resize", resize);
+    observer.observe(host);
     measure();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", resize);
-    };
+    return () => observer.disconnect();
   }, [root]);
   useEffect(() => {
     try {
       localStorage.setItem(KEY, JSON.stringify({ width: preferredWidth }));
     } catch {
-      /* Keep usable without storage. */
+      /* The active layout remains usable without storage. */
     }
   }, [preferredWidth]);
   useEffect(() => {
@@ -94,7 +76,6 @@ export function useAssistantLayout(
   useEffect(() => {
     if (!open) stop();
   }, [open]);
-
   const resize = (next: number, restore = preferredWidth) => {
     if (next <= COLLAPSE_AT) {
       stop();
@@ -113,7 +94,7 @@ export function useAssistantLayout(
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (drag.current)
       resize(
-        drag.current.width + drag.current.x - event.clientX,
+        drag.current.width + event.clientX - drag.current.x,
         drag.current.restore,
       );
   };
@@ -124,9 +105,9 @@ export function useAssistantLayout(
         : event.key === "End"
           ? maxWidth
           : event.key === "ArrowLeft"
-            ? width + 10
+            ? width - 10
             : event.key === "ArrowRight"
-              ? width - 10
+              ? width + 10
               : null;
     if (next !== null) {
       event.preventDefault();
@@ -139,8 +120,7 @@ export function useAssistantLayout(
     maxWidth,
     mobile,
     dragging,
-    belowHeader,
-    toolbarOffset: open && !belowHeader ? width + 6 : 0,
+    columnWidth: open && !mobile ? width + GUTTER : 0,
     resizer: {
       onPointerDown,
       onPointerMove,
@@ -148,9 +128,8 @@ export function useAssistantLayout(
       onPointerCancel: stop,
       onLostPointerCapture: stop,
       onKeyDown,
-      onDoubleClick: () => setPreferredWidth(DEFAULT_WIDTH),
+      onDoubleClick: () => setPreferredWidth(null),
     },
   };
 }
-
 export type AssistantLayout = ReturnType<typeof useAssistantLayout>;

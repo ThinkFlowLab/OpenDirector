@@ -23,7 +23,8 @@ try {
     type: "project.create", payload: { name: `Viewport focus ${projectId.slice(0, 8)}` } });
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
   await page.getByText("Saved on this device", { exact: true }).waitFor();
-  await page.locator(".cw-chat-button").click();
+  const chatToggle = page.locator(".cw-chat-button");
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
   await page.locator(".cw-assistant-panel:not([hidden])").waitFor();
   headers["X-OpenDirector-Session"] = await page.evaluate(async () => (await import("/src/backend/api.ts")).sessionId);
   const create = async (x, y) => {
@@ -38,9 +39,10 @@ try {
   const checkCentered = async (id) => {
     await page.waitForFunction((id) => {
       const node = document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();
-      const panel = document.querySelector(".cw-assistant-panel").getBoundingClientRect();
-      return node.left > 75 && node.right < panel.left - 10 && node.top > 72 && node.bottom < innerHeight - 65 &&
-        Math.abs((node.left + node.right) / 2 - (80 + panel.left - 16) / 2) < 50;
+      const canvas = document.querySelector(".cw-canvas-region").getBoundingClientRect();
+      const left = canvas.left + (canvas.width < 700 ? 64 : 80), right = canvas.right - 20;
+      return node.left > left - 5 && node.right < right + 10 && node.top > canvas.top + 72 && node.bottom < canvas.bottom - 65 &&
+        Math.abs((node.left + node.right) / 2 - (left + right) / 2) < 50;
     }, id);
   };
   const editor = page.locator(".cw-assistant-panel [contenteditable=true]").first();
@@ -51,7 +53,8 @@ try {
   assert.equal(await page.locator(".react-flow__node.selected").count(), 0);
   await page.screenshot({ path: "/tmp/created-node-focus.png" });
   await page.waitForTimeout(250);
-  await page.mouse.move(100, 800);
+  const canvas = await page.locator(".cw-canvas-region").boundingBox();
+  await page.mouse.move(canvas.x + 100, 800);
   await page.mouse.down();
   const before = await transform();
   await create(5000, 5000);

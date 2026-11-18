@@ -2,11 +2,23 @@
 
 [English](user-guide.md) · [简体中文](user-guide.zh-CN.md) · [Back to README](../../README.md)
 
+## Choose a creation mode
+
+Use **Agent mode** and **Canvas mode** in the top bar to switch layouts. OpenDirector starts in Canvas mode when no preference is saved, and remembers your choice in this browser.
+
+- **Agent mode** centers the chat so you can describe a goal and work with the assistant. Press `Shift` twice to focus the input. To inspect or edit nodes and the timeline, switch to Canvas mode.
+- **Canvas mode** places chat on the left and the canvas on the right, with a default 1:2 split. Drag the divider to resize the chat, or double-click it to restore the default width. Use **Collapse AI chat** to hide the chat and **Chat with AI** to bring it back.
+- In a narrow window, Canvas mode shows one area at a time. Use **Show canvas** and **Chat with AI** to switch between them.
+
+Both modes share the same project, conversation, draft and attachments. Switching modes preserves the canvas view and keeps replies and generation tasks running without submitting them again.
+
+Change the interface language in **Settings → General → Language**. Agent mode has a settings button in the top bar; Canvas mode has one at the bottom left. The assistant's reply language follows your question.
+
 ## Connect models
 
 For external agent harnesses (Codex, OpenCode, Claude Code, DeepSeek Harness and JiuwenSwarm), OpenDirector checks the backend's `PATH` first, then common CLI installation directories. These include user bins, npm/nvm, Bun, Volta, Windows Scoop and Python Scripts, and macOS Homebrew and user Python bins. It also checks Codex desktop installs, OpenCode's `.opencode/bin`, Claude's `.claude/local`, and configured npm, pipx and uv bin directories. It checks known directories without scanning the whole disk. Finding a CLI does not establish authentication or configuration readiness. For other locations, add the CLI directory to the backend's `PATH` and restart the backend. The Default agent continues to use the bundled OpenCode.
 
-Click the gear at the bottom left to open **Settings**, then open **Model connections**. Add models for chat, image, video, or audio generation as needed.
+Open **Settings → Model connections**. Add models for chat, image, video, or audio generation as needed.
 
 For optional Kling 4.0 and Flash video generation, follow [Generate videos with Kling](kling-video.md). Both support text, first-frame, and image-reference generation. Standard Kling 4.0 also supports first-and-last frames. Adding the service preserves your existing model selection.
 
@@ -137,13 +149,13 @@ Codex web search citations appear as numbered source links when the search resul
 
 Click a source number to view its full URL in a bordered information card, then choose **Copy link** or **Open link**. Close the card with the button at its top right, by pressing `Esc`, or by clicking outside it.
 
-Click **Chat with AI** at the bottom right, select a chat model, and describe what you want to create. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
+Use the chat in either creation mode, select a chat model, and describe what you want to create. If the chat is collapsed in Canvas mode, click **Chat with AI** to reopen it. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
 Use **New conversation** at the top of the panel to start a separate chat. **Conversation history** lets you search and switch between this canvas's conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices; the active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
 
 - Press `Enter` to send, or `Shift+Enter` for a new line.
 - You can stop the response while it is being generated.
-- Click the collapse button at the top right to hide the chat panel. Drag its left edge to resize it.
+- In Canvas mode, click **Collapse AI chat** to hide the chat panel. Drag its right edge to resize it, or double-click the edge to restore the default width.
 
 Asset generation may continue after the reply ends. Check its progress in **Generation history**.
 

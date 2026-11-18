@@ -15,6 +15,7 @@ import type {
   CanvasNodeKind,
 } from "../model.ts";
 import { SaveQueue } from "../saveQueue.ts";
+import type { WorkspaceMode } from "../workspaceMode";
 import { multiSelectionGeometry } from "../selectionReferences.ts";
 import type { SubjectMediaSlot } from "../subjectMedia.ts";
 import type { CanvasToolId, ToolParameters } from "../toolCatalog.ts";
@@ -82,6 +83,11 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   >;
   selectionAtPointerDown: RefObject<string[]>;
   root: RefObject<HTMLDivElement | null>;
+  canvasRegion: RefObject<HTMLDivElement | null>;
+  workspaceMode: WorkspaceMode;
+  changeWorkspaceMode: (mode: WorkspaceMode) => void;
+  assistantVisible: boolean;
+  canvasVisible: boolean;
   composerElement: RefObject<HTMLDivElement | null>;
   toolbarElement: RefObject<HTMLDivElement | null>;
   fileInput: RefObject<HTMLInputElement | null>;

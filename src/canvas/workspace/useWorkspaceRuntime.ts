@@ -1,7 +1,8 @@
 
 import { SaveQueue } from "../saveQueue.ts";
 import { useKeyPress, useReactFlow, type Edge } from "@xyflow/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { readWorkspaceMode, saveWorkspaceMode, type WorkspaceMode } from "../workspaceMode";
 import { useNodeVersionCounts } from "../NodeVersionHistory";
 
 import { CreationEditorSession } from "../../backend/creationEditorSession";
@@ -115,6 +116,20 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
     }
   })();
   const { notifications, notify, dismiss } = useCanvasNotifications();
+  const [workspaceMode, setWorkspaceMode] = useState(readWorkspaceMode);
+  const preferenceWarningShown = useRef(false);
+  const changeWorkspaceMode = (mode: WorkspaceMode) => {
+    if (mode === workspaceMode) return;
+    pointerGesture.current.cancel();
+    flowSurface.current?.cancel();
+    runtime.references?.cancel();
+    runtime.setMenu(null);
+    setWorkspaceMode(mode);
+    if (!saveWorkspaceMode(mode) && !preferenceWarningShown.current) {
+      preferenceWarningShown.current = true;
+      notify(t("workspaceModes.preferenceFailed"));
+    }
+  };
   const editorOrigin = useRef<ResultSource | null>(null);
   const mediaPublications = useRef(
     new WeakMap<ResultSource, MediaPublication>(),
@@ -191,6 +206,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   } | null>(null);
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const canvasRegion = useRef<HTMLDivElement>(null);
   const assistantLayout = useAssistantLayout(root, assistantOpen, () => {
     setAssistantOpen(false);
     requestAnimationFrame(() =>
@@ -199,6 +215,8 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         ?.focus(),
     );
   });
+  const assistantVisible = workspaceMode === "agent" || assistantOpen;
+  const canvasVisible = workspaceMode === "canvas" && (!assistantLayout.mobile || !assistantOpen);
   const toolbarElement = useRef<HTMLDivElement>(null);
   const composerElement = useRef<HTMLDivElement>(null);
   const focusSelection = (id: string) => {
@@ -245,11 +263,13 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
     [backendCatalog.models],
   );
 
-  const center = (): Point =>
-    flow.screenToFlowPosition({
-      x: window.innerWidth / 2 - (panel ? 150 : 0),
-      y: window.innerHeight * 0.32,
+  const center = (): Point => {
+    const bounds = canvasRegion.current?.getBoundingClientRect();
+    return flow.screenToFlowPosition({
+      x: (bounds?.left ?? 0) + (bounds?.width ?? window.innerWidth) / 2 - (panel ? 150 : 0),
+      y: (bounds?.top ?? 0) + (bounds?.height ?? window.innerHeight) * 0.32,
     });
+  };
   // A node freezes the dialog's model at creation. Changing the picker later
   // must not rewrite a model the viewer already has on the canvas, so this is
   // the only place the assistant selection is read.
@@ -335,6 +355,11 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   runtime.uploadSource = uploadSource;
   runtime.referenceTarget = referenceTarget;
   runtime.root = root;
+  runtime.canvasRegion = canvasRegion;
+  runtime.workspaceMode = workspaceMode;
+  runtime.changeWorkspaceMode = changeWorkspaceMode;
+  runtime.assistantVisible = assistantVisible;
+  runtime.canvasVisible = canvasVisible;
   runtime.assistantLayout = assistantLayout;
   runtime.toolbarElement = toolbarElement;
   runtime.composerElement = composerElement;

@@ -63,9 +63,9 @@ async function saved() {
   await page.getByText("Saved on this device", { exact: true }).waitFor();
 }
 async function menu(itemId, action) {
-  await page
-    .locator(".react-flow__pane")
-    .click({ position: { x: 1400, y: 800 } });
+  const pane = page.locator(".react-flow__pane");
+  const canvas = await pane.boundingBox();
+  await pane.click({ position: { x: canvas.width - 200, y: canvas.height - 200 } });
   await page.keyboard.press("Escape");
   await page
     .locator(`.react-flow__node[data-id="${itemId}"] .cw-node-title`)

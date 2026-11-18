@@ -37,6 +37,9 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     arrivingNodes,
     assistantLayout,
     assistantOpen,
+    canvasRegion,
+    canvasVisible,
+    workspaceMode,
     begin,
     bypassSnapping,
     cancelResultImport,
@@ -600,7 +603,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
         }
       : mediaBounds;
   const selectionPresentation = useSelectionPresentation({
-    root,
+    root: canvasRegion,
     toolbar: toolbarElement,
     composer: composerElement,
     // Generators are screen-space UI, like the toolbar and sidebar. Only their
@@ -613,6 +616,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     panel,
     focusRequest: presentationFocus,
     blocked:
+      !canvasVisible ||
       composerExpanded ||
       interacting ||
       references.connecting ||
@@ -620,9 +624,10 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       pointerGesture.current.moved ||
       !selectionControls,
     controlsKey: `${assistantOpen}:${assistantLayout.width}:${hasComposer}:${hasToolbar}:${composerExpanded}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
+    preserveViewportKey: `${workspaceMode}:${canvasVisible}:${assistantOpen}:${assistantLayout.width}`,
   });
   revealCreatedNodes.current = (nodes, allNodes) => {
-    if (switchPending.current || viewportMoving.current || interacting || pointerGesture.current.active ||
+    if (!canvasVisible || switchPending.current || viewportMoving.current || interacting || pointerGesture.current.active ||
         references.connecting || spacePressed || selectedRef.current.length > 1 ||
         editing || preview || activeAction || textEditingId || composerExpanded) return;
     const focused = document.activeElement;
@@ -631,7 +636,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     const bounds = boundsOfNodes(nodes, allNodes);
     if (bounds) selectionPresentation.reveal(bounds);
   };
-  useCanvasWheelBoundary(root, selectionPresentation.userNavigation);
+  useCanvasWheelBoundary(canvasRegion, selectionPresentation.userNavigation, canvasVisible);
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -755,7 +760,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
     bypassSnapping.current = event.metaKey || event.ctrlKey;
     if (bypassSnapping.current) clearGuides();
-    if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
+    if (!canvasVisible || !ready || switchPending.current || event.nativeEvent.isComposing) return;
     const el = event.target as HTMLElement;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();

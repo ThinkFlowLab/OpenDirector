@@ -46,7 +46,6 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     saveQueue,
     setActionSession,
     setArrivingNodes,
-    setAssistantOpen,
     setAssistantSelectionRequest,
     setBusinessHistory,
     setComposerNodeId,
@@ -285,7 +284,6 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       flowSurface.current?.cancel();
       setSelectedEdges([]);
       setPanel(null);
-      setAssistantOpen(false);
       setAssistantSelectionRequest(0);
       setMenu(null);
       setRename(null);

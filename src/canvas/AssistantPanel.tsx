@@ -61,6 +61,7 @@ export function AssistantPanel({
   visibleNodes,
   selectedNodes,
   open,
+  collapsible = true,
   layout,
   selectionRequest,
   onClose,
@@ -76,6 +77,7 @@ export function AssistantPanel({
   visibleNodes: CanvasNode[];
   selectedNodes: CanvasNode[];
   open: boolean;
+  collapsible?: boolean;
   layout: AssistantLayout;
   selectionRequest: number;
   onClose: () => void;
@@ -173,8 +175,24 @@ export function AssistantPanel({
       chat.setContent(content, projectReferences.assets);
   }, [projectReferences.assets]);
 
+  const previouslyOpen = useRef(open);
+  const openFocusTarget = useRef<Element | null>(null);
   useEffect(() => {
-    if (open && chat.loaded) editor.current?.focus();
+    if (open && !previouslyOpen.current)
+      openFocusTarget.current = document.activeElement;
+    previouslyOpen.current = open;
+    if (!open) {
+      openFocusTarget.current = null;
+      return;
+    }
+    if (!chat.loaded) return;
+    const active = document.activeElement;
+    // Loading a default-open chat must not dismiss a project menu or rename.
+    // An explicit open retains focus intent until the user chooses another control.
+    if (active === document.body || active?.closest("#canvas-assistant") ||
+        active === openFocusTarget.current)
+      editor.current?.focus();
+    openFocusTarget.current = null;
   }, [open, chat.loaded, value.conversationId]);
   const displayedAssets = [
     ...new Map(
@@ -346,7 +364,7 @@ export function AssistantPanel({
           event.preventDefault();
           event.stopPropagation();
           if (mediaPreview) setMediaPreview(null);
-          else onClose();
+          else if (collapsible) onClose();
         }
       }}
       onDragOver={(event) => {
@@ -385,6 +403,7 @@ export function AssistantPanel({
         }
         onChange={changeConversation}
         onClose={onClose}
+        collapsible={collapsible}
       />
       <div
         className="cw-assistant-log"
@@ -782,7 +801,7 @@ export function AssistantPanel({
           )}
         </div>
       </div>
-      {!layout.mobile && (
+      {collapsible && !layout.mobile && (
         <div
           className="cw-assistant-resizer"
           role="separator"

@@ -1,3 +1,4 @@
+import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -91,6 +92,7 @@ import { TooltipButton } from "../TooltipButton";
 import { VideoActionEditor } from "../VideoActionEditor";
 import { captureVideoEndpoint, extractVideoAudio } from "../videoActionRuntime";
 import "../workspace.css";
+import "../workspace-modes.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { DirectorStage, IconButton, helpShortcuts, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
 
@@ -106,6 +108,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     addNode,
     assetListAnchor,
     assistantLayout,
+    assistantVisible,
+    canvasRegion,
+    canvasVisible,
+    workspaceMode,
+    changeWorkspaceMode,
     assistantOpen,
     assistantSelectionRequest,
     backendCatalog,
@@ -341,15 +348,17 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}${spacePressed ? " cw-workspace-space-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
-      data-edge-motion={pageVisible}
-      data-assistant-open={assistantOpen}
+      data-edge-motion={pageVisible && canvasVisible}
+      data-assistant-open={assistantVisible}
+      data-workspace-mode={workspaceMode}
+      data-narrow={assistantLayout.mobile}
+      data-canvas-visible={canvasVisible}
       data-assistant-resizing={assistantLayout.dragging}
       data-canvas-interacting={interacting}
       style={
         {
           "--assistant-width": `${assistantLayout.width}px`,
-          "--assistant-toolbar-offset": `${assistantLayout.toolbarOffset}px`,
-          "--assistant-top": assistantLayout.belowHeader ? "78px" : "14px",
+          "--assistant-column-width": `${assistantLayout.columnWidth}px`,
           "--cw-selection-padding": `${SELECTION_PADDING / zoom}px`,
         } as CSSProperties
       }
@@ -441,6 +450,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       }}
       onDrop={(event) => {
         if (
+          !canvasVisible ||
+          !(event.target as HTMLElement).closest(".cw-canvas-region") ||
           event.defaultPrevented ||
           (event.target as HTMLElement).closest("[role=dialog]")
         )
@@ -455,12 +466,161 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         }
       }}
     >
+      <header className="cw-topbar">
+        <div className="cw-project-heading">
+          <img
+            className="cw-brand"
+            src={openDirectorLogoAnimation}
+            alt="OpenDirector"
+            draggable={false}
+          />
+          <ProjectSelector
+            currentId={doc.id}
+            editNameForId={editProjectNameId}
+            name={doc.title}
+            disabled={!ready || switching || projectRenaming}
+            onSelect={(project) =>
+              switchDocument(() => openWorkspaceProject(project))
+            }
+            onCreate={() => {
+              const id = crypto.randomUUID();
+              void switchDocument(async () => {
+                const { projects } = await listWorkspaceProjects();
+                const names = new Set(projects.map(project => project.name));
+                const base = t("canvas.project.defaultName");
+                let name = base;
+                for (let suffix = 2; names.has(name); suffix++) name = `${base} ${suffix}`;
+                const project = await createWorkspaceProject(name, id);
+                const document = await openWorkspaceProject(project);
+                await saveWorkspaceDocument(document);
+                return document;
+              }).then(success => { if (success) setEditProjectNameId(id); });
+            }}
+            onRename={renameCurrentProject}
+            onRenameProject={renameProject}
+            onDeleteProject={deleteProject}
+          />
+          <div
+            className="cw-language-toggle"
+            hidden={workspaceMode === "agent"}
+            role="group"
+            aria-label={t("common.language")}
+          >
+            <button
+              type="button"
+              className={locale === "zh-CN" ? "is-active" : ""}
+              aria-pressed={locale === "zh-CN"}
+              onClick={() => setLocale("zh-CN")}
+            >
+              {t("common.chinese")}
+            </button>
+            <span aria-hidden="true">|</span>
+            <button
+              type="button"
+              className={locale === "en-US" ? "is-active" : ""}
+              aria-pressed={locale === "en-US"}
+              onClick={() => setLocale("en-US")}
+            >
+              {t("common.englishShort")}
+            </button>
+          </div>
+          {workspaceMode === "canvas" && <NodeInfoButton nodes={doc.nodes} />}
+          <span className="cw-save-status" title={saveStatusText}>
+            <i className={saveStatus.state === "saved" ? "saved" : ""} />
+            {saveStatusText}
+          </span>
+          {saveStatus.state === "failed" && (
+            <div className="cw-save-conflict-actions">
+              <button onClick={() => void exportDocument()}>
+                {t("canvas.workspace.save.exportCopy")}
+              </button>
+              <button
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      t("canvas.workspace.save.reloadConfirm"),
+                    )
+                  )
+                    return;
+                  void workspaceProjection(doc.id)
+                    .open()
+                    .then((next) => {
+                      installDocument(next);
+                      setSaveStatus({ state: "saved" });
+                    })
+                    .catch((error) => notify(errorMessage(error)));
+                }}
+              >
+                {t("canvas.workspace.save.reload")}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="cw-top-actions">
+          <div className="cw-canvas-top-actions" hidden={workspaceMode === "agent"}>
+          <span ref={assetListAnchor} className="cw-asset-list-anchor">
+            <IconButton
+              name="search"
+              label={t("canvas.workspace.toolbar.assets")}
+              tooltipSide="bottom"
+              active={panel === "search"}
+              onClick={() => {
+                void persist(historyRef.current.present, false).then(
+                  (saved) => {
+                    if (saved) togglePanel("search");
+                  },
+                );
+              }}
+            />
+          </span>
+          <IconButton
+            name="history"
+            label={t("canvas.workspace.toolbar.history")}
+            tooltipSide="bottom"
+            active={panel === "history"}
+            onClick={() => togglePanel("history")}
+          />
+          <IconButton
+            name="canvasImport"
+            label={t("canvas.workspace.toolbar.importCanvas")}
+            tooltipSide="bottom"
+            size={20}
+            onClick={() => importInput.current?.click()}
+          />
+          <IconButton
+            name="canvasExport"
+            label={t("canvas.workspace.toolbar.exportCanvas")}
+            tooltipSide="bottom"
+            size={20}
+            onClick={exportDocument}
+          />
+          <input
+            ref={importInput}
+            type="file"
+            accept=".canvas,application/zip"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void importDocument(file);
+            }}
+          />
+          </div>
+          {workspaceMode === "agent" && <IconButton
+            name="settings" label={t("canvas.workspace.toolbar.settings")}
+            onClick={() => { setSettingsCategory("general"); setSettingsOpen(true); }}
+          />}
+          <WorkspaceModeSwitch mode={workspaceMode} onChange={changeWorkspaceMode} />
+        </div>
+      </header>
+      <div className="cw-canvas-region" ref={canvasRegion} data-testid="canvas-region"
+        inert={!canvasVisible} aria-hidden={!canvasVisible} data-visible={canvasVisible}>
       <CanvasPlaybackProvider
         blocked={
           // Dragging a node is intentionally absent here: the video node keeps
           // playing while the node is dragged. Only gestures that move the
           // viewport or open another surface interrupt playback.
-          panning ||
+          !canvasVisible || panning ||
           references.connecting ||
           Boolean(
             editing ||
@@ -815,145 +975,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           }}
         />
       )}
-      <header className="cw-topbar">
-        <div className="cw-project-heading">
-          <img
-            className="cw-brand"
-            src={openDirectorLogoAnimation}
-            alt="OpenDirector"
-            draggable={false}
-          />
-          <ProjectSelector
-            currentId={doc.id}
-            editNameForId={editProjectNameId}
-            name={doc.title}
-            disabled={!ready || switching || projectRenaming}
-            onSelect={(project) =>
-              switchDocument(() => openWorkspaceProject(project))
-            }
-            onCreate={() => {
-              const id = crypto.randomUUID();
-              void switchDocument(async () => {
-                const { projects } = await listWorkspaceProjects();
-                const names = new Set(projects.map(project => project.name));
-                const base = t("canvas.project.defaultName");
-                let name = base;
-                for (let suffix = 2; names.has(name); suffix++) name = `${base} ${suffix}`;
-                const project = await createWorkspaceProject(name, id);
-                const document = await openWorkspaceProject(project);
-                await saveWorkspaceDocument(document);
-                return document;
-              }).then(success => { if (success) setEditProjectNameId(id); });
-            }}
-            onRename={renameCurrentProject}
-            onRenameProject={renameProject}
-            onDeleteProject={deleteProject}
-          />
-          <div
-            className="cw-language-toggle"
-            role="group"
-            aria-label={t("common.language")}
-          >
-            <button
-              type="button"
-              className={locale === "zh-CN" ? "is-active" : ""}
-              aria-pressed={locale === "zh-CN"}
-              onClick={() => setLocale("zh-CN")}
-            >
-              {t("common.chinese")}
-            </button>
-            <span aria-hidden="true">|</span>
-            <button
-              type="button"
-              className={locale === "en-US" ? "is-active" : ""}
-              aria-pressed={locale === "en-US"}
-              onClick={() => setLocale("en-US")}
-            >
-              {t("common.englishShort")}
-            </button>
-          </div>
-          <NodeInfoButton nodes={doc.nodes} />
-          <span className="cw-save-status" title={saveStatusText}>
-            <i className={saveStatus.state === "saved" ? "saved" : ""} />
-            {saveStatusText}
-          </span>
-          {saveStatus.state === "failed" && (
-            <div className="cw-save-conflict-actions">
-              <button onClick={() => void exportDocument()}>
-                {t("canvas.workspace.save.exportCopy")}
-              </button>
-              <button
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      t("canvas.workspace.save.reloadConfirm"),
-                    )
-                  )
-                    return;
-                  void workspaceProjection(doc.id)
-                    .open()
-                    .then((next) => {
-                      installDocument(next);
-                      setSaveStatus({ state: "saved" });
-                    })
-                    .catch((error) => notify(errorMessage(error)));
-                }}
-              >
-                {t("canvas.workspace.save.reload")}
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="cw-top-actions">
-          <span ref={assetListAnchor} className="cw-asset-list-anchor">
-            <IconButton
-              name="search"
-              label={t("canvas.workspace.toolbar.assets")}
-              tooltipSide="bottom"
-              active={panel === "search"}
-              onClick={() => {
-                void persist(historyRef.current.present, false).then(
-                  (saved) => {
-                    if (saved) togglePanel("search");
-                  },
-                );
-              }}
-            />
-          </span>
-          <IconButton
-            name="history"
-            label={t("canvas.workspace.toolbar.history")}
-            tooltipSide="bottom"
-            active={panel === "history"}
-            onClick={() => togglePanel("history")}
-          />
-          <IconButton
-            name="canvasImport"
-            label={t("canvas.workspace.toolbar.importCanvas")}
-            tooltipSide="bottom"
-            size={20}
-            onClick={() => importInput.current?.click()}
-          />
-          <IconButton
-            name="canvasExport"
-            label={t("canvas.workspace.toolbar.exportCanvas")}
-            tooltipSide="bottom"
-            size={20}
-            onClick={exportDocument}
-          />
-          <input
-            ref={importInput}
-            type="file"
-            accept=".canvas,application/zip"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) void importDocument(file);
-            }}
-          />
-        </div>
-      </header>
+
       <CanvasToolRail
         holdCollapsed={false}
         items={[
@@ -1526,7 +1548,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           </div>
         </>
       )}
-      {hasToolbar && single?.type === "timeline" && !lockedIds.has(single.id) && (
+      {canvasVisible && hasToolbar && single?.type === "timeline" && !lockedIds.has(single.id) && (
         <TimelineOutputShortcut node={single} state={timelineOutput.state}
           blocked={timelineOutput.busy && timelineOutput.state?.itemId !== single.id || !!(timelineOutput.blockedItemId && timelineOutput.blockedItemId !== single.id)}
           onRun={() => void timelineOutput.run(single, () => persist(doc, false))} />
@@ -2279,6 +2301,16 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         </aside>
       )}
 
+      </div>
+      {workspaceMode === "canvas" && assistantLayout.mobile && assistantOpen && (
+        <button
+          className="cw-narrow-region-toggle"
+          onClick={() => setAssistantOpen(false)}
+        >
+          {t("workspaceModes.showCanvas")}
+        </button>
+      )}
+
       {ready && (
         <AssistantPanel
           key={doc.id}
@@ -2288,10 +2320,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           nodes={[...doc.nodes, ...(doc.hiddenNodes ?? [])]}
           visibleNodes={doc.nodes}
           selectedNodes={doc.nodes.filter((node) => selected.includes(node.id))}
-          open={assistantOpen}
+          open={assistantVisible}
+          collapsible={workspaceMode === "canvas"}
           layout={assistantLayout}
           selectionRequest={assistantSelectionRequest}
           onClose={() => {
+            if (workspaceMode === "agent") return;
             setAssistantOpen(false);
             requestAnimationFrame(() =>
               root.current

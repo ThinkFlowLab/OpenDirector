@@ -1,4 +1,4 @@
-/** Isolated fixture only: modified wheels belong to the canvas, never page UI. */
+/** Isolated fixture only: modified wheels zoom only within the canvas region. */
 import assert from "node:assert/strict";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -63,17 +63,28 @@ try {
     );
   });
   const metrics = () =>
-    page.evaluate(() => ({
-      zoom: new DOMMatrix(
+    page.evaluate(() => {
+      const viewport = new DOMMatrix(
         getComputedStyle(document.querySelector(".react-flow__viewport"))
           .transform,
-      ).a,
-      width: window.innerWidth,
-      ratio: window.devicePixelRatio,
-      scale: window.visualViewport.scale,
-    }));
+      );
+      return {
+        zoom: viewport.a,
+        x: viewport.e,
+        y: viewport.f,
+        width: window.innerWidth,
+        ratio: window.devicePixelRatio,
+        scale: window.visualViewport.scale,
+      };
+    });
   const controls = [];
-  async function zoomWheel(locator, name) {
+  const outsideCanvas = [];
+  async function modifiedWheel(locator, name, zoomCanvas = true) {
+    assert.equal(
+      await locator.evaluate((element) => Boolean(element.closest(".cw-canvas-region"))),
+      zoomCanvas,
+      `${name}: verify the wheel target's region`,
+    );
     await locator.hover();
     await page.waitForTimeout(100);
     const before = await metrics();
@@ -96,50 +107,69 @@ try {
     }
     await page.waitForTimeout(180);
     const after = await metrics();
-    assert.ok(after.zoom > before.zoom, `${name}: wheel must zoom the canvas`);
-    assert.deepEqual(
-      { ...after, zoom: before.zoom },
-      before,
-      `${name}: page UI must stay fixed`,
-    );
+    if (zoomCanvas) {
+      assert.ok(after.zoom > before.zoom, `${name}: wheel must zoom the canvas`);
+      assert.deepEqual(
+        { ...after, zoom: before.zoom, x: before.x, y: before.y },
+        before,
+        `${name}: page UI must stay fixed`,
+      );
+    } else {
+      assert.deepEqual(
+        { zoom: after.zoom, x: after.x, y: after.y },
+        { zoom: before.zoom, x: before.x, y: before.y },
+        `${name}: wheel must preserve the canvas viewport`,
+      );
+    }
     const prevented = await page.evaluate(
       (count) => window.__modifiedWheels.slice(count),
       count,
     );
-    assert.ok(
-      prevented.length && prevented.every(Boolean),
-      `${name}: native default must be cancelled`,
-    );
+    if (zoomCanvas) {
+      assert.ok(
+        prevented.length && prevented.every(Boolean),
+        `${name}: native default must be cancelled`,
+      );
+    }
     // Meta+wheel follows the same boundary without changing ordinary scrolling.
-    assert.equal(
-      await locator.evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        return !element.dispatchEvent(
-          new WheelEvent("wheel", {
-            bubbles: true,
-            cancelable: true,
-            deltaY: 120,
-            metaKey: true,
-            clientX: rect.left + rect.width / 2,
-            clientY: rect.top + rect.height / 2,
-          }),
-        );
-      }),
-      true,
-    );
-    await page.waitForFunction(
-      (zoom) =>
-        Math.abs(
-          new DOMMatrix(
-            getComputedStyle(document.querySelector(".react-flow__viewport"))
-              .transform,
-          ).a - zoom,
-        ) < 0.001,
-      before.zoom,
-    );
-    controls.push(name);
+    const metaPrevented = await locator.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return !element.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          deltaY: 120,
+          metaKey: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        }),
+      );
+    });
+    if (zoomCanvas) {
+      assert.equal(metaPrevented, true);
+      await page.waitForFunction(
+        (zoom) =>
+          Math.abs(
+            new DOMMatrix(
+              getComputedStyle(document.querySelector(".react-flow__viewport"))
+                .transform,
+            ).a - zoom,
+          ) < 0.001,
+        before.zoom,
+      );
+      controls.push(name);
+    } else {
+      await page.waitForTimeout(180);
+      const afterMeta = await metrics();
+      assert.deepEqual(
+        { zoom: afterMeta.zoom, x: afterMeta.x, y: afterMeta.y },
+        { zoom: before.zoom, x: before.x, y: before.y },
+        `${name}: Meta+wheel must preserve the canvas viewport`,
+      );
+      outsideCanvas.push(name);
+    }
   }
-  await zoomWheel(
+  await modifiedWheel(
     page.getByRole("toolbar", { name: "画布创作工具" }),
     "left toolbar",
   );
@@ -159,7 +189,7 @@ try {
   await material.waitFor();
   await material.click();
   await page.getByRole("toolbar", { name: "节点操作", exact: true }).waitFor();
-  await zoomWheel(
+  await modifiedWheel(
     page.getByRole("toolbar", { name: "节点操作", exact: true }),
     "node toolbar",
   );
@@ -173,7 +203,7 @@ try {
       "\n",
     ),
   );
-  await zoomWheel(editor, "node composer");
+  await modifiedWheel(editor, "node composer");
   await editor.evaluate((element) => (element.scrollTop = 0));
   const originalZoom = (await metrics()).zoom;
   await editor.hover();
@@ -188,7 +218,7 @@ try {
     exact: true,
   });
   await parameters.waitFor();
-  await zoomWheel(parameters, "portaled parameters");
+  await modifiedWheel(parameters, "portaled parameters", false);
   await parameters
     .getByRole("button", { name: "关闭参数", exact: true })
     .evaluate((element) => element.click());
@@ -204,18 +234,20 @@ try {
   await page
     .getByRole("dialog", { name: "展开的节点会话框", exact: true })
     .waitFor();
-  await zoomWheel(editor, "expanded composer");
+  await modifiedWheel(editor, "expanded composer");
   await page.getByRole("button", { name: "收起会话框", exact: true }).click();
-  await page.locator(".cw-chat-button").click();
-  await zoomWheel(
+  const chatToggle = page.locator(".cw-chat-button");
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
+  await modifiedWheel(
     page.locator('.cw-assistant-composer [role="textbox"]'),
     "assistant sidebar",
+    false,
   );
   await page.getByRole("button", { name: "收起 AI 对话", exact: true }).click();
   await page.getByRole("button", { name: "资产库", exact: true }).click();
   const library = page.getByRole("dialog", { name: "资产库", exact: true });
   await library.waitFor();
-  await zoomWheel(library, "asset library dialog");
+  await modifiedWheel(library, "asset library dialog", false);
   await page.getByRole("button", { name: "关闭资产库", exact: true }).click();
   // The same trusted wheel still changes React Flow zoom over real canvas areas.
   async function canvasWheel(point, name) {
@@ -270,8 +302,9 @@ try {
     JSON.stringify({
       isolated: true,
       controlsZoomCanvasOnly: controls,
+      outsideCanvasRetainsViewport: outsideCanvas,
       canvasAndNodeZoom: true,
-      nativePageZoomPrevented: true,
+      nativePageZoomPreventedOnCanvas: true,
       ordinaryEditorScroll: true,
       errors,
     }),

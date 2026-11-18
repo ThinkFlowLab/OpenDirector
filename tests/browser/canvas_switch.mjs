@@ -62,8 +62,34 @@ try {
     await page.getByText("Saved on this device", { exact: true }).waitFor();
     await picker.click({ trial: true });
   };
-  await page.goto(`${web}/ai-tool/ai-canvas/${projects[0].id}`);
-  await ready(projects[0]);
+  // A slow default-open chat must not steal focus and dismiss the project picker.
+  let releaseAssistant;
+  const assistantGate = new Promise(resolve => { releaseAssistant = resolve; });
+  const assistantPath = `**/creation/projects/${projects[0].id}/assistant`;
+  await page.route(assistantPath, async route => {
+    const response = await route.fetch();
+    await assistantGate;
+    await route.fulfill({ response });
+  }, { times: 1 });
+  const releaseDeadline = setTimeout(() => releaseAssistant(), 15000);
+  try {
+    await page.goto(`${web}/ai-tool/ai-canvas/${projects[0].id}`);
+    await ready(projects[0]);
+    await picker.click();
+    const target = page.getByRole("menuitemradio", { name: projects[1].name, exact: true });
+    await target.waitFor();
+    releaseAssistant();
+    await page.waitForFunction(() => document.querySelector('#canvas-assistant [role="textbox"]')?.isContentEditable);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await picker.getAttribute("aria-expanded"), "true", "chat loading must keep the project picker open");
+    assert.equal(await page.locator('.cw-project-search input').evaluate(element => element === document.activeElement), true);
+    await target.click({ trial: true });
+    await page.keyboard.press("Escape");
+  } finally {
+    clearTimeout(releaseDeadline);
+    releaseAssistant();
+    await page.unroute(assistantPath);
+  }
   const samples = [];
   for (let index = 0; index < 12; index++) {
     const target = projects[(index + 1) % 2];

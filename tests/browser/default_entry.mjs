@@ -187,7 +187,8 @@ try {
   await page
     .getByRole("button", { name: name + " renamed", exact: true })
     .waitFor();
-  await page.getByRole("button", { name: "与 AI 对话", exact: true }).click();
+  const chatToggle = page.getByRole("button", { name: "与 AI 对话", exact: true });
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
   const message = page.getByRole("textbox", { name: "消息内容", exact: true });
   await message.waitFor();
   assert.equal((await message.innerText()).replace(/\u200b/g, "").trim(), "");

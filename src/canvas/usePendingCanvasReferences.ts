@@ -93,6 +93,12 @@ export function usePendingCanvasReferences(
         return;
       }
       if (!latest.current || event.isComposing || event.keyCode === 229) return;
+      // A focused menu owns its dismissal; keep the staged references intact.
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="menu"]')
+      )
+        return;
       event.preventDefault();
       suppressed.current = true;
       cancel();

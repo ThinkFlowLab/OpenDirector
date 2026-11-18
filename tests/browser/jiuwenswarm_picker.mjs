@@ -86,7 +86,8 @@ try {
   );
   await page.goto(base);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "与 AI 对话", exact: true }).click();
+  const chatToggle = page.getByRole("button", { name: "与 AI 对话", exact: true });
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
   const trigger = page.getByRole("button", { name: /^Agent：/ });
   await trigger.click();
   await page
@@ -158,7 +159,7 @@ try {
     await page.waitForTimeout(100);
   }
   await page.reload();
-  await page.getByRole("button", { name: "与 AI 对话", exact: true }).click();
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
   await page
     .getByRole("button", {
       name: "Agent：JiuwenSwarm · Swarm Alternate",

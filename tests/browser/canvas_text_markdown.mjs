@@ -128,9 +128,12 @@ async function checkTextNode(resizeZoom) {
   // Normal selection can still fit before the next resize begins.
   await page.locator(".react-flow__pane").click({ position: { x: 20, y: 80 } });
   const fitBox = await node.boundingBox();
-  await page.mouse.move(1000, 800);
+  const canvas = await page.locator(".react-flow__pane").boundingBox();
+  const panStart = { x: canvas.x + canvas.width / 2, y: canvas.y + canvas.height * 0.8 };
+  await page.mouse.move(panStart.x, panStart.y);
   await page.mouse.down({ button: "middle" });
-  await page.mouse.move(1000 + 100 - fitBox.x, 800 + 140 - fitBox.y, { steps: 8 });
+  await page.mouse.move(panStart.x + canvas.x + 100 - fitBox.x,
+    panStart.y + canvas.y + 140 - fitBox.y, { steps: 8 });
   await page.mouse.up({ button: "middle" });
   const beforeFit = await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform);
   await node.click({ position: { x: 30, y: 40 } });
