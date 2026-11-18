@@ -151,34 +151,39 @@ test("the remote catalog wins when it is usable", async () => {
   );
 });
 
-test("a broken remote catalog falls back to the bundled copy", async () => {
+test("a malformed remote catalog falls back to the bundled copy", async () => {
   const result = await loadExampleCatalog({
     remoteUrl: "https://example.test/catalog.json",
-    builtinUrl: "/example-canvases.json",
     fetchImpl: stubFetch({
       "https://example.test/catalog.json": () => json({ schemaVersion: 99, items: [] }),
-      "/example-canvases.json": () => json(catalogWith([{ ...validItem, id: "bundled" }])),
     }),
   });
-  assert.equal(result.source, "builtin");
+  assert.equal(result.source, "code");
   assert.deepEqual(
     result.catalog.items.map((item) => item.id),
-    ["bundled"],
+    ["image-canvas", "video-canvas"],
   );
 });
 
-test("both files missing still leaves the compiled-in samples", async () => {
+test("an unreachable remote still leaves the bundled samples", async () => {
   const result = await loadExampleCatalog({
     remoteUrl: "https://example.test/catalog.json",
     fetchImpl: stubFetch({
       "https://example.test/catalog.json": () => {
         throw new Error("offline");
       },
-      "/example-canvases.json": () => {
-        throw new Error("offline");
-      },
     }),
   });
   assert.equal(result.source, "code");
   assert.equal(result.catalog.items.length, 2);
+});
+
+test("the bundled copy is the one the build ships", async () => {
+  const result = await loadExampleCatalog();
+  assert.equal(result.source, "code");
+  assert.deepEqual(
+    result.catalog.items.map((item) => item.id),
+    ["image-canvas", "video-canvas"],
+  );
+  assert.deepEqual(result.rejected, []);
 });

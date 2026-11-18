@@ -87,7 +87,6 @@ export const canvasWorkspace = {
   "canvas.workspace.empty.hint":
     "Double-click the canvas to create a node, or drop in your assets",
   "canvas.workspace.empty.configureModels": "Configure models",
-  "canvas.workspace.empty.example": "Try the example canvas",
   "canvas.workspace.empty.tagline":
     "Reference connections · Free arrangement · Autosaved locally",
 
@@ -452,4 +451,7 @@ export const canvasWorkspace = {
   // The download reports live progress; sizes render as plain data.
   "canvas.example.state.downloadingPercent": "Downloading… {percent}%",
   "canvas.example.progress.label": "Download progress",
+  // The empty canvas imports the two hosted samples directly.
+  "canvas.workspace.empty.tryImage": "Try image example",
+  "canvas.workspace.empty.tryVideo": "Try video example",
 } as const;

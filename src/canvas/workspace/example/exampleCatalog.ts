@@ -1,10 +1,13 @@
 /**
- * Remote example canvases: catalog parsing, validation and the fallback order.
+ * Example canvases: catalog parsing, validation and the fallback order.
  *
  * The catalog is data, never code: a remote copy may be updated without an app
- * release, an in-app copy keeps first launch working offline, and a compiled-in
- * list keeps the entry usable when both files are missing.
+ * release, and the bundled copy (imported below) keeps a first launch working
+ * offline. `public/` is not an option here — the packaged server only mounts
+ * `/assets` and `/fonts`.
  */
+import bundledCatalog from "./example-canvases.json" with { type: "json" };
+
 export interface ExampleText {
   "zh-CN": string;
   "en-US": string;
@@ -49,7 +52,7 @@ export interface ExampleCatalog {
   items: ExampleEntry[];
 }
 
-export type CatalogSource = "remote" | "builtin" | "code";
+export type CatalogSource = "remote" | "code";
 
 export interface RejectedEntry {
   /** The offending id when it parsed well enough to be reported. */
@@ -65,8 +68,9 @@ export interface ExampleCatalogResult {
 
 export const EXAMPLE_CATALOG_SCHEMA_VERSION = 1;
 
-/** Served by the app itself; the build copies `public/` to the site root. */
-export const EXAMPLE_CATALOG_BUILTIN_PATH = "/example-canvases.json";
+/** The two stable ids the empty-state buttons import directly. */
+export const IMAGE_EXAMPLE_ID = "image-canvas";
+export const VIDEO_EXAMPLE_ID = "video-canvas";
 
 /**
  * Hosts a catalog may download from. Suffix entries match their subdomains, so
@@ -82,73 +86,20 @@ export const EXAMPLE_ALLOWED_HOSTS: readonly string[] = [
   "qbox.me",
 ];
 
-/**
- * Compiled-in fallback. Kept in step with `public/example-canvases.json`; the
- * sizes and digests here were measured on 2026-11-17 (see the development doc).
- */
-export const BUILTIN_EXAMPLE_CATALOG: ExampleCatalog = {
-  schemaVersion: EXAMPLE_CATALOG_SCHEMA_VERSION,
-  updatedAt: "2026-11-17T06:40:00Z",
-  items: [
-    {
-      id: "image-canvas",
-      title: {
-        "zh-CN": "图像创作示例画布",
-        "en-US": "Image creation example canvas",
-      },
-      summary: {
-        "zh-CN": "图片生成、主体替换与参考素材的入门示例",
-        "en-US": "Image generation, subject replacement and references",
-      },
-      url: "https://lz.qaiu.top/parser?url=https://wwbks.lanzouv.com/i1BWT4ga8c6h&pwd=4b6t",
-      filename: "图像创作示例画布.zip",
-      sha256:
-        "12566c858dab7a4ccbefa757a0d69965b526b9c253b472034137445f1c93b0cb",
-      bytes: 27582888,
-      contentKind: "zip-wrapper",
-      inner: {
-        entry: "图像创作示例画布.canvas",
-        sha256:
-          "60f40d2aaa54b65724081efab1b58b0e41f0dd78d6793dcf95ea9ee3dd97f911",
-        bytes: 27689522,
-        archiveVersion: 2,
-        assets: 5,
-        nodes: 12,
-      },
-    },
-    {
-      id: "video-canvas",
-      title: {
-        "zh-CN": "视频创作示例画布",
-        "en-US": "Video creation example canvas",
-      },
-      summary: {
-        "zh-CN": "时间线、文生视频与图生视频的组合示例",
-        "en-US": "Timeline with text-to-video and image-to-video",
-      },
-      url: "https://lz.qaiu.top/parser?url=https://wwbks.lanzouv.com/iUPML4ga8bch&pwd=905a",
-      filename: "视频创作示例画布.zip",
-      sha256:
-        "9c1662d6eec2ee1f9765ca53473cd1a93ab0ceeb841e8c0db895cd522a0bb13e",
-      bytes: 26086524,
-      contentKind: "zip-wrapper",
-      inner: {
-        entry: "视频创作示例画布.canvas",
-        sha256:
-          "76b10a86f0900816095c2b03c7533514db7fbe4ee968fe8338da55905e1cd8e5",
-        bytes: 26128975,
-        archiveVersion: 2,
-        assets: 9,
-        nodes: 17,
-      },
-    },
-  ],
-};
-
 const KINDS = new Set<ExampleContentKind>(["auto", "canvas", "zip-wrapper"]);
 const HOST_LOCATOR = /^[a-z0-9.-]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const VERSION = /^\d+(?:\.\d+)*$/;
+
+/**
+ * Compiled-in fallback: the same file a remote catalog would serve, imported so
+ * the build bundles it. `public/` is not reachable from the packaged server,
+ * which only mounts `/assets` and `/fonts`.
+ */
+export const BUILTIN_EXAMPLE_CATALOG: ExampleCatalog = parseExampleCatalog(
+  bundledCatalog,
+).catalog;
+
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -339,7 +290,7 @@ async function readCatalogFile(
   fetchImpl: typeof fetch,
   url: string,
   signal: AbortSignal | undefined,
-): Promise<ExampleCatalog> {
+): Promise<unknown> {
   const response = await fetchImpl(url, {
     method: "GET",
     credentials: "omit",
@@ -347,50 +298,39 @@ async function readCatalogFile(
     signal,
   });
   if (!response.ok) throw new Error(`catalog responded ${response.status}`);
-  const parsed: unknown = await response.json();
-  return parseExampleCatalog(parsed).catalog;
+  return response.json();
 }
 
 /**
- * Loads the catalog without ever failing: remote, then app copy, then the
- * compiled-in list. `rejected` reports rows dropped while validating.
+ * Loads the catalog without ever failing: the remote copy when one is
+ * configured, otherwise the bundled one. `rejected` reports rows dropped while
+ * validating.
  */
 export async function loadExampleCatalog(
   options: {
     fetchImpl?: typeof fetch;
     signal?: AbortSignal;
     remoteUrl?: string;
-    builtinUrl?: string;
     appVersion?: string;
   } = {},
 ): Promise<ExampleCatalogResult> {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const builtinUrl = options.builtinUrl ?? EXAMPLE_CATALOG_BUILTIN_PATH;
   const rejected: RejectedEntry[] = [];
-  for (const [source, url] of [
-    ["remote", options.remoteUrl],
-    ["builtin", builtinUrl],
-  ] as const) {
-    if (!url) continue;
+  if (options.remoteUrl) {
     try {
-      const parsed: unknown = await (async () => {
-        const response = await fetchImpl(url, {
-          method: "GET",
-          credentials: "omit",
-          cache: "no-store",
-          signal: options.signal,
-        });
-        if (!response.ok) throw new Error(`catalog responded ${response.status}`);
-        return response.json();
-      })();
+      const fetchImpl = options.fetchImpl ?? fetch;
+      const parsed = await readCatalogFile(
+        fetchImpl,
+        options.remoteUrl,
+        options.signal,
+      );
       const validated = parseExampleCatalog(parsed);
       rejected.push(...validated.rejected);
-      return { catalog: validated.catalog, source, rejected };
+      return { catalog: validated.catalog, source: "remote", rejected };
     } catch {
-      /* A missing or malformed copy falls through to the next source. */
+      /* A missing or malformed remote copy falls through to the bundled one. */
     }
   }
-  const fallback = parseExampleCatalog(BUILTIN_EXAMPLE_CATALOG);
+  const fallback = parseExampleCatalog(bundledCatalog);
   rejected.push(...fallback.rejected);
   return { catalog: fallback.catalog, source: "code", rejected };
 }
@@ -402,5 +342,3 @@ export function exampleById(
 ): ExampleEntry | undefined {
   return catalog.items.find((item) => item.id === id);
 }
-
-export { readCatalogFile };

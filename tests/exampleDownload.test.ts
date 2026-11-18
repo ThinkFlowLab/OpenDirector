@@ -205,14 +205,22 @@ test("a declared content-length over the budget fails before reading", async () 
   assert.equal(read, false);
 });
 
-test("an integrity mismatch discards the download", async () => {
-  const outer = await wrappedArchive();
+test("a direct archive is checked against its own digest", async () => {
+  const archive = await canvasArchive();
   const failure = await rejection(
-    fetchExampleBytes(entry({ sha256: "b".repeat(64) }), {
-      fetchImpl: (async () => respond(outer)()) as typeof fetch,
+    fetchExampleCanvas(entry({ sha256: "b".repeat(64) }), {
+      fetchImpl: (async () => respond(archive)()) as typeof fetch,
     }),
   );
   assert.equal(failure.code, "integrity");
+});
+
+test("a wrapper's outer digest is advisory, since a host may repack it", async () => {
+  const outer = await wrappedArchive();
+  const result = await fetchExampleCanvas(entry({ sha256: "b".repeat(64) }), {
+    fetchImpl: (async () => respond(outer)()) as typeof fetch,
+  });
+  assert.equal(result.kind, "zip-wrapper");
 });
 
 test("the inner digest is checked after unwrapping", async () => {

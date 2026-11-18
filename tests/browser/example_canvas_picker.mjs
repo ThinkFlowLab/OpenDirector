@@ -1,9 +1,11 @@
 /**
- * Isolated UI regression: the empty canvas offers the example picker, imports a
- * wrapped `.canvas` download, and reports a blocked page instead of importing it.
+ * Isolated UI regression: the empty canvas imports the two hosted samples
+ * directly with a progress bar, the project menu still opens the full picker,
+ * and a blocked page is reported instead of imported.
  *
- * Both samples ship as a ZIP around one `.canvas`, so the fixture mirrors that
- * shape; the failure case serves HTML like a blocked share link does.
+ * The catalog ships inside the app, so the check intercepts the sample URLs
+ * themselves; the fixture is a ZIP around one `.canvas`, like the real hosts
+ * serve, and the failure case returns HTML like a blocked share link does.
  */
 import assert from "node:assert/strict";
 import { buildCanvasArchive } from "../../src/canvas/canvasArchive.ts";
@@ -46,26 +48,18 @@ const wrapper = await createZip([
 ]);
 const wrapperBytes = Buffer.from(await wrapper.arrayBuffer());
 
-const sampleUrl = "https://lz.qaiu.top/fixture/example.zip";
-const catalog = {
-  schemaVersion: 1,
-  items: [
-    {
-      id: "fixture-canvas",
-      title: { "zh-CN": document.title, "en-US": "Fixture example canvas" },
-      url: sampleUrl,
-      filename: `${document.title}.zip`,
-      contentKind: "zip-wrapper",
-      bytes: wrapperBytes.byteLength,
-      inner: { entry: `${document.title}.canvas`, archiveVersion: 2, nodes: 2 },
-    },
-  ],
-};
+// The bundled catalog points the two buttons at these hosts.
+const samplePattern = /^https:\/\/lz\.qaiu\.top\//;
 const downloadHeaders = {
   // A cross-origin route still needs CORS headers: the app fetches, not navigates.
   "access-control-allow-origin": "*",
   "content-disposition": `attachment; filename="${document.title}.zip"`,
 };
+const served = (contentType = "application/octet-stream") => ({
+  status: 200,
+  headers: { ...downloadHeaders, "content-type": contentType },
+  body: contentType === "text/html" ? "<!doctype html><html><body>请登录</body></html>" : wrapperBytes,
+});
 
 const projectId = crypto.randomUUID();
 await call(`/api/creation/projects/${projectId}/commands`, {
@@ -89,63 +83,54 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.route("**/example-canvases.json", (route) => route.fulfill({ json: catalog }));
-  await page.route(sampleUrl, (route) =>
-    route.fulfill({
-      status: 200,
-      headers: { ...downloadHeaders, "content-type": "application/octet-stream" },
-      body: wrapperBytes,
-    }),
-  );
+  // A short delay makes the streaming progress observable on a ~1 KB fixture.
+  await page.route(samplePattern, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill(served());
+  });
 
   const openCanvas = async () => {
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
-    await page.getByRole("button", { name: /体验示例画布/ }).click();
-    await page.locator(".cw-example-dialog").waitFor();
+    // The example buttons enable once the canvas is ready.
+    await page.waitForFunction(() => {
+      const button = [...document.querySelectorAll("button")].find((item) =>
+        item.textContent?.includes("体验图片示例"),
+      );
+      return !!button && !button.disabled;
+    });
   };
 
-  // 1. The picker lists the catalog entry with its measured size.
+  // 1. The empty-state button downloads, shows progress, imports and closes the bar.
   await openCanvas();
-  const dialog = page.locator(".cw-example-dialog");
-  await dialog.getByText(document.title, { exact: true }).waitFor();
-  assert.match(await dialog.locator(".cw-example-item small").first().innerText(), /MB|KB/);
-
-  // 1b. The project menu reaches the same picker without returning to an empty canvas.
-  await dialog.getByRole("button", { name: "关闭", exact: true }).first().click();
-  await page.getByRole("button", { name: "切换项目", exact: true }).click();
-  await page.getByRole("menuitem", { name: /示例画布/ }).click();
-  await page.locator(".cw-example-dialog").waitFor();
-  await page
-    .locator(".cw-example-dialog")
-    .getByText(document.title, { exact: true })
-    .waitFor();
-
-  // 2. Downloading the wrapped archive imports it and switches the canvas.
-  await dialog.getByRole("button", { name: "下载并导入" }).click();
-  await dialog.getByText(/已导入/).waitFor();
+  await page.getByRole("button", { name: "体验图片示例" }).click();
+  await page.locator(".cw-empty-example-status").waitFor();
   await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
   assert.equal(await page.locator(".react-flow__node").count(), 2);
+  // The progress block lives in the empty state, which the imported canvas replaces.
+  assert.equal(await page.locator(".cw-empty-example-status").count(), 0);
+
+  // 2. The project menu still reaches the full picker.
+  // The switch saves the new project first; the switcher is disabled until then.
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="切换项目"]');
+    return !!button && !button.disabled;
+  });
+  await page.getByRole("button", { name: "切换项目", exact: true }).click();
+  await page.getByRole("menuitem", { name: "示例画布", exact: true }).click();
+  const dialog = page.locator(".cw-example-dialog");
+  await dialog.waitFor();
+  // The catalog ships with the app, so the rows carry its titles.
+  await dialog.getByText("图像创作示例画布", { exact: true }).waitFor();
   await dialog.getByRole("button", { name: "关闭", exact: true }).first().click();
 
-  // 3. A page instead of an archive is reported, and nothing is imported.
-  await page.unroute(sampleUrl);
-  await page.route(sampleUrl, (route) =>
-    route.fulfill({
-      status: 200,
-      headers: { ...downloadHeaders, "content-type": "text/html" },
-      body: "<!doctype html><html><body>请登录</body></html>",
-    }),
-  );
+  // 3. A page instead of an archive is reported inline, and nothing is imported.
+  await page.unroute(samplePattern);
+  await page.route(samplePattern, (route) => route.fulfill(served("text/html")));
   await openCanvas();
-  await page.locator(".cw-example-dialog").getByRole("button", { name: "下载并导入" }).click();
+  await page.getByRole("button", { name: "体验图片示例" }).click();
   await page.getByText(/服务器返回的是网页/).waitFor();
   assert.equal(await page.locator(".react-flow__node").count(), 0);
-  // The manual fallback stays available for a blocked link.
-  assert.equal(
-    await page.locator(".cw-example-manual").count(),
-    1,
-  );
 
   assert.deepEqual(errors, []);
 } finally {

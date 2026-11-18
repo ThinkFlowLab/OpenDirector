@@ -1,47 +1,13 @@
 import { useEffect, useRef } from "react";
-import { useI18n, useT, type Translate } from "../../../i18n/I18nProvider.tsx";
+import { useI18n, useT } from "../../../i18n/I18nProvider.tsx";
 import type { ExampleEntry } from "./exampleCatalog.ts";
-import { useExampleImport, type ExampleStatus } from "./useExampleImport.ts";
+import { useExampleImport } from "./useExampleImport.ts";
+import { exampleFailureText, examplePercent } from "./exampleFailure.ts";
 import "./example-canvas.css";
 
 function megabytes(bytes: number | undefined): string | null {
   if (!bytes) return null;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-/** Completion percentage, or null while the server has not declared a size. */
-function percentOf(status: ExampleStatus): number | null {
-  if (!status.total || !status.received) return null;
-  return Math.min(100, Math.round((status.received / status.total) * 100));
-}
-
-/** One sentence per failure, chosen by code so the cause stays recognizable. */
-function failureText(t: Translate, status: ExampleStatus): string {
-  switch (status.code) {
-    case "http":
-      return t("canvas.example.error.http", { status: status.httpStatus ?? 0 });
-    case "network":
-      return t("canvas.example.error.network");
-    case "html":
-      return t("canvas.example.error.html");
-    case "notArchive":
-      return t("canvas.example.error.notArchive");
-    case "ambiguous":
-      return t("canvas.example.error.ambiguous");
-    case "notCanvas":
-      return t("canvas.example.error.notCanvas");
-    case "tooLarge":
-      return t("canvas.example.error.tooLarge");
-    case "integrity":
-      return t("canvas.example.error.integrity");
-    case "invalidUrl":
-      return t("canvas.example.error.invalidUrl");
-    case "aborted":
-      return t("canvas.example.error.aborted");
-    default:
-      // Archive validation fails with an already-localized message.
-      return status.message || t("canvas.example.error.unknown");
-  }
 }
 
 /**
@@ -97,7 +63,7 @@ export function ExampleCanvasDialog({
             const status = statuses[entry.id] ?? { phase: "idle" as const };
             const running = isRunning(entry.id);
             const size = megabytes(entry.bytes);
-            const percent = percentOf(status);
+            const percent = examplePercent(status);
             return (
               <li key={entry.id} className="cw-example-item" data-example-id={entry.id}>
                 <div className="cw-example-item-heading">
@@ -152,7 +118,7 @@ export function ExampleCanvasDialog({
                 </div>
                 {status.phase === "failed" && (
                   <p className="cw-example-error" role="alert">
-                    {failureText(t, status)}
+                    {exampleFailureText(t, status)}
                   </p>
                 )}
                 {entry.manual?.shareUrl && (

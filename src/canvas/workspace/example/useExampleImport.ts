@@ -119,8 +119,8 @@ export function useExampleImport(deps: ExampleImportDeps) {
   }, []);
 
   const start = useCallback(
-    async (entry: ExampleEntry) => {
-      if (controllers.current.has(entry.id)) return;
+    async (entry: ExampleEntry): Promise<boolean> => {
+      if (controllers.current.has(entry.id)) return false;
       const controller = new AbortController();
       controllers.current.set(entry.id, controller);
       try {
@@ -129,8 +129,10 @@ export function useExampleImport(deps: ExampleImportDeps) {
           if (status.code === "aborted") update(entry.id, null);
           else update(entry.id, status);
         });
+        return true;
       } catch {
         /* The inline status already explains the failure. */
+        return false;
       } finally {
         controllers.current.delete(entry.id);
       }

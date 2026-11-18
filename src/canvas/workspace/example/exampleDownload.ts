@@ -209,10 +209,6 @@ export async function fetchExampleBytes(
       throw transportError(cause, deadline.signal.aborted);
     }
     if (bytes.byteLength === 0) throw new ExampleError("notArchive");
-    if (entry.sha256) {
-      const digest = await sha256Hex(bytes);
-      if (digest && digest !== entry.sha256) throw new ExampleError("integrity");
-    }
     return bytes;
   } finally {
     deadline.dispose();
@@ -250,17 +246,25 @@ export async function normalizeToCanvas(
   return { bytes: inner, kind: "zip-wrapper", innerEntry };
 }
 
-/** Download plus normalization, with the optional inner digest checked. */
+/**
+ * Download plus normalization.
+ *
+ * Digests are verified against the transferred identity, not the transport: a
+ * catalog entry that ships a wrapper cannot pin the outer ZIP, because any host
+ * or CDN may re-pack it. `entry.sha256` therefore applies to a direct archive,
+ * and `entry.inner.sha256` to the `.canvas` a wrapper carries.
+ */
 export async function fetchExampleCanvas(
   entry: ExampleEntry,
   options: ExampleDownloadOptions = {},
 ): Promise<ExampleDownload> {
   const outer = await fetchExampleBytes(entry, options);
   const normalized = await normalizeToCanvas(outer);
-  if (entry.inner?.sha256) {
+  const expected =
+    normalized.kind === "canvas" ? entry.sha256 : entry.inner?.sha256;
+  if (expected) {
     const digest = await sha256Hex(normalized.bytes);
-    if (digest && digest !== entry.inner.sha256)
-      throw new ExampleError("integrity");
+    if (digest && digest !== expected) throw new ExampleError("integrity");
   }
   // Both buffers are ours: the wrapper's bytes and, when unwrapped, the inner
   // entry copy. Zeroing them is the only copy this module ever creates.

@@ -87,7 +87,6 @@ export const canvasWorkspace = {
   "canvas.workspace.empty.title": "你的故事，由你执导",
   "canvas.workspace.empty.hint": "双击画布创建节点，或拖入你的素材",
   "canvas.workspace.empty.configureModels": "配置模型",
-  "canvas.workspace.empty.example": "体验示例画布",
   "canvas.workspace.empty.tagline": "参考连接 · 自由编排 · 本机自动保存",
 
   "canvas.workspace.loading.opening": "正在打开画布…",
@@ -407,4 +406,7 @@ export const canvasWorkspace = {
   // The download reports live progress; sizes render as plain data.
   "canvas.example.state.downloadingPercent": "正在下载… {percent}%",
   "canvas.example.progress.label": "下载进度",
+  // The empty canvas imports the two hosted samples directly.
+  "canvas.workspace.empty.tryImage": "体验图片示例",
+  "canvas.workspace.empty.tryVideo": "体验视频示例",
 } as const;
