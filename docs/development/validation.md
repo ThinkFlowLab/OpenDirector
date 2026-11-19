@@ -289,6 +289,10 @@ node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件
 node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选适配器的比例与尺寸
 ```
 
+历史版本预览回归（[#393](https://github.com/ThinkFlowLab/OpenDirector/issues/393)）沿用上述隔离服务：运行 `node tests/browser/node_versions.mjs`；设置 `HISTORY_PREVIEW_PROBE=delay` 会延迟目标缩略图一秒，完整旅程应通过。设置 `HISTORY_PREVIEW_PROBE=missing` 会注入缩略图 404，预期脚本失败并输出 `History preview unavailable`、目标资产 ID、HTTP 状态和媒体提示；它是故障诊断检查，不是成功旅程。清除变量后恢复正常运行。布局断言必须等待预期资产的图片加载成功，不能以提示词出现代替预览就绪。
+
+History preview regression ([#393](https://github.com/ThinkFlowLab/OpenDirector/issues/393)): run `node tests/browser/node_versions.mjs` against the isolated services above. `HISTORY_PREVIEW_PROBE=delay` delays the target thumbnail by one second; the complete journey must pass. `HISTORY_PREVIEW_PROBE=missing` injects a thumbnail 404; the script must fail with `History preview unavailable`, the target asset ID, HTTP status and media message. This is an expected-failure diagnostic probe. Unset the variable for the normal journey. Measure layout only after the expected asset's image has loaded successfully; prompt readiness does not establish media readiness.
+
 `mp4_export.mjs` 以 640x360 渲染：没有 GPU 的无头浏览器只在该尺寸暴露 H.264
 编码能力，1080p 导出仍需在桌面浏览器人工验收。
 
