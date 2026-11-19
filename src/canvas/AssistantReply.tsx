@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from "react";
-import type { ComponentProps } from "react";
+import type { ReactNode } from "react";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
-import type { Components, LinkSafetyModalProps, StreamdownProps } from "streamdown";
+import type { Components, ExtraProps, LinkSafetyModalProps, StreamdownProps } from "streamdown";
 import type { ChatMessage, ChatTool } from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
@@ -121,16 +121,17 @@ export const AssistantReply = memo(function AssistantReply({
     // Give persisted project references their own renderer. Ordinary anchors
     // keep Streamdown's sanitize and link-safety behavior.
     const components: Components = {
-      "canvas-reference": ({ href, children }: ComponentProps<"a">) => {
+      "canvas-reference": ({ href, children }: Record<string, unknown> & ExtraProps) => {
+        const content = children as ReactNode;
         const link = links.get(String(href));
-        if (!link) return <span>{children}</span>;
+        if (!link) return <span>{content}</span>;
         return <a href="#" onClick={(event) => {
           event.preventDefault();
           const hint = applyCanvasLinkClick(link, (nodeId) => onCanvasLink?.(nodeId));
           setCanvasHint(hint
             ? t(hint.hintKey) + (hint.projectId ? ` · ${hint.projectId}` : "")
             : null);
-        }}>{children}</a>;
+        }}>{content}</a>;
       },
     };
     const targets = Array.from(links.keys());
