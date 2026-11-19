@@ -86,8 +86,12 @@ class LocalProjects:
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL, expires REAL NOT NULL,
                     path TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS agent_sessions (
+                    id TEXT PRIMARY KEY, owner TEXT NOT NULL
+                );
             """)
             db.execute("DELETE FROM sessions WHERE expires<=?", (time.time(),))
+            db.execute("DELETE FROM agent_sessions WHERE id NOT IN (SELECT id FROM sessions)")
 
 
     @contextmanager
@@ -122,7 +126,13 @@ class LocalProjects:
     def _open(self, db, project: dict, session: str):
         identifier(session)
         project_id = project["id"]
-        if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND expires>?", (project_id, session, time.time())).fetchone():
+        retained = db.execute('SELECT owner FROM agent_sessions WHERE id=?', (session,)).fetchone()
+        owner = retained['owner'] if retained else session
+        # A run retains its own lease, while its originating window can still
+        # edit the project. Unrelated windows remain mutually exclusive.
+        if db.execute('''SELECT 1 FROM sessions s LEFT JOIN agent_sessions a ON a.id=s.id
+                         WHERE s.project_id=? AND s.expires>? AND COALESCE(a.owner,s.id)<>?''',
+                      (project_id, time.time(), owner)).fetchone():
             raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="project_open_elsewhere")
         lease = db.execute("SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, time.time())).fetchone()
         if lease and lease["path"] != project["path"]:
@@ -130,6 +140,12 @@ class LocalProjects:
         db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,expires=excluded.expires,path=excluded.path", (session, project_id, time.time() + self.LEASE_SECONDS, project["path"]))
 
 
-    def release(self, session: str):
+    def release(self, session: str, *, successor: str | None = None):
         with self.transaction() as db:
+            # A reload hands off ownership without replacing run lease IDs;
+            # a late release from the old page cannot revoke the new owner.
+            if successor is not None:
+                identifier(successor)
+                db.execute('UPDATE agent_sessions SET owner=? WHERE owner=?', (successor, session))
             db.execute("DELETE FROM sessions WHERE id=?", (session,))
+            db.execute("DELETE FROM agent_sessions WHERE id=?", (session,))

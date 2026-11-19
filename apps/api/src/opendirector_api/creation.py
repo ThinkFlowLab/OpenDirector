@@ -118,8 +118,8 @@ def creation_routes(projects: CreationProjects, generation=None):
         return {'ok': True}
 
     @router.delete('/sessions/{session_id}')
-    def release(session_id: UUID):
-        projects.local.release(str(session_id))
+    def release(session_id: UUID, replacement: UUID | None = None):
+        projects.local.release(str(session_id), successor=str(replacement) if replacement else None)
         return {'ok': True}
 
     @router.post('/projects/{project_id}/commands', response_model=CommandReceipt)

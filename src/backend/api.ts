@@ -67,8 +67,9 @@ const sessionReady = releaseStaleSession(
   previousSession,
   sessionId,
   (globalThis.navigator as { locks?: SessionLocks } | undefined)?.locks,
+  // Only the confirmed stale-page path hands active runs to this new page.
   (id) =>
-    fetch(`/api/creation/sessions/${id}`, {
+    fetch(`/api/creation/sessions/${id}?replacement=${sessionId}`, {
       method: "DELETE",
       headers: { "X-OpenDirector-Request": "1" },
     }),
