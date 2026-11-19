@@ -185,3 +185,135 @@ def test_empty_upstream_body_is_explicitly_terminated(tmp_path):
                     assert await response.aread() == b''
         assert records(tmp_path)[-1]['forwardedBytes'] == 0
     asyncio.run(run())
+
+
+def test_sse_and_json_usage_observability_with_turn_summary(tmp_path):
+    async def run():
+        responses = iter([
+            httpx.Response(
+                200,
+                headers={'content-type': 'text/event-stream'},
+                stream=Stream([
+                    b'data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 1"}}]}\n\n',
+                    b'data: {"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":120,"total_tokens":1120,'
+                    b'"prompt_tokens_details":{"cached_tokens":750},'
+                    b'"completion_tokens_details":{"reasoning_tokens":45}}}'
+                ]),
+            ),
+            httpx.Response(
+                200,
+                headers={'content-type': 'application/json; charset=utf-8'},
+                stream=Stream([
+                    json.dumps({
+                        'choices': [{'message': {'role': 'assistant', 'content': 'done'}}],
+                        'usage': {
+                            'prompt_tokens': 600,
+                            'completion_tokens': 80,
+                            'prompt_cache_hit_tokens': 450,
+                            'prompt_cache_miss_tokens': 150,
+                        },
+                    }).encode()
+                ]),
+            ),
+            httpx.Response(
+                400,
+                headers={'content-type': 'application/json'},
+                stream=Stream([b'{"error":"bad request"}']),
+            ),
+        ])
+        async with gateway_server(tmp_path, lambda _: next(responses)) as (gateway, url):
+            async with httpx.AsyncClient(trust_env=False, timeout=3) as client:
+                for expected_status in (200, 200, 400):
+                    async with request(client, url) as response:
+                        assert response.status_code == expected_status
+                        await response.aread()
+            summary = gateway.close()
+            assert gateway.close() == summary
+
+        rows = records(tmp_path)
+        completed = [row for row in rows if row['event'] == 'model.completed']
+        assert len(completed) == 3
+        assert completed[0]['usage'] == {
+            'promptTokens': 1000,
+            'completionTokens': 120,
+            'totalTokens': 1120,
+            'cachedPromptTokens': 750,
+            'cacheMissPromptTokens': 250,
+            'reasoningTokens': 45,
+        }
+        assert completed[1]['usage'] == {
+            'promptTokens': 600,
+            'completionTokens': 80,
+            'totalTokens': 680,
+            'cachedPromptTokens': 450,
+            'cacheMissPromptTokens': 150,
+        }
+        assert 'usage' not in completed[2]
+
+        summaries = [row for row in rows if row['event'] == 'turn.usage']
+        assert len(summaries) == 1
+        assert summaries[0]['requestCount'] == 3
+        assert summaries[0]['completedRequests'] == 2
+        assert summaries[0]['usageReportedRequests'] == 2
+        assert summaries[0]['promptTokens'] == 1600
+        assert summaries[0]['completionTokens'] == 200
+        assert summaries[0]['totalTokens'] == 1800
+        assert summaries[0]['cachedPromptTokens'] == 1200
+        assert summaries[0]['reasoningTokens'] == 45
+        assert summaries[0]['cacheHitRate'] == 0.75
+    asyncio.run(run())
+
+
+def test_malformed_or_oversized_json_usage_never_breaks_forwarding(tmp_path):
+    from opendirector.agent.model_gateway import MAX_JSON_USAGE_BYTES, normalize_usage
+
+    assert normalize_usage(None) is None
+    assert normalize_usage({'prompt_tokens': True, 'completion_tokens': -1}) is None
+
+    async def run():
+        oversized = b'{"padding":"' + (b'x' * (MAX_JSON_USAGE_BYTES + 32)) + b'","usage":{"prompt_tokens":10}}'
+        async with gateway_server(tmp_path, lambda _: httpx.Response(
+                200, headers={'content-type': 'application/json'}, stream=Stream([oversized[:4096], oversized[4096:]]))) as (gateway, url):
+            async with httpx.AsyncClient(trust_env=False, timeout=3) as client:
+                async with request(client, url) as response:
+                    assert response.status_code == 200
+                    assert await response.aread() == oversized
+            summary = gateway.close()
+            assert summary['completedRequests'] == 1
+            assert summary['usageReportedRequests'] == 0
+            assert summary['cacheHitRate'] is None
+    asyncio.run(run())
+
+
+def test_split_sse_chunks_and_cache_read_write_token_dialects(tmp_path):
+    async def run():
+        stream = Stream([
+            b'data: {"choices":[{"index":0,"delta":{"content":"hello"}}],"usage":{"input_tokens":800,"cache_read_input_tokens":600,"cache_creation_input_tokens":120}}\n\n',
+            b'data: {"choices":[{"index":0,"delta":{"content":" world"}}],"usage":null}\n\n',
+            b'data: {"choices":[],"usage":{"output_tokens":95,"output_tokens_details":{"reasoning_tokens":30}}}\n\n',
+            b'data: [DONE]\n\n',
+        ])
+        async with gateway_server(
+            tmp_path, lambda _: httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=stream)
+        ) as (gateway, url):
+            async with httpx.AsyncClient(trust_env=False, timeout=3) as client:
+                async with request(client, url) as response:
+                    assert response.status_code == 200
+                    await response.aread()
+            summary = gateway.close()
+
+        completed = [row for row in records(tmp_path) if row['event'] == 'model.completed']
+        assert len(completed) == 1
+        assert completed[0]['usage'] == {
+            'promptTokens': 800,
+            'completionTokens': 95,
+            'totalTokens': 895,
+            'cachedPromptTokens': 600,
+            'cacheWritePromptTokens': 120,
+            'cacheMissPromptTokens': 200,
+            'reasoningTokens': 30,
+        }
+        assert summary['cachedPromptTokens'] == 600
+        assert summary['cacheWritePromptTokens'] == 120
+        assert summary['cacheHitRate'] == 0.75
+    asyncio.run(run())

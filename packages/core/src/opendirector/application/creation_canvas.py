@@ -14,15 +14,21 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.domain.creation.assets import AssetRef
 from opendirector.domain.creation.base import CanvasItemVersion, ObjectVersion
 from opendirector.domain.creation.commands import CanvasShow, Query, ReferenceWrite, SpecWrite
-from opendirector.domain.creation.generation import FollowingSource, ResolvedReference
+from opendirector.domain.creation.generation import (
+    DEFAULT_MUSIC_SECONDS, FollowingSource, ResolvedReference, execution_spec, reference_music_seconds, validate_generation,
+)
 from opendirector.domain.creation.canvas import CanvasReferenceSources, FollowingReferenceSource, PinnedReferenceSource, media_card_size, node_capabilities, VideoCanvasItem
 from opendirector.domain.creation.models import ModelConfigPublic
 from opendirector.domain.creation.project import ProjectSnapshot, asset_references
 from opendirector.domain.creation.index import object_index
 from opendirector.domain.creation.validation import ContractError
+from opendirector.domain.image_output import resolve_image_output
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.minimax_models import MINIMAX_MODELS
 from opendirector.domain.rule_facts import FRAME_IMAGE_LIMIT
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.video_output import apply_video_resolution
+from opendirector.integrations.model_adapters import capabilities_of
 from opendirector.ports.gateway import gateway
 
 COLLECTIONS = {'canvas_item': 'canvasItems', 'generation_spec': 'generationSpecs',
@@ -839,6 +845,362 @@ class CreationCanvas:
         return dict(snapshot=snapshot, visibleItemIds=[i.id for i in snapshot.canvasItems if i.id in visible],
                     hiddenItemIds=[i.id for i in snapshot.canvasItems if i.id not in visible], edges=edges, capabilities=capabilities)
 
+    def project_view(self, snapshot: ProjectSnapshot, *, view: str = 'full', item_ids: tuple[UUID, ...] = ()):
+        if view == 'full' and not item_ids:
+            return snapshot
+        items_by_id = {item.id: item for item in snapshot.canvasItems}
+        for requested in item_ids:
+            if requested not in items_by_id:
+                raise ContractError('missing_object', '业务对象不存在。', requested)
+        selected_items = [items_by_id[requested] for requested in item_ids] if item_ids else list(snapshot.canvasItems)
+        selected_item_ids = {item.id for item in selected_items}
+        specs_by_id = {spec.id: spec for spec in snapshot.generationSpecs}
+        docs_by_id = {doc.id: doc for doc in snapshot.editorDocuments}
+
+        spec_ids = set()
+        doc_ids = set()
+        for item in selected_items:
+            if item.binding.role == 'generation':
+                spec_ids.add(item.binding.objectRef.id)
+            elif item.binding.role == 'empty' and item.binding.draftSpec:
+                spec_ids.add(item.binding.draftSpec.id)
+            elif item.binding.role == 'editor':
+                doc_ids.add(item.binding.objectRef.id)
+            for editor_ref in getattr(item, 'editors', ()):
+                doc_ids.add(editor_ref.id)
+        if not item_ids:
+            spec_ids = set(specs_by_id)
+            doc_ids = set(docs_by_id)
+
+        selected_specs = [spec for spec in snapshot.generationSpecs if spec.id in spec_ids]
+        selected_refs = [ref for ref in snapshot.references if ref.active and ref.targetSpecId in spec_ids]
+        for ref in selected_refs:
+            if ref.binding == 'follow_current' and ref.source.id in items_by_id:
+                source_item = items_by_id[ref.source.id]
+                if source_item.kind == 'subject':
+                    doc_ids.add(source_item.binding.objectRef.id)
+        selected_docs = [doc for doc in snapshot.editorDocuments if doc.id in doc_ids]
+        selected_results = [result for result in snapshot.results if result.specId in spec_ids]
+        selected_jobs = [job for job in snapshot.jobs if not item_ids or job.originItemId in selected_item_ids
+                         or job.inputSnapshot.spec.id in spec_ids]
+
+        if item_ids:
+            linked_asset_ids = {ref.assetId for ref in asset_references(
+                (selected_items, selected_specs, selected_refs, selected_docs, selected_results, selected_jobs))}
+            for item in selected_items:
+                current = current_asset(snapshot, item)
+                if current is not None:
+                    linked_asset_ids.add(current.id)
+            for ref in selected_refs:
+                if ref.binding == 'follow_current' and ref.source.id in items_by_id:
+                    source_asset = current_asset(snapshot, items_by_id[ref.source.id])
+                    if source_asset is not None:
+                        linked_asset_ids.add(source_asset.id)
+            selected_assets = [asset for asset in snapshot.assets if asset.id in linked_asset_ids]
+        else:
+            selected_assets = list(snapshot.assets)
+
+        if view == 'full':
+            return {
+                'format': snapshot.format,
+                'formatVersion': snapshot.formatVersion,
+                'project': snapshot.project.model_dump(mode='json'),
+                'scopedItemIds': [str(item_id) for item_id in item_ids],
+                'assets': [asset.model_dump(mode='json') for asset in selected_assets],
+                'generationSpecs': [spec.model_dump(mode='json') for spec in selected_specs],
+                'references': [ref.model_dump(mode='json') for ref in selected_refs],
+                'canvasItems': [item.model_dump(mode='json') for item in selected_items],
+                'editorDocuments': [doc.model_dump(mode='json') for doc in selected_docs],
+                'jobs': [job.model_dump(mode='json') for job in selected_jobs],
+                'results': [result.model_dump(mode='json') for result in selected_results],
+                'eventCursor': snapshot.eventCursor,
+                'undoClearedThrough': snapshot.undoClearedThrough,
+            }
+
+        visible = visible_item_ids(snapshot)
+        active_jobs = [job for job in selected_jobs if job.status in {'queued', 'running', 'interrupted'}]
+        active_ref_counts: dict[UUID, int] = {}
+        for ref in snapshot.references:
+            if ref.active:
+                active_ref_counts[ref.targetSpecId] = active_ref_counts.get(ref.targetSpecId, 0) + 1
+        canvas_summary = []
+        for item in selected_items:
+            owner_spec_id = (item.binding.objectRef.id if item.binding.role == 'generation' else
+                             item.binding.draftSpec.id if item.binding.role == 'empty' and item.binding.draftSpec else None)
+            spec = specs_by_id.get(owner_spec_id) if owner_spec_id else None
+            related_jobs = [job for job in reversed(snapshot.jobs) if job.originItemId == item.id
+                            or (owner_spec_id is not None and job.inputSnapshot.spec.id == owner_spec_id)]
+            running_job = next((job for job in related_jobs if job.status in {'queued', 'running'}), None)
+            status_job = running_job or (related_jobs[0] if related_jobs else None)
+            asset = current_asset(snapshot, item)
+            canvas_summary.append({
+                'id': str(item.id),
+                'kind': item.kind,
+                'title': item.title,
+                'revision': item.revision,
+                'visible': item.id in visible,
+                'locked': item.locked,
+                'parentId': str(item.parentId) if item.parentId else None,
+                'position': item.position.model_dump(mode='json'),
+                'width': item.width,
+                'height': item.height,
+                'bindingRole': item.binding.role,
+                'specId': str(spec.id) if spec else None,
+                'specRevision': spec.revision if spec else None,
+                'modelConfigId': str(spec.modelConfigId) if spec and spec.modelConfigId else None,
+                'currentResultId': str(spec.currentResultId) if spec and spec.currentResultId else None,
+                'activeReferenceCount': active_ref_counts.get(spec.id, 0) if spec else 0,
+                'promptPreview': (spec.prompt or '')[:120] if spec else None,
+                'currentAssetId': str(asset.id) if asset else None,
+                'editorId': str(item.binding.objectRef.id) if item.binding.role == 'editor' else None,
+                'status': status_job.status if status_job else 'idle',
+            })
+        result = {
+            'view': 'summary',
+            'project': snapshot.project.model_dump(mode='json'),
+            'eventCursor': snapshot.eventCursor,
+            'counts': {
+                'canvasItems': len(snapshot.canvasItems),
+                'visibleCanvasItems': len(visible),
+                'generationSpecs': len(snapshot.generationSpecs),
+                'activeReferences': sum(1 for ref in snapshot.references if ref.active),
+                'assets': len(snapshot.assets),
+                'editorDocuments': len(snapshot.editorDocuments),
+                'jobs': len(snapshot.jobs),
+                'activeJobs': sum(1 for job in snapshot.jobs if job.status in {'queued', 'running', 'interrupted'}),
+                'results': len(snapshot.results),
+            },
+            'canvasItems': canvas_summary,
+            'assets': [{
+                'id': str(asset.id),
+                'name': asset.name,
+                'kind': asset.kind,
+                'revision': asset.revision,
+                'fingerprint': asset.fingerprint,
+                'size': asset.metadata.size,
+                'durationSeconds': asset.metadata.durationSeconds,
+                'width': asset.metadata.width,
+                'height': asset.metadata.height,
+                'hasAudio': asset.metadata.hasAudio,
+            } for asset in selected_assets],
+            'editorDocuments': [{
+                'id': str(doc.id),
+                'kind': doc.kind,
+                'revision': doc.revision,
+            } for doc in selected_docs],
+            'activeJobs': [{
+                'id': str(job.id),
+                'revision': job.revision,
+                'status': job.status,
+                'phase': job.phase,
+                'specId': str(job.inputSnapshot.spec.id),
+                'originItemId': str(job.originItemId) if job.originItemId else None,
+            } for job in active_jobs],
+            'models': gateway().models(self.projects.local.repository).list(),
+        }
+        if item_ids:
+            result['scopedItemIds'] = [str(item_id) for item_id in item_ids]
+        return result
+
+    def generation_precheck(self, snapshot: ProjectSnapshot, spec_ids: tuple[UUID, ...]) -> dict:
+        specs_by_id = {spec.id: spec for spec in snapshot.generationSpecs}
+        for spec_id in spec_ids:
+            if spec_id not in specs_by_id:
+                raise ContractError('missing_object', '业务对象不存在。', spec_id)
+        assets_by_id = {asset.id: asset for asset in snapshot.assets}
+        records = {
+            str(asset.id): {
+                'id': str(asset.id),
+                'kind': asset.kind,
+                'width': asset.metadata.width,
+                'height': asset.metadata.height,
+                'durationMs': round(asset.metadata.durationSeconds * 1000) if asset.metadata.durationSeconds is not None else None,
+            }
+            for asset in snapshot.assets
+        }
+        check_asset = self._asset_checker(snapshot)
+        models = gateway().models(self.projects.local.repository)
+        configured_models = models.list()
+        has_score_model = any('audio.score' in capabilities_of(item) for item in configured_models)
+        presentation = snapshot.model_dump(mode='json')
+        items = []
+        by_kind: dict[str, int] = {}
+        by_connection: dict[str, int] = {}
+        estimated_video_seconds = 0.0
+        total_reference_bytes = 0
+
+        for spec_id in spec_ids:
+            spec = specs_by_id[spec_id]
+            by_kind[spec.kind] = by_kind.get(spec.kind, 0) + 1
+            issues = []
+            owners = [item for item in snapshot.canvasItems
+                      if (item.binding.role == 'generation' and item.binding.objectRef.id == spec.id)
+                      or (item.binding.role == 'empty' and item.binding.draftSpec and item.binding.draftSpec.id == spec.id)]
+            for owner in owners:
+                try:
+                    self._editable(presentation, owner.id)
+                except ContractError as error:
+                    issue = error.issue.model_dump(mode='json')
+                    issue['objectId'] = issue.get('objectId') or str(owner.id)
+                    issues.append(issue)
+            active_for_spec = sum(job.inputSnapshot.spec.id == spec.id and job.status in {'queued', 'running'}
+                                  for job in snapshot.jobs)
+            if active_for_spec >= 8:
+                issues.append({'code': 'revision_conflict', 'message': '该配置的排队任务已达上限，请等待或取消原任务。', 'objectId': str(spec.id)})
+
+            config = None
+            rules_dict = None
+            public = None
+            resolved = ()
+            effective_spec = spec
+            if spec.modelConfigId is None:
+                issues.append({'code': 'invalid_input', 'message': '请选择生成模型。', 'objectId': str(spec.id)})
+            else:
+                try:
+                    config = models.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
+                    rules_dict = input_rules(config)
+                    public = ModelConfigPublic.model_validate(
+                        {key: val for key, val in config.items() if key != 'apiKey'} | {'inputRules': rules_dict}
+                    )
+                except (ProjectError, ValueError) as error:
+                    converted = ContractError.from_error(error, spec.id).issue.model_dump(mode='json')
+                    converted['objectId'] = converted.get('objectId') or str(spec.id)
+                    issues.append(converted)
+
+            duration_estimate = None
+            if public is not None and config is not None and rules_dict is not None:
+                by_connection[public.connectionType] = by_connection.get(public.connectionType, 0) + 1
+                try:
+                    profile = rules_dict['profile']
+                    if profile == 'vllm-omni-segmentation':
+                        raise ProjectError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。')
+                    if profile == 'vllm-omni-depth':
+                        raise ProjectError('视频深度模型仅用于深度动作捕捉，请选择生成模型。')
+                    if profile == 'vllm-omni-score':
+                        raise ProjectError('扒谱模型仅用于参照音乐生成，请选择音乐生成模型。')
+                    if config.get('protocol') == 'minimax_video_v2' and (spec.kind != 'video' or config['modelId'] not in MINIMAX_MODELS):
+                        raise ProjectError('MiniMax Video V2 不支持所选视频模型。')
+                    projected, resolved = current_generation_inputs(snapshot, spec, public.inputRules)
+                    effective_spec = execution_spec(projected, resolved, public.inputRules)
+                    validate_generation(effective_spec, public, resolved)
+
+                    ref_ids = list(dict.fromkeys(
+                        str(ref.asset.assetId) for ref in resolved if ref.transmission != 'context_only'
+                    ))
+                    intent = effective_spec.parameters.model_dump(exclude_none=True)
+                    if effective_spec.kind == 'image':
+                        resolve_image_output(config, rules_dict, intent)
+                    elif effective_spec.kind == 'video':
+                        seconds = intent.get('durationSeconds')
+                        if seconds is None and config.get('videoCapabilities'):
+                            seconds = rules_dict['videoCapabilities']['defaultDuration']
+                        duration_estimate = float(seconds if seconds is not None else 5.0)
+                        if config.get('protocol') == 'bigmodel_video':
+                            from opendirector.domain.bigmodel_video import cogvideo_parameters
+                            cogvideo_parameters(config, intent)
+                        elif config.get('protocol') == 'kling_video':
+                            from opendirector.domain.kling_models import kling_parameters
+                            kling_parameters(config, intent, any(records.get(key, {}).get('kind') == 'image' for key in ref_ids))
+                        else:
+                            output = dict(intent)
+                            if (output.get('resolution') == 'auto' and output.get('aspectRatio')
+                                    and profile in {'standard-video', 'fasth3-omni', 'vllm-omni-h3'}):
+                                if effective_spec.parameters.videoMode == 'continuation':
+                                    raise ProjectError('接续沿用上一段视频的画幅，请将比例设为自动。', 422)
+                                caps = rules_dict.get('videoCapabilities') or {}
+                                choices = [c for c in caps.get('outputs', []) if seconds is None or seconds in c['durations']]
+                                if not choices:
+                                    raise ProjectError('指定视频比例前，请在模型接入中配置输出规格。', 422)
+                                preferred = next((c for c in choices if c['resolution'] == caps.get('defaultResolution')), choices[0])
+                                output['resolution'] = preferred['resolution']
+                            if config.get('protocol') != 'minimax_video_v2':
+                                node_stub = {'videoMode': effective_spec.parameters.videoMode, 'referenceIds': ref_ids}
+                                apply_video_resolution({}, node_stub, records, config, output)
+                    elif effective_spec.kind == 'audio' and effective_spec.parameters.creationType == 'music':
+                        duration_estimate = float(intent.get('durationSeconds') or DEFAULT_MUSIC_SECONDS)
+                        if ref_ids:
+                            if not has_score_model:
+                                raise ProjectError('参照音乐需要先把参照扒成乐谱，请在“模型接入”中添加扒谱模型（vLLM-Omni 扒谱接口）。', 409)
+                            recording = next((records[key] for key in ref_ids if records.get(key, {}).get('kind') == 'audio'), None)
+                            if recording and intent.get('durationFromReference', True) and recording.get('durationMs'):
+                                duration_estimate = float(reference_music_seconds(recording['durationMs'] / 1000))
+                except (ContractError, ProjectError, ValueError) as error:
+                    converted = ContractError.from_error(error, spec.id).issue.model_dump(mode='json')
+                    converted['objectId'] = converted.get('objectId') or str(spec.id)
+                    issues.append(converted)
+
+            ref_bytes = 0
+            ref_count = 0
+            for ref in resolved:
+                if ref.transmission == 'context_only':
+                    continue
+                ref_count += 1
+                asset = assets_by_id.get(ref.asset.assetId)
+                if asset is not None:
+                    ref_bytes += asset.metadata.size
+                    try:
+                        check_asset(asset)
+                    except (ContractError, ProjectError) as error:
+                        converted = ContractError.from_error(error, asset.id).issue.model_dump(mode='json')
+                        converted['objectId'] = converted.get('objectId') or str(asset.id)
+                        issues.append(converted)
+                    except OSError as error:
+                        issues.append({'code': 'storage_unavailable', 'message': str(error), 'objectId': str(asset.id)})
+            total_reference_bytes += ref_bytes
+
+            if duration_estimate is None:
+                if effective_spec.kind == 'video':
+                    default_dur = (
+                        rules_dict['videoCapabilities']['defaultDuration']
+                        if rules_dict and (rules_dict.get('videoCapabilities') or {}).get('defaultDuration') is not None
+                        else 5.0
+                    )
+                    duration_estimate = float(effective_spec.parameters.durationSeconds or default_dur)
+                elif effective_spec.kind == 'audio' and effective_spec.parameters.creationType == 'music':
+                    duration_estimate = float(effective_spec.parameters.durationSeconds or DEFAULT_MUSIC_SECONDS)
+            if effective_spec.kind == 'video' and duration_estimate is not None:
+                estimated_video_seconds += duration_estimate
+
+            items.append({
+                'specId': str(spec.id),
+                'specRevision': spec.revision,
+                'originItemId': str(owners[0].id) if owners else None,
+                'kind': spec.kind,
+                'ready': not issues,
+                'modelConfigId': str(spec.modelConfigId) if spec.modelConfigId else None,
+                'modelId': public.modelId if public else None,
+                'protocol': public.protocol if public else None,
+                'connectionType': public.connectionType if public else None,
+                'videoMode': effective_spec.parameters.videoMode if effective_spec.kind == 'video' else None,
+                'estimatedDurationSeconds': duration_estimate,
+                'referenceCount': ref_count,
+                'referenceBytes': ref_bytes,
+                'activeJobs': active_for_spec,
+                'issues': issues,
+            })
+
+        ready_count = sum(1 for entry in items if entry['ready'])
+        requires_confirmation = (
+            len(items) > 1
+            or any(entry['connectionType'] and entry['connectionType'] != 'self_hosted'
+                   and entry['kind'] in {'video', 'audio'}
+                   and (entry['estimatedDurationSeconds'] or 0) >= 10
+                   for entry in items)
+        )
+        return {
+            'totalSpecs': len(items),
+            'readySpecs': ready_count,
+            'blockedSpecs': len(items) - ready_count,
+            'allReady': ready_count == len(items),
+            'byKind': by_kind,
+            'byConnectionType': by_connection,
+            'estimatedVideoSeconds': round(estimated_video_seconds, 3),
+            'totalReferenceBytes': total_reference_bytes,
+            'activeJobsInProject': sum(1 for job in snapshot.jobs if job.status in {'queued', 'running'}),
+            'requiresConfirmation': requires_confirmation,
+            'items': items,
+        }
+
     async def query(self, query: Query) -> JsonValue:
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
@@ -852,7 +1214,9 @@ class CreationCanvas:
         snapshot = self.projects.snapshot(query.projectId)
         history = CreationHistory(self.projects)
         if query.type == 'project.get':
-            return snapshot
+            return self.project_view(snapshot, view=query.view, item_ids=query.itemIds)
+        if query.type == 'generation.precheck':
+            return self.generation_precheck(snapshot, query.specIds)
         if query.type == 'generationSpec.versions':
             return history.versions(query.projectId, query.objectId)
         if query.type == 'canvas.versions':

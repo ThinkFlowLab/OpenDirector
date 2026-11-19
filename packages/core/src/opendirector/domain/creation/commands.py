@@ -456,6 +456,13 @@ class QueryBase(Contract):
 
 class ProjectQuery(QueryBase):
     type: Literal['project.get'] = Field(description='Read the current project.')
+    view: Literal['full', 'summary'] = Field(default='full', description='Full snapshot or compact object summary.')
+    itemIds: tuple[UUID, ...] = Field(default=(), max_length=100, description='Canvas item IDs to scope the returned objects.')
+
+    @model_validator(mode='after')
+    def distinct_items(self):
+        unique(self.itemIds, 'queried canvas item IDs')
+        return self
 
 
 class ObjectQuery(QueryBase):
@@ -494,8 +501,18 @@ class AssetPreviewQuery(QueryBase):
     objectId: UUID = Field(description='Asset ID.')
 
 
+class GenerationPrecheckQuery(QueryBase):
+    type: Literal['generation.precheck'] = Field(description='Validate and estimate generation configurations without creating jobs.')
+    specIds: tuple[UUID, ...] = Field(min_length=1, max_length=50, description='Target generation configuration IDs.')
+
+    @model_validator(mode='after')
+    def distinct_specs(self):
+        unique(self.specIds, 'precheck configuration IDs')
+        return self
+
+
 Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
-                  CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
+                  CanvasStatusQuery | AssetPreviewQuery | GenerationPrecheckQuery, Field(discriminator='type')]
 
 
 class ChangedObject(Contract):

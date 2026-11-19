@@ -3919,6 +3919,7 @@
                 "asset.usage": "#/$defs/AssetUsageQuery",
                 "canvas.status": "#/$defs/CanvasStatusQuery",
                 "canvas.versions": "#/$defs/VersionsQuery",
+                "generation.precheck": "#/$defs/GenerationPrecheckQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
                 "object.get": "#/$defs/ObjectQuery",
@@ -3947,6 +3948,9 @@
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
+              },
+              {
+                "$ref": "#/$defs/GenerationPrecheckQuery"
               }
             ],
             "title": "Query"
@@ -5270,6 +5274,48 @@
           "suggestion"
         ],
         "title": "GenerationFailure",
+        "type": "object"
+      },
+      "GenerationPrecheckQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.precheck",
+            "description": "Validate and estimate generation configurations without creating jobs.",
+            "title": "Type",
+            "type": "string"
+          },
+          "specIds": {
+            "description": "Target generation configuration IDs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Specids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "specIds"
+        ],
+        "title": "GenerationPrecheckQuery",
         "type": "object"
       },
       "GenerationSpecBase": {
@@ -9435,6 +9481,27 @@
             "description": "Read the current project.",
             "title": "Type",
             "type": "string"
+          },
+          "view": {
+            "default": "full",
+            "description": "Full snapshot or compact object summary.",
+            "enum": [
+              "full",
+              "summary"
+            ],
+            "title": "View",
+            "type": "string"
+          },
+          "itemIds": {
+            "default": [],
+            "description": "Canvas item IDs to scope the returned objects.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Itemids",
+            "type": "array"
           }
         },
         "required": [
@@ -15030,6 +15097,7 @@
             "asset.usage": "#/$defs/AssetUsageQuery",
             "canvas.status": "#/$defs/CanvasStatusQuery",
             "canvas.versions": "#/$defs/VersionsQuery",
+            "generation.precheck": "#/$defs/GenerationPrecheckQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
             "object.get": "#/$defs/ObjectQuery",
@@ -15058,6 +15126,9 @@
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
+          },
+          {
+            "$ref": "#/$defs/GenerationPrecheckQuery"
           }
         ],
         "title": "Query"
@@ -19215,6 +19286,7 @@
                 "asset.usage": "#/$defs/AssetUsageQuery",
                 "canvas.status": "#/$defs/CanvasStatusQuery",
                 "canvas.versions": "#/$defs/VersionsQuery",
+                "generation.precheck": "#/$defs/GenerationPrecheckQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
                 "object.get": "#/$defs/ObjectQuery",
@@ -19243,6 +19315,9 @@
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
+              },
+              {
+                "$ref": "#/$defs/GenerationPrecheckQuery"
               }
             ],
             "title": "Query"
@@ -20622,6 +20697,48 @@
           "suggestion"
         ],
         "title": "GenerationFailure",
+        "type": "object"
+      },
+      "GenerationPrecheckQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.precheck",
+            "description": "Validate and estimate generation configurations without creating jobs.",
+            "title": "Type",
+            "type": "string"
+          },
+          "specIds": {
+            "description": "Target generation configuration IDs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Specids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "specIds"
+        ],
+        "title": "GenerationPrecheckQuery",
         "type": "object"
       },
       "GenerationSpecBase": {
@@ -24963,12 +25080,35 @@
             "description": "Read the current project.",
             "title": "Type",
             "type": "string"
+          },
+          "view": {
+            "default": "full",
+            "description": "Full snapshot or compact object summary.",
+            "enum": [
+              "full",
+              "summary"
+            ],
+            "title": "View",
+            "type": "string"
+          },
+          "itemIds": {
+            "default": [],
+            "description": "Canvas item IDs to scope the returned objects.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Itemids",
+            "type": "array"
           }
         },
         "required": [
           "queryId",
           "projectId",
-          "type"
+          "type",
+          "view",
+          "itemIds"
         ],
         "title": "ProjectQuery",
         "type": "object"
@@ -30783,6 +30923,7 @@
             "asset.usage": "#/$defs/AssetUsageQuery",
             "canvas.status": "#/$defs/CanvasStatusQuery",
             "canvas.versions": "#/$defs/VersionsQuery",
+            "generation.precheck": "#/$defs/GenerationPrecheckQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
             "object.get": "#/$defs/ObjectQuery",
@@ -30811,6 +30952,9 @@
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
+          },
+          {
+            "$ref": "#/$defs/GenerationPrecheckQuery"
           }
         ],
         "title": "Query"
