@@ -3291,6 +3291,198 @@
         "title": "ChangedObject",
         "type": "object"
       },
+      "ChatCanvasLink": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "description": "Original Markdown destination.",
+            "title": "Target",
+            "type": "string"
+          },
+          "status": {
+            "description": "Typed link resolution outcome.",
+            "enum": [
+              "focused",
+              "hidden",
+              "materialize",
+              "ambiguous",
+              "missing",
+              "cross-project",
+              "external"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "nodeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolved canvas item identity.",
+            "title": "Nodeid"
+          },
+          "assetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolved project asset identity.",
+            "title": "Assetid"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Destination project identity.",
+            "title": "Projectid"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolved business kind.",
+            "title": "Kind"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "reveal",
+                  "materialize"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required presentation action.",
+            "title": "Action"
+          },
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/$defs/ChatCanvasLinkCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Candidates requiring user choice.",
+            "title": "Candidates"
+          }
+        },
+        "required": [
+          "target",
+          "status"
+        ],
+        "title": "ChatCanvasLink",
+        "type": "object"
+      },
+      "ChatCanvasLinkCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "nodeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas item candidate identity.",
+            "title": "Nodeid"
+          },
+          "assetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project asset candidate identity.",
+            "title": "Assetid"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Candidate business kind.",
+            "title": "Kind"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Candidate display title.",
+            "title": "Title"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the candidate is hidden.",
+            "title": "Hidden"
+          }
+        },
+        "title": "ChatCanvasLinkCandidate",
+        "type": "object"
+      },
       "CommandBase": {
         "additionalProperties": false,
         "properties": {
@@ -5474,6 +5666,20 @@
             "description": "Whether to display an additional result item.",
             "title": "Showadditionalresult",
             "type": "boolean"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Trusted Agent turn that initiated this execution.",
+            "title": "Agentrunid"
           }
         },
         "required": [
@@ -7235,6 +7441,20 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that initiated this execution, when applicable.",
+            "title": "Agentrunid"
           }
         },
         "required": [
@@ -18579,6 +18799,211 @@
         "title": "ChangedObject",
         "type": "object"
       },
+      "ChatCanvasLink": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "description": "Original Markdown destination.",
+            "title": "Target",
+            "type": "string"
+          },
+          "status": {
+            "description": "Typed link resolution outcome.",
+            "enum": [
+              "focused",
+              "hidden",
+              "materialize",
+              "ambiguous",
+              "missing",
+              "cross-project",
+              "external"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "nodeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolved canvas item identity.",
+            "title": "Nodeid"
+          },
+          "assetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolved project asset identity.",
+            "title": "Assetid"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Destination project identity.",
+            "title": "Projectid"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolved business kind.",
+            "title": "Kind"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "reveal",
+                  "materialize"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required presentation action.",
+            "title": "Action"
+          },
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/$defs/ChatCanvasLinkCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Candidates requiring user choice.",
+            "title": "Candidates"
+          }
+        },
+        "required": [
+          "target",
+          "status",
+          "nodeId",
+          "assetId",
+          "projectId",
+          "kind",
+          "action",
+          "candidates"
+        ],
+        "title": "ChatCanvasLink",
+        "type": "object"
+      },
+      "ChatCanvasLinkCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "nodeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas item candidate identity.",
+            "title": "Nodeid"
+          },
+          "assetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project asset candidate identity.",
+            "title": "Assetid"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Candidate business kind.",
+            "title": "Kind"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Candidate display title.",
+            "title": "Title"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the candidate is hidden.",
+            "title": "Hidden"
+          }
+        },
+        "required": [
+          "nodeId",
+          "assetId",
+          "kind",
+          "title",
+          "hidden"
+        ],
+        "title": "ChatCanvasLinkCandidate",
+        "type": "object"
+      },
       "CommandBase": {
         "additionalProperties": false,
         "properties": {
@@ -20833,6 +21258,20 @@
             "description": "Whether to display an additional result item.",
             "title": "Showadditionalresult",
             "type": "boolean"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Trusted Agent turn that initiated this execution.",
+            "title": "Agentrunid"
           }
         },
         "required": [
@@ -20842,7 +21281,8 @@
           "previousJobId",
           "adoptionPolicy",
           "batchId",
-          "showAdditionalResult"
+          "showAdditionalResult",
+          "agentRunId"
         ],
         "title": "GenerationSubmit",
         "type": "object"
@@ -22675,6 +23115,20 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that initiated this execution, when applicable.",
+            "title": "Agentrunid"
           }
         },
         "required": [
@@ -22704,7 +23158,8 @@
           "adoptionResultId",
           "adoptionMaterial",
           "adopted",
-          "adapterParameters"
+          "adapterParameters",
+          "agentRunId"
         ],
         "title": "Job",
         "type": "object"

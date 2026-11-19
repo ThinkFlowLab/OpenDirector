@@ -2,6 +2,7 @@ import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
 import { defaultTranslate } from "../canvas/assistantTranslate.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { headers, json, request, responseError } from "./api.ts";
+import type { ChatCanvasLink, ChatCanvasLinkCandidate } from "../contracts/generated.ts";
 
 export type AgentRuntime =
   | "default"
@@ -60,7 +61,10 @@ export interface ChatSource {
   url: string;
   title: string;
 }
+/** A resolved canvas reference persisted with an assistant reply. */
+export type { ChatCanvasLink, ChatCanvasLinkCandidate };
 export interface ChatMessage {
+  canvasLinks?: ChatCanvasLink[];
   sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;

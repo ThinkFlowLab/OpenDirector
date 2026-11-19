@@ -1,14 +1,18 @@
 import { memo, useMemo, useState } from "react";
-import { Streamdown } from "streamdown";
-import type { LinkSafetyModalProps } from "streamdown";
+import type { ReactNode } from "react";
+import { Streamdown, defaultRehypePlugins } from "streamdown";
+import type { Components, ExtraProps, LinkSafetyModalProps, StreamdownProps } from "streamdown";
 import type { ChatMessage, ChatTool } from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { AssistantLinkInfo } from "./AssistantLinkInfo";
+import { applyCanvasLinkClick } from "./assistantCanvasLink";
+import { prepareCanvasReferences, renderCanvasReferences } from "./canvasReferences.ts";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
 import { assistantCitationFormatter } from "./assistantCitations.ts";
+import { renderCanvasMentions } from "./assistantCanvasMentions.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
 
 const STATUS: Record<ChatTool["status"], MessageKey> = {
@@ -94,14 +98,17 @@ function ToolGroup({ tools, t }: { tools: ChatTool[]; t: Translate }) {
 export const AssistantReply = memo(function AssistantReply({
   message,
   thinking,
+  onCanvasLink,
   t = defaultTranslate,
 }: {
   message: ChatMessage;
   thinking: boolean;
+  onCanvasLink?: (nodeId: string) => void;
   /** Injected by the panel; standalone mounts fall back to the active locale. */
   t?: Translate;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [canvasHint, setCanvasHint] = useState<string | null>(null);
   const formatText = useMemo(() => assistantCitationFormatter(
     message.text, message.sources, message.status === "streaming", t,
   ), [message.text, message.sources, message.status, t]);
@@ -109,6 +116,31 @@ export const AssistantReply = memo(function AssistantReply({
     enabled: true,
     renderModal: (props: LinkSafetyModalProps) => props.isOpen ? <AssistantLinkInfo {...props} t={t} /> : null,
   }), [t]);
+  const projectLinks = useMemo(() => {
+    const links = new Map(message.canvasLinks?.map((link) => [link.target, link]));
+    // Give persisted project references their own renderer. Ordinary anchors
+    // keep Streamdown's sanitize and link-safety behavior.
+    const components: Components = {
+      "canvas-reference": ({ href, children }: Record<string, unknown> & ExtraProps) => {
+        const content = children as ReactNode;
+        const link = links.get(String(href));
+        if (!link) return <span>{content}</span>;
+        return <a href="#" onClick={(event) => {
+          event.preventDefault();
+          const hint = applyCanvasLinkClick(link, (nodeId) => onCanvasLink?.(nodeId));
+          setCanvasHint(hint
+            ? t(hint.hintKey) + (hint.projectId ? ` · ${hint.projectId}` : "")
+            : null);
+        }}>{content}</a>;
+      },
+    };
+    const targets = Array.from(links.keys());
+    const rehypePlugins: StreamdownProps["rehypePlugins"] = [defaultRehypePlugins.raw,
+      [prepareCanvasReferences, { targets }], defaultRehypePlugins.sanitize,
+      defaultRehypePlugins.harden, [renderCanvasReferences, { targets }],
+      [renderCanvasMentions, { targets }]];
+    return { components, rehypePlugins };
+  }, [message.canvasLinks, onCanvasLink, t]);
   const copyLabel =
     copyState === "copied"
       ? t("assistant.reply.copied")
@@ -124,6 +156,8 @@ export const AssistantReply = memo(function AssistantReply({
         mode={message.status === "streaming" ? "streaming" : "static"}
         isAnimating={message.status === "streaming"}
         linkSafety={linkSafety}
+        components={projectLinks.components}
+        rehypePlugins={projectLinks.rehypePlugins}
       >
         {formatText(text)}
       </Streamdown>
@@ -134,6 +168,7 @@ export const AssistantReply = memo(function AssistantReply({
     : <ToolGroup key={part.id} tools={part.tools} t={t} />;
   return (
     <>
+      {canvasHint && <p role="status">{canvasHint}</p>}
       {!!message.plan?.length && <details className="cw-chat-plan cw-chat-activity">
         <summary>
           <CanvasIcon name="sparkle" size={15} />

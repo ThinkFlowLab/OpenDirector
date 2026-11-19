@@ -1,6 +1,10 @@
 /** Assistant panel, reply activity, pickers, references and chat transport. */
 export const assistant = {
   "assistant.reply.sourceUnavailable": "来源不可用",
+  "assistant.reply.canvasLink.materialize": "该对象尚未放置在画布中。",
+  "assistant.reply.canvasLink.ambiguous": "该链接匹配多个画布对象。",
+  "assistant.reply.canvasLink.missing": "链接的对象不在当前工程中。",
+  "assistant.reply.canvasLink.crossProject": "该链接指向另一个工程。",
   "assistant.reply.copyLink": "复制链接",
   "assistant.reply.copyLinkFailed": "复制失败，请选择链接地址复制",
   "assistant.reply.openLink": "打开链接",

@@ -1,6 +1,10 @@
 /** English assistant copy. Keys must match `zh-CN/assistant.ts`. */
 export const assistant = {
   "assistant.reply.sourceUnavailable": "Source unavailable",
+  "assistant.reply.canvasLink.materialize": "This item is not on the canvas yet.",
+  "assistant.reply.canvasLink.ambiguous": "This link matches several canvas items.",
+  "assistant.reply.canvasLink.missing": "This linked item is not in the project.",
+  "assistant.reply.canvasLink.crossProject": "This link points to another project.",
   "assistant.reply.copyLink": "Copy link",
   "assistant.reply.copyLinkFailed": "Copy failed; select the URL to copy it",
   "assistant.reply.openLink": "Open link",

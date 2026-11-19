@@ -361,6 +361,25 @@ export interface ChangedObjectInput extends ContractInput {
   readonly change: "created" | "updated" | "hidden" | "deleted";
 }
 
+export interface ChatCanvasLinkInput extends ContractInput {
+  readonly target: string;
+  readonly status: "focused" | "hidden" | "materialize" | "ambiguous" | "missing" | "cross-project" | "external";
+  readonly nodeId?: string | null;
+  readonly assetId?: string | null;
+  readonly projectId?: string | null;
+  readonly kind?: string | null;
+  readonly action?: "reveal" | "materialize" | null;
+  readonly candidates?: ReadonlyArray<ChatCanvasLinkCandidateInput> | null;
+}
+
+export interface ChatCanvasLinkCandidateInput extends ContractInput {
+  readonly nodeId?: string | null;
+  readonly assetId?: string | null;
+  readonly kind?: string | null;
+  readonly title?: string | null;
+  readonly hidden?: boolean | null;
+}
+
 export interface CommandBaseInput extends ContractInput {
   readonly commandId: string;
   readonly projectId: string;
@@ -557,6 +576,7 @@ export interface GenerationSubmitInput extends ContractInput {
   readonly adoptionPolicy?: "if_current" | "candidate_only";
   readonly batchId?: string | null;
   readonly showAdditionalResult?: boolean;
+  readonly agentRunId?: string | null;
 }
 
 export interface GenerationSubmitCommandInput extends CommandBaseInput {
@@ -724,6 +744,7 @@ export interface JobInput extends ProjectEntityInput {
   readonly adoptionMaterial?: AssetRefInput | null;
   readonly adopted?: boolean;
   readonly adapterParameters?: Readonly<Record<string, JsonValueInput>>;
+  readonly agentRunId?: string | null;
 }
 
 export interface JobCancelCommandInput extends CommandBaseInput {
@@ -1941,6 +1962,25 @@ export interface ChangedObject extends Contract {
   readonly change: "created" | "updated" | "hidden" | "deleted";
 }
 
+export interface ChatCanvasLink extends Contract {
+  readonly target: string;
+  readonly status: "focused" | "hidden" | "materialize" | "ambiguous" | "missing" | "cross-project" | "external";
+  readonly nodeId: string | null;
+  readonly assetId: string | null;
+  readonly projectId: string | null;
+  readonly kind: string | null;
+  readonly action: "reveal" | "materialize" | null;
+  readonly candidates: ReadonlyArray<ChatCanvasLinkCandidate> | null;
+}
+
+export interface ChatCanvasLinkCandidate extends Contract {
+  readonly nodeId: string | null;
+  readonly assetId: string | null;
+  readonly kind: string | null;
+  readonly title: string | null;
+  readonly hidden: boolean | null;
+}
+
 export interface CommandBase extends Contract {
   readonly commandId: string;
   readonly projectId: string;
@@ -2137,6 +2177,7 @@ export interface GenerationSubmit extends Contract {
   readonly adoptionPolicy: "if_current" | "candidate_only";
   readonly batchId: string | null;
   readonly showAdditionalResult: boolean;
+  readonly agentRunId: string | null;
 }
 
 export interface GenerationSubmitCommand extends CommandBase {
@@ -2304,6 +2345,7 @@ export interface Job extends ProjectEntity {
   readonly adoptionMaterial: AssetRef | null;
   readonly adopted: boolean;
   readonly adapterParameters: Readonly<Record<string, JsonValue>>;
+  readonly agentRunId: string | null;
 }
 
 export interface JobCancelCommand extends CommandBase {

@@ -68,6 +68,7 @@ export function AssistantPanel({
   onModelSelections,
   onOpenSettings,
   onPrepareReferences,
+  onFocusCanvasNode,
 }: {
   documentId: string;
   documentTitle: string;
@@ -84,6 +85,7 @@ export function AssistantPanel({
   onModelSelections?: (selections: ModelSelections) => void;
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
+  onFocusCanvasNode?: (nodeId: string) => void;
 }) {
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
@@ -434,7 +436,7 @@ export function AssistantPanel({
             )}
             <div className="cw-assistant-message-text">
               {message.role === "assistant" ? (
-                <AssistantReply message={message} thinking={chat.thinkingNow} t={t} />
+                <AssistantReply message={message} thinking={chat.thinkingNow} t={t} onCanvasLink={onFocusCanvasNode} />
               ) : message.role === "user" &&
                 (message.content || message.assets?.length) ? (
                 referenceContent(

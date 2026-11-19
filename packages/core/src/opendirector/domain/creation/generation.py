@@ -306,6 +306,7 @@ class Job(ProjectEntity):
     adoptionMaterial: AssetRef | None = Field(default=None, description='Material version reserved for adoption.')
     adopted: bool = Field(default=False, description='Whether the generated result was adopted.')
     adapterParameters: dict[str, JsonValue] = Field(default_factory=dict, description='Fixed provider-specific execution parameters.')
+    agentRunId: UUID | None = Field(default=None, description='Agent turn that initiated this execution, when applicable.')
 
     @model_validator(mode='after')
     def execution_identity(self):

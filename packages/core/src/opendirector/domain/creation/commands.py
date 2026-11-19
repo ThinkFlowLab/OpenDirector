@@ -214,6 +214,7 @@ class GenerationSubmit(Contract):
     adoptionPolicy: Literal['if_current', 'candidate_only'] = Field(default='if_current', description='Policy for adopting the completed result.')
     batchId: UUID | None = Field(default=None, description='Generation batch ID.')
     showAdditionalResult: bool = Field(default=False, description='Whether to display an additional result item.')
+    agentRunId: UUID | None = Field(default=None, description='Trusted Agent turn that initiated this execution.')
 
     @model_validator(mode='after')
     def presentation(self):
