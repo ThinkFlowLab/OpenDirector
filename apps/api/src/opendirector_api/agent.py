@@ -68,6 +68,7 @@ class Turn(BaseModel):
     thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
     modelSelections: dict[str, str | None] = Field(default_factory=dict)
     skills: list[str] = Field(default_factory=list, max_length=1)
+    delivery: Literal['queue', 'insert'] = 'queue'
 
 
 def draft_content_is_empty(content):
@@ -194,6 +195,35 @@ class Conversations:
             value['messages'].append(queued)
             durable_json(file, value)
         return queued
+
+    def insert(self, project_id: UUID, session: str, message: dict,
+               conversation_id: UUID | None = None) -> dict:
+        """Store a message that was handed to the turn already running.
+
+        It is written directly before the streaming reply, so the transcript
+        reads the way the model met it: after the user's first message and
+        before the answer was finished.
+        """
+        with self.projects.local.transaction() as db:
+            self.projects._recover()
+            directory, _, _ = self.projects._load(db, project_id)
+            self.projects._lease(db, project_id, directory, session)
+            folder = child(directory, 'agent-runs')
+            folder.mkdir(exist_ok=True)
+            file = child(folder, 'conversation.json')
+            value = read_json(file) if file.exists() else {'messages': [], **Draft().model_dump()}
+            value['conversationId'] = value.get('conversationId') or str(uuid5(project_id, 'assistant'))
+            if conversation_id is not None and str(conversation_id) != value['conversationId']:
+                raise ProjectError('当前对话已切换，请重新加载后重试；原对话未覆盖。', 409)
+            if any(item['id'] == message['id'] for item in value['messages']):
+                raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
+            inserted = {**message, 'status': 'inserted'}
+            index = len(value['messages'])
+            if index and value['messages'][-1].get('status') == 'streaming':
+                index -= 1
+            value['messages'].insert(index, inserted)
+            durable_json(file, value)
+        return inserted
 
     def dispatch(self, project_id: UUID, session: str | None = None,
                  agent_session: str | None = None) -> dict | None:
@@ -462,6 +492,7 @@ class Chain:
     task: asyncio.Task | None = None
     stopped: bool = False
     last: dict | None = None
+    steer: asyncio.Queue[str] | None = None
 
 
 def agent_routes(projects, generation, configs, provider=None, *, active=None) -> APIRouter:
@@ -725,7 +756,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 session=run_session, directory=plan['directory'], config=plan['config'], messages=context,
                 selected_skills=message.get('skills') or [], thinking=plan['thinking'],
                 model_selections=plan['model_selections'], runtime_model=message.get('runtimeModel'),
-                skills=plan['available'], conversation_id=chain.conversation_id)
+                skills=plan['available'], conversation_id=chain.conversation_id, steer=chain.steer)
             async with aclosing(runtimes.stream(run)) as stream:
                 async for event in stream:
                     if event['type'] == 'delta':
@@ -814,6 +845,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         turn_id, saved, error, status = chain.turn, None, None, 'complete'
         try:
             while True:
+                chain.steer = asyncio.Queue()
                 saved, error, status = await produce_one(chain, plan)
                 turn_id = UUID(plan['message']['id'])
                 if status != 'complete' or chain.stopped:
@@ -835,6 +867,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             status, error = 'stopped', None
             raise
         finally:
+            chain.steer = None
             chain.events.put({'type': 'end', 'turnId': str(turn_id), 'nextTurnId': None,
                               'conversation': saved if saved is not None else chain.last, 'error': error})
             if active.get(project_id) is chain:
@@ -934,8 +967,32 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         """
         session = str(x_opendirector_session)
         async with admission.setdefault(project_id, asyncio.Lock()):
+            if value.delivery == 'insert' and (value.assets or value.content or value.skills):
+                # Checked before the run settings are rebuilt: a supplement is
+                # text for the turn that is already running, nothing else.
+                raise ProjectError('运行中插入只支持文字，请等回复结束后再附带素材或技能。', 409)
             plan = await prepare(project_id, value, session, accept_language)
             chain = active.get(project_id)
+            if value.delivery == 'insert':
+                # Text handed to the turn that is already running. It reaches the
+                # model through the runtime's own channel, never through a second
+                # turn, so the answer keeps the work it has already done.
+                if chain is None:
+                    raise ProjectError('当前没有正在执行的回复，直接发送即可。', 409)
+                if value.conversationId is not None and chain.conversation_id is not None \
+                        and str(value.conversationId) != str(chain.conversation_id):
+                    raise ProjectError('当前对话已切换，请重新加载后重试；原对话未覆盖。', 409)
+                spec = runtime_spec(value.runtime)
+                if not spec.supportsSteering:
+                    raise ProjectError(f'{spec.label} 不支持在回复执行中插入内容，请改用排队。', 409)
+                if chain.steer is None:
+                    raise ProjectError('这一轮回复刚刚结束，请重新发送。', 409)
+                chain.steer.put_nowait(value.text)
+                inserted = await asyncio.to_thread(conversations.insert, project_id, session,
+                                                   plan['message'], value.conversationId)
+                chain.events.put({'type': 'steered', 'message': inserted})
+                return JSONResponse({'inserted': inserted, 'chainId': str(chain.id),
+                                     'turnId': str(chain.turn)}, status_code=202)
             if chain is not None:
                 if value.conversationId is not None and chain.conversation_id is not None \
                         and str(value.conversationId) != str(chain.conversation_id):
