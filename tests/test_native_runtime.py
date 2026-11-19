@@ -34,42 +34,92 @@ pytestmark = pytest.mark.merge
 
 FAKE = '''import json, os, subprocess, sys
 from pathlib import Path
+
+
+def body(prompt):
+    assert 'Segment plan' not in prompt
+    if 'Continue plan' in prompt:
+        assert ('Save a plan' in prompt) == (os.environ.get('TEST_MISSING_ROLLOUT') == '1')
+    workspace_marker = Path('.continuation-test')
+    if 'Continue plan' in prompt:
+        assert workspace_marker.read_text() == str(Path.cwd())
+    else:
+        workspace_marker.write_text(str(Path.cwd()))
+    work = Path(prompt.split('Execution directory: ', 1)[1].split(chr(10), 1)[0])
+    assert list((work / '.agents/skills').glob('*/SKILL.md'))
+    subprocess.run([sys.executable, '-c', 'from pathlib import Path; Path("environment-check.txt").write_text("native execution works")'], cwd=work, check=True)
+    cli = [sys.executable, '-m', 'opendirector.cli']
+    def invoke(*arguments):
+        return json.loads(subprocess.check_output([*cli, *arguments], text=True))
+    assert 'project' in subprocess.check_output([*cli, '--help'], text=True)
+    assert 'Asset ID' in subprocess.check_output([*cli, 'asset', 'write-text', '--help'], text=True) or 'name' in subprocess.check_output([*cli, 'asset', 'write-text', '--help'], text=True)
+    operation = '00000000-0000-0000-0000-000000000003'
+    result = invoke('--operation-id', operation, 'asset', 'write-text', '--name', 'native.md', '--text', 'Native plan')
+    assert result['status'] == 'applied', result
+    assert invoke('--operation-id', operation, 'asset', 'write-text', '--name', 'native.md', '--text', 'Native plan') == result
+    preview = invoke('query', 'asset.preview', '--object-id', '00000000-0000-0000-0000-000000000001')
+    assert preview['preview']['mimeType'] == 'image/webp', preview
+    return 'Native saved.'
+
+
+def emit(payload):
+    print(json.dumps(payload), flush=True)
+
+
+if 'app-server' in sys.argv:
+    resumed = False
+    for line in sys.stdin:
+        message = json.loads(line)
+        method = message.get('method')
+        if method is None:
+            continue
+        identity = message.get('id')
+        if method == 'initialize':
+            emit({'jsonrpc': '2.0', 'id': identity, 'result': {'userAgent': 'fake'}})
+        elif method == 'initialized':
+            continue
+        elif method == 'thread/start':
+            # The sandbox and approval policy are protocol parameters now, so
+            # they are pinned here instead of in the command line.
+            params = message['params']
+            assert params['sandbox'] == 'workspace-write', params
+            assert params['approvalPolicy'] == 'never', params
+            emit({'jsonrpc': '2.0', 'id': identity, 'result': {'thread': {'id': 'test-native'}}})
+        elif method == 'thread/resume':
+            assert os.environ.get('TEST_MISSING_ROLLOUT') != '1'
+            resumed = True
+            emit({'jsonrpc': '2.0', 'id': identity, 'result': {'thread': {'id': message['params']['threadId']}}})
+        elif method == 'turn/start':
+            prompt = message['params']['input'][0]['text']
+            if 'Continue plan' in prompt:
+                assert resumed == (os.environ.get('TEST_MISSING_ROLLOUT') != '1')
+            reply = body(prompt)
+            emit({'jsonrpc': '2.0', 'id': identity,
+                'result': {'turn': {'id': 'test-turn', 'items': [], 'status': 'inProgress'}}})
+            emit({'jsonrpc': '2.0', 'method': 'item/completed', 'params': {'threadId': 'test-native',
+                'turnId': 'test-turn', 'completedAtMs': 0,
+                'item': {'type': 'agentMessage', 'id': 'message-1', 'text': reply}}})
+            emit({'jsonrpc': '2.0', 'method': 'turn/completed', 'params': {'threadId': 'test-native',
+                'turn': {'id': 'test-turn', 'items': [], 'status': 'completed'}}})
+        elif method == 'turn/steer':
+            emit({'jsonrpc': '2.0', 'id': identity, 'result': {'turnId': 'test-turn'}})
+    sys.exit(0)
+
 prompt = sys.stdin.read()
-assert 'Segment plan' not in prompt
 if 'Continue plan' in prompt:
- assert ('Save a plan' in prompt) == (os.environ.get('TEST_MISSING_ROLLOUT') == '1')
- runtime = os.environ['TEST_RUNTIME']
- resume_args = {'codex': ['resume', 'test-native', '-'], 'claude': ['--resume', 'test-native']}
- assert sys.argv[2:] == ([] if os.environ.get('TEST_MISSING_ROLLOUT') == '1' else resume_args.get(runtime, ['--session', 'test-native']))
-workspace_marker = Path('.continuation-test')
-if 'Continue plan' in prompt:
- assert workspace_marker.read_text() == str(Path.cwd())
-else:
- workspace_marker.write_text(str(Path.cwd()))
-work = Path(prompt.split('Execution directory: ', 1)[1].split(chr(10), 1)[0])
-assert list((work / '.agents/skills').glob('*/SKILL.md'))
-subprocess.run([sys.executable, '-c', 'from pathlib import Path; Path("environment-check.txt").write_text("native execution works")'], cwd=work, check=True)
-cli = [sys.executable, '-m', 'opendirector.cli']
-def invoke(*arguments):
- response = subprocess.check_output([*cli, *arguments], text=True)
- return json.loads(response)
-assert 'project' in subprocess.check_output([*cli, '--help'], text=True)
-assert 'Asset ID' in subprocess.check_output([*cli, 'asset', 'write-text', '--help'], text=True) or 'name' in subprocess.check_output([*cli, 'asset', 'write-text', '--help'], text=True)
-payload = '{"name":"native.md","text":"Native plan"}'
-operation = '00000000-0000-0000-0000-000000000003'
-result = invoke('--operation-id', operation, 'asset', 'write-text', '--name', 'native.md', '--text', 'Native plan')
-assert result['status'] == 'applied', result
-assert invoke('--operation-id', operation, 'asset', 'write-text', '--name', 'native.md', '--text', 'Native plan') == result
-preview = invoke('query', 'asset.preview', '--object-id', '00000000-0000-0000-0000-000000000001')
-assert preview['preview']['mimeType'] == 'image/webp', preview
+    if os.environ.get('TEST_MISSING_ROLLOUT') == '1':
+        assert '--resume' not in sys.argv and '--session' not in sys.argv
+    else:
+        assert '--resume' in sys.argv or '--session' in sys.argv
+reply = body(prompt)
 runtime = os.environ['TEST_RUNTIME']
 if runtime == 'codex':
- print(json.dumps({'type':'thread.started','thread_id':'test-native'}))
- print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'Native saved.'}}))
+    emit({'type': 'thread.started', 'thread_id': 'test-native'})
+    emit({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': reply}})
 elif runtime == 'claude':
- print(json.dumps({'type':'assistant','session_id':'test-native','message':{'content':[{'type':'text','text':'Native saved.'}]}}))
+    emit({'type': 'assistant', 'session_id': 'test-native', 'message': {'content': [{'type': 'text', 'text': reply}]}})
 else:
- print(json.dumps({'type':'text','sessionID':'test-native','part':{'text':'Native saved.'}}))
+    emit({'type': 'text', 'sessionID': 'test-native', 'part': {'text': reply}})
 '''
 
 
@@ -119,7 +169,7 @@ def test_cli_bridge_preserves_utf8_with_legacy_stdio_encoding():
 @pytest.mark.parametrize("missing_rollout", [False, True])
 def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime, missing_rollout):
     missing_rollout = missing_rollout and runtime == "codex"
-    monkeypatch.setattr(native, "codex_session_available", lambda _: not missing_rollout)
+    monkeypatch.setattr(native, "codex_session_available", lambda _, directory: not missing_rollout)
     monkeypatch.setenv("TEST_MISSING_ROLLOUT", "1" if missing_rollout else "0")
     local = LocalProjects(tmp_path)
     config = ModelConfigs(tmp_path).save('agent','http://localhost:9999/v1','test','',auth_mode='none')
@@ -130,7 +180,9 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime,
     monkeypatch.setattr(CreationAssets, 'preview', lambda self, project_id, asset_id, target:
         {'preview': {'path': str(preview), 'mimeType': 'image/webp'}})
     def command(kind, work, socket, token, model, model_url, catalog, **kwargs):
-        return [sys.executable, str(script), "--"], {**os.environ, 'TEST_RUNTIME':kind,
+        # Codex answers over the app-server protocol now; the other runtimes
+        # still get one prompt on stdin.
+        return [sys.executable, str(script), 'app-server' if kind == 'codex' else "--"], {**os.environ, 'TEST_RUNTIME':kind,
             'PWD':str(kwargs.get('native_directory') or work), **(kwargs.get('bridge_env') or {'OPENDIRECTOR_AGENT_SOCKET':socket})}
     monkeypatch.setattr(native, 'command', command)
     monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
@@ -234,16 +286,22 @@ def test_claude_skill_alias_refuses_to_replace_a_real_directory(tmp_path, monkey
 
 def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
     monkeypatch.setattr(native, "executable", lambda _: sys.executable)
-    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules'))
     for runtime in ('default', 'opencode', 'codex', 'claude'):
         work = tmp_path / runtime
         work.mkdir()
         args, env = native.command(runtime, work, '/tmp/test.sock', 'private-token', 'test-model', 'http://localhost:1', [])
         assert 'private-token' not in ' '.join(args) if runtime == 'opencode' else True
         if runtime == 'codex':
-            assert '--ignore-user-config' in args
+            # One long-lived app-server: the sandbox, approval policy and model
+            # travel in the thread/start request, not in the command line.
+            assert args[1] == 'app-server'
+            assert 'exec' not in args
+            assert '--ignore-user-config' not in args
+            assert env['CODEX_HOME'].endswith('.codex')
+            # The server takes the model in `turn/start`, not on the command line.
+            assert not any(item == '--model' for item in args)
             assert 'features.shell_tool=true' in args
-            assert args[args.index('--sandbox') + 1] == 'workspace-write'
+            assert not any(item == '--sandbox' for item in args)
             assert not any('mcp_servers.' in item for item in args)
             assert '--dangerously-bypass-approvals-and-sandbox' not in args
         elif runtime == 'claude':
@@ -261,16 +319,24 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
                 assert 'title' not in config['agent']
 
 
-def test_codex_only_passes_supported_isolation_flags(tmp_path, monkeypatch):
+def test_codex_server_gets_a_home_of_its_own(tmp_path, monkeypatch):
+    """`app-server` has no `--ignore-user-config`; a private home isolates it."""
     binary = str(tmp_path / 'codex')
     monkeypatch.setattr(native, 'executable', lambda _: binary)
-    monkeypatch.setattr(native, '_CODEX_ISOLATION', {})
-    monkeypatch.setattr(native.subprocess, 'run', lambda *args, **kwargs:
-        SimpleNamespace(stdout=b'Options:\n      --ephemeral\n      --ignore-user-config\n      --ignore-rules\n', stderr=b''))
-    args, _ = native.command('codex', tmp_path, '', 'token', None, '', [])
-    assert '--ephemeral' not in args
-    assert '--ignore-user-config' in args
-    assert '--ignore-rules' in args
+    source = tmp_path / 'user-home'
+    source.mkdir()
+    (source / 'auth.json').write_text('{"token": "secret"}')
+    monkeypatch.setenv('CODEX_HOME', str(source))
+    work = tmp_path / 'agent-runs' / 'turn-1' / 'work'
+    work.mkdir(parents=True)
+    args, env = native.command('codex', work, '', 'token', None, '', [])
+    assert args[1] == 'app-server'
+    assert '--ignore-user-config' not in args
+    home = tmp_path / 'agent-runs' / '.codex'
+    assert env['CODEX_HOME'] == str(home)
+    # The credentials travel with the private home; the user config does not.
+    assert (home / 'auth.json').read_text() == '{"token": "secret"}'
+    assert not (home / 'config.toml').exists()
 
 
 def test_codex_inherits_windows_system_proxy_without_overriding_explicit_proxy(monkeypatch):
@@ -288,11 +354,13 @@ def test_codex_inherits_windows_system_proxy_without_overriding_explicit_proxy(m
 def test_codex_isolation_preserves_windows_workspace_sandbox(tmp_path, monkeypatch, platform):
     monkeypatch.setattr(native, 'sys', SimpleNamespace(platform=platform))
     monkeypatch.setattr(native, 'executable', lambda _: 'codex')
-    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules'))
-    args, _ = native.command('codex', tmp_path, '', '', None, '', [])
+    args, env = native.command('codex', tmp_path, '', '', None, '', [])
+    assert args[:2] == ['codex', 'app-server']
     assert ('windows.sandbox="elevated"' in args) == (platform == 'win32')
-    assert args[args.index('--sandbox') + 1] == 'workspace-write'
+    # The sandbox itself travels in the thread settings the app server receives;
+    # the exec-only bypass flag must never be among the arguments.
     assert '--dangerously-bypass-approvals-and-sandbox' not in args
+    assert env['CODEX_HOME'].endswith('.codex')
 
 
 def test_codex_reconnect_does_not_end_turn():
@@ -653,10 +721,16 @@ def test_bundled_launch_reports_incomplete_install(tmp_path, monkeypatch):
 
 
 def test_codex_resume_requires_a_persisted_rollout(tmp_path, monkeypatch):
-    monkeypatch.setenv('CODEX_HOME', str(tmp_path))
+    monkeypatch.setenv('CODEX_HOME', str(tmp_path / 'user-home'))
     session = '01a1b721-ec28-7f33-85a6-0cf1355f6627'
-    assert not native.codex_session_available(session)
-    rollout = tmp_path / 'sessions' / '2026' / f'rollout-{session}.jsonl'
+    assert not native.codex_session_available(session, tmp_path)
+    rollout = tmp_path / 'user-home' / 'sessions' / '2026' / f'rollout-{session}.jsonl'
     rollout.parent.mkdir(parents=True)
     rollout.write_text('{}\n')
-    assert native.codex_session_available(session)
+    assert native.codex_session_available(session, tmp_path)
+    # The app server writes its rollouts into the project, not the user home.
+    project = tmp_path / 'agent-runs' / '.codex' / 'sessions' / '2026'
+    project.mkdir(parents=True)
+    other = '01a1b721-0000-7f33-85a6-0cf1355f6627'
+    (project / f'rollout-{other}.jsonl').write_text('{}\n')
+    assert native.codex_session_available(other, tmp_path)
