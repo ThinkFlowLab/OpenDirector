@@ -359,7 +359,9 @@ def _title_prefix_accepts(remainder: str) -> bool:
     if first in _MENTION_END_AFTER_SPACE:
         return len(remainder) == 1 or remainder[1].isspace()
     if first.isspace():
-        rest = remainder.strip()
+        # Sentence punctuation may close the trailing prose ("@Finished note
+        # here."); trim it before deciding whether the words are ordinary.
+        rest = _mention_base(remainder.strip())
         return bool(rest) and all(
             _PROSE_WORD.fullmatch(word) for word in rest.split())
     return bool(_CJK_CHARACTER.match(remainder))
@@ -370,7 +372,8 @@ def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
     # clean mention boundary after it. A longer unusable prefix shadows every
     # shorter one: resolving "Dr" for "@Dr. Smith 99" would reference a
     # different object, so the safer outcome is "missing".
-    prefixes = [title for title in _known_titles(snapshot) if name.startswith(title)]
+    titles = _known_titles(snapshot)
+    prefixes = [title for title in titles if name.startswith(title)]
     if prefixes:
         title = max(prefixes, key=len)
         if _title_prefix_accepts(name[len(title):]):
@@ -384,9 +387,13 @@ def _resolve_title(name: str, snapshot: Any, result: dict) -> dict:
     # Keep the persisted target on the mention itself so the renderer never
     # turns the rest of the sentence ("@No such item. Next step") into one
     # clickable reference. A raw mention with no boundary keeps its full text.
+    # If the boundary prefix is itself a known title, keeping it would alias a
+    # different mention's receipt ("@Dr. Smith 99" must not become "@Dr"), so
+    # the full raw mention is preserved instead.
     base = _mention_base(name)
-    return {**result, 'target': '@' + base if base else result['target'],
-            'status': 'missing'}
+    if not base or base in titles:
+        return {**result, 'status': 'missing'}
+    return {**result, 'target': '@' + base, 'status': 'missing'}
 
 
 def resolve_canvas_link(target: str, snapshot: Any, turn_id: str | None = None) -> dict:
@@ -424,13 +431,25 @@ def canvas_links_for_text(text: str, snapshot: Any, turn_id: str | None = None) 
     """Resolve each unique inline link, omitting ordinary external URLs."""
     result: list[dict] = []
     seen: set[str] = set()
-    for target in [*link_targets(text), *_mention_targets(text)]:
+
+    def add(target: str, *, preserve_target: bool = False) -> None:
         if target in seen:
-            continue
+            return
         seen.add(target)
         resolved = resolve_canvas_link(target, snapshot, turn_id)
-        if resolved['status'] != 'external':
-            result.append(resolved)
+        if resolved['status'] == 'external':
+            return
+        if preserve_target:
+            # A Markdown anchor is keyed by its exact href when the reply is
+            # rendered. Resolving "@Title." must not rewrite the key to
+            # "@Title", or the anchor can no longer find its receipt.
+            resolved['target'] = target
+        result.append(resolved)
+
+    for target in link_targets(text):
+        add(target, preserve_target=True)
+    for target in _mention_targets(text):
+        add(target)
     return result
 
 

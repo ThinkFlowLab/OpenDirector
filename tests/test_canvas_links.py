@@ -419,6 +419,50 @@ def test_a_longer_known_title_with_an_unusable_boundary_shadows_shorter_nodes():
         assert 'nodeId' not in link
 
 
+def test_a_rejected_longer_title_does_not_alias_a_shorter_mention():
+    # The missing receipt for "@Dr. Smith 99" must keep a distinct target;
+    # collapsing it to "@Dr" would overwrite the genuine focused receipt in
+    # the renderer's target map and make the real "@Dr" link show "missing".
+    dr = node(uuid4(), title='Dr')
+    full = node(uuid4(), title='Dr. Smith')
+    project = snapshot(nodes=[dr, full])
+    for text in ('@Dr\n@Dr. Smith 99', '@Dr. Smith 99\n@Dr'):
+        links = canvas_links_for_text(text, project, uuid4())
+        by_target = {link['target']: link for link in links}
+        assert len(by_target) == len(links), links
+        assert by_target['@Dr']['status'] == 'focused'
+        assert by_target['@Dr']['nodeId'] == str(dr.id)
+        assert by_target['@Dr. Smith 99']['status'] == 'missing'
+        assert 'nodeId' not in by_target['@Dr. Smith 99']
+
+
+@pytest.mark.parametrize(('text', 'title', 'target'), [
+    ('See @Finished note here.', 'Finished note', '@Finished note'),
+    ('See @Chapter 2.1 here.', 'Chapter 2.1', '@Chapter 2.1'),
+    ('@Finished note says hello. Next step', 'Finished note', '@Finished note'),
+])
+def test_terminal_sentence_punctuation_after_trailing_prose(text, title, target):
+    # The sentence-final period closes the trailing prose, then the prose can
+    # be dropped; it must not be treated as part of the last prose word.
+    item = node(uuid4(), title=title)
+    link, = canvas_links_for_text(text, snapshot(nodes=[item]), uuid4())
+    assert link['status'] == 'focused'
+    assert link['target'] == target
+    assert link['nodeId'] == str(item.id)
+
+
+def test_markdown_title_links_keep_the_anchor_href_as_target():
+    # The renderer keys a Markdown anchor by its exact href. Resolving
+    # "@Title." to the title "Title" must not rewrite the persisted key.
+    item = node(uuid4(), title='Title')
+    project = snapshot(nodes=[item])
+    focused, = canvas_links_for_text('[Open](@Title.)', project)
+    assert focused == {'target': '@Title.', 'status': 'focused',
+                       'nodeId': str(item.id), 'kind': 'text'}
+    missing, = canvas_links_for_text('[Open](@Missing.)', project)
+    assert missing == {'target': '@Missing.', 'status': 'missing'}
+
+
 def test_missing_mentions_keep_the_target_off_following_prose():
     # A missing mention must not wrap the rest of the sentence into the
     # clickable reference; the persisted target stops at the mention boundary.
