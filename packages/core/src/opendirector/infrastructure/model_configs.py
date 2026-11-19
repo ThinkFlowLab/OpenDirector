@@ -11,11 +11,25 @@ from filelock import FileLock
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.capabilities import agent_input_modalities
-from opendirector.domain.model_connection import connection_fields, model_fields
+from opendirector.domain.model_connection import connection_fields, is_bigmodel_connection, model_fields, same_connection_address
 from opendirector.domain.video_capabilities import check_video_config
 from opendirector.infrastructure.local_projects import child, read_json, write_json
 
 MODEL_KINDS = ("agent", "image", "video", "audio", "vision")
+
+
+def _provider_for_edit(models, existing, draft):
+    provider_id = existing.get('providerId', existing['id'])
+    # Moving a category off a shared account must not move other categories' keys or URLs.
+    if not is_bigmodel_connection(draft) and any(
+        item.get('providerId') == provider_id and item['kind'] != existing['kind'] for item in models
+    ):
+        new_id = str(uuid4())
+        for item in models:
+            if item.get('providerId') == provider_id and item['kind'] == existing['kind']:
+                item['providerId'] = new_id
+        return new_id
+    return provider_id
 
 
 class ModelConfigs:
@@ -80,10 +94,12 @@ class ModelConfigs:
         """Resolve a private credential snapshot for a backend call only."""
         return self.resolve(config_id, "agent")
 
-    def resolve(self, config_id: str, kind: str) -> dict:
+    def resolve(self, config_id: str, kind: str, *, connection: dict | None = None) -> dict:
         with self.lock:
-            item = next((item for item in self._read() if item["id"] == config_id and item["kind"] == kind), None)
-            if item is None:
+            item = next((item for item in self._read() if item["id"] == config_id), None)
+            if item is None or (item["kind"] != kind and not (
+                connection and is_bigmodel_connection(item) and is_bigmodel_connection(connection)
+            )):
                 raise ProjectError("所选模型不存在或类别不符，请在设置中配置并重新选择。", 409)
             return dict(item)
 
@@ -104,11 +120,14 @@ class ModelConfigs:
             legacy_segmentation = existing and existing['kind'] == 'vision' and kind in {'image', 'video'}
             if existing and existing["kind"] != kind and not legacy_segmentation:
                 raise ProjectError("不能修改模型所属类别。")
+            draft = {'kind': kind, **fields, **connection}
             if connection['authMode'] == 'none':
                 fields['apiKey'] = ''
             elif not fields['apiKey']:
                 if not existing or not existing['apiKey']:
                     raise ProjectError('请填写 API Key，或将鉴权方式设为无需鉴权。')
+                if not same_connection_address(existing, draft):
+                    raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
                 fields['apiKey'] = existing['apiKey']
             item = {'id': config_id or str(uuid4()), 'kind': kind, **fields, **connection}
             item['inputModalities'] = agent_input_modalities(kind, input_modalities if input_modalities is not None else (existing or {}).get('inputModalities'))
@@ -118,15 +137,18 @@ class ModelConfigs:
             profile = input_rules(item)['profile']
             if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:
                 check_video_config(kind, 'vllm_omni', 'fasth3' if profile == 'fasth3-omni' else 'minimax_h3', item['videoCapabilities'])
+            if existing and 'providerId' in existing:
+                item['providerId'] = _provider_for_edit(models, existing, item)
             if existing:
                 models[models.index(existing)] = item
             else:
                 models.append(item)
-            if existing and 'providerId' in existing:
-                item['providerId'] = existing['providerId']
+            if 'providerId' in item:
                 for peer in models:
                     if peer.get('providerId') == item['providerId']:
-                        peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode', 'proxyMode')})
+                        peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode')})
+                        if peer['kind'] == kind:
+                            peer['proxyMode'] = item['proxyMode']
             self._write(models)
             return self._public(item)
 
@@ -168,25 +190,33 @@ class ModelConfigs:
             if config_id and not existing:
                 raise ProjectError('模型配置已被删除，请重新加载。', 404)
             legacy_segmentation = existing and existing['kind'] == 'vision' and kind in {'image', 'video'}
-            if existing and existing['kind'] != kind and not legacy_segmentation:
+            draft = {'kind': kind, **fields[0], **connection}
+            cross_category = existing and existing['kind'] != kind and not legacy_segmentation
+            if cross_category and not (is_bigmodel_connection(existing) and is_bigmodel_connection(draft)):
                 raise ProjectError('不能修改模型所属类别。')
             key = api_key.strip()
             if connection['authMode'] == 'none':
                 key = ''
             elif not key:
-                if not existing or existing['url'] != fields[0]['url'] or not existing['apiKey']:
+                if not existing or not same_connection_address(existing, draft) or not existing['apiKey']:
                     raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
                 key = existing['apiKey']
-            provider_id = existing.get('providerId', existing['id']) if existing else str(uuid4())
-            previous = [item for item in models if item.get('providerId') == provider_id or item['id'] == config_id]
+            provider_id = _provider_for_edit(models, existing, draft) if existing else str(uuid4())
+            if cross_category:
+                # Promote an explicitly selected standalone record, preserving its model ID.
+                existing['providerId'] = provider_id
+            previous = [item for item in models if (item.get('providerId') == provider_id and item['kind'] == kind)
+                        or (item['id'] == config_id and not cross_category)]
             peers = {item['modelId']: item for item in previous}
             saved = []
             for field in fields:
                 old = peers.get(field['modelId'])
                 if old is None and len(previous) == 1 and len(fields) == 1:
-                    old = existing
+                    old = previous[0]
                 item = {'id': old['id'] if old else str(uuid4()), 'kind': kind, **field, **connection,
                         'apiKey': key, 'providerId': provider_id, 'videoAdapter': video_adapter or 'auto'}
+                if cross_category and proxy_mode is None and previous:
+                    item['proxyMode'] = (old or previous[0])['proxyMode']
                 options = model_options.get(field['modelId'], {})
                 item['videoAdapter'] = options.get('videoAdapter') or video_adapter or (old or {}).get('videoAdapter', 'auto')
                 modalities = options.get('inputModalities', input_modalities if input_modalities is not None else (old or {}).get('inputModalities'))
@@ -200,7 +230,7 @@ class ModelConfigs:
             remaining = [item for item in models if item not in previous]
             for item in remaining:
                 if item.get('providerId') == provider_id:
-                    item.update(url=fields[0]['url'], apiKey=key, connectionType=connection['connectionType'], authMode=connection['authMode'], proxyMode=connection['proxyMode'])
+                    item.update(url=fields[0]['url'], apiKey=key, connectionType=connection['connectionType'], authMode=connection['authMode'])
             self._write(remaining + saved)
             return [self._public(item) for item in saved]
 

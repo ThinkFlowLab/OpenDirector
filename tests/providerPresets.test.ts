@@ -397,3 +397,49 @@ test("a saved Zhipu GLM-TTS connection reopens with its provider identity", () =
   assert.equal(providerPresetFor(model), "zhipu");
   assert.equal(providerPresetFor({ ...model, url: "https://other.test/v1" }), "custom");
 });
+
+
+test("all four BigModel presets reuse accounts across categories", () => {
+  const categories = ["agent", "image", "video", "audio"] as const;
+  const presets = { agent: "zhipu", image: "bigmodel", video: "bigmodel-video", audio: "zhipu" };
+  for (const sourceKind of categories) {
+    const source = PROVIDER_PRESETS.find((preset) => preset.id === presets[sourceKind])!;
+    const account: ModelConfig = {
+      ...source, id: "account-a", providerId: "provider-a", kind: sourceKind,
+      modelId: source.modelsByKind![sourceKind]![0],
+      inputRules: { profile: "", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] },
+    };
+    const records = [
+      account,
+      { ...account, id: "account-b", providerId: "provider-b" },
+      { ...account, id: "same-account" },
+      { ...account, id: "wrong-url", providerId: "wrong-url", url: source.url + "/other" },
+      { ...account, id: "wrong-auth", providerId: "wrong-auth", authMode: "none" as const },
+      { ...account, id: "wrong-protocol", providerId: "wrong-protocol",
+        protocol: sourceKind === "video" ? "openai" as const : "bigmodel_video" as const },
+    ];
+    for (const kind of categories) {
+      const target = PROVIDER_PRESETS.find((preset) => preset.id === presets[kind])!;
+      assert.deepEqual(
+        matchingConnections(records, kind, {
+          ...target, kind, modelId: target.modelsByKind![kind]![0], apiKey: "", url: target.url + "/",
+        }).map((connection) => connection.id),
+        ["account-a", "account-b"],
+        `${sourceKind} to ${kind}`,
+      );
+    }
+  }
+});
+
+test("BigModel connections are offered per account across categories", () => {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu")!;
+  const account: ModelConfig = { ...preset, kind: "agent", modelId: "shared-model", id: "old-chat",
+    inputRules: { profile: "agent", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
+  const target = { ...preset, modelId: "image", kind: "image" as const, apiKey: "", url: preset.url + "/" };
+  const records: ModelConfig[] = [account, { ...account, id: "two", providerId: "other" },
+    { ...account, kind: "audio", providerId: "other", id: "speech" },
+    { ...account, id: "without-key", authMode: "none" },
+    { ...account, id: "custom", url: preset.url + "/other" }];
+  assert.deepEqual(matchingConnections(records, "image", target).map(item => item.id), ["old-chat", "two"]);
+  assert.deepEqual(matchingConnections(records, "image", { ...target, url: "https://models.example/v1" }), []);
+});

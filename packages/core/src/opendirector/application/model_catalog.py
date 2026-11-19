@@ -7,7 +7,7 @@ import asyncio
 import time
 
 from opendirector.domain.input_rules import input_rules
-from opendirector.domain.model_connection import connection_fields, model_fields
+from opendirector.domain.model_connection import connection_fields, model_fields, same_connection_address
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.chat_completions import ChatCompletions, chat_payload
 from opendirector.integrations.model_capabilities import read_service_models, read_video_capabilities
@@ -23,7 +23,7 @@ def _draft(kind, url, model_id, api_key, connection_type, protocol, auth_mode, p
 
 
 def _reuse_saved_key(config, existing, *, require_key):
-    if not existing or existing['url'] != config['url'] or (require_key and not existing['apiKey']):
+    if not existing or not same_connection_address(existing, config) or (require_key and not existing['apiKey']):
         raise ProjectError(_SAVED_KEY)
     config['apiKey'] = existing['apiKey']
     return config
@@ -51,32 +51,32 @@ class ModelCatalog:
     def delete_service(self, config_id):
         self.configs.delete_service(config_id)
 
-    async def _existing(self, config_id, kind, *, threaded):
+    async def _existing(self, config_id, config, *, threaded):
         if not config_id:
             return None
         # Discovery and agent tests read the saved key off the event loop.
         # Capability lookup stays on the caller, as the previous handler did.
         if threaded:
-            return await asyncio.to_thread(self.configs.resolve, config_id, kind)
-        return self.configs.resolve(config_id, kind)
+            return await asyncio.to_thread(self.configs.resolve, config_id, config['kind'], connection=config)
+        return self.configs.resolve(config_id, config['kind'], connection=config)
 
-    async def _with_saved_key(self, config, config_id, kind, *, require_key, threaded):
+    async def _with_saved_key(self, config, config_id, *, require_key, threaded):
         if config['authMode'] != 'bearer' or config['apiKey']:
             return config
-        existing = await self._existing(config_id, kind, threaded=threaded)
+        existing = await self._existing(config_id, config, threaded=threaded)
         return _reuse_saved_key(config, existing, require_key=require_key)
 
     async def discover(self, kind, url, model_id, api_key, config_id=None, *, connection_type='api', protocol=None,
                        auth_mode=None, proxy_mode=None):
         config = _draft(kind, url, model_id or 'discovery', api_key, connection_type, protocol, auth_mode, proxy_mode)
-        config = await self._with_saved_key(config, config_id, kind, require_key=True, threaded=True)
+        config = await self._with_saved_key(config, config_id, require_key=True, threaded=True)
         models = await read_service_models(config)
         return list(dict.fromkeys(item['id'] for item in models))
 
     async def test_agent(self, url, model_id, api_key, config_id=None, *, connection_type='api', protocol=None,
                          auth_mode=None, proxy_mode=None, timeout=AGENT_TEST_TIMEOUT_SECONDS):
         config = _draft('agent', url, model_id, api_key, connection_type, protocol, auth_mode, proxy_mode)
-        config = await self._with_saved_key(config, config_id, 'agent', require_key=True, threaded=True)
+        config = await self._with_saved_key(config, config_id, require_key=True, threaded=True)
         payload = chat_payload(config, [{'role': 'user', 'content': 'Reply with OK only.'}], 'auto')
         payload['max_tokens'] = 1024
         started = time.monotonic()
@@ -100,5 +100,5 @@ class ModelCatalog:
                         videoAdapter=video_adapter or 'auto')
         if source == 'preset':
             return input_rules(config).get('videoCapabilities')
-        config = await self._with_saved_key(config, config_id, 'video', require_key=False, threaded=False)
+        config = await self._with_saved_key(config, config_id, require_key=False, threaded=False)
         return await read_video_capabilities(config)

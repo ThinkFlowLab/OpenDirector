@@ -4,6 +4,19 @@ from urllib.parse import urlsplit
 from opendirector.domain.projects import ProjectError
 
 
+def is_bigmodel_connection(config: dict) -> bool:
+    """Official mainland BigModel presets share one bearer account across protocols."""
+    kind = config.get('kind')
+    return (config.get('url', '').rstrip('/') == 'https://open.bigmodel.cn/api/paas/v4'
+            and config.get('connectionType') == 'api' and config.get('authMode') == 'bearer'
+            and kind in {'agent', 'image', 'video', 'audio'}
+            and config.get('protocol') == ('bigmodel_video' if kind == 'video' else 'openai'))
+
+
+def same_connection_address(saved: dict, draft: dict) -> bool:
+    return saved['url'] == draft['url'] or (is_bigmodel_connection(saved) and is_bigmodel_connection(draft))
+
+
 def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None):
     if connection_type not in {'api', 'self_hosted'}:
         raise ProjectError('无效的接入方式。')
