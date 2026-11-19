@@ -324,6 +324,7 @@ export function AssistantPanel({
   const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
     new URLSearchParams({
       traceProject: documentId,
+      ...(value.conversationId ? { conversation: value.conversationId } : {}),
       turn: latestUser.id,
       runtime: latestReply.runtime === "default" ? "opencode" : latestReply.runtime ?? "opencode",
       ...(latestReply.status === "streaming" ? { live: "1" } : {}),
@@ -416,6 +417,7 @@ export function AssistantPanel({
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&
             previous?.role === "user" && new URLSearchParams({
               traceProject: documentId,
+              ...(value.conversationId ? { conversation: value.conversationId } : {}),
               turn: previous.id,
               runtime: message.runtime === "default" ? "opencode" : message.runtime ?? "opencode",
             });
