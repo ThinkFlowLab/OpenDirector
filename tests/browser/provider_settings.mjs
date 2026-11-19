@@ -23,6 +23,9 @@ await page.addInitScript(() => {
 });
 page.setDefaultTimeout(15000);
 const calls = [];
+const initialModelIds = new Set(
+  (await call("/api/model-configs")).map((model) => model.id),
+);
 page.on("request", (request) => calls.push(request.url()));
 try {
   const projectId = crypto.randomUUID();
@@ -234,4 +237,12 @@ try {
   throw error;
 } finally {
   await browser.close();
+  // Leave the shared fixture catalogue as this workflow found it so later
+  // browser workflows do not inherit its saved services.
+  for (const model of await call("/api/model-configs").catch(() => [])) {
+    if (!initialModelIds.has(model.id))
+      await call(`/api/model-configs/${model.id}`, undefined, "DELETE").catch(
+        () => {},
+      );
+  }
 }
