@@ -21,6 +21,7 @@ import {
   PROVIDER_PRESETS,
   matchingConnections,
   presetProtocol,
+  presetStages,
   providerPresetFor,
 } from "./providerPresets";
 import { CanvasIcon } from "./CanvasIcon";
@@ -70,29 +71,40 @@ export function ModelServiceForm({
   const t = useT();
   const connectionFieldId = useId();
   const [connection, setConnection] = useState(existing);
-  const [presetId, setPresetId] = useState(
-    existing
-      ? providerPresetFor(existing)
-      : kind === "video" || kind === "image" || kind === "audio"
-        ? LOCAL_OMNI_PRESET_ID
-        : "custom",
+  const initialPresetId = existing
+    ? providerPresetFor(existing)
+    : kind === "video" || kind === "image" || kind === "audio"
+      ? LOCAL_OMNI_PRESET_ID
+      : "custom";
+  const initialPreset = PROVIDER_PRESETS.find(
+    (item) => item.id === initialPresetId,
   );
+  // The custom preset shows a sample hosted endpoint; leave it empty so the
+  // user enters their own service. Self-hosted presets carry real defaults.
+  const initialDefaults =
+    initialPreset?.connectionType === "self_hosted" ? initialPreset : undefined;
+  const [presetId, setPresetId] = useState(initialPresetId);
   const [modelOptions, setModelOptions] = useState<
     Record<string, ModelOptions>
   >({});
   const [modelErrors, setModelErrors] = useState<Record<string, string>>({});
   const [value, setValue] = useState<ModelConfigInput>({
     kind,
-    url: existing?.url ?? "",
+    url: existing?.url ?? initialDefaults?.url ?? "",
     modelId: existing?.modelId ?? "",
     apiKey: "",
-    connectionType: existing?.connectionType ?? "self_hosted",
+    connectionType:
+      existing?.connectionType ??
+      initialDefaults?.connectionType ??
+      "self_hosted",
     capabilityAutoCheck: existing?.capabilityAutoCheck,
     protocol:
       existing && isSegmentationModel(existing)
         ? "vllm_omni_segmentation"
-        : (existing?.protocol ?? PROTOCOLS[kind][0][0]),
-    authMode: existing?.authMode ?? "none",
+        : (existing?.protocol ??
+          presetProtocol(initialDefaults, kind) ??
+          PROTOCOLS[kind][0][0]),
+    authMode: existing?.authMode ?? initialDefaults?.authMode ?? "none",
     proxyMode: existing ? (existing.proxyMode ?? "system") : "direct",
     videoAdapter: existing?.videoAdapter ?? "auto",
     inputModalities:
@@ -125,6 +137,17 @@ export function ModelServiceForm({
   const segmentation = value.protocol === "vllm_omni_segmentation";
   const depth = value.protocol === "vllm_omni_depth";
   const score = value.protocol === "vllm_omni_score";
+  const selectedPreset = PROVIDER_PRESETS.find((item) => item.id === presetId);
+  const stages = presetStages(selectedPreset, kind);
+  const activeStage = stages.find(
+    (stage) => stage.protocol === value.protocol,
+  );
+  const protocolLabel = (protocol: ModelConfigInput["protocol"]) => {
+    const option = PROTOCOLS[kind].find(
+      ([candidate]) => candidate === protocol,
+    );
+    return option ? t(option[1]) : protocol;
+  };
   const hasSavedKey = Boolean(
     connection &&
     connection.authMode === "bearer" &&
@@ -356,6 +379,41 @@ export function ModelServiceForm({
           disabled={locked}
           onChange={chooseProvider}
         />
+        {stages.length > 1 && (
+          <fieldset
+            className="cw-model-connection cw-provider-stage"
+            disabled={locked}
+            aria-label={t("models.service.stage")}
+          >
+            <div className="cw-model-connection-field">
+              <label>
+                {t("models.service.stage")}
+                <select
+                  value={value.protocol}
+                  onChange={(event) =>
+                    update({
+                      protocol: event.target
+                        .value as ModelConfigInput["protocol"],
+                    })
+                  }
+                >
+                  {stages.map((stage) => (
+                    <option key={stage.protocol} value={stage.protocol}>
+                      {protocolLabel(stage.protocol)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {activeStage && (
+                <p className="cw-model-note">
+                  {t("models.service.stageEndpoints", {
+                    paths: activeStage.paths.join(", "),
+                  })}
+                </p>
+              )}
+            </div>
+          </fieldset>
+        )}
         {!connection && connections.length > 0 && (
           <div className="cw-provider-reuse">
             <span>{t("models.service.existingConnections")}</span>

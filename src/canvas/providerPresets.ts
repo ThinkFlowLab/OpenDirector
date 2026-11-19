@@ -64,11 +64,12 @@ export interface ProviderPreset {
   authMode: ModelConfigInput["authMode"];
   modelsByKind?: Partial<Record<ModelKind, readonly string[]>>;
   /**
-   * Per-kind endpoints of a service that serves several stages behind one
-   * connection. Absent for single-purpose presets, where `url` + `protocol`
-   * describe the whole connection.
+   * Per-kind stages of a service that serves several endpoints behind one
+   * connection. The first stage is the kind's default. Absent for
+   * single-purpose presets, where `url` + `protocol` describe the whole
+   * connection.
    */
-  stages?: Partial<Record<ModelKind, ProviderStage>>;
+  stages?: Partial<Record<ModelKind, readonly ProviderStage[]>>;
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -270,42 +271,82 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     connectionType: "self_hosted",
     authMode: "none",
     // One localhost service serves several stages; each stage keeps the
-    // protocol its adapter expects, so a single connection is enough.
+    // protocol its adapter expects, so a single connection is enough. The
+    // first stage of each kind is the default.
+    //
+    // ASR is deliberately absent: vllm-omni does not serve
+    // /audio/transcriptions yet (S1 in #10007) and this application has no ASR
+    // adapter. SheetSage2 score shares the path with its own protocol.
     stages: {
-      agent: { paths: ["/chat/completions"], protocol: "openai" },
-      image: { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
-      video: { paths: ["/videos"], protocol: "vllm_omni" },
-      audio: { paths: ["/audio/speech", "/audio/transcriptions"], protocol: "openai" },
-      vision: {
-        paths: ["/images/segmentations", "/videos/segmentations"],
-        protocol: "vllm_omni_segmentation",
-      },
+      agent: [{ paths: ["/chat/completions"], protocol: "openai" }],
+      image: [
+        { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
+        {
+          paths: ["/images/segmentations", "/videos/segmentations"],
+          protocol: "vllm_omni_segmentation",
+        },
+      ],
+      video: [
+        { paths: ["/videos"], protocol: "vllm_omni" },
+        {
+          paths: ["/images/segmentations", "/videos/segmentations"],
+          protocol: "vllm_omni_segmentation",
+        },
+        { paths: ["/videos/depth"], protocol: "vllm_omni_depth" },
+      ],
+      audio: [
+        { paths: ["/audio/speech"], protocol: "openai" },
+        { paths: ["/audio/speech"], protocol: "vllm_omni_music" },
+        { paths: ["/audio/transcriptions"], protocol: "vllm_omni_score" },
+      ],
+      vision: [
+        {
+          paths: ["/images/segmentations", "/videos/segmentations"],
+          protocol: "vllm_omni_segmentation",
+        },
+      ],
     },
   },
 ];
 
 export const LOCAL_OMNI_PRESET_ID = "vllm-omni-local";
 
-/**
- * Protocols a saved self-hosted connection may still carry from the retired
- * per-stage vLLM-Omni presets. They now resolve to the one local service, so
- * an existing configuration keeps its provider name instead of reading as
- * "custom".
- */
-const OMNI_STAGE_PROTOCOLS: readonly ModelConfigInput["protocol"][] = [
-  "vllm_omni",
-  "vllm_omni_music",
-  "vllm_omni_score",
-  "vllm_omni_segmentation",
-  "vllm_omni_depth",
-];
+/** The stages a preset serves for one kind; empty for single-purpose presets. */
+export function presetStages(
+  preset: ProviderPreset | undefined,
+  kind: ModelKind,
+): readonly ProviderStage[] {
+  return preset?.stages?.[kind] ?? [];
+}
 
-/** The protocol a connection uses for one kind; falls back to the preset's own. */
+/**
+ * The protocol a connection uses for one kind. A protocol that names one of
+ * the preset's stages is kept, so reopening a saved specialized connection
+ * does not silently switch it back to the kind's default stage.
+ */
 export function presetProtocol(
   preset: ProviderPreset | undefined,
   kind: ModelKind,
+  protocol?: ModelConfigInput["protocol"] | null,
 ): ModelConfigInput["protocol"] | undefined {
-  return preset?.stages?.[kind]?.protocol ?? preset?.protocol;
+  const stages = presetStages(preset, kind);
+  if (protocol && stages.some((stage) => stage.protocol === protocol))
+    return protocol;
+  return stages[0]?.protocol ?? preset?.protocol;
+}
+
+/**
+ * `openai` is shared by generic self-hosted services, so it identifies this
+ * preset only at the documented loopback default. The specialized vLLM-Omni
+ * protocols are unique and need no URL rule.
+ */
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.replace(/^\[|\]$/g, "");
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
 }
 
 export function providerPresetFor(model: ModelConfig): string {
@@ -317,12 +358,16 @@ export function providerPresetFor(model: ModelConfig): string {
       preset.kinds.includes(model.kind),
   );
   if (explicit) return explicit.id;
-  if (
-    model.connectionType === "self_hosted" &&
-    model.protocol &&
-    OMNI_STAGE_PROTOCOLS.includes(model.protocol)
-  )
-    return LOCAL_OMNI_PRESET_ID;
+  const staged = PROVIDER_PRESETS.find(
+    (preset) =>
+      model.connectionType === "self_hosted" &&
+      preset.kinds.includes(model.kind) &&
+      presetStages(preset, model.kind).some(
+        (stage) => stage.protocol === model.protocol,
+      ) &&
+      (model.protocol !== "openai" || isLoopbackUrl(model.url)),
+  );
+  if (staged) return staged.id;
   const deployed = PROVIDER_PRESETS.find(
     (preset) =>
       preset.connectionType === "self_hosted" &&

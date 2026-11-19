@@ -660,6 +660,7 @@
 .cw-model-picker.has-capability-cards .cw-model-options { max-height: none; }
 
 .cw-model-editor-scroll > .cw-model-connection-details { margin: 0 0 16px; }
+.cw-model-editor-scroll > .cw-provider-stage { margin: 0 0 16px; }
 .cw-model-editor-scroll > .cw-provider-key { margin: 0 0 18px; }
 
 .cw-model-availability { padding: 12px 0; font-size: var(--settings-label-size, 13px); }

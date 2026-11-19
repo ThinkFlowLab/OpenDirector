@@ -405,18 +405,41 @@ test("vLLM-Omni is one local service with an endpoint per stage", () => {
   assert.equal(preset.authMode, "none");
   assert.deepEqual(preset.kinds, ["agent", "image", "video", "audio", "vision"]);
   assert.deepEqual(preset.stages, {
-    agent: { paths: ["/chat/completions"], protocol: "openai" },
-    image: { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
-    video: { paths: ["/videos"], protocol: "vllm_omni" },
-    audio: { paths: ["/audio/speech", "/audio/transcriptions"], protocol: "openai" },
-    vision: {
-      paths: ["/images/segmentations", "/videos/segmentations"],
-      protocol: "vllm_omni_segmentation",
-    },
+    agent: [{ paths: ["/chat/completions"], protocol: "openai" }],
+    image: [
+      { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
+      {
+        paths: ["/images/segmentations", "/videos/segmentations"],
+        protocol: "vllm_omni_segmentation",
+      },
+    ],
+    video: [
+      { paths: ["/videos"], protocol: "vllm_omni" },
+      {
+        paths: ["/images/segmentations", "/videos/segmentations"],
+        protocol: "vllm_omni_segmentation",
+      },
+      { paths: ["/videos/depth"], protocol: "vllm_omni_depth" },
+    ],
+    audio: [
+      { paths: ["/audio/speech"], protocol: "openai" },
+      { paths: ["/audio/speech"], protocol: "vllm_omni_music" },
+      { paths: ["/audio/transcriptions"], protocol: "vllm_omni_score" },
+    ],
+    vision: [
+      {
+        paths: ["/images/segmentations", "/videos/segmentations"],
+        protocol: "vllm_omni_segmentation",
+      },
+    ],
   });
   for (const kind of ["agent", "image", "video", "audio", "vision"] as const) {
-    assert.equal(presetProtocol(preset, kind), preset.stages![kind]!.protocol);
+    assert.equal(presetProtocol(preset, kind), preset.stages![kind]![0]!.protocol);
   }
+  // A saved specialized stage keeps its protocol; only an unknown one falls
+  // back to the kind's first stage.
+  assert.equal(presetProtocol(preset, "audio", "vllm_omni_music"), "vllm_omni_music");
+  assert.equal(presetProtocol(preset, "audio", "vllm_omni_depth"), "openai");
   // The retired per-stage presets leave exactly one entry per kind behind.
   for (const kind of ["agent", "image", "video", "audio", "vision"] as const) {
     const omni = providerOptions(kind).filter((item) => item.id.startsWith("vllm-omni"));
@@ -437,15 +460,24 @@ test("saved self-hosted vLLM-Omni connections resolve to the local service", () 
     ["vllm_omni_music", "audio"],
     ["vllm_omni_score", "audio"],
     ["vllm_omni_depth", "video"],
+    ["vllm_omni_segmentation", "image"],
+    ["vllm_omni_segmentation", "video"],
     ["vllm_omni_segmentation", "vision"],
   ] as const) {
     assert.equal(providerPresetFor(saved(protocol, kind)), LOCAL_OMNI_PRESET_ID);
+  }
+  // `openai` is shared with generic local services, so it only identifies the
+  // preset at a loopback address.
+  for (const kind of ["agent", "image", "audio"] as const) {
+    assert.equal(providerPresetFor(saved("openai", kind)), LOCAL_OMNI_PRESET_ID);
+  }
+  for (const url of ["http://192.168.1.5:8000/v1", "https://local.example/v1"]) {
+    assert.equal(providerPresetFor({ ...saved("openai", "audio"), url }), "custom");
   }
   // A hosted connection with another URL keeps reading as custom; the same
   // localhost URL still resolves to the local service.
   assert.equal(providerPresetFor({ ...saved("vllm_omni", "video"), connectionType: "api", url: "https://elsewhere.test/v1" }), "custom");
   assert.equal(providerPresetFor({ ...saved("vllm_omni", "video"), connectionType: "api" }), LOCAL_OMNI_PRESET_ID);
-  assert.equal(providerPresetFor(saved("openai", "audio")), "custom");
 });
 
 test("the local vLLM-Omni service reads in both languages", () => {
