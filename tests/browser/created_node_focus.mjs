@@ -90,12 +90,25 @@ try {
   // Restoring an existing identity must not be mistaken for remote creation,
   // including when it arrives through the event stream rather than UI undo.
   const read = () => call(`/api/creation/projects/${projectId}`);
+  // The workspace autosaves on its own, so a save can land between reading the
+  // revisions below and posting the command. That is the documented "the item
+  // changed since it was loaded, reload and try again" race, not a history bug:
+  // refresh the revisions and retry instead of failing on a stale snapshot.
+  const settle = async () => {
+    await page.getByText('Saved on this device', { exact: true }).first().waitFor({ timeout: 5000 }).catch(() => {});
+  };
   const send = async (type, payload) => {
-    const current = await read();
-    return call(`/api/creation/projects/${projectId}/commands`, {
-      commandId: crypto.randomUUID(), projectId, type, payload,
-      expectedVersions: current.canvasItems.map((item) => ({ objectType: 'canvas_item', id: item.id, revision: item.revision })),
-    });
+    for (let attempt = 1; ; attempt += 1) {
+      await settle();
+      const current = await read();
+      const receipt = await call(`/api/creation/projects/${projectId}/commands`, {
+        commandId: crypto.randomUUID(), projectId, type, payload,
+        expectedVersions: current.canvasItems.map((item) => ({ objectType: 'canvas_item', id: item.id, revision: item.revision })),
+      });
+      const stale = receipt.status === 'rejected' && receipt.issues?.some((issue) => issue.code === 'revision_conflict');
+      if (!stale || attempt === 3) return receipt;
+      await page.waitForTimeout(150);
+    }
   };
   const shown = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
   const selection = () => page.locator('.react-flow__node.selected').evaluateAll((nodes) => nodes.map((node) => node.dataset.id).sort());
