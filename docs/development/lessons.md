@@ -48,6 +48,12 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Fixture-mode follow-up:** [PR #266 review](https://github.com/ThinkFlowLab/OpenDirector/pull/266#issuecomment-6906025718) found browser workflows passing with local HTTP-generation fixtures but failing before business assertions under nightly's generic provider. Declare the required fixture modes in the manifest and check the running API and web proxy before executing each fixture lane. Reproduce the workflow's service commands and script grouping; separately correct local startup commands do not validate CI wiring.
 - **Save-observation follow-up:** [Issue #300](https://github.com/ThinkFlowLab/OpenDirector/issues/300) reproduced a stale saved label satisfying a browser wait before the edited text binding was committed. `asset.writeText` had succeeded, but the `creation.batch` containing `canvas.materialize` was still in flight; its later applied receipt installed the binding and the content was `AB`. Wait for the specific persisted binding, settings or position before asserting a save, retain the content check, and bound and release test gates even on failure. A visible saved label alone does not identify which edit was acknowledged.
 
+## Browser clock pauses must precede short-lived observations
+
+- **Trigger:** Freezing browser time to inspect a short-lived response in both languages.
+- **Evidence:** [Nightly run 44645615189](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/44645615189/job/135987292433) failed at `capability_discovery.mjs:517`: `pauseAt(new Date())` targeted a time already behind the running browser clock.
+- **Check:** Pause at a future time with command-transport headroom, realign the paused wall clock with the HTTP fixture, and only then request the observation. Advancing to the pause target after receiving it can expire it. Keep explicit expiry assertions and exercise the production preview; a passing rerun alone does not explain the original failure.
+
 ## Native permission plans are not committed permissions
 
 - **Trigger:** Retrying an ACL read/modify/write or rolling back failed initialization.
