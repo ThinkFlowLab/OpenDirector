@@ -21,6 +21,7 @@ const workflows = [
   { name: "locale", script: "tests/browser/locale.mjs" },
   { name: "creation closure", script: "scripts/verify_creation_browser.mjs" },
   { name: "assistant activity", script: "tests/browser/assistant_activity.mjs" },
+  { name: "assistant reference overflow", script: "tests/browser/assistant_reference_overflow.mjs" },
   {
     name: "generation reference",
     script: "tests/browser/canvas_generation_reference.mjs",

@@ -14,6 +14,8 @@ import { AgentPicker } from "./AgentPicker";
 import { ModelPicker } from "./AssistantPickers";
 import { SkillPicker } from "./SkillPicker";
 import { CanvasIcon } from "./CanvasIcon";
+import { assetDisplayName } from "./assetNames.ts";
+import { ChatReferenceChip } from "./ChatReferenceChip";
 import {
   currentReferences,
   fingerprintMatches,
@@ -42,15 +44,6 @@ import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 
-function kindOf(asset: ChatAsset) {
-  return asset.type.startsWith("image/")
-    ? "image"
-    : asset.type.startsWith("video/")
-      ? "video"
-      : asset.type.startsWith("audio/")
-        ? "audio"
-        : "text";
-}
 
 /** OpenDirector conversation tools in an OpenDirector floating canvas window. */
 export function AssistantPanel({
@@ -449,25 +442,18 @@ export function AssistantPanel({
                   ) : part.type === "skill" ? (
                     <span key={index} className="cw-chat-skill-token">/{part.name}</span>
                   ) : (
-                    <span
+                    <ChatReferenceChip
                       key={index}
-                      className="cw-chat-reference"
-                      data-preview-asset={part.assetId}
-                    >
-                      {assetPreviews[part.assetId] ? (
-                        <img src={assetPreviews[part.assetId]} alt="" />
-                      ) : (
-                        <CanvasIcon
-                          name={kindOf(
-                            message.assets?.find(
-                              (asset) => asset.id === part.assetId,
-                            ) ?? ({ type: "text/plain" } as ChatAsset),
-                          )}
-                          size={18}
-                        />
+                      name={part.name}
+                      assetId={part.assetId}
+                      asset={message.assets?.find(
+                        (asset) => asset.id === part.assetId,
                       )}
-                      <span>{part.name}</span>
-                    </span>
+                      previewSrc={assetPreviews[part.assetId]}
+                      ariaLabel={t("assistant.reference.chip", {
+                        name: assetDisplayName(part.name),
+                      })}
+                    />
                   ),
                 )
               ) : (

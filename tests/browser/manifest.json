@@ -62,6 +62,11 @@
       "note": "Mounts /tests/browser/assistant_activity_fixture.tsx through Vite. vite preview cannot serve that module, so this script is not in the production lane."
     },
     {
+      "file": "assistant_reference_overflow.mjs",
+      "lanes": ["gate"],
+      "note": "Mounts /tests/browser/assistant_reference_overflow_fixture.tsx through Vite. vite preview cannot serve that module, so this script is not in the production lane."
+    },
+    {
       "file": "assistant_auxiliary_panels.mjs",
       "fixture": true,
       "previewSafe": true,

@@ -170,6 +170,7 @@
   height: 1.5em;
   margin: 0 0.15em;
   padding: 0 0.2em;
+  overflow: hidden;
   border: 1px solid var(--chat-border, #ffffff20);
   border-radius: 4px;
   background: var(--chat-surface, #303034);
