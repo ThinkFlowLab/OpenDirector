@@ -2,11 +2,13 @@
 
 [中文](#中文) · [Open the presentation page](showcase.html) · [Install and connect](../README.md)
 
-![Compare candidates and adopt a result](media/walkthrough.gif)
+[![A penguin at a lunar mailbox, shown as a candidate in DSH](media/workflow.png)](media/walkthrough.mp4)
 
-[Watch the short recording](media/walkthrough.mp4) · [Animated GIF](media/walkthrough.gif)
+[Watch Lunar Post Office (1 min 16 sec)](media/walkthrough.mp4) · [Compare three saved versions (GIF)](media/walkthrough.gif)
 
-The recording uses DSH rc.3 Web and two existing images replayed through a local provider. It shows three labeled versions, a comparison of the original images, adoption of V2, and the same selection after reloading. Capture itself makes no paid model calls.
+The video follows one image from prompt to saved project. The plugin sends a single generation through OpenDirector and a local bridge to MiniMax image-01. The candidate appears around 0:50. After adoption, the same image is marked current when the project reopens. This is a continuous, browser-driven recording on the web host bundled with Windows DSH 0.2.2-rc.5.
+
+The separate GIF shows how to compare V1, V2 and V3. It uses previously generated images replayed in DSH rc.3 Web.
 
 ## Try an example
 
@@ -26,7 +28,7 @@ A DSH conversation can start the same workflow:
 
 ## 中文
 
-这段演示使用完整的 DSH rc.3 网页宿主。图片来自已有素材回放，展示三个带版本号的候选、原图对比、采用 V2，以及刷新后找回同一个选择的实际界面操作。录制过程没有调用付费模型。
+「月面邮局」的视频在 Windows DSH rc.5 自带的网页宿主中连续录制。浏览器自动操作插件，通过 OpenDirector 和本机转接向 MiniMax image-01 实际生成一张图。约 0:50 可以看到候选，结尾是刷新后重新打开工程的结果。另附的 GIF 用回放图片演示三版候选的比较与采用。
 
 打开「OpenDirector → 创作素材」，在描述下选择示例，选择工作室生图、角色参考图或配音。示例先填入描述；检查模型和参数后再生成。已经选好的模型、尺寸、参考图顺序和候选数量会保留。
 
