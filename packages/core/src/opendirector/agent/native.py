@@ -13,7 +13,7 @@ from urllib.request import getproxies
 from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
-from opendirector.agent import cli_transport, deepseek
+from opendirector.agent import appserver, cli_transport, deepseek
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
@@ -42,9 +42,6 @@ def executable(runtime: str) -> str | None:
     return cli_executable('dsh' if runtime == 'deepseek' else runtime)
 
 
-_CODEX_ISOLATION: dict[str, tuple[str, ...]] = {}
-
-
 def codex_environment() -> dict[str, str]:
     env = dict(os.environ)
     if sys.platform == 'win32' and not (env.get('HTTPS_PROXY') or env.get('ALL_PROXY')):
@@ -54,31 +51,35 @@ def codex_environment() -> dict[str, str]:
     return env
 
 
-def codex_isolation_flags(binary: str) -> tuple[str, ...]:
-    """Optional codex flags this CLI accepts.
+def codex_home(work: Path) -> Path:
+    """A codex home the app server owns for this project.
 
-    Isolation flags vary across releases, and an unsupported flag prevents the
-    CLI from starting. Keep rollouts on disk so later turns can resume them.
+    `app-server` does not accept the `exec`-only `--ignore-user-config`, so the
+    same isolation comes from a home of its own: only the credentials are
+    copied in, and the rollout stays with the project so the next turn can
+    still resume it.
     """
-    cached = _CODEX_ISOLATION.get(binary)
-    if cached is not None:
-        return cached
-    wanted = ('--ignore-user-config', '--ignore-rules')
-    try:
-        probe = subprocess.run([binary, 'exec', '--help'], capture_output=True,
-                               timeout=20, stdin=subprocess.DEVNULL)
-        # Help text can contain bytes outside the console code page.
-        help_text = (probe.stdout + probe.stderr).decode('utf-8', 'replace')
-    except (OSError, subprocess.SubprocessError):
-        help_text = ''
-    flags = tuple(flag for flag in wanted if flag in help_text)
-    _CODEX_ISOLATION[binary] = flags
-    return flags
+    root = work
+    for candidate in work.parents:
+        if candidate.name == 'agent-runs':
+            root = candidate
+            break
+    home = root / '.codex'
+    home.mkdir(parents=True, exist_ok=True)
+    source = Path(os.environ.get('CODEX_HOME', Path.home() / '.codex')) / 'auth.json'
+    target = home / 'auth.json'
+    if source.is_file() and (
+            not target.exists() or target.stat().st_mtime < source.stat().st_mtime):
+        target.write_bytes(source.read_bytes())
+        target.chmod(0o600)
+    return home
 
 
-def codex_session_available(session_id: str) -> bool:
-    home = Path(os.environ.get('CODEX_HOME', Path.home() / '.codex'))
-    return any(path.is_file() for folder in ('sessions', 'archived_sessions')
+def codex_session_available(session_id: str, directory: Path) -> bool:
+    """A rollout of this session, in the project home or the user's own."""
+    homes = (directory / 'agent-runs' / '.codex',
+             Path(os.environ.get('CODEX_HOME', Path.home() / '.codex')))
+    return any(path.is_file() for home in homes for folder in ('sessions', 'archived_sessions')
                for path in (home / folder).glob(f'**/*{session_id}*.jsonl'))
 
 
@@ -123,10 +124,15 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
             'sandbox_workspace_write.network_access=true',
             'skills.bundled.enabled=false', f'developer_instructions={json.dumps(SYSTEM)}']
         if sys.platform == 'win32':
-            # --ignore-user-config also removes windows.sandbox. Without a
-            # Windows backend Codex downgrades workspace-write to read-only.
+            # `app-server` chooses the sandbox per thread, but the Windows
+            # backend is still a config value: without it workspace-write
+            # degrades to read-only.
             settings.append('windows.sandbox="elevated"')
-        args = [binary, 'exec', '--json', '--skip-git-repo-check', *codex_isolation_flags(binary), '--sandbox', 'workspace-write']
+        # The app server is the same engine behind a channel a running turn can
+        # still receive text on; `exec` reads one prompt and exits. Its home is
+        # private, because `--ignore-user-config` belongs to `exec`.
+        env['CODEX_HOME'] = str(codex_home(work))
+        args = [binary, 'app-server']
         for setting in settings:
             args += ['-c', setting]
     else:
@@ -142,7 +148,8 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
             '--strict-mcp-config', '--mcp-config', json.dumps({'mcpServers': {}}),
             '--allowedTools', 'Skill(opendirector:*)', 'Bash', 'Read',
             '--permission-mode', 'dontAsk', '--setting-sources', '']
-    if model:
+    # `app-server` rejects `--model`; the model travels in the turn request.
+    if model and runtime != 'codex':
         args += ['--model', model]
     return args, env
 
@@ -184,7 +191,7 @@ class NativeRuntime:
             # Unverifiable session directories cannot be resumed. Preserve the
             # old session and start with authoritative conversation context.
             session_id = None
-        if session_id and runtime == 'codex' and not codex_session_available(session_id):
+        if session_id and runtime == 'codex' and not codex_session_available(session_id, directory):
             # Retain the validated workspace while rebuilding a missing native
             # conversation from the full authoritative history.
             session_id = None
@@ -243,18 +250,16 @@ class NativeRuntime:
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':
                     args += ['--effort', thinking]
-                if session_id and runtime != 'deepseek':
-                    if runtime == 'codex':
-                        args += ['resume', session_id, '-']
-                    else:
-                        args += ['--session' if runtime == 'opencode' else '--resume', session_id]
+                if session_id and runtime not in {'deepseek', 'codex'}:
+                    args += ['--session' if runtime == 'opencode' else '--resume', session_id]
                 execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
                     'Set the native shell workdir to this execution directory for file and media operations. '
                     'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
                     'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.')
-                prompt = execution_context + '\n' + json.dumps(context[-1:] if session_id else context, ensure_ascii=False)
+                recent = json.dumps(context[-1:] if session_id else context, ensure_ascii=False)
+                prompt = execution_context + '\n' + recent
                 skill_instruction = ''
                 if selected:
                     name = selected[0]
@@ -266,6 +271,9 @@ class NativeRuntime:
                         skill_instruction = f'Use the native skill tool to load {name} from {work / ".agents/skills"} before proceeding.'
                     else:
                         prompt = f'Use the native skill tool to load {name} before proceeding.\n' + prompt
+                # The app server can only resume a saved thread; if that thread
+                # turns out to be gone the turn must still see the whole history.
+                full_prompt = prompt.replace(recent, json.dumps(context, ensure_ascii=False))
                 env['OPENDIRECTOR_PROJECT_ID'] = str(run.project_id)
                 try:
                     process = await asyncio.create_subprocess_exec(*args, cwd=native_work, env=env,
@@ -281,7 +289,7 @@ class NativeRuntime:
                         stderr_tail.extend(chunk)
                         del stderr_tail[:-8192]
                 stderr_task = asyncio.create_task(drain_stderr())
-                if runtime != 'deepseek':
+                if runtime not in {'deepseek', 'codex'}:
                     process.stdin.write(prompt.encode() + b'\n')
                     await process.stdin.drain()
                     process.stdin.close()
@@ -307,6 +315,11 @@ class NativeRuntime:
                                 blocks.append('Current user request\n' + context[-1]['content'])
                             reported_session = await deepseek.run(process, work, blocks, runtime_model, thinking,
                                                             deepseek_server, observe, session_id)
+                        elif runtime == 'codex':
+                            reported_session = await appserver.run(process, work=native_work,
+                                model=config['modelId'] if config else runtime_model,
+                                resume=session_id, prompt=prompt, fallback=full_prompt,
+                                steer=run.steer, emit=queue.put)
                         else:
                             while line := await process.stdout.readline():
                                 raw = json.loads(line)
@@ -321,7 +334,7 @@ class NativeRuntime:
                                         or session_id and reported_session and reported_session != session_id):
                                     raise ProjectError('Harness 返回了不同的会话 ID。', 502)
                                 await queue.put({'native': raw})
-                        if await process.wait():
+                        if runtime != 'codex' and await process.wait():
                             await record_exit()
                             raise ProjectError(f'{runtime} 进程退出（{process.returncode}），请检查 CLI 登录和配置。', 502)
                         if reported_session:
