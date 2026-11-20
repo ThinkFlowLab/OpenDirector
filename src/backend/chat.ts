@@ -26,6 +26,8 @@ export interface RuntimeInfo {
     | "unsupported_version"
     | "unknown";
   supportsSkills?: boolean;
+  /** The runtime can take extra text inside a reply that is already running. */
+  supportsSteering?: boolean;
 }
 export interface ChatSkill {
   source?: "builtin" | "workspace" | "project";
@@ -70,7 +72,17 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   content?: ReferenceContent | null;
-  status: "complete" | "streaming" | "stopped" | "interrupted";
+  status:
+    | "complete"
+    | "streaming"
+    | "queued"
+    | "cancelled"
+    | "stopped"
+    | "interrupted"
+    /** Text handed to the reply that was running when it was sent. */
+    | "inserted";
+  /** Position of a queued message in the delivery order the server assigned. */
+  queueSeq?: number;
   assets?: ChatAsset[];
   model?: string;
   thinking?: Thinking;
@@ -136,7 +148,20 @@ export type ChatEvent =
   | ({ type: "tool" } & ChatTool)
   | { type: "delta"; text: string }
   | { type: "sources"; sources: ChatSource[] }
-  | { type: "end"; conversation: Conversation | null; error: string | null };
+  /** A message accepted while a reply runs; it starts when that reply ends. */
+  | { type: "queued"; message: ChatMessage }
+  /** A queued message was withdrawn before it started. */
+  | { type: "retracted"; messageId: string }
+  /** Text that reached the reply while it was still running. */
+  | { type: "steered"; message: ChatMessage }
+  | {
+      type: "end";
+      turnId?: string;
+      /** Set when the server has already started the next queued message. */
+      nextTurnId?: string | null;
+      conversation: Conversation | null;
+      error: string | null;
+    };
 
 export interface ChatRequest {
   conversationId?: string;
@@ -150,6 +175,8 @@ export interface ChatRequest {
   runtime?: AgentRuntime;
   runtimeModel?: string | null;
   skills?: string[];
+  /** Insert reaches the running reply; queue waits for it to end. */
+  delivery?: "queue" | "insert";
 }
 
 const path = (id: string) => `/creation/projects/${id}/assistant`;
@@ -270,6 +297,101 @@ async function readChatEvents(
   } finally {
     reader.releaseLock();
   }
+}
+
+export interface QueuedReply {
+  queued: ChatMessage;
+  chainId: string;
+  turnId: string;
+}
+
+/**
+ * Hand a message to the assistant without waiting for the running reply.
+ *
+ * The server answers with a stream when the project is idle and with
+ * `202 { queued }` when a reply is running, so a client submits here without
+ * having to know which of the two it is.
+ */
+export async function sendChat(
+  id: string,
+  value: ChatRequest,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+): Promise<QueuedReply | null> {
+  const response = await fetch("/api" + path(id) + "/messages", {
+    ...json("POST", value),
+    headers: { ...headers, "Content-Type": "application/json" },
+    signal,
+  });
+  if (response.status === 202) return (await response.json()) as QueuedReply;
+  await readChatEvents(response, onEvent, t);
+  return null;
+}
+
+export interface InsertedReply {
+  inserted: ChatMessage;
+  chainId: string;
+  turnId: string;
+}
+
+/**
+ * Hand the text to the reply that is already running.
+ *
+ * `delivery: "insert"` goes through the runtime's own channel, so the answer
+ * keeps the work it has already done. The server refuses the insert when no
+ * reply is running, when the runtime has no such channel, or when the message
+ * carries assets; the caller shows that refusal as it is.
+ */
+export async function insertChat(
+  id: string,
+  value: ChatRequest,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+): Promise<InsertedReply | null> {
+  const response = await fetch("/api" + path(id) + "/messages", {
+    ...json("POST", { ...value, delivery: "insert" }),
+    headers: { ...headers, "Content-Type": "application/json" },
+    signal,
+  });
+  if (response.status === 202) return (await response.json()) as InsertedReply;
+  await readChatEvents(response, onEvent, t);
+  return null;
+}
+
+/**
+ * Take back a message that is still waiting behind the running reply.
+ *
+ * A message that has already started is part of the record: the server
+ * refuses it with 409 and the caller still has to stop the reply instead.
+ */
+export async function retractChatMessage(
+  id: string,
+  message: string,
+): Promise<{ retracted: string; conversation: Conversation }> {
+  return request<{ retracted: string; conversation: Conversation }>(
+    path(id) + `/messages/${message}`,
+    { method: "DELETE", headers },
+  );
+}
+
+/**
+ * Continue a queue that nothing is draining, for example after a restart
+ * or after a reply failed with messages still waiting behind it.
+ */
+export async function continueQueue(
+  id: string,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+) {
+  const response = await fetch("/api" + path(id) + "/queue/dispatch", {
+    ...json("POST", {}),
+    headers: { ...headers, "Content-Type": "application/json" },
+    signal,
+  });
+  await readChatEvents(response, onEvent, t);
 }
 
 export interface RuntimeModel {

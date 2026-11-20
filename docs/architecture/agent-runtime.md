@@ -10,7 +10,7 @@ Harness 指承担模型调用、工具执行和上下文管理的 Agent 执行�
 | --- | --- | --- |
 | Default | 固定版本的 bundled OpenCode | OpenDirector 模型配置，经本地模型代理访问服务 |
 | OpenCode CLI | opencode，优先 PATH，再查找常见 CLI 安装目录 | CLI 原生配置与模型目录 |
-| Codex | 优先 PATH 中的 codex，再查找常见桌面版与 CLI 安装目录 | 原生认证与模型目录；隔离启动前解析所选模型或默认模型 |
+| Codex | 优先 PATH 中的 codex，再查找常见桌面版与 CLI 安装目录；以 `app-server` 常驻进程通信，沙箱与审批策略作为协议参数传入 | 原生认证与模型目录；隔离启动前解析所选模型或默认模型 |
 | Claude Code | claude，优先 PATH，再查找常见 CLI 安装目录 | 原生认证、环境变量与初始化模型目录 |
 | JiuwenSwarm | jiuwenswarm-process，优先 PATH，再查找常见 CLI 安装目录，通过 stdin/stdout JSONL 直接调用 | 本机 Jiuwen 模型目录、配置与环境变量 |
 | DeepSeek Harness | dsh，优先 PATH，再查找常见 CLI 安装目录，以 acp profile 运行标准 JSON-RPC | CLI 原生 profile、模型目录与认证 |
@@ -51,7 +51,7 @@ Default 将模型配置中的输入模态传入 bundled OpenCode。外部 harnes
 
 Search citations keep their native markers in the original reply and trace. Completed Codex MCP web-search results supply validated source IDs, HTTP(S) URLs and titles through `sources` events; the conversation retains this metadata with the reply. The UI splits tool activities using raw text offsets before formatting prose citations as source links, and uses the same formatting for copying. Code examples remain literal. Missing sources and incomplete final markers have a localized fallback. For saved Codex replies without source metadata, queries derive it from the matching turn's project-local trace without rewriting the conversation; a bounded metadata cache is invalidated by trace modification time and size. Reading a trace never requests a model call.
 
-同一工程同时只接受一个回复运行。运行事件转换为回复正文和工具活动，保存到对应会话；原生事件与业务工具事件追加到 `agent-runs/<turn-id>.<runtime>.jsonl`。Default 使用 `opencode` 作为轨迹文件的 runtime 名称。
+同一工程同时只执行一个回复。运行期间仍可提交补充消息：`POST /assistant/messages` 在空闲时直接开始一轮，在运行中返回 202 并按 `queueSeq` 把消息排入投递队列，本轮结束后依次运行。`end` 事件带 `nextTurnId` 时事件流不关闭，客户端因此能在同一条连接上接着收到下一轮；断线重连用 `GET /turns/{turn_id}/events?after=<seq>` 从已收到的最后一帧续读；链已经推进到下一轮时，客户端手里上一轮的 turn id 同样能找到这条链，不必等页面刷新。排队消息立即出现在会话里并可读；停止时整条链一起停止，排队消息标记为 `cancelled` 并保留下来供用户重新发送。运行中还可以把补充文字直接交给这一轮：`POST /assistant/messages` 带 `delivery: "insert"` 时，文字经 runtime 的原生通道进入正在执行的模型循环，而不是另起一轮，因此这一轮已经做的工作不会重来。插入只接受纯文字，素材与技能要等回复结束后再发；runtime 不支持同轮插入时返回 409 并说明原因，用户可改用排队。Codex 通过 `turn/steer` 提供该通道；其它 runtime 在接入原生通道前一律排队。运行事件转换为回复正文和工具活动，保存到对应会话；原生事件与业务工具事件追加到 `agent-runs/<turn-id>.<runtime>.jsonl`。Default 使用 `opencode` 作为轨迹文件的 runtime 名称。
 
 Default 的模型网关在 `agent-runs/<turn-id>.model.jsonl` 记录实际转发的请求体，包括生效的系统消息、会话上下文、工具 Schema 与模型参数。请求 ID 关联上游 HTTP 状态、响应头等待耗时和传输错误。该文件仅供本地调试，创建权限为 `0600`，不记录 HTTP 鉴权头。回复片段、工具结果和 token 用量仍见原生轨迹。
 
@@ -87,7 +87,7 @@ English summary: a Job created by an Agent `generation.submit` records `agentRun
 | Harness | 执行约束 |
 | --- | --- |
 | OpenCode | 工具权限配置开放 Shell、文件读取、已发现技能和业务 CLI |
-| Codex | workspace-write 沙箱，开放 Shell 和业务 CLI |
+| Codex | `app-server` 以 workspace-write 沙箱、`never` 审批策略启动线程，开放 Shell 和业务 CLI |
 | Claude Code | 明确允许 Skill、Bash、Read 和业务 CLI |
 | JiuwenSwarm | 明确允许 skill_tool、list_skill、read_file、bash 和业务 CLI |
 | DeepSeek Harness | 沿用原生工具与权限；Skill 限于本轮快照，业务操作通过 Shell 调用 opendirector，未承接的审批不自动批准 |
