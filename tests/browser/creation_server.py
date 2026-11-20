@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import subprocess
+from urllib.parse import urlsplit
 
 from fastapi import Request
 from PIL import Image
@@ -21,31 +22,37 @@ from opendirector_api.main import create_app
 from opendirector.application.tool_operations import TOOLS, Output
 from opendirector.domain.capabilities import Segment, MediaResult
 from opendirector.integrations.model_adapters import OpenAIImages, VllmOmniSegmentation
+from opendirector.integrations.providers import GenerationProviders
 
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', type=int, default=8019)
 parser.add_argument('--root', type=Path)
 parser.add_argument('--assistant-fixture', action='store_true', help='Use a gated assistant response without a real model')
+parser.add_argument('--http-generation-fixture', action='store_true',
+                    help='Use real generation adapters against loopback HTTP test servers only')
 args = parser.parse_args()
 root = (args.root or Path(tempfile.mkdtemp(prefix='opendirector-creation-'))).resolve()
 if root.parent != Path(tempfile.gettempdir()).resolve() or not root.name.startswith('opendirector-creation-'):
     parser.error('Browser fixtures require an opendirector-creation-* directory directly under the system temp directory')
 store = LocalProjects(root)
 configs = ModelConfigs(root)
+# These configurations use the in-process adapters below and have no HTTP
+# capability service. Keep their checks explicit so they do not occupy the
+# bounded query workers used by a browser test's real capability fixture.
 if not configs.list():
     for kind in ('agent', 'image'):
         configs.save(kind, 'http://127.0.0.1:12345/v1', f'fixture-{kind}', '',
-                     connection_type='self_hosted', protocol='openai', auth_mode='none')
+                     connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
 
 # Test-only adapters let the real preview and tool services exercise owned
 # assets, model selection and cancellation without contacting a GPU endpoint.
 if not any(model['kind'] == 'vision' for model in configs.list()):
     configs.save('vision', 'http://127.0.0.1:12345/v1', 'facebook/sam3', '',
-                 connection_type='self_hosted', protocol='vllm_omni', auth_mode='none')
+                 connection_type='self_hosted', protocol='vllm_omni', auth_mode='none', capability_auto_check=False)
 if not any(model['modelId'] == 'Qwen/Qwen-Image-2.1' for model in configs.list()):
     configs.save('image', 'http://127.0.0.1:12345/v1', 'Qwen/Qwen-Image-2.1', '',
-                 connection_type='self_hosted', protocol='openai', auth_mode='none')
+                 connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
 selection_gate = asyncio.Event()
 selection_gate.set()
 selection_calls, image_edit_calls = [], []
@@ -121,6 +128,28 @@ class FixtureProvider:
 
 
 provider = FixtureProvider()
+http_generation_calls = []
+if args.http_generation_fixture:
+    from opendirector.application import creation_generation
+
+    class HttpFixtureProvider(GenerationProviders):
+        """Exercise request preparation and saved remote IDs with a local test service."""
+        def __init__(self, media):
+            super().__init__(media, poll_interval=.05)
+
+        def validate(self, kind, config):
+            target = urlsplit(config['url'])
+            if target.scheme != 'http' or target.hostname != '127.0.0.1':
+                raise ProjectError('HTTP browser fixtures require a loopback test service')
+            super().validate(kind, config)
+
+        async def generate(self, config, task, submitted, *, result_ready=None):
+            self.validate(task['kind'], config)
+            http_generation_calls.append(dict(id=task['id'], kind=task['kind']))
+            return await super().generate(config, task, submitted, result_ready=result_ready)
+
+    # Preserve the runtime's ProviderMedia wiring for frozen continuation inputs.
+    creation_generation.GenerationProviders = HttpFixtureProvider
 assistant_gate = asyncio.Event()
 assistant_gate.set()
 assistant_contexts = []
@@ -158,14 +187,16 @@ async def fixture_outpaint(context):
 
 # Only this isolated executable substitutes a recipe; no model endpoint is used.
 TOOLS['outpaint'] = replace(TOOLS['outpaint'], requires=lambda _: (), recipe=fixture_outpaint)
-app = create_app(store, generation_provider=provider)
+app = create_app(store, generation_provider=None if args.http_generation_fixture else provider)
 
 
 @app.get('/api/creation-test-health')
 def health():
-    return dict(isolated=True, provider='fixture', root=str(root), calls=provider.calls, toolCalls=tool_calls,
+    return dict(isolated=True, provider='fixture', root=str(root),
+                calls=http_generation_calls if args.http_generation_fixture else provider.calls, toolCalls=tool_calls,
                 selectionCalls=selection_calls, selectionActive=selection_active, imageEditCalls=image_edit_calls,
-                assistantFixture=args.assistant_fixture, assistantContexts=assistant_contexts)
+                assistantFixture=args.assistant_fixture, assistantContexts=assistant_contexts,
+                httpGenerationFixture=args.http_generation_fixture)
 
 
 @app.post('/api/creation-test-assistant-gate')

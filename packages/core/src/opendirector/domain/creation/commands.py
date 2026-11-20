@@ -405,6 +405,7 @@ IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'ro
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
+                    'capability_unavailable', 'capability_paused', 'capability_connection_changed',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',

@@ -284,6 +284,17 @@ def test_codex_inherits_windows_system_proxy_without_overriding_explicit_proxy(m
     assert native.codex_environment()['HTTPS_PROXY'] == 'http://127.0.0.1:8002'
 
 
+@pytest.mark.parametrize('platform', ['win32', 'linux', 'darwin'])
+def test_codex_isolation_preserves_windows_workspace_sandbox(tmp_path, monkeypatch, platform):
+    monkeypatch.setattr(native, 'sys', SimpleNamespace(platform=platform))
+    monkeypatch.setattr(native, 'executable', lambda _: 'codex')
+    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules'))
+    args, _ = native.command('codex', tmp_path, '', '', None, '', [])
+    assert ('windows.sandbox="elevated"' in args) == (platform == 'win32')
+    assert args[args.index('--sandbox') + 1] == 'workspace-write'
+    assert '--dangerously-bypass-approvals-and-sandbox' not in args
+
+
 def test_codex_reconnect_does_not_end_turn():
     assert native.text_events('codex', {'type': 'error', 'message': 'Reconnecting...'}) == []
     assert native.text_events('codex', {'type': 'item.completed', 'item': {

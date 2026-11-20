@@ -2,6 +2,9 @@ name: Release checks
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:

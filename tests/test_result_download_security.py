@@ -79,6 +79,20 @@ def test_dns_names_and_mixed_answers_cannot_hide_private_addresses(resolve, addr
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize('address', ['198.18.1.38', '2001:2::122'])
+def test_fake_ip_dns_rejection_explains_recovery_without_another_request(resolve, address):
+    resolve[0][:] = [address]
+    adapter, calls = image_from('https://cdn.test/result.png?signature=private')
+    with pytest.raises(GenerationError) as error:
+        generate(adapter)
+    details = error.value.details
+    assert (details.stage, details.category) == ('download', 'protocol')
+    assert '非公网地址' in details.message
+    assert '域名解析' in details.suggestion
+    assert 'signature' not in str(error.value) and CONFIG['apiKey'] not in str(error.value)
+    assert [call.method for call in calls] == ['POST']
+
+
 def test_public_download_pins_checked_ip_and_preserves_host_tls_and_signed_path(resolve):
     adapter, calls = image_from('https://cdn.test/result.png?signature=keep%2Bme')
     assert generate(adapter).data == png()

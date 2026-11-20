@@ -1,3 +1,4 @@
+import { availabilitySummary } from "./availabilityPresentation.ts";
 import { VoiceLibrary } from "./VoiceLibrary";
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
@@ -65,6 +66,7 @@ export interface NodeComposerProps {
   running?: boolean;
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
+  onCheckModels?: (ids: readonly string[]) => Promise<void>;
   removeWatermark?: boolean;
   referenceControls?: GenerationReferenceControls;
 }
@@ -91,12 +93,17 @@ export function NodeComposer({
   onPickReference,
   running = false,
   backendModels = [],
+  onCheckModels,
   removeWatermark = false,
   referenceControls,
 }: NodeComposerProps) {
   const { t } = useI18n();
   const [openPanel, setPanel] = useState<Panel>(null);
   const panel = running ? null : openPanel;
+  const visibleModelIds = backendModels.filter((item) => item.kind === selectedNode?.data.kind).map((item) => item.id).join(",");
+  useEffect(() => {
+    if (selectedNode && visibleModelIds) void onCheckModels?.(visibleModelIds.split(","));
+  }, [selectedNode?.id, visibleModelIds, onCheckModels]);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelAnchor = useRef<HTMLElement | null>(null);
   const mentions = useRef<GenerationReferenceHandle>(null);
@@ -513,7 +520,7 @@ export function NodeComposer({
                 id: `config:${item.id}`,
                 name: modelLabel(item),
                 modelId: item.modelId,
-                description: modelDescription(item),
+                description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
                 group: providerLabel(item),
               })),
             ]}

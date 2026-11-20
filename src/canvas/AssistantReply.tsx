@@ -32,7 +32,7 @@ function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
       </summary>
       <div className="cw-chat-activity-detail">
         {(tool.error || tool.message) && (
-          <p>{assistantToolText(tool.error || tool.message!, t)}</p>
+          <p>{assistantToolText(tool.error || tool.message!, t, tool.code)}</p>
         )}
         {tool.arguments && <details className="cw-chat-tool-data">
           <summary><CanvasIcon name="chevronRight" size={12} />{t("assistant.reply.arguments")}</summary>

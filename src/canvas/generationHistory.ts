@@ -17,6 +17,8 @@ import type { CanvasToolTask } from "./toolCatalog.ts";
 
 export interface GenerationJob {
   id: string;
+  /** Authoritative execution revision, when supplied by the service ledger. */
+  revision?: number;
   nodeId: string;
   title: string;
   status:
@@ -32,6 +34,7 @@ export interface GenerationJob {
   finishedAt?: number;
   durationKey?: string;
   outputKind?: "text" | "image" | "video" | "audio";
+  videoDuration?: { requestedSeconds?: number; resultSeconds?: number };
   activityPhase?: import("./generationActivity.ts").GenerationPhase;
   message?: string;
   /** Service-reported reason for a failed or interrupted execution. */

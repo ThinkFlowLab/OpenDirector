@@ -56,6 +56,8 @@ export const models = {
   "models.service.providerApi": "服务商 API",
   "models.service.provider": "提供商",
   "models.service.url": "服务地址（Base URL）",
+  "models.service.urlPlaceholder": "输入服务的 API 根地址",
+  "models.service.modelPlaceholder": "输入服务中的模型 ID",
   "models.service.noKey": "无需密钥",
   "models.service.keyConfigured": "密钥已配置",
   "models.service.noAuthPlaceholder": "此服务无需鉴权",
@@ -66,7 +68,7 @@ export const models = {
   "models.service.hide": "隐藏",
   "models.service.show": "显示",
   "models.service.urlNote":
-    "自部署服务通常填写 /v1 地址；通过 SSH 隧道连接时填写本地转发地址。",
+    "填写服务提供的 API 根地址。",
   "models.service.beijingWorkspaceUrl":
     "使用北京地域的 API Key。如需使用业务空间专属地址，请将 https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 中的 <workspace-id> 替换为你的业务空间 ID。",
   "models.service.inputCapabilities": "输入能力",
@@ -92,6 +94,7 @@ export const models = {
   "models.service.videoAdapter": "视频适配方式",
   "models.service.adapterAuto": "自动识别已知模型；其他使用通用首帧接口",
   "models.service.adapterFastH3": "FastH3-Omni（8 步、多素材参考）",
+  "models.service.adapterFastH3Dual": "FastH3-Omni（首尾帧锚点）",
   "models.service.adapterMiniMaxH3": "原生 MiniMax-H3（首帧、素材参考、接续）",
   "models.service.adapterStandard": "通用 /videos（文本、单张首帧）",
   "models.service.loadPreset": "载入适配预设",

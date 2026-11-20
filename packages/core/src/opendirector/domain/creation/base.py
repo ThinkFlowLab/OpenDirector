@@ -1,6 +1,6 @@
 """Versioned JSON contracts for the new project format; no storage or UI code."""
 from typing import Annotated, Literal
-from uuid import UUID
+from uuid import UUID, uuid5
 import hashlib
 import json
 
@@ -70,6 +70,11 @@ def digest(value: Contract, *, exclude=None) -> str:
     encoded = json.dumps(value.model_dump(mode='json', exclude=exclude), ensure_ascii=False, sort_keys=True,
                          separators=(',', ':'), allow_nan=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def agent_command_id(run_id: UUID, call_id: str) -> UUID:
+    """Command identity the host derives for one Agent tool call; it is also the idempotency key."""
+    return uuid5(run_id, call_id)
 
 
 def unique(values, label):

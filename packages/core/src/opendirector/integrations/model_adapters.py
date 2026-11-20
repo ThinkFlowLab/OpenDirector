@@ -18,18 +18,22 @@ import httpx
 from PIL import Image, UnidentifiedImageError
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
+from opendirector.domain.capability_messages import constraint_rejection
 from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthRequest, EditMask, ImageRequest, MediaResult, MusicRequest,
                                           ScoreRequest, Segment, SegmentRequest, SpeechRequest, TrackRequest, Tracks, VideoEditRequest,
                                           VideoRequest)
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.image_inputs import image_input_policy, validate_image_request
 from opendirector.domain.bigmodel_image import validate_bigmodel_image
 from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.minimax_speech import validate_minimax_speech_input
 from opendirector.media import heif_type
 from opendirector.domain.moss_image import validate_moss_image_prompt, validate_moss_image_size
 from opendirector.domain.moss_speech import validate_moss_speech_input
+from opendirector.domain.omni_capabilities import RequestConstraints
 from opendirector.domain.zhipu_speech import validate_zhipu_speech_input
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.request_constraints import constraint_failure
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.reference_inputs import data_uri, image_type, request_size
@@ -107,9 +111,14 @@ async def _download_moss_result(adapter, config, url):
 
 class ModelAdapter:
     capabilities: frozenset[str] = frozenset()
+    supports_native_mask = False
 
     def __init__(self, transport=None, poll_interval=3):
         self.transport, self.poll_interval = transport, poll_interval
+
+    def image_parameters(self, width, height, **options):
+        """Only adapters with an exact image-route projection supply fields."""
+        return {}
 
     async def image(self, config, request: ImageRequest) -> MediaResult:
         raise ProjectError('所选模型不支持图片生成。', 409)
@@ -319,7 +328,22 @@ class MinimaxH3Images(ModelAdapter):
     capabilities = frozenset({'image.generate', 'image.edit'})
     max_images = 16
 
+    @staticmethod
+    def generation_parameters(size):
+        return dict(size=size, n=1, output_format='png', response_format='url')
+
+    def image_parameters(self, width, height, *, has_images=True, native_mask=False, strength=None, seed=None, extra=None):
+        if native_mask:
+            raise ProjectError('当前图片服务不支持选区输入。', 422, code='image_input_mask')
+        ratio = min(3, max(1 / 3, width / height))
+        scale = 2048 / math.sqrt(ratio)
+        width, height = round(scale * ratio), round(scale)
+        width, height = min(width, 3 * height), min(height, 3 * width)
+        return {**self.generation_parameters(f'{width}x{height}'), 'width': width, 'height': height}
+
     async def image(self, config, request: ImageRequest) -> MediaResult:
+        if request.mask is not None or request.reference is not None:
+            raise ProjectError('当前图片服务不支持选区输入。', 422, code='image_input_mask')
         images = [*([request.image] if request.image is not None else []), *request.references]
         if len(images) > self.max_images:
             raise ProjectError('MiniMax H3 图片编辑最多接受 16 张参考图。', 422, code='minimax_image_count')
@@ -337,16 +361,11 @@ class MinimaxH3Images(ModelAdapter):
                 dimensions = (None, None)
             validate_minimax_image_reference(mime, *dimensions)
             encoded.append(data_uri(data, mime))
-        width, height = request.width, request.height
-        ratio = min(3, max(1 / 3, width / height))
-        scale = 2048 / math.sqrt(ratio)
-        width, height = round(scale * ratio), round(scale)
-        size = f'{min(width, 3 * height)}x{min(height, 3 * width)}'
-        return await self.generate(config, request.prompt, size, encoded)
+        parameters = self.image_parameters(request.width, request.height, has_images=bool(images))
+        return await self.generate(config, request.prompt, parameters['size'], encoded)
 
     async def generate(self, config, prompt, size, images, *, result_ready=None):
-        payload = {'model': config['modelId'], 'prompt': prompt, 'size': size, 'n': 1,
-                   'output_format': 'png', 'response_format': 'url'}
+        payload = {'model': config['modelId'], 'prompt': prompt, **self.generation_parameters(size)}
         route = '/images/generations'
         if images:
             route = '/images/edits'
@@ -422,16 +441,19 @@ class OpenAIImages(ModelAdapter):
     """
 
     capabilities = frozenset({'image.generate', 'image.edit'})
+    supports_native_mask = True
     OPENAI_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
 
     def __init__(self, transport=None, poll_interval=3, *, free_size=False, max_edge=1536, grid=16, strength=False, max_images=1,
-                 transparent=False, response_format=True, reference_field='image'):
+                 transparent=False, response_format=True, reference_field='image', image_policy=None, legacy_image_policy=False):
         super().__init__(transport, poll_interval)
         self.free_size, self.max_edge, self.grid = free_size, max_edge, grid
         # img2img services honour strength; instruction editors ignore it.
         self.strength, self.max_images = strength, max_images
         # gpt-image omits `response_format`: it is documented base64 output only.
         self.response_format, self.reference_field = response_format, reference_field
+        self.image_policy = image_policy
+        self.legacy_image_policy = legacy_image_policy
         # Models with an RGBA decoder can lift a subject onto transparency.
         self.capabilities = type(self).capabilities | ({'image.cutout'} if transparent else set())
 
@@ -444,6 +466,22 @@ class OpenAIImages(ModelAdapter):
         # Diffusion latents need both axes on the service's pixel grid.
         return tuple(max(256, int(round(value * scale / self.grid)) * self.grid) for value in (width, height))
 
+    def image_parameters(self, width, height, *, has_images=True, native_mask=False, strength=None, seed=None, extra=None):
+        """The same scalar values drive capability checks and HTTP serialization."""
+        width, height = (width, height) if native_mask else self.size(width, height)
+        parameters = {'width': width, 'height': height, 'size': f'{width}x{height}', **(extra or {})}
+        if not has_images:
+            parameters['n'] = 1
+        if self.response_format:
+            parameters['response_format'] = 'b64_json'
+        if self.free_size:
+            parameters['output_format'] = 'png'
+            if seed is not None:
+                parameters['seed'] = seed
+        if has_images and strength is not None and (self.strength or native_mask):
+            parameters['strength'] = round(min(max(strength, 0.0), 1.0), 3)
+        return parameters
+
     async def cutout(self, config, request: CutoutRequest) -> MediaResult:
         if 'image.cutout' not in self.capabilities:
             return await super().cutout(config, request)
@@ -455,33 +493,44 @@ class OpenAIImages(ModelAdapter):
                                 extra={'background': 'transparent'})
 
     async def image(self, config, request: ImageRequest, *, extra=None) -> MediaResult:
-        width, height = self.size(request.width, request.height)
+        policy = self.image_policy or {**image_input_policy(config), 'maxImages': self.max_images}
+        if not self.legacy_image_policy:
+            validate_image_request(request, policy)
         secrets = (config.get('apiKey', ''),)
-        images = [*([request.image] if request.image is not None else []), *request.references][:self.max_images]
-        extra = dict(extra or {})
-        if self.free_size:
-            extra['output_format'] = 'png'
-            if request.seed is not None:
-                extra['seed'] = request.seed
+        images = [*([request.image] if request.image is not None else []), *request.references]
+        if self.legacy_image_policy:
+            # Only persisted tasks accepted before image policies existed use
+            # the original request shape, including its original image count.
+            images = images[:self.max_images]
+        parameters = self.image_parameters(request.width, request.height, has_images=bool(images),
+            native_mask=request.mask is not None, strength=request.strength, seed=request.seed, extra=extra)
+        frozen = policy.get('requestConstraints')
+        if frozen is not None and not self.legacy_image_policy:
+            counts = {'text': 1, 'image': len(images), 'mask_image': int(request.mask is not None),
+                      'reference_image': int(request.reference is not None)}
+            failure = constraint_failure(RequestConstraints.model_validate(frozen), counts, parameters)
+            if failure:
+                code, message = constraint_rejection(*failure)
+                raise ProjectError(message, 422, code=code)
+        # Width/height describe the parsed size; the image API accepts one size field.
+        fields = {key: value for key, value in parameters.items() if key not in {'width', 'height'}}
 
         async def work():
             async with _client(self, config) as client:
                 if not images:
-                    payload = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                               'n': 1, **extra}
-                    if self.response_format:
-                        payload['response_format'] = 'b64_json'
+                    payload = {'model': config['modelId'], 'prompt': request.prompt, **fields}
                     async with client.stream('POST', endpoint(config['url'], '/images/generations'),
                                              headers=auth_headers(config), json=payload) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
                 else:
-                    form = {'model': config['modelId'], 'prompt': request.prompt, 'size': f'{width}x{height}',
-                            **{key: str(item) for key, item in extra.items()}}
-                    if self.response_format:
-                        form['response_format'] = 'b64_json'
-                    if request.strength is not None and self.strength:
-                        form['strength'] = f'{min(max(request.strength, 0.0), 1.0):.3f}'
+                    form = {'model': config['modelId'], 'prompt': request.prompt,
+                            **{key: f'{item:.3f}' if key == 'strength' else str(item) for key, item in fields.items()}}
                     files = image_parts(images, self.reference_field)
+                    if request.mask is not None:
+                        native = policy['nativeMask']
+                        files.append((native['field'], ('mask.png', request.mask, 'image/png')))
+                        if request.reference is not None:
+                            files.append((native['referenceField'], ('reference.png', request.reference, 'image/png')))
                     async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
                                              data=form, files=files, extensions={'model_parameters': {'fields': form, 'file_count': len(files)}}) as response:
                         value = json.loads(await bounded(response, stage='submit', secrets=secrets))
@@ -510,7 +559,17 @@ class ArkImageEdits(ModelAdapter):
     # Use the shared reference count limit across Ark's Seedream variants.
     max_images = 10
 
+    def __init__(self, transport=None, poll_interval=3, *, image_policy=None, legacy_image_policy=False):
+        super().__init__(transport, poll_interval)
+        self.image_policy = image_policy
+        self.legacy_image_policy = legacy_image_policy
+        if image_policy is not None:
+            self.max_images = min(type(self).max_images, image_policy['maxImages'])
+
     async def image(self, config, request: ImageRequest) -> MediaResult:
+        policy = self.image_policy or image_input_policy(config)
+        if not self.legacy_image_policy:
+            validate_image_request(request, {**policy, 'maxImages': self.max_images, 'nativeMask': None})
         width, height = request.width, request.height
         if not 1 / 16 <= width / height <= 16:
             raise ProjectError('火山方舟图片编辑的输出宽高比须在 1:16 至 16:1 之间。', 422)
@@ -520,8 +579,8 @@ class ArkImageEdits(ModelAdapter):
         width, height = round(width * scale), round(height * scale)
         width, height = min(width, 16 * height), min(height, 16 * width)
         images = [request.image, *request.references] if request.image is not None else list(request.references)
-        if len(images) > self.max_images:
-            raise ProjectError('火山方舟图片编辑最多接受 10 张参考图片。', 422)
+        if self.legacy_image_policy and len(images) > self.max_images:
+            raise ProjectError('火山方舟图片编辑最多支持 10 张参考图片。', 422)
         refs = []
         for image in images:
             mime = image_type(image)
@@ -625,23 +684,38 @@ class VllmOmniVideo(ModelAdapter):
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             raise protocol_failure(stage) from None
 
-    def _fields(self, config, prompt, frames, seed=None, avoid=''):
-        fields = {'model': config['modelId'], 'prompt': prompt, 'fps': str(self.FPS), 'num_frames': str(frames)}
+    @classmethod
+    def video_parameters(cls, seconds, *, first_frame=False, aspect_ratio='16:9', seed=None):
+        fields = {'fps': cls.FPS, 'num_frames': cls.frames(seconds)}
         if seed is not None:
-            fields['seed'] = str(seed)
+            fields['seed'] = seed
+        extra = {'task': 'fl2va'} if first_frame else {
+            'task': 't2va', 'aspect_ratio': aspect_ratio if aspect_ratio in cls.RATIOS else '16:9'}
+        return fields, extra
+
+    @classmethod
+    def edit_parameters(cls, seconds, width, height):
+        if not 4 <= seconds <= cls.MAX_SECONDS + 0.05:
+            raise ProjectError(f'单次视频局部重绘需要 4–{cls.MAX_SECONDS} 秒的片段。', 422)
+        frames = cls.frames(seconds)
+        width, height = cls.canvas(width, height)
+        return ({'fps': cls.FPS, 'num_frames': frames, 'size': f'{width}x{height}'},
+                {'task': 't2va', 'aspect_ratio': cls.ratio(width, height), 'duration': frames / cls.FPS})
+
+    @staticmethod
+    def _fields(config, prompt, values, extra, avoid=''):
+        fields = {'model': config['modelId'], 'prompt': prompt,
+                  **{key: str(value) for key, value in values.items()}, 'extra_params': json.dumps(extra)}
         if avoid:
             fields['negative_prompt'] = avoid
         return fields
 
     async def video(self, config, request: VideoRequest, *, submitted=None) -> MediaResult:
-        fields = self._fields(config, request.prompt, self.frames(request.seconds), request.seed, request.avoid)
+        fields = self._fields(config, request.prompt, *self.video_parameters(request.seconds,
+            first_frame=request.first_frame is not None, aspect_ratio=request.aspect_ratio, seed=request.seed), request.avoid)
         files = []
         if request.first_frame is not None:
-            extra = {'task': 'fl2va'}
             files.append(('input_reference', ('first_frame.png', request.first_frame, 'image/png')))
-        else:
-            extra = {'task': 't2va', 'aspect_ratio': request.aspect_ratio if request.aspect_ratio in self.RATIOS else '16:9'}
-        fields['extra_params'] = json.dumps(extra)
         return await self._job(config, fields, files, submitted)
 
     @classmethod
@@ -650,14 +724,11 @@ class VllmOmniVideo(ModelAdapter):
             return media.conform(work.write('in.mp4', data), work.path / 'out.mp4', width=width, height=height, fps=cls.FPS).read_bytes()
 
     async def edit_video(self, config, request: VideoEditRequest, *, submitted=None) -> MediaResult:
-        if not 4 <= request.seconds <= self.MAX_SECONDS + 0.05:
-            raise ProjectError(f'单次视频局部重绘需要 4–{self.MAX_SECONDS} 秒的片段。', 422)
-        frames = self.frames(request.seconds)
-        width, height = self.canvas(request.width, request.height)
+        values, extra = self.edit_parameters(request.seconds, request.width, request.height)
+        frames = values['num_frames']
+        width, height = map(int, values['size'].split('x'))
         source = await blocking(self._conformed, request.source, width, height)
-        fields = self._fields(config, request.prompt, frames, avoid=request.avoid)
-        fields.update(size=f'{width}x{height}',
-                      extra_params=json.dumps({'task': 't2va', 'aspect_ratio': self.ratio(width, height), 'duration': frames / self.FPS}))
+        fields = self._fields(config, request.prompt, values, extra, request.avoid)
         files = [('source_video', ('source.mp4', source, 'video/mp4')),
                  ('video_noise_mask', ('video-mask.json', json.dumps(self.picture_mask(request.picture, frames)).encode(), 'application/json')),
                  ('audio_noise_mask', ('audio-mask.json', json.dumps(self.sound_mask(request.sound, frames)).encode(), 'application/json'))]
@@ -698,7 +769,8 @@ class OpenAISpeech(ModelAdapter):
 
     async def speech(self, config, request: SpeechRequest) -> MediaResult:
         # Self-hosted speech servers name their own speakers; "default" selects the model's.
-        voice = request.voice or ('default' if config.get('connectionType') == 'self_hosted' else 'alloy')
+        from opendirector.domain.voices import effective_speech_voice
+        voice = effective_speech_voice(config, request.voice)
         payload = {'model': config['modelId'], 'input': request.text, 'voice': voice, 'response_format': 'mp3'}
 
         async def work():
@@ -862,10 +934,18 @@ class VllmOmniDepth(ModelAdapter):
             return media.disparity(work.write('meters.mp4', data), work.path / 'inverse.mp4', near=near, far=far)
 
 
-def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
+def adapter_for(config, transport=None, poll_interval=3, *, image_policy=None, legacy_image_policy=False) -> ModelAdapter | None:
     """The adapter serving a configuration, chosen from its explicit profile and protocol."""
     kind, protocol = config['kind'], config.get('protocol')
     profile = input_rules(config)['profile']
+    policy = image_policy if image_policy is not None else image_input_policy(config) if kind == 'image' else None
+    if legacy_image_policy and kind == 'image':
+        # These are the historical transport limits, used exclusively by tasks
+        # already accepted without a frozen image policy.
+        old_max = 10 if protocol == 'volcengine' else {'vllm-omni-qwen-image': 4, 'openai-gpt-image': 16}.get(profile, 1)
+        policy = {**policy, 'maxImages': old_max, 'nativeMask': None}
+    image_options = {'max_images': policy['maxImages'], 'image_policy': policy,
+                     'legacy_image_policy': legacy_image_policy} if policy is not None else {}
     if profile == 'vllm-omni-segmentation':
         return VllmOmniSegmentation(transport, poll_interval)
     if profile == 'vllm-omni-depth':
@@ -887,20 +967,20 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
     if profile == 'zhipu-speech':
         return ZhipuSpeech(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':
-        return OpenAIImages(transport, poll_interval, free_size=True, strength=True)
+        return OpenAIImages(transport, poll_interval, free_size=True, strength=True, **image_options)
     if kind == 'image' and profile == 'vllm-omni-qwen-image':
-        return OpenAIImages(transport, poll_interval, free_size=True, max_edge=2048, grid=32, max_images=4, transparent=True)
+        return OpenAIImages(transport, poll_interval, free_size=True, max_edge=2048, grid=32, transparent=True, **image_options)
     if kind == 'image' and protocol == 'volcengine':
-        return ArkImageEdits(transport, poll_interval)
+        return ArkImageEdits(transport, poll_interval, image_policy=policy, legacy_image_policy=legacy_image_policy)
     if kind == 'image' and profile == 'openai-gpt-image':
         # gpt-image: base64 answers only, 16 reference images, documented sizes.
         # No subject cutout: its edits redraw and move the subject, so a returned
         # alpha does not line up with the source pixels, and gpt-image-2 rejects
         # transparent backgrounds outright.
-        return OpenAIImages(transport, poll_interval, max_images=16,
+        return OpenAIImages(transport, poll_interval, **image_options,
                             response_format=False, reference_field='image[]')
     if kind == 'image' and protocol == 'openai':
-        return OpenAIImages(transport, poll_interval)
+        return OpenAIImages(transport, poll_interval, **image_options)
     if kind == 'video' and profile == 'vllm-omni-h3':
         return VllmOmniVideo(transport, poll_interval)
     if kind == 'audio' and profile == 'vllm-omni-music':

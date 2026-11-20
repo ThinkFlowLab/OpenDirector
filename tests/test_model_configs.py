@@ -33,7 +33,9 @@ def test_four_categories_survive_restart_without_exposing_secrets(api):
         assert set(response.json()) == {"id", "kind", "url", "modelId", "inputRules", "connectionType", "protocol", "authMode", "proxyMode", "videoAdapter", "videoCapabilities", "inputModalities"}
         configs.append(response.json())
     assert len({item["id"] for item in configs}) == 5
-    assert client.get("/api/model-configs").json() == configs
+    observed = client.get("/api/model-configs").json()
+    assert all(item['availability']['status'] == 'unknown' for item in observed)
+    assert [{key: value for key, value in item.items() if key != 'availability'} for item in observed] == configs
     assert ModelConfigs(store.repository).list() == configs
     assert not store.root.exists()
     path = store.state_dir / "models.json"
@@ -382,7 +384,8 @@ def test_delete_service_removes_group_atomically(api):
     other = client.post('/api/model-configs', json=payload(modelId='other')).json()
     response = client.delete('/api/model-services/' + saved[0]['id'])
     assert response.status_code == 204
-    assert client.get('/api/model-configs').json() == [other]
+    observed = client.get('/api/model-configs').json()
+    assert [{key: value for key, value in item.items() if key != 'availability'} for item in observed] == [other]
     assert json.loads((store.state_dir / 'models.json').read_text())['services'] == {}
 
 

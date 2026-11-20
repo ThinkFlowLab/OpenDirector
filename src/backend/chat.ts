@@ -39,6 +39,7 @@ export interface ChatTool {
   status: "running" | "complete" | "failed" | "interrupted";
   textOffset: number;
   error?: string | null;
+  code?: string;
   message?: string | null;
   taskId?: string | null;
   arguments?: Record<string, unknown>;

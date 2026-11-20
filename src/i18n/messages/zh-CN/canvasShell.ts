@@ -141,4 +141,5 @@ export const canvasShell = {
   "canvas.textWindow.hint": "编辑内容会实时同步到画布节点",
   "canvas.textWindow.locked": "节点已锁定，仅可查看",
   "canvas.textWindow.count": "{count} 字",
+  "canvas.project.examples": "示例画布",
 } as const;

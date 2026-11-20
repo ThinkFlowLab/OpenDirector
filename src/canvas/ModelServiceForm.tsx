@@ -1,3 +1,4 @@
+import { DraftAvailabilityCheck } from "./DraftAvailabilityCheck";
 import { ProviderPicker } from "./ProviderPicker";
 import { useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../backend/api.ts";
@@ -53,26 +54,6 @@ const PROTOCOLS: Record<
   ],
 };
 
-const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
-  agent: ["http://127.0.0.1:8100/v1", "Qwen/Qwen3-30B-A3B"],
-  image: ["http://127.0.0.1:8200/v1", "Tongyi-MAI/Z-Image-Turbo"],
-  video: ["http://127.0.0.1:8010/v1", "MiniMaxAI/MiniMax-H3"],
-  audio: ["http://127.0.0.1:8220/v1", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"],
-  vision: ["http://127.0.0.1:8230/v1", "facebook/sam3"],
-};
-const MUSIC_PLACEHOLDERS: [string, string] = [
-  "http://127.0.0.1:8240/v1",
-  "m-a-p/YuE2-3B",
-];
-const SCORE_PLACEHOLDERS: [string, string] = [
-  "http://127.0.0.1:8260/v1",
-  "m-a-p/SheetSage2",
-];
-const DEPTH_PLACEHOLDERS: [string, string] = [
-  "http://127.0.0.1:8250/v1",
-  "depth-anything/Video-Depth-Anything-Small",
-];
-
 export function ModelServiceForm({
   kind,
   existing,
@@ -108,6 +89,7 @@ export function ModelServiceForm({
     modelId: existing?.modelId ?? "",
     apiKey: "",
     connectionType: existing?.connectionType ?? "self_hosted",
+    capabilityAutoCheck: existing?.capabilityAutoCheck,
     protocol:
       existing && isSegmentationModel(existing)
         ? "vllm_omni_segmentation"
@@ -145,20 +127,6 @@ export function ModelServiceForm({
   const segmentation = value.protocol === "vllm_omni_segmentation";
   const depth = value.protocol === "vllm_omni_depth";
   const score = value.protocol === "vllm_omni_score";
-  const placeholders =
-    value.protocol === "bigmodel_video"
-      ? ["https://open.bigmodel.cn/api/paas/v4", "cogvideox-3"]
-      : value.protocol === "minimax_video_v2"
-      ? ["https://api.minimax.cn/v2", "MiniMax-H3"]
-      : value.protocol === "kling_video"
-        ? ["https://api-beijing.klingai.com", "kling-4.0"]
-      : value.protocol === "vllm_omni_music"
-        ? MUSIC_PLACEHOLDERS
-        : score
-          ? SCORE_PLACEHOLDERS
-          : depth
-            ? DEPTH_PLACEHOLDERS
-            : PLACEHOLDERS[segmentation ? "vision" : kind];
   const hasSavedKey = Boolean(
     connection &&
     connection.authMode === "bearer" &&
@@ -314,6 +282,7 @@ export function ModelServiceForm({
       url: model.url,
       modelId: model.modelId,
       connectionType: model.connectionType,
+      capabilityAutoCheck: model.capabilityAutoCheck,
       inputModalities: model.inputModalities,
       videoAdapter: model.videoAdapter,
       videoCapabilities: model.videoCapabilities,
@@ -434,7 +403,7 @@ export function ModelServiceForm({
                   required
                   maxLength={2048}
                   value={value.url}
-                  placeholder={placeholders[0]}
+                  placeholder={t("models.service.urlPlaceholder")}
                   aria-describedby={`${connectionFieldId}-url-note`}
                   onChange={(event) => update({ url: event.target.value })}
                 />
@@ -468,6 +437,10 @@ export function ModelServiceForm({
               <p className="cw-model-note" id={`${connectionFieldId}-proxy-note`}>
                 {t("models.service.proxyNote")}
               </p>
+            </div>
+            <div className="cw-model-connection-field">
+              <label><input type="checkbox" checked={value.capabilityAutoCheck ?? value.connectionType === "self_hosted"}
+                onChange={(event) => update({ capabilityAutoCheck: event.target.checked })} />{t("availability.autoCheck")}</label>
             </div>
           </fieldset>
         </details>
@@ -525,7 +498,7 @@ export function ModelServiceForm({
           <p className="cw-model-note">{t("models.service.minimaxNote")}</p>
         )}
         <ModelPicker
-          modelPlaceholder={placeholders[1]}
+          modelPlaceholder={t("models.service.modelPlaceholder")}
           available={modelIds}
           selected={selectedModels}
           loaded={loaded}
@@ -546,6 +519,8 @@ export function ModelServiceForm({
               : undefined
           }
           renderDetails={(id) => (
+            <>
+            <DraftAvailabilityCheck connection={{ ...value, ...optionsFor(id) }} configId={connection?.id} modelId={id} />
             <ModelCapabilityCard
               key={`${connection?.id ?? "new"}:${value.protocol}:${id}`}
               modelId={id}
@@ -564,6 +539,7 @@ export function ModelServiceForm({
                 setModelErrors((current) => ({ ...current, [id]: message }))
               }
             />
+            </>
           )}
         />
         {segmentation && (

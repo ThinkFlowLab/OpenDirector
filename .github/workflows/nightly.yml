@@ -168,11 +168,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/extended-logs"
           fixture_api_pid=""
           fixture_web_pid=""
+          http_fixture_api_pid=""
+          http_fixture_web_pid=""
           python tests/browser/creation_server.py --port 8019 >"$RUNNER_TEMP/creation-server.log" 2>&1 &
           api_pid=$!
           OPENDIRECTOR_API_URL="$CREATION_API_URL" npm run dev -- --port 5179 --strictPort >"$RUNNER_TEMP/vite.log" 2>&1 &
           web_pid=$!
-          trap 'kill "$api_pid" "$web_pid" "$fixture_api_pid" "$fixture_web_pid" 2>/dev/null || true; wait 2>/dev/null || true' EXIT
+          trap 'kill "$api_pid" "$web_pid" "$fixture_api_pid" "$fixture_web_pid" "$http_fixture_api_pid" "$http_fixture_web_pid" 2>/dev/null || true; wait 2>/dev/null || true' EXIT
           for attempt in {1..60}; do
             if curl --silent --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/creation-test-health" >/dev/null && curl --silent --fail "$CREATION_WEB_URL/" >/dev/null; then
               break
@@ -212,6 +214,7 @@ jobs:
           done
           curl --fail -H 'X-OpenDirector-Request: 1' http://127.0.0.1:8020/api/creation-test-health
           curl --silent --fail http://127.0.0.1:5180/ >/dev/null
+          CREATION_WEB_URL=http://127.0.0.1:5180 CREATION_API_URL=http://127.0.0.1:8020 node scripts/check-browser-manifest.mjs --lane extendedFixture
           fixture_scripts=()
           while IFS= read -r line; do fixture_scripts+=("$line"); done < <(
             node -e 'const m=require("./tests/browser/manifest.json");for(const s of m.scripts)if((s.lanes||[]).includes("extendedFixture"))console.log([s.file,...(s.args||[])].join(" "))'
@@ -227,9 +230,35 @@ jobs:
               failed=1
             fi
           done
+          # These workflows exercise real HTTP adapters, so they cannot share
+          # the generic provider used by the existing fixture workflows.
+          python tests/browser/creation_server.py --port 8021 --http-generation-fixture --assistant-fixture >"$RUNNER_TEMP/http-creation-server.log" 2>&1 &
+          http_fixture_api_pid=$!
+          OPENDIRECTOR_API_URL=http://127.0.0.1:8021 npm run dev -- --port 5181 --strictPort >"$RUNNER_TEMP/http-vite.log" 2>&1 &
+          http_fixture_web_pid=$!
+          for attempt in {1..60}; do
+            if curl --silent --fail -H 'X-OpenDirector-Request: 1' http://127.0.0.1:8021/api/creation-test-health >/dev/null && curl --silent --fail http://127.0.0.1:5181/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          CREATION_WEB_URL=http://127.0.0.1:5181 CREATION_API_URL=http://127.0.0.1:8021 node scripts/check-browser-manifest.mjs --lane extendedHttpFixture
+          http_fixture_scripts=()
+          while IFS= read -r line; do http_fixture_scripts+=("$line"); done < <(
+            node -e 'const m=require("./tests/browser/manifest.json");for(const s of m.scripts)if((s.lanes||[]).includes("extendedHttpFixture"))console.log([s.file,...(s.args||[])].join(" "))'
+          )
+          for entry in "${http_fixture_scripts[@]}"; do
+            log="$RUNNER_TEMP/extended-logs/${entry%.mjs}.log"
+            if CREATION_WEB_URL=http://127.0.0.1:5181 CREATION_API_URL=http://127.0.0.1:8021 node "tests/browser/$entry" >"$log" 2>&1; then
+              echo "pass $entry" >> extended-results.txt
+            else
+              echo "fail $entry" >> extended-results.txt
+              failed=1
+            fi
+          done
           cat extended-results.txt
           if [ "$failed" -ne 0 ]; then
-            for entry in "${scripts[@]}" "${fixture_scripts[@]}"; do
+            for entry in "${scripts[@]}" "${fixture_scripts[@]}" "${http_fixture_scripts[@]}"; do
               log="$RUNNER_TEMP/extended-logs/${entry%.mjs}.log"
               if grep -Fq "fail $entry" extended-results.txt; then
                 echo "===== $entry ====="
@@ -241,7 +270,7 @@ jobs:
       - name: Print isolated service logs on failure
         if: failure()
         run: |
-          for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log" "$RUNNER_TEMP/assistant-creation-server.log" "$RUNNER_TEMP/assistant-vite.log"; do
+          for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log" "$RUNNER_TEMP/assistant-creation-server.log" "$RUNNER_TEMP/assistant-vite.log" "$RUNNER_TEMP/http-creation-server.log" "$RUNNER_TEMP/http-vite.log"; do
             if [ -f "$log" ]; then tail -n 150 "$log"; fi
           done
       - name: Upload extended lane results

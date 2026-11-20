@@ -175,6 +175,8 @@ export const generation = {
   "generation.history.empty": "暂无此类型的生成历史。",
   "generation.history.selectJob": "选择历史{title}",
   "generation.history.readingPreview": "正在读取结果预览…",
+  "generation.history.requestedDuration": "请求时长：{seconds} 秒",
+  "generation.history.resultDuration": "成片时长：{seconds} 秒",
   "generation.history.query": "继续查询原任务",
   "generation.history.cancelCloud": "取消云端任务",
   "generation.history.cancelTool": "停止工具任务",

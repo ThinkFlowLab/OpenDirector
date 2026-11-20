@@ -8,6 +8,8 @@ import { normalizeClaudeTrace } from "./claudeTrace.ts";
 import { normalizeCodexTrace } from "./codexTrace.ts";
 import { normalizeDeepseekTrace } from "./deepseekTrace.ts";
 
+import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
+
 import "./assistant-trace.css";
 
 type TraceRecord = {
@@ -183,6 +185,28 @@ function TraceEntries({ traces, rawModel }: { traces: string[]; rawModel: boolea
   });
 }
 
+function TraceJobs({ jobs }: { jobs: TurnJob[] }) {
+  const t = useT();
+  return (
+    <section className="cw-trace-jobs" aria-label={t("trace.jobs.title")}>
+      <h2>{t("trace.jobs.title")}</h2>
+      {jobs.map((job) => {
+        const view = turnJobView(job, t);
+        return (
+          <div key={view.key} className="cw-trace-row cw-trace-job">
+            <span className={`cw-trace-badge is-job-${view.status}`}>{view.statusText}</span>
+            <span className="cw-trace-preview">
+              <code>{job.jobId}</code>
+              {[view.assetText, view.adoptedText, view.cancelText, view.errorText]
+                .filter(Boolean).map((text) => ` · ${text}`).join("")}
+            </span>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 export default function AssistantTracePage({ params }: { params: URLSearchParams }) {
   const project = params.get("traceProject") ?? "";
   const turn = params.get("turn") ?? "";
@@ -193,6 +217,7 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
   const [showModel, setShowModel] = useState(false);
   const rawModel = runtime === "opencode" && showModel;
   const [status, setStatus] = useState<number | null>(null);
+  const [jobs, setJobs] = useState<TurnJob[]>([]);
   const t = useT();
 
   useEffect(() => {
@@ -209,18 +234,23 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
     }).catch(() => {});
     setStatus(null);
     setTraces([]);
+    setJobs([]);
     let timer: number | undefined;
     async function refresh() {
       try {
         if (live && document.hidden) return;
+        const jobsRequest = fetch(`/api/creation/projects/${projectPath}/assistant/turns/${turnPath}/jobs`, options)
+          .then(readTurnJobs, () => [] as TurnJob[]);
         const snapshots = await Promise.all(sources.map(async (name) => {
           const response = await fetch(`${traceUrl}/${encodeURIComponent(name)}`, options);
           const body = response.ok ? await response.text() : "";
           return { status: response.status, body: name === "deepseek" ? normalizeDeepseekTrace(body) : name === "codex" ? normalizeCodexTrace(body) : name === "claude" ? normalizeClaudeTrace(body) : body };
         }));
+        const nextJobs = await jobsRequest;
         const status = snapshots.some((item) => item.status === 200) ? 200 : snapshots[0].status;
         if (controller.signal.aborted) return;
         setStatus(status);
+        setJobs((previous) => JSON.stringify(previous) === JSON.stringify(nextJobs) ? previous : nextJobs);
         const bodies = snapshots.map((item) => item.body);
         setTraces((previous) => bodies.every((body, index) => body === previous[index]) ? previous : bodies);
       } catch {
@@ -265,6 +295,7 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
           status === 404 ? t("trace.notFound") :
           t("trace.loadFailed")}</p>
       )}
+      {jobs.length > 0 && <TraceJobs jobs={jobs} />}
     </main>
   );
 }

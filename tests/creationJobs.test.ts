@@ -33,6 +33,14 @@ function fixture() {
   };
 }
 
+test("the history projection retains the execution revision used by confirmed recovery", () => {
+  const { snapshot, active } = fixture();
+  const job = { ...active, status: "failed" as const, revision: 17 };
+  const projected = creationJobs({ ...snapshot, jobs: [job] })[0]!;
+  assert.equal(projected.revision, 17);
+  assert.equal(projected.status, "failed");
+});
+
 test("a slow old preview cannot delay preparation or cancellation metadata", async () => {
   const { snapshot, active } = fixture();
   const asset = snapshot.assets.find(
@@ -159,4 +167,43 @@ test("a failed job carries its service reason so the toast can show it", () => {
     jobs: [{ ...active, status: "succeeded" as const }],
   }).find((j) => j.id === active.id)!;
   assert.equal(done.failure, undefined);
+});
+
+test("video history shows measured duration separately before the preview loads", () => {
+  const { snapshot } = fixture();
+  const job = snapshot.jobs[0]!;
+  const assetId = snapshot.results[0]!.asset.assetId;
+  const completed = {
+    ...snapshot,
+    jobs: [{
+      ...job,
+      inputSnapshot: {
+        ...job.inputSnapshot,
+        spec: {
+          ...job.inputSnapshot.spec,
+          kind: "video" as const,
+          parameters: {
+            generateAudio: true, videoMode: "first_frame" as const,
+            durationSeconds: 4, aspectRatio: "16:9", resolution: "480P",
+          },
+        },
+      },
+      execution: {
+        kind: "video" as const, durationSeconds: 4,
+        size: "832x480", resolution: "480P", fps: 24, numFrames: 107,
+        numInferenceSteps: 20, guidanceScale: null, seed: null,
+        watermark: null, generateAudio: null,
+      },
+    }],
+    assets: snapshot.assets.map((asset) => asset.id === assetId ? {
+      ...asset,
+      kind: "video" as const,
+      metadata: { ...asset.metadata, mimeType: "video/mp4", durationSeconds: 107 / 24 },
+    } : asset),
+  };
+  const [row] = creationJobs(completed);
+  assert.equal(row?.preview?.state, "pending");
+  assert.deepEqual(row?.videoDuration, { requestedSeconds: 4, resultSeconds: 107 / 24 });
+  const [withoutResult] = creationJobs({ ...completed, results: [] });
+  assert.deepEqual(withoutResult?.videoDuration, { requestedSeconds: 4, resultSeconds: undefined });
 });

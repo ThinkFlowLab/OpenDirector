@@ -1,7 +1,8 @@
+import { ModelAvailabilityCard } from "./ModelAvailabilityCard";
 import { ModelSetup, modelSetupMissing, type SetupKind } from "./ModelSetup";
 import { ModelLogo } from "./ModelLogo";
 import { providerLabel } from "./providerPresets";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { errorMessage } from "../backend/api.ts";
 import { MODEL_KINDS, type BackendModels } from "../backend/models.ts";
 import type { ModelConfig } from "../backend/rules.ts";
@@ -44,6 +45,11 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
       models.findIndex((item) => item.providerId === model.providerId) ===
         index,
   );
+  const visibleIds = models.map((model) => model.id).join(",");
+  const checkAvailability = catalog.refreshAvailability;
+  useEffect(() => {
+    if (visibleIds && catalog.connected) void checkAvailability(visibleIds.split(","));
+  }, [visibleIds, catalog.connected, checkAvailability]);
   const [skipped, setSkipped] = useState<SetupKind[]>([]);
   const missing = modelSetupMissing(catalog.models);
   const pending = missing.filter(kind => !skipped.includes(kind));
@@ -185,6 +191,13 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
                       ))}
                       {members.length > 3 && <span>+{members.length - 3}</span>}
                     </div>
+                    <details className="cw-model-availability-details">
+                      <summary>{t("availability.title")}</summary>
+                      {members.map((member) => <ModelAvailabilityCard key={member.id} title={member.modelId}
+                        value={member.availability} checking={catalog.checkingIds.has(member.id)}
+                        error={member.availability?.reasonCode === "query_failed" ? catalog.availabilityError || undefined : undefined}
+                        onRefresh={() => void catalog.refreshAvailability([member.id], true)} />)}
+                    </details>
                     <div className="cw-model-service-bottom">
                       <span>
                         {providerLabel(model)}{" "}

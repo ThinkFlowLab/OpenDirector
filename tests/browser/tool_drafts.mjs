@@ -219,6 +219,40 @@ try {
     await prompt().inputValue(),
     "Continue editing the actual output",
   );
+  // Continuing a result retains selection mode, but never reuses the old mask.
+  await page
+    .getByText("请先涂抹或识别需要修改的区域", { exact: true })
+    .waitFor();
+  assert.equal(await page.locator(".iae-generate").isDisabled(), true);
+  assert.equal((await tasks()).length, 1);
+  const continuedDrawing = page.locator("canvas.iae-ink-mask");
+  await continuedDrawing.waitFor();
+  const continuedRect = await continuedDrawing.boundingBox();
+  await page.mouse.move(
+    continuedRect.x + continuedRect.width * 0.55,
+    continuedRect.y + continuedRect.height * 0.3,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    continuedRect.x + continuedRect.width * 0.7,
+    continuedRect.y + continuedRect.height * 0.55,
+    { steps: 12 },
+  );
+  await page.mouse.up();
+  snapshot = await until(
+    state,
+    (s) => s.editorDocuments.some((d) => d.id === next.id && d.data.selection?.mask),
+    "saved selection for continued output",
+  );
+  const continued = snapshot.editorDocuments.find((d) => d.id === next.id);
+  const continuedMaskId = continued.data.selection.mask.assetId;
+  assert.equal(continued.data.selection.source.assetId, output.id);
+  assert.notEqual(continuedMaskId, maskId);
+  await until(
+    () => page.locator(".iae-generate").isEnabled(),
+    Boolean,
+    "continued selection ready",
+  );
   // Lose both acceptance and immediate lookup; reload and explicitly retry.
   // The browser must resend the original intent, not create another paid task.
   const sent = [];
@@ -256,6 +290,7 @@ try {
       rows.length === 2 && rows.every((row) => row.status === "succeeded"),
     "accepted original attempt",
   );
+  assert.equal(sent[0].maskAssetId, continuedMaskId);
   await open(output.canvasItemId);
   await prompt().fill("New edits must not replace the unknown request");
   await page

@@ -29,6 +29,7 @@ const skip = [
   /[\\/]modelDescriptions\.ts$/,
   /[\\/]creationPreviewText\.ts$/,
   /[\\/]assistantToolText\.ts$/,
+  /[\\/]capabilityErrorText\.ts$/,
   /[\\/]generationFailureText\.ts$/,
   /\.test\./,
 ];

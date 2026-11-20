@@ -122,6 +122,10 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         settings = ['features.shell_tool=true', 'features.apply_patch_freeform=false', 'web_search="disabled"',
             'sandbox_workspace_write.network_access=true',
             'skills.bundled.enabled=false', f'developer_instructions={json.dumps(SYSTEM)}']
+        if sys.platform == 'win32':
+            # --ignore-user-config also removes windows.sandbox. Without a
+            # Windows backend Codex downgrades workspace-write to read-only.
+            settings.append('windows.sandbox="elevated"')
         args = [binary, 'exec', '--json', '--skip-git-repo-check', *codex_isolation_flags(binary), '--sandbox', 'workspace-write']
         for setting in settings:
             args += ['-c', setting]
@@ -246,7 +250,7 @@ class NativeRuntime:
                         args += ['--session' if runtime == 'opencode' else '--resume', session_id]
                 execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
                     'Set the native shell workdir to this execution directory for file and media operations. '
-                    'Use inherited PATH to discover installed programs with command -v. '
+                    'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
                     'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.')

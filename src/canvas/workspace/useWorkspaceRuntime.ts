@@ -147,7 +147,8 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   );
   const toolCatalog = useToolCatalog(
     backendCatalog.connected,
-    backendCatalog.models,
+    backendCatalog.availabilityRevision,
+    t,
   );
   const setupChecked = useRef(false);
   const theme = useTheme();

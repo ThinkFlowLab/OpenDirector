@@ -75,3 +75,9 @@
 .cw-trace-command-detail pre { margin: 0; padding: 10px 12px; border-radius: 6px; background: #191919; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cw-trace-command-detail p { font-size: 12px; color: #aaa; }
 @media (max-width: 600px) { .cw-trace-command-detail { padding-left: 20px; } }
+.cw-trace-job { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; padding: 6px 20px; align-items: center; }
+.cw-trace-jobs { margin-top: 16px; border-top: 1px solid #333; }
+.cw-trace-jobs h2 { margin: 0; padding: 10px 20px 6px; font-size: 14px; }
+.cw-trace-job .cw-trace-preview { white-space: normal; overflow-wrap: anywhere; }
+.cw-trace-badge.is-job-succeeded { background: #254034; color: #91d6ab; }
+.cw-trace-badge.is-job-failed, .cw-trace-badge.is-job-interrupted { background: #4d2a2a; color: #f0a3a3; }

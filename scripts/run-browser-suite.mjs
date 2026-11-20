@@ -14,6 +14,10 @@ import { spawnSync } from "node:child_process";
 
 const workflows = [
   { name: "timeline node output", script: "tests/browser/timeline_node_output.mjs" },
+  {
+    name: "example canvas picker",
+    script: "tests/browser/example_canvas_picker.mjs",
+  },
   { name: "locale", script: "tests/browser/locale.mjs" },
   { name: "creation closure", script: "scripts/verify_creation_browser.mjs" },
   { name: "assistant activity", script: "tests/browser/assistant_activity.mjs" },
@@ -23,6 +27,7 @@ const workflows = [
   },
   { name: "minimax h3", script: "tests/browser/minimax_h3.mjs" },
   { name: "provider settings", script: "tests/browser/provider_settings.mjs" },
+  { name: "capability discovery", script: "tests/browser/capability_discovery.mjs" },
   { name: "created node focus", script: "tests/browser/created_node_focus.mjs" },
   { name: "cross canvas paste", script: "tests/browser/cross_canvas_paste.mjs" },
   { name: "reference reconnect", script: "tests/browser/reference_reconnect.mjs" },

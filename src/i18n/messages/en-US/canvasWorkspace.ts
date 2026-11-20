@@ -87,7 +87,6 @@ export const canvasWorkspace = {
   "canvas.workspace.empty.hint":
     "Double-click the canvas to create a node, or drop in your assets",
   "canvas.workspace.empty.configureModels": "Configure models",
-  "canvas.workspace.empty.example": "Try the example canvas",
   "canvas.workspace.empty.tagline":
     "Reference connections · Free arrangement · Autosaved locally",
 
@@ -423,4 +422,36 @@ export const canvasWorkspace = {
     "A subject video cannot exceed 15 seconds",
   "canvas.workspace.referenceIssue.sourceDurationMissing":
     "Read the actual video or audio duration before adding it to the target node",
+  // Example canvas picker: download and import a hosted sample.
+  "canvas.example.dialog.title": "Choose an example canvas",
+  "canvas.example.dialog.hint": "The canvas is downloaded and imported locally; keep editing once it opens.",
+  "canvas.example.dialog.empty": "No example canvas is available right now.",
+  "canvas.example.action.import": "Download and import",
+  "canvas.example.action.retry": "Retry",
+  "canvas.example.action.cancelDownload": "Cancel download",
+  "canvas.example.action.close": "Close",
+  "canvas.example.action.dismiss": "Dismiss",
+  "canvas.example.action.manual": "Can't download? Import manually",
+  "canvas.example.state.downloading": "Downloading…",
+  "canvas.example.state.importing": "Importing…",
+  "canvas.example.state.done": "Imported “{title}”",
+  "canvas.example.error.http": "Download failed (HTTP {status}). Retry, or import it manually.",
+  "canvas.example.error.network": "The network dropped. Try again.",
+  "canvas.example.error.html": "The server returned a web page instead of a canvas file; the request may be blocked.",
+  "canvas.example.error.notArchive": "The download is not a ZIP canvas package; it may be blocked or damaged.",
+  "canvas.example.error.ambiguous": "The archive does not contain exactly one .canvas file.",
+  "canvas.example.error.notCanvas": "That file is not an OpenDirector canvas.",
+  "canvas.example.error.tooLarge": "The file exceeds the size limit; the download was stopped.",
+  "canvas.example.error.integrity": "The file failed its integrity check and was discarded.",
+  "canvas.example.error.invalidUrl": "This example points at an untrusted address; the download was blocked.",
+  "canvas.example.error.aborted": "The download was cancelled.",
+  "canvas.example.error.unknown": "The import failed. Try again, or import it manually.",
+  "canvas.example.manual.steps": "After downloading, drop the .canvas file on the canvas or use Import canvas.",
+  "canvas.example.manual.share": "Open the share link (code {code})",
+  // The download reports live progress; sizes render as plain data.
+  "canvas.example.state.downloadingPercent": "Downloading… {percent}%",
+  "canvas.example.progress.label": "Download progress",
+  // The empty canvas imports the two hosted samples directly.
+  "canvas.workspace.empty.tryImage": "Try image example",
+  "canvas.workspace.empty.tryVideo": "Try video example",
 } as const;

@@ -6,6 +6,22 @@ from opendirector.domain.projects import ProjectError
 from opendirector.domain.references import project_content
 
 
+def generation_fields(parameters, *, frame_indices=None):
+    """Prepare the same FastH3 fields for capability checks and HTTP submission."""
+    from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
+    fields = {}
+    if any(key in parameters for key in ('duration', 'seconds', 'num_frames')):
+        fields.update(video_frame_parameters(float(parameters.get('duration', parameters.get('seconds', 5))),
+            parameters.get('fps', FPS), parameters.get('num_frames')))
+    extra = {'task': 'ref2va', 'audio_flow_shift': 3}
+    steps = 8
+    if frame_indices is not None:
+        extra.update(task='fl2va', sampler='res_multistep', frame_indices=tuple(frame_indices))
+        steps = parameters.get('num_inference_steps', 20)
+    fields.update(size=parameters.get('size', '832x480'), num_inference_steps=steps,
+                  guidance_scale=1, fps=24, seed=parameters.get('seed', 1234))
+    return fields, extra
+
 
 def native_prompt(task, sources):
     """Render each rich reference in place using H3's per-modality ordinals."""

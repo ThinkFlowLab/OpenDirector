@@ -141,6 +141,11 @@ export interface AudioParametersInput extends ContractInput {
   readonly durationFromReference?: boolean | null;
 }
 
+export interface AvailabilityCatalogInput extends ContractInput {
+  readonly revision: string;
+  readonly models: ReadonlyArray<ModelAvailabilityInput>;
+}
+
 export interface BatchCommandInput extends CommandBaseInput {
   readonly type: "creation.batch";
   readonly payload: BatchPayloadInput;
@@ -356,6 +361,32 @@ export interface CanvasUpdateCommandOperationInput {
   readonly payload: CanvasPresentationUpdateInput;
 }
 
+export interface CapabilityDeclarationInput extends ContractInput {
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityExecutionInput extends ContractInput {
+  readonly state: "unpaused" | "paused" | "unknown";
+  readonly scope: "deployment" | "worker" | null;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityInputDetailInput extends ContractInput {
+  readonly name: string;
+  readonly support: "supported" | "unsupported" | "unknown";
+  readonly source?: "service" | "application";
+  readonly minCount?: number | null;
+  readonly maxCount?: number | null;
+  readonly values?: ReadonlyArray<string | number | boolean> | null;
+  readonly min?: number | null;
+  readonly max?: number | null;
+  readonly multipleOf?: number | null;
+}
+
 export interface ChangedObjectInput extends ContractInput {
   readonly version: ObjectVersionInput;
   readonly change: "created" | "updated" | "hidden" | "deleted";
@@ -388,7 +419,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -724,6 +755,8 @@ export interface JobInput extends ProjectEntityInput {
   readonly adoptionMaterial?: AssetRefInput | null;
   readonly adopted?: boolean;
   readonly adapterParameters?: Readonly<Record<string, JsonValueInput>>;
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
 }
 
 export interface JobCancelCommandInput extends CommandBaseInput {
@@ -816,14 +849,30 @@ export interface MediaPublicationOutputInput extends ContractInput {
   readonly height?: number;
 }
 
+export interface ModelAvailabilityInput extends ContractInput {
+  readonly configId: string | null;
+  readonly modelId: string;
+  readonly identity: string;
+  readonly autoCheck: boolean;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly revision: string;
+  readonly operations: ReadonlyArray<OperationAvailabilityInput>;
+}
+
 export interface ModelConfigPublicInput extends ModelConnectionInput {
   readonly id: string;
   readonly providerId?: string | null;
   readonly inputRules: InputRulesInput;
+  readonly capabilityAutoCheck?: boolean | null;
+  readonly availability?: ModelAvailabilityInput | null;
 }
 
 export interface ModelConfigWriteInput extends ModelConnectionInput {
   readonly apiKey?: string | null;
+  readonly capabilityAutoCheck?: boolean | null;
 }
 
 export interface ModelConnectionInput extends ContractInput {
@@ -835,7 +884,7 @@ export interface ModelConnectionInput extends ContractInput {
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
 }
 
@@ -848,7 +897,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules?: InputRulesInput | null;
 }
 
@@ -891,6 +940,21 @@ export interface ObjectVersionInput extends ContractInput {
   readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result";
   readonly id: string;
   readonly revision: number;
+}
+
+export interface OperationAvailabilityInput extends ContractInput {
+  readonly operation: string;
+  readonly profile: string;
+  readonly method: string;
+  readonly path: string;
+  readonly output: string;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly declaration?: CapabilityDeclarationInput | null;
+  readonly execution?: CapabilityExecutionInput | null;
+  readonly inputDetails?: ReadonlyArray<CapabilityInputDetailInput>;
 }
 
 export interface PaletteDataInput extends ContractInput {
@@ -1721,6 +1785,11 @@ export interface AudioParameters extends Contract {
   readonly durationFromReference?: boolean | null;
 }
 
+export interface AvailabilityCatalog extends Contract {
+  readonly revision: string;
+  readonly models: ReadonlyArray<ModelAvailability>;
+}
+
 export interface BatchCommand extends CommandBase {
   readonly type: "creation.batch";
   readonly payload: BatchPayload;
@@ -1936,6 +2005,32 @@ export interface CanvasUpdateCommandOperation {
   readonly payload: CanvasPresentationUpdate;
 }
 
+export interface CapabilityDeclaration extends Contract {
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityExecution extends Contract {
+  readonly state: "unpaused" | "paused" | "unknown";
+  readonly scope: "deployment" | "worker" | null;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityInputDetail extends Contract {
+  readonly name: string;
+  readonly support: "supported" | "unsupported" | "unknown";
+  readonly source: "service" | "application";
+  readonly minCount: number | null;
+  readonly maxCount: number | null;
+  readonly values: ReadonlyArray<string | number | boolean> | null;
+  readonly min: number | null;
+  readonly max: number | null;
+  readonly multipleOf: number | null;
+}
+
 export interface ChangedObject extends Contract {
   readonly version: ObjectVersion;
   readonly change: "created" | "updated" | "hidden" | "deleted";
@@ -1968,7 +2063,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2304,6 +2399,8 @@ export interface Job extends ProjectEntity {
   readonly adoptionMaterial: AssetRef | null;
   readonly adopted: boolean;
   readonly adapterParameters: Readonly<Record<string, JsonValue>>;
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
 }
 
 export interface JobCancelCommand extends CommandBase {
@@ -2396,13 +2493,29 @@ export interface MediaPublicationOutput extends Contract {
   readonly height: number;
 }
 
+export interface ModelAvailability extends Contract {
+  readonly configId: string | null;
+  readonly modelId: string;
+  readonly identity: string;
+  readonly autoCheck: boolean;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly revision: string;
+  readonly operations: ReadonlyArray<OperationAvailability>;
+}
+
 export interface ModelConfigPublic extends ModelConnection {
   readonly id: string;
   readonly inputRules: InputRules;
+  readonly capabilityAutoCheck?: boolean | null;
+  readonly availability?: ModelAvailability | null;
 }
 
 export interface ModelConfigWrite extends ModelConnection {
   readonly apiKey: string | null;
+  readonly capabilityAutoCheck?: boolean | null;
 }
 
 export interface ModelConnection extends Contract {
@@ -2414,7 +2527,7 @@ export interface ModelConnection extends Contract {
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities: VideoCapabilities | null;
 }
 
@@ -2427,7 +2540,7 @@ export interface ModelSnapshot extends Contract {
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules: InputRules | null;
 }
 
@@ -2470,6 +2583,21 @@ export interface ObjectVersion extends Contract {
   readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result";
   readonly id: string;
   readonly revision: number;
+}
+
+export interface OperationAvailability extends Contract {
+  readonly operation: string;
+  readonly profile: string;
+  readonly method: string;
+  readonly path: string;
+  readonly output: string;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly declaration?: CapabilityDeclaration | null;
+  readonly execution?: CapabilityExecution | null;
+  readonly inputDetails: ReadonlyArray<CapabilityInputDetail>;
 }
 
 export interface PaletteData extends Contract {

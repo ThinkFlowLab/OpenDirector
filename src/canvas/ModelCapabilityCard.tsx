@@ -228,6 +228,9 @@ export function ModelCapabilityCard({
                   <option value="fasth3">
                     {t("models.service.adapterFastH3")}
                   </option>
+                  <option value="fasth3_dual">
+                    {t("models.service.adapterFastH3Dual")}
+                  </option>
                   <option value="standard">
                     {t("models.service.adapterStandard")}
                   </option>

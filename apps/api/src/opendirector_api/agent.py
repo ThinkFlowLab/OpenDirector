@@ -1,7 +1,7 @@
 """Project-scoped assistant persistence and native runtime streaming."""
 import asyncio
 from contextlib import aclosing, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import logging
 from pathlib import Path
@@ -18,16 +18,24 @@ from opendirector.agent.context import RunContext, RuntimeId
 from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
+from opendirector.application.model_availability import requests_for
+from opendirector.domain.creation.base import agent_command_id
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import MAX_REFERENCES, PROMPT_MAX_LENGTH
 from opendirector.infrastructure.creation_projects import durable_json
 from opendirector.infrastructure.local_projects import child, read_json
+from opendirector.integrations.chat_completions import CHAT_MAX_TOKENS
 from opendirector_api.localization import localized_error_for_language
 
 logger = logging.getLogger(__name__)
 
 
 Runtime = RuntimeId
+
+def _assistant_request(config):
+    """Admission uses the same output ceiling as the configured model gateway."""
+    return replace(requests_for(config, inputs={'text'})[0],
+                   parameters=(('max_tokens', CHAT_MAX_TOKENS),))
 
 
 class Draft(BaseModel):
@@ -117,7 +125,8 @@ class Conversations:
             return directory
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
-               begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None) -> dict:
+               begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
+               before_begin=None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
@@ -138,6 +147,8 @@ class Conversations:
             if begin is not None:
                 if any(message['id'] == begin['id'] for message in value['messages']):
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
+                if before_begin is not None:
+                    before_begin()
                 value['messages'].append(begin)
                 value['messages'].append({'id': str(uuid5(UUID(begin['id']), 'assistant')),
                     'role': 'assistant', 'text': '', 'status': 'streaming',
@@ -388,6 +399,18 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             raise ProjectError('轨迹文件不存在。', 404)
         return FileResponse(file, media_type='text/plain', headers={'Cache-Control': 'no-store'})
 
+    @router.get('/turns/{turn_id}/jobs')
+    def turn_jobs(project_id: UUID, turn_id: UUID):
+        # Read-only like the trace routes: no session lease, and the Agent trace is not consulted.
+        # It reads the committed snapshot and never starts, resumes or replays a command.
+        jobs = sorted((job for job in projects.snapshot(project_id).jobs if job.agentRunId == turn_id),
+                      key=lambda job: (job.createdAt, str(job.id)))
+        return [dict(jobId=job.id, callId=job.agentCallId, commandId=agent_command_id(turn_id, job.agentCallId),
+                     status=job.status, phase=job.phase, recovery=job.recovery, resumeAllowed=job.resumeAllowed,
+                     cancelRequested=job.cancelRequested, remoteCancellation=job.remoteCancellation,
+                     errorDetails=job.errorDetails, asset=job.asset, adopted=job.adopted)
+                for job in jobs]
+
     active: dict[UUID, Chain] = {}
     admission: dict[UUID, asyncio.Lock] = {}
 
@@ -456,6 +479,21 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         return {kind: {'modelConfigId': model_id, 'modelName': names.get(model_id)}
                 for kind, model_id in model_selections.items() if model_id}
 
+    def revalidate(plan: dict):
+        """Re-read the model config just before the message joins the conversation.
+
+        prepare() validates while the user is still typing; the settings can move
+        before the message is accepted, so the same gate runs again inside the
+        conversation transaction.
+        """
+        config, prepared = plan.get('config'), plan.get('prepared')
+        if config is None or prepared is None:
+            return None
+        def check() -> None:
+            current = configs.resolve(str(plan.get('config_id')), 'agent')
+            generation.availability.require(current, _assistant_request(current), prepared)
+        return check
+
     async def prepare(project_id: UUID, value: Turn, session: str, accept_language: str | None) -> dict:
         """Validate a submitted turn and resolve everything it needs to run.
 
@@ -472,6 +510,12 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         if value.runtime == 'jiuwenswarm' and value.thinking != 'auto':
             raise ProjectError('JiuwenSwarm 当前使用原生默认推理强度。', 409)
         config = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent') if spec.modelSource == 'settings' else None
+        prepared = None
+        if config is not None:
+            prepared = await asyncio.to_thread(generation.availability.prepare, config)
+            current = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent')
+            generation.availability.require(current, _assistant_request(current), prepared)
+            config = current
         available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
         if set(value.skills) - {item['name'] for item in available}:
             raise ProjectError('技能已失效，请重新选择。', 409)
@@ -482,7 +526,9 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                 raise ProjectError('引用素材不属于当前工程。', 409)
         model = config['modelId'] if config else (value.runtimeModel or 'CLI 默认模型')
         model_selections = dict(value.modelSelections)
-        return {'session': session, 'directory': directory, 'config': config, 'available': available,
+        return {'session': session, 'directory': directory, 'config': config, 'prepared': prepared,
+                'config_id': str(value.modelId) if value.modelId else None,
+                'available': available,
                 'model': model, 'model_selections': model_selections,
                 'preferences': preferences_for(model_selections), 'thinking': value.thinking,
                 'accept_language': accept_language,
@@ -721,7 +767,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             plan = await prepare(project_id, value, session, accept_language)
             try:
                 plan['start'] = await asyncio.to_thread(conversations.update, project_id, session,
-                    begin=plan['message'], conversation_id=value.conversationId)
+                    begin=plan['message'], conversation_id=value.conversationId,
+                    before_begin=revalidate(plan))
             except ProjectError as failure:
                 # The message points at a thread that is no longer the active one.
                 # Clients of this endpoint read that from the stream, so report it
@@ -751,6 +798,9 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                 chain.events.put({'type': 'queued', 'message': queued})
                 return JSONResponse({'queued': queued, 'chainId': str(chain.id),
                                      'turnId': str(chain.turn)}, status_code=202)
+            check = revalidate(plan)
+            if check is not None:
+                await asyncio.to_thread(check)
             await asyncio.to_thread(conversations.queue, project_id, session, plan['message'], value.conversationId)
             dispatched = await asyncio.to_thread(conversations.dispatch, project_id, session)
             if dispatched is None:

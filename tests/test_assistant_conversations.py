@@ -35,7 +35,9 @@ def assistant(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
     monkeypatch.setattr(agent, 'skills', empty_skills)
     from opendirector.infrastructure.model_configs import ModelConfigs
-    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model'})
+    config = {'id': str(uuid4()), 'modelId': 'test-model', 'kind': 'agent', 'url': 'http://models.test/v1',
+              'connectionType': 'api', 'protocol': 'openai', 'authMode': 'none', 'apiKey': ''}
+    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: dict(config))
     with TestClient(create_app(LocalProjects(tmp_path)), headers={
         'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
         pid = str(uuid4())

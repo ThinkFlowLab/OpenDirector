@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          fetch-depth: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.event.before && github.event.before != '0000000000000000000000000000000000000000')) && '0' || '1' }}
+          fetch-depth: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.event.before && github.event.before != '0000000000000000000000000000000000000000')) && '0' || '1' }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
@@ -42,10 +42,13 @@ jobs:
       - name: Check static configuration
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           PUSH_BASE_SHA: ${{ github.event.before }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             python -m pre_commit run --from-ref "$PR_BASE_SHA" --to-ref HEAD
+          elif [ "$GITHUB_EVENT_NAME" = merge_group ] && [ -n "$MERGE_GROUP_BASE_SHA" ]; then
+            python -m pre_commit run --from-ref "$MERGE_GROUP_BASE_SHA" --to-ref HEAD
           elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$PUSH_BASE_SHA" ] && [ "$PUSH_BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
             python -m pre_commit run --from-ref "$PUSH_BASE_SHA" --to-ref HEAD
           else
@@ -55,6 +58,7 @@ jobs:
         name: Select check scope / 判断检查范围
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: python scripts/ci/select_checks.py
 
   python:

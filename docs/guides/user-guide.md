@@ -39,7 +39,7 @@ example vLLM's 4096 default) rejects every request with HTTP 400.
 
 For vLLM-Omni video connections, enter fractional seconds directly, for example `6.583333`. The CLI accepts `opendirector video create --duration 6.583333` together with the other required options. Read `opendirector video create --help` and `opendirector model list` first; `inputRules.fractionalDuration` identifies support, and each output's duration list defines the allowed range. H3 can align output to its supported frame count, so inspect the actual result duration before assembling segments.
 
-For detailed video settings, see [Video model capability configuration (Chinese)](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
+For detailed video settings, see [Video model capability configuration](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
 
 Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
 
@@ -71,6 +71,7 @@ The first launch creates an untitled canvas. Later launches can restore the most
 - Click the project name at the top left to rename it. Press `Enter` or click elsewhere to save, or press `Esc` to cancel.
 - Click the arrow next to the name to switch projects. Choose **New canvas project** to create one.
 - On an empty canvas, click **Configure models** to open **Settings → Model connections**.
+- Click **Try image example** or **Try video example** on an empty canvas to import a hosted sample: it downloads with a progress bar, imports as a new project and opens it. A download that is a ZIP around a single `.canvas` file is unwrapped automatically, and a page returned instead of a file is reported rather than imported. The project menu's **Example canvases** row opens the full list, with sizes and a manual-import link for a sample that cannot be downloaded.
 - Use the left toolbar or double-click empty canvas space to create text, image, video, audio, timeline, or subject nodes.
 - Right-click empty canvas space to create a node, paste, undo, or redo.
 - Click **Upload** on the left or drag files onto the canvas to add assets. Use **Asset library** to choose existing assets.
