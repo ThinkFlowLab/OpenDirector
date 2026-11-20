@@ -1,11 +1,88 @@
 .cw-stage-dialog {
   width: min(1500px, 98vw);
+  /* A stage needs a tall, definite frame: the two region scrollers inside
+   * size themselves against it. */
+  height: min(880px, calc(100dvh - 48px));
+}
+/* The stage splits scrolling into two regions — subjects with the stage and
+ * timeline on one side, the inspector on the other — so neither column drags
+ * the other along. Region scrollbars stay quiet until the region is used. */
+.cw-stage-dialog .cw-domain-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 10px;
+}
+/* Pass the available height through to the two scroll regions. A fieldset's
+ * internal content box ignores the clamped flex size in Chromium, so the
+ * layout is positioned against the fieldset's border box instead. */
+.cw-stage-dialog .cw-domain-body > .cw-stage-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.cw-stage-dialog .cw-editor-work {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.cw-stage-dialog .cw-editor-work > .cw-stage-layout {
+  position: absolute;
+  inset: 0;
 }
 .cw-stage-layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 190px minmax(300px, 1fr) 240px;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
-  min-height: 480px;
+}
+.cw-stage-main,
+.cw-stage-inspector {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3b55 transparent;
+}
+.cw-stage-main:hover,
+.cw-stage-inspector:hover {
+  scrollbar-color: #7d75b3 transparent;
+}
+.cw-stage-main:active,
+.cw-stage-inspector:active {
+  scrollbar-color: #a08ff0 transparent;
+}
+.cw-stage-main::-webkit-scrollbar,
+.cw-stage-inspector::-webkit-scrollbar {
+  width: 9px;
+}
+.cw-stage-main::-webkit-scrollbar-thumb,
+.cw-stage-inspector::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background: #3f3b55;
+  background-clip: content-box;
+}
+.cw-stage-main:hover::-webkit-scrollbar-thumb,
+.cw-stage-inspector:hover::-webkit-scrollbar-thumb {
+  background: #7d75b3;
+  background-clip: content-box;
+}
+.cw-stage-main:active::-webkit-scrollbar-thumb,
+.cw-stage-inspector:active::-webkit-scrollbar-thumb {
+  background: #a08ff0;
+  background-clip: content-box;
+}
+.cw-stage-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 190px minmax(300px, 1fr);
+  gap: 18px;
+  align-content: start;
 }
 .cw-stage-objects,
 .cw-stage-inspector {
@@ -47,6 +124,11 @@
 .cw-stage-center {
   min-width: 0;
 }
+/* The timeline track, transport and storyboard align to the frame width. */
+.cw-stage-stack {
+  margin-inline: auto;
+  min-width: 0;
+}
 .cw-stage-viewport {
   width: 100%;
   aspect-ratio: 16/9;
@@ -68,11 +150,6 @@
   flex-wrap: wrap;
   margin: 15px 0;
 }
-.cw-stage-transport output {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: #c5c5d5;
-}
 .cw-stage-transport label {
   font-size: 11px;
   display: flex;
@@ -83,7 +160,7 @@
   width: 65px !important;
   padding: 5px !important;
 }
-.cw-stage-center > input[type="range"] {
+.cw-stage-stack > input[type="range"] {
   width: 100%;
   accent-color: #b493ec;
 }
@@ -149,16 +226,35 @@
   height: 32px;
   width: 100%;
 }
-.cw-stage-dialog .cw-domain-body {
-  padding-bottom: 10px;
-}
 @media (max-width: 1100px) {
+  /* Narrow layouts keep one shared scroll; the split targets wide screens. */
+  .cw-stage-dialog {
+    height: auto;
+    max-height: calc(100dvh - 48px);
+  }
+  .cw-stage-dialog .cw-domain-body {
+    display: block;
+    overflow: auto;
+  }
+  .cw-stage-dialog .cw-domain-body > .cw-stage-shell,
+  .cw-stage-dialog .cw-editor-work {
+    position: static;
+    display: block;
+    flex: none;
+  }
+  .cw-stage-dialog .cw-editor-work > .cw-stage-layout {
+    position: static;
+  }
   .cw-stage-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cw-stage-main {
     grid-template-columns: 150px minmax(260px, 1fr);
+    overflow: visible;
   }
   .cw-stage-inspector {
     grid-column: 1/-1;
-    max-height: none;
+    overflow: visible;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
@@ -175,8 +271,8 @@
     grid-template-columns: 1fr;
     gap: 12px;
   }
-  .cw-stage-objects {
-    max-height: none;
+  .cw-stage-main {
+    grid-template-columns: 1fr;
   }
   .cw-stage-object-list {
     flex-direction: row;

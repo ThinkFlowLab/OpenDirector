@@ -2,20 +2,28 @@ import { useEditorCommit, type EditorApplyResult } from "./useEditorCommit";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkinnedObject } from "three/addons/utils/SkeletonUtils.js";
 import type { CanvasNode } from "./model";
+import type { AssetRef } from "../contracts/generated.ts";
 import { ControlSlider } from "./ControlSlider";
 import {
   createLocalStage,
+  parseLocalStageDocument,
   parseLocalStageValue,
+  probeStageAsset,
   sampleStage,
+  stageCameraAt,
   editStageObjectAt,
   editStageCameraAt,
   captureStageFrame,
   stageFrameTimes,
   removeStageFrame,
   stageOutputSize,
+  unregisteredStageAssets,
   defaultStageCamera,
   STAGE_RATIOS,
+  STAGE_ASSET_MAX_BYTES,
 } from "./stageDocument";
 import type {
   LocalStageDocument,
@@ -26,6 +34,7 @@ import type {
   StageShot,
   StageObject,
   StageTransform,
+  StageAssetRole,
   Vector3Value,
 } from "./stageDocument";
 import {
@@ -36,7 +45,12 @@ import {
 } from "./stageHistory";
 import { EditorModal } from "./EditorModal";
 import "./director-stage.css";
-import { STAGE_MOTIONS, sampleJointPose } from "./stageMotion";
+import {
+  STAGE_MOTIONS,
+  sampleJointPose,
+  selectStageAnimation,
+  type StageMotion,
+} from "./stageMotion";
 import { encodeMp4 } from "./mp4Export";
 import { downloadFile, downloadFilename } from "./assets";
 import { withMediaDuration } from "./editorMedia";
@@ -56,6 +70,26 @@ export interface DirectorStageProps {
   onPrepareRender?: (
     stage: LocalStageDocument,
   ) => Promise<(result: LinkedMediaResult) => Promise<boolean>>;
+  /** Whether a pinned asset is registered in the currently open project;
+   * stage JSON imports reject objects pinning assets it reports as absent. */
+  isRegisteredAsset?: (asset: AssetRef) => boolean;
+}
+interface LoadedStageAsset {
+  scene: THREE.Object3D;
+  animations: THREE.AnimationClip[];
+}
+interface RestPose {
+  object: THREE.Object3D;
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  scale: THREE.Vector3;
+}
+interface ImportedRuntime {
+  root: THREE.Group;
+  clips: THREE.AnimationClip[];
+  mixer?: THREE.AnimationMixer;
+  activeClip?: THREE.AnimationClip;
+  restPose: RestPose[];
 }
 interface StageRuntime {
   renderer: THREE.WebGLRenderer;
@@ -64,6 +98,10 @@ interface StageRuntime {
   controls: OrbitControls;
   root: THREE.Group;
   grid: THREE.GridHelper;
+  imported: Map<string, ImportedRuntime>;
+  /** In-flight or resolved loads keyed by pinned asset id or source URL, so
+   * concurrent effect runs share one load and one set of GPU resources. */
+  assetCache: Map<string, Promise<LoadedStageAsset>>;
 }
 const vector = (value: THREE.Vector3): Vector3Value => ({
   x: value.x,
@@ -75,6 +113,7 @@ const titles: Record<StageObject["kind"], MessageKey> = {
   person: "editors.stage.ui.objectPerson",
   box: "editors.stage.ui.objectBox",
   sphere: "editors.stage.ui.objectSphere",
+  gltf: "editors.stage.ui.objectGltf",
 };
 function applyTransform(object: THREE.Object3D, value: StageTransform) {
   object.position.set(value.position.x, value.position.y, value.position.z);
@@ -84,6 +123,8 @@ function applyTransform(object: THREE.Object3D, value: StageTransform) {
 function buildObject(value: StageObject): THREE.Group {
   const group = new THREE.Group();
   group.userData.objectId = value.id;
+  group.userData.objectKind = value.kind;
+  if (value.kind === "gltf") group.userData.assetSource = value.source;
   const material = new THREE.MeshStandardMaterial({
     color: value.color,
     roughness: 0.58,
@@ -104,7 +145,11 @@ function buildObject(value: StageObject): THREE.Group {
   if (value.kind === "box") add(new THREE.BoxGeometry(1, 1, 1), 0, 0.5, 0);
   else if (value.kind === "sphere")
     add(new THREE.SphereGeometry(0.6, 32, 24), 0, 0.6, 0);
-  else {
+  else if (value.kind === "gltf") {
+    material.transparent = true;
+    material.opacity = 0.35;
+    add(new THREE.BoxGeometry(1, 1, 1), 0, 0.5, 0);
+  } else {
     const bone = (
       parent: THREE.Object3D,
       name: string,
@@ -148,6 +193,95 @@ function buildObject(value: StageObject): THREE.Group {
   }
   applyTransform(group, value);
   return group;
+}
+function cloneImportedAsset(
+  value: StageObject,
+  loaded: LoadedStageAsset,
+): THREE.Group {
+  const group = new THREE.Group();
+  group.userData.objectId = value.id;
+  group.userData.objectKind = value.kind;
+  group.userData.assetSource = value.source;
+  group.add(cloneSkinnedObject(loaded.scene));
+  applyTransform(group, value);
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  return group;
+}
+async function loadStageAsset(source: string): Promise<LoadedStageAsset> {
+  const loaded = await new GLTFLoader().loadAsync(source);
+  return { scene: loaded.scene, animations: loaded.animations };
+}
+function applySelectionHighlight(
+  root: THREE.Object3D,
+  selected: string | null,
+) {
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      let owner: THREE.Object3D | null = child;
+      while (owner && !owner.userData.objectId) owner = owner.parent;
+      const highlighted = owner?.userData.objectId === selected;
+      // Imported models may use unlit or other materials without emissive.
+      const materials = Array.isArray(child.material)
+        ? child.material
+        : [child.material];
+      for (const material of materials)
+        if (material instanceof THREE.MeshStandardMaterial)
+          material.emissive.set(highlighted ? "#1e1536" : "#000000");
+    }
+  });
+}
+function createImportedRuntime(
+  group: THREE.Group,
+  clips: THREE.AnimationClip[],
+): ImportedRuntime {
+  const restPose: RestPose[] = [];
+  for (const child of group.children)
+    child.traverse((object) => {
+      restPose.push({
+        object,
+        position: object.position.clone(),
+        quaternion: object.quaternion.clone(),
+        scale: object.scale.clone(),
+      });
+    });
+  return {
+    root: group,
+    clips,
+    mixer: clips.length ? new THREE.AnimationMixer(group) : undefined,
+    restPose,
+  };
+}
+function applyImportedAnimation(
+  imported: Map<string, ImportedRuntime>,
+  value: StageSampleObject,
+) {
+  if (value.kind !== "gltf") return;
+  const binding = imported.get(value.id);
+  if (!binding?.mixer) return;
+  const clip = value.motion
+    ? selectStageAnimation(binding.clips, value.motion.preset)
+    : undefined;
+  if (binding.activeClip !== clip) {
+    binding.mixer.stopAllAction();
+    if (clip) binding.mixer.clipAction(clip).reset().play();
+    // Leaving a clip must return the skeleton to its authored rest pose;
+    // stopAllAction alone leaves bones at the last sampled pose.
+    else
+      for (const part of binding.restPose) {
+        part.object.position.copy(part.position);
+        part.object.quaternion.copy(part.quaternion);
+        part.object.scale.copy(part.scale);
+      }
+    binding.activeClip = clip;
+  }
+  binding.mixer.setTime(
+    clip && value.motion ? value.motionTime * value.motion.speed : 0,
+  );
 }
 function poseJoints(group: THREE.Object3D, value: StageSampleObject) {
   if (value.kind !== "person") return;
@@ -203,6 +337,7 @@ function displayPose(runtime: StageRuntime, pose: StageSample) {
     if (data) {
       applyTransform(child, data);
       poseJoints(child, data);
+      applyImportedAnimation(runtime.imported, data);
     }
   }
 }
@@ -211,6 +346,68 @@ const focalLength = (fov: number) =>
 const fovFromFocal = (focal: number) =>
   THREE.MathUtils.radToDeg(2 * Math.atan(35 / (16 / 9) / (2 * focal)));
 
+/** Canonical decimal form: the only text that becomes a domain value. Leading
+ * zeros ("03"), trailing dots ("1."), exponents, and empty text never commit;
+ * clearing a field therefore cannot silently write 0. */
+const DECIMAL_TEXT = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+function NumberField({
+  ariaLabel,
+  value,
+  min,
+  max,
+  decimals = 3,
+  quantize = false,
+  clamp = false,
+  onCommit,
+}: {
+  ariaLabel: string;
+  value: number;
+  min?: number;
+  max?: number;
+  /** Display precision; quantize also rounds committed values to it. */
+  decimals?: number;
+  quantize?: boolean;
+  /** Clamp out-of-range entries instead of refusing them until blur. */
+  clamp?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  // null = not editing; "" = editing with an empty field (no committed value).
+  const [draft, setDraft] = useState<string | null>(null);
+  const editing = draft !== null;
+  const canonical = String(Number(value.toFixed(decimals)));
+  const commit = (raw: number) => {
+    let next = quantize ? Math.round(raw * 10 ** decimals) / 10 ** decimals : raw;
+    if (clamp) {
+      if (min !== undefined) next = Math.max(min, next);
+      if (max !== undefined) next = Math.min(max, next);
+      onCommit(next);
+      return;
+    }
+    if (
+      Number.isFinite(next) &&
+      (min === undefined || next >= min) &&
+      (max === undefined || next <= max)
+    )
+      onCommit(next);
+  };
+  return (
+    <input
+      aria-label={ariaLabel}
+      type="text"
+      inputMode="decimal"
+      value={editing ? draft : canonical}
+      onChange={(event) => {
+        const text = event.target.value;
+        setDraft(text);
+        if (DECIMAL_TEXT.test(text)) commit(Number(text));
+      }}
+      onBlur={() => setDraft(null)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === "Escape") setDraft(null);
+      }}
+    />
+  );
+}
 function VectorFields({
   label,
   value,
@@ -234,25 +431,19 @@ function VectorFields({
       {axes.map((axis) => (
         <label key={axis}>
           {axis.toUpperCase()}
-          <input
-            aria-label={`${label} ${axis.toUpperCase()}`}
-            type="number"
-            step={rotation ? 5 : 0.1}
+          <NumberField
+            ariaLabel={`${label} ${axis.toUpperCase()}`}
             min={min}
-            value={Number(
-              (rotation
-                ? THREE.MathUtils.radToDeg(value[axis])
-                : value[axis]
-              ).toFixed(3),
-            )}
-            onChange={(event) => {
-              const raw = Number(event.target.value);
-              if (Number.isFinite(raw) && (min === undefined || raw >= min))
-                onChange({
-                  ...value,
-                  [axis]: rotation ? THREE.MathUtils.degToRad(raw) : raw,
-                });
-            }}
+            decimals={rotation ? 1 : 3}
+            value={
+              rotation ? THREE.MathUtils.radToDeg(value[axis]) : value[axis]
+            }
+            onCommit={(raw) =>
+              onChange({
+                ...value,
+                [axis]: rotation ? THREE.MathUtils.degToRad(raw) : raw,
+              })
+            }
           />
         </label>
       ))}
@@ -266,6 +457,7 @@ export function DirectorStage({
   onClose,
   onRender,
   onPrepareRender,
+  isRegisteredAsset,
 }: DirectorStageProps) {
   const { t } = useI18n();
   const [historyState, setHistoryState] = useState(() =>
@@ -287,6 +479,8 @@ export function DirectorStage({
     [ready, setReady] = useState(false);
   const [inserted, setInserted] = useState(false);
   const [renderProgress, setRenderProgress] = useState<number | null>(null);
+  const [assetRole, setAssetRole] = useState<StageAssetRole>("character");
+  const [assetNotice, setAssetNotice] = useState("");
   const renderPublisher = useRef<
     ((result: LinkedMediaResult) => boolean | Promise<boolean>) | null
   >(null);
@@ -297,15 +491,22 @@ export function DirectorStage({
     stageRef = useRef(stage),
     timeRef = useRef(time),
     playingRef = useRef(playing),
+    selectedRef = useRef(selected),
     importInput = useRef<HTMLInputElement>(null),
+    assetInput = useRef<HTMLInputElement>(null),
+    ownedAssetUrls = useRef(new Set<string>()),
     active = useRef(true);
   stageRef.current = stage;
   timeRef.current = time;
   playingRef.current = playing;
+  selectedRef.current = selected;
   const sampled = sampleStage(stage, time);
   const object = sampled.objects.find((item) => item.id === selected);
   const cameraValue = sampled.camera;
   const outputSize = stageOutputSize(stage.aspectRatio);
+  // The frame sits centered at a comfortable size (a 16:9 stage is 900px
+  // wide) and the timeline track, transport and storyboard match its width.
+  const stageStackWidth = `min(100%, calc(min(60vh, 506px) * ${outputSize.width / outputSize.height}))`;
   const frameTimes = stageFrameTimes(stage);
   const installHistory = (next: StageHistory) => {
     if (next === history.current) return;
@@ -317,6 +518,7 @@ export function DirectorStage({
     setRendered(null);
     setInserted(false);
     setError("");
+    setAssetNotice("");
   };
   const edit = (
     operation: (value: LocalStageDocument) => LocalStageDocument,
@@ -361,7 +563,16 @@ export function DirectorStage({
       });
   };
   const addMotionClip = () => {
-    if (!object) return;
+    if (
+      !object ||
+      (object.kind !== "person" &&
+        !(
+          object.kind === "gltf" &&
+          object.role === "character" &&
+          object.hasAnimation
+        ))
+    )
+      return;
     const start = timeRef.current;
     const next =
       object.motionClips.find((clip) => clip.start > start)?.start ??
@@ -410,8 +621,9 @@ export function DirectorStage({
       const id = crypto.randomUUID();
       return {
         ...current,
+        // The duplicate becomes the edit target; camera management must not
+        // silently flip storyboard-cut evaluation back to a single camera.
         activeCameraId: id,
-        cameraSource: "camera",
         cameras: [
           ...current.cameras,
           {
@@ -512,7 +724,16 @@ export function DirectorStage({
     const fill = new THREE.DirectionalLight(0x8d88ff, 1.8);
     fill.position.set(-6, 5, -5);
     scene.add(fill);
-    const current = { renderer, scene, camera, controls, root, grid };
+    const current: StageRuntime = {
+      renderer,
+      scene,
+      camera,
+      controls,
+      root,
+      grid,
+      imported: new Map(),
+      assetCache: new Map(),
+    };
     runtime.current = current;
     setCamera(current, sampleStage(stageRef.current, timeRef.current).camera);
     const resize = () => {
@@ -614,6 +835,13 @@ export function DirectorStage({
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("webglcontextlost", contextLost);
       disposeObject(scene);
+      for (const pending of runtime.current?.assetCache.values() ?? [])
+        void pending.then(
+          (loaded) => disposeObject(loaded.scene),
+          () => undefined,
+        );
+      for (const url of ownedAssetUrls.current) URL.revokeObjectURL(url);
+      ownedAssetUrls.current.clear();
       light.shadow.dispose();
       renderer.dispose();
       renderer.domElement.remove();
@@ -624,12 +852,120 @@ export function DirectorStage({
   useEffect(() => {
     const current = runtime.current;
     if (!current) return;
+    const objects = new Map(stage.objects.map((item) => [item.id, item]));
     for (const child of [...current.root.children]) {
-      current.root.remove(child);
-      disposeObject(child);
+      const item = objects.get(child.userData.objectId as string);
+      const sourceChanged =
+        item?.kind === "gltf" &&
+        child.userData.assetSource !== item.source;
+      if (!item || child.userData.objectKind !== item.kind || sourceChanged) {
+        current.root.remove(child);
+        if (child.userData.objectKind !== "gltf") disposeObject(child);
+        current.imported.delete(child.userData.objectId as string);
+      }
     }
-    stage.objects.forEach((item) => current.root.add(buildObject(item)));
+    for (const item of stage.objects) {
+      const existing = current.root.children.find(
+        (child) => child.userData.objectId === item.id,
+      );
+      if (!existing) current.root.add(buildObject(item));
+      else if (item.kind !== "gltf")
+        existing.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            const materials = Array.isArray(child.material)
+              ? child.material
+              : [child.material];
+            materials.forEach((material) => {
+              if (material instanceof THREE.MeshStandardMaterial)
+                material.color.set(item.color);
+            });
+          }
+        });
+    }
+    // Loaded clones share GPU resources with their cached scene, so a cached
+    // scene must stay resident while any live object or clone references it;
+    // once the last one is gone, dispose instead of holding model-sized memory.
+    const liveKeys = new Set<string>();
+    for (const child of current.root.children) {
+      const key = child.userData.assetCacheKey;
+      if (typeof key === "string") liveKeys.add(key);
+    }
+    for (const item of stage.objects)
+      if (item.kind === "gltf")
+        liveKeys.add(item.asset?.assetId ?? item.source ?? "");
+    for (const [key, pending] of [...current.assetCache]) {
+      if (liveKeys.has(key)) continue;
+      current.assetCache.delete(key);
+      void pending.then(
+        (loaded) => disposeObject(loaded.scene),
+        () => undefined,
+      );
+    }
   }, [stage.objects, ready]);
+  useEffect(() => {
+    const current = runtime.current;
+    if (!current || !ready) return;
+    let cancelled = false;
+    const load = async () => {
+      for (const item of stage.objects) {
+        if (item.kind !== "gltf") continue;
+        if (!item.source) {
+          if (item.asset) setError(t("editors.stage.ui.assetUnavailable"));
+          continue;
+        }
+        const existing = current.root.children.find(
+          (child) => child.userData.objectId === item.id,
+        );
+        if (
+          existing?.userData.assetSource === item.source &&
+          current.imported.has(item.id)
+        )
+          continue;
+        try {
+          const cacheKey = item.asset?.assetId ?? item.source;
+          let pending = current.assetCache.get(cacheKey);
+          if (!pending) {
+            pending = loadStageAsset(item.source);
+            current.assetCache.set(cacheKey, pending);
+            // A failed load must not poison the cache; evict it so a later
+            // effect run can retry.
+            pending.catch(() => {
+              if (current.assetCache.get(cacheKey) === pending)
+                current.assetCache.delete(cacheKey);
+            });
+          }
+          const loaded = await pending;
+          if (cancelled || !active.current) return;
+          const previous = current.root.children.find(
+            (child) => child.userData.objectId === item.id,
+          );
+          if (previous) current.root.remove(previous);
+          const group = cloneImportedAsset(item, loaded);
+          group.userData.assetCacheKey = cacheKey;
+          current.root.add(group);
+          current.imported.set(
+            item.id,
+            createImportedRuntime(group, loaded.animations),
+          );
+          if (item.role === "character" && !loaded.animations.length)
+            setAssetNotice(t("editors.stage.ui.assetNotice"));
+          // The clone lands after the selection effect ran, so it must pick up
+          // the highlight for the currently selected object itself.
+          applySelectionHighlight(group, selectedRef.current);
+          displayPose(current, sampleStage(stageRef.current, timeRef.current));
+        } catch {
+          if (!cancelled && active.current)
+            setError(
+              t("editors.stage.ui.assetLoadFailed", { name: item.name }),
+            );
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [stage.objects, ready, t]);
   useEffect(() => {
     const current = runtime.current;
     if (!current) return;
@@ -639,16 +975,7 @@ export function DirectorStage({
   useEffect(() => {
     const current = runtime.current;
     if (!current) return;
-    current.root.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        const material = child.material as THREE.MeshStandardMaterial;
-        let owner: THREE.Object3D | null = child;
-        while (owner && !owner.userData.objectId) owner = owner.parent;
-        material.emissive.set(
-          owner?.userData.objectId === selected ? "#1e1536" : "#000000",
-        );
-      }
-    });
+    applySelectionHighlight(current.root, selected);
   }, [selected, stage.objects, ready]);
   useEffect(() => {
     if (!runtime.current) return;
@@ -755,7 +1082,16 @@ export function DirectorStage({
   };
   const importStage = async (file: File) => {
     try {
-      const next = parseLocalStageValue(JSON.parse(await file.text()), t);
+      const next = parseLocalStageDocument(await file.text(), t);
+      const foreign = isRegisteredAsset
+        ? unregisteredStageAssets(next, isRegisteredAsset)
+        : [];
+      if (foreign.length)
+        throw new Error(
+          t("editors.stage.ui.importForeignAssets", {
+            names: foreign.map((object) => object.name).join(", "),
+          }),
+        );
       if (active.current) {
         edit(() => next);
         setTime(0);
@@ -770,20 +1106,130 @@ export function DirectorStage({
         );
     }
   };
+  const importAsset = async (file: File) => {
+    const lowerName = file.name.toLowerCase();
+    let source: string | undefined;
+    try {
+      if (!lowerName.endsWith(".glb") && !lowerName.endsWith(".gltf"))
+        throw new Error(t("editors.stage.ui.assetUnsupported"));
+      if (file.size > STAGE_ASSET_MAX_BYTES)
+        throw new Error(
+          t("editors.stage.ui.assetTooLarge", {
+            name: file.name,
+            size: STAGE_ASSET_MAX_BYTES / 1024 / 1024,
+          }),
+        );
+      const probed = probeStageAsset(await file.arrayBuffer());
+      if (probed === "corrupt")
+        throw new Error(t("editors.stage.ui.assetCorrupt", { name: file.name }));
+      if (!probed)
+        throw new Error(
+          t("editors.stage.ui.assetLoadFailed", { name: file.name }),
+        );
+      if (probed.external)
+        throw new Error(t("editors.stage.ui.assetUnsupported"));
+      // Self-contained but Draco/meshopt/KTX2-compressed: the loader has no
+      // decoders, so say that instead of letting the parse fail as "corrupt".
+      if (probed.compressed)
+        throw new Error(t("editors.stage.ui.assetCompressed"));
+      const url = URL.createObjectURL(file);
+      source = url;
+      ownedAssetUrls.current.add(url);
+      let loaded: LoadedStageAsset;
+      try {
+        loaded = await loadStageAsset(source);
+      } catch (reason) {
+        console.debug("stage asset import failed", reason);
+        throw new Error(
+          t("editors.stage.ui.assetLoadFailed", { name: file.name }),
+        );
+      }
+      const id = crypto.randomUUID();
+      const name = file.name.replace(/\.(?:glb|gltf)$/i, "") || file.name;
+      edit((current) => ({
+        ...current,
+        objects: [
+          ...current.objects,
+          {
+            id,
+            kind: "gltf",
+            name,
+            color: "#b8c5ff",
+            role: assetRole,
+            format: probed.format,
+            source,
+            animationNames: loaded.animations.map(
+              // Fallback must match the backend probe's animation_{index}.
+              (clip, index) => clip.name.trim() || `animation_${index}`,
+            ),
+            hasAnimation: loaded.animations.length > 0,
+            position: { x: current.objects.length * 1.3, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+            keyframes: [],
+            motionClips: [],
+          },
+        ],
+      }));
+      setSelected(id);
+      setAssetNotice(
+        loaded.animations.length
+          ? t("editors.stage.ui.assetImported", {
+              name,
+              animationCount: loaded.animations.length,
+            })
+          : t("editors.stage.ui.assetImportedStatic", { name }),
+      );
+    } catch (reason) {
+      if (source) {
+        URL.revokeObjectURL(source);
+        ownedAssetUrls.current.delete(source);
+      }
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : t("editors.stage.ui.assetLoadFailed", { name: file.name }),
+      );
+    }
+  };
 
   const renderVideo = async () => {
     if (!runtime.current) return;
+    const previewRuntime = runtime.current;
     const controller = new AbortController();
     exporting.current?.abort();
     exporting.current = controller;
-    const snapshot = parseLocalStageValue(stageRef.current, t);
+    const exportStage = parseLocalStageValue(stageRef.current, t);
     setPlaying(false);
     setError("");
     setRendered(null);
     setInserted(false);
     setRenderProgress(0);
-    const scene = runtime.current.scene.clone(true);
+    const scene = previewRuntime.scene.clone(true);
     const root = scene.getObjectByName("stage-objects")!;
+    const renderImported = new Map<string, ImportedRuntime>();
+    for (const [id, binding] of previewRuntime.imported) {
+      const item = exportStage.objects.find((object) => object.id === id);
+      const cloned = root.children.find(
+        (child) => child.userData.objectId === id,
+      );
+      // Clone from the pristine cached scene, not the posed runtime clone,
+      // so frames outside motion clips render the authored rest pose.
+      const cached = previewRuntime.assetCache.get(
+        item?.asset?.assetId ?? item?.source ?? "",
+      );
+      const source =
+        (cached ? await cached.catch(() => undefined) : undefined)?.scene ??
+        binding.root.children[0];
+      if (!item || !cloned || !source) continue;
+      const replacement = cloneImportedAsset(item, {
+        scene: source,
+        animations: binding.clips,
+      });
+      root.remove(cloned);
+      root.add(replacement);
+      renderImported.set(id, createImportedRuntime(replacement, binding.clips));
+    }
     const materials = new Map<THREE.Material, THREE.Material>();
     scene.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
@@ -804,11 +1250,11 @@ export function DirectorStage({
     let renderer: THREE.WebGLRenderer | undefined;
     try {
       renderPublisher.current = onPrepareRender
-        ? await onPrepareRender(snapshot)
+        ? await onPrepareRender(exportStage)
         : onRender;
       controller.signal.throwIfAborted();
       renderer = new THREE.WebGLRenderer({ antialias: true });
-      const size = stageOutputSize(snapshot.aspectRatio);
+      const size = stageOutputSize(exportStage.aspectRatio);
       renderer.setSize(size.width, size.height);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.shadowMap.enabled = true;
@@ -820,12 +1266,12 @@ export function DirectorStage({
       );
       const blob = await encodeMp4({
         canvas: renderer.domElement,
-        duration: snapshot.duration,
+        duration: exportStage.duration,
         fps: 30,
         signal: controller.signal,
         progress: setRenderProgress,
         draw: (at) => {
-          const pose = sampleStage(snapshot, at);
+          const pose = sampleStage(exportStage, at);
           camera.position.set(
             pose.camera.position.x,
             pose.camera.position.y,
@@ -845,6 +1291,7 @@ export function DirectorStage({
             if (object) {
               applyTransform(child, object);
               poseJoints(child, object);
+              applyImportedAnimation(renderImported, object);
             }
           }
           renderer!.render(scene, camera);
@@ -945,13 +1392,35 @@ export function DirectorStage({
             {t("editors.stage.ui.importJson")}
           </button>
           <button
-            onClick={() =>
+            onClick={() => {
+              // Exports carry no model bytes: an import that exists only as a
+              // browser URL would become an unopenable object, so name it.
+              const unsaved = stageRef.current.objects.filter(
+                (object) => object.kind === "gltf" && !object.asset,
+              );
+              if (unsaved.length) {
+                setError(
+                  t("editors.stage.ui.exportUnsavedImports", {
+                    names: unsaved.map((object) => object.name).join(", "),
+                  }),
+                );
+                return;
+              }
               download(
-                JSON.stringify(stageRef.current, null, 2),
+                JSON.stringify(
+                  {
+                    ...stageRef.current,
+                    objects: stageRef.current.objects.map(
+                      ({ source: _source, ...object }) => object,
+                    ),
+                  },
+                  null,
+                  2,
+                ),
                 `${node.data.title || "director-stage"}.stage.json`,
                 "application/json",
-              )
-            }
+              );
+            }}
           >
             {t("editors.stage.ui.exportJson")}
           </button>
@@ -967,7 +1436,7 @@ export function DirectorStage({
         </>
       }
     >
-      <div>
+      <div className="cw-stage-shell">
         {renderProgress !== null && (
           <div className="cw-render-status" role="status">
             <progress value={renderProgress} max={1} />
@@ -1015,15 +1484,40 @@ export function DirectorStage({
         )}
         <fieldset className="cw-editor-work" disabled={renderProgress !== null}>
           <div className="cw-stage-layout">
+            <div className="cw-stage-main">
             <aside className="cw-stage-objects">
               <h3>{t("editors.stage.ui.sceneObjects")}</h3>
               <div className="cw-stage-add">
                 {(["person", "box", "sphere"] as const).map((kind) => (
                   <button key={kind} onClick={() => addObject(kind)}>
-                    + {titles[kind]}
+                    + {t(titles[kind])}
                   </button>
                 ))}
               </div>
+              <label className="cw-domain-field">
+                {t("editors.stage.ui.assetRole")}
+                <select
+                  value={assetRole}
+                  onChange={(event) =>
+                    setAssetRole(event.target.value as StageAssetRole)
+                  }
+                >
+                  <option value="character">
+                    {t("editors.stage.ui.assetCharacter")}
+                  </option>
+                  <option value="scene">
+                    {t("editors.stage.ui.assetScene")}
+                  </option>
+                </select>
+              </label>
+              <button onClick={() => assetInput.current?.click()}>
+                + {t("editors.stage.ui.importAsset")}
+              </button>
+              {assetNotice && (
+                <p className="cw-domain-note" role="status">
+                  {assetNotice}
+                </p>
+              )}
               <div className="cw-stage-object-list">
                 {stage.objects.map((item) => (
                   <button
@@ -1069,11 +1563,11 @@ export function DirectorStage({
               </p>
             </aside>
             <section className="cw-stage-center">
+              <div className="cw-stage-stack" style={{ width: stageStackWidth }}>
               <div
                 className="cw-stage-viewport"
                 style={{
                   aspectRatio: `${outputSize.width} / ${outputSize.height}`,
-                  width: `min(100%, calc(min(55vh, 480px) * ${outputSize.width / outputSize.height}))`,
                 }}
                 ref={mount}
                 role="img"
@@ -1091,25 +1585,31 @@ export function DirectorStage({
                     ? t("editors.stage.ui.pause")
                     : t("editors.stage.ui.playAction")}
                 </button>
-                <output>
-                  {t("editors.stage.ui.time", {
-                    time: time.toFixed(2),
-                    duration: stage.duration.toFixed(2),
-                  })}
-                </output>
+                <label>
+                  {t("editors.stage.ui.currentTime")}
+                  <NumberField
+                    ariaLabel={t("editors.stage.ui.currentTimeAria")}
+                    value={time}
+                    min={0}
+                    max={stage.duration}
+                    decimals={2}
+                    quantize
+                    clamp
+                    onCommit={(next) => {
+                      setPlaying(false);
+                      setTime(next);
+                    }}
+                  />
+                </label>
                 <label>
                   {t("editors.stage.ui.totalDuration")}
-                  <input
-                    aria-label={t("editors.stage.ui.stageDurationAria")}
-                    type="number"
-                    min={0.1}
-                    step={0.5}
+                  <NumberField
+                    ariaLabel={t("editors.stage.ui.stageDurationAria")}
                     value={stage.duration}
-                    onChange={(event) =>
-                      edit((current) => ({
-                        ...current,
-                        duration: Number(event.target.value),
-                      }))
+                    min={0.1}
+                    decimals={2}
+                    onCommit={(duration) =>
+                      edit((current) => ({ ...current, duration }))
                     }
                   />
                 </label>
@@ -1187,35 +1687,27 @@ export function DirectorStage({
                     </label>
                     <label>
                       {t("editors.stage.ui.startSeconds")}
-                      <input
-                        aria-label={t("editors.stage.ui.shotStartAria", {
+                      <NumberField
+                        ariaLabel={t("editors.stage.ui.shotStartAria", {
                           number: index + 1,
                         })}
-                        type="number"
-                        min={0}
-                        step={0.1}
                         value={shot.start}
-                        onChange={(event) =>
-                          updateShot(shot.id, {
-                            start: Number(event.target.value),
-                          })
-                        }
+                        min={0}
+                        decimals={2}
+                        onCommit={(start) => updateShot(shot.id, { start })}
                       />
                     </label>
                     <label>
                       {t("editors.stage.ui.durationSeconds")}
-                      <input
-                        aria-label={t("editors.stage.ui.shotDurationAria", {
+                      <NumberField
+                        ariaLabel={t("editors.stage.ui.shotDurationAria", {
                           number: index + 1,
                         })}
-                        type="number"
-                        min={0.1}
-                        step={0.1}
                         value={shot.duration}
-                        onChange={(event) =>
-                          updateShot(shot.id, {
-                            duration: Number(event.target.value),
-                          })
+                        min={0.1}
+                        decimals={2}
+                        onCommit={(duration) =>
+                          updateShot(shot.id, { duration })
                         }
                       />
                     </label>
@@ -1248,7 +1740,9 @@ export function DirectorStage({
                   </div>
                 ))}
               </section>
+              </div>
             </section>
+            </div>
             <aside className="cw-stage-inspector">
               <h3>
                 {object
@@ -1276,7 +1770,26 @@ export function DirectorStage({
                       }
                     />
                   </label>
-                  {object.kind === "person" && (
+                  {object.kind === "gltf" && (
+                    <p className="cw-domain-note" role="status">
+                      {object.role === "character"
+                        ? t("editors.stage.ui.assetCharacter")
+                        : t("editors.stage.ui.assetScene")}
+                      {" · "}
+                      {object.hasAnimation
+                        ? t("editors.stage.ui.assetImported", {
+                            name: object.name,
+                            animationCount: object.animationNames?.length ?? 0,
+                          })
+                        : t("editors.stage.ui.assetImportedStatic", {
+                            name: object.name,
+                          })}
+                    </p>
+                  )}
+                  {(object.kind === "person" ||
+                    (object.kind === "gltf" &&
+                      object.role === "character" &&
+                      object.hasAnimation)) && (
                     <section className="cw-stage-clips">
                       <h3>{t("editors.stage.ui.motionClips")}</h3>
                       <button onClick={addMotionClip}>
@@ -1317,57 +1830,47 @@ export function DirectorStage({
                           </label>
                           <label>
                             {t("editors.stage.ui.startSeconds")}
-                            <input
-                              aria-label={t(
+                            <NumberField
+                              ariaLabel={t(
                                 "editors.stage.ui.motionStartAria",
                                 { number: index + 1 },
                               )}
-                              type="number"
-                              min={0}
-                              step={0.1}
                               value={clip.start}
-                              onChange={(event) =>
-                                updateClip(clip.id, {
-                                  start: Number(event.target.value),
-                                })
+                              min={0}
+                              decimals={2}
+                              onCommit={(start) =>
+                                updateClip(clip.id, { start })
                               }
                             />
                           </label>
                           <label>
                             {t("editors.stage.ui.durationSeconds")}
-                            <input
-                              aria-label={t(
+                            <NumberField
+                              ariaLabel={t(
                                 "editors.stage.ui.motionDurationAria",
                                 { number: index + 1 },
                               )}
-                              type="number"
-                              min={0.1}
-                              step={0.1}
                               value={clip.duration}
-                              onChange={(event) =>
-                                updateClip(clip.id, {
-                                  duration: Number(event.target.value),
-                                })
+                              min={0.1}
+                              decimals={2}
+                              onCommit={(duration) =>
+                                updateClip(clip.id, { duration })
                               }
                             />
                           </label>
                           <label>
                             {t("editors.stage.ui.speed")}
-                            <input
-                              aria-label={t(
+                            <NumberField
+                              ariaLabel={t(
                                 "editors.stage.ui.motionSpeedAria",
                                 { number: index + 1 },
                               )}
-                              type="number"
-                              min={0.1}
-                              step={0.1}
                               value={clip.motion.speed}
-                              onChange={(event) =>
+                              min={0.1}
+                              decimals={2}
+                              onCommit={(speed) =>
                                 updateClip(clip.id, {
-                                  motion: {
-                                    ...clip.motion,
-                                    speed: Number(event.target.value),
-                                  },
+                                  motion: { ...clip.motion, speed },
                                 })
                               }
                             />
@@ -1454,11 +1957,21 @@ export function DirectorStage({
                   aria-label={t("editors.stage.ui.editCamera")}
                   value={sampled.cameraId}
                   onChange={(event) =>
-                    edit((current) => ({
-                      ...current,
-                      activeCameraId: event.target.value,
-                      cameraSource: "camera",
-                    }))
+                    edit((current) => {
+                      const cameraId = event.target.value;
+                      // Retarget the camera that evaluates at the playhead;
+                      // choosing an edit target must not flip the evaluation
+                      // strategy between the active camera and storyboard cuts.
+                      const { shot } = stageCameraAt(current, timeRef.current);
+                      return shot
+                        ? {
+                            ...current,
+                            shots: current.shots.map((item) =>
+                              item.id === shot.id ? { ...item, cameraId } : item,
+                            ),
+                          }
+                        : { ...current, activeCameraId: cameraId };
+                    })
                   }
                 >
                   {stage.cameras.map((camera) => (
@@ -1556,15 +2069,12 @@ export function DirectorStage({
               />
               <label className="cw-domain-field">
                 {t("editors.stage.ui.focal")}
-                <input
-                  type="number"
+                <NumberField
+                  ariaLabel={t("editors.stage.ui.focal")}
+                  value={focalLength(cameraValue.fov)}
                   min={1}
-                  step={1}
-                  value={Number(focalLength(cameraValue.fov).toFixed(1))}
-                  onChange={(event) => {
-                    const focal = Number(event.target.value);
-                    if (focal > 0) editCamera({ fov: fovFromFocal(focal) });
-                  }}
+                  decimals={1}
+                  onCommit={(focal) => editCamera({ fov: fovFromFocal(focal) })}
                 />
               </label>
               <label className="cw-domain-field">
@@ -1592,9 +2102,6 @@ export function DirectorStage({
               </button>
             </aside>
           </div>
-          <p className="cw-domain-note">
-            {t("editors.stage.ui.footerHint")}
-          </p>
           <input
             className="cw-domain-file-input"
             ref={importInput}
@@ -1607,7 +2114,22 @@ export function DirectorStage({
               event.target.value = "";
             }}
           />
+          <input
+            className="cw-domain-file-input"
+            ref={assetInput}
+            type="file"
+            accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+            aria-label={t("editors.stage.ui.importAsset")}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void importAsset(file);
+              event.target.value = "";
+            }}
+          />
         </fieldset>
+          <p className="cw-domain-note">
+            {t("editors.stage.ui.footerHint")}
+          </p>
       </div>
     </EditorModal>
   );

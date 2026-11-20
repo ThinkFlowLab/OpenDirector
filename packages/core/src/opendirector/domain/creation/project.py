@@ -7,9 +7,11 @@ from pydantic import BaseModel, Field, model_validator
 from .assets import Asset, AssetRef
 from .base import Contract, NonNegative, ObjectVersion, Point, ProjectEntity, Revision, unique
 from .canvas import CanvasItem, EditorBinding, GenerationBinding, MaterialBinding, MediaCanvasItem
-from .editors import EditorDocument, MediaEditDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
+from .editors import DirectorDocument, EditorDocument, MediaEditDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
 from .generation import FollowingReference, GenerationSpec, Job, PromptReference, Reference, ResultVersion
 from ..rule_facts import TIMELINE_DURATION_EPSILON
+
+STAGE_MODEL_MIME = {'glb': 'model/gltf-binary', 'gltf': 'model/gltf+json'}
 
 
 class Project(Contract):
@@ -81,7 +83,7 @@ class ProjectSnapshot(Contract):
         for ref in asset_references(objects):
             asset = assets.get(ref.assetId)
             if asset is None or ref.revision > asset.revision or ref.fingerprint != asset.fingerprint or ref.kind != asset.kind:
-                raise ValueError('Missing or inconsistent pinned asset reference')
+                raise ValueError('Missing or inconsistent pinned asset reference. 缺失或不一致的固定素材引用。')
         parents = {}
         for item in self.canvasItems:
             if item.parentId:
@@ -208,6 +210,17 @@ class ProjectSnapshot(Contract):
                         duration = asset.metadata.durationSeconds
                         if asset.kind != 'image' and duration is not None and clip.outPoint > duration + TIMELINE_DURATION_EPSILON:
                             raise ValueError('时间线片段超过素材的实际时长。')
+            if isinstance(doc, DirectorDocument):
+                for obj in doc.data.objects:
+                    if obj.kind == 'gltf':
+                        asset = assets[obj.asset.assetId]
+                        if asset.metadata.mimeType != STAGE_MODEL_MIME[obj.format] or asset.metadata.selfContained is not True:
+                            raise ValueError('Imported stage objects require a matching self-contained GLB or GLTF asset. 导入的舞台对象需要匹配的自包含 GLB 或 GLTF 素材。')
+                        # Animation metadata is attested by the client; verify it
+                        # against the names the pinned bytes actually declare.
+                        names = asset.metadata.animationNames or ()
+                        if tuple(obj.animationNames) != names or obj.hasAnimation != bool(names):
+                            raise ValueError('Imported animation metadata must match the pinned asset bytes. 导入的动画信息必须与固定素材的实际字节一致。')
         return self
 
 

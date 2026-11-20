@@ -13,6 +13,28 @@ export interface StageMotion {
   speed: number;
   amount: number;
 }
+/** Name hints that map a procedural motion preset onto imported animation clips. */
+export const STAGE_ANIMATION_HINTS: Record<
+  StageMotion["preset"],
+  readonly string[]
+> = {
+  idle: ["idle", "rest", "stand", "default"],
+  walk: ["walk", "walking"],
+  run: ["run", "running"],
+  wave: ["wave", "waving"],
+};
+/** Clip choice for a preset: first clip whose name contains a hint, else the first clip. */
+export function selectStageAnimation<T extends { name: string }>(
+  clips: readonly T[],
+  preset: StageMotion["preset"],
+): T | undefined {
+  const hints = STAGE_ANIMATION_HINTS[preset];
+  return (
+    clips.find((clip) =>
+      hints.some((hint) => clip.name.toLowerCase().includes(hint)),
+    ) ?? clips[0]
+  );
+}
 export interface JointPose {
   hipsY: number;
   leftHip: number;

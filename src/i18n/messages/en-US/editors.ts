@@ -214,6 +214,10 @@ export const editors = {
     "A keyframe references a missing or duplicate stage object.",
   "editors.stage.error.invalidLegacyObject": "A legacy stage object is invalid.",
   "editors.stage.error.jointMotionPerson": "Only people support joint motion.",
+  "editors.stage.error.importedSceneMotion":
+    "Scene assets cannot carry character motion clips.",
+  "editors.stage.error.importedMotionUnavailable":
+    "This imported character has no animation data.",
   "editors.stage.error.invalidDocument":
     "The local director preview format is invalid.",
   "editors.stage.error.invalidObject":
@@ -229,6 +233,7 @@ export const editors = {
   "editors.layerDocument.defaultName": "Original image",
   "editors.layerDocument.error.size":
     "A local layer canvas allows at most 8192 pixels per side and 16.77 million pixels total. Make the image smaller first.",
+  "editors.layerDocument.error.notJson": "The selected file is not a JSON document.",
   "editors.layerDocument.error.structure": "The layer file structure is invalid.",
   "editors.layerDocument.error.invalidParameter":
     "The layer file contains invalid dimensions, coordinates, or parameters.",
@@ -291,6 +296,28 @@ export const editors = {
   "editors.stage.ui.objectPerson": "Person",
   "editors.stage.ui.objectBox": "Box",
   "editors.stage.ui.objectSphere": "Sphere",
+  "editors.stage.ui.objectGltf": "Imported model",
+  "editors.stage.ui.importAsset": "Import GLB / GLTF",
+  "editors.stage.ui.assetRole": "Imported asset role",
+  "editors.stage.ui.assetCharacter": "Character",
+  "editors.stage.ui.assetScene": "Scene",
+  "editors.stage.ui.assetNotice":
+    "This character has no animation data; it still follows camera, storyboard, and transform keyframes.",
+  "editors.stage.ui.assetUnavailable":
+    "The imported asset is unavailable. Reopen the project or import it again.",
+  "editors.stage.ui.assetLoadFailed":
+    "Could not load “{name}”. The file may be corrupt or reference external resources.",
+  "editors.stage.ui.assetCorrupt":
+    "Could not read “{name}”: the GLB header is valid but the embedded JSON is missing or corrupt.",
+  "editors.stage.ui.assetTooLarge":
+    "“{name}” is larger than {size} MB. Use a smaller GLB or GLTF file.",
+  "editors.stage.ui.assetUnsupported":
+    "Only GLB and self-contained GLTF files are supported. FBX and external GLTF resources are not supported yet.",
+  "editors.stage.ui.assetCompressed":
+    "Compressed models (Draco, meshopt, or KTX2) are not supported yet. Export the model uncompressed and import it again.",
+  "editors.stage.ui.assetImported":
+    "Imported {name} · {animationCount} animation clips",
+  "editors.stage.ui.assetImportedStatic": "Imported {name} · no animation data",
   "editors.stage.ui.degreesSuffix": " (degrees)",
   "editors.stage.ui.editFailed": "The stage change failed.",
   "editors.stage.ui.cameraName": "Camera {number}",
@@ -303,6 +330,12 @@ export const editors = {
   "editors.stage.ui.rendererNotReady": "The stage renderer is not ready yet.",
   "editors.stage.ui.screenshotFailed": "The screenshot failed.",
   "editors.stage.ui.importFailed": "The stage could not be imported.",
+  "editors.stage.ui.importNotJson":
+    "The selected file is not a stage JSON document. Model files are imported with “Import GLB / GLTF”.",
+  "editors.stage.ui.importForeignAssets":
+    "The stage file pins imported models that are not registered in this project: {names}. Open the stage in its original project, or import the model files here first.",
+  "editors.stage.ui.exportUnsavedImports":
+    "The stage file cannot carry imported models that exist only in this browser: {names}. Apply edits to save them to the project first.",
   "editors.stage.ui.exportFailed": "The preview video export failed.",
   "editors.stage.ui.motionTitle": "{title} · Motion preview",
   "editors.stage.ui.addCanvasFailed": "Adding to the canvas failed.",
@@ -331,7 +364,8 @@ export const editors = {
   "editors.stage.ui.stageAria": "Interactive 3D director stage",
   "editors.stage.ui.pause": "Pause",
   "editors.stage.ui.playAction": "Play motion and keyframes",
-  "editors.stage.ui.time": "{time} / {duration} s",
+  "editors.stage.ui.currentTime": "Current time",
+  "editors.stage.ui.currentTimeAria": "Stage current time",
   "editors.stage.ui.totalDuration": "Total duration",
   "editors.stage.ui.stageDurationAria": "Stage duration",
   "editors.stage.ui.recordKeyframe": "Record a keyframe here",
@@ -387,7 +421,7 @@ export const editors = {
   "editors.stage.ui.verticalFov": "Vertical field of view {value}°",
   "editors.stage.ui.resetCamera": "Reset camera",
   "editors.stage.ui.footerHint":
-    "Editing the camera or a subject writes a keyframe at the current time; preview, stills, and MP4 share the aspect and sampling. Storyboard cuts, segmented joint motion, and 30 fps MP4 export are supported. External skinned FBX/GLB characters and cloud director versions are not connected yet.",
+    "Editing the camera or a subject writes a keyframe at the current time; preview, stills, and MP4 share the aspect and sampling. GLB and self-contained GLTF characters or scene assets are registered in the project and follow camera, storyboard, and transform keyframes. FBX and external GLTF resources are not supported yet.",
   "editors.stage.ui.importAria": "Import director stage",
   "editors.stage.ui.startSeconds": "Start (s)",
   "editors.stage.ui.durationSeconds": "Duration (s)",

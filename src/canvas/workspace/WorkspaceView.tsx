@@ -2689,6 +2689,17 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           }
         >
           <DirectorStage
+            isRegisteredAsset={(ref) => {
+              // Same consistency the backend snapshot check demands.
+              const assets = creationClient(doc.id).snapshot.assets;
+              return assets.some(
+                (asset) =>
+                  asset.id === ref.assetId &&
+                  asset.fingerprint === ref.fingerprint &&
+                  asset.kind === ref.kind &&
+                  ref.revision <= asset.revision,
+              );
+            }}
             onPrepareRender={async (localStage) => {
               await commitEditorData({ localStage });
               const origin = editorOrigin.current!;

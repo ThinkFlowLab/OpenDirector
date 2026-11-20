@@ -3,10 +3,12 @@ import test from "node:test";
 import {
   createLocalStage,
   defaultStageCamera,
+  parseLocalStageDocument,
   parseLocalStageValue,
   sameLocalStage,
   sampleStage,
   sampleStageCamera,
+  stageCameraAt,
   editStageObjectAt,
   editStageCameraAt,
   captureStageFrame,
@@ -14,7 +16,12 @@ import {
   stageOutputSize,
   STAGE_RATIOS,
 } from "../src/canvas/stageDocument.ts";
-import { sampleJointPose } from "../src/canvas/stageMotion.ts";
+import {
+  sampleJointPose,
+  selectStageAnimation,
+  STAGE_ANIMATION_HINTS,
+  STAGE_MOTIONS,
+} from "../src/canvas/stageMotion.ts";
 import {
   createStageHistory,
   commitStageHistory,
@@ -124,6 +131,20 @@ test("legacy malformed references and duplicate frame times remain rejected duri
       }),
     /摄像机/,
   );
+});
+
+test("stage JSON text imports reject unparsable files with a localized notice", () => {
+  const stage = createLocalStage();
+  assert.ok(
+    sameLocalStage(stage, parseLocalStageDocument(JSON.stringify(stage))),
+  );
+  // Binary model bytes fed to the JSON importer must not surface an engine
+  // SyntaxError quoting the file's contents.
+  assert.throws(
+    () => parseLocalStageDocument("glTF\u0000\u0000\u0000\u0000"),
+    /不是舞台 JSON/,
+  );
+  assert.throws(() => parseLocalStageDocument("{ broken"), /不是舞台 JSON/);
 });
 
 test("editing one axis at the playhead preserves the other sampled axes and untouched tracks", () => {
@@ -331,6 +352,37 @@ test("storyboard hard cuts use independent camera animation, hold the last frame
   );
 });
 
+test("stageCameraAt resolves the evaluating shot for retargeting without flipping the source", () => {
+  const stage = createLocalStage();
+  stage.cameras.push({
+    id: "b",
+    name: "反打",
+    pose: { ...defaultStageCamera(), position: { x: -5, y: 3.5, z: 7 } },
+    keyframes: [],
+  });
+  stage.cameraSource = "storyboard";
+  stage.shots = [{ id: "first", cameraId: "b", start: 2, duration: 4 }];
+  const inside = stageCameraAt(stage, 3.5);
+  assert.equal(inside.cameraId, "b");
+  assert.equal(inside.shot?.id, "first");
+  // Half-open boundaries: the start belongs to the shot, and the last
+  // instant of the timeline closes a shot ending exactly at the duration.
+  assert.equal(stageCameraAt(stage, 2).shot?.id, "first");
+  assert.equal(stageCameraAt(stage, 6).shot?.id, "first");
+  assert.equal(stageCameraAt(stage, 6).cameraId, "b");
+  // Gaps fall back to the active camera with no shot to retarget.
+  const gap = stageCameraAt(stage, 0);
+  assert.equal(gap.cameraId, "camera-1");
+  assert.equal(gap.shot, undefined);
+  // Single-camera mode ignores shots entirely.
+  const single = stageCameraAt({ ...stage, cameraSource: "camera" }, 3.5);
+  assert.equal(single.cameraId, "camera-1");
+  assert.equal(single.shot, undefined);
+  // Clamping mirrors the sampler for out-of-range queries.
+  assert.equal(stageCameraAt(stage, -1).cameraId, "camera-1");
+  assert.equal(stageCameraAt(stage, 99).shot?.id, "first");
+});
+
 test("camera and storyboard persistence rejects dangling IDs, duplicate camera IDs and overlapping cuts", () => {
   const stage = createLocalStage();
   const shot = {
@@ -393,6 +445,28 @@ test("supported preview and output frames have one exact aspect with even encode
   }
   assert.throws(() =>
     parseLocalStageValue({ ...createLocalStage(), aspectRatio: "0:1" }),
+  );
+});
+
+test("motion presets pick imported clips by contained name hints, clip order first", () => {
+  assert.deepEqual(
+    Object.keys(STAGE_ANIMATION_HINTS).sort(),
+    Object.keys(STAGE_MOTIONS).sort(),
+  );
+  const clips = [
+    { name: "mixamo.com" },
+    { name: "Standing_Idle" },
+    { name: "Walk Forward" },
+  ];
+  assert.equal(selectStageAnimation(clips, "walk")!.name, "Walk Forward");
+  assert.equal(selectStageAnimation(clips, "idle")!.name, "Standing_Idle");
+  assert.equal(selectStageAnimation([{ name: "WALK" }], "walk")!.name, "WALK");
+  assert.equal(selectStageAnimation(clips, "run")!.name, "mixamo.com");
+  assert.equal(selectStageAnimation([], "walk"), undefined);
+  const ordered = [{ name: "Walking_slow" }, { name: "Walk_fast" }];
+  assert.equal(
+    selectStageAnimation(ordered, "walk")!.name,
+    "Walking_slow",
   );
 });
 

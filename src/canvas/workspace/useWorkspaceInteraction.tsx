@@ -12,6 +12,7 @@ import { absolutePosition, boundsOfNodes } from "../geometry";
 import { executeCommand } from "../history";
 import { createNode, nextNodeTitle, type CanvasCommand, type CanvasNode, type CanvasNodeData, type CanvasNodeKind, type Point } from "../model";
 import { orderNodesForCanvas, stackSelection, updateStack } from "../operations";
+import { createLocalStage } from "../stageDocument";
 
 import { persistCurrentDocument } from "../projectManagement";
 import { referencePresentation } from "../referenceEvidence";
@@ -222,6 +223,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     const where = position ?? center();
     const node = createNode(kind, where, {
       ...snapshotModel(kind),
+      ...(kind === "external" ? { localStage: createLocalStage(t) } : {}),
       title: nextNodeTitle(current, kind, t(nodeKindKeys[kind])),
       ...(sourceIds.length > 1 && kind === "video"
         ? { settings: { videoMode: "reference" as const } }
@@ -287,6 +289,15 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     referenceTarget.current = null;
     setMenu(null);
     setPanel(null);
+    if (kind === "external") {
+      requestAnimationFrame(() => {
+        if (historyRef.current.present.id !== current.id) return;
+        const created = historyRef.current.present.nodes.find(
+          (candidate) => candidate.id === node.id,
+        );
+        if (created) void openEditor(created);
+      });
+    }
     return node;
   };
   const fit = (selection = false) => {

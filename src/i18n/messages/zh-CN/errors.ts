@@ -164,6 +164,8 @@ export const errors = {
   "errors.backend.resultCandidate": "结果已保留为候选",
   "errors.backend.mediaEmpty": "素材没有可读取的内容。",
   "errors.backend.mediaReadFailed": "素材读取失败。",
+  "errors.backend.directorAssetMissing":
+    "导演台包含尚未登记为工程素材的导入资产。",
   "errors.backend.unsupportedGeneration": "该节点不支持生成配置。",
   "errors.backend.assemblyMissing":
     "装配连线对应的主体素材或时间线片段已不存在。",

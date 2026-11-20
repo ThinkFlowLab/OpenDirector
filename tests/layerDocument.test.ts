@@ -197,6 +197,29 @@ test("boundary rejects remote assets, duplicate ids, invalid geometry and malfor
     assert.throws(() => parseLayerDocumentValue(bad));
 });
 
+test("layer JSON text imports reject unparsable files with a localized notice", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: { origin: "http://localhost:5173" },
+  });
+  try {
+    const document = createLayerDocument(
+      "blob:http://localhost:5173/source",
+      800,
+      600,
+    );
+    assert.deepEqual(parseLayerDocument(JSON.stringify(document)), document);
+    // Non-JSON bytes must report the localized notice, not an engine
+    // SyntaxError quoting the file's contents.
+    assert.throws(() => parseLayerDocument("glTF not json"), /不是 JSON/);
+    assert.throws(() => parseLayerDocument("{ broken"), /不是 JSON/);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "location", descriptor);
+    else Reflect.deleteProperty(globalThis, "location");
+  }
+});
+
 test("project layer sources accept current-origin blobs but reject foreign and opaque origins", () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
   Object.defineProperty(globalThis, "location", {
