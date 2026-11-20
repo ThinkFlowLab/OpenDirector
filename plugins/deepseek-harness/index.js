@@ -4,7 +4,7 @@ import { connectionStatus } from './src/connection.js'
 import { Readable } from 'node:stream'
 import { zipEntries } from './src/archive.js'
 import { OpenDirectorClient } from './src/client.js'
-import { resolveConfig } from './src/config.js'
+import { DEFAULT_BASE_URL, resolveConfig } from './src/config.js'
 import { ConfigError, HttpError, InputError, NetworkError, RequestTimeoutError, UnknownOperationError } from './src/errors.js'
 import { createMessages } from './src/i18n.js'
 import { createOpenDirectorTools } from './src/tools.js'
@@ -13,7 +13,7 @@ export const name = 'opendirector'
 export const inject = ['tools']
 
 export const Config = Schema.object({
-  baseUrl: Schema.string().default('http://127.0.0.1:8000'),
+  baseUrl: Schema.string().default(DEFAULT_BASE_URL),
   canvasBaseUrl: Schema.string().default(''),
   locale: Schema.union(['en-US', 'zh-CN']).default('en-US'),
   requestTimeoutMs: Schema.number().default(30000),

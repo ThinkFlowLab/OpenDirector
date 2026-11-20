@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { apply } from '../index.js'
+import manifest from '../package.json' with { type: 'json' }
 import { connectionStatus } from '../src/connection.js'
 import { NetworkError, RequestTimeoutError } from '../src/errors.js'
 
@@ -49,7 +50,7 @@ test('connection route reads counts and capabilities without exposing model or p
     let value = await response.json()
     assert.equal(value.apiUrl, baseUrl)
     assert.equal(value.canvasUrl, 'http://localhost:5173')
-    assert.equal(value.version, '0.1.0')
+    assert.equal(value.version, manifest.version)
     assert.deepEqual(value.projects, { status: 'ok', count: 1 })
     assert.deepEqual(value.models, { status: 'ok', count: 3, capabilities: {
       image: 1, imageEdit: 1, imageToVideo: 1, videoContinuation: 1, voiceover: 1,

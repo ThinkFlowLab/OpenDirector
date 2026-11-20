@@ -81,6 +81,21 @@ test('action plan is one atomic project batch with separate specs and one pinned
   assert.equal(packState(f.snapshot, group.id, f.io.canRetry).actions.length, 2)
 })
 
+test('an action pack keeps the chosen image size and only uses automatic sizing when none was requested', async () => {
+  const f = fixture()
+  const output = { size: '2048x2048', aspectRatio: '1:1' }
+  const model = (await f.io.models())[0]
+  f.io.models = async () => [model]
+  model.imageOutputs = []
+  await assert.rejects(actionPackRequest({ ...f.input, output }, f.io), { key: 'creation.output' })
+  assert.equal(f.commands.length, 0)
+  await actionPackRequest(f.input, f.io)
+  assert.deepEqual(f.snapshot.generationSpecs[0].parameters, { size: 'auto' })
+  model.imageOutputs = [{ size: '1024x1024', aspectRatio: '1:1' }, output]
+  await actionPackRequest({ ...f.input, operationId: randomUUID(), output }, f.io)
+  assert.deepEqual(f.snapshot.generationSpecs.at(-1).parameters, output)
+})
+
 test('invalid plans and unsupported references never write; video actions pin the first frame', async () => {
   const f = fixture()
   for (const actions of [[], Array(7).fill({ name: 'x', prompt: 'p' }),

@@ -8,6 +8,7 @@ import {
   buildProjectCreateCommand,
   buildResultSelectCommand,
   buildSubmitCommand,
+  imageOutputParameters,
   requireUuid,
   requireString,
   requireEnum,
@@ -719,10 +720,7 @@ export class OpenDirectorClient {
     })
     if (reuseResultId && (model.kind === 'audio' || input.output == null)) parameters = {}
     else if (model.kind === 'image') {
-      const output = input.output == null ? model.imageOutputs[0]
-        : model.imageOutputs.find(item => item.size === input.output.size && item.aspectRatio === input.output.aspectRatio)
-      if (!output && (input.output != null || model.imageOutputs.length)) throw new InputError('creation.output')
-      parameters = output ? { size: output.size, aspectRatio: output.aspectRatio } : { size: 'auto' }
+      parameters = imageOutputParameters(model.imageOutputs, input.output)
     } else if (video) {
       const durationSeconds = input.durationSeconds ?? video.defaultDuration
       if (durationSeconds !== null && !video.durations.includes(durationSeconds)) throw new InputError('creation.video_duration')

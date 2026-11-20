@@ -1,4 +1,4 @@
-import { buildCreateGeneration, buildSubmitCommand, requireUuid, requireString, uuid5 } from './operations.js'
+import { buildCreateGeneration, buildSubmitCommand, imageOutputParameters, requireUuid, requireString, uuid5 } from './operations.js'
 import { InputError, UnknownOperationError } from './errors.js'
 import { mediaDetails } from './presentation.js'
 import { resultVersionInfo } from './versions.js'
@@ -126,10 +126,7 @@ export async function actionPackRequest(input, io) {
       || (model.kind === 'image' ? !(model.maxImages >= 1) : !model.videoChoices?.first_frame)) throw new InputError('pack.model')
     let parameters
     if (model.kind === 'image') {
-      const output = input.output == null ? model.imageOutputs[0] : model.imageOutputs.find(output =>
-        output.size === input.output.size && output.aspectRatio === input.output.aspectRatio)
-      if (!output && model.imageOutputs.length) throw new InputError('creation.output')
-      parameters = output ? { size: output.size, aspectRatio: output.aspectRatio } : { size: 'auto' }
+      parameters = imageOutputParameters(model.imageOutputs, input.output)
     } else {
       const video = model.videoChoices.first_frame
       const durationSeconds = input.durationSeconds ?? video.defaultDuration

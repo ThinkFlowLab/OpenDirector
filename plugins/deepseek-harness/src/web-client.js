@@ -1177,6 +1177,29 @@ window.__ModuleLoader__.load({
         task && h(ActionPackDialog, { ...task, t, onClose: () => { setTask(null); setVersion(value => value + 1) } }))
     }
 
+    function imageOutputSelection(model, requested) {
+      const options = model?.imageOutputs ?? []
+      const output = requested == null ? options[0] : options.find(item =>
+        item.size === requested.size && item.aspectRatio === requested.aspectRatio)
+      return { options, requested, output, unavailable: Boolean(model && requested && !output) }
+    }
+
+    function ImageOutputField({ selection, original, onChange, disabled, t }) {
+      const { options, requested, output, unavailable } = selection
+      const keepOriginal = original !== undefined
+      if (!options.length && !unavailable && !keepOriginal) return null
+      const value = keepOriginal && requested == null ? 'original' : unavailable ? '' : options.indexOf(output)
+      return h('div', { style: { display: 'grid', gap: '.3rem' } },
+        (options.length > 0 || keepOriginal) && h('label', { style: { display: 'grid', gap: '.3rem' } }, t('output'),
+          h('select', { 'aria-label': t('output'), value, disabled,
+            onChange: e => onChange(e.target.value === 'original' ? null : options[Number(e.target.value)]),
+          }, keepOriginal && h('option', { value: 'original' }, [t('keepOriginalOutput'), original].filter(Boolean).join(' · ')),
+          unavailable && h('option', { value: '', disabled: true }, t('chooseOutput')),
+          ...options.map(({ size, aspectRatio }, i) => h('option', { key: i, value: i }, [size, aspectRatio].filter(Boolean).join(' · '))))),
+        unavailable && h('p', { role: 'alert' }, t('outputUnavailable').replace('{size}', requested.size)),
+        unavailable && !options.length && button(t(keepOriginal ? 'keepOriginalOutput' : 'useModelDefault'), () => onChange(null), { disabled }))
+    }
+
     function ActionPackDialog({ source, projectId: suppliedProject, packId: suppliedPack, recovery, status: recoveredStatus, t, onClose }) {
       const dialog = useRef(null)
       const busy = useRef(false)
@@ -1266,23 +1289,21 @@ window.__ModuleLoader__.load({
       const choices = catalog?.models.filter(model => model.kind === form.kind
         && (form.kind === 'image' ? model.maxImages > 0 : model.videoChoices?.first_frame)) ?? []
       const model = choices.find(model => model.id === form.modelId)
-      const outputs = model?.imageOutputs ?? []
-      const outputIndex = form.output ? outputs.findIndex(output =>
-        output.size === form.output.size && output.aspectRatio === form.output.aspectRatio) : 0
+      const imageSize = imageOutputSelection(model, form.output)
       const video = model?.videoChoices?.first_frame
       function change(key, value) {
         setDirty(true)
         if (['kind', 'modelId', 'output', 'durationSeconds'].includes(key)) catalogInitialized.current = true
         setForm(previous => ({ ...previous, [key]: value,
-          ...(['kind', 'modelId'].includes(key) && { output: null, durationSeconds: null }),
-          ...(key === 'kind' && { modelId: '',
+          ...(key === 'modelId' && { durationSeconds: null }),
+          ...(key === 'kind' && { modelId: '', output: null, durationSeconds: null,
             ...recentSetup(catalog, 'pack:' + value, value, value === 'video' ? 'first_frame' : undefined) }),
         }))
       }
       useEffect(() => {
-        if (packId || locked || !model) return
+        if (packId || locked || !model || imageSize.unavailable) return
         rememberRecent(catalog.scope, { projectId, packKind: form.kind, setups: { ['pack:' + form.kind]: {
-          modelId: model.id, output: form.kind === 'image' ? outputs[outputIndex] ?? null : null,
+          modelId: model.id, output: form.kind === 'image' ? imageSize.output ?? null : null,
           durationSeconds: form.durationSeconds ?? video?.defaultDuration ?? null,
         } } })
       }, [packId, locked, model?.id, form.kind, form.output, form.durationSeconds, catalog?.scope, projectId])
@@ -1306,7 +1327,7 @@ window.__ModuleLoader__.load({
       }
       async function prepare(event) {
         event.preventDefault()
-        if (busy.current || pendingItem) return
+        if (busy.current || pendingItem || imageSize.unavailable) return
         const names = form.actions.map(action => action.name.trim().normalize('NFKC').toLowerCase())
         if (!form.title.trim() || !form.actions.length || names.some(name => !name)
           || new Set(names).size !== names.length || form.actions.some(action => !action.prompt.trim())) {
@@ -1316,7 +1337,7 @@ window.__ModuleLoader__.load({
         const input = { action: 'prepare', projectId, operationId: crypto.randomUUID(),
           sourceResultId: source.resultId, title: form.title, sharedPrompt: form.prompt,
           actions: form.actions, modelConfigId: form.modelId,
-          ...(outputs[outputIndex] && { output: outputs[outputIndex] }),
+          ...(imageSize.output && { output: imageSize.output }),
           ...(video && { durationSeconds: form.durationSeconds ?? video.defaultDuration }),
         }
         const saved = { ...input, packAction: 'prepare' }
@@ -1404,9 +1425,8 @@ window.__ModuleLoader__.load({
               h('label', null, t('model'), h('select', { 'aria-label': t('model'), required: true, value: form.modelId, onChange: e => change('modelId', e.target.value) },
                 h('option', { value: '' }, t('model')), ...choices.map(model =>
                   h('option', { key: model.id, value: model.id }, model.modelId)))),
-              form.kind === 'image' && outputs.length > 0 && h('label', null, t('output'), h('select', {
-                'aria-label': t('output'), value: outputIndex, onChange: e => change('output', outputs[Number(e.target.value)]),
-              }, ...outputs.map((output, index) => h('option', { key: index, value: index }, output.aspectRatio + ' · ' + output.size)))),
+              form.kind === 'image' && h(ImageOutputField, { selection: imageSize,
+                onChange: value => change('output', value), disabled: locked, t }),
               video?.durations.length > 0 && h('label', null, t('videoDuration'), h('select', {
                 'aria-label': t('videoDuration'), value: form.durationSeconds ?? video.defaultDuration ?? video.durations[0],
                 onChange: e => change('durationSeconds', Number(e.target.value)),
@@ -1422,7 +1442,7 @@ window.__ModuleLoader__.load({
                 onChange: e => change('actions', form.actions.map((value, i) => i === index ? { ...value, prompt: e.target.value } : value)) })),
               button(t('packRemove'), () => change('actions', form.actions.filter((_, i) => i !== index)), { disabled: form.actions.length === 1 }))),
             button(t('packAdd'), () => change('actions', [...form.actions, { name: '', prompt: '' }]), { disabled: form.actions.length >= 6 }),
-            h('button', { type: 'submit', className: 'od-button od-primary', disabled: locked || !model || (outputs.length > 0 && outputIndex < 0) },
+            h('button', { type: 'submit', className: 'od-button od-primary', disabled: locked || !model || imageSize.unavailable },
               t(submitting ? 'submitting' : 'packCreate').replace('{count}', form.actions.length)))),
         packId && !pack && h('p', null, t('loading')),
         pack && h('section', null,
@@ -1561,11 +1581,8 @@ window.__ModuleLoader__.load({
       const video = model?.videoChoices?.[videoMode]
       const durationSeconds = form.durationSeconds ?? video?.defaultDuration
       const durationUnavailable = Boolean(video && form.durationSeconds !== null && !video.durations.includes(durationSeconds))
-      const outputs = model?.imageOutputs ?? []
-      const outputIndex = form.output
-        ? outputs.findIndex(item => item.size === form.output.size && item.aspectRatio === form.output.aspectRatio) : 0
-      const output = outputs[outputIndex]
-      const outputUnavailable = Boolean(model && form.output && !output)
+      const imageSize = imageOutputSelection(model, form.output)
+      const { output, unavailable: outputUnavailable } = imageSize
       const referenceLimit = model?.maxImages ?? 1
       const tooManyReferences = Boolean(model) && references.length > referenceLimit
       const jobId = result?.jobId
@@ -1598,7 +1615,7 @@ window.__ModuleLoader__.load({
         ...((key === 'kind' || key === 'modelId') && { voice: '' }),
       }))
       useEffect(() => {
-        if (existingJob || templateOf || videoMode === 'continuation' || locked || !model || !catalog?.scope) return
+        if (existingJob || templateOf || videoMode === 'continuation' || locked || !model || outputUnavailable || !catalog?.scope) return
         const context = videoMode ?? (source ? 'edit' : form.kind)
         const chosenProject = source?.projectId
           ?? (catalog.projects?.some(project => project.id === form.projectId) ? form.projectId : undefined)
@@ -1879,15 +1896,9 @@ window.__ModuleLoader__.load({
           durationUnavailable && h('p', { role: 'alert' }, t('durationUnavailable')),
           durationUnavailable && video.durations.length === 0
             && button(t('useDefaultDuration'), () => update('durationSeconds', null), { disabled: locked }),
-          (outputs.length > 0 || (templateOf && form.kind === 'image')) && field('output', h('select', {
-            disabled: locked, value: templateOf && form.output === null ? 'original' : outputUnavailable ? '' : outputIndex,
-            onChange: event => update('output', event.target.value === 'original' ? null : outputs[Number(event.target.value)]),
-          }, templateOf && h('option', { value: 'original' }, [t('keepOriginalOutput'), catalog.template.originalOutput].filter(Boolean).join(' · ')),
-          outputUnavailable && h('option', { value: '', disabled: true }, t('chooseOutput')),
-          ...outputs.map(({ size, aspectRatio }, index) =>
-            h('option', { key: index, value: index }, [size, aspectRatio].filter(Boolean).join(' · '))))),
-          outputUnavailable && h('p', { role: 'alert' }, t('outputUnavailable').replace('{size}', form.output.size)),
-          outputUnavailable && outputs.length === 0 && button(t(templateOf ? 'keepOriginalOutput' : 'useModelDefault'), () => update('output', null), { disabled: locked }),
+          form.kind === 'image' && h(ImageOutputField, { selection: imageSize,
+            original: templateOf ? catalog.template.originalOutput ?? '' : undefined,
+            onChange: value => update('output', value), disabled: locked, t }),
           form.kind === 'audio' && field('voice', h('input', {
             required: model?.voiceRequired, disabled: locked || Boolean(templateOf), maxLength: 200, value: form.voice,
             onChange: event => update('voice', event.target.value),

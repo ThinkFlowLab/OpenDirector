@@ -7,6 +7,13 @@ export const MEDIA_KINDS = ['text', 'image', 'video', 'audio', 'file']
 export const SUBJECT_ROLES = ['main', 'auxiliary', 'voice']
 export const REFERENCE_BINDINGS = ['follow_current', 'pinned']
 
+export function imageOutputParameters(outputs, requested) {
+  const output = requested == null ? outputs[0] : outputs.find(item =>
+    item.size === requested.size && item.aspectRatio === requested.aspectRatio)
+  if (requested != null && !output) throw new InputError('creation.output')
+  return output ? { size: output.size, aspectRatio: output.aspectRatio } : { size: 'auto' }
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function fail(key, params) {
