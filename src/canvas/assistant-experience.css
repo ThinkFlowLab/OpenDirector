@@ -190,6 +190,22 @@
 .cw-assistant-toolbar .cw-assistant-send.is-stop + .cw-assistant-send {
   margin-left: 6px;
 }
+.cw-assistant-toolbar .cw-assistant-queue-button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--chat-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cw-assistant-toolbar .cw-assistant-queue-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .cw-assistant-queue-hint {
   display: block;
 }

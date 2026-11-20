@@ -21,6 +21,7 @@ import {
   type Conversation,
   type ChatRequest,
   conversationIsEmpty,
+  insertChat,
   sendChat,
   retractChatMessage,
   continueQueue,
@@ -63,6 +64,21 @@ const empty = (): Conversation => ({
 });
 
 /** A streaming reply is interrupted unless its turn is still running on the server. */
+/**
+ * Put a message where the server recorded it: right before the reply that was
+ * streaming when it was sent, not after it.
+ */
+function insertBeforeStreaming(
+  value: Conversation,
+  message: ChatMessage,
+): Conversation {
+  if (value.messages.some((item) => item.id === message.id)) return value;
+  const messages = [...value.messages];
+  const at = messages.findIndex((item) => item.status === "streaming");
+  messages.splice(at < 0 ? messages.length : at, 0, message);
+  return { ...value, messages };
+}
+
 function restoreConversation(
   projectId: string,
   saved: Conversation,
@@ -472,6 +488,36 @@ export function useAssistantChat(
    * The server queues the message and starts it when that reply ends, so the
    * composer stays usable instead of dropping the keystroke on the floor.
    */
+  /**
+   * Hand the composer text to the reply that is already running.
+   *
+   * Unlike `queue`, the model keeps its place in the turn: the words arrive
+   * inside the run, so nothing already done is repeated.
+   */
+  const insert = async () => {
+    if (!submitting.current || !current.current.draft.trim()) return;
+    const input = current.current;
+    setError("");
+    try {
+      await flushChatDraft(projectId);
+      const accepted = await insertChat(
+        projectId,
+        requestFor(input, crypto.randomUUID()),
+        new AbortController().signal,
+        () => {},
+        t,
+      );
+      if (!alive.current || !accepted) return;
+      setValue((previous) => {
+        const merged = insertBeforeStreaming(previous, accepted.inserted);
+        return merged === previous
+          ? previous
+          : { ...merged, draft: "", draftContent: null, assets: [], skills: [] };
+      });
+    } catch (reason) {
+      if (alive.current) setError(displayError(errorMessage(reason)));
+    }
+  };
   const queue = async () => {
     const input = current.current;
     setError("");
@@ -633,6 +679,8 @@ export function useAssistantChat(
                 ? previous
                 : { ...previous, messages: [...previous.messages, event.message] },
             );
+          } else if (event.type === "steered") {
+            setValue((previous) => insertBeforeStreaming(previous, event.message));
           } else if (event.type === "retracted") {
             setValue((previous) => ({
               ...previous,
@@ -760,6 +808,12 @@ export function useAssistantChat(
     value,
     runtimes,
     runtimesLoading,
+    /** The selected runtime can take text while a reply is running. */
+    steerable: Boolean(
+      runtimes.find((item) => item.id === (value.runtime ?? "default"))
+        ?.supportsSteering,
+    ),
+    insert,
     refreshRuntimes,
     setValue,
     selectAgent: (patch: Partial<Conversation>) => {

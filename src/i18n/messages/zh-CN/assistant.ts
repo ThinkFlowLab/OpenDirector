@@ -63,6 +63,12 @@ export const assistant = {
   "assistant.panel.queueHint": "当前回复结束后发送",
   "assistant.panel.queued": "排队中 · 第 {position} 位",
   "assistant.panel.queueWhileRunning": "按 Enter 排队，当前回复结束后自动发送",
+  "assistant.panel.insert": "立即插入",
+  "assistant.panel.insertHint": "把这段文字交给正在执行的回复",
+  "assistant.panel.inserted": "已插入当前回复",
+  "assistant.panel.insertWhileRunning":
+    "按 Enter 立即插入当前回复；点「排队」改为等它结束后再发送",
+  "assistant.panel.queueShort": "排队",
   "assistant.panel.cancelled": "排队消息已取消",
   "assistant.panel.retract": "撤回",
   "assistant.panel.retractHint": "撤回这条还没开始执行的排队消息",

@@ -65,6 +65,12 @@ export const assistant = {
   "assistant.panel.queued": "Queued · position {position}",
   "assistant.panel.queueWhileRunning":
     "Press Enter to queue this behind the running reply",
+  "assistant.panel.insert": "Insert now",
+  "assistant.panel.insertHint": "Hand this text to the reply that is running",
+  "assistant.panel.inserted": "Inserted into the running reply",
+  "assistant.panel.insertWhileRunning":
+    "Press Enter to insert this into the running reply, or Queue to send it after",
+  "assistant.panel.queueShort": "Queue",
   "assistant.panel.cancelled": "Queued message cancelled",
   "assistant.panel.retract": "Withdraw",
   "assistant.panel.retractHint": "Withdraw this queued message before it starts",

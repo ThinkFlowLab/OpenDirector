@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   continueQueue,
+  insertChat,
   retractChatMessage,
   sendChat,
   type ChatEvent,
@@ -151,4 +152,55 @@ test("a stalled queue is continued and its reply read from the same stream", asy
     ["start", "delta", "end"],
   );
   assert.equal(fetch.mock.calls.length, 1);
+});
+
+test("an inserted message goes to the running reply, not into the queue", async (t) => {
+  const inserted = {
+    id: "message-9",
+    role: "user",
+    text: "改成蓝色",
+    status: "inserted",
+  };
+  const fetch = t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string, init?: RequestInit) => {
+      assert.ok(url.endsWith("/assistant/messages"));
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body));
+      // The delivery is what tells the server where the text belongs.
+      assert.equal(body.delivery, "insert");
+      return new Response(
+        JSON.stringify({ inserted, chainId: "chain-1", turnId: "turn-1" }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  );
+  const events: ChatEvent[] = [];
+  const accepted = await insertChat(
+    "project",
+    request,
+    new AbortController().signal,
+    (event) => events.push(event),
+  );
+  assert.equal(accepted?.inserted.status, "inserted");
+  assert.equal(accepted?.turnId, "turn-1");
+  assert.deepEqual(events, []);
+  assert.equal(fetch.mock.calls.length, 1);
+});
+
+test("a refused insert surfaces the server's reason", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(
+      JSON.stringify({
+        detail: "Claude Code 不支持在回复执行中插入内容，请改用排队。",
+        code: "operation_rejected",
+      }),
+      { status: 409, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  await assert.rejects(
+    insertChat("project", request, new AbortController().signal, () => {}),
+    /不支持在回复执行中插入内容/,
+  );
 });
