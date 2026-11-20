@@ -2254,6 +2254,18 @@ window.__ModuleLoader__.load({
       const video = kind === 'video'
       const audio = kind === 'audio'
       const image = kind === 'image'
+      useEffect(() => {
+        const element = player.current
+        if (!video || !element || failed) return
+        const visible = new IntersectionObserver(entries => {
+          if (entries.some(entry => entry.isIntersecting)) {
+            element.preload = 'metadata'
+            visible.disconnect()
+          }
+        })
+        visible.observe(element)
+        return () => visible.disconnect()
+      }, [video, url, failed])
       const facts = [
         (image || video) && details?.width && details?.height && t('fileSize').replace('{size}', `${details.width} × ${details.height}`),
         image && details?.requestedSize && t('requestedSize').replace('{size}', details.requestedSize.replace('x', ' × ')),
