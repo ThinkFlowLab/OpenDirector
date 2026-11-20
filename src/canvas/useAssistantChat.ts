@@ -17,8 +17,13 @@ import {
   streamChat,
   stopChat,
   type ChatAsset,
+  type ChatMessage,
   type Conversation,
+  type ChatRequest,
   conversationIsEmpty,
+  sendChat,
+  retractChatMessage,
+  continueQueue,
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { creationClient } from "../backend/creationClient.ts";
@@ -448,38 +453,81 @@ export function useAssistantChat(
       commit,
     );
 
+  const requestFor = (input: Conversation, id: string): ChatRequest => ({
+    id,
+    conversationId: input.conversationId,
+    modelId: agent?.id,
+    runtime: input.runtime ?? "default",
+    runtimeModel: input.runtimeModel,
+    text: input.draft,
+    content: input.draftContent,
+    assets: input.assets.map((asset) => asset.id),
+    thinking: builtinThinking(input, agent?.id),
+    modelSelections: input.modelSelections,
+    skills: input.skills ?? [],
+  });
+  /**
+   * Send what the composer holds without waiting for the running reply.
+   *
+   * The server queues the message and starts it when that reply ends, so the
+   * composer stays usable instead of dropping the keystroke on the floor.
+   */
+  const queue = async () => {
+    const input = current.current;
+    setError("");
+    try {
+      await flushChatDraft(projectId);
+      const accepted = await sendChat(
+        projectId,
+        requestFor(input, crypto.randomUUID()),
+        new AbortController().signal,
+        () => {},
+        t,
+      );
+      if (!alive.current) return;
+      if (!accepted) {
+        // The reply ended in between, so this message opened a turn of its own.
+        // Read that run instead of leaving its stream unread.
+        const { conversation: saved, activeTurnId } = await conversation(projectId);
+        if (!alive.current) return;
+        setValue(restoreConversation(projectId, saved, Boolean(activeTurnId)));
+        if (activeTurnId) void resume.current(activeTurnId);
+        return;
+      }
+      setValue((previous) =>
+        previous.messages.some((message) => message.id === accepted.queued.id)
+          ? previous
+          : {
+              ...previous,
+              messages: [...previous.messages, accepted.queued],
+              draft: "",
+              draftContent: null,
+              assets: [],
+              skills: [],
+            },
+      );
+    } catch (reason) {
+      if (alive.current) setError(displayError(errorMessage(reason)));
+    }
+  };
   const send = async () => {
     if (
       !loaded ||
       switching.current ||
-      submitting.current ||
       uploading.current ||
       !canSend ||
       !current.current.draft.trim()
     )
       return;
+    // A reply is already arriving: queue behind it instead of failing silently.
+    if (submitting.current) {
+      await queue();
+      return;
+    }
     const input = current.current;
     await follow(crypto.randomUUID(), async (id, signal, onEvent) => {
       await flushChatDraft(projectId);
-      await streamChat(
-        projectId,
-        {
-          id,
-          conversationId: input.conversationId,
-          modelId: agent?.id,
-          runtime: input.runtime ?? "default",
-          runtimeModel: input.runtimeModel,
-          text: input.draft,
-          content: input.draftContent,
-          assets: input.assets.map((asset) => asset.id),
-          thinking: builtinThinking(input, agent?.id),
-          modelSelections: input.modelSelections,
-          skills: input.skills ?? [],
-        },
-        signal,
-        onEvent,
-        t,
-      );
+      await sendChat(projectId, requestFor(input, id), signal, onEvent, t);
     });
   };
   /** Re-attach to a turn that kept running while this project was not shown. */
@@ -513,7 +561,9 @@ export function useAssistantChat(
     const abort = new AbortController();
     controller.current = abort;
     turnId.current = id;
-    const assistantId = crypto.randomUUID();
+    // One stream covers every reply in the chain, so the reply being written
+    // is replaced each time a `start` frame opens a new one.
+    let reply = crypto.randomUUID();
     try {
       await run(
         id,
@@ -521,6 +571,8 @@ export function useAssistantChat(
         (event) => {
           if (!alive.current) return;
           if (event.type === "start") {
+            // A new reply begins; the previous one is saved in this conversation.
+            reply = crypto.randomUUID();
             setStarted(true);
             setValue({
               ...event.conversation,
@@ -528,7 +580,7 @@ export function useAssistantChat(
                 message.status === "streaming"
                   ? {
                       ...message,
-                      id: assistantId,
+                      id: reply,
                     }
                   : message,
               ),
@@ -538,7 +590,7 @@ export function useAssistantChat(
             setValue((previous) => ({
               ...previous,
               messages: previous.messages.map((message) =>
-                message.id === assistantId
+                message.id === reply
                   ? { ...message, text: message.text + event.text }
                   : message,
               ),
@@ -546,7 +598,7 @@ export function useAssistantChat(
           } else if (event.type === "sources") {
             setValue((previous) => ({
               ...previous,
-              messages: previous.messages.map((message) => message.id === assistantId
+              messages: previous.messages.map((message) => message.id === reply
                 ? { ...message, sources: Array.from(new Map([
                     ...event.sources.map((source) => [source.id, source] as const),
                     ...(message.sources ?? []).map((source) => [source.id, source] as const),
@@ -557,7 +609,7 @@ export function useAssistantChat(
           else if (event.type === "plan") {
             setValue((previous) => ({
               ...previous,
-              messages: previous.messages.map((message) => message.id === assistantId
+              messages: previous.messages.map((message) => message.id === reply
                 ? { ...message, plan: event.entries } : message),
             }));
           } else if (event.type === "tool") {
@@ -566,7 +618,7 @@ export function useAssistantChat(
             setValue((previous) => ({
               ...previous,
               messages: previous.messages.map((message) => {
-                if (message.id !== assistantId) return message;
+                if (message.id !== reply) return message;
                 const tools = [...(message.tools ?? [])];
                 const index = tools.findIndex((item) => item.id === tool.id);
                 if (index < 0) tools.push(tool);
@@ -575,7 +627,22 @@ export function useAssistantChat(
               }),
             }));
             if (event.status !== "running") onEnd.current();
+          } else if (event.type === "queued") {
+            setValue((previous) =>
+              previous.messages.some((message) => message.id === event.message.id)
+                ? previous
+                : { ...previous, messages: [...previous.messages, event.message] },
+            );
+          } else if (event.type === "retracted") {
+            setValue((previous) => ({
+              ...previous,
+              messages: previous.messages.filter(
+                (message) => message.id !== event.messageId,
+              ),
+            }));
           } else if (event.type === "end") {
+            // The chain moves on to the next queued message; stop must follow it.
+            if (event.nextTurnId) turnId.current = event.nextTurnId;
             if (event.conversation) setValue(event.conversation);
             if (event.error) setError(displayError(event.error));
           }
@@ -639,6 +706,42 @@ export function useAssistantChat(
       }
     }
   };
+  /** Withdraw a message that has not started yet. */
+  const retract = async (messageId: string) => {
+    const before = current.current;
+    setValue((previous) => ({
+      ...previous,
+      messages: previous.messages.filter((message) => message.id !== messageId),
+    }));
+    try {
+      const result = await retractChatMessage(projectId, messageId);
+      if (!alive.current) return;
+      setValue((previous) => ({ ...previous, messages: result.conversation.messages }));
+    } catch (reason) {
+      if (!alive.current) return;
+      setValue(before);
+      setError(displayError(errorMessage(reason)));
+    }
+  };
+  /** Put a cancelled message back in the composer so it can be sent again. */
+  const refill = (message: ChatMessage) => {
+    setValue((previous) => ({
+      ...previous,
+      draft: message.text,
+      draftContent: message.content ?? null,
+      assets: message.assets ?? [],
+    }));
+  };
+  /** Start the oldest waiting message when nothing is running. */
+  const proceed = async () => {
+    if (!loaded || switching.current || submitting.current) return;
+    const next = current.current.messages.find(
+      (message) => message.status === "queued",
+    );
+    await follow(next?.id ?? crypto.randomUUID(), async (_id, signal, onEvent) => {
+      await continueQueue(projectId, signal, onEvent, t);
+    });
+  };
   const stop = async () => {
     if (!turnId.current || stopping) return;
     setStopping(true);
@@ -690,6 +793,9 @@ export function useAssistantChat(
     addNodes,
     addAssets,
     send,
+    retract,
+    refill,
+    proceed,
     stop,
     reload: () => setLoadAttempt((n) => n + 1),
   };
