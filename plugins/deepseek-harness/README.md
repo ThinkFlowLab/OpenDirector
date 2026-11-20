@@ -55,9 +55,11 @@ The interactive workflow has been verified in DSH Web with the host running in W
 
 ## Continue with fewer repeated choices
 
-On this device, the plugin remembers the last project, project-list view and model settings for each creation action, separately for each OpenDirector service. New forms reuse models that are still available and keep the last image size or video duration. For continuation, choose the connection that generated the source clip. An unsubmitted draft takes priority. A fresh creation starts with one candidate; a saved draft keeps the count you chose. Clear these preferences under **Connection check → Diagnostic text → Forget recent settings**.
+Open **Resume project** to see the project you have been using in this chat. You can switch projects in the picker. The plugin remembers the list view and generation settings on this device for each OpenDirector service. New forms reuse models that are still available and keep the last image size or video duration. For continuation, choose the connection that generated the source clip. An unsubmitted draft takes priority. A fresh creation starts with one candidate; a saved draft keeps the count you chose. Clear these preferences under **Connection check → Diagnostic text → Forget recent settings**.
 
 Image cards keep **Adopt**, **Edit** and **More actions** in view. Open **More actions → Animate** to use the image as a first frame. On a video card, pause on a shot you like and choose **More actions → Save current frame as PNG**. The frame uses the original video dimensions. Clips from models that support continuation also offer **Continue**.
+
+Click a picture to see its original dimensions. Use the arrow keys to browse the images on the current page and **Adopt this image** to keep the one on screen. You can also edit that image or send its reference to the chat draft. While creating, **Edit**, **Animate** and **Continue** open the next step in the same window. **Back one step** returns to your earlier candidates and draft.
 
 Each node's results show V1, V2 and so on in registration order, unchanged by search or pagination. Image cards show the saved file size in pixels. When it differs from the requested dimensions, the card shows both. Cards also show the job time and an identified source version when available. An edit creates a separate node, so its numbering starts at V1 and can point back to the source node's version.
 
@@ -77,7 +79,7 @@ See the [workflow demo and example scenarios](https://github.com/ThinkFlowLab/Op
 
 In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/user-guide.md) explains model connections. The example uses that configured service.
 
-In DSH Web, choose **OpenDirector → Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
+In DSH Web, choose **OpenDirector → Create media** next to the composer. Select an existing project or name a new one. Choose **Image**, **Video** or **Voiceover**. For a video, pick **Animate an image** or **Continue a clip**, then select the source from that project. If you already wrote a shot description in the composer, choose **Use chat draft** to copy it into the form. Choose a model, review the description, and click **Generate one candidate**.
 
 Choose **Number of candidates** (1–4) to create a group in one action. Each candidate is a separate generation task on the same node. The group shows saved progress and completed media together; select two images to compare, then adopt the version you prefer. Groups also work with voiceover and video forms. A failed member keeps its error while successful siblings remain available.
 
@@ -85,7 +87,7 @@ When a group submission is unconfirmed, check its original receipts. **Continue 
 
 After a submission is accepted, **Generation settings** folds away so the candidates stay in view. Expand it to inspect the submitted settings. The plugin follows DSH’s light and dark themes, with distinct generation, adoption and current-result controls.
 
-Unsubmitted input stays in the current browser tab. Close the dialog or reload DSH, then return to the same creation or edit action to continue. This includes the chosen model, image size and ordered references. Use **Clear draft** to start over. Submitted jobs stay in **Resume project → Tasks**; reopening a draft does not submit it.
+Unsubmitted input stays in the current browser tab. Close the dialog or reload DSH, then return to the same creation or edit action to continue. This includes the chosen model, image size and ordered references. Use **Clear draft** to start over. After submitting, you can close the form and keep chatting. Click the task status beside **OpenDirector** to reopen your result. If several tasks are running, pick one by its description. Older jobs are under **Resume project → Tasks**.
 
 If a submission is unconfirmed, reopen the action or choose **Resume project → Submissions to check** after closing or reloading DSH. Checking uses the original submission ID and opens the accepted task without generating again; it does not require the model catalog. **Start a separate creation** opens a new form and keeps the original submission available to check. **Hide reminder** only removes the local reminder. Recovery information stays in the current browser tab. If browser storage is unavailable, keep the page open and check before reloading.
 
@@ -103,9 +105,19 @@ Choose **Generate another candidate** to run the same canvas node again with its
 
 Cards show the file's actual dimensions and duration when available. Click an image to view the original in DSH, then switch between **Actual size** and **Fit to window**.
 
+After a run in the creation form finishes, choose **Adjust settings for another version** to keep its source, prompt and settings. Change the description and submit when ready. The previous results stay in the form. After two single-image runs, **Compare versions** shows them side by side.
+
 If you lose the connection, use **Check submission** or **Check progress** to look up the same operation. If the provider confirms a quota or rate limit failure, fix the issue and choose **Retry generation** to use the same node. When a canvas holds the project open, save and close it, then try again in the same dialog.
 
-For an open-ended request, use the chat as usual:
+### Pick up an earlier edit in chat
+
+Try “Show the two versions of the keeper in Night Watch. Which one was used for the video?” The images appear in the order you asked for. If an image was used as the first frame of a saved video, its card names the clip. Ask to play that clip to get a player in the conversation.
+
+Choose **Discuss edit** on the original portrait and tell the chat model what you want to keep: “I like this coastline. How would you add the red scarf without changing the framing?” The proposal stays attached to that portrait. Choose **Review edit** to adjust the wording and generation settings. Clicking **Generate one candidate** submits the image request.
+
+In **Resume project**, choose **Reference in chat** on a result to add that exact version to your message. For an image or clip, **More actions → Plan the next shot** also adds a question about framing and motion. Add your own direction and send when ready.
+
+To start a new project from chat, try this:
 
 > Create a project called “Moonlit studio”. Use one of my configured image models to make a cinematic moonlit room. Show me the candidate before adopting it.
 
@@ -181,6 +193,7 @@ Accepted OpenDirector jobs keep running when the DSH plugin is disabled or an ag
 | --- | --- | --- |
 | `opendirector_projects` | “List my projects” or “Create a project called Moonlit studio.” | Project list or create receipt. |
 | `opendirector_project` | “Show Moonlit studio and its configured image models.” | Project, model catalog, current object revisions, and project link. |
+| `opendirector_results` | “Show both versions, then help me draft an edit for the first one.” | Saved result cards, first-frame links, or a prompt for review. |
 | `opendirector_create_generation` | “Set up an image node for a moonlit room. Wait before generating.” | Editable node and its saved references. |
 | `opendirector_submit` | “Run that image generation.” | Accepted job ID with `candidate_only` selection policy. |
 | `opendirector_job` | “Check the job and show me the saved candidates.” | Job state, candidates, and selection state. |

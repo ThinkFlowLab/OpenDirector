@@ -2,6 +2,17 @@
 
 [中文](#中文) · [Open the presentation page](showcase.html) · [Install and connect](../README.md)
 
+## Night Watch
+
+[Watch the walkthrough (2:26)](media/night-watch.mp4). A lighthouse keeper gets a red scarf, turns toward the sea and speaks a single line. The portrait, edit, moving shot and voiceover came from four live MiniMax requests. The walkthrough also shows a later conversation about the saved project.
+
+- **0:04** — DeepSeek finds the portrait used as the video's first frame.
+- **0:54** — Compare the two portraits and adopt the red-scarf version.
+- **2:07** — Open DeepSeek's suggested scarf edit with the wider coastal portrait already selected.
+- **2:22** — Watch the exported film with its title and voiceover.
+
+## Lunar Post Office
+
 [![A penguin at a lunar mailbox, shown as a candidate in DSH](media/workflow.png)](media/walkthrough.mp4)
 
 [Watch Lunar Post Office (1 min 16 sec)](media/walkthrough.mp4) · [Compare three saved versions (GIF)](media/walkthrough.gif)

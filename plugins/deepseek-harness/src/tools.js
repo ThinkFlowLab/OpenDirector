@@ -54,6 +54,7 @@ function rawInput(args) {
     'specId',
     'resultId',
     'sourceResultId',
+    'resultIds',
     'jobId',
     'expectedSpecRevision',
     'expectedItemRevision',
@@ -81,6 +82,11 @@ function presentationMeta(_args, value) {
   if (typeof status === 'string') meta.status = status
   if (Array.isArray(value?.jobIds)) meta.jobIds = value.jobIds.slice(0, 8)
   if (Array.isArray(value?.projects)) meta.projectCount = value.projects.length
+  if (value.action === 'show' && value.results) {
+    meta.savedResults = { projectName: value.projectName, results: value.results }
+  } else if (value.action === 'draft' && value.editPrompt) {
+    meta.editDraft = { projectName: value.projectName, source: value.results[0], prompt: value.editPrompt }
+  }
   const kind = value?.job?.execution?.kind
   if (kind === 'image' || kind === 'video' || kind === 'audio') {
     const candidates = value.results.filter(result => result.asset?.kind === kind)
@@ -241,7 +247,7 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
       schema,
       render: (_args, value) => [{
         type: 'text',
-        text: renderToolResult(key, value, t, { webPreview: key === 'job' && hasWebPreview() }),
+        text: renderToolResult(key, value, t, { webPreview: (key === 'job' || key === 'results') && hasWebPreview() }),
       }],
       presentationMeta,
     },
@@ -612,6 +618,41 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
   })
 
 
+  const results = makeTool({
+    key: 'results',
+    name: 'opendirector_results',
+    description: t('tool.results.description'),
+    parameters: {
+      projectId: projectIdParam,
+      action: required({ type: 'string', enum: ['find', 'show', 'draft'] }),
+      kind: { type: 'string', enum: ['image', 'video', 'audio'], description: t('param.resultKind') },
+      query: string(t('param.resultQuery')),
+      after: string(t('param.resultCursor')),
+      resultIds: arrayOf(string(t('param.resultId')), t('param.savedResultIds')),
+      editPrompt: string(t('param.editPrompt')),
+    },
+    schema: outputSchema({
+      action: string(), projectId: string(), projectName: string(), canvasUrl: string(),
+      results: arrayOf(objectOf()), editPrompt: string(),
+    }, ['action', 'projectId', 'projectName', 'canvasUrl', 'results']),
+    async execute(args, { signal }) {
+      if (args.action === 'find') {
+        const matches = await client.libraryResults(args.projectId, {
+          kind: args.kind, query: args.query, after: args.after, signal,
+        })
+        return { ...matches, action: args.action }
+      }
+      if (args.action === 'draft' && (args.resultIds?.length !== 1
+        || typeof args.editPrompt !== 'string' || !args.editPrompt.trim())) throw new InputError('library.edit_draft')
+      const saved = await client.showResults(args.projectId, args.resultIds, { signal })
+      if (args.action === 'draft') {
+        if (saved.results[0].kind !== 'image') throw new InputError('library.edit_draft')
+        return { ...saved, action: args.action, editPrompt: args.editPrompt.trim() }
+      }
+      return { ...saved, action: args.action }
+    },
+  })
+
   const actionPack = makeTool({
     key: 'actionPack',
     name: 'opendirector_action_pack',
@@ -645,5 +686,5 @@ export function createOpenDirectorTools({ client, t, hasWebPreview = () => false
     },
   })
 
-  return [projects, project, createGeneration, submit, job, adoptResult, cancel, operation, actionPack]
+  return [projects, project, results, createGeneration, submit, job, adoptResult, cancel, operation, actionPack]
 }

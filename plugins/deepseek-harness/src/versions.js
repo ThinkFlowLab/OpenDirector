@@ -41,7 +41,7 @@ function titlesBySpec(snapshot) {
  * frozen reference asset identity matches exactly one result registered before
  * the current one; a shared fingerprint alone is not evidence of provenance.
  */
-export function resultVersionInfo(snapshot) {
+export function resultVersionInfo(snapshot, { includeFirstFrameUsage = false } = {}) {
   const results = Array.isArray(snapshot?.results) ? snapshot.results : []
   const jobs = new Map((snapshot?.jobs ?? []).map(job => [job.id, job]))
   const titles = titlesBySpec(snapshot)
@@ -63,11 +63,20 @@ export function resultVersionInfo(snapshot) {
     }
     info.set(result.id, {
       version,
+      ...(includeFirstFrameUsage && result.asset?.kind === 'image' && { firstFrameFor: [] }),
       ...(Array.isArray(videoModes) && { supportsContinuation: videoModes.includes('continuation') }),
       ...(createdAt !== undefined && { createdAt }),
       ...(source && { sourceResultId: source.result.id, sourceVersion: source.version }),
       ...(source && titles.has(source.result.specId) && { sourceTitle: titles.get(source.result.specId) }),
     })
+    if (includeFirstFrameUsage && result.asset?.kind === 'video' && job?.status === 'succeeded') {
+      const firstFrame = job.inputSnapshot?.references?.find(ref => ref.role === 'first_frame')
+      const matches = seenIdentities.get(identityKey(firstFrame?.asset))
+      if (matches?.length === 1 && matches[0].result.asset.kind === 'image') {
+        const title = titles.get(result.specId)
+        info.get(matches[0].result.id).firstFrameFor.push({ resultId: result.id, ...(title && { title }) })
+      }
+    }
     const own = identityKey(result.asset)
     if (own !== undefined) {
       const registered = seenIdentities.get(own)

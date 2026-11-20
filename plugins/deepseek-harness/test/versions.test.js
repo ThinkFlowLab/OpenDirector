@@ -158,6 +158,49 @@ test('library paging, filtering and comparison keep registration versions stable
     [[results[13].id, 14], [results[0].id, 1]])
 })
 
+test('show saved media in the requested order using the frozen prompt and the actual video first frame', async () => {
+  const projectId = randomUUID()
+  const image = result(randomUUID(), randomUUID(), asset(randomUUID(), 1, 'original'))
+  const edited = result(randomUUID(), randomUUID(), asset(image.asset.assetId, 2, 'edited'))
+  const voice = result(randomUUID(), randomUUID(), asset(randomUUID(), 1, 'voice', 'audio'))
+  const makeClip = () => result(randomUUID(), randomUUID(), asset(randomUUID(), 1, 'clip', 'video'))
+  const video = makeClip(), failed = makeClip(), referenceOnly = makeClip(), changed = makeClip()
+  const prompt = 'Keep the coast. '.repeat(45) + 'Add a scarf.'
+  const clipJob = (clip, role, input, status = 'succeeded') => ({
+    id: clip.jobId, status, inputSnapshot: { references: [{ role, asset: input }] },
+  })
+  const snapshot = {
+    project: { id: projectId, name: 'Night Watch' },
+    generationSpecs: [{ id: edited.specId, currentResultId: edited.id, prompt: 'New draft' }],
+    canvasItems: [{ title: 'Keeper by the sea', binding: { role: 'generation', objectRef: { id: video.specId } } }],
+    assets: [{ id: voice.asset.assetId, metadata: { durationSeconds: 2 } }],
+    jobs: [
+      { id: edited.jobId, inputSnapshot: { spec: { prompt }, references: [{ role: 'reference', asset: image.asset }] } },
+      clipJob(video, 'first_frame', edited.asset), clipJob(failed, 'first_frame', edited.asset, 'failed'),
+      clipJob(referenceOnly, 'reference', image.asset), clipJob(changed, 'first_frame', { ...edited.asset, fingerprint: 'different' }),
+    ],
+    results: [image, edited, voice, video, failed, referenceOnly, changed],
+  }
+  const calls = []
+  const client = new OpenDirectorClient({ baseUrl: 'http://localhost', requestTimeoutMs: 1000 }, {
+    fetchImpl: async (url, init) => { calls.push([init.method, new URL(url).pathname]); return Response.json(snapshot) },
+  })
+  const order = [edited.id, image.id, video.id, voice.id]
+  const saved = await client.showResults(projectId, order)
+  assert.equal(saved.projectName, 'Night Watch')
+  assert.deepEqual(saved.results.map(row => row.resultId), order)
+  const [scarf, original, shot, audio] = saved.results
+  assert.deepEqual(scarf.firstFrameFor, [{ resultId: video.id, title: 'Keeper by the sea' }])
+  assert.deepEqual(original.firstFrameFor, [])
+  assert.equal(scarf.prompt, prompt)
+  assert.equal(scarf.selected, true)
+  assert.equal(scarf.sourceResultId, image.id)
+  assert.equal(shot.sourceResultId, edited.id)
+  assert.equal(audio.details.durationSeconds, 2)
+  assert.deepEqual(calls, [['GET', '/api/creation/projects/' + projectId]])
+  await assert.rejects(client.showResults(projectId, [edited.id, randomUUID()]), { key: 'library.results' })
+})
+
 test('creation and group status projections reuse the same versions and createdAt', async () => {
   const projectId = randomUUID(), specId = randomUUID(), groupId = randomUUID()
   const job1 = randomUUID(), job2 = randomUUID()

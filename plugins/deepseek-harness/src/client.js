@@ -67,6 +67,25 @@ function librarySearch(snapshot, query) {
   }
 }
 
+function savedResultCards(snapshot, search, jobs, versionOptions) {
+  const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
+  const selected = result => specs.get(result.specId)?.currentResultId === result.id
+  const detailsFor = resultMediaDetails(snapshot, jobs)
+  const versions = resultVersionInfo(snapshot, versionOptions)
+  function card(result, promptLimit) {
+    const { id, specId, jobId, asset } = result
+    const prompt = jobs.get(jobId)?.inputSnapshot?.spec?.prompt ?? ''
+    const title = search.title(specId)
+    const details = detailsFor(result)
+    return {
+      resultId: id, specId, assetId: asset.assetId, kind: asset.kind, selected: selected(result),
+      ...(versions.get(id) ?? {}), ...(details && { details }), ...(title && { title }),
+      prompt: prompt.slice(0, promptLimit),
+    }
+  }
+  return { selected, card }
+}
+
 function creationSeed(snapshot, resultId, model) {
   const result = snapshot.results.find(item => item.id === resultId)
   const job = snapshot.jobs.find(item => item.id === result?.jobId)
@@ -332,10 +351,8 @@ export class OpenDirectorClient {
     const cursor = after == null ? null : requireUuid(after, 'after')
     const snapshot = await this.project(projectId, { signal })
     const search = librarySearch(snapshot, query)
-    const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
-    const detailsFor = resultMediaDetails(snapshot, jobs)
-    const versions = resultVersionInfo(snapshot)
+    const cards = savedResultCards(snapshot, search, jobs)
     const results = []
     const step = order === 'oldest' ? 1 : -1
     const cursorIndex = cursor === null ? null : snapshot.results.findIndex(result => result.id === cursor)
@@ -343,25 +360,16 @@ export class OpenDirectorClient {
     const start = cursorIndex === null ? (step === 1 ? 0 : snapshot.results.length - 1) : cursorIndex + step
     // Registration order is stable even when jobs finish out of order.
     for (let index = start; index >= 0 && index < snapshot.results.length && results.length <= LIBRARY_PAGE_SIZE; index += step) {
-      const { id, specId, jobId, asset } = snapshot.results[index]
+      const result = snapshot.results[index]
+      const { id, specId, jobId, asset } = result
       if (!Object.hasOwn(MEDIA_TYPES, asset.kind) || (kind !== 'all' && asset.kind !== kind)) continue
-      const selected = specs.get(specId)?.currentResultId === id
+      const selected = cards.selected(result)
       if ((selection === 'current' && !selected) || (selection === 'other' && selected)) continue
       const job = jobs.get(jobId)
       const prompt = job?.inputSnapshot?.spec?.prompt ?? ''
       const title = search.title(specId)
       if (!search.matches(prompt, title, job?.inputSnapshot?.model?.modelId, id, jobId, specId)) continue
-      const details = detailsFor({ asset, jobId })
-      results.push({
-        resultId: id,
-        specId,
-        assetId: asset.assetId,
-        kind: asset.kind,
-        selected,
-        ...(versions.get(id) ?? {}),
-        ...(details && { details }), ...(title && { title }),
-        prompt: prompt.slice(0, 160),
-      })
+      results.push(cards.card(result, 160))
     }
     const hasMore = results.length > LIBRARY_PAGE_SIZE
     if (hasMore) results.pop()
@@ -421,31 +429,34 @@ export class OpenDirectorClient {
       }))
   }
 
-  async compareImages(projectId, resultIds, { signal } = {}) {
+  async #readResultCards(projectId, resultIds, signal, imagesOnly) {
     const project = requireUuid(projectId, 'projectId')
-    if (!Array.isArray(resultIds) || resultIds.length !== 2) throw new InputError('library.compare')
+    const errorKey = imagesOnly ? 'library.compare' : 'library.results'
+    if (!Array.isArray(resultIds) || resultIds.length < 1 || resultIds.length > 4
+      || (imagesOnly && resultIds.length !== 2)) throw new InputError(errorKey)
     const ids = resultIds.map(id => requireUuid(id, 'resultId'))
-    if (ids[0] === ids[1]) throw new InputError('library.compare')
+    if (new Set(ids).size !== ids.length) throw new InputError(errorKey)
     const snapshot = await this.project(project, { signal })
-    const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
-    const results = new Map(snapshot.results.map(result => [result.id, result]))
-    const detailsFor = resultMediaDetails(snapshot, jobs)
-    const names = librarySearch(snapshot, '')
-    const versions = resultVersionInfo(snapshot)
-    const images = ids.map(resultId => {
-      const result = results.get(resultId)
-      if (result?.asset.kind !== 'image') throw new InputError('library.compare')
-      return {
-        resultId, assetId: result.asset.assetId, kind: 'image', specId: result.specId,
-        selected: specs.get(result.specId)?.currentResultId === resultId,
-        ...(versions.get(resultId) ?? {}),
-        title: names.title(result.specId) ?? '',
-        prompt: jobs.get(result.jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 500) ?? '',
-        details: detailsFor(result),
-      }
+    const byId = new Map(snapshot.results.map(result => [result.id, result]))
+    const cards = savedResultCards(snapshot, librarySearch(snapshot, ''), jobs, { includeFirstFrameUsage: !imagesOnly })
+    const results = ids.map(id => {
+      const result = byId.get(id)
+      const kind = result?.asset?.kind
+      if (imagesOnly ? kind !== 'image' : !Object.hasOwn(MEDIA_TYPES, kind)) throw new InputError(errorKey)
+      return cards.card(result, imagesOnly ? 500 : undefined)
     })
-    return { projectId: project, canvasUrl: this.canvasUrl(project), images }
+    return { projectId: project, projectName: snapshot.project.name, canvasUrl: this.canvasUrl(project), results }
+  }
+
+  showResults(projectId, resultIds, { signal } = {}) {
+    return this.#readResultCards(projectId, resultIds, signal, false)
+  }
+
+  async compareImages(projectId, resultIds, { signal } = {}) {
+    const saved = await this.#readResultCards(projectId, resultIds, signal, true)
+    return { projectId: saved.projectId, canvasUrl: saved.canvasUrl,
+      images: saved.results.map(image => ({ title: '', ...image })) }
   }
 
   async creationTemplate(projectId, resultId, { signal } = {}) {

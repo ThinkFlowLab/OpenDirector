@@ -101,6 +101,12 @@ test('browse saved results without a lease and adopt with a recoverable receipt'
   assert.equal((await adopt(request({}, {}))).status, 403)
   assert.equal((await adopt(request({}, { 'X-OpenDirector-Action': '1', 'Sec-Fetch-Site': 'cross-site' }))).status, 403)
   assert.equal(calls.length, 5)
+  const refreshed = await library({ url: '/api/opendirector/library?' + new URLSearchParams({
+    project, show: [candidate, original].join(','),
+  }) })
+  assert.deepEqual((await refreshed.json()).results.map(item => [item.resultId, item.selected]),
+    [[candidate, false], [original, true]])
+  assert.deepEqual(calls.at(-1), ['GET', path])
   const busy = await adopt(request({}))
   assert.equal((await busy.json()).code, 'storage_busy')
   assert.equal(command, undefined)

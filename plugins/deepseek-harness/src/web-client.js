@@ -2,8 +2,9 @@
 window.__ModuleLoader__.load({
   id: '@opendirector/dsh-plugin',
   factory(require) {
-    const { cloneElement, createElement: h, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
+    const { Children, cloneElement, createContext, createElement: h, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
+    const ChatContext = createContext(null)
     const en = {
       reloadData: 'Reload',
       chooseModel: 'Choose a model', needsModel: 'Select a model to continue', promptPlaceholder: 'Describe the subject, setting and light.',
@@ -78,12 +79,28 @@ window.__ModuleLoader__.load({
       packThink: 'Think', packThinkPrompt: 'Tilt the head thoughtfully, keep the same character and appearance.',
       packDefaultTitle: 'Character actions',
       images: 'Image results', videos: 'Video results', original: 'Original', sourceClip: 'Source clip',
+      previousImage: 'Previous image', nextImage: 'Next image', adoptImage: 'Adopt this image',
       viewOriginal: 'View original image', fitImage: 'Fit to window', actualImageSize: 'Actual size',
       originalUnavailable: 'Could not load the original image.', duration: '{seconds} s',
       candidate: 'Candidate', unavailable: 'Could not load the preview.', retryMedia: 'Reload preview',
       canvas: 'Open canvas', edit: 'Edit', firstFrame: 'Animate', continue: 'Continue', adopt: 'Adopt', adopted: 'Result adopted',
-      createHint: 'Create an image or voiceover, then choose the version you want to keep.',
-      libraryHint: 'Find your work, compare versions and pick up where you left off.',
+      createHint: 'Choose what to make and where to save it.', backStep: 'Back one step',
+      animateStill: 'Animate an image', extendClip: 'Continue a clip', videoStart: 'Start from',
+      pickStill: 'Choose a saved image for the first frame.', pickClip: 'Choose the clip to continue.',
+      noStills: 'This project has no saved image to animate.', noClips: 'This project has no saved video yet.',
+      clipsUnsupported: 'The clips on this page were made with models that cannot continue a video.',
+      makeStill: 'Create a first frame', videoProject: 'Choose a project to browse its images and clips.',
+      noVideoMode: 'No configured video model supports this mode.',
+      libraryHint: 'Pick a project, or ask in chat: “Show my last two versions and help me plan an edit.”',
+      discussEdit: 'Discuss edit', discussPrompt: 'Help me plan an edit for “{image}” in “{project}” (result {id}). Draft a prompt for me to review before generating. What I want to change: ',
+      discussReady: 'Add your change in the chat box, then send.', discussBusy: 'The chat box is busy. Try again in a moment.',
+      referenceInChat: 'Reference in chat', planNextShot: 'Plan the next shot', chatRefAdded: 'Reference added to the chat box.',
+      assetReference: 'OpenDirector · {title} · {kind} (project {projectId}, result {resultId})',
+      nextShotPrompt: 'Help me plan the next shot using this version. Suggest the framing and movement before generating.',
+      useChatDraft: 'Use chat draft', appendChatDraft: 'Append chat draft', draftTooLong: 'The combined description exceeds the model’s limit.',
+      savedOnly: 'Saved results', wasFirstFrame: 'First frame for {videos}', savedPrompt: 'Original prompt',
+      savedRefreshFailed: 'Could not refresh these versions. Try again.',
+      editProposal: 'Suggested edit', reviewEdit: 'Review edit', editProposalHint: 'Review the prompt and settings before generating.',
       generationSettings: 'Generation settings',
       moreCandidateCount: 'Additional candidates', groupStopped: 'The remaining planned candidates were not submitted.',
       candidateCount: 'Number of candidates', generateGroup: 'Generate {count} candidates',
@@ -110,6 +127,8 @@ window.__ModuleLoader__.load({
       recent: 'Saved results', selected: 'Current result', adopting: 'Adopting…', checkAdoption: 'Check adoption',
       tasks: 'Tasks', tasksEmpty: 'No generation tasks match these filters.', viewTask: 'View progress',
       taskProgress: 'Task progress', backgroundHint: 'Closing this dialog does not cancel the job. Find it under Resume project → Tasks.',
+      chatTasks: 'Tasks in this chat', taskCount: '{count} tasks', taskNeedsCheck: 'Needs checking', partlyReady: 'Partly ready', partialGroup: 'Some candidates are unconfirmed',
+      taskStatusUnavailable: 'Status unavailable', closeTaskHint: 'You can close this window and follow the task beside the OpenDirector button.',
       cancelled: 'Cancelled', interrupted: 'Interrupted',
       pendingSubmissions: 'Submissions to check', pendingHint: 'Check the original submission without generating again.',
       startSeparateCreation: 'Start a separate creation',
@@ -121,7 +140,7 @@ window.__ModuleLoader__.load({
       reuseHint: 'Uses this version’s saved settings in a new node. Review the candidate before adopting.',
       reuseReferences: 'References kept from this version', referenceMedia: 'Reference media',
       reuseUnavailable: 'Could not load the saved settings. Reload them, or check the model and references in OpenDirector.',
-      draftRestored: 'Unsubmitted draft restored.', clearDraft: 'Clear draft',
+      draftRestored: 'Unsubmitted draft restored.', clearDraft: 'Clear draft', resumeEarlierDraft: 'Resume earlier draft',
       modelUnavailable: 'The saved model is unavailable. Choose another model.',
       projectUnavailable: 'The saved project is unavailable. Choose another project.',
       stopGeneration: 'Request stop', stoppingGeneration: 'Requesting stop…', checkStop: 'Check stop request',
@@ -142,6 +161,7 @@ window.__ModuleLoader__.load({
       outputUnavailable: '{size} is unavailable on this model. Choose a different size or model.',
       generate: 'Generate one candidate', submitting: 'Submitting…', checkGeneration: 'Check submission',
       repeatGeneration: 'Generate another candidate',
+      adjustGeneration: 'Adjust settings for another version', previousRound: 'Previous results', compareRevisions: 'Compare versions',
       repeatHint: 'Uses the settings saved on this canvas node. Existing candidates stay available.',
       repeatUnavailable: 'The generation node is unavailable. Open the canvas to check it.',
       noModels: 'Configure a compatible model in OpenDirector first.',
@@ -256,12 +276,28 @@ window.__ModuleLoader__.load({
       packThink: '思考', packThinkPrompt: '歪头思考，保持同一个角色和外观。',
       packDefaultTitle: '角色动作',
       images: '图片结果', videos: '视频结果', original: '原图', sourceClip: '源片段',
+      previousImage: '上一张', nextImage: '下一张', adoptImage: '采用这张图',
       viewOriginal: '查看原图', fitImage: '适应窗口', actualImageSize: '实际大小',
       originalUnavailable: '暂时无法加载原图。', duration: '{seconds} 秒',
       candidate: '候选', unavailable: '暂时无法加载预览。', retryMedia: '重新加载预览',
       canvas: '打开画布', edit: '改图', firstFrame: '转成视频', continue: '续写', adopt: '采用', adopted: '已采用结果',
-      createHint: '生成图片或配音，比较候选后再选用。',
-      libraryHint: '找回作品、对比版本，继续上次的创作。',
+      createHint: '选好要制作的素材和保存工程，就可以开始。', backStep: '返回上一步',
+      animateStill: '让图片动起来', extendClip: '续写视频', videoStart: '从哪里开始',
+      pickStill: '选一张已保存的图片作为首帧。', pickClip: '选一个要续写的视频片段。',
+      noStills: '这个工程还没有可作首帧的图片。', noClips: '这个工程还没有已保存的视频。',
+      clipsUnsupported: '这一页的片段使用的模型不支持视频续写。',
+      makeStill: '先生成一张首帧图', videoProject: '选择工程即可浏览其中的图片和视频。',
+      noVideoMode: '已配置的视频模型暂不支持这种生成方式。',
+      libraryHint: '选择工程，也可以在聊天里说：“把上次的两版放一起，先帮我想想怎么改。”',
+      discussEdit: '讨论改图', discussPrompt: '我想修改「{project}」里的「{image}」（结果 {id}）。先帮我拟一段改图提示词，等我确认后再生成。我想改的是：',
+      discussReady: '在聊天框补上想改的地方，再发送。', discussBusy: '聊天框正忙，稍后再试。',
+      referenceInChat: '引用到对话', planNextShot: '规划下一镜', chatRefAdded: '已把这版素材加到聊天输入框。',
+      assetReference: 'OpenDirector · {title} · {kind}（工程 {projectId}，结果 {resultId}）',
+      nextShotPrompt: '我想用这一版接下一镜。先帮我想想景别和镜头运动，等我确认再生成。',
+      useChatDraft: '带入聊天草稿', appendChatDraft: '追加聊天草稿', draftTooLong: '合并后的描述超过了模型的字数上限。',
+      savedOnly: '已保存的结果', wasFirstFrame: '用作「{videos}」的首帧', savedPrompt: '原提示词',
+      savedRefreshFailed: '暂时无法刷新这些版本，可以再试一次。',
+      editProposal: '改图提案', reviewEdit: '检查并改图', editProposalHint: '检查提示词和生成设置后，再决定是否生成。',
       generationSettings: '生成设置',
       moreCandidateCount: '新增候选数量', groupStopped: '其余计划候选未提交。',
       candidateCount: '候选数量', generateGroup: '生成 {count} 个候选',
@@ -288,6 +324,8 @@ window.__ModuleLoader__.load({
       recent: '已保存的结果', selected: '当前结果', adopting: '正在采用…', checkAdoption: '查询采用状态',
       tasks: '任务', tasksEmpty: '没有符合筛选条件的生成任务。', viewTask: '查看进度',
       taskProgress: '任务进度', backgroundHint: '关闭弹窗不会取消任务，可从「继续工程 → 任务」找回。',
+      chatTasks: '这次对话的任务', taskCount: '{count} 个任务', taskNeedsCheck: '待确认', partlyReady: '部分成功', partialGroup: '部分候选待确认',
+      taskStatusUnavailable: '暂时查不到进度', closeTaskHint: '可以关掉窗口继续聊天，在 OpenDirector 按钮旁查看进度和结果。',
       cancelled: '已取消', interrupted: '已中断',
       pendingSubmissions: '待确认的提交', pendingHint: '查询原来的提交，不会重新生成。',
       startSeparateCreation: '开始另一项创作',
@@ -299,7 +337,7 @@ window.__ModuleLoader__.load({
       reuseHint: '沿用所选版本的设置，在同一工程的新节点中生成候选，审阅后再采用。',
       reuseReferences: '沿用这版的参考素材', referenceMedia: '参考素材',
       reuseUnavailable: '暂时无法读取已保存的设置。可以重新读取，或在 OpenDirector 中检查模型与参考素材。',
-      draftRestored: '已恢复未提交的草稿。', clearDraft: '清空草稿',
+      draftRestored: '已恢复未提交的草稿。', clearDraft: '清空草稿', resumeEarlierDraft: '继续之前的创作草稿',
       modelUnavailable: '草稿中的模型暂不可用，请重新选择。',
       projectUnavailable: '草稿中的工程暂不可用，请重新选择。',
       stopGeneration: '请求停止', stoppingGeneration: '正在请求停止…', checkStop: '查询停止请求',
@@ -320,6 +358,7 @@ window.__ModuleLoader__.load({
       outputUnavailable: '当前模型不支持 {size}。请选择其他尺寸或切换模型。',
       generate: '生成一个候选', submitting: '正在提交…', checkGeneration: '查询提交状态',
       repeatGeneration: '再生成一个候选',
+      adjustGeneration: '调整设置，再做一版', previousRound: '上一轮结果', compareRevisions: '对比前后两版',
       repeatHint: '使用此画布节点上保存的设置，已有候选仍可选择。',
       repeatUnavailable: '暂时无法使用该生成节点，请打开画布查看。',
       noModels: '请先在 OpenDirector 配置支持此操作的模型。',
@@ -394,8 +433,9 @@ window.__ModuleLoader__.load({
       .od-media-ui form label { font-size: .85em; }
       .od-media-ui .od-launcher { width: 2rem; min-height: 2rem; padding: 0 !important; border-color: transparent; }
       .od-create-form { display: grid; gap: .85rem; }
-      .od-create-form > label:first-child { font-weight: 600; }
-      .od-create-form > label:first-child textarea { resize: vertical; min-height: 5.75rem; font-weight: normal; }
+      .od-create-form > label:has(textarea) { font-weight: 600; }
+      .od-create-form textarea { resize: vertical; min-height: 5.75rem; font-weight: normal; }
+      .od-source-name { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .od-create-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(19rem,100%),1fr)); gap: .8rem 1.2rem;
         border-top: 1px solid var(--dsw-alias-border-l1); padding-block: 1rem .5rem; align-items: start; }
       .od-submit-row { display: flex; flex-wrap: wrap; gap: .45rem .8rem; align-items: center;
@@ -511,6 +551,29 @@ window.__ModuleLoader__.load({
       recentCache.set(scope, {})
       try { window.localStorage.removeItem(recentKey + scope) } catch {}
     }
+    function lastChatProject(chat) {
+      const turns = chat?.timeline?.turnOrder ?? []
+      for (let i = turns.length - 1; i >= 0; i--) {
+        const calls = chat.nodes.turnDataSource(turns[i], 'tool-call').getSnapshot()
+        const call = calls.findLast(({ root }) => root.name?.startsWith('opendirector_') && root.meta?.projectId)
+        if (call) return { id: call.root.meta.projectId, callId: call.root.callId }
+      }
+      return null
+    }
+    function initialProject(projects, scope, sessionId, chatProject) {
+      const recent = readRecent(scope)
+      const choice = sessionId ? recent.projectChoices?.[sessionId] : { id: recent.projectId }
+      const has = id => projects.some(project => project.id === id)
+      if (choice && choice.after === chatProject?.callId && (choice.id === '' || has(choice.id))) return choice.id
+      if (has(chatProject?.id)) return chatProject.id
+      return projects.length === 1 ? projects[0].id : ''
+    }
+    function chooseProject(scope, sessionId, chatProject, id) {
+      const changes = { projectId: id }
+      if (sessionId) changes.projectChoices = { ...readRecent(scope).projectChoices,
+        [sessionId]: { id, after: chatProject?.callId } }
+      rememberRecent(scope, changes)
+    }
     function recentSetup(catalog, context, kind, videoMode) {
       const saved = readRecent(catalog?.scope).setups?.[context]
       const model = catalog?.models?.find(item => item.id === saved?.modelId && item.kind === kind
@@ -520,6 +583,16 @@ window.__ModuleLoader__.load({
         ? { size: saved.output.size, aspectRatio: saved.output.aspectRatio } : null
       const durationSeconds = Number.isFinite(saved.durationSeconds) ? saved.durationSeconds : null
       return { modelId: model.id, output, durationSeconds }
+    }
+    function creationModels(catalog, kind, videoMode, edit) {
+      return catalog?.models.filter(model => model.kind === kind
+        && (videoMode ? model.videoChoices?.[videoMode] : !edit || model.maxImages > 0))
+    }
+    function creationSetup(catalog, context, kind, videoMode) {
+      const saved = context === 'continuation' ? {} : recentSetup(catalog, context, kind, videoMode)
+      if (saved.modelId) return saved
+      const models = creationModels(catalog, kind, videoMode, context === 'edit')
+      return models?.length === 1 ? { modelId: models[0].id } : {}
     }
 
     const mediaDraftKey = '@opendirector/dsh-plugin:media-drafts:v1'
@@ -686,24 +759,168 @@ window.__ModuleLoader__.load({
           nextCursor: items.length > start + 12 ? pendingIdentity(visible.at(-1)) : null, onPage: setPage, t }))
     }
 
-    function CreateMedia({ t, openPlugin }) {
+    const taskStorage = '@opendirector/dsh-plugin:chat-tasks:v1'
+    const taskListeners = new Set()
+    const taskDialogs = new Map()
+    const backgroundReads = new Map()
+    let chatTasks
+    function getChatTasks() {
+      if (chatTasks) return chatTasks
+      try { chatTasks = JSON.parse(window.sessionStorage.getItem(taskStorage) ?? '[]') } catch {}
+      if (!Array.isArray(chatTasks)) chatTasks = []
+      return chatTasks
+    }
+    function subscribeTasks(listener) { taskListeners.add(listener); return () => taskListeners.delete(listener) }
+    const taskKey = task => task.projectId + ':' + (task.groupId || task.jobId)
+    const activeTask = phase => ['accepted', 'queued', 'running'].includes(phase)
+    function changeTask(sessionId, task, changes) {
+      if (!sessionId || !task?.jobId) return
+      const tasks = getChatTasks()
+      const previous = tasks.find(item => item.sessionId === sessionId && taskKey(item) === taskKey(task))
+      if (changes && previous && Object.keys(changes).every(key => changes[key] === previous[key])) return
+      if (previous) chatTasks = changes ? tasks.map(item => item === previous ? { ...item, ...changes } : item)
+        : tasks.filter(item => item !== previous)
+      else if (changes?.jobId) chatTasks = [{ ...changes, sessionId }, ...tasks]
+      else return
+      try {
+        if (chatTasks.length) window.sessionStorage.setItem(taskStorage, JSON.stringify(chatTasks))
+        else window.sessionStorage.removeItem(taskStorage)
+      } catch {}
+      for (const listener of taskListeners) listener()
+    }
+    async function readTask(task, signal) {
+      const params = new URLSearchParams({ project: task.projectId, ...(task.groupId ? { group: task.groupId } : { job: task.jobId }) })
+      const response = await fetch('/api/opendirector/creation?' + params, { signal })
+      if (!response.ok) throw new Error('Job status unavailable')
+      return response.json()
+    }
+    function recordProgress(sessionId, task, value) {
+      const complete = task.groupId && task.requestedCount && value.totalCount >= task.requestedCount
+      const partial = task.groupId && task.groupComplete === false && !complete
+      const uncertain = value.category === 'submission_unknown' || value.jobs?.some(item => item.category === 'submission_unknown')
+      const mixed = value.completedCount > 0 && value.failedCount > 0
+      const phase = activeTask(value.status) ? value.status : uncertain ? 'providerUnknown'
+        : partial ? 'partialGroup' : mixed ? 'partlyReady' : value.status
+      changeTask(sessionId, task, { phase,
+        unavailable: false, ...(complete && { groupComplete: true, canContinueGroup: false, acceptedCount: value.totalCount }) })
+    }
+    function rememberTask(sessionId, projectId, receipt, kind, prompt) {
+      if (!projectId || !receipt.jobId) return
+      const task = { projectId, jobId: receipt.jobId, ...(receipt.groupId && { groupId: receipt.groupId }) }
+      changeTask(sessionId, task, { ...task, status: receipt.status, phase: 'accepted', kind, prompt: prompt?.slice(0, 160),
+        canvasUrl: receipt.canvasUrl, ...(receipt.groupId && { groupComplete: receipt.groupComplete,
+          requestedCount: receipt.requestedCount, acceptedCount: receipt.acceptedCount, canContinueGroup: receipt.canContinueGroup }) })
+    }
+    function ChatOverlay({ onReturn, children }) {
+      const chat = useContext(ChatContext)
+      return h(ChatContext.Provider, { value: { ...chat, returnToChat() {
+        onReturn()
+        chat?.returnToChat?.()
+      } } }, children)
+    }
+
+    function SessionTasks({ sessionId, t }) {
+      const tasks = useSyncExternalStore(subscribeTasks, getChatTasks).filter(task => task.sessionId === sessionId)
+      const [panel, setPanel] = useState(null)
+      const list = useRef(null)
+      const viewed = useRef(null)
+      const active = tasks.some(task => activeTask(task.phase))
+      useEffect(() => {
+        if (!active) return
+        let timer, current, disposed = false
+        const visible = () => !document.hidden && navigator.onLine !== false
+        async function check() {
+          if (disposed || current || !visible()) return
+          for (const task of getChatTasks()) {
+            if (disposed || !visible()) break
+            const key = taskKey(task)
+            if (task.sessionId !== sessionId || !activeTask(task.phase) || taskDialogs.has(key) || backgroundReads.has(key)) continue
+            const controller = new AbortController()
+            current = controller
+            backgroundReads.set(key, controller)
+            try {
+              const value = await readTask(task, controller.signal)
+              if (!controller.signal.aborted) recordProgress(sessionId, task, value)
+            } catch {
+              if (!controller.signal.aborted) changeTask(sessionId, task, { unavailable: true })
+            } finally {
+              backgroundReads.delete(key)
+              current = null
+            }
+          }
+          if (!disposed && visible()) timer = setTimeout(check, 15000)
+        }
+        function wake() {
+          clearTimeout(timer)
+          if (visible()) timer = setTimeout(check, 0)
+          else current?.abort()
+        }
+        if (visible()) timer = setTimeout(check, 15000)
+        document.addEventListener('visibilitychange', wake)
+        window.addEventListener('online', wake)
+        window.addEventListener('offline', wake)
+        return () => {
+          disposed = true
+          clearTimeout(timer)
+          current?.abort()
+          document.removeEventListener('visibilitychange', wake)
+          window.removeEventListener('online', wake)
+          window.removeEventListener('offline', wake)
+        }
+      }, [sessionId, active])
+      useEffect(() => { if (panel === 'list') list.current?.showModal() }, [panel])
+      if (!tasks.length) return null
+      const selected = tasks.find(item => taskKey(item) === panel)
+      const phase = task => t(task.unavailable ? 'taskStatusUnavailable' : task.phase === 'accepted' ? 'queued'
+        : task.phase === 'providerUnknown' ? 'taskNeedsCheck' : task.phase)
+      const summary = tasks.length === 1 ? phase(tasks[0]) : t('taskCount').replace('{count}', tasks.length)
+      function openPanel(key) { viewed.current = null; setPanel(key) }
+      function closeTask(toChat = false) {
+        setPanel(!toChat && tasks.length > 1 ? 'list' : null)
+        if (selected && viewed.current === taskKey(selected) && !activeTask(selected.phase) && !['partialGroup', 'providerUnknown'].includes(selected.phase))
+          changeTask(sessionId, selected, null)
+      }
+      return h('div', { style: row },
+        button(summary, () => openPanel(tasks.length === 1 ? taskKey(tasks[0]) : 'list'), {
+          'aria-label': t('chatTasks') + ' · ' + summary, 'aria-haspopup': 'dialog', title: t('chatTasks'),
+        }),
+        panel === 'list' && h('dialog', { ref: list, className: 'od-media-ui', style: dialogStyle, 'aria-label': t('chatTasks'),
+          onClose: e => { if (e.target === e.currentTarget) setPanel(null) } },
+          dialogHeader(t('chatTasks'), () => list.current.close(), t),
+          ...tasks.map(task => button((task.prompt || t(task.kind === 'image' ? 'picture' : task.kind || 'taskProgress')) + ' · ' + phase(task),
+            () => openPanel(taskKey(task)), { key: taskKey(task) }))),
+        selected && h(ChatOverlay, { onReturn: () => closeTask(true) },
+          h(GenerationDialog, { key: taskKey(selected), sessionId, existingJob: selected, t, onClose: closeTask,
+            onSettledRead: () => { viewed.current = taskKey(selected) } })))
+    }
+
+    function CreateMedia({ t, openPlugin, appendChatDraft, useInput, focusChat, sessionId, readChatProject }) {
       const [open, setOpen] = useState(null)
+      const [chatProject, setChatProject] = useState(null)
       const [menu, setMenu] = useState(null)
       const trigger = useRef(null)
       const actions = [['create', 'creation'], ['resume', 'library'], ['actionPacks', 'packs'], ['connection', 'connection']]
-        .map(([label, page]) => ({ label, run: () => setOpen(page) }))
-      return h('div', { className: 'od-media-ui', style: row },
+        .map(([label, page]) => ({ label, run: () => {
+          if (page === 'library' || page === 'creation') setChatProject(readChatProject?.())
+          setOpen(page)
+        } }))
+      const chat = { sessionId, appendChatDraft, useInput, returnToChat() {
+        setOpen(null)
+        focusChat?.()
+      } }
+      return h(ChatContext.Provider, { value: chat }, h('div', { className: 'od-media-ui', style: row },
         button(icon('create'), event => {
           const rect = event.currentTarget.getBoundingClientRect()
           setMenu(menu ? null : { x: rect.left, y: rect.top, above: true })
         }, { ref: trigger, className: 'od-launcher', title: 'OpenDirector', 'aria-label': 'OpenDirector',
           'aria-haspopup': 'menu', 'aria-expanded': Boolean(menu) }),
+        sessionId && h(SessionTasks, { sessionId, t }),
         menu && h(ActionMenu, { actions, position: menu, trigger, t, label: 'OpenDirector',
           close: (restore = true) => { setMenu(null); if (restore) trigger.current?.focus() } }),
         open === 'connection' && h(ConnectionDialog, { t, openPlugin, onClose: () => setOpen(null) }),
         open === 'packs' && h(ActionPackLibrary, { t, onClose: () => setOpen(null) }),
-        open === 'library' && h(ProjectLibrary, { t, onClose: () => setOpen(null) }),
-        open === 'creation' && h(GenerationDialog, { t, onClose: () => setOpen(null) }))
+        open === 'library' && h(ProjectLibrary, { t, sessionId, chatProject, onClose: () => setOpen(null) }),
+        open === 'creation' && h(GenerationDialog, { t, sessionId, chatProject, onClose: () => setOpen(null) })))
     }
 
     function ConnectionDialog({ t, openPlugin, onClose }) {
@@ -809,8 +1026,9 @@ window.__ModuleLoader__.load({
       return response.json()
     }
 
-    function ProjectLibrary({ t, onClose }) {
+    function ProjectLibrary({ t, onClose, sessionId, chatProject }) {
       const dialog = useRef(null)
+      const initialized = useRef(false)
       const [projects, setProjects] = useState(null)
       const [scope, setScope] = useState('')
       const [projectId, setProjectId] = useState('')
@@ -842,9 +1060,11 @@ window.__ModuleLoader__.load({
           else {
             setProjects(value.projects)
             setScope(value.scope)
-            const recent = readRecent(value.scope)
-            if (value.projects.some(project => project.id === recent.projectId)) setProjectId(recent.projectId)
-            if (['results', 'jobs'].includes(recent.view)) setView(recent.view)
+            if (!initialized.current) {
+              initialized.current = true
+              setProjectId(initialProject(value.projects, value.scope, sessionId, chatProject))
+              if (!chatProject && readRecent(value.scope).view === 'jobs') setView('jobs')
+            }
           }
           setPending(false)
         }).catch(() => {
@@ -875,7 +1095,7 @@ window.__ModuleLoader__.load({
         refresh()
       }
       function changeProject(id) {
-        if (id) rememberRecent(scope, { projectId: id })
+        chooseProject(scope, sessionId, chatProject, id)
         setProjectId(id)
         setComparison([])
         setComparing(false)
@@ -963,9 +1183,9 @@ window.__ModuleLoader__.load({
             h('p', { style: { margin: 0, overflowWrap: 'anywhere' } }, job.prompt),
             button(t('viewTask'), () => setTask({ ...job, projectId, canvasUrl: current.canvasUrl }), { 'aria-haspopup': 'dialog' })))))
           : current.results.length === 0 ? h('p', null, t(!query && filters.kind === 'all' && filters.selection === 'all' ? 'resultsEmpty' : 'noMatches'))
-          : h('div', { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
+          : h(ImageReviewGrid, { style: { display: 'grid', gap: '.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
             ...current.results.map((candidate, index) => h(Preview, {
-              ...candidate, key: candidate.resultId, projectId, t, canvasUrl: current.canvasUrl,
+              ...candidate, key: candidate.resultId, projectId, projectName: current.projectName, t, canvasUrl: current.canvasUrl,
               title: candidate.title || (candidate.version ? t('candidate') : `${t('candidate')} ${index + 1}`),
               onAdopted: refresh,
               compareSelected: comparison.some(item => item.resultId === candidate.resultId),
@@ -1012,7 +1232,7 @@ window.__ModuleLoader__.load({
         !value && !failed && h('p', { role: 'status' }, t('loading')),
         failed && h('div', null, h('p', { role: 'alert' }, t('comparisonUnavailable')),
           button(t('refresh'), () => setRevision(previous => previous + 1))),
-        value && !failed && h('div', { style: { display: 'grid', gap: '1rem',
+        value && !failed && h(ImageReviewGrid, { style: { display: 'grid', gap: '1rem',
           gridTemplateColumns: 'repeat(auto-fit, minmax(min(24rem, 100%), 1fr))' } },
           ...value.images.map((image, index) => h(Preview, {
             ...image, key: image.resultId, projectId, t, expanded: true, canvasUrl: value.canvasUrl,
@@ -1021,20 +1241,18 @@ window.__ModuleLoader__.load({
           }))))
     }
 
-    function ReferencePicker({ projectId, references, setReferences, limit, locked, t }) {
-      const [open, setOpen] = useState(false)
+    function useSourcePage(projectId, kind, enabled) {
       const [cursor, setCursor] = useState({})
       const [page, setPage] = useState(null)
       const [loading, setLoading] = useState(false)
       const [error, setError] = useState(false)
-      const full = references.length >= limit
-      const pickerOpen = open && !locked && limit > 1
       useEffect(() => {
-        if (!pickerOpen) return
+        if (!enabled) return
         const controller = new AbortController()
+        setPage(null)
         setLoading(true)
         setError(false)
-        readLibrary(projectId, controller.signal, { kind: 'image' }, cursor.after).then(value => {
+        readLibrary(projectId, controller.signal, { kind }, cursor.after).then(value => {
           if (controller.signal.aborted) return
           setPage(value)
           setLoading(false)
@@ -1044,12 +1262,40 @@ window.__ModuleLoader__.load({
           setLoading(false)
         })
         return () => controller.abort()
-      }, [pickerOpen, cursor, projectId])
+      }, [enabled, cursor, projectId, kind])
+      return { page, loading, error, cursor, setCursor }
+    }
+
+    function VideoSourcePicker({ projectId, mode, selected, onSelect, emptyAction, t }) {
+      const kind = mode === 'continuation' ? 'video' : 'image'
+      const { page, loading, error, cursor, setCursor } = useSourcePage(projectId, kind, true)
+      const items = page?.results.filter(item => kind === 'image' || item.supportsContinuation !== false) ?? []
+      return h('section', { 'aria-label': t(kind === 'image' ? 'firstFrameSource' : 'sourceClip') },
+        h('p', null, t(kind === 'image' ? 'pickStill' : 'pickClip')),
+        !page && !error && h('small', { role: 'status' }, t('loading')),
+        error && h('div', { style: row }, h('small', { role: 'alert' }, t('libraryError')),
+          button(t('reloadData'), () => setCursor({ ...cursor }))),
+        page && !items.length && h('div', { style: row },
+          h('small', null, t(kind === 'image' ? 'noStills' : page.results.length ? 'clipsUnsupported' : 'noClips')), emptyAction),
+        h('div', { style: row }, ...items.map(item => {
+          const label = [item.title || item.prompt || t('candidate'), item.version && 'v' + item.version].filter(Boolean).join(' · ')
+          return button(h('span', { style: row },
+            kind === 'image' && h('img', { src: mediaHref(projectId, item.assetId, kind), alt: '', loading: 'lazy',
+              style: { width: '3.2rem', height: '3.2rem', objectFit: 'contain' } }),
+            h('span', { className: 'od-source-name' }, label)), () => onSelect({ ...item, projectId }),
+            { key: item.resultId, title: label, current: item.resultId === selected?.resultId,
+              'aria-pressed': item.resultId === selected?.resultId })
+        })),
+        page && h(PageControls, { cursor, nextCursor: page.nextCursor, onPage: setCursor, disabled: loading, t }))
+    }
+
+    function ReferencePicker({ projectId, references, setReferences, limit, locked, t }) {
+      const [open, setOpen] = useState(false)
+      const full = references.length >= limit
+      const pickerOpen = open && !locked && limit > 1
+      const { page, loading, error, cursor, setCursor } = useSourcePage(projectId, 'image', pickerOpen)
       function toggle() {
-        if (!open) {
-          setCursor({})
-          setPage(null)
-        }
+        if (!open) setCursor({})
         setOpen(value => !value)
       }
       function add(image) {
@@ -1523,7 +1769,7 @@ window.__ModuleLoader__.load({
                   button(t('packCancelEdit'), cancelEdit, { disabled: locked }))),
               ...active.map(job => h(JobCancellation, { key: job.jobId, projectId, jobId: job.jobId, progress: job, t, onChange: refresh })),
               ['failed', 'interrupted'].includes(action.status) && h('p', null, t(generationMessages.get(action.jobs.at(-1)?.category) ?? 'recoverOnCanvas')),
-              h('div', { className: 'od-pack-candidates' }, ...results.map((result, index) => h(Preview, {
+              h(ImageReviewGrid, { className: 'od-pack-candidates' }, ...results.map((result, index) => h(Preview, {
                 ...result, key: result.resultId, projectId, title: t(result.selected ? 'selected' : 'candidate') + ' ' + (action.results.length - page * 4 - index),
                 t, onAdopted: refresh, canvasUrl: pack.canvasUrl, compactActions: true,
                 onCompare: action.kind === 'image' ? () => setComparison(previous =>
@@ -1582,33 +1828,111 @@ window.__ModuleLoader__.load({
             () => onApply(keys.map(key => ({ name: t('pack' + key), prompt: t('pack' + key + 'Prompt') })))))))
     }
 
-    function GenerationDialog({ source, videoMode, existingJob, templateOf, t, onClose }) {
+    function ImportChatDraft({ useInput, prompt, limit, onApply, t }) {
+      const draft = useInput(state => state.phase === 'plain' ? state.draft.trim() : '')
+      if (!draft || prompt.trim() === draft || prompt.trimEnd().endsWith('\n' + draft)) return null
+      const next = prompt ? prompt + (prompt.endsWith('\n') ? '' : '\n') + draft : draft
+      const tooLong = next.length > limit
+      return h('div', { style: row }, button(t(prompt.trim() ? 'appendChatDraft' : 'useChatDraft'),
+        () => onApply(next), { disabled: tooLong }), tooLong && h('small', null, t('draftTooLong')))
+    }
+
+    function generationTitle({ existingJob, templateOf, videoMode, source }) {
+      return existingJob ? 'taskProgress' : templateOf ? 'reuseSettings' : videoMode === 'continuation' ? 'continue'
+        : videoMode ? 'firstFrame' : source ? 'edit' : 'create'
+    }
+
+    function GenerationDialog(props) {
       const dialog = useRef(null)
+      const [steps, setSteps] = useState([])
+      const [pack, setPack] = useState(null)
+      const returning = useRef(null)
+      const pages = [props, ...steps.map(step => step.page)]
+      function leavePage() {
+        const element = dialog.current
+        element.querySelectorAll('video, audio').forEach(player => player.pause())
+        return { focus: document.activeElement, scroll: element.scrollTop }
+      }
+      function openStep(page) {
+        const from = leavePage()
+        setSteps(previous => [...previous, { page, from }])
+      }
+      function back() {
+        returning.current = steps.at(-1).from
+        setSteps(previous => previous.slice(0, -1))
+      }
+      function openPack(source) {
+        const from = leavePage()
+        dialog.current.close()
+        setPack({ source, from })
+      }
+      function close() {
+        flushMediaDrafts()
+        props.onClose()
+      }
+      useLayoutEffect(() => {
+        const element = dialog.current
+        if (pack) return
+        if (!element.open) element.showModal()
+        if (returning.current) {
+          const { focus, scroll } = returning.current
+          returning.current = null
+          focus?.focus({ preventScroll: true })
+          element.scrollTop = scroll
+        } else if (steps.length) {
+          element.querySelector('[data-generation-page]:not([hidden]) [data-step-back]')?.focus()
+          element.scrollTop = 0
+        }
+      }, [steps.length, pack])
+      const { t } = props
+      return h('div', null, h('dialog', { className: 'od-media-ui', ref: dialog, style: dialogStyle,
+        onClose: event => { if (event.target === dialog.current && !pack && !dialog.current.open) close() },
+        'aria-label': t(generationTitle(pages.at(-1))), onCancel: event => {
+          if (event.target !== dialog.current) return
+          event.preventDefault()
+          if (steps.length) back()
+          else close()
+        } }, ...pages.map((page, index) => h('div', { key: index, hidden: index !== steps.length, 'data-generation-page': '' },
+          h(GenerationStep, { ...page, t, visible: index === steps.length && !pack, openStep, openPack,
+            back: index > 0 ? back : null, onClose: close })))),
+        pack && h(ActionPackDialog, { source: pack.source, t, onClose: () => {
+          returning.current = pack.from
+          setPack(null)
+        } }))
+    }
+
+    function GenerationStep({ source, videoMode: fixedVideoMode, existingJob, templateOf, proposal, sessionId, chatProject, t, visible, openStep, openPack, back, onClose, onSettledRead }) {
+      const page = useRef(null)
       const busy = useRef(false)
       const attempt = useRef(null)
       const [catalog, setCatalog] = useState(null)
-      const draftKey = existingJob ? ['repeat', existingJob.projectId, existingJob.jobId].join(':') : templateOf ? ['reuse', templateOf.projectId, templateOf.resultId].join(':') : source ? [videoMode ?? 'edit', source.projectId, source.resultId].join(':') : 'create'
+      const chat = useContext(ChatContext)
+      const taskSession = sessionId ?? chat?.sessionId
+      const createKey = sessionId ? 'create:' + sessionId : 'create'
+      const draftKey = proposal ? ['proposal', source.projectId, source.resultId, proposal.callId].join(':') : existingJob ? ['repeat', existingJob.projectId, existingJob.jobId].join(':') : templateOf ? ['reuse', templateOf.projectId, templateOf.resultId].join(':') : source ? [fixedVideoMode ?? 'edit', source.projectId, source.resultId].join(':') : createKey
       const pending = useSyncExternalStore(subscribePending, readPendingSubmissions)
-      const [recoveredJob, setRecoveredJob] = useState(null)
       const [startFresh, setStartFresh] = useState(false)
-      const restoringPending = !startFresh && !attempt.current && pending.some(item => item.context === draftKey)
+      const [result, setResult] = useState(existingJob ?? null)
+      const restoringPending = !result && !startFresh && !attempt.current && pending.some(item => item.context === draftKey)
       const defaults = {
-        kind: templateOf?.kind ?? (videoMode ? 'video' : 'image'), projectId: '', projectName: '', modelId: '',
-        prompt: '', output: null, voice: '', durationSeconds: null, candidateCount: 1,
+        kind: templateOf?.kind ?? (fixedVideoMode ? 'video' : 'image'), projectId: '', projectName: '', modelId: '',
+        videoSource: null, videoMode: 'first_frame',
+        prompt: proposal?.prompt ?? '', output: null, voice: '', durationSeconds: null, candidateCount: 1,
       }
       const [saved] = useState(() => existingJob ? null : readMediaDraft(draftKey))
+      const [earlierDraft, setEarlierDraft] = useState(() => !saved && sessionId && draftKey === createKey ? readMediaDraft('create') : null)
       const catalogInitialized = useRef(Boolean(saved))
       const [catalogRun, setCatalogRun] = useState(0)
       const [restored, setRestored] = useState(Boolean(saved))
       const [recentRestored, setRecentRestored] = useState(false)
       const [recentBase, setRecentBase] = useState(null)
       const [form, setForm] = useState(() => ({ ...defaults, ...saved?.form }))
-      const [result, setResult] = useState(existingJob ?? null)
+      const videoMode = fixedVideoMode ?? (form.kind === 'video' ? form.videoMode : undefined)
+      const videoSource = source ?? (form.videoSource?.projectId === form.projectId ? form.videoSource : null)
       const [progress, setProgress] = useState(null)
+      const [previousRound, setPreviousRound] = useState(null)
       const [repeatStatus, setRepeatStatus] = useState(null)
       const [repeatCount, setRepeatCount] = useState(1)
-      const [packSource, setPackSource] = useState(null)
-      const packTrigger = useRef(null)
       const [comparison, setComparison] = useState([])
       const [comparing, setComparing] = useState(false)
       const [submitting, setSubmitting] = useState(false)
@@ -1620,9 +1944,8 @@ window.__ModuleLoader__.load({
           && typeof item.resultId === 'string' && typeof item.assetId === 'string' && item.resultId !== source.resultId) : [])] : [])
       const fromResult = Boolean(source)
       const continuation = videoMode === 'continuation'
-      const title = t(existingJob ? 'taskProgress' : templateOf ? 'reuseSettings' : continuation ? 'continue' : videoMode ? 'firstFrame' : fromResult ? 'edit' : 'create')
-      const choices = catalog?.models.filter(model => model.kind === form.kind
-        && (videoMode ? model.videoChoices?.[videoMode] : !source || model.maxImages > 0))
+      const title = t(generationTitle({ existingJob, templateOf, videoMode: fixedVideoMode, source }))
+      const choices = creationModels(catalog, form.kind, videoMode, Boolean(source))
       const model = choices?.find(item => item.id === form.modelId)
       const video = model?.videoChoices?.[videoMode]
       const durationSeconds = form.durationSeconds ?? video?.defaultDuration
@@ -1645,15 +1968,16 @@ window.__ModuleLoader__.load({
         && !catalog.projects.some(project => project.id === form.projectId)
       const modelUnavailable = catalog && !catalog.error && form.modelId && !model
       const missing = projectUnavailable ? 'projectUnavailable' : !source && !templateOf && !form.projectId ? 'needsProject'
+        : videoMode && !videoSource ? (continuation ? 'pickClip' : 'pickStill')
         : form.projectId === 'new' && !form.projectName.trim() ? 'needsName'
-        : !choices?.length ? 'noModels' : modelUnavailable ? 'modelUnavailable' : !model ? 'needsModel'
+        : !choices?.length ? (videoMode ? 'noVideoMode' : 'noModels') : modelUnavailable ? 'modelUnavailable' : !model ? 'needsModel'
         : tooManyReferences ? 'referencesChanged' : outputUnavailable ? 'chooseOutput'
         : durationUnavailable ? 'chooseDuration' : model.voiceRequired && !form.voice.trim() ? 'needsVoice'
         : !form.prompt.trim() ? 'needsPrompt' : null
       useEffect(() => {
-        if (existingJob || restoringPending || recoveredJob) return
-        saveMediaDraft(draftKey, !locked && dirty ? { form, references } : null)
-      }, [draftKey, form, references, locked, existingJob, dirty, restoringPending, recoveredJob])
+        if (!visible || existingJob || restoringPending) return
+        saveMediaDraft(draftKey, !locked && (dirty || restored) ? { form, references } : null)
+      }, [draftKey, form, references, locked, existingJob, dirty, restored, restoringPending, visible])
       function clearDraft() {
         setForm(draftBase)
         setReferences(source && !videoMode ? [source] : [])
@@ -1662,8 +1986,11 @@ window.__ModuleLoader__.load({
         flushMediaDrafts()
       }
       const update = (key, value) => setForm(previous => ({ ...previous, [key]: value,
-        ...(key === 'kind' && { modelId: '', output: null, durationSeconds: null,
-          ...recentSetup(catalog, value, value) }),
+        ...(['kind', 'videoMode', 'projectId'].includes(key) && { videoSource: null }),
+        ...(key === 'kind' && { modelId: '', output: null, durationSeconds: null, videoMode: 'first_frame',
+          ...(value === 'video' ? creationSetup(catalog, 'first_frame', 'video', 'first_frame') : creationSetup(catalog, value, value)) }),
+        ...(key === 'videoMode' && { modelId: '', durationSeconds: null,
+          ...creationSetup(catalog, value, 'video', value) }),
         ...((key === 'kind' || key === 'modelId') && { voice: '' }),
       }))
       useEffect(() => {
@@ -1678,16 +2005,8 @@ window.__ModuleLoader__.load({
         })
       }, [existingJob, templateOf, locked, model?.id, form.kind, form.projectId, form.output, form.durationSeconds, catalog?.scope])
 
-      useLayoutEffect(() => {
-        if (packSource || recoveredJob) return
-        dialog.current.showModal()
-        if (packTrigger.current) {
-          dialog.current.querySelector(`[data-opendirector-result="${CSS.escape(packTrigger.current)}"] [aria-haspopup=menu]`)?.focus()
-          packTrigger.current = null
-        }
-      }, [packSource, recoveredJob])
       useEffect(() => {
-        if (existingJob || restoringPending || recoveredJob) return
+        if (existingJob || restoringPending) return
         const controller = new AbortController()
         setCatalog(null)
         Promise.all([
@@ -1710,42 +2029,49 @@ window.__ModuleLoader__.load({
             kind: template.kind, projectId: templateOf.projectId, modelId: template.modelConfigId,
             ...(initialize && { prompt: template.prompt, voice: template.voice }),
           }))
-          else if (initialize) {
+          else if (initialize || saved) {
             const recent = readRecent(models.scope)
-            const kind = !source && ['image', 'audio'].includes(recent.kind) ? recent.kind : defaults.kind
-            const preferred = videoMode === 'continuation' ? {} : recentSetup(models, videoMode ?? (source ? 'edit' : kind), kind, videoMode)
-            const preferredProject = !source && projects.projects.some(project => project.id === recent.projectId) ? recent.projectId : ''
+            const kind = !source && ['image', 'video', 'audio'].includes(recent.kind) ? recent.kind : defaults.kind
+            const initialMode = fixedVideoMode ?? (kind === 'video' ? defaults.videoMode : undefined)
+            const context = initialMode ?? (source ? 'edit' : kind)
+            const preferred = creationSetup(models, context, kind, initialMode)
+            const preferredProject = !source && initialProject(projects.projects, models.scope, sessionId, chatProject)
             const restoredForm = { ...defaults, kind, ...preferred, ...(preferredProject && { projectId: preferredProject }) }
             setRecentBase(restoredForm)
-            setForm(restoredForm)
-            setRecentRestored(Boolean(preferred.modelId || preferredProject))
+            if (initialize) {
+              setForm(previous => ({ ...restoredForm, ...(previous.prompt && { prompt: previous.prompt }) }))
+              setRecentRestored(Boolean(preferred.modelId && preferred.modelId === recent.setups?.[context]?.modelId))
+            }
           }
           catalogInitialized.current = true
         }).catch(() => {
           if (!controller.signal.aborted) setCatalog({ error: true, projects: [], models: [] })
         })
         return () => controller.abort()
-      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId, restoringPending, recoveredJob, catalogRun])
+      }, [fromResult, existingJob, templateOf?.projectId, templateOf?.resultId, restoringPending, catalogRun])
       useEffect(() => {
+        if (existingJob?.recovery) rememberTask(taskSession, existingJob.projectId, existingJob, existingJob.kind, existingJob.prompt)
         if (existingJob?.recovery && (!existingJob.groupId || existingJob.groupComplete)) forgetSubmission(existingJob.recovery)
       }, [existingJob?.recovery])
       useEffect(() => {
-        if (!jobId || recoveredJob) return
+        if (!jobId || !visible) return
         const controller = new AbortController()
         let timer
         let inFlight = false
         let active = true
+        const key = taskKey({ projectId, jobId, groupId })
+        taskDialogs.set(key, (taskDialogs.get(key) ?? 0) + 1)
+        backgroundReads.get(key)?.abort()
         const available = () => !document.hidden && navigator.onLine !== false
         async function poll() {
           if (controller.signal.aborted || inFlight || !available()) return
           inFlight = true
           try {
-            const params = new URLSearchParams({ project: projectId, ...(groupId ? { group: groupId } : { job: jobId }) })
-            const response = await fetch('/api/opendirector/creation?' + params, { signal: controller.signal })
-            if (!response.ok) throw new Error('Job status unavailable')
-            const value = await response.json()
+            const value = await readTask({ projectId, jobId, groupId }, controller.signal)
             if (controller.signal.aborted) return
-            active = ['accepted', 'queued', 'running'].includes(value.status)
+            active = activeTask(value.status)
+            recordProgress(taskSession, result, value)
+            if (!active) onSettledRead?.()
             setPollError(false)
             setProgress(previous => ({ ...value, jobId, results: value.results ?? previous?.results ?? [] }))
             if (active && available()) timer = setTimeout(poll, 2500)
@@ -1767,11 +2093,14 @@ window.__ModuleLoader__.load({
         return () => {
           controller.abort()
           clearTimeout(timer)
+          const count = taskDialogs.get(key) - 1
+          if (count) taskDialogs.set(key, count)
+          else taskDialogs.delete(key)
           document.removeEventListener('visibilitychange', wake)
           window.removeEventListener('online', wake)
           window.removeEventListener('offline', wake)
         }
-      }, [jobId, projectId, groupId, pollRun, recoveredJob])
+      }, [jobId, projectId, groupId, pollRun, visible])
       useEffect(() => {
         // Saved group members also prove acceptance when a reply was lost.
         // This only reconciles the display; it never submits remaining work.
@@ -1796,6 +2125,8 @@ window.__ModuleLoader__.load({
         setSubmitting(true)
         let current
         function receive(value) {
+          rememberTask(taskSession, current?.projectId, value, current?.kind || existingJob?.kind || form.kind,
+            current?.prompt || form.prompt || existingJob?.prompt)
           if (value.groupId && value.jobId) setPollRun(value => value + 1)
           if (value.projectCreated && current?.projectName) {
             const project = { id: current.projectId, name: current.projectName }
@@ -1860,7 +2191,7 @@ window.__ModuleLoader__.load({
             projectId: templateOf?.projectId ?? source?.projectId ?? (newProject ? crypto.randomUUID() : form.projectId),
             operationId: crypto.randomUUID(),
             ...(templateOf && { reuseResultId: templateOf.resultId }),
-            ...(videoMode ? { videoMode, sourceResultId: source.resultId, durationSeconds }
+            ...(videoMode ? { videoMode, sourceResultId: videoSource.resultId, durationSeconds }
               : source && { sourceResultIds: references.map(item => item.resultId) }),
             ...(newProject && { projectName: form.projectName.trim() }),
             kind: form.kind, modelConfigId: form.modelId, prompt: form.prompt.trim(),
@@ -1875,6 +2206,16 @@ window.__ModuleLoader__.load({
       const candidates = progress?.results ?? []
       const providerUnknown = Boolean(status) && progress.category === 'submission_unknown'
       const canRetry = status === 'failed' && progress.canRetry
+      const settled = ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(status)
+        || (!jobId && result?.status === 'rejected' && result.draftSaved)
+      const canAdjust = !existingJob && settled && !unknown && !providerUnknown && !attempt.current
+        && (!groupId || result.groupComplete && !progress?.jobs?.some(job => job.category === 'submission_unknown'))
+      const previousImages = previousRound && previousRound.projectId === projectId
+        ? previousRound.results.filter(item => item.kind === 'image') : []
+      const currentImages = candidates.filter(item => item.kind === 'image')
+      const comparePair = previousImages.length === 1 && currentImages.length === 1
+        && previousImages[0].resultId !== currentImages[0].resultId
+        ? [previousImages[0].resultId, currentImages[0].resultId] : null
       const outcome = providerUnknown ? 'providerUnknown'
         : status === 'failed' ? generationMessages.get(progress.category) ?? 'failed'
           : ['cancelled', 'interrupted'].includes(status) ? 'stopped' : status === 'accepted' ? 'queued' : status
@@ -1886,6 +2227,17 @@ window.__ModuleLoader__.load({
         setComparison(previous => previous.includes(candidate.resultId) ? previous.filter(id => id !== candidate.resultId)
           : previous.length < 2 ? [...previous, candidate.resultId] : previous)
       }
+      function adjustGeneration() {
+        if (!canAdjust || busy.current) return
+        if (candidates.length) setPreviousRound({ projectId, canvasUrl: result.canvasUrl, results: candidates })
+        setResult(null)
+        setProgress(null)
+        setPollError(false)
+        setRepeatStatus(null)
+        setComparison([])
+        setComparing(false)
+        requestAnimationFrame(() => page.current?.querySelector('form textarea')?.focus())
+      }
       function checkGroup() {
         attempt.current ??= { projectId, operationId: groupId, candidateCount: result.requestedCount }
         return send(() => ({}))
@@ -1895,64 +2247,88 @@ window.__ModuleLoader__.load({
         attempt.current = null
         await send(() => ({ ...identity, continueGroup: true }))
       }
-      const sourcePreview = source && h(Preview, {
-        version: source.version, projectId: source.projectId, assetId: source.assetId, kind: source.kind, details: source.details, t,
+      const previewSource = videoMode ? videoSource : source
+      const sourcePreview = previewSource && h(Preview, {
+        version: previewSource.version, projectId: previewSource.projectId, assetId: previewSource.assetId, kind: previewSource.kind, details: previewSource.details, t,
         title: t(continuation ? 'sourceClip' : videoMode ? 'firstFrameSource' : 'original'),
       })
-      if (recoveredJob) return h(GenerationDialog, { existingJob: recoveredJob, t, onClose })
-      if (packSource) return h(ActionPackDialog, { source: packSource, t, onClose: () => setPackSource(null) })
-      return h('dialog', {
-        className: 'od-media-ui',
-        ref: dialog, onClose: event => { if (event.target === event.currentTarget) { flushMediaDrafts(); onClose() } },
-        'aria-label': title, style: dialogStyle,
-      },
-        dialogHeader(title, () => dialog.current.close(), t,
+      return h('div', { ref: page },
+        back && button(t('backStep'), back, { 'data-step-back': '' }),
+        dialogHeader(title, onClose, t,
           !existingJob && !source && !templateOf && !jobId ? t('createHint') : undefined),
         !existingJob && !restoringPending && !catalog && h('p', { role: 'status' }, t('loading')),
         !existingJob && !restoringPending && !locked && h('div', { style: row },
           restored && h('small', { role: 'status' }, t('draftRestored')),
+          earlierDraft && catalog && !catalog.error && !dirty && !locked && button(t('resumeEarlierDraft'), () => {
+            setForm({ ...defaults, ...earlierDraft.form })
+            setRestored(true)
+            setEarlierDraft(null)
+            saveMediaDraft(draftKey, earlierDraft)
+            saveMediaDraft('create', null)
+            flushMediaDrafts()
+          }),
           !restored && recentRestored && h('small', { role: 'status' }, t('recentRestored')),
-          dirty && catalog && !catalog.error && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
+          (dirty || restored) && catalog && !catalog.error && button(t(templateOf ? 'resetTemplate' : 'clearDraft'), clearDraft)),
         projectUnavailable && h('p', { role: 'alert' }, t('projectUnavailable')),
         modelUnavailable && h('p', { role: 'alert' }, t('modelUnavailable')),
         existingJob && h('p', { style: { overflowWrap: 'anywhere' } }, existingJob.prompt),
         catalog?.error && h('div', { style: row },
           h('p', { role: 'alert' }, t(templateOf ? 'reuseUnavailable' : 'libraryError')),
           button(t('reloadData'), () => setCatalogRun(value => value + 1))),
-        restoringPending && h(PendingSubmissions, { context: draftKey, t, onRecovered: setRecoveredJob }),
+        restoringPending && h(PendingSubmissions, { context: draftKey, t, onRecovered: job => openStep({ existingJob: job }) }),
         restoringPending && !existingJob && button(t('startSeparateCreation'), () => setStartFresh(true)),
         !restoringPending && pending.length > 0 && !pendingDurable && h('p', { role: 'alert' }, t('pendingStorageUnavailable')),
         !restoringPending && catalog && !catalog.error && h(jobId ? 'details' : 'div',
           { className: jobId ? 'od-settings' : undefined },
           jobId && h('summary', null, t('generationSettings')),
           h('form', { onSubmit: submit, className: 'od-create-form' },
-          field(form.kind === 'audio' ? 'speechText' : continuation ? 'shot' : videoMode ? 'motion' : source ? 'brief' : 'prompt', h('textarea', {
-            required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
-            placeholder: !source && form.kind === 'image' ? t('promptPlaceholder') : undefined,
-            value: form.prompt, onChange: event => update('prompt', event.target.value),
-          })),
-          !locked && h(ExamplePicker, {
-            key: form.kind + (videoMode ?? ''), mode: form.kind === 'audio' ? 'audio' : continuation ? 'continuation' : videoMode ? 'first_frame' : source ? 'edit' : 'image',
-            prompt: form.prompt, t, onApply: value => update('prompt', value),
-          }),
-          h('div', { className: 'od-create-options' },
+          !source && !templateOf && h('div', { role: 'group', 'aria-label': t('mediaType'), style: row },
+            ...[['image', 'picture'], ['video', 'video'], ['audio', 'speech']].map(([kind, label]) =>
+              button(t(label), () => { if (form.kind !== kind) update('kind', kind) },
+                { key: kind, disabled: locked, current: form.kind === kind, 'aria-pressed': form.kind === kind }))),
           !source && !templateOf && field('chooseProject', h('select', {
-            required: true, disabled: locked, value: form.projectId, onChange: event => update('projectId', event.target.value),
+            required: true, disabled: locked, value: form.projectId, onChange: event => {
+              const id = event.target.value
+              if (id !== 'new') chooseProject(catalog?.scope, sessionId, chatProject, id)
+              update('projectId', id)
+            },
           }, h('option', { value: '' }, t('chooseProject')),
           ...catalog.projects.map(({ id, name }) => h('option', { key: id, value: id }, name)),
           h('option', { value: 'new' }, t('newProject')))),
           !source && !templateOf && form.projectId === 'new' && field('projectName', h('input', {
             required: true, disabled: locked, value: form.projectName, onChange: event => update('projectName', event.target.value),
           })),
-          !source && !templateOf && field('mediaType', h('select', {
-            disabled: locked, value: form.kind, onChange: event => update('kind', event.target.value),
-          }, h('option', { value: 'image' }, t('picture')), h('option', { value: 'audio' }, t('speech')))),
+          !source && videoMode && !locked && h('div', null,
+            h('div', { role: 'group', 'aria-label': t('videoStart'), style: row },
+              ...[['first_frame', 'animateStill'], ['continuation', 'extendClip']].map(([mode, label]) =>
+                button(t(label), () => { if (mode !== videoMode) update('videoMode', mode) },
+                  { key: mode, current: videoMode === mode, 'aria-pressed': videoMode === mode }))),
+            !form.projectId ? h('p', null, t('videoProject'))
+              : form.projectId === 'new' ? h('div', { style: row }, h('p', null, t(continuation ? 'noClips' : 'noStills')),
+                button(t('makeStill'), () => update('kind', 'image')))
+                : !projectUnavailable && h(VideoSourcePicker, { key: form.projectId + ':' + videoMode,
+                  projectId: form.projectId, mode: videoMode, selected: videoSource,
+                  onSelect: value => update('videoSource', value), t,
+                  emptyAction: continuation ? button(t('animateStill'), () => update('videoMode', 'first_frame'))
+                    : button(t('makeStill'), () => update('kind', 'image')) })),
+          field(form.kind === 'audio' ? 'speechText' : continuation ? 'shot' : videoMode ? 'motion' : source ? 'brief' : 'prompt', h('textarea', {
+            required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
+            placeholder: !source && form.kind === 'image' ? t('promptPlaceholder') : undefined,
+            value: form.prompt, onChange: event => update('prompt', event.target.value),
+          })),
+          !locked && chat?.useInput && h(ImportChatDraft, { useInput: chat.useInput, prompt: form.prompt,
+            limit: Math.min(model?.maxPromptCharacters ?? 20000, 20000), onApply: value => update('prompt', value), t }),
+          !locked && h(ExamplePicker, {
+            key: form.kind + (videoMode ?? ''), mode: form.kind === 'audio' ? 'audio' : continuation ? 'continuation' : videoMode ? 'first_frame' : source ? 'edit' : 'image',
+            prompt: form.prompt, t, onApply: value => update('prompt', value),
+          }),
+          h('div', { className: 'od-create-options' },
           field('model', h('select', {
             name: 'model', required: true, disabled: locked || Boolean(templateOf), value: form.modelId, onChange: event => update('modelId', event.target.value),
           }, h('option', { value: '' }, t('chooseModel')),
           ...choices.map(item => h('option', { key: item.id, value: item.id },
             `${item.modelId} · ${t(item.connectionType === 'self_hosted' ? 'local' : 'hosted')}`)))),
-          choices.length === 0 && h('div', { style: row }, h('p', null, t('noModels')),
+          choices.length === 0 && h('div', { style: row }, h('p', null, t(videoMode ? 'noVideoMode' : 'noModels')),
             !locked && button(t('reloadData'), () => setCatalogRun(value => value + 1))),
           video?.durations.length > 0 && field('videoDuration', h('select', {
             disabled: locked, value: durationUnavailable ? '' : durationSeconds,
@@ -1993,7 +2369,8 @@ window.__ModuleLoader__.load({
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
         result?.draftSaved && !jobId && h('p', null, t('draftSaved')),
         jobId && h('p', { role: status === 'failed' || providerUnknown ? 'alert' : 'status' }, t(outcome ?? 'waiting')),
-        jobId && h('small', null, t('backgroundHint')),
+        jobId && h('small', null, t(taskSession && getChatTasks().some(item => item.sessionId === taskSession && taskKey(item) === taskKey(result))
+          ? 'closeTaskHint' : 'backgroundHint')),
         groupId && progress?.jobs && h('section', { 'aria-label': t('candidateCount'), style: { display: 'grid', gap: '.4rem' } },
           h('strong', null, t('groupSummary').replace('{done}', progress.completedCount)
             .replace('{total}', progress.totalCount).replace('{failed}', progress.failedCount)),
@@ -2017,22 +2394,32 @@ window.__ModuleLoader__.load({
         pollError && h('p', { role: 'alert' }, t('progressUnavailable')),
         (pollError || providerUnknown) && button(t('checkProgress'), () => { setPollError(false); setPollRun(value => value + 1) }),
         result?.canvasUrl && (jobId || result.draftSaved) && canvasLink(result.canvasUrl, t),
-        candidates.length > 0 && h('div', {
+        canAdjust && button(t('adjustGeneration'), adjustGeneration, { disabled: submitting }),
+        previousRound && h('details', { open: true, className: 'od-settings' },
+          h('summary', null, t('previousRound')),
+          h(ImageReviewGrid, { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' } },
+            ...previousRound.results.map((item, index) => h(Preview, {
+              ...item, key: item.resultId, projectId: previousRound.projectId, canvasUrl: previousRound.canvasUrl, t,
+              onOpenGeneration: openStep, onMakePack: () => openPack({ ...item, projectId: previousRound.projectId }),
+              title: previousRound.results.length === 1 ? t('previousRound') : t('previousRound') + ' ' + (index + 1),
+              onCompare: !comparePair && previousImages.length && currentImages.length && item.kind === 'image' ? () => toggleComparison(item) : undefined,
+              compareSelected: comparison.includes(item.resultId), compareDisabled: comparison.length === 2 && !comparison.includes(item.resultId),
+            })))),
+        candidates.length > 0 && h(ImageReviewGrid, {
           style: { display: 'grid', gap: '.7rem', marginBlock: '.7rem',
             gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' },
         }, sourcePreview, ...candidates.map((candidate, index) => h(Preview, {
           ...candidate, projectId, key: candidate.resultId, t, canvasUrl: result.canvasUrl,
-          onMakePack: () => { packTrigger.current = candidate.resultId; setPackSource({ ...candidate, projectId }) },
+          onOpenGeneration: openStep, onMakePack: () => openPack({ ...candidate, projectId }),
           title: candidate.version || candidates.length === 1 ? t('candidate') : `${t('candidate')} ${index + 1}`,
-          onCompare: groupId && candidate.kind === 'image' ? () => toggleComparison(candidate) : undefined,
+          onCompare: !comparePair && (groupId || previousImages.length) && candidate.kind === 'image' ? () => toggleComparison(candidate) : undefined,
           compareSelected: comparison.includes(candidate.resultId),
           compareDisabled: comparison.length === 2 && !comparison.includes(candidate.resultId),
-          onAdopted: () => setProgress(previous => ({ ...previous,
-            results: previous.results.map(item => ({ ...item, selected: item.resultId === candidate.resultId })),
-          })),
+          onAdopted: () => setPollRun(value => value + 1),
         }))),
-        groupId && candidates.some(candidate => candidate.kind === 'image') && button(t('groupCompare') + ' (' + comparison.length + '/2)',
-          () => setComparing(true), { disabled: comparison.length !== 2 }),
+        comparePair ? button(t('compareRevisions'), () => { setComparison(comparePair); setComparing(true) })
+          : (groupId || previousImages.length > 0) && currentImages.length > 0 && button(t('groupCompare') + ' (' + comparison.length + '/2)',
+            () => setComparing(true), { disabled: comparison.length !== 2 }),
         comparing && h(ImageComparisonDialog, { projectId, resultIds: comparison, t,
           onAdopted: () => setPollRun(value => value + 1), onClose: () => setComparing(false) }),
         !restoringPending && !groupId && ((status === 'succeeded' && candidates.length > 0) || canRetry) && h('div', { style: row },
@@ -2208,21 +2595,50 @@ window.__ModuleLoader__.load({
       }, t(label))))
     }
 
-    function OriginalImageDialog({ url, title, t, onClose }) {
+    // Keep review order identical to the visible cards, including the source in an edit.
+    function ImageReviewGrid({ children, ...layout }) {
+      const cards = Children.toArray(children)
+      const images = cards.filter(card => card.type === Preview && card.props.kind === 'image')
+      const [active, setActive] = useState(null)
+      return h('div', layout, cards.map(card => {
+        const index = images.indexOf(card)
+        if (index < 0) return card
+        return cloneElement(card, { review: {
+          active: active === card.key, index, count: images.length,
+          close: () => setActive(null), open: () => setActive(card.key),
+          step: delta => { const next = images[index + delta]; if (next) setActive(next.key) },
+        } })
+      }))
+    }
+
+    function OriginalImageDialog({ url, title, t, onClose, review, decision }) {
       const dialog = useRef(null)
       const [actualSize, setActualSize] = useState(false)
+      const [size, setSize] = useState(null)
       const [status, setStatus] = useState('loading')
       useEffect(() => { dialog.current.showModal() }, [])
       return h('dialog', {
         className: 'od-media-ui',
         ref: dialog, 'aria-label': t('viewOriginal'),
+        onKeyDown: event => {
+          if (!review || event.altKey || event.ctrlKey || event.metaKey) return
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault()
+            review.step(event.key === 'ArrowLeft' ? -1 : 1)
+          }
+        },
         onClose: event => { if (event.target === event.currentTarget) onClose() },
         onContextMenu: event => event.stopPropagation(),
         style: { ...dialogStyle, width: 'min(72rem, calc(100vw - 2rem))' },
       },
         h('header', { style: { ...row, justifyContent: 'space-between', marginBottom: '.65rem' } },
-          h('strong', null, title),
+          h('div', { style: row }, h('strong', null, title),
+            size && h('small', { className: 'od-hint' }, size)),
           h('div', { style: row },
+            review?.count > 1 && h('nav', { 'aria-label': t('viewOriginal'), style: row },
+              button(t('previousImage'), () => review.step(-1), { disabled: review.index === 0 }),
+              h('span', { role: 'status' }, (review.index + 1) + ' / ' + review.count),
+              button(t('nextImage'), () => review.step(1), { disabled: review.index + 1 === review.count })),
             button(t(actualSize ? 'fitImage' : 'actualImageSize'), () => setActualSize(value => !value),
               { disabled: status !== 'ready' }),
             button(t('close'), () => dialog.current.close(), { autoFocus: true }))),
@@ -2232,22 +2648,40 @@ window.__ModuleLoader__.load({
           button(t('reloadData'), () => setStatus('loading')))
           : h('div', { style: { maxHeight: '62vh', overflow: 'auto', background: surface, borderRadius: '.55rem' } },
             h('img', {
-              src: url, alt: title, onLoad: () => setStatus('ready'), onError: () => setStatus('failed'),
+              src: url, alt: title, onLoad: event => {
+                const img = event.currentTarget
+                setSize(img.naturalWidth + ' × ' + img.naturalHeight)
+                setStatus('ready')
+              }, onError: () => setStatus('failed'),
               style: { display: 'block', margin: 'auto', maxWidth: actualSize ? 'none' : '100%',
                 maxHeight: actualSize ? 'none' : '62vh', width: 'auto', height: 'auto' },
-            })))
+            })),
+        decision)
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, onMakePack, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions, version, createdAt, sourceResultId, sourceVersion, sourceTitle, supportsContinuation }) {
+    function Preview({ projectId, projectName, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, onMakePack, onOpenGeneration, canvasUrl, expanded, review, onCompare, compareSelected, compareDisabled, compactActions, onDiscuss, saved, firstFrameFor, version, createdAt, sourceResultId, sourceVersion, sourceTitle, supportsContinuation }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [status, setStatus] = useState('')
-      const [viewingOriginal, setViewingOriginal] = useState(false)
+      const [standaloneOriginal, setStandaloneOriginal] = useState(false)
+      const viewingOriginal = review ? review.active : standaloneOriginal
+      const openOriginal = review?.open ?? (() => setStandaloneOriginal(true))
+      const thumbnail = useRef(null)
+      function closeOriginal() {
+        if (review) review.close()
+        else setStandaloneOriginal(false)
+        thumbnail.current?.focus({ preventScroll: true })
+      }
+      function leaveOriginal(event) {
+        event.currentTarget.closest('dialog')?.close()
+        closeOriginal()
+      }
       const [menu, setMenu] = useState(null)
       const [buffering, setBuffering] = useState(false)
       const trigger = useRef(null)
       const player = useRef(null)
       const adoption = useAdoption({ projectId, resultId, onAdopted })
+      const chat = useContext(ChatContext)
       const thumbnailUrl = mediaHref(projectId, assetId, kind)
       const downloadUrl = thumbnailUrl + '&original=1'
       const url = expanded && kind === 'image' ? downloadUrl : thumbnailUrl
@@ -2287,7 +2721,7 @@ window.__ModuleLoader__.load({
       const media = video
         ? h('video', { ...playbackEvents, ref: player, src: url, controls: true, playsInline: true, preload: 'none', 'aria-label': title, onError, style: mediaStyle })
         : audio ? h('audio', { ...playbackEvents, ref: player, src: url, controls: true, preload: 'none', 'aria-label': title, onError, style: { width: '100%' } })
-          : h('button', { type: 'button', onClick: () => setViewingOriginal(true),
+          : h('button', { type: 'button', ref: thumbnail, onClick: openOriginal,
             'aria-label': t('viewOriginal'), 'aria-haspopup': 'dialog', title: t('viewOriginal'),
             style: { padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in' },
           }, h('img', { src: url, alt: title, loading: 'lazy', onError, style: mediaStyle }))
@@ -2298,6 +2732,19 @@ window.__ModuleLoader__.load({
         } catch {
           setStatus(resultId)
         }
+      }
+      function referenceInChat(nextShot = false) {
+        const kindLabel = t(image ? 'picture' : kind)
+        const values = { title: [projectName, title].filter(Boolean).join(' · '), kind: kindLabel, projectId, resultId }
+        let text = t('assetReference').replace(/\{(\w+)\}/g, (_, key) => values[key])
+        if (nextShot) text += '\n' + t('nextShotPrompt')
+        if (chat.appendChatDraft(text)) {
+          setStatus(t('chatRefAdded'))
+          chat.returnToChat?.()
+          return true
+        }
+        setStatus(t('discussBusy'))
+        return false
       }
       function closeMenu(restore = true) {
         setMenu(null)
@@ -2343,13 +2790,24 @@ window.__ModuleLoader__.load({
       const pending = adoption.status === 'adopting'
       const adoptLabel = pending ? 'adopting' : selected ? 'selected'
         : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
+      const canReference = Boolean(resultId && chat?.appendChatDraft)
+      function derive(mode) {
+        const step = mode === 'reuse' ? { templateOf: { projectId, resultId, kind, canvasUrl } }
+          : { source: { projectId, assetId, resultId, kind, details, version },
+            ...(mode !== 'edit' && { videoMode: mode }) }
+        if (onOpenGeneration) onOpenGeneration(step)
+        else setAction(step)
+      }
       const actions = [
-        !expanded && (image || audio) && { label: 'reuseSettings', quick: audio && !compactActions, run: () => setAction('reuse') },
-        !expanded && image && { label: 'edit', quick: !compactActions, run: () => setAction('edit') },
+        canReference && { label: 'referenceInChat', run: () => referenceInChat() },
+        canReference && (image || video) && { label: 'planNextShot', run: () => referenceInChat(true) },
+        image && onDiscuss && { label: 'discussEdit', quick: true, run: () => setStatus(onDiscuss() ? t('discussReady') : t('discussBusy')) },
+        !expanded && (image || audio) && { label: 'reuseSettings', quick: audio && !compactActions, run: () => derive('reuse') },
+        !expanded && image && { label: 'edit', quick: !compactActions, run: () => derive('edit') },
         image && { label: 'newActionPack', run: onMakePack ?? (() => setAction('pack')) },
-        image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
-        !expanded && image && { label: 'firstFrame', run: () => setAction('first_frame') },
-        video && supportsContinuation !== false && { label: 'continue', quick: !compactActions, run: () => setAction('continuation') },
+        image && { label: 'viewOriginal', run: openOriginal },
+        !expanded && image && { label: 'firstFrame', run: () => derive('first_frame') },
+        video && supportsContinuation !== false && { label: 'continue', quick: !compactActions, run: () => derive('continuation') },
         (video || audio) && !failed && { label: player.current?.paused === false ? 'pause' : 'play', run: togglePlayback },
         video && !failed && { label: 'saveFrame', run: saveFrame },
         !selected && !pending && { label: adoptLabel, run: adoption.adopt },
@@ -2377,17 +2835,22 @@ window.__ModuleLoader__.load({
             setFailed(false)
             setStatus(previous => previous === t('playbackFailed') ? '' : previous)
           }),
-          image && button(t('viewOriginal'), () => setViewingOriginal(true), { 'aria-haspopup': 'dialog' })) : media,
+          image && button(t('viewOriginal'), openOriginal, { ref: thumbnail, 'aria-haspopup': 'dialog' })) : media,
+        firstFrameFor?.length > 0 && h('small', { className: 'od-hint' }, t('wasFirstFrame').replace('{videos}',
+          () => firstFrameFor.map(video => video.title || video.resultId.slice(0, 8)).join(', '))),
         buffering && h('small', { role: 'status' }, t('buffering')),
         video && resultId && supportsContinuation === false && h('small', { style: { color: muted } }, t('noClipContinuation')),
         onCompare && h('label', { style: row },
           h('input', { type: 'checkbox', checked: compareSelected, disabled: compareDisabled,
             onChange: onCompare }), t('chooseComparison')),
-        prompt && h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt),
+        prompt && (saved ? h('details', { style: { fontSize: '.82em', overflowWrap: 'anywhere' } },
+          h('summary', null, t('savedPrompt')), h('p', null, prompt))
+          : h('p', { style: { margin: 0, color: muted, fontSize: '.82em', overflowWrap: 'anywhere' } }, prompt)),
         resultId && h('div', { style: { display: 'grid', gap: '.45rem' } },
           h('div', { style: row },
             button(t(adoptLabel), adoption.adopt, { primary: !selected, current: selected, symbol: selected ? 'check' : undefined, disabled: pending || selected }),
-            quickAction && button(t(quickAction.label), quickAction.run, { 'aria-haspopup': 'dialog' }),
+            quickAction && button(t(quickAction.label), quickAction.run, { 'aria-haspopup': onOpenGeneration || quickAction.label === 'discussEdit' ? undefined : 'dialog' }),
+            canReference && chat.returnToChat && button(t('referenceInChat'), () => referenceInChat()),
             button('···', event => {
               if (menu) closeMenu()
               else {
@@ -2400,15 +2863,18 @@ window.__ModuleLoader__.load({
             && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t(adoption.status)),
           adoption.canvasUrl && !onAdopted && canvasLink(adoption.canvasUrl, t),
           status && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, status)),
-        action === 'pack' && h(ActionPackDialog, { source: { projectId, resultId, assetId, kind, details, version }, t, onClose: () => setAction(null) }),
-        action && action !== 'pack' && h(GenerationDialog, {
-          source: action === 'reuse' ? undefined : { projectId, assetId, resultId, kind, details, version },
-          templateOf: action === 'reuse' ? { projectId, resultId, kind, canvasUrl } : undefined,
-          videoMode: ['edit', 'reuse'].includes(action) ? undefined : action,
-          t, onClose: () => setAction(null),
-        }),
+        action && h(ChatOverlay, { onReturn: () => setAction(null) }, action === 'pack'
+          ? h(ActionPackDialog, { source: { projectId, resultId, assetId, kind, details, version }, t, onClose: () => setAction(null) })
+          : h(GenerationDialog, { ...action, t, onClose: () => setAction(null) })),
         viewingOriginal && h(OriginalImageDialog, {
-          url: downloadUrl, title, t, onClose: () => setViewingOriginal(false),
+          url: downloadUrl, title: [title, versionText].filter(Boolean).join(' · '), t, review, onClose: closeOriginal,
+          decision: resultId && h('footer', { style: { ...row, marginTop: '.55rem' } },
+            button(t(adoptLabel === 'adopt' ? 'adoptImage' : adoptLabel), adoption.adopt,
+              { primary: !selected, current: selected, disabled: pending || selected }),
+            !expanded && button(t('edit'), event => { leaveOriginal(event); derive('edit') }),
+            canReference && button(t('referenceInChat'), event => { if (referenceInChat()) leaveOriginal(event) }),
+            status === t('discussBusy') && h('span', { role: 'status' }, status),
+            adoption.status && !pending && !selected && h('span', { role: 'status' }, t(adoption.status))),
         }))
     }
 
@@ -2417,7 +2883,15 @@ window.__ModuleLoader__.load({
         className: 'od-button', style: { ...buttonStyle, textDecoration: 'none', whiteSpace: 'nowrap' } }, `${t('canvas')} ↗`)
     }
 
-    function MediaResults({ meta, t }) {
+    function discussImage(appendChatDraft, projectName, imageTitle, resultId, t) {
+      if (!appendChatDraft || !resultId) return undefined
+      return () => appendChatDraft(t('discussPrompt')
+        .replace('{image}', () => imageTitle).replace('{project}', () => projectName)
+        .replace('{id}', () => resultId.slice(0, 8)))
+    }
+
+    function MediaResults({ meta, appendChatDraft, t }) {
+      const [adopted, setAdopted] = useState(null)
       const preview = meta.mediaPreview ?? meta.imagePreview
       const kind = preview.kind ?? 'image'
       const heading = t(kind === 'video' ? 'videos' : kind === 'audio' ? 'audios' : 'images')
@@ -2429,33 +2903,98 @@ window.__ModuleLoader__.load({
             h('span', { style: { color: muted, fontSize: '.73em' } }, `OpenDirector · ${heading}`),
             h('strong', { style: { fontSize: '1em', overflowWrap: 'anywhere' } }, preview.projectName)),
           canvasLink(meta.canvasUrl, t)),
-        h('div', { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' } },
+        h(ImageReviewGrid, { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' } },
           preview.sourceAssetId && h(Preview, {
             key: preview.sourceAssetId, projectId: meta.projectId, assetId: preview.sourceAssetId,
             version: preview.candidates[0]?.sourceVersion, kind: sourceKind, details: preview.sourceDetails, title: t(sourceKind === 'video' ? 'sourceClip' : 'original'), t,
           }),
-          ...preview.candidates.map((candidate, index) => h(Preview, {
-            ...candidate, key: candidate.resultId, projectId: meta.projectId, kind, t, canvasUrl: meta.canvasUrl,
-            title: candidate.version ? t('candidate') : preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate'),
-          }))))
+          ...preview.candidates.map((candidate, index) => {
+            const title = candidate.version ? t('candidate') : preview.candidates.length > 1 ? `${t('candidate')} ${index + 1}` : t('candidate')
+            return h(Preview, {
+              ...candidate, key: candidate.resultId, projectId: meta.projectId, projectName: preview.projectName, kind, title, t, canvasUrl: meta.canvasUrl,
+              selected: adopted ? adopted === candidate.resultId : candidate.selected, onAdopted: () => setAdopted(candidate.resultId),
+              onDiscuss: kind === 'image' ? discussImage(appendChatDraft, preview.projectName, title, candidate.resultId, t) : undefined,
+            })
+          })))
     }
 
-    function MediaResultsTail({ turn, useChat, t }) {
+    function SavedResults({ meta, results, appendChatDraft, t }) {
+      const [updated, setUpdated] = useState(null)
+      const [revision, setRevision] = useState(0)
+      const [status, setStatus] = useState('')
+      const projectId = meta.projectId
+      const ids = results.map(result => result.resultId).join(',')
+      useEffect(() => {
+        if (!revision) return
+        const controller = new AbortController()
+        fetch('/api/opendirector/library?' + new URLSearchParams({ project: projectId, show: ids }),
+          { signal: controller.signal }).then(async response => {
+          if (!response.ok) throw new Error('Saved results unavailable')
+          const value = await response.json()
+          if (!controller.signal.aborted) { setUpdated(value.results); setStatus('') }
+        }).catch(() => { if (!controller.signal.aborted) setStatus('savedRefreshFailed') })
+        return () => controller.abort()
+      }, [revision, projectId, ids])
+      function refresh() { setStatus('loading'); setRevision(value => value + 1) }
+      return h('section', { 'data-opendirector-saved-results': '', 'aria-label': t('savedOnly'),
+        style: { display: 'grid', gap: '.65rem' } },
+        h('header', { style: { ...row, justifyContent: 'space-between' } },
+          h('strong', null, meta.savedResults.projectName),
+          h('div', { style: row }, button(t('refresh'), refresh, { disabled: status === 'loading' }),
+            canvasLink(meta.canvasUrl, t))),
+        h(ImageReviewGrid, { style: { display: 'grid', gap: '.7rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(15rem, 100%), 1fr))' } },
+          ...(updated ?? results).map((item, index) => {
+            const name = item.title || t(item.kind === 'image' ? 'picture' : item.kind)
+            const title = results.length > 1 ? (index + 1) + ' · ' + name : name
+            return h(Preview, { ...item, key: item.resultId, saved: true, projectId, projectName: meta.savedResults.projectName, title, t, canvasUrl: meta.canvasUrl, onAdopted: refresh,
+              onDiscuss: item.kind === 'image' ? discussImage(appendChatDraft, meta.savedResults.projectName, title, item.resultId, t) : undefined })
+          })),
+        status && h('small', { role: status === 'loading' ? 'status' : 'alert' }, t(status)))
+    }
+
+    function EditProposal({ meta, callId, t }) {
+      const [open, setOpen] = useState(false)
+      const { projectName, source, prompt } = meta.editDraft
+      return h('section', { className: 'od-settings', 'data-opendirector-edit-draft': '', 'aria-label': t('editProposal') },
+        h('strong', null, t('editProposal')),
+        h('small', { className: 'od-hint' }, projectName + ' · ' + (source.title || t('picture'))),
+        h('p', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, prompt),
+        h('div', { style: row }, button(t('reviewEdit'), () => setOpen(true), { primary: true, 'aria-haspopup': 'dialog' }),
+          h('small', { className: 'od-hint' }, t('editProposalHint'))),
+        open && h(ChatOverlay, { onReturn: () => setOpen(false) }, h(GenerationDialog, {
+          source: { ...source, projectId: meta.projectId }, proposal: { prompt, callId }, t, onClose: () => setOpen(false) })))
+    }
+
+    function MediaResultsTail({ turn, useChat, appendChatDraft, t }) {
       const source = useChat(snapshot => snapshot.nodes.turnDataSource(turn.turn, 'tool-call'))
       const calls = useSyncExternalStore(source.subscribe, source.getSnapshot)
       const previews = new Map()
       const adoptions = new Map()
+      const shows = []
+      const latestShow = new Map()
+      const proposals = new Map()
       for (const { root } of calls) {
         const meta = root.meta
         if (root.name === 'opendirector_job' && (meta?.mediaPreview || meta?.imagePreview)) {
           previews.set(meta.jobId, meta)
+        } else if (root.name === 'opendirector_results' && meta?.savedResults) {
+          shows.push({ callId: root.callId, meta })
+          for (const item of meta.savedResults.results) latestShow.set(meta.projectId + ':' + item.resultId, root.callId)
+        } else if (root.name === 'opendirector_results' && meta?.editDraft) {
+          proposals.set(meta.projectId + ':' + meta.editDraft.source.resultId, { callId: root.callId, meta })
         } else if (root.name === 'opendirector_adopt_result' && meta?.status === 'applied' && meta.canvasUrl) {
           adoptions.set(meta.resultId, meta.canvasUrl)
         }
       }
-      if (!previews.size && !adoptions.size) return null
+      if (!previews.size && !adoptions.size && !shows.length && !proposals.size) return null
       return h('div', { className: 'od-media-ui', style: { display: 'grid', gap: '.65rem' } },
-        ...Array.from(previews, ([key, meta]) => h(MediaResults, { key, meta, t })),
+        ...Array.from(previews, ([key, meta]) => h(MediaResults, { key, meta, appendChatDraft, t })),
+        ...shows.map(({ callId, meta }) => {
+          const results = meta.savedResults.results.filter(item => latestShow.get(meta.projectId + ':' + item.resultId) === callId)
+          return results.length > 0 && h(SavedResults, { key: callId + ':' + results.map(item => item.resultId).join(','),
+            meta, results, appendChatDraft, t })
+        }),
+        ...Array.from(proposals.values(), ({ callId, meta }) => h(EditProposal, { key: callId, callId, meta, t })),
         ...Array.from(adoptions, ([key, url]) => h('div', {
           key, 'data-opendirector-adoption': '', style: { ...row, justifyContent: 'space-between',
             padding: '.5rem .7rem', border, borderRadius: '.55rem', fontSize: '.9em' },
@@ -2476,12 +3015,38 @@ window.__ModuleLoader__.load({
           return () => { flushMediaDrafts(); window.removeEventListener('pagehide', flushMediaDrafts) }
         })
         ctx.effect(() => ctx.locale.register(namespace, { en, zh }))
+        const chatFor = sessionId => {
+          const input = ctx.get('conversation')?.input
+          const binding = ctx.get('sessions')?.binding?.(sessionId)
+          if (!binding || !input?.requestDraftInitialization) return { sessionId }
+          return { sessionId,
+            focusChat: () => requestAnimationFrame(() => {
+              const composer = input.for?.(binding.ctx)
+              if (!composer?.focus) return
+              composer.focus()
+              const editor = document.activeElement
+              if (editor?.isContentEditable) {
+                const placeCaret = () => window.getSelection()?.collapse(editor, editor.childNodes.length)
+                placeCaret()
+                // rc.5 restores a previous selection after focus. Allow that update to settle.
+                requestAnimationFrame(() => { if (document.activeElement === editor) placeCaret() })
+              }
+            }),
+            appendChatDraft: prompt => input.requestDraftInitialization(binding,
+              { prompt, whenDraftExists: 'append' }) === 'applied' }
+        }
         ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
           name: 'conversation.chat.turnTail', id: '@opendirector/dsh-plugin', locale: namespace,
-        }, MediaResultsTail))
+          inject: chatFor,
+        }, props => h(ChatContext.Provider, { value: { sessionId: props.sessionId, useInput: props.useInput,
+          appendChatDraft: props.appendChatDraft, returnToChat: props.focusChat } }, h(MediaResultsTail, props))))
         ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
           name: 'conversation.input.left', id: '@opendirector/dsh-plugin:create', locale: namespace,
-        }, props => h(CreateMedia, { ...props,
+          inject: sessionId => ({ ...chatFor(sessionId), sessionId, readChatProject() {
+            const binding = ctx.get('sessions')?.binding?.(sessionId)
+            return binding ? lastChatProject(ctx.get('uiConversation')?.binding(binding).target('chat').getSnapshot()) : null
+          } }),
+        }, props => h(CreateMedia, { ...props, key: props.sessionId,
           openPlugin: typeof ctx.get('pluginNavigation')?.openBundle === 'function'
             ? () => ctx.get('pluginNavigation')?.openBundle('@opendirector/dsh-plugin') : undefined,
         })))

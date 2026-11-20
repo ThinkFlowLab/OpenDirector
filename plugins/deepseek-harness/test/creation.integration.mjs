@@ -9,7 +9,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools';
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native';
 
 const base = (process.env.OPENDIRECTOR_FIXTURE_URL ?? 'http://127.0.0.1:8019').replace(/\/+$/, '');
-const evidence = { backend: 'real OpenDirector application + isolated image provider fixture', host: 'published DSH 0.2.2-rc.1 Cordis Loader + Tools + Native executor', model: 'fixture only; no real model service', checks: [] };
+const evidence = { backend: 'real OpenDirector application + isolated image provider fixture', host: 'DSH Cordis Loader + Tools + Native executor', model: 'fixture only; no real model service', checks: [] };
 const ctx = new Context();
 ctx.baseUrl = pathToFileURL(process.cwd() + '/').href;
 const headers = { 'X-OpenDirector-Request': '1', 'Content-Type': 'application/json' };
@@ -64,8 +64,10 @@ try {
   await ctx.loader.await();
   const entry = [...ctx.loader.entries()].find(value => value.options.id === 'opendirector');
   assert.ok(entry);
-  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 9);
-  evidence.checks.push('real Cordis Loader registered 9 native tools');
+  const toolNames = () => ctx.tools.schemas().map(tool => tool.name).filter(name => name.startsWith('opendirector_')).sort();
+  const registeredTools = toolNames();
+  assert.ok(registeredTools.includes('opendirector_results'));
+  evidence.checks.push(`real Cordis Loader registered ${registeredTools.length} native tools`);
   const projectId = randomUUID();
   const name = `DSH 148 isolated project ${projectId.slice(0, 8)}`;
   const created = await call('opendirector_projects', { action: 'create', name, projectId, operationId: randomUUID() });
@@ -96,6 +98,9 @@ try {
   assert.equal(adopted.receipt.status, 'applied');
   const afterAdopt = await call('opendirector_project', { projectId });
   assert.equal(afterAdopt.snapshot.generationSpecs.find(value => value.id === node.specId).currentResultId, result.id);
+  const shown = await call('opendirector_results', { action: 'show', projectId, resultIds: [result.id] });
+  assert.equal(shown.results[0].assetId, result.asset.assetId);
+  assert.equal(shown.results[0].selected, true);
   const adoptReplay = await call('opendirector_adopt_result', adoptArgs);
   assert.equal(adoptReplay.receipt.inputFingerprint, adopted.receipt.inputFingerprint);
   evidence.checks.push('project -> editable generation -> accepted job -> registered real PNG candidate -> explicit adoption -> replay');
@@ -112,7 +117,7 @@ try {
   await entry.update({ disabled: true });
   await ctx.loader.await();
   assert.ok(entry);
-  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 0);
+  assert.deepEqual(toolNames(), []);
   await api('POST', '/api/creation-test-gate', { open: true });
   const whileDisabled = await waitForJob(projectId, pending.jobIds[0], false);
   assert.equal(whileDisabled.job.status, 'succeeded');
@@ -120,7 +125,7 @@ try {
   await entry.update({ disabled: false });
   await ctx.loader.await();
   assert.ok(entry);
-  assert.equal(ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_')).length, 9);
+  assert.deepEqual(toolNames(), registeredTools);
   const resumed = await call('opendirector_job', { projectId, jobId: pending.jobIds[0] });
   assert.equal(resumed.job.status, 'succeeded');
   evidence.checks.push('real loader disable unregisters tools; accepted OD job completes; enable restores persisted result query');

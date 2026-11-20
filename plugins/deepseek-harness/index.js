@@ -107,6 +107,10 @@ export function apply(ctx, config) {
         try {
           const params = new URL(request.url, 'http://localhost').searchParams
           const projectId = params.get('project')
+          if (params.has('show')) {
+            const value = await client.showResults(projectId, params.get('show').split(','), { signal: request.signal })
+            return Response.json(value, { headers })
+          }
           if (params.has('compare')) {
             const value = await client.compareImages(projectId, params.get('compare').split(','), { signal: request.signal })
             return Response.json(value, { headers })

@@ -30,6 +30,20 @@ export function renderToolResult(key, value, t, { webPreview = false } = {}) {
   if (status) lines.push(`${t('summary.status')}: ${t(`status.${status}`)}`)
   if (value.receipt?.status === 'rejected') {
     lines.push(...value.receipt.issues.map(issue => `${issue.code}: ${issue.message}`))
+  } else if (key === 'results') {
+    // The user sees media cards. The chat model needs identities, the saved prompt and exact source links.
+    for (const [index, result] of value.results.entries()) {
+      const { resultId, kind, title, prompt, selected, sourceResultId, firstFrameFor } = result
+      lines.push(JSON.stringify({ position: index + 1, resultId, kind, title, prompt, selected, sourceResultId, firstFrameFor }))
+    }
+    if (value.action === 'find') {
+      lines.push(value.results.length ? t('summary.foundResults') : t('summary.noResults'))
+      if (value.nextCursor) lines.push(`after: ${value.nextCursor}`)
+    } else if (value.action === 'draft') {
+      lines.push(value.editPrompt, t(webPreview ? 'summary.editDraftWeb' : 'summary.editDraft'))
+    } else {
+      lines.push(t(webPreview ? 'summary.savedCards' : 'summary.canvasPreview'))
+    }
   } else if (key === 'submit') {
     lines.push(t('summary.submitted'), ...value.jobIds.map(id => `jobId: ${id}`))
   } else if (key === 'job') {
@@ -44,7 +58,7 @@ export function renderToolResult(key, value, t, { webPreview = false } = {}) {
         if (result.asset) lines.push(`${t('summary.referenceAsset')}: ${JSON.stringify(result.asset)}`)
       }
       const hasPreview = webPreview && value.results.some(({ asset }) =>
-        asset?.kind === 'image' || asset?.kind === 'video')
+        asset?.kind === 'image' || asset?.kind === 'video' || asset?.kind === 'audio')
       lines.push(t(hasPreview ? 'summary.webPreview' : 'summary.canvasPreview'))
     }
     if (value.job.errorDetails?.message) lines.push(value.job.errorDetails.message)
