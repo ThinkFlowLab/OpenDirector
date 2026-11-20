@@ -529,6 +529,11 @@ export function AssistantPanel({
                 </button>
               </small>
             )}
+            {message.status === "inserted" && (
+              <small className="cw-assistant-message-status">
+                {t("assistant.panel.inserted")}
+              </small>
+            )}
             {message.status === "cancelled" && (
               <small className="cw-assistant-message-status">
                 {t("assistant.panel.cancelled")}
@@ -746,7 +751,10 @@ export function AssistantPanel({
             onSubmit={() => {
               nearBottom.current = true;
               pendingReferences.cancel();
-              void chat.send();
+              // Enter reaches the running reply when the runtime can take it;
+              // otherwise it queues behind that reply.
+              if (chat.sending && chat.steerable) void chat.insert();
+              else void chat.send();
             }}
           />
           <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />
@@ -812,14 +820,29 @@ export function AssistantPanel({
                 <CanvasIcon name="stop" size={16} />
               </button>
             )}
+            {chat.sending && (
+              <button
+                type="button"
+                className="cw-assistant-queue-button"
+                title={t("assistant.panel.queueHint")}
+                disabled={!chat.canSend || locked || !value.draft.trim()}
+                onClick={() => void chat.send()}
+              >
+                {t("assistant.panel.queueShort")}
+              </button>
+            )}
             <button
               type="submit"
               className="cw-assistant-send"
               aria-label={chat.sending
-                ? t("assistant.panel.queue")
+                ? chat.steerable
+                  ? t("assistant.panel.insert")
+                  : t("assistant.panel.queue")
                 : t("assistant.panel.send")}
               title={chat.sending
-                ? t("assistant.panel.queueHint")
+                ? chat.steerable
+                  ? t("assistant.panel.insertHint")
+                  : t("assistant.panel.queueHint")
                 : t("assistant.panel.send")}
               disabled={!chat.canSend || locked || !value.draft.trim()}
             >
@@ -850,7 +873,9 @@ export function AssistantPanel({
           )}
         {chat.sending && !!value.draft.trim() && (
           <span className="cw-assistant-queue-hint">
-            {t("assistant.panel.queueWhileRunning")}
+            {chat.steerable
+              ? t("assistant.panel.insertWhileRunning")
+              : t("assistant.panel.queueWhileRunning")}
           </span>
         )}
         {latestTrace && (

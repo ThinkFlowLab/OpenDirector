@@ -27,6 +27,8 @@ export interface RuntimeInfo {
     | "unsupported_version"
     | "unknown";
   supportsSkills?: boolean;
+  /** The runtime can take extra text inside a reply that is already running. */
+  supportsSteering?: boolean;
 }
 export interface ChatSkill {
   source?: "builtin" | "workspace" | "project";
@@ -77,7 +79,9 @@ export interface ChatMessage {
     | "queued"
     | "cancelled"
     | "stopped"
-    | "interrupted";
+    | "interrupted"
+    /** Text handed to the reply that was running when it was sent. */
+    | "inserted";
   /** Position of a queued message in the delivery order the server assigned. */
   queueSeq?: number;
   assets?: ChatAsset[];
@@ -157,6 +161,8 @@ export type ChatEvent =
   | { type: "queued"; message: ChatMessage }
   /** A queued message was withdrawn before it started. */
   | { type: "retracted"; messageId: string }
+  /** Text that reached the reply while it was still running. */
+  | { type: "steered"; message: ChatMessage }
   | {
       type: "end";
       turnId?: string;
@@ -178,6 +184,8 @@ export interface ChatRequest {
   runtime?: AgentRuntime;
   runtimeModel?: string | null;
   skills?: string[];
+  /** Insert reaches the running reply; queue waits for it to end. */
+  delivery?: "queue" | "insert";
 }
 
 function normalizeConversation(value: Conversation): Conversation {
@@ -344,6 +352,37 @@ export async function sendChat(
     signal,
   });
   if (response.status === 202) return (await response.json()) as QueuedReply;
+  await readChatEvents(response, onEvent, t);
+  return null;
+}
+
+export interface InsertedReply {
+  inserted: ChatMessage;
+  chainId: string;
+  turnId: string;
+}
+
+/**
+ * Hand the text to the reply that is already running.
+ *
+ * `delivery: "insert"` goes through the runtime's own channel, so the answer
+ * keeps the work it has already done. The server refuses the insert when no
+ * reply is running, when the runtime has no such channel, or when the message
+ * carries assets; the caller shows that refusal as it is.
+ */
+export async function insertChat(
+  id: string,
+  value: ChatRequest,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+): Promise<InsertedReply | null> {
+  const response = await fetch("/api" + path(id) + "/messages", {
+    ...json("POST", { ...value, delivery: "insert" }),
+    headers: { ...headers, "Content-Type": "application/json" },
+    signal,
+  });
+  if (response.status === 202) return (await response.json()) as InsertedReply;
   await readChatEvents(response, onEvent, t);
   return null;
 }
