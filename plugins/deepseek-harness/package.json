@@ -45,7 +45,7 @@
     "release:prepare": "node scripts/prepare-release.mjs"
   },
   "engines": {
-    "dsh": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3",
+    "dsh": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3 || 0.2.2-rc.5",
     "node": ">=24.9.0"
   },
   "dsh": {
@@ -62,7 +62,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3"
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3 || 0.2.2-rc.5"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",

@@ -6,7 +6,7 @@ Create media from a DSH conversation, follow generation progress, and open the s
 
 ## Install and connect
 
-Use DSH **0.2.2-rc.1, rc.2 or rc.3** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
+Start OpenDirector using the [installation guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/installation.md). The plugin supports DSH **0.2.2-rc.1, rc.2, rc.3 and rc.5**. In Desktop, open **Plugins** and add the local `.tgz` file. To build the package and use it in a Web profile, run these commands from the plugin directory with Node.js **24.9.0 or newer** and `pnpm` on your path.
 
 ```sh
 npm pack
@@ -242,4 +242,4 @@ node test/creation.integration.mjs
 
 This checks project creation, a saved PNG candidate, result selection and replay, edit-session conflicts, and an accepted job completing while the plugin is disabled. It requires the fixture's health marker before writing. `OPENDIRECTOR_FIXTURE_URL` can select another fixture port; the test uses generated fixture images rather than a model service.
 
-The package declares DSH 0.2.2-rc.1, rc.2 and rc.3. Web installation and operation have been verified on rc.1. In a full published rc.3 Web host, the packaged plugin passed image creation, action revisions, independent candidate selection, reload recovery, video playback and ZIP export. The rc.3 tool packages also passed the plugin loading and execution checks. The rc.2 tool interfaces were checked against its release source; a full rc.2 host and DSH Desktop still need hands-on acceptance. OpenDirector’s installation requirements are maintained in its installation guide.
+The rc.5 Windows Desktop runtime installed the tarball in a fresh profile. In its Web UI we generated a fixture image, previewed it and adopted it. The Desktop window still needs a hands-on check. Earlier checks covered Web installation on rc.1 and image creation, action revisions, candidate selection, reload recovery, video playback and ZIP export on rc.3. For rc.2 we checked the published tool interfaces.

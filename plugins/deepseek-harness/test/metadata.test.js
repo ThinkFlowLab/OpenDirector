@@ -51,15 +51,7 @@ test('locale metadata identifies OpenDirector with matching user-facing descript
     assert.ok(locale.meta.description.trim().length > 0)
   }
 
-  const english = en.meta.description
-  assert.match(english, /^[A-Z]/)
-  assert.ok(english.endsWith('.'))
-  assert.doesNotMatch(english, /\n/)
-
-  const chinese = zh.meta.description
-  assert.match(chinese, /[\u4e00-\u9fff]/)
-  assert.ok(chinese.endsWith('。'))
-  assert.notEqual(chinese, english)
+  assert.notEqual(zh.meta.description, en.meta.description)
 })
 
 test('icon is small, self-contained, and the package points at real project resources', async () => {

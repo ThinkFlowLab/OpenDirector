@@ -79,9 +79,11 @@ jobs:
           retention-days: 7
 
   latest-tools:
-    name: Plugin tools (DSH 0.2.2-rc.3)
+    name: Plugin compatibility
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    env:
+      DSH_VERSION: 0.2.2-rc.5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -92,13 +94,21 @@ jobs:
       - name: Install plugin dependencies
         working-directory: plugins/deepseek-harness
         run: npm ci
-      - name: Use the published rc.3 tool packages
+      - name: Install the DSH compatibility checker and tool runtime
         working-directory: plugins/deepseek-harness
         run: >-
           npm install --ignore-scripts --no-save --package-lock=false
-          @deepseek-ai/dsh-tools@0.2.2-rc.3
-          @deepseek-ai/dsh-tool-executor-native@0.2.2-rc.3
-          @deepseek-ai/dsh-system-prompt@0.2.2-rc.3
+          "@deepseek-ai/dsh-app-boot@$DSH_VERSION"
+          "@deepseek-ai/dsh-tools@$DSH_VERSION"
+          "@deepseek-ai/dsh-tool-executor-native@$DSH_VERSION"
+          "@deepseek-ai/dsh-system-prompt@$DSH_VERSION"
       - name: Check plugin loading and execution
         working-directory: plugins/deepseek-harness
-        run: npm test
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot'
+          import manifest from './package.json' with { type: 'json' }
+          assert.equal(evaluatePluginCompatibility(manifest, {}, process.env.DSH_VERSION), undefined)
+          JS
+          npm test

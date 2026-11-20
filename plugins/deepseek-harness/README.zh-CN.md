@@ -6,7 +6,7 @@
 
 ## 安装并连接
 
-使用 **DSH 0.2.2-rc.1、rc.2 或 rc.3**、**Node.js 24.9.0 或更新版本**，并确保 `pnpm` 在 `PATH` 中。先按[安装指南](../../docs/guides/installation.zh-CN.md)启动 OpenDirector，再从本插件目录打包，并先创建带对话界面的 Web profile，再加入插件包：
+先按[安装指南](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/installation.zh-CN.md)启动 OpenDirector。插件支持 **DSH 0.2.2-rc.1、rc.2、rc.3 和 rc.5**。在桌面客户端打开「插件」，选择本地 `.tgz` 文件安装。要自己打包并在网页版使用，请准备 **Node.js 24.9.0 或更新版本**，确保能运行 `pnpm`，然后在插件目录执行以下命令。
 
 ```sh
 npm pack
@@ -243,4 +243,4 @@ node test/creation.integration.mjs
 
 这会检查创建工程、PNG候选落盘、采用与重放、编辑会话冲突，以及停用插件期间已接受任务继续完成。脚本先检查隔离夹具标记再写入；用 `OPENDIRECTOR_FIXTURE_URL` 可选择其他夹具端口。图片来自测试夹具，不调用模型服务。
 
-本包声明接受 DSH 0.2.2-rc.1、rc.2 和 rc.3。rc.1 已完成 Web 安装和操作验证；打包插件也已在完整的 rc.3 网页宿主中验证图片创作、动作描述修改、独立选版、刷新找回、视频播放和 ZIP 导出。rc.3 工具包另通过插件加载与执行检查。rc.2 工具接口已按发布源码核对，完整 rc.2 宿主和 DSH 桌面端仍待本人验收。OpenDirector 的运行环境要求以安装指南为准。
+在 Windows 桌面版 rc.5 随附的运行环境中，我们已用独立配置安装本地包，并在其网页界面生成、预览和采用了一张测试图片。桌面窗口中的操作还待手测。此前在 rc.1 测过网页安装，在 rc.3 测过图片创作、动作修改、候选选版、刷新找回、视频播放和 ZIP 导出。rc.2 核对过已发布的工具接口。
