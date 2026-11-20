@@ -53,6 +53,7 @@ export function resultVersionInfo(snapshot) {
     const version = (counts.get(result.specId) ?? 0) + 1
     counts.set(result.specId, version)
     const job = jobs.get(result.jobId)
+    const videoModes = result.asset?.kind === 'video' ? job?.inputSnapshot?.model?.inputRules?.videoModes : undefined
     const createdAt = validTime(job?.createdAt)
     const key = identityKey(referenceSourceAsset(job))
     let source
@@ -62,6 +63,7 @@ export function resultVersionInfo(snapshot) {
     }
     info.set(result.id, {
       version,
+      ...(Array.isArray(videoModes) && { supportsContinuation: videoModes.includes('continuation') }),
       ...(createdAt !== undefined && { createdAt }),
       ...(source && { sourceResultId: source.result.id, sourceVersion: source.version }),
       ...(source && titles.has(source.result.specId) && { sourceTitle: titles.get(source.result.specId) }),

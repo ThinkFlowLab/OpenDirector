@@ -10,6 +10,8 @@ The video follows one image from prompt to saved project. The plugin sends a sin
 
 The separate GIF shows how to compare V1, V2 and V3. It uses previously generated images replayed in DSH rc.3 Web.
 
+[Watch the penguin post its letter](media/lunar-mail.mp4). From the saved image card we chose **Animate**, used the image as the first frame, and requested four seconds at 480P from MiniMax-H3-Lite. The downloaded clip plays for 4.46 seconds. Pause it in DSH and choose **Save current frame as PNG** to keep a still.
+
 ## Try an example
 
 Open **OpenDirector → Create media** and pick an example below the description. The form keeps your model and parameters; choose **Generate** when ready.
@@ -27,6 +29,8 @@ A DSH conversation can start the same workflow:
 > Create a project called “Studio by the window”. Use my configured image model to generate two candidates of a wooden desk, a blue mug and a green plant in natural window light. Show them before adopting either one.
 
 ## 中文
+
+[看企鹅把信投进邮筒](media/lunar-mail.mp4)。从已保存的企鹅图片点「转成视频」，用它作首帧，向 MiniMax-H3-Lite 请求 4 秒、480P 的镜头。成片实际长 4.46 秒。在 DSH 中暂停后，可以从视频菜单把当前画面存成 PNG。
 
 「月面邮局」的视频在 Windows DSH rc.5 自带的网页宿主中连续录制。浏览器自动操作插件，通过 OpenDirector 和本机转接向 MiniMax image-01 实际生成一张图。约 0:50 可以看到候选，结尾是刷新后重新打开工程的结果。另附的 GIF 用回放图片演示三版候选的比较与采用。
 

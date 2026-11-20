@@ -12,6 +12,14 @@ function result(specId, jobId, value) {
   return { id: randomUUID(), specId, jobId, asset: value }
 }
 
+test('video cards use the source job’s continuation modes and keep older results actionable', () => {
+  const modes = [['first_frame', 'reference'], ['first_frame', 'continuation'], undefined]
+  const jobs = modes.map(videoModes => ({ id: randomUUID(), inputSnapshot: { model: { inputRules: { videoModes } } } }))
+  const results = jobs.map(job => result(randomUUID(), job.id, asset(randomUUID(), 1, 'a'.repeat(64), 'video')))
+  const info = resultVersionInfo({ results, jobs })
+  assert.deepEqual(results.map(row => info.get(row.id).supportsContinuation), [false, true, undefined])
+})
+
 test('versions follow each spec registration order and accept only valid createdAt strings', () => {
   const specA = randomUUID(), specB = randomUUID()
   const jobA1 = randomUUID(), jobA2 = randomUUID(), jobB = randomUUID(), jobC = randomUUID()

@@ -100,6 +100,9 @@ window.__ModuleLoader__.load({
       videoModeUnavailable: 'Choose a model that supports this video action.',
       videoSourceUnavailable: 'The source result is unavailable. Refresh the project and try again.',
       continuationHint: 'Use the same model connection that generated this clip. The new clip keeps its dimensions.',
+      noClipContinuation: 'The model that made this clip doesn’t support continuation.',
+      saveFrame: 'Save current frame as PNG', playForFrame: 'Play the video, then pause on the frame you want to save.',
+      frameFailed: 'Couldn’t save this frame. Wait for the picture to load and try again.',
       continuationUnavailable: 'Open the canvas for details. If the source cache has expired, generate the source clip again.',
       resume: 'Resume project', close: 'Close', chooseProject: 'Choose a project',
       projectsEmpty: 'No OpenDirector projects yet.', resultsEmpty: 'This project has no saved media results.',
@@ -275,6 +278,9 @@ window.__ModuleLoader__.load({
       videoModeUnavailable: '请选择支持此视频操作的模型。',
       videoSourceUnavailable: '暂时无法使用源素材，请刷新工程后重试。',
       continuationHint: '请选择生成原片段时用的模型连接。续写沿用原片段的尺寸。',
+      noClipContinuation: '生成这段视频的模型不支持续写。',
+      saveFrame: '保存当前帧为 PNG', playForFrame: '先播放视频，在想保存的画面暂停。',
+      frameFailed: '这帧还没保存。等画面加载后再试一次。',
       continuationUnavailable: '可在画布查看详情。如果源片段的接续缓存已过期，请重新生成源片段。',
       resume: '继续工程', close: '关闭', chooseProject: '选择工程',
       projectsEmpty: '还没有 OpenDirector 工程。', resultsEmpty: '这个工程还没有保存素材结果。',
@@ -2232,7 +2238,7 @@ window.__ModuleLoader__.load({
             })))
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, onMakePack, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions, version, createdAt, sourceResultId, sourceVersion, sourceTitle }) {
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, onMakePack, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions, version, createdAt, sourceResultId, sourceVersion, sourceTitle, supportsContinuation }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [status, setStatus] = useState('')
@@ -2296,6 +2302,32 @@ window.__ModuleLoader__.load({
         if (element.paused) element.play().catch(() => setStatus(t('playbackFailed')))
         else element.pause()
       }
+      function saveFrame() {
+        const element = player.current
+        if (!element || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || element.seeking) {
+          setStatus(t('playForFrame'))
+          return
+        }
+        const frame = document.createElement('canvas')
+        frame.width = element.videoWidth
+        frame.height = element.videoHeight
+        const timestamp = element.currentTime.toFixed(3)
+        try {
+          frame.getContext('2d').drawImage(element, 0, 0)
+          frame.toBlob(blob => {
+            if (!blob) { setStatus(t('frameFailed')); return }
+            const link = document.createElement('a')
+            const url = URL.createObjectURL(blob)
+            link.href = url
+            link.download = `frame-${resultId}-${timestamp}s.png`
+            link.click()
+            setTimeout(() => URL.revokeObjectURL(url), 1000)
+            setStatus('')
+          }, 'image/png')
+        } catch {
+          setStatus(t('frameFailed'))
+        }
+      }
       const pending = adoption.status === 'adopting'
       const adoptLabel = pending ? 'adopting' : selected ? 'selected'
         : adoption.status === 'adoptUnknown' ? 'checkAdoption' : 'adopt'
@@ -2305,8 +2337,9 @@ window.__ModuleLoader__.load({
         image && { label: 'newActionPack', run: onMakePack ?? (() => setAction('pack')) },
         image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
         !expanded && image && { label: 'firstFrame', run: () => setAction('first_frame') },
-        video && { label: 'continue', quick: !compactActions, run: () => setAction('continuation') },
+        video && supportsContinuation !== false && { label: 'continue', quick: !compactActions, run: () => setAction('continuation') },
         (video || audio) && !failed && { label: player.current?.paused === false ? 'pause' : 'play', run: togglePlayback },
+        video && !failed && { label: 'saveFrame', run: saveFrame },
         !selected && !pending && { label: adoptLabel, run: adoption.adopt },
         { label: 'download', href: downloadUrl, download: '' },
         canvasUrl && { label: 'canvas', href: canvasUrl, target: '_blank', rel: 'noopener noreferrer' },
@@ -2334,6 +2367,7 @@ window.__ModuleLoader__.load({
           }),
           image && button(t('viewOriginal'), () => setViewingOriginal(true), { 'aria-haspopup': 'dialog' })) : media,
         buffering && h('small', { role: 'status' }, t('buffering')),
+        video && resultId && supportsContinuation === false && h('small', { style: { color: muted } }, t('noClipContinuation')),
         onCompare && h('label', { style: row },
           h('input', { type: 'checkbox', checked: compareSelected, disabled: compareDisabled,
             onChange: onCompare }), t('chooseComparison')),

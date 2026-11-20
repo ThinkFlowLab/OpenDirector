@@ -57,7 +57,7 @@ The interactive workflow has been verified in DSH Web with the host running in W
 
 On this device, the plugin remembers the last project, project-list view and model settings for each creation action, separately for each OpenDirector service. New forms reuse models that are still available and keep the last image size or video duration. For continuation, choose the connection that generated the source clip. An unsubmitted draft takes priority. A fresh creation starts with one candidate; a saved draft keeps the count you chose. Clear these preferences under **Connection check → Diagnostic text → Forget recent settings**.
 
-Image cards keep **Adopt**, **Edit** and **More actions** in view. **Animate**, **Reuse settings**, download and action packs remain in the menu. Video cards keep continuation handy, and voiceover cards offer reuse.
+Image cards keep **Adopt**, **Edit** and **More actions** in view. Open **More actions → Animate** to use the image as a first frame. On a video card, pause on a shot you like and choose **More actions → Save current frame as PNG**. The frame uses the original video dimensions. Clips from models that support continuation also offer **Continue**.
 
 Each node's results show V1, V2 and so on in registration order, unchanged by search or pagination. Image cards show the saved file size in pixels. When it differs from the requested dimensions, the card shows both. Cards also show the job time and an identified source version when available. An edit creates a separate node, so its numbering starts at V1 and can point back to the source node's version.
 

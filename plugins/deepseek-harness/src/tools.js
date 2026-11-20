@@ -66,7 +66,7 @@ function rawInput(args) {
 
 function resultVersionFields(result) {
   const fields = {}
-  for (const key of ['version', 'createdAt', 'sourceResultId', 'sourceVersion', 'sourceTitle']) {
+  for (const key of ['version', 'createdAt', 'sourceResultId', 'sourceVersion', 'sourceTitle', 'supportsContinuation']) {
     if (result?.[key] !== undefined) fields[key] = result[key]
   }
   return fields
