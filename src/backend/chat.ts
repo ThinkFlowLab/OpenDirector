@@ -70,7 +70,15 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   content?: ReferenceContent | null;
-  status: "complete" | "streaming" | "stopped" | "interrupted";
+  status:
+    | "complete"
+    | "streaming"
+    | "queued"
+    | "cancelled"
+    | "stopped"
+    | "interrupted";
+  /** Position of a queued message in the delivery order the server assigned. */
+  queueSeq?: number;
   assets?: ChatAsset[];
   model?: string;
   thinking?: Thinking;
@@ -136,7 +144,16 @@ export type ChatEvent =
   | ({ type: "tool" } & ChatTool)
   | { type: "delta"; text: string }
   | { type: "sources"; sources: ChatSource[] }
-  | { type: "end"; conversation: Conversation | null; error: string | null };
+  /** A message accepted while a reply runs; it starts when that reply ends. */
+  | { type: "queued"; message: ChatMessage }
+  | {
+      type: "end";
+      turnId?: string;
+      /** Set when the server has already started the next queued message. */
+      nextTurnId?: string | null;
+      conversation: Conversation | null;
+      error: string | null;
+    };
 
 export interface ChatRequest {
   conversationId?: string;
@@ -270,6 +287,36 @@ async function readChatEvents(
   } finally {
     reader.releaseLock();
   }
+}
+
+export interface QueuedReply {
+  queued: ChatMessage;
+  chainId: string;
+  turnId: string;
+}
+
+/**
+ * Hand a message to the assistant without waiting for the running reply.
+ *
+ * The server answers with a stream when the project is idle and with
+ * `202 { queued }` when a reply is running, so a client submits here without
+ * having to know which of the two it is.
+ */
+export async function sendChat(
+  id: string,
+  value: ChatRequest,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+): Promise<QueuedReply | null> {
+  const response = await fetch("/api" + path(id) + "/messages", {
+    ...json("POST", value),
+    headers: { ...headers, "Content-Type": "application/json" },
+    signal,
+  });
+  if (response.status === 202) return (await response.json()) as QueuedReply;
+  await readChatEvents(response, onEvent, t);
+  return null;
 }
 
 export interface RuntimeModel {
