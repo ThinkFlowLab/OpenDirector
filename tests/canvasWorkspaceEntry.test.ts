@@ -10,6 +10,7 @@ import {
 import { createNode } from "../src/canvas/model.ts";
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
 import { generationEditIdentity } from "../src/canvas/generationSettings.ts";
+import { CANVAS_CREATION_TOOLS } from "../src/canvas/creationTools.ts";
 import {
   generationPrepareBlock,
   importedNodeIds,
@@ -85,6 +86,12 @@ test("video references ignore irrelevant slot initialization but retain explicit
     settings: { ...draft.data.settings!, videoMode: "first-last" as const } } };
   assert.equal(uploadTargetUnchanged({ ...firstLast, data: { ...firstLast.data,
     settings: { ...firstLast.data.settings, frameSlotsInitialized: true } } }, firstLast), false);
+});
+
+test("director stage is enabled in the shared creation entry list", () => {
+  const stage = CANVAS_CREATION_TOOLS.find((tool) => tool.kind === "external");
+  assert.ok(stage);
+  assert.equal(stage.unavailable, undefined);
 });
 
 test("upload picker blocks locked, generation output, and running nodes", () => {

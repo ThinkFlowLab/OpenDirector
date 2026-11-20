@@ -2689,6 +2689,17 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           }
         >
           <DirectorStage
+            isRegisteredAsset={(ref) => {
+              // Same consistency the backend snapshot check demands.
+              const assets = creationClient(doc.id).snapshot.assets;
+              return assets.some(
+                (asset) =>
+                  asset.id === ref.assetId &&
+                  asset.fingerprint === ref.fingerprint &&
+                  asset.kind === ref.kind &&
+                  ref.revision <= asset.revision,
+              );
+            }}
             onPrepareRender={async (localStage) => {
               await commitEditorData({ localStage });
               const origin = editorOrigin.current!;
@@ -2704,14 +2715,9 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             onApply={(localStage, screenshot) =>
               commitEditorData({
                 localStage,
-                ...(screenshot
-                  ? {
-                      src: screenshot,
-                      mimeType: "image/png",
-                      assetState: "ready",
-                      media: undefined,
-                    }
-                  : {}),
+                // The save projection imports these bytes and pins the
+                // resulting project asset on the director document.
+                ...(screenshot ? { stillCapture: screenshot } : {}),
               })
             }
             onClose={closeEditor}

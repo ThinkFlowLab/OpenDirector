@@ -83,7 +83,9 @@ export function isGenerationProvenance(
     optionalString(value.inputFingerprint) &&
     optionalString(value.editorDocumentId) &&
     (value.editorRevision === undefined ||
-      Number.isSafeInteger(value.editorRevision))
+      Number.isSafeInteger(value.editorRevision)) &&
+    (value.stagePreview === undefined ||
+      typeof value.stagePreview === "boolean")
   );
 }
 

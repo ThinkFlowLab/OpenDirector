@@ -48,6 +48,19 @@ import {
 import { sameJsonValue } from "./sameJsonValue.ts";
 import { classifyImportFile, readEditorResource } from "../canvas/editorMedia.ts";
 
+/**
+ * Stage object names are free display text; the backend upload name must
+ * stay path-free, control-free and within its 255-character limit. The cut
+ * counts code points, never splitting a surrogate pair.
+ */
+export function stageUploadTitle(name: string, format: string): string {
+  const safe =
+    Array.from(name.replace(/[/\\\u0000-\u001f]+/g, "_").trim())
+      .slice(0, 250)
+      .join("") || tNow("editors.stage.ui.objectGltf");
+  return `${safe}.${format}`;
+}
+
 /** Every comparison here is over a document that carries its media inline, so
  * it reads the values instead of serializing both sides to compare strings. */
 const same = sameJsonValue;
@@ -398,14 +411,36 @@ export class CreationProjection {
           },
         };
       case "director":
+        {
+          const objects = await Promise.all(
+            doc.data.objects.map(async (object) =>
+              object.kind === "gltf" && object.asset
+                ? {
+                    ...object,
+                    source: await this.client
+                      .mediaUrl(object.asset.assetId)
+                      .catch(() => undefined),
+                  }
+                : object,
+            ),
+          );
+        const stillSrc = doc.data.still
+          ? await this.client
+              .mediaUrl(doc.data.still.assetId)
+              .catch(() => undefined)
+          : undefined;
         return {
           external: { externalType: "director-stage" },
           localStage: parseLocalStageValue({
             format: "opendirector-local-stage",
             version: 2,
             ...doc.data,
+            objects,
           }),
+          ...(doc.data.still ? { stillAsset: doc.data.still } : {}),
+          ...(stillSrc ? { src: stillSrc } : {}),
         };
+        }
       case "layers":
         return {
           layers: {
@@ -622,6 +657,14 @@ export class CreationProjection {
           // Export records this so an imported generation node can be rebuilt
           // with real provenance instead of a fabricated one.
           const evidence = asset.provenance;
+          // Only director publications mark a stage preview; timeline renders
+          // share the 'rendered' source but are ordinary composition outputs.
+          const stagePreviewDoc =
+            evidence.source === "rendered" && evidence.editorDocumentId
+              ? snapshot.editorDocuments.find(
+                  (doc) => doc.id === evidence.editorDocumentId,
+                )
+              : undefined;
           node.data.generationProvenance = {
             source: evidence.source,
             ...(evidence.jobId ? { jobId: evidence.jobId } : {}),
@@ -633,6 +676,9 @@ export class CreationProjection {
               : {}),
             ...(evidence.editorRevision != null
               ? { editorRevision: evidence.editorRevision }
+              : {}),
+            ...(stagePreviewDoc?.kind === "director"
+              ? { stagePreview: true }
               : {}),
           };
           node.data.media = {
@@ -1234,12 +1280,53 @@ export class CreationProjection {
         };
       }
       case "director": {
+        const stage = parseLocalStageValue(
+          node.data.localStage ?? createLocalStage(),
+        );
+        const objects = await Promise.all(
+          stage.objects.map(async (object) => {
+            const {
+              source: _source,
+              asset: _asset,
+              role: _role,
+              format: _format,
+              animationNames: _animationNames,
+              hasAnimation: _hasAnimation,
+              ...base
+            } = object;
+            if (object.kind !== "gltf") return base;
+            const asset =
+              object.asset ??
+              (object.source
+                ? await this.importResource({
+                    kind: "file",
+                    title: stageUploadTitle(object.name, object.format!),
+                    src: object.source,
+                  })
+                : undefined);
+            if (!asset)
+              throw new Error(tNow("errors.backend.directorAssetMissing"));
+            return { ...base, asset, role: object.role, format: object.format, animationNames: object.animationNames, hasAnimation: object.hasAnimation };
+          }),
+        );
+        const still = node.data.stillCapture
+          ? await this.importResource({
+              kind: "image",
+              title: node.data.title ?? "director-stage",
+              src: node.data.stillCapture,
+              fresh: true,
+            })
+          : node.data.stillAsset;
         const {
           format: _format,
           version: _version,
           ...data
-        } = node.data.localStage ?? createLocalStage();
-        return { ...common, kind, data };
+        } = stage;
+        return {
+          ...common,
+          kind,
+          data: { ...data, objects, ...(still ? { still } : {}) },
+        };
       }
       case "image_crop": {
         const crop = node.data.imageCrop!;

@@ -242,6 +242,39 @@
       "lanes": ["extended", "production"]
     },
     {
+      "file": "director_stage_entry.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "Second-phase Director Stage acceptance: create, import GLB, edit, reopen, undo and redo. DIRECTOR_STAGE_LOCALE reruns the flow in another UI language."
+    },
+    {
+      "file": "director_stage_fixture.mjs",
+      "helper": true,
+      "note": "GLB and animated-GLB fixture builders for the Director Stage browser checks."
+    },
+    {
+      "file": "director_stage_animation.mjs",
+      "lanes": [
+        "manual"
+      ],
+      "note": "Third-phase Director Stage acceptance: an animated GLB follows the stage timeline into the same sampled MP4; run against an isolated creation server."
+    },
+    {
+      "file": "director_stage_output.mjs",
+      "lanes": [
+        "manual"
+      ],
+      "note": "Fourth-phase Director Stage acceptance: captured stills and preview MP4s become tracked project assets the timeline can reference."
+    },
+    {
+      "file": "director_stage_delivery.mjs",
+      "lanes": [
+        "manual"
+      ],
+      "note": "A definitively refused editor delivery must not replay forever: the Director Stage recovers on the next attempt."
+    },
+    {
       "file": "double_shift_chat.mjs",
       "previewSafe": true,
       "lanes": [

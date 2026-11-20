@@ -4534,6 +4534,18 @@
             },
             "title": "Objects",
             "type": "array"
+          },
+          "still": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Captured still frame pinned as a project image asset."
           }
         },
         "required": [
@@ -8372,6 +8384,35 @@
             "default": null,
             "description": "Audio channel count.",
             "title": "Channels"
+          },
+          "selfContained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether a model container embeds all its buffers and images.",
+            "title": "Selfcontained"
+          },
+          "animationNames": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Animation clip names declared by a parsed model container, in document order.",
+            "title": "Animationnames"
           }
         },
         "required": [
@@ -12009,7 +12050,8 @@
             "enum": [
               "person",
               "box",
-              "sphere"
+              "sphere",
+              "gltf"
             ],
             "title": "Kind",
             "type": "string"
@@ -12043,6 +12085,67 @@
             },
             "title": "Motionclips",
             "type": "array"
+          },
+          "asset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Registered GLB or self-contained GLTF asset for an imported stage object."
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "character",
+                  "scene"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Imported stage object role.",
+            "title": "Role"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "glb",
+                  "gltf"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Imported stage asset container format.",
+            "title": "Format"
+          },
+          "animationNames": {
+            "default": [],
+            "description": "Animation clip names discovered in the imported asset.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Animationnames",
+            "type": "array"
+          },
+          "hasAnimation": {
+            "default": false,
+            "description": "Whether the imported asset contains animation clips.",
+            "title": "Hasanimation",
+            "type": "boolean"
           }
         },
         "required": [
@@ -20400,6 +20503,18 @@
             },
             "title": "Objects",
             "type": "array"
+          },
+          "still": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Captured still frame pinned as a project image asset."
           }
         },
         "required": [
@@ -20411,7 +20526,8 @@
           "activeCameraId",
           "cameraSource",
           "shots",
-          "objects"
+          "objects",
+          "still"
         ],
         "title": "DirectorData",
         "type": "object"
@@ -24423,6 +24539,35 @@
             "default": null,
             "description": "Audio channel count.",
             "title": "Channels"
+          },
+          "selfContained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether a model container embeds all its buffers and images.",
+            "title": "Selfcontained"
+          },
+          "animationNames": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Animation clip names declared by a parsed model container, in document order.",
+            "title": "Animationnames"
           }
         },
         "required": [
@@ -24434,7 +24579,9 @@
           "frameRate",
           "hasAudio",
           "sampleRate",
-          "channels"
+          "channels",
+          "selfContained",
+          "animationNames"
         ],
         "title": "MediaMetadata",
         "type": "object"
@@ -28163,7 +28310,8 @@
             "enum": [
               "person",
               "box",
-              "sphere"
+              "sphere",
+              "gltf"
             ],
             "title": "Kind",
             "type": "string"
@@ -28197,6 +28345,67 @@
             },
             "title": "Motionclips",
             "type": "array"
+          },
+          "asset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Registered GLB or self-contained GLTF asset for an imported stage object."
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "character",
+                  "scene"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Imported stage object role.",
+            "title": "Role"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "glb",
+                  "gltf"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Imported stage asset container format.",
+            "title": "Format"
+          },
+          "animationNames": {
+            "default": [],
+            "description": "Animation clip names discovered in the imported asset.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Animationnames",
+            "type": "array"
+          },
+          "hasAnimation": {
+            "default": false,
+            "description": "Whether the imported asset contains animation clips.",
+            "title": "Hasanimation",
+            "type": "boolean"
           }
         },
         "required": [
@@ -28208,7 +28417,12 @@
           "name",
           "color",
           "keyframes",
-          "motionClips"
+          "motionClips",
+          "asset",
+          "role",
+          "format",
+          "animationNames",
+          "hasAnimation"
         ],
         "title": "StageObject",
         "type": "object"

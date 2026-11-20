@@ -451,7 +451,9 @@ class CreationCanvas:
         doc = next(d for d in snapshot.editorDocuments if d.id == payload.editorId)
         self._validate_timeline(doc, snapshot)
         output = self.assets._reference(snapshot, payload.asset)
-        if output.kind != 'video' or output.provenance.source != 'upload' or any(r.assetId == output.id for r in asset_references(snapshot)):
+        # Browser sessions upload renders; agents register them through
+        # artifact.publish. Either way the render must be fresh and unused.
+        if output.kind != 'video' or output.provenance.source not in {'upload', 'agent_written'} or any(r.assetId == output.id for r in asset_references(snapshot)):
             raise ContractError('role_restricted', '合成输出必须是尚未发布的视频素材。', output.id)
         if any(r.assetId == output.id for record in self.projects.history(snapshot.project.id) for r in asset_references(record.snapshot)):
             raise ContractError('role_restricted', '合成输出已有历史用途，不能改写来源。', output.id)

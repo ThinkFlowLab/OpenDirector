@@ -227,6 +227,8 @@ export const errors = {
   "errors.backend.resultCandidate": "Result kept as a candidate",
   "errors.backend.mediaEmpty": "The media has no readable content.",
   "errors.backend.mediaReadFailed": "Could not read the media.",
+  "errors.backend.directorAssetMissing":
+    "The director stage contains an imported asset without a registered project asset.",
   "errors.backend.unsupportedGeneration":
     "This node does not support generation settings.",
   "errors.backend.assemblyMissing":

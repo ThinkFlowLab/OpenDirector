@@ -52,7 +52,9 @@ def publish_media(service, data, payload):
         service._available(service.assets._reference(snapshot, ref))
     for output in payload.outputs:
         asset = service.assets._reference(snapshot, output.asset)
-        if asset.kind not in allowed or asset.provenance.source != 'upload' or asset.id in used | historical:
+        # Uploads come from the browser session; agents register the same
+        # deliverables through artifact.publish. The invariant is freshness.
+        if asset.kind not in allowed or asset.provenance.source not in {'upload', 'agent_written'} or asset.id in used | historical:
             raise ContractError('role_restricted', '输出必须是尚未发布且类型匹配的真实素材。', asset.id)
         service._available(asset)
         if doc.kind == 'director' and (asset.metadata.durationSeconds is None or abs(asset.metadata.durationSeconds - doc.data.duration) > .15):

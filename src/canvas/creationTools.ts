@@ -24,6 +24,5 @@ export const CANVAS_CREATION_TOOLS: readonly {
     kind: "external",
     labelKey: "canvas.kind.external",
     icon: "rail-stage",
-    unavailable: true,
   },
 ];

@@ -199,6 +199,8 @@ export const editors = {
   "editors.stage.error.missingObject": "关键帧引用了缺失或重复的舞台对象。",
   "editors.stage.error.invalidLegacyObject": "旧舞台对象无效。",
   "editors.stage.error.jointMotionPerson": "只有人物支持关节动作。",
+  "editors.stage.error.importedSceneMotion": "场景素材不能携带角色动作片段。",
+  "editors.stage.error.importedMotionUnavailable": "此导入人物没有动画数据。",
   "editors.stage.error.invalidDocument": "本地导演预演格式无效。",
   "editors.stage.error.invalidObject": "舞台对象 ID、类型或颜色无效。",
   "editors.stage.error.invalidMotionClip": "动作片段无效。",
@@ -210,6 +212,7 @@ export const editors = {
   "editors.layerDocument.defaultName": "原始图片",
   "editors.layerDocument.error.size":
     "本地图层画布最多 8192 像素 / 边、总计 1677 万像素。请先缩小图片。",
+  "editors.layerDocument.error.notJson": "所选文件不是 JSON 文档。",
   "editors.layerDocument.error.structure": "图层文件结构不正确。",
   "editors.layerDocument.error.invalidParameter":
     "图层文件包含无效的尺寸、坐标或参数。",
@@ -260,6 +263,26 @@ export const editors = {
   "editors.stage.ui.objectPerson": "人物",
   "editors.stage.ui.objectBox": "方块",
   "editors.stage.ui.objectSphere": "球体",
+  "editors.stage.ui.objectGltf": "导入模型",
+  "editors.stage.ui.importAsset": "导入 GLB / GLTF",
+  "editors.stage.ui.assetRole": "导入素材角色",
+  "editors.stage.ui.assetCharacter": "人物",
+  "editors.stage.ui.assetScene": "场景",
+  "editors.stage.ui.assetNotice":
+    "此人物没有动画数据，但仍会跟随摄像机、分镜和变换关键帧。",
+  "editors.stage.ui.assetUnavailable": "导入素材不可用，请重新打开工程或再次导入。",
+  "editors.stage.ui.assetLoadFailed":
+    "无法加载「{name}」。文件可能损坏，或引用了外部资源。",
+  "editors.stage.ui.assetCorrupt":
+    "无法读取「{name}」：GLB 头有效，但内嵌 JSON 缺失或已损坏。",
+  "editors.stage.ui.assetTooLarge":
+    "「{name}」超过 {size} MB，请使用更小的 GLB 或 GLTF 文件。",
+  "editors.stage.ui.assetUnsupported":
+    "目前仅支持 GLB 和自包含 GLTF；FBX 及外部 GLTF 资源暂不支持。",
+  "editors.stage.ui.assetCompressed":
+    "暂不支持压缩模型（Draco、meshopt 或 KTX2）。请先导出未压缩的模型，再重新导入。",
+  "editors.stage.ui.assetImported": "已导入 {name} · {animationCount} 个动画片段",
+  "editors.stage.ui.assetImportedStatic": "已导入 {name} · 无动画数据",
   "editors.stage.ui.degreesSuffix": "（度）",
   "editors.stage.ui.editFailed": "舞台修改失败。",
   "editors.stage.ui.cameraName": "摄像机 {number}",
@@ -270,6 +293,12 @@ export const editors = {
   "editors.stage.ui.rendererNotReady": "舞台渲染器尚未就绪。",
   "editors.stage.ui.screenshotFailed": "截图失败。",
   "editors.stage.ui.importFailed": "导入舞台失败。",
+  "editors.stage.ui.importNotJson":
+    "所选文件不是舞台 JSON 文档。模型文件请使用「导入 GLB / GLTF」导入。",
+  "editors.stage.ui.importForeignAssets":
+    "舞台文件引用了未在本工程登记的导入模型：{names}。请在原工程中打开，或先在此工程导入对应模型文件。",
+  "editors.stage.ui.exportUnsavedImports":
+    "舞台文件无法携带仅存在于当前浏览器的导入模型：{names}。请先应用编辑，将其保存为工程素材。",
   "editors.stage.ui.exportFailed": "预演视频导出失败。",
   "editors.stage.ui.motionTitle": "{title} · 动作预演",
   "editors.stage.ui.addCanvasFailed": "加入画布失败。",
@@ -279,7 +308,8 @@ export const editors = {
   "editors.stage.ui.redo": "重做",
   "editors.stage.ui.importJson": "导入舞台 JSON",
   "editors.stage.ui.exportJson": "导出舞台 JSON",
-  "editors.stage.ui.screenshot": "下载镜头截图",
+  "editors.stage.ui.screenshot": "捕获镜头定格",
+  "editors.stage.ui.stillCaptured": "已捕获定格，应用后登记为工程图片素材。",
   "editors.stage.ui.renderMp4": "合成预演 MP4",
   "editors.stage.ui.renderProgress": "正在合成预演 {percent}%",
   "editors.stage.ui.cancelRender": "取消合成",
@@ -295,7 +325,8 @@ export const editors = {
   "editors.stage.ui.stageAria": "可交互的三维导演舞台",
   "editors.stage.ui.pause": "暂停",
   "editors.stage.ui.playAction": "播放动作与关键帧",
-  "editors.stage.ui.time": "{time} / {duration} 秒",
+  "editors.stage.ui.currentTime": "当前时刻",
+  "editors.stage.ui.currentTimeAria": "舞台当前时刻",
   "editors.stage.ui.totalDuration": "总时长",
   "editors.stage.ui.stageDurationAria": "舞台总时长",
   "editors.stage.ui.recordKeyframe": "在此记录关键帧",
@@ -351,7 +382,7 @@ export const editors = {
   "editors.stage.ui.verticalFov": "垂直视角 {value}°",
   "editors.stage.ui.resetCamera": "重置镜头",
   "editors.stage.ui.footerHint":
-    "修改机位或主体会写入当前时间的关键帧；预览、截图与 MP4 共用画幅和采样。支持分镜硬切、分段关节动作和 30 fps MP4 导出。外部 FBX/GLB 蒙皮角色与云端导演版本尚未接入。",
+    "修改机位或主体会写入当前时间的关键帧；预览、截图与 MP4 共用画幅和采样。GLB 和自包含 GLTF 人物或场景素材会登记到工程，并跟随摄像机、分镜和变换关键帧。FBX 及外部 GLTF 资源暂不支持。",
   "editors.stage.ui.importAria": "导入导演舞台",
   "editors.stage.ui.startSeconds": "开始（秒）",
   "editors.stage.ui.durationSeconds": "时长（秒）",
