@@ -9,6 +9,19 @@ export function mediaDetails(metadata) {
   }
 }
 
+// A repeat can share a spec with earlier jobs. Read the size each job actually submitted.
+export function resultMediaDetails(snapshot, jobs = new Map(snapshot.jobs.map(job => [job.id, job]))) {
+  const assets = new Map((snapshot.assets ?? []).map(asset => [asset.id, asset.metadata]))
+  return ({ asset, jobId }) => {
+    const details = mediaDetails(assets.get(asset.assetId))
+    const size = jobs.get(jobId)?.inputSnapshot?.spec?.parameters?.size
+    if (asset.kind === 'image' && details?.width && /^\d+x\d+$/.test(size) && size !== `${details.width}x${details.height}`) {
+      return { ...details, requestedSize: size }
+    }
+    return details
+  }
+}
+
 /** Model-facing summaries. The canonical value remains available to programs. */
 export function renderToolResult(key, value, t, { webPreview = false } = {}) {
   const lines = [t(`render.${key}`)]

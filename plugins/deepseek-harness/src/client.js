@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mediaDetails } from './presentation.js'
+import { mediaDetails, resultMediaDetails } from './presentation.js'
 import { resultVersionInfo } from './versions.js'
 import { actionPackRequest, actionPackArchive } from './action-packs.js'
 import {
@@ -39,10 +39,6 @@ export function joinUrl(baseUrl, path) {
 
 function creationPath(projectId) {
   return `${PROJECTS}/${projectId}`
-}
-
-function assetMetadata(snapshot) {
-  return new Map((snapshot.assets ?? []).map(asset => [asset.id, asset.metadata]))
 }
 
 function canRetryFailedJob(job) {
@@ -338,7 +334,7 @@ export class OpenDirectorClient {
     const search = librarySearch(snapshot, query)
     const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
-    const metadata = assetMetadata(snapshot)
+    const detailsFor = resultMediaDetails(snapshot, jobs)
     const versions = resultVersionInfo(snapshot)
     const results = []
     const step = order === 'oldest' ? 1 : -1
@@ -355,7 +351,7 @@ export class OpenDirectorClient {
       const prompt = job?.inputSnapshot?.spec?.prompt ?? ''
       const title = search.title(specId)
       if (!search.matches(prompt, title, job?.inputSnapshot?.model?.modelId, id, jobId, specId)) continue
-      const details = mediaDetails(metadata.get(asset.assetId))
+      const details = detailsFor({ asset, jobId })
       results.push({
         resultId: id,
         specId,
@@ -434,7 +430,7 @@ export class OpenDirectorClient {
     const specs = new Map(snapshot.generationSpecs.map(spec => [spec.id, spec]))
     const jobs = new Map(snapshot.jobs.map(job => [job.id, job]))
     const results = new Map(snapshot.results.map(result => [result.id, result]))
-    const metadata = assetMetadata(snapshot)
+    const detailsFor = resultMediaDetails(snapshot, jobs)
     const names = librarySearch(snapshot, '')
     const versions = resultVersionInfo(snapshot)
     const images = ids.map(resultId => {
@@ -446,7 +442,7 @@ export class OpenDirectorClient {
         ...(versions.get(resultId) ?? {}),
         title: names.title(result.specId) ?? '',
         prompt: jobs.get(result.jobId)?.inputSnapshot?.spec?.prompt?.slice(0, 500) ?? '',
-        details: mediaDetails(metadata.get(result.asset.assetId)),
+        details: detailsFor(result),
       }
     })
     return { projectId: project, canvasUrl: this.canvasUrl(project), images }
@@ -492,10 +488,10 @@ export class OpenDirectorClient {
     const results = Array.isArray(snapshot?.results)
       ? snapshot.results.filter((item) => item.jobId === job).map(item => ({ ...item, ...versions.get(item.id) }))
       : []
-    const metadata = assetMetadata(snapshot)
-    const resultDetails = Object.fromEntries(results.flatMap(({ asset }) => {
-      const details = mediaDetails(metadata.get(asset.assetId))
-      return details ? [[asset.assetId, details]] : []
+    const detailsFor = resultMediaDetails(snapshot)
+    const resultDetails = Object.fromEntries(results.flatMap(result => {
+      const details = detailsFor(result)
+      return details ? [[result.asset.assetId, details]] : []
     }))
     return {
       job: value, results, projectName: snapshot.project.name,
@@ -524,12 +520,13 @@ export class OpenDirectorClient {
     const snapshot = await this.project(project, { signal })
     const specId = job.inputSnapshot.spec.id
     const selected = snapshot.generationSpecs.find(spec => spec.id === specId)?.currentResultId
-    const metadata = assetMetadata(snapshot)
+    const detailsFor = resultMediaDetails(snapshot)
     const versions = resultVersionInfo(snapshot)
     return {
       status: job.status, ...cancellation,
-      results: snapshot.results.filter(result => result.specId === specId).map(({ id, asset }) => {
-        const details = mediaDetails(metadata.get(asset.assetId))
+      results: snapshot.results.filter(result => result.specId === specId).map(result => {
+        const { id, asset } = result
+        const details = detailsFor(result)
         return { resultId: id, assetId: asset.assetId, kind: asset.kind, selected: id === selected,
           ...(versions.get(id) ?? {}),
           ...(details && { details }) }
@@ -550,16 +547,15 @@ export class OpenDirectorClient {
       : jobs.every(job => job.status === 'cancelled') ? 'cancelled' : 'failed'
     const ids = new Set(jobs.map(job => job.id))
     const selected = new Set(snapshot.generationSpecs.map(spec => spec.currentResultId))
-    const metadata = assetMetadata(snapshot)
+    const detailsFor = resultMediaDetails(snapshot)
     const versions = resultVersionInfo(snapshot)
     return {
       groupId: group, status, completedCount: done, failedCount: failed, totalCount: jobs.length,
       jobs: jobs.map(job => ({ jobId: job.id, status: job.status, cancelRequested: job.cancelRequested,
         remoteCancellation: job.remoteCancellation, category: job.errorDetails?.category })),
-      results: snapshot.results.filter(result => ids.has(result.jobId)).map(({ id, asset }) => ({
-        resultId: id, assetId: asset.assetId, kind: asset.kind, selected: selected.has(id),
-        ...(versions.get(id) ?? {}),
-        ...(metadata.has(asset.assetId) && { details: mediaDetails(metadata.get(asset.assetId)) }),
+      results: snapshot.results.filter(result => ids.has(result.jobId)).map(result => ({
+        resultId: result.id, assetId: result.asset.assetId, kind: result.asset.kind, selected: selected.has(result.id),
+        ...(versions.get(result.id) ?? {}), details: detailsFor(result),
       })),
     }
   }

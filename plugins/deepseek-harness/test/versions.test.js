@@ -158,11 +158,13 @@ test('creation and group status projections reuse the same versions and createdA
   const snapshot = {
     project: { id: projectId, name: 'Studio' },
     generationSpecs: [{ id: specId, currentResultId: second.id }],
-    canvasItems: [], assets: [],
+    canvasItems: [], assets: [first, second].map(item => ({
+      id: item.asset.assetId, metadata: { width: 512, height: 512 },
+    })),
     jobs: [
       { id: job1, batchId: groupId, status: 'succeeded', createdAt: '2025-02-03T04:05:06.000Z',
-        inputSnapshot: { spec: { id: specId } } },
-      { id: job2, batchId: groupId, status: 'succeeded', inputSnapshot: { spec: { id: specId } } },
+        inputSnapshot: { spec: { id: specId, parameters: { size: '512x512' } } } },
+      { id: job2, batchId: groupId, status: 'succeeded', inputSnapshot: { spec: { id: specId, parameters: { size: '1536x1024' } } } },
     ],
     results: [first, second],
   }
@@ -177,6 +179,11 @@ test('creation and group status projections reuse the same versions and createdA
     [second.id, 2, undefined],
   ])
   const group = await client.creationGroupStatus(projectId, groupId)
+  for (const view of [status, group]) {
+    assert.deepEqual(view.results.map(item => item.details), [
+      { width: 512, height: 512 }, { width: 512, height: 512, requestedSize: '1536x1024' },
+    ])
+  }
   assert.deepEqual(group.results.map(item => [item.resultId, item.version, item.selected]), [
     [first.id, 1, false], [second.id, 2, true],
   ])

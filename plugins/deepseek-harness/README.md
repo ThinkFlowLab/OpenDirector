@@ -45,7 +45,7 @@ Beyond npm and an index, a versioned GitHub Release can carry the tarball and ch
 
 ### Check the connection
 
-Choose the plug icon (**Connection check**) next to **Action packs**. The dialog shows the configured API and canvas addresses, project count, and model connections for images, references, image-to-video, continuation and voiceover. It checks once when opened; use **Check again** after changing the service.
+Open **OpenDirector → Connection check** beside the message box. The dialog shows the configured API and canvas addresses, project count, and model connections for images, references, image-to-video, continuation and voiceover. It checks once when opened; use **Check again** after changing the service.
 
 An empty model catalog links you to OpenDirector to configure one. Connection errors explain whether to check the address, start the service, or fix access. **Copy diagnostics** copies the plugin version, addresses, status and counts; it omits project names, model credentials and provider responses. Listed models have not been tested by a generation. This check makes no model calls.
 
@@ -59,7 +59,7 @@ On this device, the plugin remembers the last project, project-list view and mod
 
 Image cards keep **Adopt**, **Edit** and **More actions** in view. **Animate**, **Reuse settings**, download and action packs remain in the menu. Video cards keep continuation handy, and voiceover cards offer reuse.
 
-Each node's results show V1, V2 and so on in registration order, unchanged by search or pagination. Cards also show the job time and an identified source version when available. An edit creates a separate node, so its numbering starts at V1 and can point back to the source node's version.
+Each node's results show V1, V2 and so on in registration order, unchanged by search or pagination. Image cards show the saved file size in pixels. When it differs from the requested dimensions, the card shows both. Cards also show the job time and an identified source version when available. An edit creates a separate node, so its numbering starts at V1 and can point back to the source node's version.
 
 If a project list or model catalog cannot be loaded, reload it in the same dialog. After adding a model in OpenDirector, reload an empty catalog to continue. Your description, action names and chosen reference stay in place; reloading only reads data.
 
@@ -67,7 +67,7 @@ If a preview fails to load, choose **Reload preview** on the same card. The orig
 
 ## Examples and a short demo
 
-Open **Try an example** in a creation form to start with a studio image, character reference, product cover or voiceover. Saved-image actions offer examples for edits and motion; continuation has its own example. Read the description, then choose **Use this description** or **Replace current description**. Your model, image size, reference order and candidate count stay as selected. Filling an example does not generate media.
+Pick an example below the description to fill an empty prompt. If you have already written something, you can read the example before choosing **Replace current description**. You can edit the text before generating.
 
 Action packs offer **Example actions** for a desktop companion or a set of expressions. **Replace action list** fills three editable actions while keeping the reference image, shared description and model.
 
@@ -77,7 +77,7 @@ See the [workflow demo and example scenarios](https://github.com/ThinkFlowLab/Op
 
 In OpenDirector, configure an image model under **Settings → Model connections** first. The [user guide](https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/user-guide.md) explains model connections. The example uses that configured service.
 
-In DSH Web, choose **Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
+In DSH Web, choose **OpenDirector → Create media** next to the composer. Select an existing project or name a new one. Choose a model, enter your prompt, and click **Generate one candidate**. You can also choose **Voiceover**, enter the text, and listen to the result in DSH.
 
 Choose **Number of candidates** (1–4) to create a group in one action. Each candidate is a separate generation task on the same node. The group shows saved progress and completed media together; select two images to compare, then adopt the version you prefer. Groups also work with voiceover and video forms. A failed member keeps its error while successful siblings remain available.
 
@@ -122,7 +122,7 @@ If the submission reply is lost, choose **Check submission** to look up the orig
 
 ### Pick up an earlier project
 
-Choose **Resume project** next to the composer, then select an OpenDirector project. Filter the saved results by media type or current selection, sort by when they were saved, and choose **Load more** for the next page. If a canvas is open for editing, save and close it before trying to adopt a result. If the connection drops during adoption, choose **Check adoption** to look up the original write.
+Choose **OpenDirector → Resume project**, then select an OpenDirector project. Filter the saved results by media type or current selection, sort by when they were saved, and choose **Load more** for the next page. If a canvas is open for editing, save and close it before trying to adopt a result. If the connection drops during adoption, choose **Check adoption** to look up the original write.
 
 Choose **Tasks** to find running, completed, and failed generations, including work submitted before you refreshed DSH. Filter by media type or change the order to find an earlier task. **View progress** opens that saved task. Completed candidates can be previewed and adopted there. A confirmed retryable failure offers **Retry generation** on the existing node. Closing the dialog keeps the task available in this list.
 
@@ -212,7 +212,7 @@ DSH Web shows saved images, videos, and audio on result cards in the current int
 
 From a saved image, open **More actions → Make an action pack**. Name 1–6 actions, add a shared character description, and choose an image model accepting references or a first-frame video model. **Create and generate** sends one task per action. Each action keeps its own candidates and adoption; generating another version leaves the current choice in place. Use **Adjust action** to change one action’s description and generate a new version while keeping other actions and existing choices.
 
-Choose **Action packs** next to the composer to reopen a saved pack. Pick one version for every action, then **Download action pack**. The ZIP contains numbered media files and a manifest with the selected results, descriptions, model IDs and content fingerprints. Downloads stream directly from project assets, up to 128 MB, without making a second local copy.
+Choose **OpenDirector → Action packs** to reopen a saved pack. Pick one version for every action, then **Download action pack**. The ZIP contains numbered media files and a manifest with the selected results, descriptions, model IDs and content fingerprints. Downloads stream directly from project assets, up to 128 MB, without making a second local copy.
 
 The reference image is pinned for every action. Character consistency, motion quality, transparency and loop timing depend on the model and the prompt; inspect the actual output before using it in a desktop pet. The pack exports individual images or clips, rather than an installed pet or a sprite-sheet runtime.
 

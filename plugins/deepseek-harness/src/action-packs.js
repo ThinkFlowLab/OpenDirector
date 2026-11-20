@@ -1,6 +1,6 @@
 import { buildCreateGeneration, buildSubmitCommand, imageOutputParameters, requireUuid, requireString, uuid5 } from './operations.js'
 import { InputError, UnknownOperationError } from './errors.js'
-import { mediaDetails } from './presentation.js'
+import { mediaDetails, resultMediaDetails } from './presentation.js'
 import { resultVersionInfo } from './versions.js'
 
 const TAG = 'dsh-action-pack'
@@ -23,6 +23,7 @@ export function packState(snapshot, packId, canRetry) {
   const { group, nodes, specs } = packNodes(snapshot, packId)
   const metadata = new Map((snapshot.assets ?? []).map(asset => [asset.id, asset.metadata]))
   const versions = resultVersionInfo(snapshot)
+  const detailsFor = resultMediaDetails(snapshot)
   const actions = nodes.map(item => {
     const spec = specs.get(item.binding.objectRef.id)
     const jobs = snapshot.jobs.filter(job => job.inputSnapshot.spec.id === spec.id)
@@ -32,7 +33,7 @@ export function packState(snapshot, packId, canRetry) {
       resultId: result.id, assetId: result.asset.assetId, kind: result.asset.kind,
       selected: result.id === spec.currentResultId,
       ...(versions.get(result.id) ?? {}),
-      details: mediaDetails(metadata.get(result.asset.assetId)),
+      details: detailsFor(result),
     }))
     const reference = snapshot.references.find(ref => ref.targetSpecId === spec.id && ref.active !== false && ref.source?.assetId)
     return {

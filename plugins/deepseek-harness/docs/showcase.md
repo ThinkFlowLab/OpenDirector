@@ -10,7 +10,7 @@ The recording uses DSH rc.3 Web and two existing images replayed through a local
 
 ## Try an example
 
-Choose **Create media → Try an example**. Read the example before filling the description. The form keeps your model and parameters; choose **Generate** when ready.
+Open **OpenDirector → Create media** and pick an example below the description. The form keeps your model and parameters; choose **Generate** when ready.
 
 | Start with | Next step |
 | --- | --- |
@@ -28,7 +28,7 @@ A DSH conversation can start the same workflow:
 
 这段演示使用完整的 DSH rc.3 网页宿主。图片来自已有素材回放，展示三个带版本号的候选、原图对比、采用 V2，以及刷新后找回同一个选择的实际界面操作。录制过程没有调用付费模型。
 
-从「创作素材 → 试一个例子」开始，选择工作室生图、角色参考图或配音。示例先填入描述；检查模型和参数后再生成。已经选好的模型、尺寸、参考图顺序和候选数量会保留。
+打开「OpenDirector → 创作素材」，在描述下选择示例，选择工作室生图、角色参考图或配音。示例先填入描述；检查模型和参数后再生成。已经选好的模型、尺寸、参考图顺序和候选数量会保留。
 
 - **工作室图片**：先生成两张候选，对比并采用一张，再从「继续工程」找回。
 - **角色动作素材包**：用一张已保存的角色图创建动作包。选择基础动作或表情示例，逐动作选版，再导出 ZIP。

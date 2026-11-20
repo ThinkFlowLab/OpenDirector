@@ -2,10 +2,14 @@
 window.__ModuleLoader__.load({
   id: '@opendirector/dsh-plugin',
   factory(require) {
-    const { cloneElement, createElement: h, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
+    const { cloneElement, createElement: h, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } = require('react')
     const namespace = 'opendirector'
     const en = {
       reloadData: 'Reload',
+      chooseModel: 'Choose a model', needsModel: 'Select a model to continue', promptPlaceholder: 'Describe the subject, setting and light.',
+      needsProject: 'Choose a project or create one.', needsName: 'Enter a project name.',
+      needsPrompt: 'Write a description or pick an example.', needsVoice: 'Enter a voice ID.',
+      fileSize: 'File {size}', requestedSize: 'Requested {size}',
       recentRestored: 'Using your recent settings.', forgetRecent: 'Forget recent settings', recentForgotten: 'Recent settings cleared.',
       versionLabel: 'V{number}', sourceVersionLabel: 'From {title} · V{number}',
       examples: 'Try an example', exampleChoose: 'Example', exampleApply: 'Use this description',
@@ -176,6 +180,10 @@ window.__ModuleLoader__.load({
       referencesChanged: 'Check the selected images and the model’s reference limit, then try again.',
     }
     const zh = {
+      chooseModel: '请选择模型', needsModel: '先选择模型', promptPlaceholder: '想画什么？试着描述主体、场景和光线。',
+      needsProject: '选择一个工程，或新建工程。', needsName: '请填写工程名称。',
+      needsPrompt: '写一句描述，或选择一个示例。', needsVoice: '请填写音色 ID。',
+      fileSize: '文件 {size}', requestedSize: '请求 {size}',
       reloadData: '重新读取',
       recentRestored: '已沿用上次设置。', forgetRecent: '清除最近设置', recentForgotten: '最近设置已清除。',
       versionLabel: 'V{number}', sourceVersionLabel: '来源：{title} · V{number}',
@@ -378,6 +386,18 @@ window.__ModuleLoader__.load({
       .od-media-ui form :is(input:not([type=checkbox]), select, textarea) { width: 100%; }
       .od-media-ui form :is(input, select, textarea):disabled { opacity: .7; }
       .od-media-ui form label { font-size: .85em; }
+      .od-media-ui .od-launcher { width: 2rem; min-height: 2rem; padding: 0 !important; border-color: transparent; }
+      .od-create-form { display: grid; gap: .85rem; }
+      .od-create-form > label:first-child { font-weight: 600; }
+      .od-create-form > label:first-child textarea { resize: vertical; min-height: 5.75rem; font-weight: normal; }
+      .od-create-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(19rem,100%),1fr)); gap: .8rem 1.2rem;
+        border-top: 1px solid var(--dsw-alias-border-l1); padding-block: 1rem .5rem; align-items: start; }
+      .od-submit-row { display: flex; flex-wrap: wrap; gap: .45rem .8rem; align-items: center;
+        border-top: 1px solid var(--dsw-alias-border-l1); padding-top: .75rem; }
+      .od-submit-row small { color: var(--dsw-alias-label-secondary); flex: 1; }
+      .od-field-link { font: inherit; color: var(--dsw-alias-brand-text); cursor: pointer;
+        background: transparent; border: 0; padding: .25rem 0; text-decoration: underline; text-underline-offset: .2em; }
+      .od-media-ui [role=menuitem]:is(:hover,:focus-visible) { background: var(--dsw-alias-interactive-bg-hover); }
       .od-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
         margin-bottom: 1rem; padding-bottom: .9rem; border-bottom: 1px solid var(--dsw-alias-border-l1); }
       .od-dialog-header h2 { margin: .15rem 0; font-size: 1.15em; font-weight: 650; letter-spacing: -.02em; }
@@ -446,6 +466,16 @@ window.__ModuleLoader__.load({
         h('div', null, h('span', { className: 'od-eyebrow' }, 'OpenDirector'),
           h('h2', null, title), hint && h('small', { className: 'od-hint' }, hint)),
         button(t('close'), close))
+    }
+
+    function SubmitRow({ reason, busy, label, focusModel }) {
+      const hint = useId()
+      return h('div', { className: 'od-submit-row' },
+        h('small', { id: hint, role: 'status' }, focusModel
+          ? h('button', { type: 'button', className: 'od-field-link', onClick: e => e.currentTarget.form.elements.namedItem('model').focus() }, reason)
+          : reason),
+        button(label, undefined, { type: 'submit', primary: true, disabled: busy || Boolean(reason),
+          'aria-describedby': reason ? hint : undefined }))
     }
 
     function mediaHref(project, asset, kind) {
@@ -652,11 +682,18 @@ window.__ModuleLoader__.load({
 
     function CreateMedia({ t, openPlugin }) {
       const [open, setOpen] = useState(null)
+      const [menu, setMenu] = useState(null)
+      const trigger = useRef(null)
+      const actions = [['create', 'creation'], ['resume', 'library'], ['actionPacks', 'packs'], ['connection', 'connection']]
+        .map(([label, page]) => ({ label, run: () => setOpen(page) }))
       return h('div', { className: 'od-media-ui', style: row },
-        button(t('create'), () => setOpen('creation'), { primary: true, symbol: 'create', title: 'OpenDirector', 'aria-haspopup': 'dialog' }),
-        button(t('resume'), () => setOpen('library'), { symbol: 'library', 'aria-haspopup': 'dialog' }),
-        button(t('actionPacks'), () => setOpen('packs'), { 'aria-haspopup': 'dialog' }),
-        button(icon('connection'), () => setOpen('connection'), { 'aria-label': t('connection'), title: t('connection'), 'aria-haspopup': 'dialog' }),
+        button(icon('create'), event => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          setMenu(menu ? null : { x: rect.left, y: rect.top, above: true })
+        }, { ref: trigger, className: 'od-launcher', title: 'OpenDirector', 'aria-label': 'OpenDirector',
+          'aria-haspopup': 'menu', 'aria-expanded': Boolean(menu) }),
+        menu && h(ActionMenu, { actions, position: menu, trigger, t, label: 'OpenDirector',
+          close: (restore = true) => { setMenu(null); if (restore) trigger.current?.focus() } }),
         open === 'connection' && h(ConnectionDialog, { t, openPlugin, onClose: () => setOpen(null) }),
         open === 'packs' && h(ActionPackLibrary, { t, onClose: () => setOpen(null) }),
         open === 'library' && h(ProjectLibrary, { t, onClose: () => setOpen(null) }),
@@ -1077,7 +1114,8 @@ window.__ModuleLoader__.load({
     const packStyles = `
       .od-pack-reference{display:flex;gap:1rem;align-items:center;margin:1rem 0;color:var(--dsw-alias-label-secondary)}
       .od-pack-reference img{width:5rem;height:5rem;object-fit:contain;border-radius:.7rem}
-      .od-pack-form fieldset{display:grid;gap:1rem;border:0;padding:0}
+      .od-pack-form fieldset{display:grid;gap:.8rem;border:0;padding:0;min-width:0}
+      .od-pack-form fieldset > .od-button{justify-self:start}
       .od-pack-form label{display:grid;gap:.35rem;min-width:0}
       .od-pack-action-input{display:grid;grid-template-columns:minmax(7rem,1fr) minmax(12rem,3fr) auto;gap:.6rem;padding:.8rem;border:1px solid #8884;border-radius:.7rem;align-items:center}
       .od-pack-form textarea{min-height:4rem;width:100%;box-sizing:border-box}
@@ -1113,7 +1151,7 @@ window.__ModuleLoader__.load({
       const [version, setVersion] = useState(0)
       const [error, setError] = useState(false)
       const [imageError, setImageError] = useState(false)
-      useEffect(() => { dialog.current.showModal() }, [])
+      useEffect(() => { if (!task) dialog.current.showModal() }, [task])
       useEffect(() => {
         const controller = new AbortController()
         setProjectsLoading(true); setError(false)
@@ -1145,6 +1183,7 @@ window.__ModuleLoader__.load({
           .catch(() => { if (!controller.signal.aborted) setImageError(true) })
         return () => controller.abort()
       }, [projectId, sourcePicker, cursor, version])
+      if (task) return h(ActionPackDialog, { ...task, t, onClose: () => { setTask(null); setVersion(value => value + 1) } })
       return h('dialog', { ref: dialog, className: 'od-media-ui', style: dialogStyle, onCancel: onClose },
         dialogHeader(t('actionPacks'), onClose, t, t('packHint')),
         h(PendingSubmissions, { context: 'packs', t, onRecovered: value => setTask(value) }),
@@ -1173,8 +1212,7 @@ window.__ModuleLoader__.load({
               'aria-label': t('packSource'), onClick: () => setTask({ source: { ...image, projectId } }) },
             h('img', { src: mediaHref(projectId, image.assetId, 'image'), alt: image.title || t('candidate'), loading: 'lazy' }),
             h('span', null, image.title || t('packSource'))))),
-          h(PageControls, { cursor, nextCursor: images?.nextCursor, onPage: setCursor, t })),
-        task && h(ActionPackDialog, { ...task, t, onClose: () => { setTask(null); setVersion(value => value + 1) } }))
+          h(PageControls, { cursor, nextCursor: images?.nextCursor, onPage: setCursor, t })))
     }
 
     function imageOutputSelection(model, requested) {
@@ -1291,6 +1329,11 @@ window.__ModuleLoader__.load({
       const model = choices.find(model => model.id === form.modelId)
       const imageSize = imageOutputSelection(model, form.output)
       const video = model?.videoChoices?.first_frame
+      const names = form.actions.map(action => action.name.trim().normalize('NFKC').toLowerCase())
+      const missing = !catalog ? 'loading' : catalog.error ? 'libraryError' : !choices.length ? 'noModels'
+        : !model ? 'needsModel' : imageSize.unavailable ? 'chooseOutput'
+        : !form.title.trim() || names.some(name => !name) || new Set(names).size !== names.length
+          || form.actions.some(action => !action.prompt.trim()) ? 'packInvalid' : null
       function change(key, value) {
         setDirty(true)
         if (['kind', 'modelId', 'output', 'durationSeconds'].includes(key)) catalogInitialized.current = true
@@ -1327,12 +1370,7 @@ window.__ModuleLoader__.load({
       }
       async function prepare(event) {
         event.preventDefault()
-        if (busy.current || pendingItem || imageSize.unavailable) return
-        const names = form.actions.map(action => action.name.trim().normalize('NFKC').toLowerCase())
-        if (!form.title.trim() || !form.actions.length || names.some(name => !name)
-          || new Set(names).size !== names.length || form.actions.some(action => !action.prompt.trim())) {
-          setFeedback('packInvalid'); return
-        }
+        if (busy.current || pendingItem || missing) return
         busy.current = true; setSubmitting(true); setFeedback('')
         const input = { action: 'prepare', projectId, operationId: crypto.randomUUID(),
           sourceResultId: source.resultId, title: form.title, sharedPrompt: form.prompt,
@@ -1404,7 +1442,9 @@ window.__ModuleLoader__.load({
       }
       const remaining = pack?.actions.filter(action => !action.jobs.length) ?? []
       const sourceImage = source ?? pack?.actions[0]?.reference
-      return h('dialog', { ref: dialog, className: 'od-media-ui od-action-pack', 'aria-label': t('newActionPack'), style: { ...dialogStyle, width: 'min(80rem, calc(100vw - 2rem))' }, onCancel: onClose },
+      return h('dialog', { ref: dialog, className: 'od-media-ui od-action-pack', 'aria-label': t('newActionPack'),
+        style: packId ? { ...dialogStyle, width: 'min(80rem, calc(100vw - 2rem))' } : dialogStyle,
+        onCancel: e => { if (e.target === e.currentTarget) onClose() } },
         dialogHeader(pack?.title ?? t('newActionPack'), onClose, t, t('packHint')),
         sourceImage && h('div', { className: 'od-pack-reference' },
           h('img', { src: mediaHref(projectId, sourceImage.assetId, 'image'), alt: t('packReference') }),
@@ -1422,8 +1462,8 @@ window.__ModuleLoader__.load({
             h('div', { style: row },
               h('label', null, t('mediaType'), h('select', { 'aria-label': t('mediaType'), value: form.kind, onChange: e => change('kind', e.target.value) },
                 h('option', { value: 'image' }, t('picture')), h('option', { value: 'video' }, t('video')))),
-              h('label', null, t('model'), h('select', { 'aria-label': t('model'), required: true, value: form.modelId, onChange: e => change('modelId', e.target.value) },
-                h('option', { value: '' }, t('model')), ...choices.map(model =>
+              h('label', null, t('model'), h('select', { name: 'model', 'aria-label': t('model'), required: true, value: form.modelId, onChange: e => change('modelId', e.target.value) },
+                h('option', { value: '' }, t('chooseModel')), ...choices.map(model =>
                   h('option', { key: model.id, value: model.id }, model.modelId)))),
               form.kind === 'image' && h(ImageOutputField, { selection: imageSize,
                 onChange: value => change('output', value), disabled: locked, t }),
@@ -1442,8 +1482,8 @@ window.__ModuleLoader__.load({
                 onChange: e => change('actions', form.actions.map((value, i) => i === index ? { ...value, prompt: e.target.value } : value)) })),
               button(t('packRemove'), () => change('actions', form.actions.filter((_, i) => i !== index)), { disabled: form.actions.length === 1 }))),
             button(t('packAdd'), () => change('actions', [...form.actions, { name: '', prompt: '' }]), { disabled: form.actions.length >= 6 }),
-            h('button', { type: 'submit', className: 'od-button od-primary', disabled: locked || !model || imageSize.unavailable },
-              t(submitting ? 'submitting' : 'packCreate').replace('{count}', form.actions.length)))),
+            h(SubmitRow, { label: t(submitting ? 'submitting' : 'packCreate').replace('{count}', form.actions.length),
+              reason: missing && t(missing), focusModel: missing === 'needsModel', busy: locked }))),
         packId && !pack && h('p', null, t('loading')),
         pack && h('section', null,
           h('div', { className: 'od-pack-toolbar' },
@@ -1507,21 +1547,19 @@ window.__ModuleLoader__.load({
     }
 
     function ExamplePicker({ mode, t, prompt, onApply }) {
-      const [choice, setChoice] = useState('')
+      const [replacement, setReplacement] = useState(null)
       const ids = mode === 'audio' ? ['Speech', 'Narration'] : mode === 'edit' ? ['Lamp', 'Evening']
-        : mode === 'first_frame' ? ['Wave', 'Push'] : mode === 'continuation' ? ['Continue']
-          : ['Studio', 'Character', 'Cover']
-      const selected = ids.includes(choice) ? choice : ids[0]
-      return h('details', { className: 'od-settings', 'data-opendirector-examples': mode },
-        h('summary', null, t('examples')),
-        h('div', { style: { display: 'grid', gap: '.5rem', marginTop: '.6rem' } },
-          h('label', null, t('exampleChoose'), h('select', {
-            'aria-label': t('exampleChoose'), value: selected, onChange: e => setChoice(e.target.value),
-          }, ...ids.map(id => h('option', { key: id, value: id }, t('example' + id))))),
-          h('p', { style: { margin: 0, whiteSpace: 'pre-wrap', fontSize: '.88em' } }, t('example' + selected + 'Prompt')),
-          h('small', { className: 'od-hint' }, t('exampleHint')),
-          h('div', { style: row }, button(t(prompt.trim() ? 'exampleReplace' : 'exampleApply'),
-            () => onApply(t('example' + selected + 'Prompt'))))))
+        : mode === 'first_frame' ? ['Wave', 'Push'] : mode === 'continuation' ? ['Continue'] : ['Studio', 'Character', 'Cover']
+      return h('div', { 'data-opendirector-examples': mode },
+        h('div', { style: row }, h('small', null, t('examples')),
+          ...ids.map(id => button(t('example' + id), () => {
+            if (prompt.trim()) setReplacement(id)
+            else { setReplacement(null); onApply(t('example' + id + 'Prompt')) }
+          }, { key: id }))),
+        replacement && h('div', { className: 'od-settings' },
+          h('p', null, t('example' + replacement + 'Prompt')),
+          button(t('exampleReplace'), () => { onApply(t('example' + replacement + 'Prompt')); setReplacement(null) }),
+          button(t('packCancelEdit'), () => setReplacement(null))))
     }
 
     function ActionExamples({ t, onApply }) {
@@ -1563,6 +1601,8 @@ window.__ModuleLoader__.load({
       const [progress, setProgress] = useState(null)
       const [repeatStatus, setRepeatStatus] = useState(null)
       const [repeatCount, setRepeatCount] = useState(1)
+      const [packSource, setPackSource] = useState(null)
+      const packTrigger = useRef(null)
       const [comparison, setComparison] = useState([])
       const [comparing, setComparing] = useState(false)
       const [submitting, setSubmitting] = useState(false)
@@ -1598,6 +1638,12 @@ window.__ModuleLoader__.load({
       const projectUnavailable = !source && !templateOf && catalog && !catalog.error && form.projectId && form.projectId !== 'new'
         && !catalog.projects.some(project => project.id === form.projectId)
       const modelUnavailable = catalog && !catalog.error && form.modelId && !model
+      const missing = projectUnavailable ? 'projectUnavailable' : !source && !templateOf && !form.projectId ? 'needsProject'
+        : form.projectId === 'new' && !form.projectName.trim() ? 'needsName'
+        : !choices?.length ? 'noModels' : modelUnavailable ? 'modelUnavailable' : !model ? 'needsModel'
+        : tooManyReferences ? 'referencesChanged' : outputUnavailable ? 'chooseOutput'
+        : durationUnavailable ? 'chooseDuration' : model.voiceRequired && !form.voice.trim() ? 'needsVoice'
+        : !form.prompt.trim() ? 'needsPrompt' : null
       useEffect(() => {
         if (existingJob || restoringPending || recoveredJob) return
         saveMediaDraft(draftKey, !locked && dirty ? { form, references } : null)
@@ -1626,9 +1672,14 @@ window.__ModuleLoader__.load({
         })
       }, [existingJob, templateOf, locked, model?.id, form.kind, form.projectId, form.output, form.durationSeconds, catalog?.scope])
 
-      useEffect(() => {
+      useLayoutEffect(() => {
+        if (packSource || recoveredJob) return
         dialog.current.showModal()
-      }, [])
+        if (packTrigger.current) {
+          dialog.current.querySelector(`[data-opendirector-result="${CSS.escape(packTrigger.current)}"] [aria-haspopup=menu]`)?.focus()
+          packTrigger.current = null
+        }
+      }, [packSource, recoveredJob])
       useEffect(() => {
         if (existingJob || restoringPending || recoveredJob) return
         const controller = new AbortController()
@@ -1796,7 +1847,7 @@ window.__ModuleLoader__.load({
       }
       function submit(event) {
         event.preventDefault()
-        if (!unknown && (locked || outputUnavailable || durationUnavailable || projectUnavailable || modelUnavailable)) return
+        if (!unknown && (locked || missing)) return
         send(() => {
           const newProject = !source && !templateOf && form.projectId === 'new'
           return {
@@ -1843,6 +1894,7 @@ window.__ModuleLoader__.load({
         title: t(continuation ? 'sourceClip' : videoMode ? 'firstFrameSource' : 'original'),
       })
       if (recoveredJob) return h(GenerationDialog, { existingJob: recoveredJob, t, onClose })
+      if (packSource) return h(ActionPackDialog, { source: packSource, t, onClose: () => setPackSource(null) })
       return h('dialog', {
         className: 'od-media-ui',
         ref: dialog, onClose: event => { if (event.target === event.currentTarget) { flushMediaDrafts(); onClose() } },
@@ -1867,7 +1919,17 @@ window.__ModuleLoader__.load({
         !restoringPending && catalog && !catalog.error && h(jobId ? 'details' : 'div',
           { className: jobId ? 'od-settings' : undefined },
           jobId && h('summary', null, t('generationSettings')),
-          h('form', { onSubmit: submit, style: { display: 'grid', gap: '.65rem', marginTop: '.65rem' } },
+          h('form', { onSubmit: submit, className: 'od-create-form' },
+          field(form.kind === 'audio' ? 'speechText' : continuation ? 'shot' : videoMode ? 'motion' : source ? 'brief' : 'prompt', h('textarea', {
+            required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
+            placeholder: !source && form.kind === 'image' ? t('promptPlaceholder') : undefined,
+            value: form.prompt, onChange: event => update('prompt', event.target.value),
+          })),
+          !locked && h(ExamplePicker, {
+            key: form.kind + (videoMode ?? ''), mode: form.kind === 'audio' ? 'audio' : continuation ? 'continuation' : videoMode ? 'first_frame' : source ? 'edit' : 'image',
+            prompt: form.prompt, t, onApply: value => update('prompt', value),
+          }),
+          h('div', { className: 'od-create-options' },
           !source && !templateOf && field('chooseProject', h('select', {
             required: true, disabled: locked, value: form.projectId, onChange: event => update('projectId', event.target.value),
           }, h('option', { value: '' }, t('chooseProject')),
@@ -1880,8 +1942,8 @@ window.__ModuleLoader__.load({
             disabled: locked, value: form.kind, onChange: event => update('kind', event.target.value),
           }, h('option', { value: 'image' }, t('picture')), h('option', { value: 'audio' }, t('speech')))),
           field('model', h('select', {
-            required: true, disabled: locked || Boolean(templateOf), value: form.modelId, onChange: event => update('modelId', event.target.value),
-          }, h('option', { value: '' }, t('model')),
+            name: 'model', required: true, disabled: locked || Boolean(templateOf), value: form.modelId, onChange: event => update('modelId', event.target.value),
+          }, h('option', { value: '' }, t('chooseModel')),
           ...choices.map(item => h('option', { key: item.id, value: item.id },
             `${item.modelId} · ${t(item.connectionType === 'self_hosted' ? 'local' : 'hosted')}`)))),
           choices.length === 0 && h('div', { style: row }, h('p', null, t('noModels')),
@@ -1903,6 +1965,10 @@ window.__ModuleLoader__.load({
             required: model?.voiceRequired, disabled: locked || Boolean(templateOf), maxLength: 200, value: form.voice,
             onChange: event => update('voice', event.target.value),
           })),
+          field('candidateCount', h('select', { value: form.candidateCount, disabled: locked,
+            onChange: event => update('candidateCount', Number(event.target.value)) },
+            ...[1, 2, 3, 4].map(count => h('option', { key: count, value: count }, count)))),
+          form.candidateCount > 1 && h('small', null, t('groupHint').replace('{count}', form.candidateCount))),
           catalog.template && h('small', null, t('reuseHint')),
           catalog.template?.references.length > 0 && h('section', { 'aria-label': t('reuseReferences') },
             h('small', null, t('reuseReferences')),
@@ -1914,21 +1980,8 @@ window.__ModuleLoader__.load({
           continuation && h('small', null, t('continuationHint')),
           source && !videoMode && h(ReferencePicker, { projectId: source.projectId, references, setReferences, limit: referenceLimit, locked, t }),
           tooManyReferences && h('p', { role: 'alert' }, t('referencesChanged')),
-          !locked && h(ExamplePicker, {
-            mode: form.kind === 'audio' ? 'audio' : continuation ? 'continuation' : videoMode ? 'first_frame' : source ? 'edit' : 'image',
-            prompt: form.prompt, t, onApply: value => update('prompt', value),
-          }),
-          field(form.kind === 'audio' ? 'speechText' : continuation ? 'shot' : videoMode ? 'motion' : source ? 'brief' : 'prompt', h('textarea', {
-            required: true, disabled: locked, rows: 3, maxLength: Math.min(model?.maxPromptCharacters ?? 20000, 20000),
-            value: form.prompt, onChange: event => update('prompt', event.target.value),
-          })),
-          field('candidateCount', h('select', { value: form.candidateCount, disabled: locked,
-            onChange: event => update('candidateCount', Number(event.target.value)) },
-            ...[1, 2, 3, 4].map(count => h('option', { key: count, value: count }, count)))),
-          form.candidateCount > 1 && h('small', null, t('groupHint').replace('{count}', form.candidateCount)),
-          (!locked || submitting || unknown) && button(generateLabel,
-            undefined, { type: 'submit', primary: true,
-              disabled: submitting || (!unknown && (!model || projectUnavailable || tooManyReferences || outputUnavailable || durationUnavailable || !form.prompt.trim())) }))),
+          (!locked || submitting || unknown) && h(SubmitRow, { label: generateLabel, busy: submitting,
+            reason: !unknown && missing ? t(missing) : null, focusModel: !unknown && missing === 'needsModel' }))),
         templateOf?.canvasUrl && catalog?.error && canvasLink(templateOf.canvasUrl, t),
         result?.status === 'rejected' && h('p', { role: 'alert' }, t(submissionMessages.get(result.code) ?? 'failedToSubmit')),
         unknown && h('p', { role: 'status' }, t('generationUnknown')),
@@ -1963,6 +2016,7 @@ window.__ModuleLoader__.load({
             gridTemplateColumns: 'repeat(auto-fit, minmax(min(12rem, 100%), 1fr))' },
         }, sourcePreview, ...candidates.map((candidate, index) => h(Preview, {
           ...candidate, projectId, key: candidate.resultId, t, canvasUrl: result.canvasUrl,
+          onMakePack: () => { packTrigger.current = candidate.resultId; setPackSource({ ...candidate, projectId }) },
           title: candidate.version || candidates.length === 1 ? t('candidate') : `${t('candidate')} ${index + 1}`,
           onCompare: groupId && candidate.kind === 'image' ? () => toggleComparison(candidate) : undefined,
           compareSelected: comparison.includes(candidate.resultId),
@@ -2093,7 +2147,7 @@ window.__ModuleLoader__.load({
       return { adopt, status, canvasUrl }
     }
 
-    function ResultMenu({ actions, position, trigger, close, t }) {
+    function ActionMenu({ actions, position, trigger, close, label, t }) {
       const menu = useRef(null)
       useLayoutEffect(() => {
         const element = menu.current
@@ -2106,7 +2160,8 @@ window.__ModuleLoader__.load({
         const scaleX = (shifted.left - origin.left) / 100 || 1
         const scaleY = (shifted.top - origin.top) / 100 || 1
         const left = Math.max(8, Math.min(position.x, window.innerWidth - origin.width - 8))
-        const top = Math.max(8, Math.min(position.y, window.innerHeight - origin.height - 8))
+        const anchorY = position.above ? position.y - origin.height - 4 : position.y
+        const top = Math.max(8, Math.min(anchorY, window.innerHeight - origin.height - 8))
         // Measure CSS offsets in viewport coordinates to include host zoom without integer-size rounding.
         element.style.left = `${(left - origin.left) / scaleX}px`
         element.style.top = `${(top - origin.top) / scaleY}px`
@@ -2137,7 +2192,7 @@ window.__ModuleLoader__.load({
       const style = { ...buttonStyle, display: 'block', width: '100%', textAlign: 'start', whiteSpace: 'nowrap',
         border: 0, textDecoration: 'none', boxSizing: 'border-box' }
       return h('div', {
-        ref: menu, role: 'menu', 'aria-label': t('actions'), onKeyDown: keyboard,
+        ref: menu, role: 'menu', 'aria-label': label, onKeyDown: keyboard,
         style: { position: 'fixed', zIndex: 100, padding: '.25rem', border, borderRadius: '.45rem',
           background: surface, boxShadow: '0 4px 16px #0004', maxHeight: 'calc(100vh - 16px)', overflow: 'auto' },
       }, ...actions.map(({ label, run, href, quick, ...attributes }) => h(href ? 'a' : 'button', {
@@ -2177,7 +2232,7 @@ window.__ModuleLoader__.load({
             })))
     }
 
-    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions, version, createdAt, sourceResultId, sourceVersion, sourceTitle }) {
+    function Preview({ projectId, assetId, resultId, kind, title, selected, prompt, details, t, onAdopted, onMakePack, canvasUrl, expanded, onCompare, compareSelected, compareDisabled, compactActions, version, createdAt, sourceResultId, sourceVersion, sourceTitle }) {
       const [failed, setFailed] = useState(false)
       const [action, setAction] = useState(null)
       const [status, setStatus] = useState('')
@@ -2194,7 +2249,8 @@ window.__ModuleLoader__.load({
       const audio = kind === 'audio'
       const image = kind === 'image'
       const facts = [
-        (image || video) && details?.width && details?.height && `${details.width} × ${details.height}`,
+        (image || video) && details?.width && details?.height && t('fileSize').replace('{size}', `${details.width} × ${details.height}`),
+        image && details?.requestedSize && t('requestedSize').replace('{size}', details.requestedSize.replace('x', ' × ')),
         (video || audio) && details?.durationSeconds
           && t('duration').replace('{seconds}', Number(details.durationSeconds.toFixed(2))),
       ].filter(Boolean)
@@ -2246,7 +2302,7 @@ window.__ModuleLoader__.load({
       const actions = [
         !expanded && (image || audio) && { label: 'reuseSettings', quick: audio && !compactActions, run: () => setAction('reuse') },
         !expanded && image && { label: 'edit', quick: !compactActions, run: () => setAction('edit') },
-        image && { label: 'newActionPack', run: () => setAction('pack') },
+        image && { label: 'newActionPack', run: onMakePack ?? (() => setAction('pack')) },
         image && { label: 'viewOriginal', run: () => setViewingOriginal(true) },
         !expanded && image && { label: 'firstFrame', run: () => setAction('first_frame') },
         video && { label: 'continue', quick: !compactActions, run: () => setAction('continuation') },
@@ -2293,7 +2349,7 @@ window.__ModuleLoader__.load({
                 setMenu({ x: left, y: bottom })
               }
             }, { ref: trigger, 'aria-haspopup': 'menu', 'aria-expanded': Boolean(menu), title: t('actions'), 'aria-label': t('actions') })),
-          menu && h(ResultMenu, { actions, position: menu, trigger, close: closeMenu, t }),
+          menu && h(ActionMenu, { actions, position: menu, trigger, close: closeMenu, label: t('actions'), t }),
           adoption.status && !pending && !selected && !(adoption.status === 'adopted' && onAdopted)
             && h('span', { role: 'status', style: { color: muted, fontSize: '.78em' } }, t(adoption.status)),
           adoption.canvasUrl && !onAdopted && canvasLink(adoption.canvasUrl, t),
