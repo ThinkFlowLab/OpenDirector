@@ -316,11 +316,54 @@ try {
       .locator(`.react-flow__node[data-id="${created.itemId}"]`)
       .click();
     assert.match(await composer.innerText(), /Preserve video draft/);
-    await composer.locator("button.cw-run-button").click();
-    const finished = await until(
-      () => call(projectPath),
-      (value) => value.jobs[0]?.status === "succeeded",
-    );
+    let submitReceipt;
+    let finished;
+    try {
+      const [response] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.url().endsWith(`${projectPath}/commands`) &&
+            response.request().postDataJSON()?.type === "generation.submit",
+        ),
+        composer.locator("button.cw-run-button").click(),
+      ]);
+      submitReceipt = await response.json();
+      assert.equal(
+        submitReceipt.status,
+        "applied",
+        JSON.stringify(submitReceipt),
+      );
+      finished = await until(
+        () => call(projectPath),
+        (value) => value.jobs[0]?.status === "succeeded",
+      );
+    } catch (error) {
+      const diagnostics = await Promise.allSettled([
+        call(projectPath),
+        call("/api/creation-test-health"),
+        composer.innerText(),
+      ]);
+      console.error(
+        "Video capability generation diagnostics",
+        JSON.stringify({
+          locale,
+          projectId,
+          specId: created.specId,
+          submitReceipt,
+          pageErrors: errors,
+          diagnostics: diagnostics.map((result, index) => ({
+            source: ["project", "fixtureHealth", "composer"][index],
+            ...(result.status === "fulfilled"
+              ? {
+                  value:
+                    index === 0 ? { jobs: result.value.jobs } : result.value,
+                }
+              : { error: String(result.reason) }),
+          })),
+        }),
+      );
+      throw error;
+    }
     assert.equal(finished.jobs[0].inputSnapshot.model.modelId, modelId);
     assert.equal(
       finished.jobs[0].inputSnapshot.spec.prompt,
