@@ -141,6 +141,11 @@ export interface AudioParametersInput extends ContractInput {
   readonly durationFromReference?: boolean | null;
 }
 
+export interface AvailabilityCatalogInput extends ContractInput {
+  readonly revision: string;
+  readonly models: ReadonlyArray<ModelAvailabilityInput>;
+}
+
 export interface BatchCommandInput extends CommandBaseInput {
   readonly type: "creation.batch";
   readonly payload: BatchPayloadInput;
@@ -254,6 +259,7 @@ export interface CanvasItemBaseInput extends ProjectEntityInput {
   readonly height?: number;
   readonly zIndex?: number;
   readonly locked?: boolean;
+  readonly color?: string | null;
   readonly visible?: boolean;
   readonly parentId?: string | null;
   readonly tags?: ReadonlyArray<string>;
@@ -305,6 +311,7 @@ export interface CanvasPresentationUpdateInput extends ContractInput {
   readonly height?: number | null;
   readonly zIndex?: number | null;
   readonly locked?: boolean | null;
+  readonly color?: string | null;
   readonly parentId?: string | null;
 }
 
@@ -356,6 +363,32 @@ export interface CanvasUpdateCommandOperationInput {
   readonly payload: CanvasPresentationUpdateInput;
 }
 
+export interface CapabilityDeclarationInput extends ContractInput {
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityExecutionInput extends ContractInput {
+  readonly state: "unpaused" | "paused" | "unknown";
+  readonly scope: "deployment" | "worker" | null;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityInputDetailInput extends ContractInput {
+  readonly name: string;
+  readonly support: "supported" | "unsupported" | "unknown";
+  readonly source?: "service" | "application";
+  readonly minCount?: number | null;
+  readonly maxCount?: number | null;
+  readonly values?: ReadonlyArray<string | number | boolean> | null;
+  readonly min?: number | null;
+  readonly max?: number | null;
+  readonly multipleOf?: number | null;
+}
+
 export interface ChangedObjectInput extends ContractInput {
   readonly version: ObjectVersionInput;
   readonly change: "created" | "updated" | "hidden" | "deleted";
@@ -388,7 +421,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -616,6 +649,7 @@ export interface ImageCropOptionsInput extends ContractInput {
 
 export interface ImageExecutionInput extends ContractInput {
   readonly kind: "image";
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly responseFormat?: "url" | "b64_json" | null;
   readonly outputFormat?: "png";
@@ -657,6 +691,7 @@ export interface ImageOutputInput extends ContractInput {
 }
 
 export interface ImageParametersInput extends ContractInput {
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size?: string;
   readonly aspectRatio?: string | null;
   readonly preset?: "none" | "product-views";
@@ -665,6 +700,7 @@ export interface ImageParametersInput extends ContractInput {
 }
 
 export interface InputRulesInput extends ContractInput {
+  readonly fractionalDuration?: boolean;
   readonly profile: string;
   readonly voiceLibrary?: VoiceLibraryCapabilitiesInput | null;
   readonly maxPromptCharacters?: number | null;
@@ -680,6 +716,7 @@ export interface InputRulesInput extends ContractInput {
   readonly requestBytes: number;
   readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
   readonly imageOutputs?: ReadonlyArray<ImageOutputInput>;
+  readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions?: ReadonlyArray<string>;
   readonly referenceImageResolutions?: ReadonlyArray<string> | null;
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
@@ -720,6 +757,8 @@ export interface JobInput extends ProjectEntityInput {
   readonly adoptionMaterial?: AssetRefInput | null;
   readonly adopted?: boolean;
   readonly adapterParameters?: Readonly<Record<string, JsonValueInput>>;
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
 }
 
 export interface JobCancelCommandInput extends CommandBaseInput {
@@ -812,14 +851,30 @@ export interface MediaPublicationOutputInput extends ContractInput {
   readonly height?: number;
 }
 
+export interface ModelAvailabilityInput extends ContractInput {
+  readonly configId: string | null;
+  readonly modelId: string;
+  readonly identity: string;
+  readonly autoCheck: boolean;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly revision: string;
+  readonly operations: ReadonlyArray<OperationAvailabilityInput>;
+}
+
 export interface ModelConfigPublicInput extends ModelConnectionInput {
   readonly id: string;
   readonly providerId?: string | null;
   readonly inputRules: InputRulesInput;
+  readonly capabilityAutoCheck?: boolean | null;
+  readonly availability?: ModelAvailabilityInput | null;
 }
 
 export interface ModelConfigWriteInput extends ModelConnectionInput {
   readonly apiKey?: string | null;
+  readonly capabilityAutoCheck?: boolean | null;
 }
 
 export interface ModelConnectionInput extends ContractInput {
@@ -827,11 +882,11 @@ export interface ModelConnectionInput extends ContractInput {
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
 }
 
@@ -840,11 +895,11 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules?: InputRulesInput | null;
 }
 
@@ -889,6 +944,21 @@ export interface ObjectVersionInput extends ContractInput {
   readonly revision: number;
 }
 
+export interface OperationAvailabilityInput extends ContractInput {
+  readonly operation: string;
+  readonly profile: string;
+  readonly method: string;
+  readonly path: string;
+  readonly output: string;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly declaration?: CapabilityDeclarationInput | null;
+  readonly execution?: CapabilityExecutionInput | null;
+  readonly inputDetails?: ReadonlyArray<CapabilityInputDetailInput>;
+}
+
 export interface PaletteDataInput extends ContractInput {
   readonly name?: string | null;
   readonly sourceImage?: AssetRefInput | null;
@@ -926,10 +996,12 @@ export interface ProjectInput extends ContractInput {
   readonly id: string;
   readonly revision?: number;
   readonly name: string;
+  readonly defaultNameIndex?: number | null;
 }
 
 export interface ProjectCreateInput extends ContractInput {
   readonly name: string;
+  readonly defaultNameIndex?: number | null;
 }
 
 export interface ProjectCreateCommandInput extends CommandBaseInput {
@@ -957,7 +1029,8 @@ export interface ProjectQueryInput extends QueryBaseInput {
   readonly type: "project.get";
 }
 
-export interface ProjectRenameInput extends ProjectCreateInput {
+export interface ProjectRenameInput extends ContractInput {
+  readonly name: string;
 }
 
 export interface ProjectRenameCommandInput extends CommandBaseInput {
@@ -1351,6 +1424,7 @@ export interface TimelinePublishRenderInput extends ContractInput {
   readonly editorId: string;
   readonly asset: AssetRefInput;
   readonly outputId: string;
+  readonly expectedOutputRevision?: number | null;
   readonly title?: string;
   readonly position?: PointInput;
 }
@@ -1716,6 +1790,11 @@ export interface AudioParameters extends Contract {
   readonly durationFromReference?: boolean | null;
 }
 
+export interface AvailabilityCatalog extends Contract {
+  readonly revision: string;
+  readonly models: ReadonlyArray<ModelAvailability>;
+}
+
 export interface BatchCommand extends CommandBase {
   readonly type: "creation.batch";
   readonly payload: BatchPayload;
@@ -1829,6 +1908,7 @@ export interface CanvasItemBase extends ProjectEntity {
   readonly height: number;
   readonly zIndex: number;
   readonly locked: boolean;
+  readonly color?: string | null;
   readonly visible: boolean;
   readonly parentId: string | null;
   readonly tags: ReadonlyArray<string>;
@@ -1880,6 +1960,7 @@ export interface CanvasPresentationUpdate extends Contract {
   readonly height: number | null;
   readonly zIndex: number | null;
   readonly locked: boolean | null;
+  readonly color?: string | null;
   readonly parentId: string | null;
 }
 
@@ -1931,6 +2012,32 @@ export interface CanvasUpdateCommandOperation {
   readonly payload: CanvasPresentationUpdate;
 }
 
+export interface CapabilityDeclaration extends Contract {
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityExecution extends Contract {
+  readonly state: "unpaused" | "paused" | "unknown";
+  readonly scope: "deployment" | "worker" | null;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+}
+
+export interface CapabilityInputDetail extends Contract {
+  readonly name: string;
+  readonly support: "supported" | "unsupported" | "unknown";
+  readonly source: "service" | "application";
+  readonly minCount: number | null;
+  readonly maxCount: number | null;
+  readonly values: ReadonlyArray<string | number | boolean> | null;
+  readonly min: number | null;
+  readonly max: number | null;
+  readonly multipleOf: number | null;
+}
+
 export interface ChangedObject extends Contract {
   readonly version: ObjectVersion;
   readonly change: "created" | "updated" | "hidden" | "deleted";
@@ -1963,7 +2070,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2191,6 +2298,7 @@ export interface ImageCropOptions extends Contract {
 
 export interface ImageExecution extends Contract {
   readonly kind: "image";
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly responseFormat: "url" | "b64_json" | null;
   readonly outputFormat: "png";
@@ -2232,6 +2340,7 @@ export interface ImageOutput extends Contract {
 }
 
 export interface ImageParameters extends Contract {
+  readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly aspectRatio: string | null;
   readonly preset: "none" | "product-views";
@@ -2240,6 +2349,7 @@ export interface ImageParameters extends Contract {
 }
 
 export interface InputRules extends Contract {
+  readonly fractionalDuration?: boolean;
   readonly profile: string;
   readonly voiceLibrary?: VoiceLibraryCapabilities | null;
   readonly maxPromptCharacters?: number | null;
@@ -2255,6 +2365,7 @@ export interface InputRules extends Contract {
   readonly requestBytes: number;
   readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
   readonly imageOutputs: ReadonlyArray<ImageOutput>;
+  readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions: ReadonlyArray<string>;
   readonly referenceImageResolutions: ReadonlyArray<string> | null;
   readonly videoCapabilities: VideoCapabilities | null;
@@ -2295,6 +2406,8 @@ export interface Job extends ProjectEntity {
   readonly adoptionMaterial: AssetRef | null;
   readonly adopted: boolean;
   readonly adapterParameters: Readonly<Record<string, JsonValue>>;
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
 }
 
 export interface JobCancelCommand extends CommandBase {
@@ -2387,13 +2500,29 @@ export interface MediaPublicationOutput extends Contract {
   readonly height: number;
 }
 
+export interface ModelAvailability extends Contract {
+  readonly configId: string | null;
+  readonly modelId: string;
+  readonly identity: string;
+  readonly autoCheck: boolean;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly revision: string;
+  readonly operations: ReadonlyArray<OperationAvailability>;
+}
+
 export interface ModelConfigPublic extends ModelConnection {
   readonly id: string;
   readonly inputRules: InputRules;
+  readonly capabilityAutoCheck?: boolean | null;
+  readonly availability?: ModelAvailability | null;
 }
 
 export interface ModelConfigWrite extends ModelConnection {
   readonly apiKey: string | null;
+  readonly capabilityAutoCheck?: boolean | null;
 }
 
 export interface ModelConnection extends Contract {
@@ -2401,11 +2530,11 @@ export interface ModelConnection extends Contract {
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities: VideoCapabilities | null;
 }
 
@@ -2414,11 +2543,11 @@ export interface ModelSnapshot extends Contract {
   readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
-  readonly protocol: "openai" | "volcengine" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
+  readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
-  readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules: InputRules | null;
 }
 
@@ -2463,6 +2592,21 @@ export interface ObjectVersion extends Contract {
   readonly revision: number;
 }
 
+export interface OperationAvailability extends Contract {
+  readonly operation: string;
+  readonly profile: string;
+  readonly method: string;
+  readonly path: string;
+  readonly output: string;
+  readonly status: "available" | "unavailable" | "unknown";
+  readonly reasonCode: string;
+  readonly checkedAt: number | null;
+  readonly expiresAt: number | null;
+  readonly declaration?: CapabilityDeclaration | null;
+  readonly execution?: CapabilityExecution | null;
+  readonly inputDetails: ReadonlyArray<CapabilityInputDetail>;
+}
+
 export interface PaletteData extends Contract {
   readonly name: string | null;
   readonly sourceImage: AssetRef | null;
@@ -2500,10 +2644,12 @@ export interface Project extends Contract {
   readonly id: string;
   readonly revision: number;
   readonly name: string;
+  readonly defaultNameIndex?: number | null;
 }
 
 export interface ProjectCreate extends Contract {
   readonly name: string;
+  readonly defaultNameIndex?: number | null;
 }
 
 export interface ProjectCreateCommand extends CommandBase {
@@ -2531,7 +2677,8 @@ export interface ProjectQuery extends QueryBase {
   readonly type: "project.get";
 }
 
-export interface ProjectRename extends ProjectCreate {
+export interface ProjectRename extends Contract {
+  readonly name: string;
 }
 
 export interface ProjectRenameCommand extends CommandBase {
@@ -2925,6 +3072,7 @@ export interface TimelinePublishRender extends Contract {
   readonly editorId: string;
   readonly asset: AssetRef;
   readonly outputId: string;
+  readonly expectedOutputRevision?: number | null;
   readonly title: string;
   readonly position: Point;
 }

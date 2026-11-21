@@ -7,6 +7,7 @@ import httpx
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_models import MINIMAX_MODELS
 from opendirector.domain.kling_models import KLING_MODELS, kling_capabilities
+from opendirector.domain.bigmodel_video import COGVIDEO_MODEL, cogvideo_capabilities
 from opendirector.domain.video_capabilities import VideoCapabilities
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.volcengine import endpoint
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 async def read_service_models(config, transport=None):
+    if config.get('protocol') == 'bigmodel_video':
+        return [{'id': COGVIDEO_MODEL, 'videoCapabilities': cogvideo_capabilities()}]
     if config.get('protocol') == 'kling_video':
         return [{'id': name, 'videoCapabilities': kling_capabilities(name)} for name in KLING_MODELS]
     if config.get('protocol') == 'minimax_video_v2':

@@ -16,6 +16,7 @@ from filelock import FileLock, Timeout
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.voice_library import VoiceLibrary
+from opendirector.application.model_availability import ModelAvailability, generation_request
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
@@ -29,10 +30,12 @@ from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
+from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
 from opendirector.integrations.model_adapters import capabilities_of
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.media.filenames import with_extension
@@ -91,7 +94,7 @@ def new_seed():
 
 
 class CreationGeneration(GenerationRuntime):
-    def __init__(self, projects, configs, provider=None):
+    def __init__(self, projects, configs, provider=None, *, availability=None):
         super().__init__()
         self.projects, self.configs = projects, configs
         self.assets = CreationAssets(projects)
@@ -99,6 +102,7 @@ class CreationGeneration(GenerationRuntime):
         self.settings = gateway().settings(projects.local.repository)
         self.provider = provider or GenerationProviders(self.store)
         self.voices = VoiceLibrary(configs)
+        self.availability = availability or ModelAvailability(configs)
 
     def directory(self, project_id):
         with self.projects.local.transaction() as db:
@@ -155,6 +159,9 @@ class CreationGeneration(GenerationRuntime):
             'video': {'duration': 5, 'ratio': 'adaptive', 'generate_audio': True},
             'audio': {'speaker': 'zh_female_vv_uranus_bigtts', 'audio_params': {'format': 'mp3', 'sample_rate': 24000}}}[spec.kind]
         intent = spec.parameters.model_dump(exclude_none=True)
+        if spec.kind == 'video' and config['protocol'] == 'bigmodel_video':
+            from opendirector.domain.bigmodel_video import cogvideo_parameters
+            return {**cogvideo_parameters(config, intent), 'watermark': not self.settings.get()['removeWatermark']}
         if spec.kind == 'video' and config['protocol'] == 'kling_video':
             from opendirector.domain.kling_models import kling_parameters
             return kling_parameters(config, intent, any(records[key]['kind'] == 'image' for key in node['referenceIds']))
@@ -163,7 +170,10 @@ class CreationGeneration(GenerationRuntime):
         if spec.kind == 'image':
             from opendirector.domain.image_output import resolve_image_output
             params['size'] = resolve_image_output(config, input_rules(config), intent)
-            if input_rules(config)['profile'] == 'vllm-omni-image':
+            if input_rules(config)['profile'] == 'openai-gpt-image' and spec.parameters.quality != 'auto':
+                params['quality'] = spec.parameters.quality
+            if (input_rules(config)['profile'] == 'vllm-omni-image'
+                    and not any(records[key]['kind'] == 'image' for key in node['referenceIds'])):
                 from opendirector.integrations.vllm_omni_image import SAMPLING
                 params.update(SAMPLING)
         if spec.kind == 'audio' and intent['creationType'] == 'music':
@@ -192,9 +202,8 @@ class CreationGeneration(GenerationRuntime):
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
-                # FastH3's wire contract sends duration; its derived frame
-                # estimate is not an explicitly submitted execution parameter.
-                params.pop('num_frames', None)
+                if config.get('videoAdapter') == 'fasth3_dual' and node.get('videoMode') == 'first_frame':
+                    params['num_inference_steps'] = 20
                 params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
@@ -209,7 +218,7 @@ class CreationGeneration(GenerationRuntime):
                 if node.get('videoMode') == 'continuation':
                     raise ProjectError('接续沿用上一段视频的画幅，请将比例设为自动。', 422)
                 caps = rules.get('videoCapabilities') or {}
-                choices = [item for item in caps.get('outputs', []) if seconds is None or seconds in item['durations']]
+                choices = [item for item in caps.get('outputs', []) if seconds is None or duration_matches(seconds, item['durations'], rules.get('fractionalDuration', False))]
                 if not choices:
                     raise ProjectError('指定视频比例前，请在模型接入中配置输出规格。', 422)
                 preferred = next((item for item in choices if item['resolution'] == caps.get('defaultResolution')), choices[0])
@@ -223,9 +232,8 @@ class CreationGeneration(GenerationRuntime):
                     params['ratio'] = '16:9'
             else:
                 apply_video_resolution(params, node, records, config, output)
-            if rules['profile'] == 'vllm-omni-h3':
-                from opendirector.integrations.vllm_omni import FPS, h3_frames
-                params.update(fps=FPS, num_frames=h3_frames(params['duration']))
+            if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'} and 'duration' in params:
+                params.update(video_frame_parameters(params['duration'], params.get('fps', FPS)))
         if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
         if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
@@ -248,6 +256,7 @@ class CreationGeneration(GenerationRuntime):
         if kind == 'image':
             profile = input_rules(config)['profile']
             return dict(kind=kind, size=parameters['size'],
+                quality=parameters.get('quality', 'auto'),
                 responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' or profile in {'moss-image', 'minimax-h3-image', 'bigmodel-glm-image'} else None,
                 outputFormat='png', watermark=parameters.get('watermark_enabled', parameters.get('watermark')),
                 numInferenceSteps=parameters.get('num_inference_steps'), guidanceScale=parameters.get('guidance_scale'))
@@ -315,7 +324,7 @@ class CreationGeneration(GenerationRuntime):
                 remote.release()
             claim.release()
 
-    def prepare(self, command, *, session=None, source='ui'):
+    def prepare(self, command, *, session=None, source='ui', agent_origin=None):
         replay = self.projects.replay(command)
         if replay is not None:
             return replay
@@ -324,6 +333,14 @@ class CreationGeneration(GenerationRuntime):
         # again under commit so a slow/offline provider cannot freeze editing.
         initial = self.projects.snapshot(command.projectId)
         voice_spec = next((spec for spec in initial.generationSpecs if spec.id == command.payload.specId), None)
+        capability_identity = None
+        capability_failure = None
+        if voice_spec is not None and voice_spec.modelConfigId:
+            try:
+                capability_config = self.configs.resolve(str(voice_spec.modelConfigId), 'agent' if voice_spec.kind == 'text' else voice_spec.kind)
+                capability_identity = self.availability.prepare(capability_config)
+            except ProjectError as error:
+                capability_failure = error
         voice_config, voice_failure = None, None
         if voice_spec is not None and voice_spec.kind == 'audio' and voice_spec.parameters.creationType == 'audio':
             try:
@@ -366,16 +383,20 @@ class CreationGeneration(GenerationRuntime):
             intermediate = ProjectSnapshot.model_validate(data)
             spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
             config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
-            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': input_rules(config)})
+            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
             spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
             spec = execution_spec(spec, resolved, public.inputRules)
             try:
-                validate_generation(spec, public, resolved)
+                validate_generation(spec, public, resolved, submitting=True)
                 if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
                     if old != voice_spec or config != voice_config:
                         raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)
                     if voice_failure is not None:
                         raise voice_failure
+                if capability_failure is not None:
+                    raise capability_failure
+                if capability_identity is not None:
+                    self.availability.require(config, generation_request(config, spec, resolved), capability_identity)
             except (ValueError, ProjectError) as error:
                 raise ContractError.from_error(error, spec.id) from error
             for reference in resolved:
@@ -391,6 +412,7 @@ class CreationGeneration(GenerationRuntime):
                 createdAt=datetime.now(timezone.utc),
                 inputFingerprint=snapshot.fingerprint(), execution={'kind': spec.kind, **({'size': '2K'} if spec.kind == 'image' else {'format': 'mp3', 'sampleRate': 24000} if spec.kind == 'audio' else {})},
                 originItemId=origin, previousJobId=command.payload.previousJobId,
+                **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
                 adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
                 batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
             task = self.task(stub)
@@ -399,6 +421,8 @@ class CreationGeneration(GenerationRuntime):
                 if hasattr(self.provider, 'prepare_inputs'):
                     self.provider.prepare_inputs(str(command.projectId), task, config)
                 parameters = self._parameters(spec, config, task, records)
+                if capability_identity is not None:
+                    self.availability.require(config, generation_request(config, spec, resolved, parameters=parameters), capability_identity)
             except ProjectError as error:
                 raise ContractError.from_error(error, spec.id) from error
             job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
@@ -406,9 +430,9 @@ class CreationGeneration(GenerationRuntime):
             return ProjectSnapshot.model_validate(data)
         return self.projects.commit(command, accept, session=session, source=source)
 
-    async def execute(self, command, *, session=None, source='ui'):
+    async def execute(self, command, *, session=None, source='ui', agent_origin=None):
         if command.type == 'generation.submit':
-            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source))
+            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source, agent_origin=agent_origin))
             async def finish():
                 try:
                     receipt = await pending

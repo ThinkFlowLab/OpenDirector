@@ -12,13 +12,15 @@ pytestmark = pytest.mark.ready
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/ci/summarize_checks.py'
 
 
-def run_summary(tmp_path, statuses, enabled=True):
+def run_summary(tmp_path, statuses, enabled=True, *, scope=None, event='pull_request'):
     summary = tmp_path / 'summary.md'
+    results = {lane: {'result': status} for lane, status in statuses.items()}
+    if scope is not None:
+        results['static']['outputs'] = scope
     result = subprocess.run(
         [sys.executable, str(SCRIPT)],
-        env={**os.environ, 'CHECK_RESULTS': json.dumps({
-            lane: {'result': status} for lane, status in statuses.items()
-        }), 'STATIC_ENABLED': json.dumps(enabled), 'GITHUB_STEP_SUMMARY': str(summary),
+        env={**os.environ, 'CHECK_RESULTS': json.dumps(results), 'GITHUB_EVENT_NAME': event,
+            'STATIC_ENABLED': json.dumps(enabled), 'GITHUB_STEP_SUMMARY': str(summary),
             'PYTHONIOENCODING': 'utf-8'},
         capture_output=True, text=True, encoding='utf-8', timeout=10,
     )
@@ -63,4 +65,54 @@ def test_missing_receipt_fails_closed(tmp_path, missing):
     statuses = dict.fromkeys(['static', 'python', 'frontend', 'browser'], 'success')
     del statuses[missing]
     result, _ = run_summary(tmp_path, statuses)
+    assert result.returncode != 0
+
+
+DOC_SCOPE = {'run-heavy': 'false', 'scope-reason': 'docs_only', 'changed-files': '2'}
+DOC_RESULTS = {'static': 'success', 'python': 'skipped', 'frontend': 'skipped', 'browser': 'skipped'}
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'merge_group'])
+def test_proven_docs_only_skip_succeeds_and_reports_reason(tmp_path, event):
+    result, summary = run_summary(tmp_path, DOC_RESULTS, scope=DOC_SCOPE, event=event)
+    assert result.returncode == 0, result.stderr
+    text = summary.read_text(encoding='utf-8')
+    assert 'Documentation-only PR' in text and 'docs_only' in text
+    assert '| browser | skipped |' in text
+
+
+@pytest.mark.parametrize('lane', ['static', 'python', 'frontend', 'browser'])
+@pytest.mark.parametrize('status', ['failure', 'cancelled'])
+@pytest.mark.parametrize('event', ['pull_request', 'merge_group'])
+def test_docs_only_never_hides_failed_or_cancelled_jobs(tmp_path, lane, status, event):
+    result, _ = run_summary(tmp_path, {**DOC_RESULTS, lane: status}, scope=DOC_SCOPE, event=event)
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize('scope', [
+    {}, {'run-heavy': 'false'}, {**DOC_SCOPE, 'scope-reason': 'comparison_unavailable'},
+    {**DOC_SCOPE, 'changed-files': '0'}, {**DOC_SCOPE, 'changed-files': 'unknown'},
+    {**DOC_SCOPE, 'run-heavy': 'invalid'},
+])
+def test_missing_or_invalid_skip_evidence_fails_closed(tmp_path, scope):
+    result, _ = run_summary(tmp_path, DOC_RESULTS, scope=scope)
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize('event', ['push', 'schedule', 'workflow_dispatch'])
+def test_other_events_cannot_claim_docs_only_skip(tmp_path, event):
+    result, _ = run_summary(tmp_path, DOC_RESULTS, scope=DOC_SCOPE, event=event)
+    assert result.returncode != 0
+
+
+def test_disabled_static_cannot_authorize_heavy_skip(tmp_path):
+    result, _ = run_summary(tmp_path, DOC_RESULTS, enabled=False, scope=DOC_SCOPE)
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize('missing', ['static', 'python', 'frontend', 'browser'])
+def test_docs_only_still_requires_every_lane_receipt(tmp_path, missing):
+    statuses = dict(DOC_RESULTS)
+    del statuses[missing]
+    result, _ = run_summary(tmp_path, statuses, scope=DOC_SCOPE if missing != 'static' else None)
     assert result.returncode != 0

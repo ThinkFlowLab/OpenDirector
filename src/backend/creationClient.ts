@@ -464,10 +464,12 @@ export class CreationClient {
     kind: Asset["kind"],
     handle: string = crypto.randomUUID(),
     importedFrom?: "generated" | "edited",
+    signal?: AbortSignal,
   ) {
-    const response = await fetch(
-      `/api${creationPath(this.id)}/uploads/${handle}`,
-      {
+    signal?.throwIfAborted();
+    const path = `${creationPath(this.id)}/uploads/${handle}`;
+    try {
+      const response = await fetch(`/api${path}`, {
         method: "PUT",
         headers: {
           ...headers,
@@ -475,9 +477,17 @@ export class CreationClient {
           "X-Asset-Kind": kind,
         },
         body: blob,
-      },
-    );
-    if (!response.ok) throw await responseError(response);
+        signal,
+      });
+      if (!response.ok) throw await responseError(response);
+      signal?.throwIfAborted();
+    } catch (error) {
+      if (signal?.aborted) {
+        // A cancelled client may race a completed staging write.
+        await storageRequest(path, { method: "DELETE" }).catch(() => undefined);
+      }
+      throw error;
+    }
     return this.registerUpload(handle, name, kind, importedFrom);
   }
   /** Copies another project's asset on the server; no bytes pass through the page. */

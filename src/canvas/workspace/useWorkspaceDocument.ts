@@ -30,9 +30,12 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     flowSurface,
     frameCapabilities,
     historyRef,
+    historyWriteVersion,
+    historyRenderVersion,
     historyReplayQueue,
     historyReplaying,
     importAbort,
+    mounted,
     notify,
     pointerGesture,
     projectRenaming,
@@ -180,7 +183,10 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       setHistory((h) => recordChange(h, fn(h.present))),
     [],
   );
-  const begin = useCallback(() => setHistory(beginTransaction), []);
+  const begin = useCallback(() => {
+    invalidateScheduledAutosave();
+    setHistory(beginTransaction);
+  }, [invalidateScheduledAutosave]);
   const end = useCallback(() => setHistory(commitTransaction), []);
 
   if (!saveQueue.current) {
@@ -292,14 +298,16 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       const fitAll =
         fit ||
         (next.viewPersisted === false && next.nodes.length > 0);
-      requestAnimationFrame(() => {
+      if (flow.viewportInitialized) {
         void flow.setViewport(next.viewport);
-        if (fitAll)
-          requestAnimationFrame(
-            () =>
-              void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }),
-          );
-      });
+      } else {
+        requestAnimationFrame(() => void flow.setViewport(next.viewport));
+      }
+      if (fitAll) {
+        requestAnimationFrame(() =>
+          void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }),
+        );
+      }
     },
     [flow],
   );
@@ -369,19 +377,16 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       );
       if (!project) throw new Error(t("canvas.workspace.error.projectMissing"));
       const renamed = await renameWorkspaceProject(project, name);
-      const document = { ...historyRef.current.present, title: renamed.name };
+      const projectFields = { title: renamed.name, defaultNameIndex: renamed.defaultNameIndex };
+      const withProjectName = (document: CanvasDocument) => ({ ...document, ...projectFields });
+      const document = withProjectName(historyRef.current.present);
       // Project metadata must stay consistent across canvas undo/redo.
       setHistory((current) => ({
         ...current,
-        present: { ...current.present, title: renamed.name },
-        past: current.past.map((item) => ({ ...item, title: renamed.name })),
-        future: current.future.map((item) => ({
-          ...item,
-          title: renamed.name,
-        })),
-        transaction: current.transaction
-          ? { ...current.transaction, title: renamed.name }
-          : null,
+        present: withProjectName(current.present),
+        past: current.past.map(withProjectName),
+        future: current.future.map(withProjectName),
+        transaction: current.transaction ? withProjectName(current.transaction) : null,
       }));
       await saveWorkspaceDocument(document);
     } finally {
@@ -502,7 +507,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
         void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
-  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId]);
+  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId, rt.history.transaction]);
   useEffect(() => {
     if (!ready) return;
     const client = creationClient(doc.id),
@@ -512,7 +517,9 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       token = 0,
       waitingForSave = false;
     const update = () => {
-      if (!active) return;
+      // historyRef describes the last render. A queued write already owns the
+      // next document, even before that ref changes. Resume after it renders.
+      if (!active || historyWriteVersion.current !== historyRenderVersion) return;
       // A pending paste can make a later local delete look clean against
       // the old baseline until the paste receipt reaches the save queue.
       if (queue.busy) {
@@ -548,6 +555,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
           // including when its visible content happens to be unchanged.
           if (
             !active ||
+            historyWriteVersion.current !== historyRenderVersion ||
             ticket !== token ||
             editorSaving.current ||
             client.snapshot !== snapshot ||
@@ -578,7 +586,9 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
           setHistory((history) => ({ ...history, present: merged }));
           const created = next.nodes.filter((node) => !known.has(node.id));
           if (created.length) requestAnimationFrame(() => {
-            if (active && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
+            // Installing the refresh restarts this listener. Its viewport work
+            // still belongs to the mounted project, not the old subscription.
+            if (mounted.current && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
           });
         })
         .catch((error) => active && notify(errorMessage(error)));
@@ -589,7 +599,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       active = false;
       unsubscribe();
     };
-  }, [doc.id, ready, notify]);
+  }, [doc.id, ready, notify, historyRenderVersion]);
   useEffect(() => {
     if (!ready) return;
     let active = true,

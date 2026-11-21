@@ -10,8 +10,18 @@ from fastapi import Request
 from opendirector.domain.timeline_errors import timeline_error_message
 
 from opendirector.domain.creation.commands import CommandReceipt
+from opendirector.domain.capabilities import Capability
+from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
+    "desktop_auth_required": "The desktop connection has expired. Reopen the application.",
+    'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
+    'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
+    'bigmodel_video_output': 'Choose a supported CogVideoX-3 pixel size and a 5- or 10-second duration. The size determines the aspect ratio.',
+    'bigmodel_video_image': 'CogVideoX-3 frame images must be valid PNG or JPEG files, up to 5 MB each.',
+    'bigmodel_video_frames': 'Use text, one first-frame image, or an explicit first/last pair. Each frame slot accepts one image; a last frame requires a first frame. Reference and continuation modes are not supported.',
+    'bigmodel_video_prompt': 'CogVideoX-3 prompts allow up to 512 characters. Provide a prompt or frame image.',
+    'bigmodel_video_cancel': 'Remote BigModel video cancellation is not connected. The task may continue running and incur charges.',
     'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',
@@ -21,6 +31,14 @@ ENGLISH_BY_CODE = {
     'kling_aspect': 'Kling keyframe generation follows the image framing. Choose Auto for frames, or a supported ratio for text and image references.',
     'kling_output': 'Choose an output resolution and integer duration supported by the selected Kling model.',
     'kling_cancel': 'Remote Kling cancellation is not connected. The task may continue running and incur charges.',
+    'capability_unavailable': 'This request is not supported.',
+    'capability_paused': 'Service paused. Resume it and try again.',
+    'image_input_count': 'Too many input images.',
+    'image_input_bytes': 'The input images exceed the size limit.',
+    'image_input_mask': 'Check the image selection.',
+    'tool_source_count': 'Check the number of source images.',
+    'tool_source_type': 'Source assets must be images.',
+    'capability_connection_changed': 'The model connection changed during the capability check. Submit again.',
     'tool_concept_translation': 'Use a short English subject description, or add a chat model in Models to translate it automatically.',
     'tool_no_video_match': 'The requested subject was not found in the video. Try a different description.',
     'voice_upload_type': 'Upload the voice recording using multipart/form-data.',
@@ -54,6 +72,7 @@ ENGLISH_BY_CODE = {
     "moss_prompt_limit": "MOSS requires a nonempty prompt of at most 4,000 characters, including text references.",
     "image_decode": "The image could not be decoded. Check its actual format and file integrity.",
     "asset_preview_unsupported": "This asset type does not support this preview format.",
+    "asset_text_api_unavailable": "canvas text show requires a running API to read the complete Markdown source. Start the API and check OPENDIRECTOR_API_URL.",
     "image_pixel_limit": "Images must contain no more than 25 million pixels.",
     "minimax_image_reference": "MiniMax H3 references must be PNG, JPEG, WebP, HEIC, or HEIF, with edges of 128–8192 pixels and a long-to-short edge ratio of at most 4:1.",
     "minimax_image_count": "MiniMax H3 image editing accepts up to 16 reference images.",
@@ -122,12 +141,19 @@ def localized_error_for_language(
     chinese: str,
     status: int,
     code: str = "operation_rejected",
+    required_capability: Capability | None = None,
 ) -> str:
     specific = timeline_error_message(code, language)
     if specific is not None:
         return specific
     if not wants_english_language(language):
         return chinese
+    if code == 'tool_model_missing':
+        return missing_tool_model_message(required_capability, english=True)
+    if code.startswith(('capability_', 'image_input_', 'tool_source_')):
+        translated = english_capability_message(chinese)
+        if translated:
+            return translated
     # A generic operation code must not hide a more specific HTTP status.
     generic = code in {"operation_rejected", "invalid_input"}
     if generic and status in {413, 502, 504}:
@@ -150,12 +176,14 @@ def localized_error(
     chinese: str,
     status: int,
     code: str = "operation_rejected",
+    required_capability: Capability | None = None,
 ) -> str:
     return localized_error_for_language(
         request.headers.get("accept-language"),
         chinese=chinese,
         status=status,
         code=code,
+        required_capability=required_capability,
     )
 
 

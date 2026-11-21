@@ -300,14 +300,25 @@ try {
     ".cw-duration-popover",
     "portaled duration picker",
   );
-  await light(duration.getByRole("spinbutton"), "duration input");
+  const durationInput = await light(
+    duration.locator(".cw-duration-number input"),
+    "duration input",
+  );
+  const maximum = Number(await durationInput.getAttribute("max"));
+  assert.ok(Number.isFinite(maximum) && maximum > 0);
   const slider = duration.getByRole("slider");
   const trackAccent = await slider.evaluate((el) =>
     getComputedStyle(el).getPropertyValue("--cw-control-accent").trim(),
   );
   assert.equal(trackAccent, "#3d6bd6");
   await slider.press("End");
-  await light(".cw-duration-notice", "duration boundary hint");
+  assert.equal(await durationInput.inputValue(), String(maximum));
+  assert.equal(await duration.locator(".cw-duration-notice").count(), 0);
+  // End chooses a valid endpoint. Exercise warning styling with invalid input.
+  await durationInput.fill(String(maximum + 1));
+  await durationInput.press("Enter");
+  await light(duration.locator(".cw-duration-notice"), "duration range warning");
+  assert.equal(await durationInput.inputValue(), String(maximum));
   if (process.env.THEME_SCREENSHOT_DIR)
     await page.screenshot({
       path: `${process.env.THEME_SCREENSHOT_DIR}/duration-light.png`,

@@ -1009,6 +1009,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -1428,6 +1442,30 @@
           }
         },
         "title": "AudioParameters",
+        "type": "object"
+      },
+      "AvailabilityCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "Version of the complete observation projection.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "models": {
+            "description": "Current saved model observations; reading does not query providers.",
+            "items": {
+              "$ref": "#/$defs/ModelAvailability"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "models"
+        ],
+        "title": "AvailabilityCatalog",
         "type": "object"
       },
       "BatchCommand": {
@@ -2419,6 +2457,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -2796,6 +2848,20 @@
             "default": null,
             "description": "Whether edits to this object are blocked.",
             "title": "Locked"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format, or '' for the default.",
+            "title": "Color"
           },
           "parentId": {
             "anyOf": [
@@ -3265,6 +3331,251 @@
         "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
+      "CapabilityDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Support decision excluding execution state.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Localizable declaration decision.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Declaration expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityDeclaration",
+        "type": "object"
+      },
+      "CapabilityExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "description": "Observed execution pause state.",
+            "enum": [
+              "unpaused",
+              "paused",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment",
+                  "worker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope proved by the service observation.",
+            "title": "Scope"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation receipt time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution observation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "state",
+          "scope",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityExecution",
+        "type": "object"
+      },
+      "CapabilityInputDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Canonical input role or parameter name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "support": {
+            "description": "Explicit fact, with omission kept unknown.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Support",
+            "type": "string"
+          },
+          "source": {
+            "default": "service",
+            "description": "Owner of this restriction.",
+            "enum": [
+              "service",
+              "application"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "minCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum transmitted inputs of this role.",
+            "title": "Mincount"
+          },
+          "maxCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum transmitted inputs of this role.",
+            "title": "Maxcount"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit allowed parameter values.",
+            "title": "Values"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter lower bound.",
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter upper bound.",
+            "title": "Max"
+          },
+          "multipleOf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parameter step from zero.",
+            "title": "Multipleof"
+          }
+        },
+        "required": [
+          "name",
+          "support"
+        ],
+        "title": "CapabilityInputDetail",
+        "type": "object"
+      },
       "ChangedObject": {
         "additionalProperties": false,
         "properties": {
@@ -3477,6 +3788,13 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -3485,6 +3803,9 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "capability_unavailable",
+              "capability_paused",
+              "capability_connection_changed",
               "capability_unsupported",
               "preview_expired",
               "storage_unavailable",
@@ -4131,6 +4452,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -4421,6 +4756,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -4919,6 +5268,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -5600,6 +5963,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -5843,6 +6220,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -6126,6 +6517,18 @@
             "const": "image",
             "description": "Business object or media type.",
             "title": "Kind",
+            "type": "string"
+          },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
             "type": "string"
           },
           "size": {
@@ -6510,6 +6913,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -6562,6 +6977,12 @@
       "InputRules": {
         "additionalProperties": false,
         "properties": {
+          "fractionalDuration": {
+            "default": false,
+            "description": "Accept fractional video seconds within each output duration range.",
+            "title": "Fractionalduration",
+            "type": "boolean"
+          },
           "profile": {
             "description": "Model capability profile.",
             "maxLength": 100,
@@ -6706,6 +7127,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -7176,6 +7619,35 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that submitted this job; omitted for jobs not submitted by an Agent.",
+            "title": "Agentrunid"
+          },
+          "agentCallId": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tool call within that turn that submitted this job; the command ID derives from both.",
+            "title": "Agentcallid"
           }
         },
         "required": [
@@ -7658,6 +8130,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -8070,6 +8556,105 @@
         "title": "MediaPublicationOutput",
         "type": "object"
       },
+      "ModelAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "configId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved model identity; null for an unsaved draft.",
+            "title": "Configid"
+          },
+          "modelId": {
+            "description": "Exact remote model identifier requested.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Opaque identity of the checked connection and model.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "autoCheck": {
+            "description": "Effective service automatic-check preference.",
+            "title": "Autocheck",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Summary across the configured adapter operations.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable summary reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest operation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          },
+          "revision": {
+            "description": "Projection version; changes on observations, identity changes and expiration.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operations consumed by the configured adapter.",
+            "items": {
+              "$ref": "#/$defs/OperationAvailability"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configId",
+          "modelId",
+          "identity",
+          "autoCheck",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "revision",
+          "operations"
+        ],
+        "title": "ModelAvailability",
+        "type": "object"
+      },
       "ModelConfigPublic": {
         "additionalProperties": false,
         "description": "Application-level, never embedded in an editable project's credential data.",
@@ -8114,6 +8699,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8170,6 +8756,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8211,6 +8798,31 @@
           "inputRules": {
             "$ref": "#/$defs/InputRules",
             "description": "Verified model input limits and output choices."
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service preference; omitted defaults to automatic for self-hosted connections.",
+            "title": "Capabilityautocheck"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ephemeral observation, never persisted in project snapshots."
           }
         },
         "required": [
@@ -8270,6 +8882,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8326,6 +8939,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8359,6 +8973,19 @@
             "default": null,
             "description": "Provider credential; omitted from public model records.",
             "title": "Apikey"
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service automatic-check override; omission preserves the existing preference.",
+            "title": "Capabilityautocheck"
           }
         },
         "required": [
@@ -8415,6 +9042,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8471,6 +9099,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8541,6 +9170,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8597,6 +9227,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8904,6 +9535,121 @@
         "title": "ObjectVersion",
         "type": "object"
       },
+      "OperationAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Canonical remote operation identifier.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Input and output mode used by the configured adapter.",
+            "title": "Profile",
+            "type": "string"
+          },
+          "method": {
+            "description": "Actual HTTP method used for submission.",
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "Actual HTTP submission path.",
+            "title": "Path",
+            "type": "string"
+          },
+          "output": {
+            "description": "Output modality consumed by the adapter.",
+            "title": "Output",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current evidence for this exact request.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable decision reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
+            "title": "Expiresat"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request support independently expires from the short execution observation."
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short-lived execution observation, separate from declared support."
+          },
+          "inputDetails": {
+            "default": [],
+            "description": "Known role and parameter facts for the actual request route; no saved configuration changes.",
+            "items": {
+              "$ref": "#/$defs/CapabilityInputDetail"
+            },
+            "title": "Inputdetails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation",
+          "profile",
+          "method",
+          "path",
+          "output",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "OperationAvailability",
+        "type": "object"
+      },
       "PaletteData": {
         "additionalProperties": false,
         "properties": {
@@ -9157,6 +9903,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index of the automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -9176,6 +9936,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index for an automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -11170,6 +11944,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -11567,6 +12355,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -11833,6 +12635,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -12205,6 +13021,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -12832,6 +13662,20 @@
             "title": "Outputid",
             "type": "string"
           },
+          "expectedOutputRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Current output node revision when appending a rendered version.",
+            "title": "Expectedoutputrevision"
+          },
           "title": {
             "default": "合成视频",
             "description": "User-visible title.",
@@ -13274,6 +14118,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -13808,6 +14666,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -14291,7 +15163,7 @@
               }
             ],
             "default": null,
-            "description": "Duration in seconds.",
+            "description": "Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.",
             "title": "Durationseconds"
           },
           "aspectRatio": {
@@ -16143,6 +17015,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -16588,6 +17474,30 @@
           "voice"
         ],
         "title": "AudioParameters",
+        "type": "object"
+      },
+      "AvailabilityCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "Version of the complete observation projection.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "models": {
+            "description": "Current saved model observations; reading does not query providers.",
+            "items": {
+              "$ref": "#/$defs/ModelAvailability"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "models"
+        ],
+        "title": "AvailabilityCatalog",
         "type": "object"
       },
       "BatchCommand": {
@@ -17596,6 +18506,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -17988,6 +18912,20 @@
             "default": null,
             "description": "Whether edits to this object are blocked.",
             "title": "Locked"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format, or '' for the default.",
+            "title": "Color"
           },
           "parentId": {
             "anyOf": [
@@ -18472,6 +19410,258 @@
         "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
+      "CapabilityDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Support decision excluding execution state.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Localizable declaration decision.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Declaration expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityDeclaration",
+        "type": "object"
+      },
+      "CapabilityExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "description": "Observed execution pause state.",
+            "enum": [
+              "unpaused",
+              "paused",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment",
+                  "worker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope proved by the service observation.",
+            "title": "Scope"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation receipt time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution observation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "state",
+          "scope",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityExecution",
+        "type": "object"
+      },
+      "CapabilityInputDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Canonical input role or parameter name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "support": {
+            "description": "Explicit fact, with omission kept unknown.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Support",
+            "type": "string"
+          },
+          "source": {
+            "default": "service",
+            "description": "Owner of this restriction.",
+            "enum": [
+              "service",
+              "application"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "minCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum transmitted inputs of this role.",
+            "title": "Mincount"
+          },
+          "maxCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum transmitted inputs of this role.",
+            "title": "Maxcount"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit allowed parameter values.",
+            "title": "Values"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter lower bound.",
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter upper bound.",
+            "title": "Max"
+          },
+          "multipleOf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parameter step from zero.",
+            "title": "Multipleof"
+          }
+        },
+        "required": [
+          "name",
+          "support",
+          "source",
+          "minCount",
+          "maxCount",
+          "values",
+          "min",
+          "max",
+          "multipleOf"
+        ],
+        "title": "CapabilityInputDetail",
+        "type": "object"
+      },
       "ChangedObject": {
         "additionalProperties": false,
         "properties": {
@@ -18690,6 +19880,13 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -18698,6 +19895,9 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "capability_unavailable",
+              "capability_paused",
+              "capability_connection_changed",
               "capability_unsupported",
               "preview_expired",
               "storage_unavailable",
@@ -19346,6 +20546,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -19654,6 +20868,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -20172,6 +21400,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -20885,6 +22127,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -21143,6 +22399,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -21454,6 +22724,18 @@
             "const": "image",
             "description": "Business object or media type.",
             "title": "Kind",
+            "type": "string"
+          },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
             "type": "string"
           },
           "size": {
@@ -21857,6 +23139,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -21916,6 +23210,12 @@
       "InputRules": {
         "additionalProperties": false,
         "properties": {
+          "fractionalDuration": {
+            "default": false,
+            "description": "Accept fractional video seconds within each output duration range.",
+            "title": "Fractionalduration",
+            "type": "boolean"
+          },
           "profile": {
             "description": "Model capability profile.",
             "maxLength": 100,
@@ -22060,6 +23360,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -22535,6 +23857,35 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that submitted this job; omitted for jobs not submitted by an Agent.",
+            "title": "Agentrunid"
+          },
+          "agentCallId": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tool call within that turn that submitted this job; the command ID derives from both.",
+            "title": "Agentcallid"
           }
         },
         "required": [
@@ -23050,6 +24401,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -23490,6 +24855,105 @@
         "title": "MediaPublicationOutput",
         "type": "object"
       },
+      "ModelAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "configId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved model identity; null for an unsaved draft.",
+            "title": "Configid"
+          },
+          "modelId": {
+            "description": "Exact remote model identifier requested.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Opaque identity of the checked connection and model.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "autoCheck": {
+            "description": "Effective service automatic-check preference.",
+            "title": "Autocheck",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Summary across the configured adapter operations.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable summary reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest operation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          },
+          "revision": {
+            "description": "Projection version; changes on observations, identity changes and expiration.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operations consumed by the configured adapter.",
+            "items": {
+              "$ref": "#/$defs/OperationAvailability"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configId",
+          "modelId",
+          "identity",
+          "autoCheck",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "revision",
+          "operations"
+        ],
+        "title": "ModelAvailability",
+        "type": "object"
+      },
       "ModelConfigPublic": {
         "additionalProperties": false,
         "description": "Application-level, never embedded in an editable project's credential data.",
@@ -23534,6 +24998,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23590,6 +25055,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23617,6 +25083,31 @@
           "inputRules": {
             "$ref": "#/$defs/InputRules",
             "description": "Verified model input limits and output choices."
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service preference; omitted defaults to automatic for self-hosted connections.",
+            "title": "Capabilityautocheck"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ephemeral observation, never persisted in project snapshots."
           }
         },
         "required": [
@@ -23680,6 +25171,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23736,6 +25228,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23769,6 +25262,19 @@
             "default": null,
             "description": "Provider credential; omitted from public model records.",
             "title": "Apikey"
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service automatic-check override; omission preserves the existing preference.",
+            "title": "Capabilityautocheck"
           }
         },
         "required": [
@@ -23830,6 +25336,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23886,6 +25393,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23960,6 +25468,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -24016,6 +25525,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -24329,6 +25839,122 @@
         "title": "ObjectVersion",
         "type": "object"
       },
+      "OperationAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Canonical remote operation identifier.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Input and output mode used by the configured adapter.",
+            "title": "Profile",
+            "type": "string"
+          },
+          "method": {
+            "description": "Actual HTTP method used for submission.",
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "Actual HTTP submission path.",
+            "title": "Path",
+            "type": "string"
+          },
+          "output": {
+            "description": "Output modality consumed by the adapter.",
+            "title": "Output",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current evidence for this exact request.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable decision reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
+            "title": "Expiresat"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request support independently expires from the short execution observation."
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short-lived execution observation, separate from declared support."
+          },
+          "inputDetails": {
+            "default": [],
+            "description": "Known role and parameter facts for the actual request route; no saved configuration changes.",
+            "items": {
+              "$ref": "#/$defs/CapabilityInputDetail"
+            },
+            "title": "Inputdetails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation",
+          "profile",
+          "method",
+          "path",
+          "output",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "inputDetails"
+        ],
+        "title": "OperationAvailability",
+        "type": "object"
+      },
       "PaletteData": {
         "additionalProperties": false,
         "properties": {
@@ -24596,6 +26222,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index of the automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -24616,6 +26256,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index for an automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -26665,6 +28319,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -27081,6 +28749,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -27368,6 +29050,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -27764,6 +29460,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -28419,6 +30129,20 @@
             "title": "Outputid",
             "type": "string"
           },
+          "expectedOutputRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Current output node revision when appending a rendered version.",
+            "title": "Expectedoutputrevision"
+          },
           "title": {
             "default": "合成视频",
             "description": "User-visible title.",
@@ -28871,6 +30595,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -29427,6 +31165,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -29941,7 +31693,7 @@
               }
             ],
             "default": null,
-            "description": "Duration in seconds.",
+            "description": "Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.",
             "title": "Durationseconds"
           },
           "aspectRatio": {

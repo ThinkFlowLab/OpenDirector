@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  assetReference,
   CreationClient,
   CreationCommandError,
 } from "../src/backend/creationClient.ts";
@@ -33,6 +34,18 @@ for (const outcome of ["unknown", "conflict"] as const) {
     const client = new CreationClient(snapshot.project.id);
     client.install(snapshot);
     client.assetForSource = () => output;
+    const imported = { ...output, id: crypto.randomUUID() };
+    const rendered = new Blob(["rendered video"], { type: "video/mp4" });
+    let imports = 0;
+    client.blob = async (assetId) => {
+      assert.equal(assetId, output.id);
+      return rendered;
+    };
+    client.importBlob = async (blob) => {
+      assert.equal(blob, rendered);
+      imports++;
+      return assetReference(imported);
+    };
     const publish = timelinePublication(client, snapshot, item.id);
     const commands: Parameters<CreationClient["command"]>[] = [];
     client.command = async (...args) => {
@@ -87,9 +100,10 @@ for (const outcome of ["unknown", "conflict"] as const) {
       await assert.rejects(publish(result), /Source changed/);
     else assert.equal(await publish(result), true);
     assert.deepEqual(commands[1], commands[0]);
+    assert.equal(imports, 1, "publication retries reuse the fresh render import");
     const [type, payload, versions, , commandId] = commands[0]!;
     assert.equal(type, "timeline.publishRender");
-    assert.ok("asset" in payload && payload.asset.assetId === output.id);
+    assert.ok("asset" in payload && payload.asset.assetId === imported.id);
     assert.equal(
       versions!.find((entry) => entry.objectType === "editor_document")!
         .revision,

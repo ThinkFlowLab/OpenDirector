@@ -1,5 +1,7 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.duration.fractionalHint": "H3 支持小数秒，输出帧数向上对齐至 17k+5，帧率为 24 fps。",
+  "generation.duration.aligned": "实际输出：{frames} 帧 · {seconds} 秒",
   "generation.bigmodel.watermarkWaiver":
     "BigModel 去水印需先签署免责声明，请前往个人中心 → 安全管理 → 去水印管理完成签署，否则生成结果仍可能带有水印。",
   "generation.model.unconfigured":
@@ -46,6 +48,12 @@ export const generation = {
 
   "generation.field.ratio": "比例",
   "generation.field.resolution": "分辨率",
+  "generation.field.quality": "质量",
+  "generation.field.qualityAria": "图片质量 {value}",
+  "generation.quality.auto": "自动",
+  "generation.quality.low": "低",
+  "generation.quality.medium": "中",
+  "generation.quality.high": "高",
   "generation.field.count": "数量",
   "generation.field.audio": "生成音频",
   "generation.field.audioPending": "请求包含音频（服务能力待确认）",
@@ -91,6 +99,8 @@ export const generation = {
     "输入生成要求，或 @ 引用素材，让 Agent 帮你创作文本",
   "generation.prompt.reading": "朗读文本",
   "generation.prompt.music": "音乐风格",
+  "generation.prompt.implicitTextPlaceholder":
+    "留空则直接使用已连接的文本参考作为提示词，也可以继续补充",
   "generation.prompt.imagePlaceholder":
     "上传参考图、输入文字或 @ 主体，描述你想要生成的图片",
   "generation.prompt.videoPlaceholder":
@@ -129,6 +139,7 @@ export const generation = {
   "generation.reference.connected": "引用已连接节点",
   "generation.reference.upload": "上传节点参考",
   "generation.reference.title": "{role}：{title}",
+  "generation.reference.readingContext": "文本朗读不把这些参考作为模型输入，仍可查看或移除。",
 
   "generation.action.cancel": "取消生成",
   "generation.action.submit": "提交生成",
@@ -165,6 +176,8 @@ export const generation = {
   "generation.history.empty": "暂无此类型的生成历史。",
   "generation.history.selectJob": "选择历史{title}",
   "generation.history.readingPreview": "正在读取结果预览…",
+  "generation.history.requestedDuration": "请求时长：{seconds} 秒",
+  "generation.history.resultDuration": "成片时长：{seconds} 秒",
   "generation.history.query": "继续查询原任务",
   "generation.history.cancelCloud": "取消云端任务",
   "generation.history.cancelTool": "停止工具任务",

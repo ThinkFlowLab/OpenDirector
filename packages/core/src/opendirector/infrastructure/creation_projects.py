@@ -175,7 +175,7 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
             self.root.mkdir(exist_ok=True)
             sync_directory(self.root.parent)
             self.local._conflict(self.root, name)
-            snapshot = ProjectSnapshot(project=Project(id=command.projectId, name=name), eventCursor=1)
+            snapshot = ProjectSnapshot(project=Project(id=command.projectId, name=name, defaultNameIndex=command.payload.defaultNameIndex), eventCursor=1)
             changed = object_changes(None, snapshot, command)
             record = self._make_record(command, None, snapshot, changed, source)
             return self._publish(CommitIntent(fromName=None, toName=name, beforeFingerprint=None, record=record))

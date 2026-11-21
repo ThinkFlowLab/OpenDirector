@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, TypeAdapter, create_model, model_validator
 
 from .assets import AssetRef, MediaMetadata
-from .base import Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
+from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
 from .canvas import CanvasItem
 from .editors import EditorDocument
 from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
@@ -16,8 +16,12 @@ class ProjectCreate(Contract):
     name: str = Field(min_length=1, max_length=100, pattern=r'\S', description='User-visible name.')
 
 
-class ProjectRename(ProjectCreate):
-    pass
+    defaultNameIndex: Positive | None = Field(default=None, exclude_if=lambda value: value is None,
+                                          description="Index for an automatically named initial project.")
+
+
+class ProjectRename(Contract):
+    name: str = Field(min_length=1, max_length=100, pattern=r'\S', description='User-visible name.')
 
 
 class AssetImport(Contract):
@@ -105,6 +109,8 @@ class CanvasPresentationUpdate(Contract):
     height: Positive | None = Field(default=None, description='Height in pixels.')
     zIndex: int | None = Field(default=None, strict=True, description='Canvas stacking order.')
     locked: bool | None = Field(default=None, description='Whether edits to this object are blocked.')
+    # Omitted when unset so commands recorded before this field keep their fingerprint.
+    color: CanvasColor | None = Field(default=None, exclude_if=lambda value: value is None, description="Group background color in #RRGGBB format, or '' for the default.")
     parentId: UUID | None = Field(default=None, description='Parent canvas group ID, or null for the root.')
     # Presence of parentId distinguishes retaining a group from ungrouping.
 
@@ -131,6 +137,7 @@ class TimelinePublishRender(Contract):
     editorId: UUID = Field(description='Editable document ID.')
     asset: AssetRef = Field(description='Immutable asset version.')
     outputId: UUID = Field(description='Published canvas output ID.')
+    expectedOutputRevision: Revision | None = Field(default=None, exclude_if=lambda value: value is None, description='Current output node revision when appending a rendered version.')
     title: str = Field(default='合成视频', max_length=255, description='User-visible title.')
     position: Point = Field(default_factory=Point, description='Position in the owning canvas or stage.')
 
@@ -269,6 +276,8 @@ class CommandBase(Contract):
             raise ValueError('expectedVersions missing current versions for ' + ', '.join(missing))
         if self.type == 'generation.submit' and versions[('generation_spec', payload.specId)] != payload.expectedSpecRevision:
             raise ValueError('Submission version differs from expected spec version')
+        if self.type == 'timeline.publishRender' and payload.expectedOutputRevision is not None and versions[('canvas_item', payload.outputId)] != payload.expectedOutputRevision:
+            raise ValueError('Output revision differs from its expected version')
         if self.type in {'generationSpec.update', 'editor.save', 'reference.update', 'reference.restore'}:
             obj = (payload.spec if self.type == 'generationSpec.update' else
                    payload.document if self.type == 'editor.save' else payload.reference)
@@ -288,6 +297,8 @@ class CommandBase(Contract):
                 required.append(('editor_document', payload.sourceEditorId))
         elif self.type in {'canvas.applyEdit', 'timeline.publishRender'}:
             required = [('canvas_item', payload.itemId), ('asset', payload.asset.assetId), ('editor_document', payload.editorId)]
+            if self.type == 'timeline.publishRender' and payload.expectedOutputRevision is not None:
+                required.append(('canvas_item', payload.outputId))
         elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit', 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
         elif self.type == 'canvas.move':
@@ -396,8 +407,11 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+                    'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
+                    'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
+                    'capability_unavailable', 'capability_paused', 'capability_connection_changed',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',

@@ -14,10 +14,13 @@
  *   fixture-phase scripts release-checks.yml runs directly).
  *
  * Run via `npm run check:browser-manifest` (part of Release checks).
+ * With --lane extendedFixture/extendedHttpFixture, also validate the live
+ * CREATION_API_URL and CREATION_WEB_URL services before running the lane.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { parseArgs } from "node:util";
 
 const browserDir = "tests/browser";
 const manifestPath = path.join(browserDir, "manifest.json");
@@ -46,15 +49,18 @@ for (const entry of entries) {
   if (!onDisk.includes(entry.file)) fail(`${entry.file} is in the manifest but not on disk`);
 }
 
-const KNOWN_LANES = new Set(["gate", "extended", "extendedFixture", "production", "perf", "manual"]);
+const FIXTURE_LANES = ["extendedFixture", "extendedHttpFixture"];
+const KNOWN_LANES = new Set(["gate", "extended", ...FIXTURE_LANES, "production", "perf", "manual"]);
 // Static harness pages do not open the workspace, so they do not see the welcome dialog.
-const welcomeExempt = new Set(["assistant_activity.mjs"]);
+// The bilingual defaults test exercises the welcome dialog itself.
+const welcomeExempt = new Set(["assistant_activity.mjs", "bilingual_defaults.mjs"]);
 for (const entry of entries) {
   const text = entry.file === undefined ? "" : fs.readFileSync(path.join(browserDir, entry.file), "utf8");
   const importsSrc = text.includes('"/src/');
   // vite preview serves dist only. In-page imports of source or test modules 404 there.
   const needsDevServer = /["'`]\/(?:src|tests)\//.test(text);
   const needsFixture = /assistant-fixture|assistantFixture/.test(text);
+  const needsHttpFixture = /http-generation-fixture|httpGenerationFixture/.test(text);
   const lanes = entry.lanes ?? [];
   const unknown = lanes.filter((lane) => !KNOWN_LANES.has(lane));
   if (unknown.length) fail(`${entry.file}: unknown lanes ${unknown.join(", ")}`);
@@ -80,6 +86,12 @@ for (const entry of entries) {
     fail(`${entry.file}: marked fixture: true but never references the assistant fixture`);
   if (entry.fixture && (lanes.includes("extended") || lanes.includes("perf")))
     fail(`${entry.file}: fixture scripts cannot run on the regular extended/perf services`);
+  if (needsHttpFixture !== Boolean(entry.httpGenerationFixture))
+    fail(`${entry.file}: httpGenerationFixture must match the script's HTTP fixture requirement`);
+  if (entry.httpGenerationFixture && lanes.some((lane) => lane !== "extendedHttpFixture"))
+    fail(`${entry.file}: HTTP generation requires the separate extendedHttpFixture services`);
+  if (lanes.includes("extendedHttpFixture") && !entry.httpGenerationFixture)
+    fail(`${entry.file}: generic provider scripts cannot run in extendedHttpFixture`);
 }
 
 const gateFromManifest = new Set(
@@ -105,11 +117,43 @@ if (
   !nightly.includes("CREATION_API_URL=http://127.0.0.1:8020")
 )
   fail("nightly extendedFixture scripts must run against the fixture web (:5180) and API (:8020)");
+for (const lane of FIXTURE_LANES) {
+  if (!nightly.includes(`node scripts/check-browser-manifest.mjs --lane ${lane}`))
+    fail(`nightly ${lane} must validate the running services before running browser scripts`);
+}
 
 assert.equal(problems.length, 0, `browser manifest check failed:\n- ${problems.join("\n- ")}`);
+const { values: { lane } } = parseArgs({ options: { lane: { type: "string" } } });
+if (lane !== undefined) {
+  assert.ok(FIXTURE_LANES.includes(lane), `Unknown fixture lane: ${lane}`);
+  const scripts = entries.filter((entry) => entry.lanes?.includes(lane));
+  assert.ok(scripts.length, `${lane}: no scripts registered`);
+  const healths = [];
+  // Query both addresses: direct test calls and browser requests through Vite
+  // must reach the same API with the flags required by the selected scripts.
+  for (const key of ["CREATION_API_URL", "CREATION_WEB_URL"]) {
+    assert.ok(process.env[key], `${lane}: ${key} is required`);
+    const response = await fetch(new URL("/api/creation-test-health", process.env[key]), {
+      headers: { "X-OpenDirector-Request": "1" }, signal: AbortSignal.timeout(5000),
+    });
+    assert.ok(response.ok, `${key}: health returned HTTP ${response.status}`);
+    const health = await response.json();
+    assert.equal(health.isolated, true, `${key}: expected isolated fixture service`);
+    assert.ok(typeof health.root === "string" && health.root.length, `${key}: missing fixture root`);
+    for (const entry of scripts) {
+      assert.equal(health.httpGenerationFixture, Boolean(entry.httpGenerationFixture),
+        `${key}: ${entry.file} requires httpGenerationFixture=${Boolean(entry.httpGenerationFixture)}`);
+      if (entry.fixture)
+        assert.equal(health.assistantFixture, true, `${key}: ${entry.file} requires assistantFixture=true`);
+    }
+    healths.push(health);
+  }
+  assert.equal(healths[0].root, healths[1].root, "API and web proxy must reach the same fixture");
+  console.log(`${lane}: running API and web fixture configuration verified`);
+}
 const count = (lane) => entries.filter((entry) => (entry.lanes ?? []).includes(lane)).length;
 console.log(
   `Browser manifest OK: ${entries.length} entries, ` +
-    `gate=${count("gate")} extended=${count("extended")} extendedFixture=${count("extendedFixture")} ` +
+    `gate=${count("gate")} extended=${count("extended")} extendedFixture=${count("extendedFixture")} extendedHttpFixture=${count("extendedHttpFixture")} ` +
     `production=${count("production")} perf=${count("perf")} manual=${count("manual")} helper=${entries.filter((entry) => entry.helper).length}`,
 );

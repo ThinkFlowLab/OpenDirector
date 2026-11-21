@@ -22,7 +22,7 @@ const extraScripts = [join(root, "scripts", "verify_creation_browser.mjs")];
 const locales = ["en-US", "zh-CN"];
 // locale.mjs switches languages on one page: it starts in English, stores a
 // Chinese preference, and asserts both.
-const switching = new Set(["locale.mjs"]);
+const switching = new Set(["locale.mjs", "bilingual_defaults.mjs"]);
 const cjk = /[\u3400-\u9fff]/;
 const selector = /\bgetBy[A-Za-z]*\(|hasText\s*:|\btext=/;
 

@@ -73,7 +73,7 @@ def test_all_model_kinds_submit_resume_and_cancel_use_direct_connection(monkeypa
         flags.append(kwargs['trust_env'])
         return async_client(**kwargs)
     monkeypatch.setattr(httpx, 'AsyncClient', client)
-    prepared = {'prompt': 'test', 'images': [], 'audios': []}
+    prepared = {'prompt': 'test', 'images': [], 'audios': [], 'continueSize': None}
     monkeypatch.setattr('opendirector.integrations.providers.generation_references', lambda *args: prepared)
     monkeypatch.setattr('opendirector.integrations.providers.references', lambda *args: [])
     monkeypatch.setattr('opendirector.integrations.vllm_omni.generation_references', lambda *args: prepared)

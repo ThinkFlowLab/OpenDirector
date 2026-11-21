@@ -1,6 +1,7 @@
 import {
   backendModel,
   serviceAudioSettings,
+  serviceImageSettings,
   type ModelConfig,
 } from "../backend/rules.ts";
 import { copyGenerationSettings } from "./dataBoundary.ts";
@@ -74,13 +75,17 @@ export function getNodeGenerationSettings(
     resolveGenerationModel(next, mode, models),
   );
   const config = backendModel(resolved, models);
-  return config ? serviceAudioSettings(resolved, config) : resolved;
+  return config
+    ? serviceImageSettings(serviceAudioSettings(resolved, config), config)
+    : resolved;
 }
 
 /** Save receipts may fill defaults and replace display labels without an edit. */
 export function generationEditSettings(node: CanvasNode) {
   if (!["image", "video", "audio"].includes(node.type)) return node.data.settings;
   const settings = getNodeGenerationSettings(node);
+  // Image save receipts expand an omitted quality to the same effective default.
+  if (node.type === "image") settings.imageQuality ??= "auto";
   if (settings.videoMode !== "first-last") delete settings.frameSlotsInitialized;
   return { ...settings, model: settings.modelConfigId ? "" : settings.model };
 }

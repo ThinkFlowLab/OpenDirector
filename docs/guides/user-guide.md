@@ -29,13 +29,17 @@ A service can provide multiple models within the same category. After entering i
 
 The service URL and Model ID must match your model service. Self-hosted service URLs typically include `/v1`; use the model name actually exposed by the service as the Model ID. For third-party services, follow the information provided by the service.
 
+Kimi assistant chat is billed in two separate ways, each with its own key and base URL, so pick the row that matches your account. **Moonshot Kimi Open Platform** is pay-per-token: enter a mainland key from the Moonshot open platform and the preset fills `https://api.moonshot.cn/v1`. **Moonshot Kimi Code subscription** draws on a Kimi Code Plan quota instead: enter the key issued with that subscription and the preset fills `https://api.kimi.com/coding/v1`. Keys are not interchangeable between the two. In both cases **Fetch models** lists the models that key can reach, such as `kimi-k3` and `kimi-k3.1-pro`. Neither preset covers the international endpoint; add that one as a custom OpenAI-compatible service with its own base URL. [Moonshot platform documentation](https://platform.kimi.com/docs), [Kimi Code provider configuration](https://moonshotai.github.io/kimi-cli/en/configuration/providers.html)
+
 For Qwen assistant chat, choose **Alibaba Cloud Model Studio (Beijing)** and enter a Beijing API key. The preset selects `qwen3.8-max`. You can keep the shared Beijing URL or enter your Beijing workspace's OpenAI-compatible Base URL ending in `/compatible-mode/v1`. [Alibaba Cloud endpoint guide](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope)
 
 For a self-hosted chat service, allow at least 8192 tokens of context: the
 application sends `max_tokens: 8192`, so a smaller `--max-model-len` (for
 example vLLM's 4096 default) rejects every request with HTTP 400.
 
-For detailed video settings, see [Video model capability configuration (Chinese)](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
+For vLLM-Omni video connections, enter fractional seconds directly, for example `6.583333`. The CLI accepts `opendirector video create --duration 6.583333` together with the other required options. Read `opendirector video create --help` and `opendirector model list` first; `inputRules.fractionalDuration` identifies support, and each output's duration list defines the allowed range. H3 can align output to its supported frame count, so inspect the actual result duration before assembling segments.
+
+For detailed video settings, see [Video model capability configuration](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
 
 Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
 
@@ -67,6 +71,7 @@ The first launch creates an untitled canvas. Later launches can restore the most
 - Click the project name at the top left to rename it. Press `Enter` or click elsewhere to save, or press `Esc` to cancel.
 - Click the arrow next to the name to switch projects. Choose **New canvas project** to create one.
 - On an empty canvas, click **Configure models** to open **Settings → Model connections**.
+- Click **Try image example** or **Try video example** on an empty canvas to import a hosted sample: it downloads with a progress bar, imports as a new project and opens it. A download that is a ZIP around a single `.canvas` file is unwrapped automatically, and a page returned instead of a file is reported rather than imported. The project menu's **Example canvases** row opens the full list, with sizes and a manual-import link for a sample that cannot be downloaded.
 - Use the left toolbar or double-click empty canvas space to create text, image, video, audio, timeline, or subject nodes.
 - Right-click empty canvas space to create a node, paste, undo, or redo.
 - Click **Upload** on the left or drag files onto the canvas to add assets. Use **Asset library** to choose existing assets.
@@ -82,7 +87,11 @@ The canvas saves automatically. Before closing it or switching projects, check t
 3. Connect a source node that has content to the target node, or type `@` in the input field to select reference assets.
 4. Check the references and parameters, then generate. When the task finishes, view its result in the node or **Generation history**.
 
+For GPT Image models, open **Generation settings** and choose **Quality** from **Auto**, **Low**, **Medium**, or **High**. **Auto** keeps the service default. The choice is saved with the project and frozen when a task is submitted. Changing it later affects subsequent tasks. Other image services do not show this option. Standalone image tools retain their service default. The Agent can set the same value through `parameters.quality` in the image generation spec.
+
 After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
+
+When an image or video node is connected to a text node with content, the prompt may stay blank: generation uses the text as is as the prompt, and anything typed in the prompt is added to it. Connected text carries no "Reference N: title" label; only text inserted with `@` keeps its label so the inline mention points at it. One text node can feed several generation nodes that use different models, and they all pick up edits to the text. Speech and music never read text references and still need their own text or style.
 
 An empty node must first receive an upload, saved text, or generated content before it can serve as a valid reference for other nodes. When uploading a node's own content, the file type must match the node. To add references, use connections, `@`, or the reference controls in the generation panel.
 
@@ -191,3 +200,7 @@ Saving projects locally does not imply offline inference. Generation prompts and
 | A video cannot be rendered or exported | Check your browser's encoding support and whether the assets can be read and played correctly. Keep the page and editor open while rendering |
 | A task is interrupted, or its submission status is unknown | Check **Generation history**. Use **Continue checking the original task** for recoverable tasks. If the status is unknown, check whether the server accepted the task before submitting again |
 | Changes have not been saved | Keep the page open, check the **Saved locally** status and any error messages, and resolve the save failure before closing or switching |
+
+### Output a timeline from the canvas
+
+Select an unlocked timeline node and use **Output video** in its toolbar. **⌘Enter** on macOS or **Ctrl+Enter** on Windows/Linux performs the same action when focus is outside a text field or dialog. The saved timeline supplies the output size, frame rate, clips and audio. A pending video node appears below the timeline immediately, with rendering progress and a cancel control. Successful publication replaces that preview with the playable MP4 under the same node identity, connected to its timeline by an output-source line. Repeated output adds a version to that video node; use its version picker to preview or restore earlier outputs. The editable timeline remains available. Failed output can be retried from the pending node. Keep the page open while rendering. Cancel stops rendering; retrying a failed publication reuses the rendered video and operation identity.

@@ -113,6 +113,7 @@ function sameNode(a: CanvasNode, b: CanvasNode): boolean {
     a.width === b.width &&
     a.height === b.height &&
     a.locked === b.locked &&
+    (a.color ?? "") === (b.color ?? "") &&
     a.zIndex === b.zIndex &&
     a.parentId === b.parentId &&
     sameNodeData(a.data, b.data)

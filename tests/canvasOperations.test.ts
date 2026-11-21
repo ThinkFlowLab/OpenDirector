@@ -8,7 +8,9 @@ import {
   edgesAttachedTo,
   deleteSelection,
   orderNodesForCanvas,
+  groupDescendants,
   groupSelection,
+  layoutGroup,
   pasteFragment,
   ungroupSelection,
 } from "../src/canvas/operations.ts";
@@ -364,4 +366,64 @@ test("deleting nodes lists its attached references while other edges stay", () =
   const deleted = deleteSelection(grouped, [group.id, other.id], []);
   assert.deepEqual(deleted.nodes.map((node) => node.id), [other.id, target.id]);
   assert.deepEqual(deleted.edges.map((edge) => edge.id), ["e-other"]);
+});
+
+test("layoutGroup arranges direct members and fits the group around them", () => {
+  const group = { ...createNode("group", { x: 100, y: 100 }), width: 900, height: 900 };
+  const member = (x: number, y: number, width: number, height: number) => ({
+    ...createNode("image", { x, y }),
+    width,
+    height,
+    parentId: group.id,
+  });
+  const a = member(300, 30, 200, 100);
+  const b = member(24, 400, 100, 150);
+  const c = member(24, 40, 120, 80);
+  const outside = createNode("text", { x: 0, y: 0 });
+  const document: CanvasDocument = {
+    ...createDocument(),
+    nodes: [group, a, b, c, outside],
+  };
+  const at = (doc: CanvasDocument, id: string) =>
+    doc.nodes.find((node) => node.id === id)!;
+
+  const row = layoutGroup(document, group.id, "row");
+  // Left-to-right order: c, b (x 24, lower), a.
+  assert.deepEqual(at(row, c.id).position, { x: 24, y: 40 });
+  assert.deepEqual(at(row, b.id).position, { x: 184, y: 40 });
+  assert.deepEqual(at(row, a.id).position, { x: 324, y: 40 });
+  assert.equal(at(row, group.id).width, 324 + 200 + 24);
+  assert.equal(at(row, group.id).height, 40 + 150 + 24);
+  assert.deepEqual(at(row, group.id).position, group.position);
+  assert.equal(at(row, outside.id), outside);
+
+  const column = layoutGroup(document, group.id, "column");
+  // Top-to-bottom order: a (y 30), c, b.
+  assert.deepEqual(
+    [a, c, b].map((node) => at(column, node.id).position),
+    [
+      { x: 24, y: 40 },
+      { x: 24, y: 180 },
+      { x: 24, y: 300 },
+    ],
+  );
+  assert.equal(at(column, group.id).width, 24 + 200 + 24);
+
+  const grid = layoutGroup(document, group.id, "grid");
+  assert.deepEqual(at(grid, b.id).position, { x: 24, y: 40 + 100 + 40 });
+  assert.equal(layoutGroup(document, outside.id, "grid"), document);
+});
+
+test("groupDescendants returns members at every depth", () => {
+  const outer = createNode("group", { x: 0, y: 0 });
+  const inner = { ...createNode("group", { x: 10, y: 10 }), parentId: outer.id };
+  const leaf = { ...createNode("image", { x: 5, y: 5 }), parentId: inner.id };
+  const direct = { ...createNode("text", { x: 50, y: 5 }), parentId: outer.id };
+  const other = createNode("image", { x: 500, y: 500 });
+  const nodes = [leaf, other, direct, inner, outer];
+  assert.deepEqual(
+    new Set(groupDescendants(nodes, outer.id).map((node) => node.id)),
+    new Set([inner.id, leaf.id, direct.id]),
+  );
+  assert.deepEqual(groupDescendants(nodes, inner.id).map((node) => node.id), [leaf.id]);
 });

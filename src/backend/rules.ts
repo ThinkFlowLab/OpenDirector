@@ -1,8 +1,11 @@
+import { availabilityBlocker, availabilityInputLimit } from "./availability.ts";
 import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
+import type { InputRules as CreationInputRules } from "../contracts/generated.ts";
 import {
   RULE_FACTS,
+  durationMatches,
   aspectRatioChoices,
   effectiveVideoMode,
   generateAudioOptions,
@@ -15,11 +18,12 @@ import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
 import { nodeDownstreamKinds } from "../canvas/connectionPolicy.ts";
 import { tNow } from "../i18n/messages.ts";
 import type { MessageKey } from "../i18n/types.ts";
+import type { ModelAvailability } from "../contracts/generated.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
 export type BackendVideoMode = "first_frame" | "reference" | "continuation";
-export type VideoAdapter = "auto" | "fasth3" | "minimax_h3" | "standard";
+export type VideoAdapter = "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
 export interface VideoCapabilities {
   outputs: {
     resolution: string;
@@ -33,6 +37,7 @@ export interface VideoCapabilities {
 }
 
 export interface InputRules {
+  fractionalDuration?: boolean;
   profile: string;
   allowedKinds: string[];
   maxImages: number;
@@ -52,12 +57,15 @@ export interface InputRules {
   audioReferenceStandalone?: boolean | null;
   generateAudioOptions?: boolean[] | null;
   imageOutputs?: { aspectRatio: string; size: string }[];
+  imageQualities?: CreationInputRules["imageQualities"];
   outputResolutions?: string[];
   referenceImageResolutions?: string[];
   videoCapabilities?: VideoCapabilities | null;
 }
 
 export interface ModelConfig {
+  capabilityAutoCheck?: boolean | null;
+  availability?: ModelAvailability | null;
   providerId?: string | null;
   id: string;
   kind: ModelKind;
@@ -69,6 +77,7 @@ export interface ModelConfig {
     | "volcengine"
     | "minimax_video_v2"
     | "kling_video"
+    | "bigmodel_video"
     | "vllm_omni"
     | "vllm_omni_segmentation"
     | "vllm_omni_music"
@@ -210,6 +219,10 @@ export function backendReferenceIssue(
 ): string | null {
   const kind = node.data.kind;
   const rules = config.inputRules;
+  const unusedInReading =
+    settings.mode === "audio" && !isMusicModel(config)
+      ? tNow("generation.issue.audioModeReference")
+      : null;
   if (
     settings.mode === "video" &&
     settings.videoMode === "first-last" &&
@@ -236,7 +249,7 @@ export function backendReferenceIssue(
   if (kind === "text")
     return rules.allowedKinds.includes("text")
       ? node.data.text?.trim()
-        ? null
+        ? (unusedInReading ?? null)
         : tNow("errors.rules.textEmpty")
       : tNow("errors.rules.textReference");
   const continuation =
@@ -249,6 +262,7 @@ export function backendReferenceIssue(
     return tNow("errors.rules.kindReference", {
       kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
     });
+  if (unusedInReading) return unusedInReading;
   return node.data.src && node.data.assetState !== "missing"
     ? null
     : tNow("errors.rules.mediaMissing");
@@ -368,6 +382,7 @@ export function backendResolutions(
 ): string[] {
   const rules = config?.inputRules;
   return resolutionChoices({
+    fractionalDuration: rules?.fractionalDuration,
     kind: settings.mode,
     videoMode: settings.videoMode,
     aspectRatio: settings.aspectRatio,
@@ -436,7 +451,7 @@ export function serviceGenerationSettings(
     )
       next.resolution = "auto";
   }
-  next = serviceAudioSettings(next, config);
+  next = serviceImageSettings(serviceAudioSettings(next, config), config);
   if (modelChanged) {
     next.imagePreset = "none";
     if (next.voiceSelection) {
@@ -472,6 +487,20 @@ export function serviceGenerationSettings(
   return next;
 }
 
+/** Drop a quality selection when the resolved service no longer supports it. */
+export function serviceImageSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+): GenerationSettings {
+  if (
+    settings.mode !== "image" ||
+    settings.imageQuality === undefined ||
+    config.inputRules.imageQualities?.includes(settings.imageQuality)
+  )
+    return settings;
+  return { ...settings, imageQuality: undefined };
+}
+
 /** Normalize a deliberate model/time change before persisting it to the canvas. */
 export function serviceVideoSettings(
   settings: GenerationSettings,
@@ -482,7 +511,7 @@ export function serviceVideoSettings(
   const next = { ...settings };
   const caps = config.inputRules.videoCapabilities;
   const durations = backendDurations(config);
-  if (durations.length && !durations.includes(next.durationSeconds))
+  if (durations.length && !durationMatches(next.durationSeconds, durations, config.inputRules.fractionalDuration))
     next.durationSeconds = caps!.defaultDuration;
   if (
     next.videoMode === "continuation" &&
@@ -503,6 +532,24 @@ export function serviceVideoSettings(
   return next;
 }
 
+/**
+ * A connected text reference implicitly supplies an image or video prompt;
+ * the backend appends its body to the provider prompt. Speech and music never
+ * read text references.
+ */
+export function hasImplicitTextPrompt(
+  settings: GenerationSettings,
+  sources: readonly CanvasNode[],
+  config: ModelConfig,
+) {
+  return (
+    (settings.mode === "image" || settings.mode === "video") &&
+    backendReferences(settings, sources, config).some(
+      (item) => item.node.data.kind === "text",
+    )
+  );
+}
+
 export function backendBlocker(
   settings: GenerationSettings,
   incoming: readonly CanvasNode[],
@@ -521,7 +568,19 @@ export function backendBlocker(
     return tNow("errors.rules.transcriptionModel");
   if (!isGenerationModel(config))
     return tNow("errors.rules.segmentationModel");
-  if (!settings.prompt.trim())
+  const references = backendReferences(settings, [...incoming, ...pinned], config);
+  const imageCount = references.filter((ref) => ref.node.data.kind === "image").length;
+  const profile = settings.mode === "audio" ? (isMusicModel(config) ? "lyrics_to_music" : "text_to_speech")
+    : settings.mode === "image" ? (imageCount > 1 ? "images_to_image" : imageCount === 1 ? "image_to_image" : "text_to_image")
+    : references.some((ref) => ref.role === "continuation") ? "video_continuation"
+    : references.some((ref) => ref.node.data.kind === "video") ? "video_to_video"
+    : references.some((ref) => ref.node.data.kind === "image") ? "image_to_video" : "text_to_video";
+  const capabilityIssue = availabilityBlocker(config, profile);
+  if (capabilityIssue) return capabilityIssue;
+  if (
+    !settings.prompt.trim() &&
+    !hasImplicitTextPrompt(settings, [...incoming, ...pinned], config)
+  )
     return settings.mode !== "audio"
       ? tNow("errors.rules.promptRequired")
       : isMusicModel(config)
@@ -612,10 +671,9 @@ export function backendBlocker(
     }).includes(false)
   )
     return tNow("errors.rules.audioDisable");
-  const references = backendReferences(settings, [...incoming, ...pinned], config);
   if (settings.mode === "video") {
     const durations = backendDurations(config);
-    if (durations.length && !durations.includes(settings.durationSeconds))
+    if (durations.length && !durationMatches(settings.durationSeconds, durations, rules.fractionalDuration))
       return tNow("errors.rules.duration");
     if (
       rules.outputResolutions &&
@@ -652,6 +710,14 @@ export function backendBlocker(
     references.filter(
       (item) => item.role !== "continuation" && item.node.data.kind === kind,
     ).length;
+  for (const kind of ["image", "video", "audio"] as const) {
+    const limit = availabilityInputLimit(config, profile, kind);
+    const current = count(kind);
+    if (limit !== null && current > limit)
+      return tNow(kind === "image" ? "errors.capability.imageCount" : "errors.rules.serviceInputLimit", {
+        kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"), limit, current,
+      });
+  }
   for (const [kind, limit] of [
     ["image", rules.maxImages],
     ["video", rules.maxVideos],

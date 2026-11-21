@@ -170,6 +170,89 @@ export function ungroupSelection(
   };
 }
 
+export type GroupLayout = "grid" | "row" | "column";
+
+/** Padding a group keeps around its members; matches {@link groupSelection}. */
+const GROUP_PADDING = { left: 24, top: 40, right: 24, bottom: 24 };
+const GROUP_LAYOUT_GAP = 40;
+
+/**
+ * Arranges a group's direct members in a row, a column or a near-square grid,
+ * in their current reading order, and resizes the group to fit them. Member
+ * positions are relative to the group, which keeps its top-left corner.
+ */
+export function layoutGroup(
+  document: CanvasDocument,
+  groupId: string,
+  layout: GroupLayout,
+): CanvasDocument {
+  const group = document.nodes.find(
+    (node) => node.id === groupId && node.type === "group",
+  );
+  if (!group) return document;
+  const members = document.nodes
+    .filter((node) => node.parentId === groupId)
+    .sort((a, b) =>
+      layout === "row"
+        ? a.position.x - b.position.x || a.position.y - b.position.y
+        : a.position.y - b.position.y || a.position.x - b.position.x,
+    );
+  if (!members.length) return document;
+  const columns =
+    layout === "row"
+      ? members.length
+      : layout === "column"
+        ? 1
+        : Math.ceil(Math.sqrt(members.length));
+  const positions = new Map<string, Point>();
+  let x = GROUP_PADDING.left,
+    y = GROUP_PADDING.top,
+    rowHeight = 0,
+    right = 0,
+    bottom = 0;
+  members.forEach((node, index) => {
+    if (index && index % columns === 0) {
+      x = GROUP_PADDING.left;
+      y += rowHeight + GROUP_LAYOUT_GAP;
+      rowHeight = 0;
+    }
+    positions.set(node.id, { x, y });
+    right = Math.max(right, x + node.width);
+    bottom = Math.max(bottom, y + node.height);
+    x += node.width + GROUP_LAYOUT_GAP;
+    rowHeight = Math.max(rowHeight, node.height);
+  });
+  return {
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.id === groupId
+        ? {
+            ...node,
+            width: right + GROUP_PADDING.right,
+            height: bottom + GROUP_PADDING.bottom,
+          }
+        : positions.has(node.id)
+          ? { ...node, position: positions.get(node.id)! }
+          : node,
+    ),
+  };
+}
+
+/** Members of a group at any depth, excluding the group itself. */
+export function groupDescendants(
+  nodes: readonly CanvasNode[],
+  groupId: string,
+): CanvasNode[] {
+  const inside = new Set([groupId]);
+  const result: CanvasNode[] = [];
+  for (const node of orderNodesForCanvas(nodes))
+    if (node.parentId && inside.has(node.parentId)) {
+      inside.add(node.id);
+      result.push(node);
+    }
+  return result;
+}
+
 /** Copies selected groups with all descendants and edges internal to the copy. */
 export function copySelection(
   document: CanvasDocument,

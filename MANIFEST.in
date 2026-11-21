@@ -3,6 +3,7 @@ include package.json package-lock.json index.html tsconfig.json vite.config.ts .
 recursive-include src *
 recursive-include packages/core/src *.py
 recursive-include apps/api/src *.py
+include apps/api/src/opendirector_api/example-canvases.json
 recursive-include packages/agent/skills *
 prune packages/core/src/opendirector/_bundled
 prune node_modules

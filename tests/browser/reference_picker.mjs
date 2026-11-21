@@ -250,6 +250,14 @@ try {
     await editor.press("ArrowLeft");
     assert.equal(await caret(), 2);
     await opened();
+    // Rapid leave/re-enter after Escape must reopen even if selectionchange
+    // never reports the outside caret (#394). Escape without motion stays closed.
+    await editor.press("Escape");
+    await closed();
+    await editor.press("ArrowRight");
+    await editor.press("ArrowLeft");
+    assert.equal(await caret(), 2);
+    await opened();
     // Clicking elsewhere inside the same editor must dismiss the portal too.
     await editor.click({ position: { x: 2, y: 8 } });
     await closed();

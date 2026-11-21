@@ -2,19 +2,18 @@ name: DSH plugin checks
 
 on:
   pull_request:
-    paths:
-      - 'plugins/deepseek-harness/**'
-      - '.github/workflows/dsh-plugin.yml'
-      - '.nvmrc'
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   push:
     branches: [main]
-    paths:
-      - 'plugins/deepseek-harness/**'
-      - '.github/workflows/dsh-plugin.yml'
-      - '.nvmrc'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   tests:
@@ -22,14 +21,27 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: scope
+        name: Select plugin scope / 判断插件检查范围
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: python3 scripts/ci/select_checks.py --dsh
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: steps.scope.outputs.run-dsh != 'false'
         with:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: plugins/deepseek-harness/package-lock.json
       - name: Install DSH plugin dependencies
+        if: steps.scope.outputs.run-dsh != 'false'
         working-directory: plugins/deepseek-harness
         run: npm ci
       - name: DSH plugin tests
+        if: steps.scope.outputs.run-dsh != 'false'
         working-directory: plugins/deepseek-harness
         run: npm test

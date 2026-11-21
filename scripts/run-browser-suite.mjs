@@ -13,6 +13,12 @@
 import { spawnSync } from "node:child_process";
 
 const workflows = [
+  { name: "large video import", script: "tests/browser/large_video_import.mjs" },
+  { name: "timeline node output", script: "tests/browser/timeline_node_output.mjs" },
+  {
+    name: "example canvas picker",
+    script: "tests/browser/example_canvas_picker.mjs",
+  },
   { name: "locale", script: "tests/browser/locale.mjs" },
   { name: "creation closure", script: "scripts/verify_creation_browser.mjs" },
   { name: "assistant activity", script: "tests/browser/assistant_activity.mjs" },
@@ -20,8 +26,13 @@ const workflows = [
     name: "generation reference",
     script: "tests/browser/canvas_generation_reference.mjs",
   },
+  {
+    name: "tts reading references",
+    script: "tests/browser/tts_reading_references.mjs",
+  },
   { name: "minimax h3", script: "tests/browser/minimax_h3.mjs" },
   { name: "provider settings", script: "tests/browser/provider_settings.mjs" },
+  { name: "capability discovery", script: "tests/browser/capability_discovery.mjs" },
   { name: "created node focus", script: "tests/browser/created_node_focus.mjs" },
   { name: "cross canvas paste", script: "tests/browser/cross_canvas_paste.mjs" },
   { name: "reference reconnect", script: "tests/browser/reference_reconnect.mjs" },
@@ -37,6 +48,7 @@ const workflows = [
   { name: "mp4 export", script: "tests/browser/mp4_export.mjs" },
   { name: "editor save", script: "tests/browser/editor_save.mjs" },
   { name: "canvas crop", script: "tests/browser/canvas_crop.mjs" },
+  { name: "canvas text Markdown", script: "tests/browser/canvas_text_markdown.mjs" },
   {
     name: "canvas layers",
     script: "tests/browser/canvas_layers.mjs",

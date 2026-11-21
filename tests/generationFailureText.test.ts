@@ -18,6 +18,33 @@ function failure(patch: Partial<GenerationFailure>): GenerationFailure {
   };
 }
 
+test("unknown 429 includes service load without diagnosing account quota", () => {
+  for (const message of [
+    "模型调用频率或配额受限。",
+    "模型服务繁忙或请求受限。",
+  ]) {
+    const value = failure({ category: "rate_limit", httpStatus: 429, message });
+    setActiveLocale("en-US");
+    assert.match(generationFailureMessage(value), /busy|overload/i);
+    setActiveLocale("zh-CN");
+    assert.match(generationFailureMessage(value), /服务繁忙/);
+  }
+});
+
+test("non-public download DNS explains the cause in both languages", () => {
+  const value = failure({
+    category: "protocol",
+    stage: "download",
+    httpStatus: null,
+    message: "生成结果地址解析为非公网地址，下载已停止。",
+  });
+  setActiveLocale("en-US");
+  assert.match(generationFailureMessage(value), /non-public address/);
+  assert.match(generationFailureMessage(value), /DNS/);
+  setActiveLocale("zh-CN");
+  assert.match(generationFailureMessage(value), /域名解析/);
+});
+
 test("known persisted failures are translated without showing backend Chinese", () => {
   setActiveLocale("en-US");
   assert.equal(
@@ -68,7 +95,10 @@ test("new provider messages fall back to category, stage and status", () => {
 });
 
 test("Kling content-policy rejection remains explicit in both languages", () => {
-  const value = failure({ providerCode: "1301", message: "供应商判定提示词或参考图片违反内容政策，已拒绝生成。" });
+  const value = failure({
+    providerCode: "1301",
+    message: "供应商判定提示词或参考图片违反内容政策，已拒绝生成。",
+  });
   setActiveLocale("en-US");
   assert.match(generationFailureMessage(value), /content policy/);
   setActiveLocale("zh-CN");
@@ -141,19 +171,31 @@ test("voice_not_found identifies the voice before generic 404 or input failures"
 
 test("provider moderation verdicts are explained in both languages", () => {
   const moderated = (message: string) =>
-    failure({ stage: "poll", httpStatus: 200, providerStatus: "failed", providerCode: "1027", message });
+    failure({
+      stage: "poll",
+      httpStatus: 200,
+      providerStatus: "failed",
+      providerCode: "1027",
+      message,
+    });
   setActiveLocale("en-US");
   assert.match(
-    generationFailureMessage(moderated("供应商判定输入内容涉及敏感信息，已拒绝生成。")),
+    generationFailureMessage(
+      moderated("供应商判定输入内容涉及敏感信息，已拒绝生成。"),
+    ),
     /flagged the input as sensitive/,
   );
   assert.match(
-    generationFailureMessage(moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。")),
+    generationFailureMessage(
+      moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。"),
+    ),
     /flagged the generated content as sensitive/,
   );
   setActiveLocale("zh-CN");
   assert.match(
-    generationFailureMessage(moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。")),
+    generationFailureMessage(
+      moderated("供应商判定生成内容涉及敏感信息，已拒绝交付。"),
+    ),
     /生成内容涉及敏感信息/,
   );
 });

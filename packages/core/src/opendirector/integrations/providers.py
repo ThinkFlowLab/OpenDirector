@@ -10,6 +10,7 @@ from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_heade
 
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.input_rules import input_rules
+from opendirector.domain.video_capabilities import validate_video_duration
 from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.reference_inputs import generation_references, references, image_type
@@ -17,12 +18,13 @@ from opendirector.integrations.volcengine import VolcengineGeneration, bounded, 
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
-from opendirector.integrations.vllm_omni import VllmOmniGeneration
+from opendirector.integrations.bigmodel_video import BigModelVideoGeneration
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload
+from opendirector.integrations.fasth3 import generation_fields as fasth3_generation_fields
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore, ZhipuSpeech
+from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech,
+                                                    VllmOmniMusic, VllmOmniScore, ZhipuSpeech, image_parts)
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
-from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
-from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
 
@@ -32,6 +34,7 @@ class GenerationProviders(VolcengineGeneration):
     def __init__(self, store, transport=None, poll_interval=3, retry_delays=(0.5, 1.0)):
         super().__init__(store, transport, poll_interval, retry_delays)
         self.minimax_video = MinimaxVideoGeneration(store, transport, poll_interval)
+        self.bigmodel_video = BigModelVideoGeneration(store, transport, poll_interval, retry_delays)
         self.kling_video = KlingVideoGeneration(store, transport, poll_interval, retry_delays)
         self.vllm_omni = VllmOmniGeneration(store, transport, poll_interval)
         self.vllm_omni_image = VllmOmniImageGeneration(store, transport, poll_interval)
@@ -43,6 +46,8 @@ class GenerationProviders(VolcengineGeneration):
         self.zhipu_speech = ZhipuSpeech(transport, poll_interval)
 
     def _profile_adapter(self, config):
+        if config and config.get('protocol') == 'bigmodel_video':
+            return self.bigmodel_video
         if config and config.get('protocol') == 'kling_video':
             return self.kling_video
         if config and config.get('protocol') == 'minimax_video_v2':
@@ -170,19 +175,26 @@ class GenerationProviders(VolcengineGeneration):
                         prepared = await asyncio.to_thread(generation_references, self.store, task, config)
                         files = []
                         fast = input_rules(config)['profile'] == 'fasth3-omni'
-                        for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
-                            if source_kind in {'image', 'video', 'audio'}:
-                                files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
+                        frame_indices = prepared.get('frameIndices')
+                        if frame_indices is not None:
+                            files = [('input_references', _upload(image, 'first_frame' if index == 0 else 'last_frame'))
+                                     for index, image in zip(frame_indices, prepared['images'], strict=True)]
+                        else:
+                            for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
+                                if source_kind in {'image', 'video', 'audio'}:
+                                    files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
                         parameters = task['parameters']
                         form = {'model': config['modelId'], 'prompt': prepared['prompt']}
-                        if 'duration' in parameters: form['seconds'] = format(parameters['duration'], 'g')
+                        if not fast and 'duration' in parameters:
+                            seconds = parameters['duration']
+                            if config['protocol'] == 'vllm_omni':
+                                validate_video_duration(config, seconds)
+                            form['seconds'] = str(int(seconds)) if float(seconds).is_integer() else str(seconds)
                         if 'size' in parameters: form['size'] = parameters['size']
                         if fast:
-                            form.update({
-                                'seconds': str(parameters.get('seconds', '5')), 'size': parameters.get('size', '832x480'),
-                                'num_inference_steps': '8', 'guidance_scale': '1', 'fps': '24',
-                                'seed': str(parameters.get('seed', 1234)),
-                                'extra_params': json.dumps({'task': 'ref2va', 'duration': float(parameters.get('duration', parameters.get('seconds', 5))), 'audio_flow_shift': 3})})
+                            values, extra = fasth3_generation_fields(parameters, frame_indices=frame_indices)
+                            form.update({key: str(value) for key, value in values.items()})
+                            form['extra_params'] = json.dumps(extra)
                         # Force multipart even for an empty reference list.
                         value = await self._json(client, 'POST', url, config, data=form, files=files or {'_multipart': (None, '1')})
                         external_id = value['id']
@@ -223,6 +235,9 @@ class GenerationProviders(VolcengineGeneration):
                     # already freeze the dimensions resolved by this adapter.
                     size = size if 'x' in size else '1024x1024'
                     fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': size}
+                    quality = task['parameters'].get('quality', 'auto')
+                    if input_rules(config)['profile'] == 'openai-gpt-image' and quality != 'auto':
+                        fields['quality'] = quality
                     if prepared['images']:
                         # Same construction as the capability adapter: leave both the
                         # field name and the declared type to one helper, so a JPEG is

@@ -1,5 +1,11 @@
 /** Timeline editor, rendering, export and track labels. */
 export const timeline = {
+  "timeline.output.retry": "Retry output",
+  "timeline.output.title": "Output video",
+  "timeline.output.shortcut": "Output video · ⌘Enter / Ctrl+Enter",
+  "timeline.output.keepOpen": "Uses the saved timeline size and frame rate. Keep this page open while rendering.",
+  "timeline.output.publishing": "Adding video to canvas…",
+  "timeline.output.otherPending": "Finish or retry the other timeline output first.",
   "timeline.text.unsupportedExchange": "FCPXML and XML + media ZIP cannot retain text or fonts. Use an editable package to continue editing, or MP4 for the rendered video.",
   "timeline.player.sourceUnavailable": "The current media source is unavailable. Restore the source file and retry.",
   "timeline.package.export": "Export editable package",

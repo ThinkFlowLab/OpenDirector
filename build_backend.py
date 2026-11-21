@@ -1,5 +1,6 @@
 """PEP 517/660 backend: build web and native resources for both pip install modes."""
 import os
+import platform
 import json
 from pathlib import Path
 import shutil
@@ -25,7 +26,11 @@ def prepare_resources():
     shutil.copytree(ROOT / 'packages/agent/skills', bundled / 'skills')
     npm_package = ROOT / 'node_modules/opencode-ai'
     metadata = json.loads((npm_package / 'package.json').read_text())
-    executable = npm_package / metadata['bin']['opencode']
+    if os.name == 'nt':
+        arch = {'AMD64': 'x64', 'ARM64': 'arm64'}[platform.machine().upper()]
+        executable = npm_package.parent / f'opencode-windows-{arch}' / 'bin/opencode.exe'
+    else:
+        executable = npm_package / metadata['bin']['opencode']
     subprocess.run([str(executable), '--version'], check=True, cwd=ROOT)
     (bundled / 'bin').mkdir()
     shutil.copy2(executable.resolve(), bundled / 'bin' / ('opencode.exe' if os.name == 'nt' else 'opencode'))

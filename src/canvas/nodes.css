@@ -367,8 +367,8 @@
   cursor: default;
 }
 .cw-node-group {
-  background: rgba(157, 164, 179, 0.035);
-  border: 1px dashed #6c6f7b;
+  background: var(--cw-group-fill, rgba(157, 164, 179, 0.035));
+  border: 1px dashed var(--cw-group-border, #6c6f7b);
   border-radius: var(--cw-node-radius);
 }
 .cw-workspace .react-flow__node-group {
@@ -410,9 +410,10 @@
   color: #777983;
 }
 .cw-text-display {
-  white-space: pre-wrap;
+  white-space: normal;
   overflow-wrap: anywhere;
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
   user-select: none;
   cursor: inherit;
 }
@@ -654,6 +655,15 @@
   display: flex;
   align-items: center;
   gap: 16px;
+}
+.cw-duration-controls:has(.cw-duration-output) {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.cw-duration-output {
+  flex-basis: 100%;
+  order: 1;
+  font-size: 11px;
 }
 .cw-duration-slider {
   flex: 1;
@@ -1682,3 +1692,9 @@
 .cw-subject-replace:disabled {
   cursor: not-allowed;
 }
+
+.cw-node-text .cw-text-resize {
+  width: 18px; height: 18px; border: 0; border-radius: 3px;
+  background: #737080; color: white; display: grid; place-items: center;
+}
+.cw-text-resize span { font-size: 12px; line-height: 1; }

@@ -1,0 +1,90 @@
+.cw-text-markdown {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cw-text-markdown > :first-child {
+  margin-top: 0;
+}
+.cw-text-markdown > :last-child {
+  margin-bottom: 0;
+}
+.cw-text-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1em 0 0.5em;
+  line-height: 1.3;
+}
+.cw-text-markdown h1 {
+  font-size: 1.6em;
+}
+.cw-text-markdown h2 {
+  font-size: 1.35em;
+}
+.cw-text-markdown h3 {
+  font-size: 1.15em;
+}
+.cw-text-markdown :is(p, ul, ol, blockquote, pre, table) {
+  margin: 0.6em 0;
+}
+.cw-text-markdown :is(ul, ol) {
+  padding-left: 1.5em;
+}
+.cw-text-markdown ul {
+  list-style: disc;
+}
+.cw-text-markdown ol {
+  list-style: decimal;
+}
+.cw-text-markdown blockquote {
+  border-left: 3px solid #8888;
+  padding-left: 1em;
+}
+.cw-text-markdown a {
+  color: #9b9bfa;
+  text-decoration: underline;
+}
+.cw-text-markdown pre {
+  overflow: auto;
+  padding: 0.75em;
+  background: #8881;
+  border-radius: 6px;
+  white-space: pre;
+}
+.cw-text-markdown code {
+  font-family: monospace;
+}
+.cw-text-markdown table {
+  border-collapse: collapse;
+  display: block;
+  overflow: auto;
+}
+.cw-text-markdown :is(th, td) {
+  border: 1px solid #8886;
+  padding: 0.3em 0.65em;
+}
+.cw-text-markdown img {
+  max-width: 100%;
+}
+.cw-text-markdown [data-streamdown="strong"] {
+  font-weight: 700;
+}
+.cw-text-markdown button[data-streamdown="link"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9b9bfa;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cw-text-markdown pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+}
+.cw-text-markdown pre code > span {
+  display: block;
+}
+
+.cw-text-markdown [data-streamdown="code-block-header"] {
+  display: none;
+}

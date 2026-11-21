@@ -4,6 +4,7 @@ import type { Locale } from "../i18n/types.ts";
 import { tNow } from "../i18n/messages.ts";
 
 export const sessionId = crypto.randomUUID();
+globalThis.window?.opendirectorDesktop?.registerSession(sessionId);
 
 const SESSION_KEY = "opendirector.session.v1";
 const lockName = (id: string) => `opendirector.session.${id}`;

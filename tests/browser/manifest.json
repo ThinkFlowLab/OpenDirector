@@ -1,19 +1,57 @@
 {
   "scripts": [
     {
+      "file": "fasth3_capability_flow.mjs",
+      "helper": true
+    },
+    {
+      "file": "input_admission_review.mjs",
+      "fixture": true,
+      "httpGenerationFixture": true,
+      "lanes": ["extendedHttpFixture"],
+      "note": "Requires creation_server.py --http-generation-fixture --assistant-fixture. Bilingual image-count admission through real HTTP requests and assistant parameter rejection with preserved drafts."
+    },
+    {
+      "file": "video_review_regressions.mjs",
+      "httpGenerationFixture": true,
+      "lanes": [
+        "extendedHttpFixture"
+      ],
+      "note": "Requires creation_server.py --http-generation-fixture. Bilingual latent continuation, endpoint closure, pause expiry and dynamic-poster admission through real adapters and loopback HTTP."
+    },
+    {
+      "file": "video_capability_roles.mjs",
+      "lanes": [
+        "extendedFixture"
+      ],
+      "note": "Bilingual video-role declarations, tool directory decisions, preserved generation inputs and substitute video results through local HTTP discovery."
+    },
+    {
+      "file": "image_quality_test.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"]
+    },
+    {
       "file": "heif_upload_recovery.mjs",
-      "lanes": ["extended", "production"],
+      "lanes": [
+        "extended",
+        "production"
+      ],
       "previewSafe": true,
       "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
     },
     {
       "file": "heif_import.mjs",
-      "lanes": ["extended"],
+      "lanes": [
+        "extended"
+      ],
       "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."
     },
     {
       "file": "kling_video.mjs",
-      "lanes": ["extendedFixture"],
+      "lanes": [
+        "extendedFixture"
+      ],
       "note": "Uses isolated creation fixtures for bilingual Kling configuration, default preservation and image-based generation."
     },
     {
@@ -51,6 +89,13 @@
         "production"
       ],
       "note": "Needs --assistant-fixture services."
+    },
+    {
+      "file": "bilingual_defaults.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": ["gate"],
+      "note": "Requires a fresh isolated assistant fixture workspace."
     },
     {
       "file": "canvas_crop.mjs",
@@ -108,6 +153,11 @@
       ]
     },
     {
+      "file": "canvas_text_markdown.mjs",
+      "lanes": ["gate"],
+      "note": "Markdown blocks, native inline composition, fullscreen selection/scroll handoff and resize commits. Uses /src through Vite."
+    },
+    {
       "file": "canvas_switch.mjs",
       "previewSafe": true,
       "lanes": [
@@ -120,6 +170,15 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "capability_discovery.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate",
+        "production"
+      ],
+      "note": "Real application with controllable local capability HTTP service; no model inference."
     },
     {
       "file": "composer_duration.mjs",
@@ -154,6 +213,12 @@
       ]
     },
     {
+      "file": "creation_ripple.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
       "file": "creation_asset_list.mjs",
       "lanes": [
         "extended"
@@ -162,10 +227,7 @@
     {
       "file": "creation_history.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "creation_journey.mjs",
@@ -184,10 +246,7 @@
     {
       "file": "default_entry.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "double_shift_chat.mjs",
@@ -215,10 +274,7 @@
     {
       "file": "first_last_frame_connections.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "generation_feedback.mjs",
@@ -337,10 +393,7 @@
     {
       "file": "paste_undo.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "project_list_overflow.mjs",
@@ -479,6 +532,13 @@
       ]
     },
     {
+      "file": "tts_reading_references.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "TTS reading panels keep connected, context-only references visible and removable. Isolated fixture only; does not submit generation or call a paid model."
+    },
+    {
       "file": "voice_library.mjs",
       "previewSafe": true,
       "lanes": [
@@ -494,9 +554,36 @@
       ]
     },
     {
+      "file": "kimi_real.mjs",
+      "helper": true,
+      "note": "Manual acceptance against a real Kimi chat endpoint; KIMI_ROUTE=open needs MOONSHOT_API_KEY, KIMI_ROUTE=coding needs KIMI_CODING_API_KEY. Both incur charges, so no lane runs it."
+    },
+    {
       "file": "zhipu_real.mjs",
       "helper": true,
       "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
+    },
+    {
+      "file": "timeline_node_output.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "previewSafe": false,
+      "note": "Canvas timeline output button and shortcut publish real MP4 results in both locales without opening the editor."
+    },
+    {
+      "file": "large_video_import.mjs",
+      "lanes": ["gate"],
+      "previewSafe": false,
+      "note": "Large MP4 file input, original asset bytes and stable canvas binding after reload."
+    },
+    {
+      "file": "example_canvas_picker.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "previewSafe": false,
+      "note": "Empty-canvas example picker: a wrapped .canvas download imports through the shared archive path, and an HTML page is reported without creating a project. The catalog and the sample are routed in-page, so no external host is needed."
     }
   ]
 }

@@ -468,3 +468,37 @@ def test_material_show_uses_media_ratio_unless_size_authored(project, size, expl
     restored = next(item for item in reloaded.snapshot(pid).canvasItems if item.id == item_id)
     assert (restored.width, restored.height) == (saved.width, saved.height)
     assert restored.binding.objectRef == asset_ref(asset)
+
+
+def test_group_color_is_set_reset_and_validated(project):
+    store, pid, session = project
+    group_id = uuid4()
+    assert send(store, pid, 'canvas.show', session=session,
+        item=dict(id=group_id, projectId=pid, kind='group', color='#3e63dd')).status == 'applied'
+    group = store.snapshot(pid).canvasItems[-1]
+    assert group.color == '#3e63dd'
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', group)],
+        itemId=group.id, color='#30a46c').status == 'applied'
+    group = store.snapshot(pid).canvasItems[-1]
+    assert group.color == '#30a46c'
+    # An empty color restores the default, which is omitted from the item.
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', group)],
+        itemId=group.id, color='').status == 'applied'
+    group = store.snapshot(pid).canvasItems[-1]
+    assert group.color is None and 'color' not in group.model_dump(mode='json')
+    with pytest.raises(ValueError, match='color'):
+        send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', group)],
+            itemId=group.id, color='blue')
+
+
+def test_canvas_update_without_color_keeps_its_historical_fingerprint():
+    # Commands recorded before the color field existed must hash the same, or
+    # history validation rejects every project containing a canvas.update.
+    item_id = str(uuid4())
+    base = dict(commandId=str(uuid4()), projectId=str(uuid4()), type='canvas.update',
+        expectedVersions=[dict(objectType='canvas_item', id=item_id, revision=1)])
+    legacy = dict(itemId=item_id, title=None, width=None, height=336.0, zIndex=None, locked=None, parentId=None)
+    command = parse_command(dict(base, payload=legacy))
+    # The fingerprint hashes this dump, so it must equal the pre-color payload exactly.
+    assert command.model_dump(mode='json')['payload'] == legacy
+    assert parse_command(dict(base, payload=dict(legacy, color=''))).model_dump(mode='json')['payload']['color'] == ''

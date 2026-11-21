@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import socket
 import shlex
+import subprocess
 import sys
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -148,10 +149,14 @@ class Client:
             value = response.json()
         except ValueError:
             value = None
+        code = value.get('code') if isinstance(value, dict) else None
         if isinstance(value, dict) and isinstance(value.get('detail'), str):
-            code = value.get('code')
-            return ProjectError(value['detail'], response.status_code, code=code if isinstance(code, str) else None)
-        return ProjectError(response.text, response.status_code)
+            message = value['detail']
+        else:
+            message = response.text
+        if not message.strip():
+            message = f"HTTP {response.status_code} from {response.url}"
+        return ProjectError(message, response.status_code, code=code if isinstance(code, str) else None)
 
     def request(self, method, path, **kwargs):
         response = self.http.request(method, path, **kwargs)
@@ -295,6 +300,14 @@ PortOption = Annotated[int, typer.Option(min=1, max=65535, help="Local API port.
 WebPortOption = Annotated[int, typer.Option(min=1, max=65535, help="Vite development port.")]
 
 
+@app.command("desktop", help="Open the desktop application installed with this terminal command. / 打开此终端命令所属的桌面应用。")
+def desktop():
+    executable = os.environ.get('OPENDIRECTOR_DESKTOP_EXECUTABLE')
+    if not executable or not Path(executable).is_file():
+        raise typer.BadParameter('Install the command from the desktop application menu. / 请从桌面应用菜单安装终端命令。')
+    subprocess.Popen([executable], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 @app.command("serve", help="Start the API and serve the built application.")
 def serve(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info):
     from opendirector.launcher import start
@@ -347,6 +360,26 @@ def select_model(models, selector):
         raise ProjectError("Multiple model configurations match. Select a configuration UUID. Candidates: " +
                            json.dumps(candidates, ensure_ascii=False))
     return matches[0]
+
+
+@group('model').command('availability', help='Read model operation availability; optionally refresh declarations without running models.')
+def model_availability(ctx: typer.Context,
+                       refresh: Annotated[bool, typer.Option(help='Query configured services using automatic-check preferences.')] = False,
+                       model: Annotated[list[UUID] | None, typer.Option(help='Restrict to saved model configuration UUIDs.')] = None,
+                       manual: Annotated[bool, typer.Option(help='Explicitly check selected models even when automatic checks are disabled. Requires --refresh and --model.')] = False):
+    client = ctx.obj
+    client.command = ctx.command_path
+    if manual and (not refresh or not model):
+        raise typer.BadParameter('--manual requires --refresh and --model')
+    arguments = {'manual': manual}
+    if model:
+        arguments['configIds'] = [str(item) for item in model]
+    if client.live:
+        emit(client.call('model_availability', {**arguments, 'refresh': refresh}))
+    elif refresh:
+        emit(client.request('POST', '/api/model-configs/availability', json=arguments))
+    else:
+        emit(client.request('GET', '/api/model-configs/availability'))
 
 
 @group("model").command("list", help="Find model configurations by media kind or model name.")
@@ -430,11 +463,160 @@ def add_material(ctx: typer.Context, asset: Annotated[UUID, typer.Option(help="R
     }}))
 
 
+text_app = typer.Typer(no_args_is_help=True,
+    help="Create, read, edit and resize UTF-8 Markdown text nodes. Dimensions use canvas coordinate units, independent of zoom.",
+    epilog="Text assets are limited to 1 MiB of UTF-8 bytes (manualText also has a 1,048,576-character bound). "
+           "Output is JSON; show includes complete source in text. Writes return status, itemId and canvasItems "
+           "with committed revisions and dimensions. Rejected locks/conflicts exit 1; usage errors exit 2. "
+           "Use show to read the latest revision before updating; keep your file on a conflict. "
+           "Text registration and canvas publication have separate receipts: a failed publication can leave an "
+           "unbound asset. Retry identical input with the same global --operation-id to reuse it.")
+group("canvas").add_typer(text_app, name="text")
+
+MarkdownFile = Annotated[Path, typer.Option(help="UTF-8 Markdown file, not JSON; - reads standard input. Maximum 1 MiB.")]
+TextWidth = Annotated[float, typer.Option(help="Width in canvas coordinate units, independent of viewport zoom; must be positive.")]
+TextHeight = Annotated[float, typer.Option(help="Height in canvas coordinate units, independent of viewport zoom; must be positive.")]
+TextVersion = Annotated[str, typer.Option(help="Required canvas_item:UUID:revision from text show. Stale revisions are rejected; read again and merge your file.")]
+
+
+def markdown_file(file):
+    from opendirector.ports.files import MAX_CREATION_TEXT_BYTES
+    if str(file) == "-":
+        content = sys.stdin.buffer.read(MAX_CREATION_TEXT_BYTES + 1)
+    else:
+        with file.open("rb") as stream:
+            content = stream.read(MAX_CREATION_TEXT_BYTES + 1)
+    if len(content) > MAX_CREATION_TEXT_BYTES:
+        raise ValueError("Markdown must not exceed 1 MiB of UTF-8 bytes.")
+    return content.decode("utf-8")
+
+
+def text_content(client, asset_id):
+    from opendirector.ports.files import MAX_CREATION_TEXT_BYTES
+    content = bytearray()
+    try:
+        with client.http.stream("GET", client.path(f"/assets/{asset_id}/content")) as response:
+            if not response.is_success:
+                response.read()
+                raise client.response_error(response)
+            for chunk in response.iter_bytes(chunk_size=65536):
+                if len(content) + len(chunk) > MAX_CREATION_TEXT_BYTES:
+                    raise ValueError("Markdown must not exceed 1 MiB of UTF-8 bytes.")
+                content.extend(chunk)
+    except httpx.RequestError as error:
+        message = ("canvas text show 读取完整 Markdown 源码需要正在运行的 API，请启动 API 并检查 OPENDIRECTOR_API_URL。"
+                   if os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US').lower().startswith('zh') else
+                   "canvas text show requires a running API to read the complete Markdown source. Start the API and check OPENDIRECTOR_API_URL.")
+        raise ProjectError(f"{message} {error.request.url}", 503, code='asset_text_api_unavailable') from error
+    return content.decode("utf-8")
+
+
+def text_item(client, item_id, revision=None):
+    item = client.query("object.get", objectId=str(item_id), **({"revision": revision} if revision else {}))
+    if item.get("kind") != "text" or "binding" not in item:
+        raise ValueError("--id must identify a text canvas item.")
+    return item
+
+
+def text_version(item_id, expected_version):
+    try:
+        kind, identity, revision = expected_version.split(":")
+        if kind != "canvas_item" or UUID(identity) != item_id or int(revision) < 1:
+            raise ValueError()
+    except (ValueError, AttributeError):
+        raise ValueError("--expected-version must be canvas_item:<same item ID>:<positive revision>.") from None
+    return dict(objectType=kind, id=str(item_id), revision=int(revision))
+
+
+def text_asset(client, item):
+    binding = item["binding"]
+    if binding["role"] == "material":
+        return binding["objectRef"]
+    if binding["role"] == "generation":
+        if binding.get("materialOverride"):
+            return binding["materialOverride"]
+        spec = client.query("object.get", objectId=binding["objectRef"]["id"])
+        if spec.get("currentResultId"):
+            return client.query("object.get", objectId=spec["currentResultId"])["asset"]
+    return None
+
+
+def write_markdown(client, text, operation, *, previous=None, versions=()):
+    receipt = client.execute("asset.writeText", {"name": "text.md", "text": text,
+        "previousAsset": previous}, [*versions, *([dict(objectType="asset", id=previous["assetId"],
+            revision=previous["revision"])] if previous else [])], identity=uuid5(operation, "text-asset"))
+    asset_version = next(item for item in receipt["changed"] if item["objectType"] == "asset")
+    asset = client.query("object.get", objectId=asset_version["id"], revision=asset_version["revision"])
+    return {"assetId": asset["id"], **{key: asset[key] for key in ("kind", "fingerprint", "revision")}}
+
+
+@text_app.command("create", help="Create an editable text node from a Markdown file or stdin.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text create --file notes.md --x 20 --y 40 --width 480 --height 320")
+def text_create(ctx: typer.Context, file: MarkdownFile,
+                x: Annotated[float, typer.Option(help="Canvas X coordinate, independent of viewport zoom.")],
+                y: Annotated[float, typer.Option(help="Canvas Y coordinate, independent of viewport zoom.")],
+                width: TextWidth = 352, height: TextHeight = 198,
+                title: Annotated[str | None, typer.Option(help="Optional text node title.")] = None,
+                item_id: Annotated[UUID | None, typer.Option(help="Optional stable canvas item UUID.")] = None):
+    from opendirector.domain.creation.canvas import TextCanvasItem
+    client = ctx.obj
+    client.command = ctx.command_path
+    operation = client.operation_id or uuid4()
+    item = TextCanvasItem.model_validate(dict(id=str(item_id or uuid5(operation, "text-item")),
+        projectId=client.project, kind="text", title=title or "", position=dict(x=x, y=y),
+        width=width, height=height, binding=dict(role="empty"))).model_dump(mode="json")
+    asset = write_markdown(client, markdown_file(file), operation)
+    item["binding"] = dict(role="material", objectRef=asset)
+    emit(client.execute("canvas.show", {"item": item}, identity=operation))
+
+
+@text_app.command("show", help="Read complete Markdown source, dimensions and canvas_item revision as JSON; no editing lease.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text show --id ITEM_UUID")
+def text_show(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")]):
+    client = ctx.obj
+    client.command = ctx.command_path
+    item = text_item(client, id)
+    asset = text_asset(client, item)
+    text = item["binding"].get("manualText") or ""
+    if asset:
+        text = text_content(client, asset["assetId"])
+    emit(dict(status="ok", itemId=item["id"], revision=item["revision"],
+        expectedVersion=f"canvas_item:{item['id']}:{item['revision']}",
+        width=item["width"], height=item["height"], coordinateSpace="canvas", text=text))
+
+
+@text_app.command("update", help="Replace Markdown source via asset.writeText and canvas.materialize, preserving dimensions.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text update --id ITEM_UUID --file - --expected-version canvas_item:ITEM_UUID:1")
+def text_update(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")],
+                file: MarkdownFile, expected_version: TextVersion):
+    client = ctx.obj
+    client.command = ctx.command_path
+    version = text_version(id, expected_version)
+    item = text_item(client, id, version["revision"])
+    operation = client.operation_id or uuid4()
+    previous = text_asset(client, item)
+    # shortcut: asset registration is a separate commit, use a shared atomic command if rollback across publication becomes required.
+    asset = write_markdown(client, markdown_file(file), operation, previous=previous, versions=[version])
+    emit(client.execute("canvas.materialize", dict(itemId=str(id), asset=asset,
+        discardGenerationDraft=True), [version], identity=operation))
+
+
+@text_app.command("resize", help="Resize a text node through canvas.update without changing Markdown.",
+    epilog="Example: opendirector --project PROJECT_UUID canvas text resize --id ITEM_UUID --width 640 --height 400 --expected-version canvas_item:ITEM_UUID:2")
+def text_resize(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")],
+                width: TextWidth, height: TextHeight, expected_version: TextVersion):
+    client = ctx.obj
+    client.command = ctx.command_path
+    version = text_version(id, expected_version)
+    text_item(client, id, version["revision"])
+    emit(client.execute("canvas.update", dict(itemId=str(id), width=width, height=height), [version]))
+
+
 @group("video").command("create", help="Create a visible, editable video generation node with its input references.")
 def video_create(ctx: typer.Context,
                  model: Annotated[str, typer.Option(help="Video model configuration UUID or unique exact model name from opendirector model list.")],
                  prompt: Annotated[str, typer.Option(help="Video generation prompt.")],
-                 duration: Annotated[float, typer.Option(min=0, help="Video duration in seconds.")],
+                 duration: Annotated[float, typer.Option(min=0, help="Video duration in seconds, e.g. 6.583333. Fractional values require model inputRules.fractionalDuration; inspect model list for supported ranges. Native H3 accepts 4-15 seconds and aligns frames upward to 17k+5 at 24 fps (15 seconds becomes 362 frames).")],
                  x: Annotated[float, typer.Option(help="Canvas X coordinate. Choose using the current item positions and sizes.")],
                  y: Annotated[float, typer.Option(help="Canvas Y coordinate. Choose using the current item positions and sizes.")],
                  first_frame: Annotated[UUID | None, typer.Option(help="Source image canvas item for first-frame mode.")] = None,
@@ -528,7 +710,11 @@ def query(ctx: typer.Context, kind: str,
 
 
 def read_file(path):
-    value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
+    if str(path) == "-":
+        source = sys.stdin.buffer.read().decode("utf-8-sig")
+    else:
+        source = path.read_text(encoding="utf-8-sig")
+    value = json.loads(source)
     if not isinstance(value, dict):
         raise ValueError("Expected a JSON object.")
     return value

@@ -13,7 +13,7 @@ from urllib.request import getproxies
 from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
-from opendirector.agent import cli_transport, deepseek
+from opendirector.agent import cli_transport, deepseek, windows_powershell
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
@@ -122,13 +122,17 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         settings = ['features.shell_tool=true', 'features.apply_patch_freeform=false', 'web_search="disabled"',
             'sandbox_workspace_write.network_access=true',
             'skills.bundled.enabled=false', f'developer_instructions={json.dumps(SYSTEM)}']
+        if sys.platform == 'win32':
+            # --ignore-user-config also removes windows.sandbox. Without a
+            # Windows backend Codex downgrades workspace-write to read-only.
+            settings.append('windows.sandbox="elevated"')
         args = [binary, 'exec', '--json', '--skip-git-repo-check', *codex_isolation_flags(binary), '--sandbox', 'workspace-write']
         for setting in settings:
             args += ['-c', setting]
     else:
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
-        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.3'}))
+        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.5'}))
         skill_root = work / '.agents/skills'
         skill_root.mkdir(parents=True, exist_ok=True)
         unlink_directory(plugin / 'skills')
@@ -235,6 +239,8 @@ class NativeRuntime:
                         config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
                         **({'native_directory': native_work} if runtime == 'opencode' else {}),
                         **({'input_modalities': config.get('inputModalities', ['text'])} if run.runtime == 'default' else {}))
+                if runtime == 'opencode':
+                    await windows_powershell.configure_opencode(args[0], native_work, env, Path(temporary))
                 if thinking != 'auto' and runtime == 'codex':
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':
@@ -246,7 +252,7 @@ class NativeRuntime:
                         args += ['--session' if runtime == 'opencode' else '--resume', session_id]
                 execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
                     'Set the native shell workdir to this execution directory for file and media operations. '
-                    'Use inherited PATH to discover installed programs with command -v. '
+                    'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
                     'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.')

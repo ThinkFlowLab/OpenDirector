@@ -1,5 +1,6 @@
 /** React Flow is a projection. These adapters translate typed editor/media
  * values; no browser URL is ever put into the authoritative project. */
+import { dataUrlToBlob } from "../canvas/downloadAssets.ts";
 import type {
   Asset,
   AssetRef,
@@ -73,6 +74,7 @@ const presentationFields = [
   "height",
   "zIndex",
   "locked",
+  "color",
   "parentId",
 ] as const;
 const extension: Record<string, string> = {
@@ -99,12 +101,14 @@ export class CreationProjection {
   }
 
   async importFile(file: File, signal?: AbortSignal): Promise<CanvasResource> {
-    const { mimeType } = classifyImportFile(file);
-    if (mimeType !== "image/heic" && mimeType !== "image/heif")
+    const { kind, mimeType } = classifyImportFile(file);
+    if (kind !== "video" && kind !== "audio" &&
+        mimeType !== "image/heic" && mimeType !== "image/heif")
       return readEditorResource(file, signal);
     signal?.throwIfAborted();
-    const ref = await this.client.importBlob(file, file.name, "image");
+    const ref = await this.client.importBlob(file, file.name, kind, undefined, undefined, signal);
     signal?.throwIfAborted();
+    // The Host probes original bytes, so audio and video never need a data URL.
     // Failed previews must not be saved as empty generation nodes.
     await this.client.mediaUrl(ref.assetId, { signal });
     return this.resource(ref);
@@ -167,6 +171,7 @@ export class CreationProjection {
         if (!resource.src) throw new Error(tNow("errors.backend.mediaEmpty"));
         let blob: Blob;
         if (existing) blob = await this.client.blob(existing.id);
+        else if (/^data:/i.test(resource.src)) blob = dataUrlToBlob(resource.src);
         else {
           const response = await fetch(resource.src);
           if (!response.ok)
@@ -579,6 +584,7 @@ export class CreationProjection {
     const document = {
       ...createDocument(snapshot.project.name),
       id: snapshot.project.id,
+      defaultNameIndex: snapshot.project.defaultNameIndex,
     };
     const view = await this.client.view();
     document.viewport = view.viewport;
@@ -597,6 +603,7 @@ export class CreationProjection {
           width: item.width,
           height: item.height,
           locked: item.locked,
+          ...(item.color ? { color: item.color } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -763,6 +770,7 @@ export class CreationProjection {
                         ? "auto"
                         : spec.parameters.size,
                     imagePreset: spec.parameters.preset,
+                    imageQuality: spec.parameters.quality ?? "auto",
                   }
                 : {}),
               ...(spec.kind === "video"
@@ -899,7 +907,10 @@ export class CreationProjection {
     }
     for (const item of snapshot.canvasItems) {
       const asset = currentAsset(snapshot, item);
-      const sourceId = asset?.provenance.sourceItemId;
+      const timelineSources = asset?.provenance.source === "rendered" && asset.provenance.editorDocumentId
+        ? snapshot.canvasItems.filter((source) => source.kind === "timeline" && source.binding.role === "editor" && source.binding.objectRef.id === asset.provenance.editorDocumentId)
+        : [];
+      const sourceId = asset?.provenance.sourceItemId ?? (timelineSources.length === 1 ? timelineSources[0].id : undefined);
       if (sourceId && snapshot.canvasItems.some((i) => i.id === sourceId))
         document.edges.push({
           id: `publication:${item.id}:${asset!.id}`,
@@ -969,6 +980,10 @@ export class CreationProjection {
                 ? null
                 : node.data.settings.aspectRatio,
             preset: node.data.settings?.imagePreset ?? "none",
+            ...(node.data.settings?.imageQuality &&
+            node.data.settings.imageQuality !== "auto"
+              ? { quality: node.data.settings.imageQuality }
+              : {}),
             responseFormat: "url",
             outputFormat: "png",
           },
@@ -1581,6 +1596,7 @@ export class CreationProjection {
               height: node.height,
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
+              ...(node.color ? { color: node.color } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,
@@ -1600,6 +1616,7 @@ export class CreationProjection {
           height: node.height,
           zIndex: node.zIndex ?? 0,
           locked: node.locked ?? false,
+          color: node.color ?? "",
           parentId: node.parentId ?? null,
         };
         const oldPresentation = {
@@ -1608,6 +1625,7 @@ export class CreationProjection {
           height: old?.height,
           zIndex: old?.zIndex ?? 0,
           locked: old?.locked ?? false,
+          color: old?.color ?? "",
           parentId: old?.parentId ?? null,
         };
         const changedFields = presentationFields.filter(

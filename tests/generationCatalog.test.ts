@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createNode } from "../src/canvas/model.ts";
 import {
+  h3FrameCount,
   changeGenerationSettings,
   generationActiveReferences,
   generationBlocker,
@@ -157,6 +158,29 @@ test("music selection resets incompatible audio parameters and validates 30–12
   assert.equal(spoken.durationSeconds, 5);
 });
 
+
+test("reading mode keeps unsupported kinds distinct from unused audio references", () => {
+  const audio = createNode(
+    "audio",
+    { x: 0, y: 0 },
+    { src: "audio.wav", assetState: "ready" },
+  );
+  const video = createNode(
+    "video",
+    { x: 0, y: 0 },
+    { src: "clip.mp4", assetState: "ready" },
+  );
+  const image = createNode(
+    "image",
+    { x: 0, y: 0 },
+    { src: "still.png", assetState: "ready" },
+  );
+  const reading = { ...generationDefaults("audio"), audioMode: "tts" as const };
+  assert.match(generationReferenceIssue(audio, reading)!, /不使用该参考/);
+  assert.match(generationReferenceIssue(video, reading)!, /未核实支持该素材类型/);
+  assert.match(generationReferenceIssue(image, reading)!, /未核实支持该素材类型/);
+});
+
 test("reading needs text and voice; audio references cannot silently replace reading text", () => {
   const audio = createNode(
     "audio",
@@ -268,4 +292,10 @@ test("image discounts and music observations are references, with unknown combin
     }),
     null,
   );
+});
+
+test("H3 output preview matches upward frame alignment and round-to-even ties", () => {
+  for (const [seconds, frames] of [[4, 107], [107 / 24, 107], [4.5, 124], [5, 124], [15, 362], [124.5 / 24, 124]]) {
+    assert.equal(h3FrameCount(seconds), frames);
+  }
 });

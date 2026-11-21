@@ -1,5 +1,11 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.service.urlPlaceholder": "Enter your service's API base URL",
+  "models.service.modelPlaceholder": "Enter the model ID from your service",
+  "models.protocolOption.bigmodelVideo": "Zhipu BigModel video API (CogVideoX-3)",
+  "models.service.bigmodelVideoSummary": "Text-to-video / single image / first-last frames",
+  "models.service.bigmodelVideoReferences": "PNG or JPEG, up to 5 MB each. Prompts allow 512 characters. Choose a pixel size and a 5- or 10-second duration.",
+
   "models.service.proxyMode": "Network connection mode",
   "models.service.proxySystem": "Use system proxy",
   "models.service.proxyDirect": "Direct (no proxy)",
@@ -71,7 +77,7 @@ export const models = {
   "models.service.hide": "Hide",
   "models.service.show": "Show",
   "models.service.urlNote":
-    "Self-hosted services usually use a /v1 URL; when connecting through an SSH tunnel, enter the local forwarded address.",
+    "Enter the API base URL provided by your service.",
   "models.service.beijingWorkspaceUrl":
     "Use a Beijing API key. To use your workspace endpoint, enter https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 with your workspace ID.",
   "models.service.inputCapabilities": "Input capabilities",
@@ -104,6 +110,8 @@ export const models = {
     "Auto-detect known models; use the generic first-frame API for others",
   "models.service.adapterFastH3":
     "FastH3-Omni (8 steps, multi-asset reference)",
+  "models.service.adapterFastH3Dual":
+    "FastH3-Omni (first/last keyframe anchors)",
   "models.service.adapterMiniMaxH3":
     "Native MiniMax-H3 (first frame, asset references, continuation)",
   "models.service.adapterStandard":

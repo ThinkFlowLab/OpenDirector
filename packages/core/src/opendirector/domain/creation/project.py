@@ -16,6 +16,8 @@ class Project(Contract):
     id: UUID = Field(description='Stable object ID.')
     revision: Revision = Field(default=1, description='Current object revision for optimistic concurrency.')
     name: str = Field(min_length=1, max_length=100, pattern=r'\S', description='User-visible name.')
+    defaultNameIndex: int | None = Field(default=None, ge=1, exclude_if=lambda value: value is None,
+                                         description='Index of the automatically named initial project.')
 
 
 def asset_references(value):

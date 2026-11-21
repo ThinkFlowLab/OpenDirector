@@ -48,6 +48,7 @@ try {
       await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`);
       await page.locator(".cw-language-toggle").getByRole("button", { name: en ? "EN" : "中文", exact: true }).click();
       await page.getByText(saved, { exact: true }).waitFor();
+      let targetNodeId;
       let uploadStarted;
       const uploading = new Promise(resolve => { uploadStarted = resolve; });
       const onRequest = request => {
@@ -65,7 +66,7 @@ try {
           await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Preview unavailable" }) });
           return;
         }
-        await until(snapshot, value => value.canvasItems.length === 1, "initial node save");
+        await until(snapshot, value => value.canvasItems.some(item => item.id === targetNodeId), "initial target node save");
         await page.getByText(saved, { exact: true }).waitFor();
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         await page.unroute("**/browser-image", previewRoute);
@@ -78,6 +79,8 @@ try {
           await page.route("**/browser-image", previewRoute);
           await page.getByRole("button", { name: mode === "video-reference"
             ? (en ? "Add Video" : "添加视频") : (en ? "Add Image" : "添加图片"), exact: true }).click();
+          targetNodeId = await page.locator(".react-flow__node").getAttribute("data-id");
+          assert.ok(targetNodeId, "capture the original upload target identity");
         } else if (mode === "failure") await page.route("**/browser-image", previewRoute);
         const upload = { name, mimeType: "application/octet-stream", buffer: bytes };
         if (mode === "node") {
@@ -106,7 +109,7 @@ try {
         } else {
           const stored = await until(snapshot, value => reference
             ? value.references.some(ref => ref.active)
-            : value.canvasItems.some(item => item.binding.role === "material"), mode);
+            : value.canvasItems.some(item => (!targetNodeId || item.id === targetNodeId) && item.binding.role === "material"), mode);
           assert.equal(stored.assets.length, 1);
           const asset = stored.assets[0];
           assert.equal(asset.metadata.mimeType, "image/heic");
@@ -128,7 +131,12 @@ try {
             const ref = stored.references.find(ref => ref.active);
             const source = stored.canvasItems.find(item => item.id === ref.source.id);
             assert.equal(source.binding.objectRef.assetId, asset.id);
-          } else assert.equal(stored.canvasItems.length, 1);
+          } else {
+            assert.equal(stored.canvasItems.length, 1);
+            const item = stored.canvasItems[0];
+            if (targetNodeId) assert.equal(item.id, targetNodeId);
+            assert.equal(item.binding.objectRef.assetId, asset.id);
+          }
         }
         await page.screenshot({ path: `test-results/heif/recovery/${mode}-${locale}.png`, fullPage: true });
         console.log(`PASS ${mode} ${locale} ${name}`);
