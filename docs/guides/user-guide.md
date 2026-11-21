@@ -140,6 +140,8 @@ Click a source number to view its full URL in a bordered information card, then 
 
 Click **Chat with AI** at the bottom right, select a chat model, and describe what you want to create. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
+When the latest reply offers next steps, three to five suggested replies appear beneath it and stay visible as you type. Select one to fill the composer or replace the text you have already written. Attachments, references and skills stay in your draft. You can edit the text or undo the replacement. Press **Send** or `Enter` when you are ready.
+
 Use **New conversation** at the top of the panel to start a separate chat. **Conversation history** lets you search and switch between this canvas's conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices; the active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
 
 - Press `Enter` to send, or `Shift+Enter` for a new line.

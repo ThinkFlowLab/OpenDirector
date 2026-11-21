@@ -35,6 +35,9 @@ pytestmark = pytest.mark.merge
 FAKE = '''import json, os, subprocess, sys
 from pathlib import Path
 prompt = sys.stdin.read()
+assert '3 to 5 distinct suggestions' in prompt, 'missing suggested reply count'
+assert 'at most 80 characters per suggestion' in prompt, 'missing suggested reply length limit'
+assert '[opendirector-replies]: #' in prompt.splitlines(), 'missing suggested reply marker'
 assert 'Segment plan' not in prompt
 if 'Continue plan' in prompt:
  assert ('Save a plan' in prompt) == (os.environ.get('TEST_MISSING_ROLLOUT') == '1')
