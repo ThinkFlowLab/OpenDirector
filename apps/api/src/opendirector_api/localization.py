@@ -88,6 +88,7 @@ ENGLISH_BY_CODE = {
     "bigmodel_image_size": "GLM-Image requires a preset size, or dimensions of 1024–2048 in multiples of 32.",
     "moss_layout_reference": "MOSS layout JSON does not accept additional text references. Put the requirements in the JSON or remove the text references.",
     "agent_dependency_unavailable": "Bundled Agent is unavailable. Reinstall with pip install --force-reinstall opendirector; for a source checkout, use pip install -e .",
+    "model_read_timeout": "The model did not respond in time, so this turn has ended. Try again later, or check that the model service is available.",
     "invalid_input": "The request is invalid. Check the required fields and their formats.",
     "invalid_project": "The project or asset identifier is invalid.",
     "missing_object": "The requested item no longer exists.",
