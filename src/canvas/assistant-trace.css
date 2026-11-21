@@ -100,3 +100,8 @@
   .cw-trace-turn > summary { grid-template-columns: auto minmax(0, 1fr); }
   .cw-trace-turn-meta { grid-column: 1 / -1; }
 }
+
+.cw-trace-export { display: flex; align-items: center; gap: 12px; padding: 8px 20px; }
+.cw-trace-export button { padding: 6px 12px; border: 1px solid #4d5d6d; border-radius: 4px; background: #303c48; color: #d6e8f7; font: inherit; cursor: pointer; }
+.cw-trace-export button:disabled { cursor: wait; opacity: .6; }
+.cw-trace-export span[role="alert"] { color: #f0a3a3; }
