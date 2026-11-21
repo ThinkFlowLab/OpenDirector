@@ -129,6 +129,8 @@ export const models = {
   "models.service.saving": "Saving…",
   "models.service.cancel": "Cancel",
   "models.service.advancedConnection": "Advanced connection settings",
+  "models.service.stage": "Stage",
+  "models.service.stageEndpoints": "Endpoints: {paths}",
   "models.service.existingConnections":
     "Connections with the same address",
   "models.service.reuseConnection": "Reuse saved connection · {model}",

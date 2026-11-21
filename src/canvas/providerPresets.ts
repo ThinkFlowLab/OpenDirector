@@ -16,23 +16,11 @@ const EN_NAMES: Record<string, string> = {
   "MiniMax 官方语音": "MiniMax Official Speech",
   "MOSS 开放平台": "MOSS Open Platform",
   "火山方舟 / Agent Plan": "Volcano Ark / Agent Plan",
-  "vLLM-Omni 图片接口": "vLLM-Omni image API",
-  "vLLM-Omni 语音合成接口": "vLLM-Omni speech synthesis API",
-  "vLLM-Omni 音乐生成接口": "vLLM-Omni music generation API",
-  "vLLM-Omni 扒谱接口": "vLLM-Omni transcription API",
-  "vLLM-Omni 视频接口": "vLLM-Omni video API",
-  "vLLM-Omni 分割接口": "vLLM-Omni segmentation API",
-  "vLLM-Omni 深度接口": "vLLM-Omni depth API",
+  "vLLM-Omni 本地服务": "vLLM-Omni local service",
 };
 
 const EN_OPTION_LABELS: Record<string, string> = {
-  图片接口: "Image API",
-  语音合成接口: "Speech synthesis API",
-  音乐生成接口: "Music generation API",
-  扒谱接口: "Transcription API",
-  视频接口: "Video API",
-  分割接口: "Segmentation API",
-  深度接口: "Depth API",
+  本地服务: "Local service",
 };
 
 const EN_GROUPS: Record<string, string> = {
@@ -55,6 +43,13 @@ function groupLabel(value: string | undefined): string | undefined {
   return getActiveLocale() === "en-US" ? (EN_GROUPS[value] ?? value) : value;
 }
 
+/** One stage of a multi-stage self-hosted service: the endpoints it serves. */
+export interface ProviderStage {
+  /** Endpoint paths appended to the connection URL, e.g. `/images/generations`. */
+  paths: readonly string[];
+  protocol: ModelConfigInput["protocol"];
+}
+
 export interface ProviderPreset {
   id: string;
   name: string;
@@ -68,6 +63,13 @@ export interface ProviderPreset {
   connectionType: ModelConfigInput["connectionType"];
   authMode: ModelConfigInput["authMode"];
   modelsByKind?: Partial<Record<ModelKind, readonly string[]>>;
+  /**
+   * Per-kind stages of a service that serves several endpoints behind one
+   * connection. The first stage is the kind's default. Absent for
+   * single-purpose presets, where `url` + `protocol` describe the whole
+   * connection.
+   */
+  stages?: Partial<Record<ModelKind, readonly ProviderStage[]>>;
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -257,39 +259,95 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     connectionType: "api",
     authMode: "bearer",
   },
-  ...(
-    [
-      ["vllm-omni-image", "vLLM-Omni 图片接口", "openai", ["image"]],
-      ["vllm-omni-speech", "vLLM-Omni 语音合成接口", "openai", ["audio"]],
-      [
-        "vllm-omni-music",
-        "vLLM-Omni 音乐生成接口",
-        "vllm_omni_music",
-        ["audio"],
-      ],
-      ["vllm-omni-score", "vLLM-Omni 扒谱接口", "vllm_omni_score", ["audio"]],
-      ["vllm-omni-video", "vLLM-Omni 视频接口", "vllm_omni", ["video"]],
-      [
-        "vllm-omni-segmentation",
-        "vLLM-Omni 分割接口",
-        "vllm_omni_segmentation",
-        ["image", "video", "vision"],
-      ],
-      ["vllm-omni-depth", "vLLM-Omni 深度接口", "vllm_omni_depth", ["video"]],
-    ] as const
-  ).map(([id, name, protocol, kinds]) => ({
-    id,
-    name,
-    group: "vLLM-Omni",
+  {
+    id: "vllm-omni-local",
     logoOrganization: "vllm-project",
-    optionLabel: name.replace("vLLM-Omni ", ""),
-    protocol,
-    kinds: [...kinds],
-    url: "",
-    connectionType: "self_hosted" as const,
-    authMode: "none" as const,
-  })),
+    name: "vLLM-Omni 本地服务",
+    optionLabel: "本地服务",
+    group: "vLLM-Omni",
+    kinds: ["agent", "image", "video", "audio", "vision"],
+    url: "http://127.0.0.1:8000/v1",
+    protocol: "vllm_omni",
+    connectionType: "self_hosted",
+    authMode: "none",
+    // One localhost service serves several stages; each stage keeps the
+    // protocol its adapter expects, so a single connection is enough. The
+    // first stage of each kind is the default.
+    //
+    // ASR is deliberately absent: vllm-omni does not serve
+    // /audio/transcriptions yet (S1 in #10007) and this application has no ASR
+    // adapter. SheetSage2 score shares the path with its own protocol.
+    stages: {
+      agent: [{ paths: ["/chat/completions"], protocol: "openai" }],
+      image: [
+        { paths: ["/images/generations", "/images/edits"], protocol: "openai" },
+        {
+          paths: ["/images/segmentations", "/videos/segmentations"],
+          protocol: "vllm_omni_segmentation",
+        },
+      ],
+      video: [
+        { paths: ["/videos"], protocol: "vllm_omni" },
+        {
+          paths: ["/images/segmentations", "/videos/segmentations"],
+          protocol: "vllm_omni_segmentation",
+        },
+        { paths: ["/videos/depth"], protocol: "vllm_omni_depth" },
+      ],
+      audio: [
+        { paths: ["/audio/speech"], protocol: "openai" },
+        { paths: ["/audio/speech"], protocol: "vllm_omni_music" },
+        { paths: ["/audio/transcriptions"], protocol: "vllm_omni_score" },
+      ],
+      vision: [
+        {
+          paths: ["/images/segmentations", "/videos/segmentations"],
+          protocol: "vllm_omni_segmentation",
+        },
+      ],
+    },
+  },
 ];
+
+export const LOCAL_OMNI_PRESET_ID = "vllm-omni-local";
+
+/** The stages a preset serves for one kind; empty for single-purpose presets. */
+export function presetStages(
+  preset: ProviderPreset | undefined,
+  kind: ModelKind,
+): readonly ProviderStage[] {
+  return preset?.stages?.[kind] ?? [];
+}
+
+/**
+ * The protocol a connection uses for one kind. A protocol that names one of
+ * the preset's stages is kept, so reopening a saved specialized connection
+ * does not silently switch it back to the kind's default stage.
+ */
+export function presetProtocol(
+  preset: ProviderPreset | undefined,
+  kind: ModelKind,
+  protocol?: ModelConfigInput["protocol"] | null,
+): ModelConfigInput["protocol"] | undefined {
+  const stages = presetStages(preset, kind);
+  if (protocol && stages.some((stage) => stage.protocol === protocol))
+    return protocol;
+  return stages[0]?.protocol ?? preset?.protocol;
+}
+
+/**
+ * `openai` is shared by generic self-hosted services, so it identifies this
+ * preset only at the documented loopback default. The specialized vLLM-Omni
+ * protocols are unique and need no URL rule.
+ */
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.replace(/^\[|\]$/g, "");
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
 
 export function providerPresetFor(model: ModelConfig): string {
   const explicit = PROVIDER_PRESETS.find(
@@ -300,6 +358,16 @@ export function providerPresetFor(model: ModelConfig): string {
       preset.kinds.includes(model.kind),
   );
   if (explicit) return explicit.id;
+  const staged = PROVIDER_PRESETS.find(
+    (preset) =>
+      model.connectionType === "self_hosted" &&
+      preset.kinds.includes(model.kind) &&
+      presetStages(preset, model.kind).some(
+        (stage) => stage.protocol === model.protocol,
+      ) &&
+      (model.protocol !== "openai" || isLoopbackUrl(model.url)),
+  );
+  if (staged) return staged.id;
   const deployed = PROVIDER_PRESETS.find(
     (preset) =>
       preset.connectionType === "self_hosted" &&

@@ -107,6 +107,8 @@ export const models = {
   "models.service.saving": "保存中…",
   "models.service.cancel": "取消",
   "models.service.advancedConnection": "高级连接设置",
+  "models.service.stage": "接口阶段",
+  "models.service.stageEndpoints": "接口路径：{paths}",
   "models.service.existingConnections": "已有相同地址的连接",
   "models.service.reuseConnection": "复用已保存连接 · {model}",
   "models.service.reuseHint": "不复用则保存为独立连接。",

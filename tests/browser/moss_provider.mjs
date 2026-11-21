@@ -51,14 +51,14 @@ const copy = {
     settings: "设置", models: "模型接入", imageOverview: "图片模型", image: "图片", audio: "音频",
     add: "添加服务", provider: "提供商", moss: "MOSS 开放平台", url: "服务地址（Base URL）",
     reload: "载入支持的模型", save: "保存服务", cancel: "取消", manage: "管理", close: "关闭设置",
-    general: "通用", language: "语言", defaultImage: "vLLM-Omni 图片接口", defaultAudio: "vLLM-Omni 语音合成接口",
+    general: "通用", language: "语言", defaultImage: "vLLM-Omni 本地服务", defaultAudio: "vLLM-Omni 本地服务",
     custom: "OpenAI 兼容", fetch: "获取模型", discoveryError: "服务返回 HTTP 401，请检查 API Key。",
   },
   "en-US": {
     settings: "Settings", models: "Model connections", imageOverview: "Image model", image: "Image", audio: "Audio",
     add: "Add service", provider: "Provider", moss: "MOSS Open Platform", url: "Service URL (Base URL)",
     reload: "Load supported models", save: "Save service", cancel: "Cancel", manage: "Manage", close: "Close settings",
-    general: "General", language: "Language", defaultImage: "vLLM-Omni image API", defaultAudio: "vLLM-Omni speech synthesis API",
+    general: "General", language: "Language", defaultImage: "vLLM-Omni local service", defaultAudio: "vLLM-Omni local service",
     custom: "OpenAI compatible", fetch: "Fetch models", discoveryError: "Service returned HTTP 401. Check the API Key.",
   },
 };
