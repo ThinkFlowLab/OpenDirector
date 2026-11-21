@@ -101,3 +101,37 @@ export function nodeMentionOptions(
     ];
   });
 }
+
+const CARET_NAVIGATION_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+]);
+
+/** Keys that move the caret without inserting text. */
+export function isCaretNavigationKey(key: string, composing = false) {
+  return !composing && CARET_NAVIGATION_KEYS.has(key);
+}
+
+/** After Escape dismisses a mention, keep the picker closed until the caret
+ * has left that mention. A later return to the same mention reopens it.
+ * `leftSinceDismiss` is set when a navigation key is pressed, so a coalesced
+ * selectionchange that never reports the outside caret still reopens. */
+export function mentionDismissAfterEvent(
+  dismissedStart: number | null,
+  leftSinceDismiss: boolean,
+  mentionStart: number | null,
+): { dismissedStart: number | null; leftSinceDismiss: boolean; open: boolean } {
+  if (mentionStart === null) {
+    return { dismissedStart: null, leftSinceDismiss: false, open: false };
+  }
+  if (dismissedStart !== mentionStart || leftSinceDismiss) {
+    return { dismissedStart: null, leftSinceDismiss: false, open: true };
+  }
+  return { dismissedStart, leftSinceDismiss: false, open: false };
+}

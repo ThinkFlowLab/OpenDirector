@@ -259,6 +259,7 @@ export interface CanvasItemBaseInput extends ProjectEntityInput {
   readonly height?: number;
   readonly zIndex?: number;
   readonly locked?: boolean;
+  readonly color?: string | null;
   readonly visible?: boolean;
   readonly parentId?: string | null;
   readonly tags?: ReadonlyArray<string>;
@@ -310,6 +311,7 @@ export interface CanvasPresentationUpdateInput extends ContractInput {
   readonly height?: number | null;
   readonly zIndex?: number | null;
   readonly locked?: boolean | null;
+  readonly color?: string | null;
   readonly parentId?: string | null;
 }
 
@@ -1906,6 +1908,7 @@ export interface CanvasItemBase extends ProjectEntity {
   readonly height: number;
   readonly zIndex: number;
   readonly locked: boolean;
+  readonly color?: string | null;
   readonly visible: boolean;
   readonly parentId: string | null;
   readonly tags: ReadonlyArray<string>;
@@ -1957,6 +1960,7 @@ export interface CanvasPresentationUpdate extends Contract {
   readonly height: number | null;
   readonly zIndex: number | null;
   readonly locked: boolean | null;
+  readonly color?: string | null;
   readonly parentId: string | null;
 }
 

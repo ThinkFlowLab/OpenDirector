@@ -13,7 +13,7 @@ from urllib.request import getproxies
 from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
-from opendirector.agent import cli_transport, deepseek
+from opendirector.agent import cli_transport, deepseek, windows_powershell
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
@@ -239,6 +239,8 @@ class NativeRuntime:
                         config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
                         **({'native_directory': native_work} if runtime == 'opencode' else {}),
                         **({'input_modalities': config.get('inputModalities', ['text'])} if run.runtime == 'default' else {}))
+                if runtime == 'opencode':
+                    await windows_powershell.configure_opencode(args[0], native_work, env, Path(temporary))
                 if thinking != 'auto' and runtime == 'codex':
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':

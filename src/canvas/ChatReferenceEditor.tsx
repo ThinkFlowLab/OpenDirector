@@ -35,7 +35,9 @@ import {
 import { referenceInsertion } from "./chatReferenceInsertion.ts";
 import type { ReferenceRules } from "./chatReferenceInsertion.ts";
 import {
+  isCaretNavigationKey,
   mentionCategories,
+  mentionDismissAfterEvent,
   mentionRange,
   slashRange,
   REFERENCE_CATEGORIES,
@@ -161,6 +163,8 @@ export function ChatReferenceEditor({
     alive = useRef(true);
   const preparation = useRef<AbortController | null>(null),
     dismissed = useRef<number | null>(null),
+    leftSinceDismiss = useRef(false),
+    pendingCaretNav = useRef(false),
     explicitPicker = useRef(false);
   const [range, setRange] = useState<Caret | null>(null),
     rangeRef = useRef(range);
@@ -185,6 +189,8 @@ export function ChatReferenceEditor({
     preparation.current?.abort();
     explicitPicker.current = false;
     dismissed.current = rangeRef.current?.start ?? null;
+    leftSinceDismiss.current = false;
+    pendingCaretNav.current = false;
     rangeRef.current = null;
     setRange(null);
   }
@@ -397,19 +403,33 @@ export function ChatReferenceEditor({
       // text. A focus selectionchange must not immediately close that picker.
       if (explicitPicker.current) return;
       dismissed.current = null;
+      leftSinceDismiss.current = false;
       rangeRef.current = null;
       setRange(null);
-    } else if (dismissed.current !== next.start) open(next);
+    } else {
+      const decision = mentionDismissAfterEvent(
+        dismissed.current,
+        leftSinceDismiss.current,
+        next.start,
+      );
+      dismissed.current = decision.dismissedStart;
+      leftSinceDismiss.current = decision.leftSinceDismiss;
+      if (decision.open) open(next);
+    }
   }
   useEffect(() => {
     function selectionChanged() {
       if (!root.current || document.activeElement !== root.current) return;
       const at = selection(root.current);
+      if (!at) return;
       if (
-        at &&
-        (at.start !== saved.current.start || at.end !== saved.current.end)
-      )
+        pendingCaretNav.current ||
+        at.start !== saved.current.start ||
+        at.end !== saved.current.end
+      ) {
+        pendingCaretNav.current = false;
         updateMention();
+      }
     }
     // selectionchange runs after the browser moves its native caret. A
     // microtask from keydown still sees the previous position in Chromium.
@@ -922,6 +942,14 @@ export function ChatReferenceEditor({
             return;
           }
           if (
+            !range &&
+            dismissed.current !== null &&
+            isCaretNavigationKey(event.key)
+          ) {
+            leftSinceDismiss.current = true;
+            pendingCaretNav.current = true;
+          }
+          if (
             (event.ctrlKey || event.metaKey) &&
             !event.altKey &&
             ["z", "y"].includes(event.key.toLowerCase())
@@ -993,6 +1021,18 @@ export function ChatReferenceEditor({
                 { start: end, end },
               );
             }
+          }
+        }}
+        onKeyUp={(event) => {
+          if (
+            pendingCaretNav.current &&
+            isCaretNavigationKey(
+              event.key,
+              composing.current || event.nativeEvent.isComposing,
+            )
+          ) {
+            pendingCaretNav.current = false;
+            updateMention();
           }
         }}
         onCopy={(event) => clipboard(event, false)}

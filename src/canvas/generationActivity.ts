@@ -9,15 +9,18 @@ export function jobActivities(
   documentId: string,
   nodes: readonly CanvasNode[] = [],
 ): ActiveGeneration[] {
-  const displayed = new Map(nodes.map((node) => [node.id, node.data.backendAssetId]));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   return jobs.flatMap((job) => {
-    // A regenerated node keeps its old media until the new result has loaded;
-    // stay busy until then rather than briefly revealing the old image.
+    // A node keeps its old media, or shows an empty frame, until the new result
+    // has loaded; stay busy until then. Locally edited text has content but no
+    // backend asset, and is not waiting for anything.
+    const node = byId.get(job.nodeId);
+    const shown = node?.data.backendAssetId;
+    const empty = Boolean(node && !node.data.src && !node.data.text);
     const delivering = Boolean(
       job.status === "succeeded" &&
       job.deliveredAssetId &&
-      displayed.has(job.nodeId) &&
-      displayed.get(job.nodeId) !== job.deliveredAssetId,
+      (shown ? shown !== job.deliveredAssetId : empty),
     );
     const finishing = delivering || Boolean(
       job.toolTask &&

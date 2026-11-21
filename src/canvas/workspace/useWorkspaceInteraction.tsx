@@ -1,5 +1,5 @@
 import { type Connection, type Edge, type NodeChange, type OnConnectEnd } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { errorMessage } from "../../backend/api.ts";
 
 import { CanvasContextMenu } from "../CanvasContextMenu";
@@ -646,7 +646,17 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
           !lockedIds.has(n.id) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
-        style: { width: n.width, height: n.height },
+        style: {
+          width: n.width,
+          height: n.height,
+          // A colored group tints its fill and border (#rrggbb plus alpha).
+          ...(n.type === "group" && n.color
+            ? {
+                "--cw-group-fill": `${n.color}24`,
+                "--cw-group-border": `${n.color}b3`,
+              }
+            : {}),
+        } as CSSProperties,
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: t("canvas.workspace.aria.nodeLabel", {
           kind: t(nodeKindKeys[n.type]),

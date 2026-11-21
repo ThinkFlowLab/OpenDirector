@@ -532,6 +532,13 @@
       ]
     },
     {
+      "file": "tts_reading_references.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "TTS reading panels keep connected, context-only references visible and removable. Isolated fixture only; does not submit generation or call a paid model."
+    },
+    {
       "file": "voice_library.mjs",
       "previewSafe": true,
       "lanes": [

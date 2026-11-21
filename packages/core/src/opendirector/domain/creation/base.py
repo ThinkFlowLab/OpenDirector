@@ -12,6 +12,8 @@ Positive = Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
 Revision = Annotated[int, Field(strict=True, ge=1)]
 PositiveInt = Annotated[int, Field(strict=True, ge=1)]
 Identifier = Annotated[str, Field(min_length=1, max_length=100, pattern=r'\S')]
+# Canvas presentation color: #RRGGBB, or '' in an update to restore the default.
+CanvasColor = Annotated[str, Field(pattern=r'^(#[0-9a-fA-F]{6})?$')]
 Fingerprint = Annotated[str, Field(pattern=r'^sha256:[0-9a-f]{64}$')]
 Digest = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
 MediaKind = Literal['text', 'image', 'video', 'audio', 'file']

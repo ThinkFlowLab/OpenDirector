@@ -74,6 +74,7 @@ const presentationFields = [
   "height",
   "zIndex",
   "locked",
+  "color",
   "parentId",
 ] as const;
 const extension: Record<string, string> = {
@@ -602,6 +603,7 @@ export class CreationProjection {
           width: item.width,
           height: item.height,
           locked: item.locked,
+          ...(item.color ? { color: item.color } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -1594,6 +1596,7 @@ export class CreationProjection {
               height: node.height,
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
+              ...(node.color ? { color: node.color } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,
@@ -1613,6 +1616,7 @@ export class CreationProjection {
           height: node.height,
           zIndex: node.zIndex ?? 0,
           locked: node.locked ?? false,
+          color: node.color ?? "",
           parentId: node.parentId ?? null,
         };
         const oldPresentation = {
@@ -1621,6 +1625,7 @@ export class CreationProjection {
           height: old?.height,
           zIndex: old?.zIndex ?? 0,
           locked: old?.locked ?? false,
+          color: old?.color ?? "",
           parentId: old?.parentId ?? null,
         };
         const changedFields = presentationFields.filter(

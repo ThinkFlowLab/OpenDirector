@@ -78,7 +78,7 @@ import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
 import { TextNodeWindow } from "../TextNodeWindow";
 import { SelectionBarAnchor } from "../SelectionBarAnchor";
 import { NodeTaskPanel } from "../NodeTaskPanel";
-import { unstackSelection } from "../operations";
+import { layoutGroup, orderNodesForCanvas, unstackSelection, type GroupLayout } from "../operations";
 
 import { ProjectSelector } from "../ProjectSelector";
 import "../settings.css";
@@ -152,6 +152,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     dismiss,
     doc,
     downloadNode,
+    downloadGroup,
+    runGroupWorkflow,
     editProjectNameId,
     editing,
     editorMode,
@@ -393,6 +395,47 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     output.id = outputState.output.id;
     rt.revealCreatedNodes.current([output], doc.nodes.some((node) => node.id === output.id) ? doc.nodes : [...doc.nodes, output]);
   }, [outputState?.output.id]);
+
+  const [workflowGroups, setWorkflowGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const runWorkflow = (groupId: string) => {
+    if (workflowGroups.has(groupId)) return;
+    setWorkflowGroups((current) => new Set(current).add(groupId));
+    void (runGroupWorkflow(groupId) as Promise<void>).finally(() =>
+      setWorkflowGroups((current) => {
+        const next = new Set(current);
+        next.delete(groupId);
+        return next;
+      }),
+    );
+  };
+
+  // Canvas locking is no longer offered. Locks saved while it was available are
+  // released the first time this browser opens the project, parents first (a
+  // locked group blocks its children). Later locks from the Agent or the API
+  // are kept and can be released from the context menu.
+  const unlockedOnOpen = useRef<string | null>(null);
+  useEffect(() => {
+    // The startup placeholder and empty projects have nothing to release.
+    if (unlockedOnOpen.current === doc.id || !doc.nodes.length) return;
+    unlockedOnOpen.current = doc.id;
+    const key = `opendirector.legacyLocksReleased:${doc.id}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+    } catch {
+      return; // Without storage the open-time release could repeat; keep locks.
+    }
+    const locked = orderNodesForCanvas(doc.nodes).filter((node) => node.locked);
+    if (!locked.length) return;
+    command({
+      type: "batch",
+      commands: locked.map((node) => ({
+        type: "update-node",
+        id: node.id,
+        patch: { locked: false },
+      })),
+    });
+  }, [doc.id, doc.nodes]);
 
   const desktop = !!window.opendirectorDesktop;
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(() => {
@@ -1484,7 +1527,33 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               } else openEditor(single, mode);
             }}
             onPreview={() => setPreview(single)}
-            onDownload={() => downloadNode(single)}
+            onDownload={() =>
+              single.type === "group" ? void downloadGroup(single) : downloadNode(single)
+            }
+            onRunWorkflow={single.type === "group" ? () => runWorkflow(single.id) : undefined}
+            workflowRunning={workflowGroups.has(single.id)}
+            onUngroup={single.type === "group" ? ungroup : undefined}
+            onLayout={
+              single.type === "group"
+                ? (layout: GroupLayout) => {
+                    if (doc.nodes.some((node) => node.parentId === single.id && lockedIds.has(node.id))) {
+                      notify(t("canvas.workspace.toast.unlockFirst"));
+                      return;
+                    }
+                    change((d) => layoutGroup(d, single.id, layout));
+                  }
+                : undefined
+            }
+            onGroupColor={
+              single.type === "group"
+                ? (color: string) =>
+                    command({
+                      type: "update-node",
+                      id: single.id,
+                      patch: { color: color || undefined },
+                    })
+                : undefined
+            }
             onAssistant={showAssistant}
             onExpand={
               single.type === "text"
@@ -1896,74 +1965,26 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 })),
               )}
               <hr />
-              {menuButton(
-                single && lockedIds.has(single.id) && !single.locked
-                  ? t("canvas.workspace.menu.groupLocked")
-                  : single?.locked
-                    ? t("canvas.workspace.menu.unlock")
-                    : t("canvas.workspace.menu.lock"),
-                "lock",
-                () => {
-                  if (single && lockedIds.has(single.id) && !single.locked) {
-                    notify(t("canvas.workspace.toast.unlockGroupFirst"));
-                    return;
-                  }
+              {/* Locking is not offered, but a node locked by the Agent, the API or an
+                  undo of the open-time unlock must still be recoverable. */}
+              {selected.some((id) => lockedIds.has(id)) &&
+                menuButton(t("canvas.workspace.menu.unlock"), "unlock", () => {
+                  const byId = new Map(doc.nodes.map((node) => [node.id, node]));
+                  const targets = new Set<string>();
+                  for (const id of selected)
+                    for (let node = byId.get(id); node; node = node.parentId ? byId.get(node.parentId) : undefined)
+                      if (node.locked) targets.add(node.id);
                   command({
                     type: "batch",
-                    commands: selected.map((id) => ({
-                      type: "update-node",
-                      id,
-                      patch: {
-                        locked: !doc.nodes.find((n) => n.id === id)?.locked,
-                      },
-                    })),
+                    commands: orderNodesForCanvas(doc.nodes)
+                      .filter((node) => targets.has(node.id))
+                      .map((node) => ({ type: "update-node" as const, id: node.id, patch: { locked: false } })),
                   });
-                },
-              )}
+                })}
               {single?.type === "stack" &&
                 menuButton(t("canvas.workspace.menu.unstack"), "stack", () =>
                   change((d) => unstackSelection(d, selected)),
                 )}
-              {menuButton(t("canvas.workspace.menu.moveToFront"), "arrow", () =>
-                command({
-                  type: "reorder-nodes",
-                  ids: selected,
-                  direction: "front",
-                }),
-              )}
-              {menuButton(
-                t("canvas.workspace.menu.moveForward"),
-                "arrow",
-                () =>
-                  command({
-                    type: "reorder-nodes",
-                    ids: selected,
-                    direction: "forward",
-                  }),
-                "⌘ ]",
-              )}
-              {menuButton(
-                t("canvas.workspace.menu.moveBackward"),
-                "arrow",
-                () =>
-                  command({
-                    type: "reorder-nodes",
-                    ids: selected,
-                    direction: "backward",
-                  }),
-                "⌘ [",
-              )}
-              {menuButton(
-                t("canvas.workspace.menu.moveToBack"),
-                "arrow",
-                () =>
-                  command({
-                    type: "reorder-nodes",
-                    ids: selected,
-                    direction: "back",
-                  }),
-                "⌘ ⇧ [",
-              )}
               {single &&
                 ["image", "video", "audio", "file"].includes(single.type) &&
                 !lockedIds.has(single.id) &&

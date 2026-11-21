@@ -219,6 +219,10 @@ export function backendReferenceIssue(
 ): string | null {
   const kind = node.data.kind;
   const rules = config.inputRules;
+  const unusedInReading =
+    settings.mode === "audio" && !isMusicModel(config)
+      ? tNow("generation.issue.audioModeReference")
+      : null;
   if (
     settings.mode === "video" &&
     settings.videoMode === "first-last" &&
@@ -245,7 +249,7 @@ export function backendReferenceIssue(
   if (kind === "text")
     return rules.allowedKinds.includes("text")
       ? node.data.text?.trim()
-        ? null
+        ? (unusedInReading ?? null)
         : tNow("errors.rules.textEmpty")
       : tNow("errors.rules.textReference");
   const continuation =
@@ -258,6 +262,7 @@ export function backendReferenceIssue(
     return tNow("errors.rules.kindReference", {
       kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
     });
+  if (unusedInReading) return unusedInReading;
   return node.data.src && node.data.assetState !== "missing"
     ? null
     : tNow("errors.rules.mediaMissing");
