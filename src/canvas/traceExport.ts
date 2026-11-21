@@ -45,7 +45,7 @@ export function traceEventSummary(body: string): { events: TraceEvent[]; truncat
 
 const inline = (value: string): string =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/\s+/g, " ").replace(/[\\\`*_{}\[\]()#+.!|]/g, "\\  value.replace(/\s+/g, " ").replace(/[\\\`*_{}\[\]()#+.!|>]/g, "\\$&");");
+    .replace(/\s+/g, " ").replace(/[\\`*_{}\[\]()#+.!|]/g, "\\$&");
 
 async function sourceReport(fetcher: typeof fetch, base: string, turn: ConversationTurn, source: string): Promise<SourceReport> {
   try {
