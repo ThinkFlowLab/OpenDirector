@@ -7,6 +7,7 @@ import { traceCategory, isThinkingTokenEstimate, readableTraceValue } from "./tr
 import { initialTurn, normalizeTrace, runtimeName, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
 
 import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
+import { conversationTraceReport } from "./traceExport.ts";
 
 import "./assistant-trace.css";
 
@@ -297,14 +298,36 @@ const STATUS_KEYS: Record<ConversationTurn["status"], MessageKey> = {
   stopped: "trace.turn.status.stopped", interrupted: "trace.turn.status.interrupted",
 };
 
-function ConversationTrace({ project, target, turns }: {
-  project: string; target: string; turns: ConversationTurn[];
+function ConversationTrace({ project, conversationId, target, turns }: {
+  project: string; conversationId: string; target: string; turns: ConversationTurn[];
 }) {
   const t = useT();
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [loaded, setLoaded] = useState<Set<string>>(() => new Set());
   const placed = useRef(false);
   const initial = initialTurn(turns, target);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(false);
+  async function exportReport() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(false);
+    try {
+      const markdown = await conversationTraceReport(project, conversationId, turns);
+      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "opendirector-trace-" + conversationId + ".md";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      setExportError(true);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function toggle(id: string, value: boolean) {
     setOpen((previous) => {
@@ -327,6 +350,12 @@ function ConversationTrace({ project, target, turns }: {
 
   return (
     <>
+      <div className="cw-trace-export">
+        <button type="button" disabled={exporting || turns.length === 0} onClick={() => void exportReport()}>
+          {t(exporting ? "trace.export.working" : "trace.export.button")}
+        </button>
+        {exportError && <span role="alert">{t("trace.export.failed")}</span>}
+      </div>
       <nav className="cw-trace-turnnav" aria-label={t("trace.turns.nav")}>
         {turns.map((item) => (
           <button key={item.id} type="button" aria-pressed={open.has(item.id)}
@@ -405,7 +434,7 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
         {!wide && <p><code>{turn}</code></p>}
       </header>
       {conversation === undefined ? <p role="status">{t("trace.loading")}</p> : wide ? (
-        <ConversationTrace project={project} target={turn} turns={conversation.turns} />
+        <ConversationTrace project={project} conversationId={conversation.id} target={turn} turns={conversation.turns} />
       ) : (
         <TurnTrace project={project} turn={turn} runtime={runtime} live={live} />
       )}
