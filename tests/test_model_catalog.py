@@ -69,7 +69,9 @@ def test_discover_reuses_saved_key_for_the_same_address_and_does_not_write(tmp_p
     calls, read = _reader([{'id': 'model-a'}, {'id': 'model-b'}, {'id': 'model-a'}])
     monkeypatch.setattr('opendirector.application.model_catalog.read_service_models', read)
     found = asyncio.run(ModelCatalog(configs).discover('agent', 'https://models.example/v1', '', '', saved['id']))
-    assert found == ['model-a', 'model-b']
+    assert found['models'] == ['model-a', 'model-b']
+    assert found['uncertain'] == ['model-a', 'model-b']
+    assert found['unsupported'] == []
     assert calls[0]['apiKey'] == 'test-secret'
     assert calls[0]['modelId'] == 'discovery'
     assert (tmp_path / '.opendirector' / 'models.json').read_bytes() == before
@@ -85,7 +87,7 @@ def test_discover_uses_typed_key_without_reading_saved_configuration(monkeypatch
     store = Store(AssertionError('saved configuration was read'))
     found = asyncio.run(ModelCatalog(store).discover(
         'agent', 'https://models.example/v1', 'draft', 'typed-secret', str(uuid4())))
-    assert found == ['only']
+    assert found['models'] == ['only']
     assert calls[0]['apiKey'] == 'typed-secret'
     assert store.calls == []
 
@@ -110,7 +112,7 @@ def test_discover_without_auth_does_not_read_a_saved_key(monkeypatch):
     found = asyncio.run(ModelCatalog(store).discover(
         'image', 'http://gpu.example/v1', 'sam', '', 'ignored', connection_type='self_hosted',
         protocol='vllm_omni_segmentation', auth_mode='none'))
-    assert found == ['sam']
+    assert found['models'] == ['sam']
     assert calls[0]['apiKey'] == ''
     assert calls[0]['authMode'] == 'none'
 
