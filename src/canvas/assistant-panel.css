@@ -306,6 +306,62 @@
   color: var(--chat-muted);
   font-size: 11px;
 }
+.cw-assistant-message-edit {
+  margin-top: 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--chat-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chat-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cw-assistant-message-edit:hover:not(:disabled) {
+  border-color: var(--chat-accent);
+  color: var(--chat-accent);
+}
+.cw-assistant-message-edit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cw-assistant-inherited {
+  margin-top: 8px;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.cw-assistant-inherited summary {
+  cursor: pointer;
+  opacity: 0.75;
+}
+.cw-assistant-inherited ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  opacity: 0.7;
+}
+.cw-assistant-inherited li {
+  display: flex;
+  gap: 8px;
+  list-style: disc;
+}
+.cw-assistant-editing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--chat-border);
+  border-radius: 8px;
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.cw-assistant-editing button {
+  border: none;
+  background: transparent;
+  color: var(--chat-accent);
+  font-size: 11px;
+  cursor: pointer;
+}
 .cw-assistant-message-assets {
   display: flex;
   flex-wrap: wrap;

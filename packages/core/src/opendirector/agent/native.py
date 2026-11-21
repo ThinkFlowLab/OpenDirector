@@ -148,6 +148,9 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
 
 
 def text_events(runtime: str, raw: dict) -> list[dict]:
+    if 'type' not in raw:
+        # Plain-text stdout the harness printed outside its event protocol.
+        return []
     if runtime == 'claude' and raw.get('error') == 'authentication_failed':
         raise ProjectError('Claude Code 登录已过期，请在终端执行 claude auth login 后重试。', 401)
     if runtime == 'codex' and raw['type'] == 'error':
@@ -309,7 +312,15 @@ class NativeRuntime:
                                                             deepseek_server, observe, session_id)
                         else:
                             while line := await process.stdout.readline():
-                                raw = json.loads(line)
+                                # A harness may print plain text on stdout, for example a
+                                # warning about an unrecognized model. Keep it in the trace
+                                # instead of failing the whole turn on a parse error.
+                                try:
+                                    raw = json.loads(line)
+                                except ValueError:
+                                    if line.strip():
+                                        await queue.put({'native': {'text': line.decode('utf-8', 'replace')}})
+                                    continue
                                 previous_session = reported_session
                                 if runtime == 'codex' and raw['type'] == 'thread.started':
                                     reported_session = raw.get('thread_id')

@@ -67,6 +67,76 @@ class Turn(BaseModel):
     thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
     modelSelections: dict[str, str | None] = Field(default_factory=dict)
     skills: list[str] = Field(default_factory=list, max_length=1)
+    revisionOf: UUID | None = None
+    expectedRevision: int | None = None
+
+
+def superseded_turn_ids(messages):
+    """Turn ids a revision replaced; they stay in history but leave the active path.
+
+    The link is one field per turn, so the active path is derived from the chain
+    instead of from message positions.
+    """
+    return {str(message['revisionOf']) for message in messages if message.get('revisionOf')}
+
+
+def active_messages(messages):
+    """Messages of the surviving attempt, in order.
+
+    A revised turn keeps the replaced request and its reply in history for
+    traceability, but neither may reach the next attempt's context. The reply id
+    repeats the rule used when a turn is accepted.
+    """
+    gone = superseded_turn_ids(messages)
+    reply_ids = {str(uuid5(UUID(turn_id), 'assistant')) for turn_id in gone}
+    return [message for message in messages
+            if str(message.get('id')) not in gone and str(message.get('id')) not in reply_ids]
+
+
+def revision_error(messages, revision_of):
+    """Why a turn may not be revised, or None when it may.
+
+    Only the newest turn can be revised, and only once: a second revision would
+    have to pick between competing successors.
+    """
+    if revision_of in superseded_turn_ids(messages):
+        return '这条消息已经修订过，请编辑最新一条。'
+    if revision_of not in {message['id'] for message in messages}:
+        return '找不到要修订的消息，请刷新后重试。'
+    turns = [message['id'] for message in messages if message.get('role') == 'user']
+    if not turns or turns[-1] != revision_of:
+        return '只能修订刚才停止的那条消息。'
+    reply = next((message for message in messages
+                  if message['id'] == str(uuid5(UUID(revision_of), 'assistant'))), None)
+    if reply is None or reply.get('status') not in {'stopped', 'interrupted'}:
+        return '只能修订已停止的消息。'
+    return None
+
+
+def inherited_jobs(messages, revision_of, jobs=()):
+    """Jobs the replaced turn already had accepted, so a retry does not repeat them.
+
+    The command id is the idempotency key the host derives from the turn and call,
+    so it is always present. The job record only exists when the submission was
+    accepted; ``jobId`` stays None for a call that never produced one, which is
+    what tells the new attempt to submit rather than reuse.
+    """
+    reply = next((message for message in messages
+                  if message['id'] == str(uuid5(UUID(revision_of), 'assistant'))), None)
+    if not reply:
+        return []
+    turn = UUID(revision_of)
+    by_call = {str(job.agentCallId): job for job in jobs if str(job.agentRunId) == revision_of}
+    snapshot = []
+    for tool in reply.get('tools', []):
+        job = by_call.get(str(tool.get('id')))
+        snapshot.append({'commandId': str(agent_command_id(turn, tool.get('id'))),
+                         'callId': tool.get('id'), 'name': tool.get('name'),
+                         'jobId': str(job.id) if job else None,
+                         'status': str(job.status) if job else tool.get('status'),
+                         'asset': job.asset.model_dump(mode='json') if job and job.asset else None,
+                         'errorDetails': job.errorDetails.model_dump(mode='json') if job and job.errorDetails else None})
+    return snapshot
 
 
 def draft_content_is_empty(content):
@@ -124,7 +194,7 @@ class Conversations:
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
-               before_begin=None) -> dict:
+               before_begin=None, expected_revision: int | None = None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
@@ -145,13 +215,24 @@ class Conversations:
             if begin is not None:
                 if any(message['id'] == begin['id'] for message in value['messages']):
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
+                expected = begin.pop('expectedRevision', expected_revision)
+                if expected is not None and expected != value.get('revision', 0):
+                    raise ProjectError('对话已在别处更新，请刷新后重试。', 409)
+                revision_of = begin.get('revisionOf')
+                if revision_of is not None:
+                    blocked = revision_error(value['messages'], str(revision_of))
+                    if blocked:
+                        raise ProjectError(blocked, 409)
+                    begin['inheritedJobs'] = inherited_jobs(value['messages'], str(revision_of),
+                        self.projects.snapshot(project_id).jobs)
                 if before_begin is not None:
                     before_begin()
                 value['messages'].append(begin)
                 value['messages'].append({'id': str(uuid5(UUID(begin['id']), 'assistant')),
                     'role': 'assistant', 'text': '', 'status': 'streaming',
                     **{key: begin[key] for key in ('model', 'modelIsCliDefault', 'runtime') if key in begin}})
-                value.update(draft='', draftContent=None, assets=[], skills=[])
+                value.update(draft='', draftContent=None, assets=[], skills=[],
+                             revision=value.get('revision', 0) + 1)
                 changed = True
             if finish is not None:
                 value['messages'] = [finish if message['id'] == finish['id'] else message for message in value['messages']]
@@ -420,14 +501,18 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                         'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
                         'modelSelections': dict(value.modelSelections),
                         'model': model, 'modelIsCliDefault': model_is_cli_default, 'status': 'complete'}
+                    if value.revisionOf is not None:
+                        user['revisionOf'] = str(value.revisionOf)
                     saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user,
-                        conversation_id=value.conversationId, before_begin=validate_connection)
+                        conversation_id=value.conversationId, before_begin=validate_connection,
+                        expected_revision=value.expectedRevision)
                     accepted = True
                     events.put({'type': 'start', 'conversation': saved})
-                    previous_sources = {source['id']: source for message in saved['messages'][:-2]
+                    active = active_messages(saved['messages'])
+                    previous_sources = {source['id']: source for message in active
                                         for source in message.get('sources', [])}
                     context = []
-                    for message in saved['messages'][:-1]:
+                    for message in active[:-1]:
                         content = message['text'] or '(empty reply)'
                         references = []
                         for attachment in message.get('assets', []):

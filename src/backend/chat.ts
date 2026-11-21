@@ -62,7 +62,21 @@ export interface ChatSource {
   url: string;
   title: string;
 }
+/** A job the superseded attempt had already accepted, kept for the retry. */
+export interface InheritedJob {
+  commandId: string;
+  callId: string;
+  name: string;
+  jobId: string | null;
+  status: string;
+  asset?: unknown;
+  errorDetails?: unknown;
+}
 export interface ChatMessage {
+  /** The stopped attempt this message revises, so history keeps both. */
+  revisionOf?: string;
+  /** Jobs accepted before the revised attempt, so it does not submit them again. */
+  inheritedJobs?: InheritedJob[];
   sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;
@@ -73,6 +87,7 @@ export interface ChatMessage {
   content?: ReferenceContent | null;
   status: "complete" | "streaming" | "stopped" | "interrupted";
   assets?: ChatAsset[];
+  skills?: string[];
   model?: string | null;
   modelIsCliDefault?: boolean;
   runtimeModel?: string | null;
@@ -108,6 +123,8 @@ export interface ChatDraft {
 }
 export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
+  /** Increments on every accepted turn; a stale value means the view is behind. */
+  revision?: number;
 }
 
 export function draftContentIsEmpty(
@@ -144,6 +161,10 @@ export type ChatEvent =
 export interface ChatRequest {
   conversationId?: string;
   id: string;
+  /** The turn this request replaces. Absent for an ordinary turn. */
+  revisionOf?: string;
+  /** The conversation revision this request was composed against. */
+  expectedRevision?: number;
   modelId?: string;
   text: string;
   content?: ReferenceContent | null;

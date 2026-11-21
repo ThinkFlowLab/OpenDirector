@@ -413,6 +413,13 @@ export function AssistantPanel({
         )}
         {value.messages.map((message, index) => {
           const previous = value.messages[index - 1];
+          const next = value.messages[index + 1];
+          // Only the newest stopped attempt can be revised, matching the server.
+          const editable = message.role === "user" &&
+            next?.role === "assistant" &&
+            (next.status === "stopped" || next.status === "interrupted") &&
+            index === value.messages.length - 2 &&
+            !chat.sending;
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&
             previous?.role === "user" && new URLSearchParams({
               traceProject: documentId,
@@ -487,6 +494,33 @@ export function AssistantPanel({
                 {t("assistant.panel.trace")} ↗
               </a>
             )}
+            {editable && (
+              <button
+                type="button"
+                className="cw-assistant-message-edit"
+                disabled={!!chat.editing}
+                onClick={() => chat.beginEdit(message)}
+              >
+                {t("assistant.panel.editResend")}
+              </button>
+            )}
+            {!!message.inheritedJobs?.length && (
+              <details className="cw-assistant-inherited">
+                <summary>
+                  {t("assistant.panel.inheritedJobs", {
+                    count: message.inheritedJobs.length,
+                  })}
+                </summary>
+                <ul>
+                  {message.inheritedJobs.map((job) => (
+                    <li key={job.commandId}>
+                      <span>{job.name}</span>
+                      <small>{job.status}</small>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             {message.role === "user" && !!message.assets?.length && <AttachmentStrip projectId={documentId} assets={message.assets.map(resolveAsset)} />}
             {(message.status === "stopped" ||
               message.status === "interrupted") && (
@@ -500,7 +534,15 @@ export function AssistantPanel({
         );
         })}
       </div>
-      <div className="cw-assistant-composer-area">
+      <div className={`cw-assistant-composer-area${chat.editing ? " is-editing" : ""}`}>
+        {chat.editing && (
+          <div className="cw-assistant-editing" role="status">
+            <span>{t("assistant.panel.editingNotice")}</span>
+            <button type="button" onClick={chat.cancelEdit}>
+              {t("assistant.panel.cancelEdit")}
+            </button>
+          </div>
+        )}
         {chat.error && (
           <div className="cw-assistant-error" role="alert">
             <span>{chat.error}</span>
