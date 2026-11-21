@@ -5,23 +5,47 @@
   "license": "Apache-2.0",
   "type": "module",
   "main": "index.js",
+  "icon": "./icon.svg",
   "exports": {
     ".": "./index.js",
     "./client": "./src/web-client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "src",
+    "locale/*.json",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md"
   ],
+  "homepage": "https://github.com/ThinkFlowLab/OpenDirector/tree/main/plugins/deepseek-harness",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThinkFlowLab/OpenDirector.git",
+    "directory": "plugins/deepseek-harness"
+  },
+  "bugs": {
+    "url": "https://github.com/ThinkFlowLab/OpenDirector/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "opendirector",
+    "image-generation",
+    "video-generation",
+    "voice-generation",
+    "media"
+  ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "engines": {
-    "dsh": "0.2.2-rc.1",
+    "dsh": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3 || 0.2.2-rc.5",
     "node": ">=24.9.0"
   },
   "dsh": {
@@ -38,7 +62,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.1"
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3 || 0.2.2-rc.5"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",

@@ -1,5 +1,6 @@
 """Provider doubles exercise the real durable runtime, files and restart path."""
 import asyncio
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from opendirector.application.creation_canvas import resolved_inputs
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, media, send, text_material, ver
 
@@ -46,6 +48,26 @@ def configure(project, config):
     changed = spec.model_copy(update={'prompt': 'Use the source', 'modelConfigId': UUID(config['id'])})
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=changed).status == 'applied'
     return target, store.snapshot(pid).generationSpecs[-1]
+
+
+def submit(project, target, spec):
+    _, pid, _ = project
+    return parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+        expectedVersions=[ver('canvas_item', target), ver('generation_spec', spec)],
+        payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+
+
+def request_cancel(store, pid, job):
+    """Commit the durable stop intent directly, as job.cancel does before stopping."""
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='job.cancel',
+        expectedVersions=[ver('job', job)], payload=dict(jobId=job.id)))
+    def mark(before):
+        current = next(j for j in before.jobs if j.id == job.id)
+        if current.status in {'succeeded', 'cancelled'}:
+            return before
+        changed = current.model_copy(update={'cancelRequested': True, 'revision': current.revision + 1})
+        return before.model_copy(update={'jobs': tuple(changed if j.id == changed.id else j for j in before.jobs)})
+    return store.commit(command, mark, source='background')
 
 
 @pytest.mark.anyio
@@ -285,3 +307,163 @@ async def test_hiding_mentioned_source_during_generation_preserves_spec_and_adop
     finally:
         provider.finish.set()
         await runner.close()
+
+
+@pytest.mark.anyio
+async def test_checkpoint_reconciles_cancellation_committed_between_read_and_write(project, monkeypatch):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    receipt = runner.prepare(submit(project, target, spec), session=session)
+    assert receipt.status == 'accepted', receipt
+    running = runner.task(store.snapshot(pid).jobs[0])
+    running.update(status='running', phase='queued')
+    runner.checkpoint(pid, running, runner.directory(pid))
+    stale = runner.task(store.snapshot(pid).jobs[0])
+    stale.update(status='running', phase='submit')
+    original = runner.projects.commit
+    commits = []
+    def injecting(work, apply, **kwargs):
+        if work.type == 'job.checkpoint':
+            commits.append(work)
+            if len(commits) == 1:
+                current = store.snapshot(pid).jobs[0]
+                request_cancel(store, pid, current)
+        return original(work, apply, **kwargs)
+    monkeypatch.setattr(runner.projects, 'commit', injecting)
+    runner.checkpoint(pid, stale, runner.directory(pid))
+    final = store.snapshot(pid).jobs[0]
+    assert final.status == 'running' and final.cancelRequested
+    assert final.errorDetails is None
+    assert len(commits) == 2, 'the stale save was rejected once and then retried'
+    assert provider.calls == []
+    await runner.close()
+
+
+@pytest.mark.anyio
+async def test_checkpoint_keeps_terminal_cancellation_against_a_stale_worker(project):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    receipt = runner.prepare(submit(project, target, spec), session=session)
+    assert receipt.status == 'accepted', receipt
+    request_cancel(store, pid, store.snapshot(pid).jobs[0])
+    cancelled = runner.task(store.snapshot(pid).jobs[0])
+    cancelled.update(status='cancelled', recovery='review', resumeAllowed=False)
+    runner.checkpoint(pid, cancelled, runner.directory(pid))
+    before = store.snapshot(pid).jobs[0]
+    assert before.status == 'cancelled' and before.cancelRequested
+    stale = runner.task(before)
+    stale.update(status='running', phase='submit', recovery='submit', resumeAllowed=True)
+    runner.checkpoint(pid, stale, runner.directory(pid))
+    after = store.snapshot(pid).jobs[0]
+    assert after.status == 'cancelled'
+    assert after == before
+    assert provider.calls == []
+    await runner.close()
+
+
+@pytest.mark.anyio
+async def test_checkpoint_leaves_a_succeeded_job_unchanged(project):
+    store, pid, session = project
+    provider = Provider()
+    provider.finish.set()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    receipt = await runner.execute(submit(project, target, spec), session=session)
+    assert receipt.status == 'accepted', receipt
+    await asyncio.gather(runner.jobs[str(receipt.jobIds[0])].future, return_exceptions=True)
+    succeeded = store.snapshot(pid).jobs[0]
+    assert succeeded.status == 'succeeded'
+    stale = runner.task(succeeded)
+    stale.update(status='running', phase='submit', recovery='submit', resumeAllowed=True)
+    runner.checkpoint(pid, stale, runner.directory(pid))
+    assert store.snapshot(pid).jobs[0] == succeeded
+    await runner.close()
+
+
+@pytest.mark.anyio
+async def test_checkpoint_does_not_retry_an_unrelated_rejection(project, monkeypatch):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    receipt = runner.prepare(submit(project, target, spec), session=session)
+    assert receipt.status == 'accepted', receipt
+    calls = []
+    def rejecting(work, apply, **kwargs):
+        calls.append(work)
+        return SimpleNamespace(status='rejected', issues=(SimpleNamespace(code='invalid_input'),))
+    monkeypatch.setattr(runner.projects, 'commit', rejecting)
+    task = runner.task(store.snapshot(pid).jobs[0])
+    task.update(status='running', phase='submit')
+    with pytest.raises(ProjectError) as failure:
+        runner.checkpoint(pid, task, runner.directory(pid))
+    assert failure.value.status == 409
+    assert len(calls) == 1
+    assert store.snapshot(pid).jobs[0].status == 'queued'
+    await runner.close()
+
+
+@pytest.mark.anyio
+async def test_cancel_committed_during_submit_checkpoint_does_not_fail_or_call_provider(project, monkeypatch):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    original = runner.projects.commit
+    loop = asyncio.get_running_loop()
+    ready = asyncio.Event()
+    injected, cancels, worker = {'done': False, 'conflicts': 0}, [], {}
+    def injecting(work, apply, **kwargs):
+        if work.type == 'job.checkpoint' and work.payload.job.phase == 'submit' and not injected['done']:
+            injected['done'] = True
+            current = store.snapshot(pid).jobs[0]
+            request_cancel(store, pid, current)
+            worker['future'] = runner.jobs[str(current.id)].future
+            loop.call_soon_threadsafe(lambda: cancels.append(asyncio.ensure_future(
+                runner.cancel(str(pid), str(current.id), session))))
+            loop.call_soon_threadsafe(ready.set)
+        receipt = original(work, apply, **kwargs)
+        if work.type == 'job.checkpoint' and receipt.status == 'rejected':
+            injected['conflicts'] += 1
+        return receipt
+    monkeypatch.setattr(runner.projects, 'commit', injecting)
+    receipt = await runner.execute(submit(project, target, spec), session=session)
+    assert receipt.status == 'accepted', receipt
+    await asyncio.wait_for(ready.wait(), 5)
+    await asyncio.gather(worker['future'], return_exceptions=True)
+    await asyncio.gather(*cancels, return_exceptions=True)
+    final = store.snapshot(pid).jobs[0]
+    assert final.status == 'cancelled', final
+    assert final.cancelRequested and final.errorDetails is None
+    assert injected['done'] and injected['conflicts'] >= 1
+    assert provider.calls == []
+    assert not store.snapshot(pid).results
+    await runner.close()
+
+
+@pytest.mark.anyio
+async def test_stale_checkpoint_preserves_the_saved_remote_identity_after_cancellation(project):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    assert runner.prepare(submit(project, target, spec), session=session).status == 'accepted'
+    stale = runner.task(store.snapshot(pid).jobs[0])
+    remote = dict(stale, status='running', phase='poll', externalTaskId='remote-accepted-1')
+    runner.checkpoint(pid, remote, runner.directory(pid))
+    request_cancel(store, pid, store.snapshot(pid).jobs[0])
+    stopped = runner.task(store.snapshot(pid).jobs[0])
+    stopped.update(status='cancelled', recovery='remote', resumeAllowed=False)
+    runner.checkpoint(pid, stopped, runner.directory(pid))
+    before = store.snapshot(pid).jobs[0]
+    stale.update(status='running', phase='submit', externalTaskId=None)
+    runner.checkpoint(pid, stale, runner.directory(pid))
+    after = store.snapshot(pid).jobs[0]
+    assert after == before
+    assert after.externalTaskId == 'remote-accepted-1'
+    assert provider.calls == []
+    await runner.close()

@@ -35,6 +35,12 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 
 - **Color profile follow-up:** [PR #287's P3 review](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5870014881) found that a correct full-size PNG did not prove correct thumbnails: the library JPEG and the asset/history WebP used separate encoders that both omitted ICC. Check every displayed rendition and the actual embedded profile, not only dimensions or successful decoding. Preserve RGB profiles through resizing, but do not attach a non-RGB source profile after converting its channels to RGB. / **颜色配置补充：** 同一素材的全尺寸 PNG 正确，并不能证明素材库 JPEG 和资产／版本历史 WebP 正确。逐条检查显示路径的实际 ICC；缩放保留 RGB 配置，转换通道后不能继续附带非 RGB 源配置。
 
+## Cancellation can race with a worker checkpoint
+
+- **Trigger:** A worker reads a running job, then cancellation advances its revision before the worker saves the next phase.
+- **Lesson:** Commit 3635393 reconciles only the checkpoint on revision conflict. The old path converted this race into a provider failure even though cancellation was saved. A stale checkpoint could also lose a saved remote task identity.
+- **Check:** Inject cancellation between the snapshot read and commit. Preserve stop intent, terminal cancellation and the accepted remote identity; do not repeat provider submission. Keep unrelated rejections as errors. The deterministic regressions in [test_creation_generation_service.py](../../tests/test_creation_generation_service.py) cover the interleaving, no provider call, terminal states and remote identity preservation.
+
 ## Baseline failures still need tracking
 
 - **Trigger:** A relevant test fails and comparison shows that it also fails on the baseline.

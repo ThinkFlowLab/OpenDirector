@@ -43,6 +43,9 @@ from opendirector.media.filenames import with_extension
 _INPUTS = ContextVar('creation_generation_inputs', default=None)
 # Connection facts a job freezes for a helper model; credentials stay in the model settings.
 SNAPSHOT_KEYS = ('kind', 'modelId', 'url', 'protocol', 'connectionType')
+# A checkpoint can lose a race with cancellation or another state write. Only
+# the state checkpoint is repeated, never a provider submission.
+CHECKPOINT_ATTEMPTS = 8
 
 
 def version(kind, obj):
@@ -470,28 +473,61 @@ class CreationGeneration(GenerationRuntime):
         return receipt
 
     def checkpoint(self, project_id, task, pinned):
-        before = self.projects.snapshot(project_id)
-        job = next(j for j in before.jobs if str(j.id) == task['id'])
-        if job.status == 'succeeded':
-            return
-        changes = {key: task[key] for key in ('status', 'phase', 'recovery', 'resumeAllowed', 'externalTaskId', 'errorDetails', 'technicalCheck') if key in task}
-        changes['adopted'] = task.get('adopted', job.adopted)
-        if changes['status'] == 'cancelled' and job.cancelRequested:
-            changes['remoteCancellation'] = ('unknown' if task.get('errorDetails') else 'requested') if task.get('externalTaskId') else 'not_requested'
-            if changes['recovery'] == 'submit':
-                changes['resumeAllowed'] = False
-        if job.cancelRequested and (task.get('errorDetails') or {}).get('providerStatus') == 'cancelled':
-            changes.update(status='cancelled', remoteCancellation='confirmed', resumeAllowed=False, recovery='retry')
-        updated = Job.model_validate({**job.model_dump(), **changes, 'revision': job.revision + 1})
-        if updated.model_copy(update={'revision': job.revision}) == job:
-            return
-        command = parse_command(dict(commandId=uuid4(), projectId=project_id, type='job.checkpoint',
-            expectedVersions=[version('job', job)], payload=dict(job=updated)))
-        def apply(current):
-            return current.model_copy(update={'jobs': tuple(updated if j.id == job.id else j for j in current.jobs)})
-        receipt = self.projects.commit(command, apply, source='background')
-        if receipt.status == 'rejected':
-            raise ProjectError('任务状态发生并发修改，请重新读取原任务。', 409)
+        # Cancellation and another worker can commit between the snapshot read
+        # and this write. A revision conflict is a state race, not an execution
+        # failure: reread authoritative state and redo only this checkpoint,
+        # with bounded attempts. Provider calls are never repeated here.
+        for attempt in range(CHECKPOINT_ATTEMPTS):
+            before = self.projects.snapshot(project_id)
+            job = next(j for j in before.jobs if str(j.id) == task['id'])
+            if job.status == 'succeeded':
+                return
+            changes = {key: task[key] for key in ('status', 'phase', 'recovery', 'resumeAllowed', 'externalTaskId', 'errorDetails', 'technicalCheck') if key in task}
+            changes['adopted'] = task.get('adopted', job.adopted)
+            # An accepted remote identity belongs to this job even if the
+            # checkpoint was prepared before it was recorded.
+            if job.externalTaskId:
+                changes['externalTaskId'] = job.externalTaskId
+            if job.cancelRequested:
+                # The stop intent is part of the authoritative state. Preserve
+                # it even when this save was planned before the cancellation.
+                changes['cancelRequested'] = True
+            if changes['status'] == 'cancelled' and job.cancelRequested:
+                changes['remoteCancellation'] = ('unknown' if task.get('errorDetails') else 'requested') if task.get('externalTaskId') else 'not_requested'
+                if changes['recovery'] == 'submit':
+                    changes['resumeAllowed'] = False
+            if job.cancelRequested and (task.get('errorDetails') or {}).get('providerStatus') == 'cancelled':
+                changes.update(status='cancelled', remoteCancellation='confirmed', resumeAllowed=False, recovery='retry')
+            if job.status == 'cancelled':
+                # Cancellation is terminal. A stale worker may still carry
+                # running, interrupted or failed facts; keep the committed
+                # cancellation and only fill in an execution identity that was
+                # not known when cancellation was recorded.
+                confirmed = (task.get('errorDetails') or {}).get('providerStatus') == 'cancelled'
+                changes['status'] = 'cancelled'
+                if not confirmed:
+                    changes.update(phase=job.phase, recovery=job.recovery, resumeAllowed=job.resumeAllowed,
+                                   remoteCancellation=job.remoteCancellation, errorDetails=job.errorDetails,
+                                   technicalCheck=job.technicalCheck, adopted=job.adopted)
+                if job.cancelRequested and not job.externalTaskId and task.get('externalTaskId'):
+                    changes['externalTaskId'] = task['externalTaskId']
+                    if changes.get('remoteCancellation', job.remoteCancellation) == 'not_requested':
+                        changes['remoteCancellation'] = 'unknown'
+            updated = Job.model_validate({**job.model_dump(), **changes, 'revision': job.revision + 1})
+            if updated.model_copy(update={'revision': job.revision}) == job:
+                return
+            command = parse_command(dict(commandId=uuid4(), projectId=project_id, type='job.checkpoint',
+                expectedVersions=[version('job', job)], payload=dict(job=updated)))
+            def apply(current):
+                return current.model_copy(update={'jobs': tuple(updated if j.id == job.id else j for j in current.jobs)})
+            receipt = self.projects.commit(command, apply, source='background')
+            if receipt.status != 'rejected':
+                return
+            # Only a concurrent object-version change can be reconciled by
+            # rereading state. Validation or storage rejection remains a real
+            # failure instead of being retried with a stale execution record.
+            if not receipt.issues or any(issue.code != 'revision_conflict' for issue in receipt.issues) or attempt == CHECKPOINT_ATTEMPTS - 1:
+                raise ProjectError('任务状态发生并发修改，请重新读取原任务。', 409)
 
     def _result_asset(self, task, directory):
         job = self.get_job(task['projectId'], task['id'])
