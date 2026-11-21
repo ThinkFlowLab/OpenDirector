@@ -59,6 +59,6 @@ test("untrusted metadata cannot inject Markdown headings or list entries", async
   const fetcher: typeof fetch = async (url) =>
     String(url).endsWith("/jobs") ? Response.json([]) : new Response("", { status: 404 });
   const result = await conversationTraceReport("p", "c", [turn("a", 1)], fetcher);
-  assert.ok(result.includes("Review <secret> \\[report\\]"));
+  assert.ok(result.includes("Review &lt;secret&gt; \\[report\\]"));
   assert.ok(!result.includes("Review <secret> [report]"));
 });
