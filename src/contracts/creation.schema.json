@@ -490,6 +490,32 @@
             "format": "uuid",
             "title": "Objectid",
             "type": "string"
+          },
+          "videoScope": {
+            "default": "first_frame",
+            "description": "Video preview mode: single first frame or multi-frame timestamped contact sheet.",
+            "enum": [
+              "first_frame",
+              "contact_sheet"
+            ],
+            "title": "Videoscope",
+            "type": "string"
+          },
+          "columns": {
+            "default": 4,
+            "description": "Contact-sheet grid columns for videoScope=\"contact_sheet\".",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Columns",
+            "type": "integer"
+          },
+          "rows": {
+            "default": 3,
+            "description": "Contact-sheet grid rows for videoScope=\"contact_sheet\".",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Rows",
+            "type": "integer"
           }
         },
         "required": [
@@ -4194,7 +4220,8 @@
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
                 "object.get": "#/$defs/ObjectQuery",
-                "project.get": "#/$defs/ProjectQuery"
+                "project.get": "#/$defs/ProjectQuery",
+                "storyboard.audit": "#/$defs/StoryboardAuditQuery"
               },
               "propertyName": "type"
             },
@@ -4219,6 +4246,9 @@
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
+              },
+              {
+                "$ref": "#/$defs/StoryboardAuditQuery"
               }
             ],
             "title": "Query"
@@ -12150,6 +12180,83 @@
         "title": "StageTransform",
         "type": "object"
       },
+      "StoryboardAuditQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "storyboard.audit",
+            "description": "Audit multi-shot continuity, H3 prompt/ordinal alignment, diversity, and pilot-gate readiness.",
+            "title": "Type",
+            "type": "string"
+          },
+          "timelineEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional timeline editor document ID to order and scope shots.",
+            "title": "Timelineeditorid"
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional canvas group item ID to scope shots.",
+            "title": "Groupid"
+          },
+          "specIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional explicit ordered video GenerationSpec IDs to audit.",
+            "title": "Specids"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type"
+        ],
+        "title": "StoryboardAuditQuery",
+        "type": "object"
+      },
       "SubjectCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -15614,7 +15721,8 @@
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
             "object.get": "#/$defs/ObjectQuery",
-            "project.get": "#/$defs/ProjectQuery"
+            "project.get": "#/$defs/ProjectQuery",
+            "storyboard.audit": "#/$defs/StoryboardAuditQuery"
           },
           "propertyName": "type"
         },
@@ -15639,6 +15747,9 @@
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
+          },
+          {
+            "$ref": "#/$defs/StoryboardAuditQuery"
           }
         ],
         "title": "Query"
@@ -16265,13 +16376,42 @@
             "format": "uuid",
             "title": "Objectid",
             "type": "string"
+          },
+          "videoScope": {
+            "default": "first_frame",
+            "description": "Video preview mode: single first frame or multi-frame timestamped contact sheet.",
+            "enum": [
+              "first_frame",
+              "contact_sheet"
+            ],
+            "title": "Videoscope",
+            "type": "string"
+          },
+          "columns": {
+            "default": 4,
+            "description": "Contact-sheet grid columns for videoScope=\"contact_sheet\".",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Columns",
+            "type": "integer"
+          },
+          "rows": {
+            "default": 3,
+            "description": "Contact-sheet grid rows for videoScope=\"contact_sheet\".",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Rows",
+            "type": "integer"
           }
         },
         "required": [
           "queryId",
           "projectId",
           "type",
-          "objectId"
+          "objectId",
+          "videoScope",
+          "columns",
+          "rows"
         ],
         "title": "AssetPreviewQuery",
         "type": "object"
@@ -20078,7 +20218,8 @@
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
                 "object.get": "#/$defs/ObjectQuery",
-                "project.get": "#/$defs/ProjectQuery"
+                "project.get": "#/$defs/ProjectQuery",
+                "storyboard.audit": "#/$defs/StoryboardAuditQuery"
               },
               "propertyName": "type"
             },
@@ -20103,6 +20244,9 @@
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
+              },
+              {
+                "$ref": "#/$defs/StoryboardAuditQuery"
               }
             ],
             "title": "Query"
@@ -28334,6 +28478,86 @@
         "title": "StageTransform",
         "type": "object"
       },
+      "StoryboardAuditQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "storyboard.audit",
+            "description": "Audit multi-shot continuity, H3 prompt/ordinal alignment, diversity, and pilot-gate readiness.",
+            "title": "Type",
+            "type": "string"
+          },
+          "timelineEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional timeline editor document ID to order and scope shots.",
+            "title": "Timelineeditorid"
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional canvas group item ID to scope shots.",
+            "title": "Groupid"
+          },
+          "specIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional explicit ordered video GenerationSpec IDs to audit.",
+            "title": "Specids"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "timelineEditorId",
+          "groupId",
+          "specIds"
+        ],
+        "title": "StoryboardAuditQuery",
+        "type": "object"
+      },
       "SubjectCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -31956,7 +32180,8 @@
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
             "object.get": "#/$defs/ObjectQuery",
-            "project.get": "#/$defs/ProjectQuery"
+            "project.get": "#/$defs/ProjectQuery",
+            "storyboard.audit": "#/$defs/StoryboardAuditQuery"
           },
           "propertyName": "type"
         },
@@ -31981,6 +32206,9 @@
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
+          },
+          {
+            "$ref": "#/$defs/StoryboardAuditQuery"
           }
         ],
         "title": "Query"

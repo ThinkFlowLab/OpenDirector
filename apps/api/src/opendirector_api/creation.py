@@ -1,4 +1,5 @@
 """Authoritative project endpoints for the canvas creation workflow."""
+from typing import Literal
 from uuid import UUID
 from pathlib import Path
 from base64 import b64encode
@@ -185,13 +186,33 @@ def creation_routes(projects: CreationProjects, generation=None):
         result = await canvas.query(value)
         if value.type == 'asset.preview' and 'preview' in result:
             result['preview'].pop('path')
-            result['preview']['url'] = f'/api/creation/projects/{project_id}/assets/{value.objectId}/preview'
+            base_url = f'/api/creation/projects/{project_id}/assets/{value.objectId}/preview'
+            if value.videoScope == 'contact_sheet':
+                result['preview']['url'] = (
+                    f'{base_url}?video_scope=contact_sheet&columns={value.columns}&rows={value.rows}'
+                )
+            else:
+                result['preview']['url'] = base_url
         return result
 
     @router.get('/projects/{project_id}/assets/{asset_id}/preview')
-    async def asset_preview(project_id: UUID, asset_id: UUID):
+    async def asset_preview(
+        project_id: UUID,
+        asset_id: UUID,
+        video_scope: Literal['first_frame', 'contact_sheet'] = Query(default='first_frame'),
+        columns: int = Query(default=4, ge=1, le=8),
+        rows: int = Query(default=3, ge=1, le=8),
+    ):
         target = projects.local.state_dir / 'previews' / str(project_id)
-        result = await run_in_threadpool(assets.preview, project_id, asset_id, target)
+        result = await run_in_threadpool(
+            assets.preview,
+            project_id,
+            asset_id,
+            target,
+            video_scope=video_scope,
+            columns=columns,
+            rows=rows,
+        )
         if 'preview' not in result:
             return result
         return FileResponse(result['preview']['path'], media_type=result['preview']['mimeType'])

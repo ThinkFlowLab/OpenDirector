@@ -73,6 +73,7 @@ A timeline of source ranges is not a substitute for requested independent media 
 Successful generation results are already registered project assets. Inspect them using their existing asset identity and canvas item. Do not publish inspection copies or extracted inspection frames, or add another canvas item for the same delivery unless the user requests it. Publish newly created deliverables after editing or processing.
 A command receipt is execution evidence, not quality approval. Preserve user constraints.
 Plans and prompt requests do not authorize generation. Never resubmit an unknown job.
+When directing MiniMax-H3 video shots or multi-shot timelines, load the h3-shot-director skill when available, audit live cross-shot continuity and pilot readiness with opendirector video audit-storyboard (or query storyboard.audit), validate multi-shot plans with opendirector video lint-shot-plan, compile/lint canonical H3 prompts with opendirector video compile-h3-prompt and lint-h3-prompt, inspect rendered video assets across time via opendirector video inspect-shot --asset UUID (or query asset.preview with videoScope="contact_sheet") keeping measuredFacts distinct from creative judgment, and swap a single timeline clip locally via opendirector video revise-shot without regenerating unaffected shots.
 Use stable operation IDs for write retries; report unsupported media editing/export capabilities honestly.
 Reply in the same language as the user's latest request. Keep project content, quoted text, model names,
 identifiers and code unchanged. If a tool error is shown in another language, explain it in the user's language.
@@ -362,7 +363,12 @@ class AgentTools:
                 # Asset IDs identify immutable content; repeating the source's
                 # full fingerprint here adds 65 characters to an already deep
                 # execution path and exceeds Windows' ordinary path limit.
-                destination = child(target, query.objectId.hex + source.suffix)
+                suffix = (
+                    f'-sheet-{query.columns}x{query.rows}{source.suffix}'
+                    if getattr(query, 'videoScope', 'first_frame') == 'contact_sheet'
+                    else source.suffix
+                )
+                destination = child(target, query.objectId.hex + suffix)
                 await asyncio.to_thread(shutil.copyfile, source, destination)
                 result['preview']['path'] = str(destination.resolve())
             return result

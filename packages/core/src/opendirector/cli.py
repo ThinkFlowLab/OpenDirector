@@ -34,7 +34,7 @@ GROUP_HELP = {
     "voice": "List, create or delete voices on a configured speech service.",
     "asset": "Import files, write text and manage registered project assets.",
     "canvas": "Display, arrange, hide and configure canvas items.",
-    "video": "Create video generation nodes with model settings and references.",
+    "video": "Create, compile/lint H3 prompts, inspect and revise video shots.",
     "job": "Inspect, wait for, cancel or recover generation jobs.",
     "artifact": "Register files from the active agent execution directory.",
     "generation-spec": "Create, edit and restore generation settings and prompts.",
@@ -619,16 +619,25 @@ def video_create(ctx: typer.Context,
                  duration: Annotated[float, typer.Option(min=0, help="Video duration in seconds, e.g. 6.583333. Fractional values require model inputRules.fractionalDuration; inspect model list for supported ranges. Native H3 accepts 4-15 seconds and aligns frames upward to 17k+5 at 24 fps (15 seconds becomes 362 frames).")],
                  x: Annotated[float, typer.Option(help="Canvas X coordinate. Choose using the current item positions and sizes.")],
                  y: Annotated[float, typer.Option(help="Canvas Y coordinate. Choose using the current item positions and sizes.")],
-                 first_frame: Annotated[UUID | None, typer.Option(help="Source image canvas item for first-frame mode.")] = None,
-                 reference_item: Annotated[list[UUID] | None, typer.Option(help="Source canvas items for reference mode. Repeat for multiple inputs.")] = None):
+                 first_frame: Annotated[UUID | None, typer.Option(help="Source image canvas item for first-frame (I2VA/FL2VA) mode.")] = None,
+                 last_frame: Annotated[UUID | None, typer.Option(help="Source image canvas item for last-frame (FL2VA/L2VA) mode.")] = None,
+                 continue_from: Annotated[UUID | None, typer.Option(help="Source video canvas item for continuation mode.")] = None,
+                 reference_item: Annotated[list[UUID] | None, typer.Option(help="Source canvas items for reference mode. Repeat for multiple inputs.")] = None,
+                 aspect_ratio: Annotated[str | None, typer.Option(help="Optional output width:height ratio such as 16:9 or 9:16.")] = None,
+                 resolution: Annotated[str, typer.Option(help="Requested output resolution or 'auto'.")] = "auto",
+                 audio: Annotated[bool | None, typer.Option(help="Include generated audio (true/false) when supported.")] = None,
+                 title: Annotated[str | None, typer.Option(help="Optional display title for the created video canvas node.")] = None):
     client = ctx.obj
     client.command = ctx.command_path
     config = select_model([value for value in client.models() if value["kind"] == "video"], model)
-    if first_frame and reference_item:
-        raise ProjectError("Choose --first-frame or --reference-item for the selected video mode.")
+    chosen_groups = sum(bool(group_value) for group_value in ((first_frame or last_frame), reference_item, continue_from))
+    if chosen_groups > 1:
+        raise ProjectError("Choose only one mode group: (--first-frame/--last-frame), --reference-item, or --continue-from.")
     allowed = config["inputRules"]["videoModes"]
-    if first_frame:
+    if first_frame or last_frame:
         mode = "first_frame"
+    elif continue_from:
+        mode = "continuation"
     elif reference_item:
         mode = "reference"
     else:
@@ -639,21 +648,39 @@ def video_create(ctx: typer.Context,
     operation = client.operation_id or uuid4()
     spec_id, item_id = str(uuid5(operation, "spec")), str(uuid5(operation, "item"))
     project_id = snapshot["project"]["id"]
+    source_bindings: list[tuple[UUID, str]] = []
+    if first_frame:
+        source_bindings.append((first_frame, "first_frame"))
+    if last_frame:
+        source_bindings.append((last_frame, "last_frame"))
+    if continue_from:
+        source_bindings.append((continue_from, "continuation"))
+    for ref_id in reference_item or []:
+        source_bindings.append((ref_id, "reference"))
     references = []
-    for index, source_id in enumerate(([first_frame] if first_frame else reference_item) or []):
+    for index, (source_id, role) in enumerate(source_bindings):
         source = next((item for item in snapshot["canvasItems"] if item["id"] == str(source_id)), None)
         if source is None:
             raise ProjectError(f"Source canvas item {source_id} is not in this project.")
         references.append({"id": str(uuid5(operation, f"reference-{index}")), "projectId": project_id,
-            "targetSpecId": spec_id, "role": "first_frame" if first_frame else "reference",
+            "targetSpecId": spec_id, "role": role,
             "order": index, "binding": "follow_current", "source": {"id": str(source_id)}})
+    parameters: dict[str, object] = {"videoMode": mode, "durationSeconds": duration, "resolution": resolution}
+    if aspect_ratio is not None:
+        parameters["aspectRatio"] = aspect_ratio
+    if audio is not None:
+        parameters["generateAudio"] = audio
+    item_payload: dict[str, object] = {
+        "id": item_id, "projectId": project_id, "kind": "video",
+        "position": {"x": x, "y": y},
+        "binding": {"role": "generation", "objectRef": {"id": spec_id}},
+    }
+    if title is not None:
+        item_payload["title"] = title
     receipt = client.execute("canvas.createGeneration", {
         "spec": {"id": spec_id, "projectId": project_id, "kind": "video", "purpose": "generation",
-                 "modelConfigId": config["id"], "prompt": prompt,
-                 "parameters": {"videoMode": mode, "durationSeconds": duration}},
-        "item": {"id": item_id, "projectId": project_id, "kind": "video",
-                 "position": {"x": x, "y": y},
-                 "binding": {"role": "generation", "objectRef": {"id": spec_id}}},
+                 "modelConfigId": config["id"], "prompt": prompt, "parameters": parameters},
+        "item": item_payload,
         "references": references,
     }, identity=operation)
     changed = {item["objectType"]: item for item in receipt["changed"]}
@@ -667,6 +694,186 @@ def video_create(ctx: typer.Context,
     emit({**receipt, "specId": spec_id, "itemId": item_id,
           "next": {"description": "Submit this configured video generation.",
                    "command": shlex.join(submit)}})
+
+
+@group("video").command("compile-h3-prompt", help="Compile structured shot/reference JSON into an official MiniMax-H3 prompt.")
+def video_compile_h3_prompt(
+    file: Annotated[Path, typer.Option(help="JSON specification file; use - for stdin.")],
+    check: Annotated[bool, typer.Option("--check/--no-check", help="Exit 1 when the compiled prompt has lint errors.")] = True,
+):
+    from opendirector.domain.h3_cinematography import compile_h3_prompt
+    result = compile_h3_prompt(read_file(file))
+    emit(result)
+    if check and not result["lint"]["valid"]:
+        raise typer.Exit(1)
+
+
+@group("video").command("lint-h3-prompt", help="Validate an H3 prompt file or live GenerationSpec against H3 grammar and ordinals.")
+def video_lint_h3_prompt(
+    ctx: typer.Context,
+    spec_id: Annotated[UUID | None, typer.Option(help="Live project GenerationSpec UUID to validate with active references.")] = None,
+    file: Annotated[Path | None, typer.Option(help="Plain-text prompt file (use - for stdin) when not inspecting --spec-id.")] = None,
+    mode: Annotated[str | None, typer.Option(help="H3 mode: t2va, i2va, fl2va, l2va, or ref2va. Inferred when --spec-id is given.")] = None,
+    duration: Annotated[float | None, typer.Option(min=0, help="Target video duration in seconds.")] = None,
+):
+    from opendirector.application.creation_storyboard import resolve_h3_spec_reference_sources
+    from opendirector.domain.creation.validation import ContractError
+    from opendirector.domain.h3_cinematography import h3_reference_ordinals, lint_h3_prompt
+    if bool(spec_id) == bool(file):
+        raise ProjectError("请提供 --spec-id 或 --file 其中之一。", 422)
+    reference_sources = None
+    if spec_id is not None:
+        client = ctx.obj
+        client.command = ctx.command_path
+        snapshot = client.snapshot()
+        try:
+            resolved = resolve_h3_spec_reference_sources(snapshot, spec_id)
+        except ContractError as exc:
+            raise ProjectError(exc.issue.message, 404) from None
+        spec = resolved["spec"]
+        prompt_text = str(spec.prompt or "")
+        effective_duration = float(duration if duration is not None else (spec.parameters.durationSeconds or 5.0))
+        h3_mode = resolved["h3Mode"]
+        reference_sources = resolved["referenceSources"] if h3_mode != "continuation" else None
+        effective_mode = mode if mode is not None else ("i2va" if h3_mode == "continuation" else h3_mode)
+    else:
+        prompt_text = sys.stdin.read() if str(file) == "-" else file.read_text(encoding="utf-8")
+        effective_mode = mode or "t2va"
+        effective_duration = float(duration if duration is not None else 5.0)
+    report = lint_h3_prompt(
+        prompt_text, mode=effective_mode, duration_seconds=effective_duration, reference_sources=reference_sources,
+    )
+    payload: dict[str, object] = {"lint": report}
+    if reference_sources is not None:
+        payload["referenceOrdinals"] = h3_reference_ordinals(reference_sources)
+    emit(payload)
+    if not report["valid"]:
+        raise typer.Exit(1)
+
+
+@group("video").command("lint-shot-plan", help="Validate a multi-shot storyboard JSON for H3 duration bounds and visual diversity.")
+def video_lint_shot_plan(
+    file: Annotated[Path, typer.Option(help="Shot plan JSON file (array of shots or {'shots': [...]}); use - for stdin.")],
+):
+    from opendirector.domain.h3_cinematography import lint_shot_plan
+    raw = json.loads(sys.stdin.read() if str(file) == "-" else file.read_text(encoding="utf-8"))
+    shots = raw["shots"] if isinstance(raw, dict) and isinstance(raw.get("shots"), list) else raw
+    if not isinstance(shots, list):
+        raise ValueError("Expected a JSON list of shots or an object with a 'shots' list.")
+    report = lint_shot_plan(shots)
+    emit(report)
+    if not report["valid"]:
+        raise typer.Exit(1)
+
+
+@group("video").command("audit-storyboard", help="Audit live project multi-shot continuity, H3 ordinals, diversity, and gate readiness.")
+def video_audit_storyboard(
+    ctx: typer.Context,
+    timeline_editor: Annotated[UUID | None, typer.Option(help="Optional timeline EditorDocument UUID to order shots.")] = None,
+    group_id: Annotated[UUID | None, typer.Option(help="Optional canvas group UUID to scope shots.")] = None,
+    spec_id: Annotated[list[UUID] | None, typer.Option(help="Explicit ordered video GenerationSpec UUIDs.")] = None,
+    strict: Annotated[bool, typer.Option("--strict/--no-strict", help="Exit 1 when audit reports blocking issues.")] = False,
+):
+    client = ctx.obj
+    client.command = ctx.command_path
+    arguments: dict[str, object] = {}
+    if timeline_editor is not None:
+        arguments["timelineEditorId"] = str(timeline_editor)
+    if group_id is not None:
+        arguments["groupId"] = str(group_id)
+    if spec_id:
+        arguments["specIds"] = [str(value) for value in spec_id]
+    report = client.query("storyboard.audit", **arguments)
+    emit(report)
+    if strict and not report.get("valid", True):
+        raise typer.Exit(1)
+
+
+@group("video").command("inspect-shot", help="Probe a local video file or registered project video asset with contact-sheet QC.")
+def video_inspect_shot(
+    ctx: typer.Context,
+    file: Annotated[Path | None, typer.Argument(help="Local video file to inspect when --asset is omitted.")] = None,
+    asset: Annotated[UUID | None, typer.Option(help="Registered project video Asset UUID to inspect via contact-sheet preview.")] = None,
+    contact_sheet: Annotated[Path | None, typer.Option(help="Exclusive output path for a timestamped JPEG contact sheet.")] = None,
+    columns: Annotated[int, typer.Option(min=1, max=8, help="Contact-sheet columns.")] = 4,
+    rows: Annotated[int, typer.Option(min=1, max=8, help="Contact-sheet rows.")] = 3,
+):
+    from opendirector.media.shot_inspection import _write_exclusive_bytes, inspect_video_shot
+    if bool(file) == bool(asset):
+        raise ProjectError("Provide either a local FILE argument or --asset UUID, not both.")
+    if asset is not None:
+        client = ctx.obj
+        client.command = ctx.command_path
+        result = client.query(
+            "asset.preview",
+            objectId=str(asset),
+            videoScope="contact_sheet",
+            columns=columns,
+            rows=rows,
+        )
+        if contact_sheet is not None:
+            preview_info = result.get("preview") or {}
+            if "path" in preview_info:
+                data = Path(preview_info["path"]).read_bytes()
+            elif "url" in preview_info:
+                resp = client.http.get(preview_info["url"])
+                if not resp.is_success:
+                    raise ProjectError(resp.text, resp.status_code)
+                data = resp.content
+            else:
+                raise ProjectError("Contact-sheet preview returned neither path nor URL.", 422)
+            _write_exclusive_bytes(contact_sheet, data)
+            result = {**result, "savedContactSheetPath": str(contact_sheet.resolve())}
+        emit(result)
+        return
+    assert file is not None
+    emit(inspect_video_shot(file, contact_sheet_path=contact_sheet, columns=columns, rows=rows))
+
+
+@group("video").command("revise-shot", help="Replace a single clip on an editable timeline by clip ID or linked source item.")
+def video_revise_shot(
+    ctx: typer.Context,
+    timeline_editor: Annotated[UUID, typer.Option(help="Target timeline EditorDocument UUID.")],
+    clip_id: Annotated[str | None, typer.Option(help="Clip ID inside the timeline, or omit to follow --source-item.")] = None,
+    asset: Annotated[UUID | None, typer.Option(help="Replacement project Asset UUID, or omit to sync --source-item.")] = None,
+    source_item: Annotated[UUID | None, typer.Option(help="Source canvas item UUID for lineage lookup and provenance.")] = None,
+    in_point: Annotated[float | None, typer.Option(min=0, help="Explicit trim start in seconds.")] = None,
+    out_point: Annotated[float | None, typer.Option(min=0, help="Explicit trim end in seconds.")] = None,
+    use_asset_duration: Annotated[bool, typer.Option("--use-asset-duration/--keep-slot-duration", help="Use full new asset duration instead of matching the current slot span.")] = False,
+    title: Annotated[str | None, typer.Option(help="Optional clip resource title; defaults to the asset name.")] = None,
+):
+    from opendirector.application.creation_storyboard import prepare_timeline_shot_revision
+    client = ctx.obj
+    client.command = ctx.command_path
+    snapshot = client.snapshot()
+    operation = client.operation_id or uuid4()
+    prepared = prepare_timeline_shot_revision(
+        snapshot,
+        timeline_editor_id=timeline_editor,
+        clip_id=clip_id,
+        asset_id=asset,
+        source_item_id=source_item,
+        in_point=in_point,
+        out_point=out_point,
+        use_asset_duration=use_asset_duration,
+        title=title,
+        operation_id=operation,
+    )
+    receipt = client.execute(
+        "editor.save",
+        {"document": prepared["document"]},
+        versions=prepared["expectedVersions"],
+        identity=operation,
+    )
+    emit({
+        **receipt,
+        "timelineEditorId": prepared["timelineEditorId"],
+        "clipId": prepared["clipId"],
+        "previousAssetId": prepared["previousAssetId"],
+        "newAssetId": prepared["newAssetId"],
+        "inPoint": prepared["inPoint"],
+        "outPoint": prepared["outPoint"],
+    })
 
 
 @group("job").command("show", help="Read job status once. Use job wait to wait for completion.")

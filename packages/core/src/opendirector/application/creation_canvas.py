@@ -844,7 +844,15 @@ class CreationCanvas:
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
         if query.type == 'asset.preview':
             target = self.projects.local.state_dir / 'previews' / str(query.projectId)
-            return await asyncio.to_thread(CreationAssets(self.projects).preview, query.projectId, query.objectId, target)
+            return await asyncio.to_thread(
+                CreationAssets(self.projects).preview,
+                query.projectId,
+                query.objectId,
+                target,
+                video_scope=query.videoScope,
+                columns=query.columns,
+                rows=query.rows,
+            )
         return to_jsonable_python(await asyncio.to_thread(self.query_snapshot, query))
 
     def query_snapshot(self, query):
@@ -853,6 +861,14 @@ class CreationCanvas:
         history = CreationHistory(self.projects)
         if query.type == 'project.get':
             return snapshot
+        if query.type == 'storyboard.audit':
+            from opendirector.application.creation_storyboard import audit_project_storyboard
+            return audit_project_storyboard(
+                snapshot,
+                timeline_editor_id=query.timelineEditorId,
+                group_id=query.groupId,
+                spec_ids=query.specIds,
+            )
         if query.type == 'generationSpec.versions':
             return history.versions(query.projectId, query.objectId)
         if query.type == 'canvas.versions':
