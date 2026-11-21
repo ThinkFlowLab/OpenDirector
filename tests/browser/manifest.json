@@ -181,6 +181,14 @@
       "note": "Real application with controllable local capability HTTP service; no model inference."
     },
     {
+      "file": "composer_configure_model.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ],
+      "note": "Needs a fixture API without a video model; opens model settings from the empty selector and keeps the draft."
+    },
+    {
       "file": "composer_duration.mjs",
       "previewSafe": true,
       "lanes": [
