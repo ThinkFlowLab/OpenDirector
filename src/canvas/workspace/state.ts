@@ -7,6 +7,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { ModelSelections } from "../../backend/chat.ts";
+import type { Asset } from "../../contracts/generated.ts";
 import type { ActiveGeneration } from "../generationActivity.ts";
 import { createHistory, type CanvasHistory } from "../history.ts";
 import type { ResultSource } from "../linkedResults.ts";
@@ -110,7 +111,7 @@ export type WorkspaceState = {
   showEdges: boolean;
   menu: WorkspaceMenu | null;
   saveStatus: WorkspaceSaveStatus;
-  preview: CanvasNode | null;
+  preview: CanvasNode | Asset | null;
   editing: CanvasNode | null;
   editorMode: WorkspaceEditorMode;
   actionSession: WorkspaceActionSession | null;

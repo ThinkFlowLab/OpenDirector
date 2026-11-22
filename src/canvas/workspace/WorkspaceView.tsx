@@ -1,4 +1,6 @@
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
+import { WorkspacePreview } from "./WorkspacePreview";
+import { useChatResultLocation } from "./useChatResultLocation";
 import { projectDisplayName } from "../projectDisplayName";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
@@ -10,7 +12,8 @@ import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
 import { request as apiRequest, errorMessage } from "../../backend/api.ts";
-import { creationClient, objectVersion, visibleItems } from "../../backend/creationClient.ts";
+import { creationClient, objectVersion } from "../../backend/creationClient.ts";
+import { showExistingItem } from "../canvasAssetPlacement.ts";
 
 import { previewImageSelection } from "../../backend/imageSelections";
 import { MediaPublication } from "../../backend/mediaPublication";
@@ -112,6 +115,7 @@ import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edge
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
+  const viewChatResult = useChatResultLocation(rt);
   const {
     actionMedia,
     actionNode,
@@ -2275,18 +2279,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                     notify(t("canvas.workspace.toast.configNotVisible"));
                     return;
                   }
-                  if (!visibleItems(client.snapshot).has(id)) {
-                    const versions = [objectVersion("canvas_item", item)];
-                    let parentId = item.parentId;
-                    while (parentId) {
-                      const parent = client.snapshot.canvasItems.find(
-                        (item) => item.id === parentId,
-                      )!;
-                      versions.push(objectVersion("canvas_item", parent));
-                      parentId = parent.parentId;
-                    }
-                    await client.command("canvas.show", { item }, versions);
-                  }
+                  await showExistingItem(client, item);
                   const projection = workspaceProjection(doc.id),
                     snapshot = client.snapshot,
                     next = await projection.read(snapshot);
@@ -2438,6 +2431,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             );
           }}
           onTurnEnd={() => void syncServiceResults()}
+          onPreviewResult={setPreview}
+          onViewResultOnCanvas={viewChatResult}
           onModelSelections={setAssistantModels}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
@@ -2495,42 +2490,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         />
       )}
       {preview && (
-        <div
-          className="cw-modal-backdrop cw-preview"
-          role="dialog"
-          aria-label={t("canvas.workspace.aria.previewDialog")}
-          onClick={() => setPreview(null)}
-        >
-          <header>
-            <span>{preview.data.title}</span>
-            <IconButton
-              name="download"
-              label={t("canvas.workspace.aria.downloadPreview")}
-              onClick={() => downloadNode(preview)}
-            />
-            <IconButton
-              name="close"
-              label={t("canvas.workspace.aria.closePreview")}
-              onClick={() => setPreview(null)}
-            />
-          </header>
-          <div onClick={(e) => e.stopPropagation()}>
-            {preview.type === "image" && preview.data.src ? (
-              <img src={preview.data.src} alt={preview.data.title} />
-            ) : preview.type === "video" && preview.data.src ? (
-              <video src={preview.data.src} controls />
-            ) : preview.type === "audio" && preview.data.src ? (
-              <audio src={preview.data.src} controls />
-            ) : (
-              <p>
-                {preview.data.text ||
-                  (preview.data.src
-                    ? t("canvas.workspace.preview.fileHint")
-                    : t("canvas.workspace.preview.emptyHint"))}
-              </p>
-            )}
-          </div>
-        </div>
+        <WorkspacePreview key={preview.id} preview={preview}
+          onDownloadNode={downloadNode} onClose={() => setPreview(null)} />
       )}
       {editing && editorMode === "default" && editing.type === "timeline" && (
         <TimelineEditor

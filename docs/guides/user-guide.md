@@ -154,6 +154,12 @@ Click a source number to view its full URL in a bordered information card, then 
 
 Use the chat in either creation mode, select a chat model, and describe what you want to create. If the chat is collapsed in **Canvas**, click **Chat with AI** to reopen it. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
+In **Create with chat**, assets the assistant writes to the project and completed generation results appear beneath the reply that produced them. A job that finishes later adds its card to the original reply. Reopen the conversation to find its results again.
+
+- Select **Preview** to inspect that version, play video or audio, or download the original file.
+- Select **Reference in chat** to add that asset to your current draft. Add your instructions and send when ready.
+- Select **View on canvas** to switch to the canvas and select the corresponding node. A hidden node is shown again. If no node displays that version yet, the canvas adds one for the existing asset. Viewing a candidate or earlier version preserves the generation node’s current result.
+
 When the latest reply offers next steps, three to five suggested replies appear beneath it and stay visible as you type. Select one to fill the composer or replace the text you have already written. Attachments, references and skills stay in your draft. You can edit the text or undo the replacement. Press **Send** or `Enter` when you are ready.
 
 Use **New conversation** to start a separate chat. Search for an earlier conversation in the chat sidebar, or open **Conversation history** from the chat header when the sidebar is hidden. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices. The active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.

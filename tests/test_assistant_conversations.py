@@ -55,6 +55,48 @@ def send(client, path, conversation_id, text):
     return response
 
 
+@pytest.mark.parametrize('interrupted', [False, True])
+def test_direct_publication_identity_survives_deletion_and_reopening(assistant, monkeypatch, interrupted):
+    client, path, _ = assistant
+    project = path.removesuffix('/assistant')
+    cid = client.get(path).json()['conversationId']
+    async def publish(self, run):
+        command = {'type': 'asset.writeText', 'payload': {'name': 'shot.md', 'text': 'wide shot'}}
+        for _ in range(2):  # Replaying a tool call must still deliver one immutable output.
+            receipt = await self.business.execute(run.project_id, run.turn_id, run.session,
+                'write', 'execute_command', command, [], run.config)
+            assert receipt['status'] == 'applied'
+        yield {'type': 'delta', 'text': 'Written'}
+        if interrupted:
+            raise RuntimeError('injected failure after publication')
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', publish)
+    saved = frames(send(client, path, cid, 'Write'))[-1]['conversation']['messages'][-1]
+    snapshot = client.get(project).json()
+    asset, = snapshot['assets']
+    assert saved['status'] == ('interrupted' if interrupted else 'complete')
+    assert saved['publishedAssets'] == {'projectId': snapshot['project']['id'],
+        'eventCursor': snapshot['eventCursor'], 'assets': [{key: asset[key] for key in ('id', 'name', 'fingerprint')}]}
+
+    # A different turn can discuss an existing file without delivering it again.
+    async def discuss(self, run):
+        yield {'type': 'delta', 'text': asset['id']}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', discuss)
+    assert 'publishedAssets' not in frames(send(client, path, cid, 'Discuss'))[-1]['conversation']['messages'][-1]
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+    payload = {'assetIds': [asset['id']], 'clearHistory': True}
+    preview = client.post(project + '/asset-delete-preview', json=payload).json()
+    assert preview['canDelete']
+    deleted = client.post(project + '/commands', json={'type': 'asset.delete', 'commandId': str(uuid4()),
+        'projectId': snapshot['project']['id'], 'payload': {**payload, 'clearHistory': preview['clearsAllUndoRedo']},
+        'expectedVersions': [{'objectType': 'asset', 'id': asset['id'], 'revision': asset['revision']}],
+        'expectedPreview': preview['fingerprint']}).json()
+    assert deleted['status'] == 'applied', deleted
+    assert client.get(project).json()['assets'] == []
+    reopened = client.post(path + f'/conversations/{cid}/activate').json()
+    assert reopened['messages'][1] == saved
+    assert client.get(path).json()['messages'] == reopened['messages']
+
+
 def test_citation_metadata_streams_and_persists_without_changing_raw_text_or_offsets(assistant, monkeypatch, tmp_path):
     client, path, _ = assistant
     source = {'id': 'turn1search0', 'url': 'https://example.test/source', 'title': 'Source'}
@@ -335,6 +377,29 @@ def test_stale_draft_and_stale_turn_cannot_modify_active_thread(assistant):
     assert client.post(path + f'/conversations/{uuid4()}/activate').status_code == 404
     assert client.post(path + '/conversations', json={'id': str(uuid4())},
         headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
+
+
+def test_concurrent_and_archived_replays_cannot_share_a_turn_between_conversations(assistant):
+    client, path, contexts = assistant
+    first = client.get(path).json()['conversationId']
+    turn = {'id': str(uuid4()), 'conversationId': first, 'runtime': 'default', 'text': 'One output'}
+    ready = threading.Barrier(2)
+    def submit():
+        ready.wait(timeout=10)
+        return client.post(path + '/turns', json=turn)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(submit) for _ in range(2)]
+        replies = [request.result(timeout=20) for request in requests]
+    assert sum(reply.status_code == 200 and frames(reply)[-1]['error'] is None for reply in replies) == 1
+    assert len(contexts) == 1
+    original = client.get(path).json()['messages']
+    assert len(original) == 2 and original[0]['id'] == turn['id']
+
+    second = client.post(path + '/conversations', json={'id': str(uuid4())}).json()['conversationId']
+    replay = frames(client.post(path + '/turns', json={**turn, 'conversationId': second}))[-1]
+    assert replay['error'] and replay['conversation'] is None
+    assert len(contexts) == 1 and client.get(path).json()['messages'] == []
+    assert client.post(path + f'/conversations/{first}/activate').json()['messages'] == original
 
 
 def test_history_identifies_unsent_drafts_and_replays_creation_without_duplicates(assistant):

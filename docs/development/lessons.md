@@ -42,6 +42,7 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** Opening chat by default or retaining it while changing projects, when its data finishes loading after the user has focused another control.
 - **Evidence:** [PR #380](https://github.com/ThinkFlowLab/OpenDirector/pull/380) reproduced delayed assistant reads closing the project picker and ending new-project renaming. Project creation and opening succeeded; the chat's readiness effect moved focus and triggered the other controls' dismissal handlers.
 - **Check:** Hold the assistant read until the project picker or name editor is active, then release it and verify that both the control and its focus remain. Preserve focus requested by explicitly opening chat or changing conversations, while respecting a later user focus change. Distinguish a controlled reproduction from proof of the original CI event order.
+- In a narrow chat, dismissing the pending canvas references on pointer-down moved a result button before pointer-up. The click landed on the card and never reached the button. Exercise a real pointer click after returning from a selected canvas node and verify that the node becomes visible again. / 窄屏聊天曾在按下鼠标时收起待引用面板，使结果按钮在松开鼠标前移位。回归应从已有选区的画布返回对话，实际点击结果按钮，并检查对应节点是否重新进入视口。
 
 ## Baseline failures still need tracking
 

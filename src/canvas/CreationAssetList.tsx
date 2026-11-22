@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { Asset, CanvasItem } from "../contracts/generated.ts";
+import type { Asset } from "../contracts/generated.ts";
 import {
-  assetReference,
   creationClient,
   creationPath,
-  currentAsset,
   objectVersion,
-  visibleItems,
 } from "../backend/creationClient.ts";
 import { errorMessage, json, request } from "../backend/api.ts";
-import { createNode, type Point } from "./model.ts";
+import type { Point } from "./model.ts";
+import { findAssetItem, showExistingItem, showNewAssetItem } from "./canvasAssetPlacement.ts";
 import { CanvasIcon } from "./CanvasIcon.tsx";
 import {
   AssetThumbnail,
@@ -286,63 +284,14 @@ export function CreationAssetList({
   const open = async (row: Row) => {
     const client = creationClient(projectId);
     await client.refresh();
-    const visible = visibleItems(client.snapshot);
-    const owners = client.snapshot.canvasItems.filter(
-      (item) => currentAsset(client.snapshot, item)?.id === row.asset.id,
-    );
-    let item = owners.find((item) => visible.has(item.id)) ?? owners[0];
+    const item = findAssetItem(client.snapshot, row.asset.id);
     if (row.owners.length && !item) {
       setAttempt((n) => n + 1);
       throw new Error(t("canvasNodes.assets.versionChanged"));
     }
-    if (item && !visible.has(item.id)) {
-      const versions = [objectVersion("canvas_item", item)];
-      let parentId = item.parentId;
-      while (parentId) {
-        const parent = client.snapshot.canvasItems.find(
-          (item) => item.id === parentId,
-        )!;
-        versions.push(objectVersion("canvas_item", parent));
-        parentId = parent.parentId;
-      }
-      await client.command("canvas.show", { item }, versions);
-    } else if (!item) {
-      const node = createNode(
-        row.asset.kind,
-        { x: position.x - 150, y: position.y - 150 },
-        {
-          media: {
-            width: row.asset.metadata.width ?? undefined,
-            height: row.asset.metadata.height ?? undefined,
-          },
-        },
-      );
-      item = {
-        id: node.id,
-        projectId,
-        revision: 1,
-        kind: row.asset.kind,
-        title: row.asset.name,
-        position: node.position,
-        width: node.width,
-        height: node.height,
-        zIndex: 0,
-        locked: false,
-        visible: true,
-        parentId: null,
-        tags: [],
-        editors: [],
-        binding: row.specId
-          ? {
-              role: "generation",
-              objectRef: { objectType: "generation_spec", id: row.specId },
-              materialOverride: null,
-            }
-          : { role: "material", objectRef: assetReference(row.asset) },
-      } as CanvasItem;
-      await client.command("canvas.show", { item });
-    }
-    onLocate(item.id);
+    const itemId = item ? await showExistingItem(client, item)
+      : await showNewAssetItem(client, row.asset, position, row.specId);
+    onLocate(itemId);
     onClose();
   };
   const openNode = async (row: NodeRow) => {
@@ -355,18 +304,7 @@ export function CreationAssetList({
       setAttempt((value) => value + 1);
       throw new Error(t("canvasNodes.assets.nodeChanged"));
     }
-    if (!visibleItems(client.snapshot).has(item.id)) {
-      const versions = [objectVersion("canvas_item", item)];
-      let parentId = item.parentId;
-      while (parentId) {
-        const parent = client.snapshot.canvasItems.find(
-          (item) => item.id === parentId,
-        )!;
-        versions.push(objectVersion("canvas_item", parent));
-        parentId = parent.parentId;
-      }
-      await client.command("canvas.show", { item }, versions);
-    }
+    await showExistingItem(client, item);
     onLocate(item.id);
     onClose();
   };

@@ -4,12 +4,15 @@ import { runtimeModels, type ChatAsset, type ModelSelections } from "../backend/
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
+import type { Asset } from "../contracts/generated.ts";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
 import "./assistant-workspace.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
 import { AssistantReply } from "./AssistantReply";
+import { AssistantResultCard } from "./AssistantResultCard";
+import { useAssistantResults } from "./useAssistantResults.ts";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
 import { ModelPicker } from "./AssistantPickers";
@@ -26,6 +29,7 @@ import {
   type ChatReferenceEditorHandle,
 } from "./ChatReferenceEditor";
 import { nodeReferenceAsset } from "./generationReferenceContent.ts";
+import { pinnedReferenceAsset } from "./pinnedReferenceAssets.ts";
 import type { CanvasNode } from "./model";
 import {
   pendingCanvasReferences,
@@ -70,6 +74,8 @@ export function AssistantPanel({
   onModelSelections,
   onOpenSettings,
   onPrepareReferences,
+  onPreviewResult,
+  onViewResultOnCanvas,
 }: {
   documentId: string;
   documentTitle: string;
@@ -87,10 +93,13 @@ export function AssistantPanel({
   onModelSelections?: (selections: ModelSelections) => void;
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
+  onPreviewResult: (asset: Asset) => void;
+  onViewResultOnCanvas: (asset: Asset, itemId?: string | null) => Promise<void>;
 }) {
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
   const { value, setValue } = chat;
+  const results = useAssistantResults(documentId, open && !collapsible, value.messages);
   const showSessionSidebar = !collapsible && layout.canShowSessionSidebar;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
@@ -241,7 +250,7 @@ export function AssistantPanel({
   useEffect(() => {
     if (nearBottom.current && log.current)
       log.current.scrollTop = log.current.scrollHeight;
-  }, [value.messages, open]);
+  }, [value.messages, open, results]);
   useEffect(() => () => confirming.current?.abort(), [pending?.id]);
   const confirmPending = async (end: number) => {
     if (!pending || referenceDisabled || confirming.current) return;
@@ -325,6 +334,21 @@ export function AssistantPanel({
       uploads.prepare,
       (assets) => editor.current?.insert(assets) ?? false,
     );
+
+  function referenceResult(asset: Asset) {
+    const input = editor.current;
+    if (!input || referenceDisabled || chat.changing) return;
+    if (value.draftContent?.some((part) =>
+      part.type === "reference" && part.binding === "asset" &&
+      part.assetId === asset.id && part.fingerprint === asset.fingerprint
+    )) {
+      input.focus();
+      return;
+    }
+    // Insert beside a selection so clicking a result keeps any highlighted draft.
+    const end = input.caret().end;
+    input.insert([pinnedReferenceAsset(asset)], { start: end, end });
+  }
 
   useEffect(() => {setMediaPreview(null);}, [documentId, value.conversationId, open]);
   useEffect(() => {
@@ -521,6 +545,18 @@ export function AssistantPanel({
                   : t("assistant.reply.empty"))
               )}
             </div>
+            {!collapsible && message.role === "assistant" && previous?.role === "user" &&
+              results.get(previous.id)?.map((result) => (
+                <AssistantResultCard
+                  key={result.resultId ?? result.assetId}
+                  projectId={documentId}
+                  result={result}
+                  referenceDisabled={referenceDisabled || chat.changing}
+                  onPreview={onPreviewResult}
+                  onReference={referenceResult}
+                  onViewOnCanvas={onViewResultOnCanvas}
+                />
+              ))}
             {trace && (
               <a className="cw-assistant-message-status cw-assistant-trace-link"
                 href={`/?${trace}`} target="_blank" rel="noopener noreferrer">

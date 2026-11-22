@@ -124,10 +124,10 @@ class Conversations:
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
-               before_begin=None) -> dict:
+               finish_turn_id: UUID | None = None, before_begin=None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
-            directory, _, _ = self.projects._load(db, project_id)
+            directory, _, records = self.projects._load(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session)
             folder = child(directory, 'agent-runs')
@@ -143,7 +143,10 @@ class Conversations:
                 value.update(draft.model_dump(mode="json", exclude={"conversationId"}))
                 changed = True
             if begin is not None:
-                if any(message['id'] == begin['id'] for message in value['messages']):
+                # Tool commands and completed jobs use project + turn as their origin.
+                if any(message['id'] == begin['id']
+                       for conversation in [value, *value.get('archivedConversations', [])]
+                       for message in conversation['messages']):
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
                 if before_begin is not None:
                     before_begin()
@@ -154,6 +157,16 @@ class Conversations:
                 value.update(draft='', draftContent=None, assets=[], skills=[])
                 changed = True
             if finish is not None:
+                # Unlike job results, directly published files can later be deleted.
+                # Keep just their immutable identity with the reply that delivered them.
+                if finish_turn_id is not None:
+                    snapshot = records[0].snapshot
+                    outputs = [{'id': str(asset.id), 'name': asset.name, 'fingerprint': asset.fingerprint}
+                               for asset in snapshot.assets if asset.provenance.source == 'agent_written'
+                               and asset.provenance.agentRunId == finish_turn_id]
+                    if outputs:
+                        finish = {**finish, 'publishedAssets': {'projectId': str(project_id),
+                            'eventCursor': snapshot.eventCursor, 'assets': outputs}}
                 value['messages'] = [finish if message['id'] == finish['id'] else message for message in value['messages']]
                 changed = True
             if changed:
@@ -562,7 +575,8 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                             'model': model, 'modelIsCliDefault': model_is_cli_default,
                             'runtime': value.runtime, 'thinking': value.thinking, 'tools': activities,
                             'sources': list(sources.values()),
-                            **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId)
+                            **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId,
+                            finish_turn_id=value.id)
                     else:
                         saved = None
                     events.put({'type': 'end', 'conversation': saved, 'error': error})

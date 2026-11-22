@@ -154,11 +154,36 @@ assistant_gate = asyncio.Event()
 assistant_gate.set()
 assistant_contexts = []
 if args.assistant_fixture:
+    from opendirector.agent.gateway import ToolGateway
     from opendirector_api import agent
 
     async def fixture_agent(self, run):
         assistant_contexts.append(run.messages)
-        if run.messages[-1]['content'].partition('\n')[0] == '建议回复验收':
+        prompt = run.messages[-1]['content'].partition('\n')[0]
+        if prompt in {'Result card: if_current', 'Result card: candidate_only'}:
+            # The model response is scripted. The job, provenance, persisted result
+            # and adoption all go through the normal Agent command gateway.
+            snapshot = self.business.projects.snapshot(run.project_id)
+            [spec] = snapshot.generationSpecs
+            [item] = snapshot.canvasItems
+            gateway = ToolGateway(self.business, run)
+            try:
+                submitted = await gateway.call('result-card-image', 'execute_command', {
+                    'type': 'generation.submit',
+                    'expectedVersions': [
+                        {'objectType': 'generation_spec', 'id': str(spec.id), 'revision': spec.revision},
+                        {'objectType': 'canvas_item', 'id': str(item.id), 'revision': item.revision},
+                    ],
+                    'payload': {'specId': str(spec.id), 'expectedSpecRevision': spec.revision,
+                                'originItemId': str(item.id), 'adoptionPolicy': prompt.split(': ')[1]},
+                })
+                if submitted.error:
+                    raise ProjectError(submitted.error)
+                yield {'type': 'delta', 'text': 'Image requested.'}
+            finally:
+                await gateway.close()
+            return
+        if prompt == '建议回复验收':
             yield {'type': 'delta', 'text': (
                 '- 展开海边重逢的完整分镜\n'
                 '- 换一个安静克制的结尾\n'

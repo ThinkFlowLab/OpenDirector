@@ -75,7 +75,7 @@ export function usePendingCanvasReferences(
       if (
         !latest.current ||
         target.closest(
-          "[data-pending-references],.cw-chat-reference-editor,.cw-chat-button",
+          "[data-pending-references],.cw-chat-reference-editor,.cw-chat-button,.cw-chat-result,.cw-preview",
         )
       )
         return;
@@ -93,10 +93,10 @@ export function usePendingCanvasReferences(
         return;
       }
       if (!latest.current || event.isComposing || event.keyCode === 229) return;
-      // A focused menu owns its dismissal; keep the staged references intact.
+      // Menus and modal previews own their dismissal.
       if (
         event.target instanceof Element &&
-        event.target.closest('[role="menu"]')
+        event.target.closest('[role="menu"],dialog:modal')
       )
         return;
       event.preventDefault();
