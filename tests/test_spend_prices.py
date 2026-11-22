@@ -18,6 +18,11 @@ def test_connection_price_takes_precedence_and_an_alias_is_unpriced():
     assert price_line(dict(mirror, connectionType='self_hosted'), 'image', {}).amount == 0
 
 
+def test_fractional_recording_cost_preserves_a_valid_subcent_rate():
+    config = dict(id=uuid4(), modelId='score', price=dict(unit='input_second', rate='0.000000000001', currency='USD'))
+    assert price_line(config, 'score', {'input_second': Decimal('3.001')}).amount == Decimal('0.000000000003001')
+
+
 def test_missing_metered_quantity_is_unknown_even_with_a_price():
     config = dict(id=uuid4(), modelId='speech', price=dict(unit='output_second', rate='0.01', currency='USD'))
     assert price_line(config, 'speech', {}).amount is None

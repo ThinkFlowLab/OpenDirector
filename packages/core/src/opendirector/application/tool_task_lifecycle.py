@@ -1,11 +1,14 @@
 """Control and recovery of tool executions, separate from read-only queries."""
 import asyncio
 from copy import deepcopy
+from decimal import Decimal
 import logging
 from uuid import UUID, uuid4, uuid5
 
 from filelock import FileLock, Timeout
 
+from opendirector.domain.capabilities import MediaResult
+from opendirector.media.probe import probe
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError
 from opendirector.ports.gateway import gateway
@@ -144,6 +147,16 @@ class ToolTaskLifecycle:
                 or error.details.stage in {'poll', 'download'} and error.details.providerStatus is None)
             await blocking(self._change_call, project_id, task_id, call['id'], {'state': 'unknown' if unknown else 'failed'})
             raise
+        price = task.get('modelSnapshots', {}).get(capability, {}).get('price') or {}
+        if (call.get('spendCallId') and price.get('unit') == 'output_second' and
+                capability in {'video.first_frame', 'video.edit'} and isinstance(result, MediaResult)):
+            try:
+                metadata = await blocking(probe, result.data, '.mp4', 'video')
+            except ProjectError:
+                metadata = {}
+            if metadata.get('durationMs') is not None:
+                await blocking(creation_spend.observe, self.projects, project_id, call['spendCallId'], 'completed',
+                               unit='output_second', usage=Decimal(metadata['durationMs']) / 1000, evidence='media')
         await blocking(self._change_call, project_id, task_id, call['id'], {'state': 'succeeded'})
         return result
 

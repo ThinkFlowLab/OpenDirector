@@ -419,15 +419,15 @@ class ToolTasks(ToolTaskLifecycle):
             if image_capability == 'image.generate':
                 image_plan['roles'] = []
         for capability, config in list(models.items()):
-            request = tool_request(config, capability, actual=True)
-            if request is None:
-                continue
             parameters_to_check = [{}]
             if capability in {'video.first_frame', 'video.edit'}:
                 video_plan = video_execution(spec.id, parameters, records[source_ids[0]],
                                              adapter=adapter_for(config), capability=capability)
                 if video_plan is not None:
                     parameters_to_check = video_plan['requests']
+            request = tool_request(config, capability, actual=True)
+            if request is None:
+                continue
             if capability == image_capability:
                 counts = {'text': 1, 'image': sum(role in {'image', 'annotation'} for role in image_plan['roles'])}
                 if image_plan['mode'] == 'native_mask':

@@ -13,6 +13,7 @@ from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_spend import review_status
 from opendirector.application.creation_tool_assets import CreationToolAssets
+from opendirector.application.tool_spend import tool_quote
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.domain.creation.commands import GroupQuoteQuery, SpendStatusQuery, parse_command
 from opendirector.domain.projects import ProjectError
@@ -160,6 +161,18 @@ async def test_agent_receives_price_and_human_approval_resumes_its_original_acti
     assert all(j.agentRunId == turn and j.agentCallId == 'generate' for j in store.snapshot(pid).jobs)
     assert Decimal((await tool('query', {'type':'spend.status'}, 'status'))['held']) == Decimal('1.20')
     await runner.close()
+
+
+def test_a_translation_request_does_not_receive_the_tool_source_video():
+    data = dict(unit='input_second', rate='.02', currency='USD')
+    def priced(name):
+        return dict(id=str(uuid4()), modelId=name, price=data)
+    asset = str(uuid4())
+    task = dict(id=str(uuid4()), tool='video-matting', sourceAssetIds=[asset], parameters={'prompt': '帆船'},
+                modelSnapshots={'video.matting': priced('tracking'), 'text.chat': priced('translation')})
+    quote = tool_quote(task, {asset: dict(fingerprint='0' * 64, durationMs=20000)})
+    assert [(line.operation, line.amount) for line in quote.lines] == [('video.matting', Decimal('.40')), ('text.chat', None)]
+    assert quote.total('USD') is None
 
 
 @pytest.mark.anyio

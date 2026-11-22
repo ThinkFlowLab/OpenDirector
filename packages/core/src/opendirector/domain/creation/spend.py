@@ -1,6 +1,6 @@
 """Service prices are decimal amounts in their original currency."""
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -9,6 +9,7 @@ from pydantic import Field, JsonValue
 from .base import Contract, Digest, ObjectVersion, ProjectEntity, digest
 
 Currency = Literal['USD', 'CNY']
+Amount = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 Money = Annotated[Decimal, Field(ge=0, max_digits=24, decimal_places=12, allow_inf_nan=False)]
 Unit = Literal['request', 'input_character', 'input_second', 'requested_second', 'output_second']
 
@@ -30,7 +31,7 @@ class PriceLine(Contract):
     price: ConnectionPrice | None = Field(default=None, description='Native unit price, when known.')
     quantityBasis: Literal['fixed', 'maximum'] = Field(default='fixed', exclude_if=lambda v: v == 'fixed', description='Whether the quoted quantity is an upper bound.')
     quantity: Money | None = Field(default=None, description='Billing units or bounded maximum for one candidate.')
-    amount: Money | None = Field(default=None, description='Estimated amount for this step of one candidate.')
+    amount: Amount | None = Field(default=None, description='Estimated amount for this step of one candidate.')
 
 
 class SpendQuote(Contract):
@@ -89,7 +90,7 @@ class SpendCall(ProjectEntity):
     state: Literal['reserved', 'submitted', 'completed', 'released'] = Field(default='reserved', description='State of the provider call.')
     usage: Money | None = Field(default=None, description='Metered units reported for the call.')
     usageSource: Literal['execution', 'provider', 'media'] | None = Field(default=None, description='Origin of the quantity used for settlement.')
-    calculated: Money | None = Field(default=None, description='Amount calculated from confirmed usage and the agreed rate.')
+    calculated: Amount | None = Field(default=None, description='Amount calculated from confirmed usage and the agreed rate.')
     reported: Money | None = Field(default=None, description='Charge explicitly reported by the provider in the line currency.')
 
     def accounted(self):
@@ -191,6 +192,16 @@ OFFICIAL_PRICES = {
     ('bigmodel_video', 'cogvideox-3', 'video'): ('request', '1'),
     ('openai', 'glm-tts', 'speech'): ('input_character', '0.0002'),
 }
+
+
+def video_units(fields, fallback_seconds=None):
+    """Frame-based APIs receive their aligned frame count, including any padding."""
+    frames, fps = fields.get('num_frames'), fields.get('fps')
+    if frames and fps:
+        seconds = (Decimal(frames) / Decimal(str(fps))).quantize(Decimal('0.000000000001'), rounding=ROUND_CEILING)
+    else:
+        seconds = fields.get('duration', fallback_seconds)
+    return {} if seconds is None else {'requested_second': seconds, 'output_second': seconds}
 
 
 def price_line(config, operation, quantities, *, bounded=()):

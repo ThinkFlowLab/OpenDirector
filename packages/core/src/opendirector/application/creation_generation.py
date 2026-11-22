@@ -20,7 +20,7 @@ from opendirector.application.creation_canvas import CreationCanvas, asset_ref, 
 from opendirector.application.voice_library import VoiceLibrary
 from opendirector.application.model_availability import ModelAvailability, generation_request
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
-from opendirector.domain.creation.spend import SpendQuote, price_line
+from opendirector.domain.creation.spend import SpendQuote, price_line, video_units
 from opendirector.domain.references import project_content
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
@@ -437,7 +437,9 @@ class CreationGeneration(GenerationRuntime):
                         # MiniMax reports its billable character count in the response.
                         quantities['input_character'] += sum(not char.isascii() for char in text)
                         bounded = ('input_character',)
-            if params.get('duration') is not None:
+            if spec.kind == 'video':
+                quantities.update(video_units(params))
+            elif params.get('duration') is not None:
                 quantities.update(requested_second=params['duration'], output_second=params['duration'])
             lines.append(price_line(config, operation, quantities, bounded=bounded))
         return SpendQuote(count=count, lines=lines, inputFingerprint=job.inputFingerprint)

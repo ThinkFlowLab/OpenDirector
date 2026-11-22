@@ -9,7 +9,7 @@ from opendirector.application.tool_image_edits import PRESETS
 from opendirector.application.tool_image_segments import SMART_LAYERS
 from opendirector.domain.creation.base import digest
 from opendirector.domain.creation.commands import parse_command
-from opendirector.domain.creation.spend import SpendCall, SpendQuote, SpendRequest, ToolSpendInput, price_line
+from opendirector.domain.creation.spend import SpendCall, SpendQuote, SpendRequest, ToolSpendInput, price_line, video_units
 from opendirector.domain.projects import ProjectError
 
 
@@ -41,7 +41,9 @@ def tool_quote(task, records):
             counts['image.edit'] = len(preset.prompts)
     if tool == 'image-hd' and 'image.edit' in counts:
         counts['image.edit'] = len(task['sourceAssetIds'])
-    pieces = (task.get('videoExecution') or {}).get('pieces', ())
+    execution = task.get('videoExecution') or {}
+    pieces = execution.get('pieces', ())
+    wire_requests = execution.get('requests', ())
     if pieces and 'video.edit' in counts:
         counts['video.edit'] = len(pieces)
     source = records[task['sourceAssetIds'][0]]
@@ -49,13 +51,14 @@ def tool_quote(task, records):
     for capability, count in counts.items():
         for index in range(count):
             units = {}
-            if source.get('durationMs') is not None:
+            if capability in {'video.matting', 'video.motion_capture'} and source.get('durationMs') is not None:
                 units['input_second'] = Decimal(source['durationMs']) / 1000
             if capability == 'video.edit' and pieces:
                 start, end = pieces[index]
-                units['input_second'] = units['requested_second'] = Decimal(str(round(end-start, 6)))
+                units['input_second'] = Decimal(str(round(end-start, 6)))
+                units.update(video_units(wire_requests[index], units['input_second']))
             elif capability == 'video.first_frame' and tool == 'dynamic-poster':
-                units['requested_second'] = 5
+                units.update(video_units(wire_requests[0] if wire_requests else {}, 5))
             lines.append(price_line(models[capability], capability, units))
     inputs = {key: value for key, value in task.items() if key in {
         'id', 'tool', 'sourceAssetIds', 'maskAssetId', 'annotationAssetId', 'boxes', 'parameters', 'modelConfigIds',
