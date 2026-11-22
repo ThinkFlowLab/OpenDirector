@@ -61,6 +61,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     clipboard,
     clipboardMedia,
     command,
+    commitCanvasCommand,
     doc,
     editing,
     fileInput,
@@ -723,12 +724,12 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     }
     fileInput.current?.click();
   };
-  const importFiles = async (files: File[], point?: Point) => {
-    const target = uploadTarget.current;
+  const importFiles = async (files: File[], point?: Point, waitForSave = false) => {
+    const target = waitForSave ? null : uploadTarget.current;
     const expected = target ? uploadSource.current : null;
     uploadSource.current = null;
     uploadTarget.current = null;
-    let refTarget = referenceTarget.current;
+    let refTarget = waitForSave ? null : referenceTarget.current;
     const importDocumentId = historyRef.current.present.id;
     referenceTarget.current = null;
     const controller = new AbortController();
@@ -866,7 +867,11 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
           )
         : { commands: [], issue: "" };
       commands.push(...linked.commands);
-      if (commands.length) command({ type: "batch", commands });
+      if (commands.length) {
+        const batch: CanvasCommand = { type: "batch", commands };
+        if (waitForSave) await commitCanvasCommand(batch, t("canvas.workspace.error.importUnsaved"));
+        else command(batch);
+      }
       setSelected(
         importedNodeIds({
           targetId: target,
@@ -891,8 +896,11 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
         : t("canvas.workspace.toast.importedAssetsSaved", {
             count: successes.length,
           });
+      if (waitForSave && !commands.length) throw new Error(importSummary);
       notify(`${importSummary}${linked.issue}`);
+      return commands.length > 0;
     } catch (error) {
+      if (waitForSave) throw error;
       if (!controller.signal.aborted)
         notify(error instanceof Error ? error.message : t("canvas.workspace.toast.assetImportFailed"));
     } finally {

@@ -80,7 +80,7 @@ jobs:
       - name: Install media tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get install --yes ffmpeg bubblewrap
           ffmpeg -version
           ffprobe -version
           ffmpeg -hide_banner -encoders 2>&1 | grep 'libx264 '
@@ -102,6 +102,33 @@ jobs:
       - name: Check generated contracts
         if: always() && steps.install.outcome == 'success'
         run: python scripts/generate_contracts.py --check
+      - name: Bundled OpenCode model gateway regression
+        if: always() && steps.install.outcome == 'success'
+        timeout-minutes: 5
+        env:
+          OPENDIRECTOR_REAL_CLI: '1'
+        run: python -m pytest tests/test_native_runtime.py tests/test_agent_visual_gate.py -k real_opencode -q -ra --durations=50 --junitxml=test-results/bundled-opencode.xml --ci-profile=test-results/bundled-opencode.json
+      - id: harness-install
+        name: Install native Harness test tools
+        if: always() && steps.install.outcome == 'success'
+        timeout-minutes: 8
+        run: |
+          npm install --prefix "$RUNNER_TEMP/visual-harness-clis" --no-audit --no-fund \
+            @openai/codex@0.166.0 @anthropic-ai/claude-code@2.1.220 \
+            opencode-ai@1.19.5 @deepseek-ai/dsh@0.2.2-rc.1
+          python -m venv "$RUNNER_TEMP/visual-jiuwen"
+          "$RUNNER_TEMP/visual-jiuwen/bin/python" -m pip install 'workswarm==0.2.8'
+          ln -s "$RUNNER_TEMP/visual-jiuwen/bin/jiuwenswarm-process" "$RUNNER_TEMP/visual-harness-clis/node_modules/.bin/jiuwenswarm-process"
+          echo "$RUNNER_TEMP/visual-harness-clis/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Native Harness visual regression
+        if: always() && steps.harness-install.outcome == 'success'
+        timeout-minutes: 10
+        env:
+          OPENDIRECTOR_HARNESS_CI: '1'
+        run: >-
+          python -m pytest tests/test_agent_visual_gate.py::test_harness_native_visual_input -q -ra
+          --basetemp "$RUNNER_TEMP/harness-visual-pytest"
+          --junitxml=test-results/harness-visual.xml --ci-profile=test-results/harness-visual.json
       - name: Python tests
         if: always() && steps.install.outcome == 'success'
         env:
@@ -110,12 +137,6 @@ jobs:
       - name: Check full layer inventory / 核对完整分层清单
         if: always() && steps.install.outcome == 'success' && inputs.python-mark-expression == ''
         run: python scripts/ci/check_test_layers.py --profile test-results/python.json --require-executed
-      - name: Bundled OpenCode model gateway regression
-        if: always() && steps.install.outcome == 'success'
-        timeout-minutes: 5
-        env:
-          OPENDIRECTOR_REAL_CLI: '1'
-        run: python -m pytest tests/test_native_runtime.py -k real_opencode -q -ra --durations=50 --junitxml=test-results/bundled-opencode.xml --ci-profile=test-results/bundled-opencode.json
       - name: Upload Python timing evidence / 上传 Python 耗时证据
         if: always() && steps.install.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -1,22 +1,4 @@
 export const modelSetup = {
-  "modelSetup.nextModel": "下一步：配置{model}",
-  "modelSetup.finishedTitle": "配置已完成",
-  "modelSetup.finishedHint": "已保存的模型配置会保留，其余模型可随时在设置中补充。",
-
-  "modelSetup.skipItem": "跳过此项",
-  "modelSetup.skipAll": "跳过全部配置",
-  "modelSetup.deferred": "稍后配置",
-
-  "modelSetup.guideSave": "填写服务连接并选择模型，然后点击「保存服务」继续。",
-  "modelSetup.guideAdd": "添加一个服务，开始配置当前类型的模型。",
-  "modelSetup.guideNext": "此类模型已配置，可以继续配置其他类型。",
-
-  "modelSetup.welcomeTitle": "欢迎来到 OpenDirector",
-  "modelSetup.welcomeDescription": "从一个想法开始，与 AI 一起创作你的视频。",
-  "modelSetup.welcomeConfigure": "配置创作模型",
-  "modelSetup.welcomeSkip": "先探索一下",
-  "modelSetup.welcomeNote": "连接你自己的模型服务，也可以稍后在设置中配置。",
-
   "modelSetup.done": "完成",
   "modelSetup.overview": "概览",
   "modelSetup.title": "配置创作模型",

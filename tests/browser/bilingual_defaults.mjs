@@ -19,16 +19,61 @@ try {
   assert.ok(session, "The browser must acquire the editing session");
   const projectName = page.locator(".cw-project-name");
   const welcome = page.locator("#welcome-language");
+  const setup = page.locator("dialog.cw-welcome");
+  await page.route("**/assistant/runtimes/default/status", (route) => route.fulfill({ json: {
+    id: "default", label: "Default Agent", group: "default", modelSource: "settings",
+    modelOverride: false, available: true, status: "ready",
+  } }));
   await projectName.filter({ hasText: /^未命名项目$/ }).waitFor();
+  await page.getByRole("heading", { name: "欢迎使用 OpenDirector" }).waitFor();
+  assert.ok(await page.getByRole("button", { name: "开始设置" }).isVisible());
+  const chineseCanvas = page.getByRole("img", { name: "OpenDirector 画布截图：六个分镜和下方的剪辑时间线" });
+  await chineseCanvas.evaluate((element) => element.decode());
+  const chineseCanvasSrc = await chineseCanvas.getAttribute("src");
   await welcome.selectOption("en-US");
-  await page.locator(".cw-welcome-secondary").click();
+  await page.getByRole("heading", { name: "Welcome to OpenDirector" }).waitFor();
+  const englishCanvas = page.getByRole("img", { name: "OpenDirector canvas screenshot with six storyboard shots and the editing timeline below" });
+  await englishCanvas.evaluate((element) => element.decode());
+  assert.notEqual(await englishCanvas.getAttribute("src"), chineseCanvasSrc);
+  await page.getByRole("button", { name: "Get started" }).click();
+  await welcome.selectOption("zh-CN");
+  await setup.getByRole("heading", { name: "连接LLM", exact: true }).waitFor();
+  await setup.getByText("OpenDirector需要配置语言模型来理解你的创作需求、规划步骤和调用工具。", { exact: true }).waitFor();
+  await setup.getByRole("button", { name: "配置语言模型", exact: true }).waitFor();
+  await setup.getByRole("button", { name: "使用已有Harness", exact: true }).waitFor();
+  await welcome.selectOption("en-US");
+  await setup.getByText("OpenDirector needs a configured language model to understand what you want to create, plan the work, and use tools.", { exact: true }).waitFor();
+  await setup.getByRole("button", { name: "Set up a language model", exact: true }).click();
+  await page.getByRole("button", { name: /^fixture-agent/ }).click();
+  await page.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
+  await welcome.selectOption("zh-CN");
+  const videoTask = setup.getByRole("checkbox", { name: "做一段视频" });
+  await videoTask.check();
+  await setup.getByRole("heading", { name: "配置视频模型", exact: true }).waitFor();
+  await setup.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("checkbox", { name: "生成配音" }).check();
+  assert.ok(await videoTask.isChecked());
+  await setup.getByRole("heading", { name: "配置语音合成模型", exact: true }).waitFor();
+  await welcome.selectOption("en-US");
+  await setup.getByRole("heading", { name: "Set up a text-to-speech model", exact: true }).waitFor();
+  const filePicker = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Import media", exact: true }).click();
+  const chooser = await filePicker;
+  assert.ok(chooser.isMultiple());
+  await chooser.setFiles({ name: "first-run.txt", mimeType: "text/plain", buffer: Buffer.from("A first draft") });
+  await setup.waitFor({ state: "hidden" });
+  assert.equal(page.url(), `${base}/`);
+  await page.locator(".react-flow__node-text").waitFor();
   await projectName.filter({ hasText: /^Untitled project$/ }).waitFor();
 
   const switchLanguage = async (label, locale) => {
     await page.locator(".cw-language-toggle").getByRole("button", { name: label, exact: true }).click();
     await page.locator(`html[lang="${locale}"]`).waitFor({ state: "attached" });
   };
-  const showChat = () => page.locator(".cw-chat-button").click();
+  const showChat = async () => {
+    await page.locator(".cw-chat-button").click();
+    await page.locator('#canvas-assistant [contenteditable="true"]:focus').waitFor();
+  };
   const heading = page.locator(".cw-assistant-header h2");
   const checkHistoryTitle = async (title) => {
     await page.locator("[data-session-history]").click();

@@ -98,6 +98,12 @@
       "note": "Requires a fresh isolated assistant fixture workspace."
     },
     {
+      "file": "first_run.mjs",
+      "previewSafe": true,
+      "lanes": ["gate"],
+      "note": "First launch: assistant prerequisite, task-specific model setup and direct access to examples."
+    },
+    {
       "file": "canvas_crop.mjs",
       "previewSafe": true,
       "lanes": [
@@ -530,6 +536,13 @@
       "lanes": [
         "extended"
       ]
+    },
+    {
+      "file": "tts_reading_references.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "TTS reading panels keep connected, context-only references visible and removable. Isolated fixture only; does not submit generation or call a paid model."
     },
     {
       "file": "voice_library.mjs",

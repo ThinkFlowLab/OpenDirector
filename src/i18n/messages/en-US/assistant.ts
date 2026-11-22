@@ -119,6 +119,8 @@ export const assistant = {
   "assistant.reply.plan": "Execution plan",
   "assistant.reply.empty": "This reply produced no content.",
   "assistant.reply.copy": "Copy",
+  "assistant.reply.suggestions": "Suggested replies",
+  "assistant.reply.useSuggestion": "Use this suggestion as the draft text",
   "assistant.reply.copyReply": "Copy reply",
   "assistant.reply.copied": "Copied",
   "assistant.reply.copyFailed": "Copy failed; select the text to copy it",

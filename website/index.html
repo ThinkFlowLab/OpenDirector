@@ -1,23 +1,33 @@
 <!doctype html>
-<html lang="en-US">
+<html lang="{{locale}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Download OpenDirector, the open-source workspace for making videos with AI.">
-  <title>Download OpenDirector</title>
-  <link rel="icon" href="./logo.png">
-  <link rel="stylesheet" href="./site.css">
-  <link rel="stylesheet" href="./showcase.css">
-  <script type="module" src="./site.mjs"></script>
-  <script type="module" src="./ambient.mjs"></script>
+  <title>{{title}}</title>
+  <meta name="description" content="{{description}}">
+  <link rel="canonical" href="{{canonical}}">
+  {{alternates}}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="OpenDirector">
+  <meta property="og:locale" content="{{ogLocale}}">
+  <meta property="og:url" content="{{canonical}}">
+  <meta property="og:title" content="{{title}}">
+  <meta property="og:description" content="{{description}}">
+  <meta property="og:image" content="{{shareImage}}">
+  <meta property="og:image:alt" content="{{preview}}">
+  <link rel="icon" href="{{siteRoot}}logo.png">
+  <link rel="stylesheet" href="{{siteRoot}}site.css">
+  <link rel="stylesheet" href="{{siteRoot}}showcase.css">
+  <script type="module" src="{{siteRoot}}site.mjs"></script>
+  <script type="module" src="{{siteRoot}}ambient.mjs"></script>
 </head>
 <body id="page-top">
   <header class="top">
-    <a class="brand" href="#page-top"><img src="./logo.png" width="26" height="26" alt="">OpenDirector</a>
-    <nav class="nav" aria-label="Site" data-label="navigation">
-      <div class="languages" role="group" aria-label="Language" data-label="language" hidden>
-        <button type="button" lang="zh-CN" data-lang="zh-CN" aria-pressed="false">中文</button>
-        <button type="button" lang="en-US" data-lang="en-US" aria-pressed="true">EN</button>
+    <a class="brand" href="#page-top"><img src="{{siteRoot}}logo.png" width="26" height="26" alt="">OpenDirector</a>
+    <nav class="nav" aria-label="{{navigation}}">
+      <div class="languages" role="group" aria-label="{{language}}">
+        <a href="{{chineseHref}}" lang="zh-CN" data-lang="zh-CN"{{chineseCurrent}}>中文</a>
+        <a href="{{englishHref}}" lang="en-US" data-lang="en-US"{{englishCurrent}}>EN</a>
       </div>
       <div class="scroll-actions" inert>
         <a class="nav-github" href="https://github.com/ThinkFlowLab/OpenDirector">
@@ -32,21 +42,21 @@
       <div class="hero-light" aria-hidden="true"><canvas></canvas></div>
       <section class="shell hero" aria-labelledby="headline">
         <h1 id="headline">OpenDirector</h1>
-        <p class="tagline" data-text="headline">An open-source AI video studio</p>
-        <p class="intro" data-text="intro">Generate shots with AI on the canvas, edit them on the timeline and export your film.</p>
-        <div class="actions">
-          <a class="primary" href="#install-heading" {{primary-hidden}}>Source installation</a>
-          <details {{menu-hidden}}>
-            <summary class="primary"><span data-text="downloads">Download OpenDirector</span></summary>
+        <p class="tagline">{{headline}}</p>
+        <p class="intro">{{intro}}</p>
+        <div class="actions" id="download">
+          <a class="primary" href="#install-heading"{{primaryHidden}}>{{source}}</a>
+          <details{{menuHidden}}>
+            <summary class="primary"><span>{{downloads}}</span></summary>
             <div class="download-panel">
-              <ul>{{desktop-options}}</ul>
+              <ul>{{desktopOptions}}</ul>
             </div>
           </details>
         </div>
       </section>
       <figure class="shell preview">
         <div class="canvas-stage">
-          <a class="canvas-image" href="./canvas.jpg" data-label="fullCanvas" aria-label="Open the full-size canvas image"><img src="./canvas.jpg" alt="The script, six shots and timeline for We Can Still Win on the OpenDirector canvas" data-label="preview" width="1280" height="720" fetchpriority="high"></a>
+          <a class="canvas-image" href="{{siteRoot}}canvas.jpg" aria-label="{{fullCanvas}}"><img src="{{siteRoot}}canvas.jpg" alt="{{preview}}" width="1280" height="720" fetchpriority="high"></a>
           <div class="canvas-shots"></div>
           <div class="canvas-timeline" aria-hidden="true"><i></i></div>
           <div class="canvas-output" aria-hidden="true">
@@ -54,80 +64,80 @@
             <video muted playsinline preload="none" width="572" height="322" hidden></video>
           </div>
         </div>
-        <figcaption><span data-text="projectCaption">Project canvas · We Can Still Win</span>
-          <a href="#film" data-text="filmLink">Watch the short film</a>
+        <figcaption><span>{{projectCaption}}</span>
+          <a href="#film">{{filmLink}}</a>
         </figcaption>
       </figure>
     </div>
     <section class="shell workflow" id="film" aria-labelledby="workflow-heading">
       <div class="film-heading">
-        <h2 id="workflow-heading" data-text="workflow">We Can Still Win</h2>
-        <p data-text="filmIntro">Six shots follow a Dota 2 player and his former teammates.</p>
+        <h2 id="workflow-heading">{{workflow}}</h2>
+        <p>{{filmIntro}}</p>
       </div>
       <div class="screening">
         <div class="film-player">
-          <video controls playsinline preload="none" width="1280" height="720" src="./film/we-can-still-win.mp4" poster="./film/poster.jpg" aria-labelledby="workflow-heading"></video>
-          <div class="film-spec"><span data-text="finalCut">Final cut</span><span>01:00 · 720p · 24 fps</span></div>
+          <video controls playsinline preload="none" width="1280" height="720" src="{{siteRoot}}film/we-can-still-win.mp4" poster="{{siteRoot}}film/poster.jpg" aria-labelledby="workflow-heading"></video>
+          <div class="film-spec"><span>{{finalCut}}</span><span>01:00 · 720p · 24 fps</span></div>
         </div>
         <div class="shot-board">
-          <h3 id="shots-title" data-text="shots">Jump to a shot</h3>
+          <h3 id="shots-title">{{shots}}</h3>
           <div class="shots" role="group" aria-labelledby="shots-title">
             <button type="button" class="film-shot" data-at="0" aria-pressed="true">
-              <img src="./film/shot-0.jpg" loading="lazy" width="300" height="168" alt="">
-              <span class="shot-caption"><span data-text="shot0">At the café</span><time>0:00</time></span>
+              <img src="{{siteRoot}}film/shot-0.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot0}}</span><time>0:00</time></span>
             </button>
             <button type="button" class="film-shot" data-at="10" aria-pressed="false">
-              <img src="./film/shot-1.jpg" loading="lazy" width="300" height="168" alt="">
-              <span class="shot-caption"><span data-text="shot1">One more game</span><time>0:10</time></span>
+              <img src="{{siteRoot}}film/shot-1.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot1}}</span><time>0:10</time></span>
             </button>
             <button type="button" class="film-shot" data-at="20" aria-pressed="false">
-              <img src="./film/shot-2.jpg" loading="lazy" width="300" height="168" alt="">
-              <span class="shot-caption"><span data-text="shot2">Late at the office</span><time>0:20</time></span>
+              <img src="{{siteRoot}}film/shot-2.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot2}}</span><time>0:20</time></span>
             </button>
             <button type="button" class="film-shot" data-at="30" aria-pressed="false">
-              <img src="./film/shot-3.jpg" loading="lazy" width="300" height="168" alt="">
-              <span class="shot-caption"><span data-text="shot3">The group chat</span><time>0:30</time></span>
+              <img src="{{siteRoot}}film/shot-3.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot3}}</span><time>0:30</time></span>
             </button>
             <button type="button" class="film-shot" data-at="40" aria-pressed="false">
-              <img src="./film/shot-4.jpg" loading="lazy" width="300" height="168" alt="">
-              <span class="shot-caption"><span data-text="shot4">Bedtime</span><time>0:40</time></span>
+              <img src="{{siteRoot}}film/shot-4.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot4}}</span><time>0:40</time></span>
             </button>
             <button type="button" class="film-shot" data-at="50" aria-pressed="false">
-              <img src="./film/shot-5.jpg" loading="lazy" width="300" height="168" alt="">
-              <span class="shot-caption"><span data-text="shot5">Back at the desk</span><time>0:50</time></span>
+              <img src="{{siteRoot}}film/shot-5.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot5}}</span><time>0:50</time></span>
             </button>
           </div>
         </div>
       </div>
     </section>
     <section class="shell install" aria-labelledby="install-heading">
-      <h2 id="install-heading" data-text="otherInstall">Other ways to install</h2>
+      <h2 id="install-heading">{{otherInstall}}</h2>
       <div class="install-methods">
         <article>
-          <h3 data-text="aiInstall">Install with AI</h3>
-          <p data-text="aiBody">Paste this prompt into your AI assistant.</p>
+          <h3>{{aiInstall}}</h3>
+          <p>{{aiBody}}</p>
           <div class="install-snippet">
-            <code data-text="installPrompt">Install and start OpenDirector for me by following this skill: https://github.com/ThinkFlowLab/OpenDirector/blob/main/.agents/skills/install-opendirector/SKILL.md</code>
-            <button type="button" data-copy data-text="copy" aria-live="polite">Copy</button>
+            <code>{{installPrompt}}</code>
+            <button type="button" data-copy aria-live="polite">{{copy}}</button>
           </div>
         </article>
         <article>
-          <h3 data-text="source">Source installation</h3>
-          <p data-text="sourceBody">Clone the repository, then follow the guide for your operating system.</p>
+          <h3>{{source}}</h3>
+          <p>{{sourceBody}}</p>
           <div class="install-snippet">
             <code>git clone https://github.com/ThinkFlowLab/OpenDirector.git</code>
-            <button type="button" data-copy data-text="copy" aria-live="polite">Copy</button>
+            <button type="button" data-copy aria-live="polite">{{copy}}</button>
           </div>
-          <a data-text="guide" data-install href="https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/installation.md">Installation guide</a>
+          <a href="{{installHref}}">{{guide}}</a>
         </article>
       </div>
     </section>
   </main>
   <footer class="shell footer">
     <span>OpenDirector</span>
-    {{desktop-notes}}
-    <a data-text="aiInstall" data-ai href="https://github.com/ThinkFlowLab/OpenDirector#install-with-ai">Install with AI</a>
-    <a data-text="guide" data-install href="https://github.com/ThinkFlowLab/OpenDirector/blob/main/docs/guides/installation.md">Installation guide</a>
+    {{desktopNotes}}
+    <a href="{{aiInstallHref}}">{{aiInstall}}</a>
+    <a href="{{installHref}}">{{guide}}</a>
   </footer>
 </body>
 </html>

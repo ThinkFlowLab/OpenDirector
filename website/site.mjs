@@ -1,119 +1,22 @@
-const repository = "https://github.com/ThinkFlowLab/OpenDirector";
-const localeKey = "opendirector.website.locale";
-const messages = {
-  "en-US": {
-    shortDownload: "Download",
-    shortInstall: "Install",
-    projectCaption: "Project canvas · We Can Still Win",
-    fullCanvas: "Open the full-size canvas image",
-    filmLink: "Watch the short film",
-    workflow: "We Can Still Win",
-    filmIntro: "Six shots follow a Dota 2 player and his former teammates.",
-    finalCut: "Final cut",
-    shots: "Jump to a shot",
-    otherInstall: "Other ways to install",
-    aiBody: "Paste this prompt into your AI assistant.",
-    sourceBody: "Clone the repository, then follow the guide for your operating system.",
-    installPrompt: "Install and start OpenDirector for me by following this skill: https://github.com/ThinkFlowLab/OpenDirector/blob/main/.agents/skills/install-opendirector/SKILL.md",
-    copy: "Copy",
-    copied: "Copied",
-    copyManual: "Select and copy",
-    shot0: "At the café",
-    shot1: "One more game",
-    shot2: "Late at the office",
-    shot3: "The group chat",
-    shot4: "Bedtime",
-    shot5: "Back at the desk",
-    title: "Download OpenDirector",
-    navigation: "Site",
-    language: "Language",
-    headline: "An open-source AI video studio",
-    intro: "Generate shots with AI on the canvas, edit them on the timeline and export your film.",
-    downloads: "Download OpenDirector",
-    all: "All downloads",
-    chooseMac: "Choose a macOS download",
-    macDownload: "Download for macOS",
-    windowsDownload: "Download for Windows",
-    testBuild: "Test build",
-    mac: "macOS (Apple silicon)",
-    windows: "Windows (x64)",
-    unavailable: "Installer unavailable",
-    notes: "Release notes",
-    macNotes: "macOS release notes",
-    windowsNotes: "Windows release notes",
-    source: "Source installation",
-    guide: "Installation guide",
-    aiInstall: "Install with AI",
-    preview: "The script, six shots and timeline for We Can Still Win on the OpenDirector canvas",
-  },
-  "zh-CN": {
-    shortDownload: "下载",
-    shortInstall: "安装",
-    projectCaption: "工程画布 · 我们还能赢",
-    fullCanvas: "打开原尺寸画布截图",
-    filmLink: "观看成片",
-    workflow: "我们还能赢",
-    filmIntro: "六个镜头讲述一个 Dota 2 玩家和老队友的故事。",
-    finalCut: "导出成片",
-    shots: "跳到镜头",
-    otherInstall: "其他安装方式",
-    aiBody: "复制这句话，发给你正在使用的 AI 助手。",
-    sourceBody: "克隆仓库，再按照对应系统的安装指南完成配置。",
-    installPrompt: "请按照这个 skill 帮我安装并启动 OpenDirector：https://github.com/ThinkFlowLab/OpenDirector/blob/main/.agents/skills/install-opendirector/SKILL.md",
-    copy: "复制",
-    copied: "已复制",
-    copyManual: "请选中复制",
-    shot0: "一起开黑",
-    shot1: "再来一局",
-    shot2: "加班的夜晚",
-    shot3: "群里的消息",
-    shot4: "哄孩子入睡",
-    shot5: "回到电脑前",
-    title: "下载 OpenDirector",
-    navigation: "站点导航",
-    language: "语言",
-    headline: "开源 AI 影像工作台",
-    intro: "和 AI 助手在画布上生成镜头，在时间线上剪辑，再导出影片。",
-    downloads: "下载 OpenDirector",
-    all: "所有下载",
-    chooseMac: "选择 macOS 安装包",
-    macDownload: "下载 macOS 版",
-    windowsDownload: "下载 Windows 版",
-    testBuild: "测试版",
-    mac: "macOS（Apple 芯片）",
-    windows: "Windows（x64）",
-    unavailable: "暂无安装包",
-    notes: "发布说明",
-    macNotes: "macOS 发布说明",
-    windowsNotes: "Windows 发布说明",
-    source: "从源码安装",
-    guide: "安装指南",
-    aiInstall: "用 AI 安装",
-    preview: "OpenDirector 画布上显示《我们还能赢》的剧本、六个分镜和时间线",
-  },
-};
+import { messages } from "./messages.mjs";
+import "./language.mjs";
+
+const copy = messages[document.documentElement.lang];
 
 const heroActions = document.querySelector(".hero .actions");
 const installers = new Map([...heroActions.querySelectorAll("a[data-system]")].map(link => [link.dataset.system, link.href]));
 
 const header = document.querySelector(".top");
 const scrollActions = header.querySelector(".scroll-actions");
-const headerActions = scrollActions.appendChild(heroActions.cloneNode(true));
+const headerActions = heroActions.cloneNode(true);
+headerActions.removeAttribute("id");
+scrollActions.appendChild(headerActions);
 const downloadControls = [heroActions, headerActions].map((actions) => ({
   recommended: actions.querySelector("a.primary"),
   downloads: actions.querySelector("details"),
   summary: actions.querySelector("summary"),
   compact: actions === headerActions,
 }));
-const languages = document.querySelectorAll("[data-lang]");
-
-function readLocale() {
-  try {
-    const saved = localStorage.getItem(localeKey);
-    if (Object.hasOwn(messages, saved)) return saved;
-  } catch {}
-  return /^zh(?:-|$)/i.test(navigator.language) ? "zh-CN" : "en-US";
-}
 
 async function detectPlatform() {
   const { userAgentData, userAgent } = navigator;
@@ -137,37 +40,7 @@ async function detectPlatform() {
   }
 }
 
-let locale = readLocale();
-let platform = {};
-
-function render() {
-  const copy = messages[locale];
-  const chinese = locale === "zh-CN";
-  document.documentElement.lang = locale;
-  document.title = copy.title;
-  for (const element of document.querySelectorAll("[data-text]")) {
-    element.textContent = copy[element.dataset.text];
-  }
-  for (const element of document.querySelectorAll("[data-label]")) {
-    element.setAttribute(element instanceof HTMLImageElement ? "alt" : "aria-label", copy[element.dataset.label]);
-  }
-  for (const button of languages) {
-    button.setAttribute("aria-pressed", String(button.dataset.lang === locale));
-  }
-  for (const link of document.querySelectorAll("[data-install]")) {
-    link.href = `${repository}/blob/main/docs/guides/installation${chinese ? ".zh-CN" : ""}.md`;
-  }
-  for (const link of document.querySelectorAll("[data-ai]")) {
-    link.href = chinese
-      ? `${repository}/blob/main/README.zh-CN.md#一句话安装`
-      : `${repository}#install-with-ai`;
-  }
-
-  updateDownloadButtons();
-}
-
-function updateDownloadButtons() {
-  const copy = messages[locale];
+function updateDownloadButtons(platform) {
   const installer = platform.compatible && installers.get(platform.system);
   let menuLabel = copy.downloads;
   if (installer) menuLabel = copy.all;
@@ -194,13 +67,6 @@ function updateDownloadButtons() {
   }
 }
 
-for (const button of languages) {
-  button.addEventListener("click", () => {
-    locale = button.dataset.lang;
-    try { localStorage.setItem(localeKey, locale); } catch {}
-    render();
-  });
-}
 function closeOutsideDownloads(event) {
   for (const { downloads } of downloadControls) {
     if (downloads.open && !downloads.contains(event.target)) downloads.open = false;
@@ -252,7 +118,7 @@ function showFilmShot(index) {
 for (const [index, shot] of shots.entries()) {
   const link = document.createElement("a");
   link.href = "#film";
-  link.dataset.label = shot.querySelector("[data-text]").dataset.text;
+  link.setAttribute("aria-label", shot.querySelector(".shot-caption span").textContent);
   canvasShots.append(link);
 
   function playShot(event) {
@@ -297,7 +163,7 @@ function runCanvasDemo() {
   } else if (demoPhase === "timeline") {
     demoTimer = setTimeout(() => {
       outputClip.poster = shots[officeShot].querySelector("img").src;
-      outputClip.src = "./film/office-preview.mp4";
+      outputClip.src = new URL("./film/office-preview.mp4", import.meta.url).href;
       outputClip.hidden = false;
       demoPhase = "preview";
       runCanvasDemo();
@@ -323,21 +189,20 @@ for (const button of document.querySelectorAll("[data-copy]")) {
     clearTimeout(reset);
     try {
       await navigator.clipboard.writeText(code.textContent);
-      button.textContent = messages[locale].copied;
+      button.textContent = copy.copied;
     } catch {
       const range = document.createRange();
       range.selectNodeContents(code);
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
-      button.textContent = messages[locale].copyManual;
+      button.textContent = copy.copyManual;
     }
-    reset = setTimeout(() => { button.textContent = messages[locale].copy; }, 1800);
+    reset = setTimeout(() => { button.textContent = copy.copy; }, 1800);
   });
 }
 
 const languageGroup = header.querySelector(".languages");
-languageGroup.hidden = false;
 function updateHeader() {
   const compact = window.scrollY > 80;
   if (compact === header.classList.contains("is-scrolled")) return;
@@ -351,6 +216,5 @@ function updateHeader() {
 window.addEventListener("scroll", updateHeader, { passive: true });
 updateHeader();
 
-render();
-platform = await detectPlatform();
-updateDownloadButtons();
+updateDownloadButtons({});
+updateDownloadButtons(await detectPlatform());

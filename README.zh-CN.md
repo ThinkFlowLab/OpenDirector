@@ -13,11 +13,15 @@
 
 # OpenDirector
 
+**[下载 OpenDirector](https://thinkflowlab.github.io/OpenDirector/zh-cn/#download)**，适用于搭载 Apple 芯片的 Mac 和 Windows x64 电脑。
+
 **从创作想法到可下载的短片：对话生成、画布管理、媒体编辑、时间线导出。**
 
 OpenDirector 是一个在本地运行、通过浏览器使用的 AI 视频创作工作台。你可以与助手讨论创意并生成素材，在画布上整理和迭代内容，用编辑工具调整图片、视频和音频，再通过时间线编排并导出 MP4。
 
 适合验证视觉创意、反复调整素材和制作短片。项目保存在本机，生成内容使用你选择的服务商 API 或自部署模型服务。
+
+[官方网站](https://thinkflowlab.github.io/OpenDirector/zh-cn/) · [下载 macOS 或 Windows 版](https://thinkflowlab.github.io/OpenDirector/zh-cn/#download) · [观看短片示例](https://thinkflowlab.github.io/OpenDirector/zh-cn/#film) · [安装指南](docs/guides/installation.zh-CN.md)
 
 [最新动态](#最新动态) · [短片示例](#短片示例我们还能赢) · [快速开始](#快速开始) · [文档](#文档) · [社区交流](#社区交流) · [参与贡献](#参与贡献)
 
@@ -53,6 +57,10 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 [下载原始成片（MP4，15.7 MiB）](docs/guides/assets/dota2-short-film.mp4?raw=true) · 60 秒 · 1280 × 720 · 24 fps · 配乐：《岁月神偷》。
 
 ## 快速开始
+
+### 安装桌面版
+
+[下载 macOS（Apple 芯片）或 Windows（x64）安装包](https://thinkflowlab.github.io/OpenDirector/zh-cn/#download)，安装完成后打开 OpenDirector。
 
 ### 一句话安装
 

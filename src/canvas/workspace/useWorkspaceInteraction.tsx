@@ -763,10 +763,11 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   };
 
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = event.target as HTMLElement;
+    if (el.closest("dialog[open]")) return;
     bypassSnapping.current = event.metaKey || event.ctrlKey;
     if (bypassSnapping.current) clearGuides();
     if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
-    const el = event.target as HTMLElement;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
     // Tool shortcuts also work when a canvas menu owns focus, while editors
