@@ -413,6 +413,12 @@ export interface CommandReceiptInput extends ContractInput {
   readonly eventCursor?: number | null;
 }
 
+export interface ConnectionPriceInput extends ContractInput {
+  readonly unit: "request" | "input_character" | "input_second" | "requested_second" | "output_second";
+  readonly rate: number | string;
+  readonly currency: "USD" | "CNY";
+}
+
 export interface ContainerBindingInput extends ContractInput {
   readonly role: "container";
 }
@@ -435,7 +441,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
   readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: GenerationQuoteQueryInput | ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -569,6 +575,13 @@ export interface GenerationFailureInput {
   readonly providerStatus?: "failed" | "cancelled" | "expired" | null;
 }
 
+export interface GenerationQuoteQueryInput extends QueryBaseInput {
+  readonly type: "generation.quote";
+  readonly specId: string;
+  readonly originItemId?: string | null;
+  readonly count?: number;
+}
+
 export interface GenerationSpecBaseInput extends ProjectEntityInput {
   readonly purpose?: "draft" | "generation";
   readonly modelConfigId?: string | null;
@@ -583,6 +596,7 @@ export interface GenerationSpecRefInput extends ContractInput {
 }
 
 export interface GenerationSubmitInput extends ContractInput {
+  readonly count?: number;
   readonly specId: string;
   readonly expectedSpecRevision: number;
   readonly originItemId?: string | null;
@@ -865,6 +879,7 @@ export interface ModelAvailabilityInput extends ContractInput {
 }
 
 export interface ModelConfigPublicInput extends ModelConnectionInput {
+  readonly price?: ConnectionPriceInput | null;
   readonly id: string;
   readonly providerId?: string | null;
   readonly inputRules: InputRulesInput;
@@ -990,6 +1005,17 @@ export interface PlayheadInput extends ContractInput {
 export interface PointInput extends ContractInput {
   readonly x?: number;
   readonly y?: number;
+}
+
+export interface PriceLineInput extends ContractInput {
+  readonly operation: string;
+  readonly modelConfigId: string;
+  readonly modelId: string;
+  readonly source: "connection" | "official" | "local" | "unknown";
+  readonly sourceVersion?: string | null;
+  readonly price?: ConnectionPriceInput | null;
+  readonly quantity?: number | string | null;
+  readonly amount?: number | string | null;
 }
 
 export interface ProjectInput extends ContractInput {
@@ -1236,6 +1262,12 @@ export interface SpecUpdateCommandOperationInput {
 
 export interface SpecWriteInput extends ContractInput {
   readonly spec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
+}
+
+export interface SpendQuoteInput extends ContractInput {
+  readonly count: number;
+  readonly inputFingerprint: string;
+  readonly lines: ReadonlyArray<PriceLineInput>;
 }
 
 export interface StackCanvasItemInput extends EditorCanvasItemInput {
@@ -2062,6 +2094,12 @@ export interface CommandReceipt extends Contract {
   readonly eventCursor: number | null;
 }
 
+export interface ConnectionPrice extends Contract {
+  readonly unit: "request" | "input_character" | "input_second" | "requested_second" | "output_second";
+  readonly rate: string;
+  readonly currency: "USD" | "CNY";
+}
+
 export interface ContainerBinding extends Contract {
   readonly role: "container";
 }
@@ -2084,7 +2122,7 @@ export interface CreationContracts extends Contract {
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
   readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
+  readonly query: GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2218,6 +2256,13 @@ export interface GenerationFailure {
   readonly providerStatus?: "failed" | "cancelled" | "expired" | null;
 }
 
+export interface GenerationQuoteQuery extends QueryBase {
+  readonly type: "generation.quote";
+  readonly specId: string;
+  readonly originItemId: string | null;
+  readonly count: number;
+}
+
 export interface GenerationSpecBase extends ProjectEntity {
   readonly purpose: "draft" | "generation";
   readonly modelConfigId: string | null;
@@ -2232,6 +2277,7 @@ export interface GenerationSpecRef extends Contract {
 }
 
 export interface GenerationSubmit extends Contract {
+  readonly count?: number;
   readonly specId: string;
   readonly expectedSpecRevision: number;
   readonly originItemId: string | null;
@@ -2514,6 +2560,7 @@ export interface ModelAvailability extends Contract {
 }
 
 export interface ModelConfigPublic extends ModelConnection {
+  readonly price?: ConnectionPrice | null;
   readonly id: string;
   readonly inputRules: InputRules;
   readonly capabilityAutoCheck?: boolean | null;
@@ -2638,6 +2685,17 @@ export interface Playhead extends Contract {
 export interface Point extends Contract {
   readonly x: number;
   readonly y: number;
+}
+
+export interface PriceLine extends Contract {
+  readonly operation: string;
+  readonly modelConfigId: string;
+  readonly modelId: string;
+  readonly source: "connection" | "official" | "local" | "unknown";
+  readonly sourceVersion: string | null;
+  readonly price: ConnectionPrice | null;
+  readonly quantity: string | null;
+  readonly amount: string | null;
 }
 
 export interface Project extends Contract {
@@ -2884,6 +2942,12 @@ export interface SpecUpdateCommandOperation {
 
 export interface SpecWrite extends Contract {
   readonly spec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
+}
+
+export interface SpendQuote extends Contract {
+  readonly count: number;
+  readonly inputFingerprint: string;
+  readonly lines: ReadonlyArray<PriceLine>;
 }
 
 export interface StackCanvasItem extends EditorCanvasItem {

@@ -290,8 +290,9 @@ def bind_unique_timeline_sources(data, document, *, new_slot_ids):
 
 
 class CreationCanvas:
-    def __init__(self, projects):
+    def __init__(self, projects, generation=None):
         self.projects = projects
+        self.generation = generation
         from opendirector.application.creation_assets import CreationAssets
         self.assets = CreationAssets(projects)
 
@@ -842,6 +843,11 @@ class CreationCanvas:
                     hiddenItemIds=[i.id for i in snapshot.canvasItems if i.id not in visible], edges=edges, capabilities=capabilities)
 
     async def query(self, query: Query) -> JsonValue:
+        if query.type == 'generation.quote':
+            if self.generation is None:
+                raise ProjectError('Generation service unavailable.', 503)
+            quote = await asyncio.to_thread(self.generation.quote, query.projectId, query.specId, query.count, query.originItemId)
+            return dict(quote=quote.model_dump(mode='json'), fingerprint=quote.fingerprint())
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
         if query.type == 'asset.preview':

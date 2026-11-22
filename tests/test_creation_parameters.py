@@ -364,7 +364,13 @@ def score_model(project, url='http://score.invalid/v1'):
 async def test_music_follows_a_reference_recording_through_its_transcribed_score(project,mode):
     store,pid,_=project
     calls=[]
-    reference=recording(20)
+    # PCM has an exact measured duration across ffprobe versions; MP3 has encoder padding.
+    reference = BytesIO()
+    import wave
+    with wave.open(reference, 'wb') as audio:
+        audio.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+        audio.writeframes(bytes(20 * 8000 * 2))
+    reference = reference.getvalue()
     def handler(request):
         if request.url.path=='/v1/audio/transcriptions':
             assert request.url.host=='score.invalid'
@@ -379,7 +385,16 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
     runner,target,spec_id=setup(project,'audio',parameters,handler,protocol='vllm_omni_music',model='m-a-p/YuE2-3B')
     score=score_model(project)
     try:
-        target,asset=follow_recording(project,target,spec_id,reference)
+        target,asset=follow_recording(project,target,spec_id,reference,'reference.wav')
+        runner.configs.set_price(score['id'], dict(currency='USD', rate='0.01', unit='input_second'))
+        music_id = next(s.modelConfigId for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+        runner.configs.set_price(str(music_id), dict(currency='USD', rate='0.02', unit='requested_second'))
+        before = store.snapshot(pid)
+        quote = runner.quote(pid, spec_id, origin=target.id)
+        assert [(line.operation, float(line.amount)) for line in quote.lines] == [
+            ('score', 0.20), ('music', 0.44 if mode == 'melody' else 1.20)]
+        assert float(quote.total('USD')) == (0.64 if mode == 'melody' else 1.40)
+        assert store.snapshot(pid) == before and calls == []
         _,receipt=await submit(project,runner,target,spec_id)
         assert receipt.status=='accepted',receipt
         await done(runner)

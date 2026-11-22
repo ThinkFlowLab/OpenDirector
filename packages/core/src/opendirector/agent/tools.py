@@ -352,7 +352,7 @@ class AgentTools:
                 # A rejected query must name the accepted types rather than echo a
                 # tag list the model has to reinterpret.
                 raise ProjectError(query_guidance(failure)) from None
-            result = await CreationCanvas(self.projects).query(query)
+            result = await CreationCanvas(self.projects, self.generation).query(query)
             if query.type == 'asset.preview' and 'preview' in result:
                 with self.projects.local.transaction() as db:
                     project_directory, _, _ = self.projects._load(db, project_id)

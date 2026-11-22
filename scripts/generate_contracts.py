@@ -17,7 +17,7 @@ from pydantic import BaseModel, TypeAdapter
 from opendirector.domain.creation.schema import ALIASES, CreationContracts
 from opendirector.domain.rule_facts import typescript_module
 
-MODULES = ('base', 'assets', 'models', 'generation', 'editors', 'canvas', 'project', 'commands', 'timeline_packages', 'schema')
+MODULES = ('base', 'spend', 'assets', 'models', 'generation', 'editors', 'canvas', 'project', 'commands', 'timeline_packages', 'schema')
 
 
 def models():

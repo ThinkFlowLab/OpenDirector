@@ -62,7 +62,7 @@ class TemporaryPackageResponse(FileResponse):
 def creation_routes(projects: CreationProjects, generation=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
-    canvas = CreationCanvas(projects)
+    canvas = CreationCanvas(projects, generation)
     history = CreationHistory(projects, assets=assets)
     timeline_packages = CreationTimelinePackages(projects)
 

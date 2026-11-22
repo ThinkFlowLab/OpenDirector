@@ -2,6 +2,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import model_validator, BaseModel, ConfigDict, Field, SecretStr
+from opendirector.domain.creation.spend import ConnectionPrice
 from opendirector.domain.creation.editors import ToolDraftBinding
 from opendirector.domain.capabilities import AgentInputModality
 from opendirector.domain.video_capabilities import VideoAdapter, VideoCapabilities
@@ -75,6 +76,7 @@ class ModelCapabilityRequest(ModelConfigInput):
 
 
 class ModelConfigPublic(ModelConnection):
+    price: ConnectionPrice | None = Field(default=None, exclude_if=lambda value: value is None)
     availability: ModelAvailability | None = Field(default=None, exclude_if=lambda value: value is None)
     providerId: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     videoAdapter: VideoAdapter = 'auto'

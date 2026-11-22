@@ -31,6 +31,8 @@ from opendirector_api.library import library_routes
 from opendirector_api.voices import voice_routes
 from opendirector_api.examples import router as example_routes
 from opendirector_api.localization import localized_error
+from fastapi import Body
+from opendirector.domain.creation.spend import ConnectionPrice
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
     ToolTaskCreate, ToolPlacement, ImageSelectionCreate, AvailabilityRefresh, AvailabilityCatalog,
@@ -284,6 +286,10 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                             video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
                             capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities,
                             capability_auto_check=value.capabilityAutoCheck)
+
+    @app.put('/api/model-configs/{config_id}/price', response_model=ModelConfigPublic)
+    def update_connection_price(config_id: UUID, value: ConnectionPrice | None = Body()):
+        return model_configs.set_price(str(config_id), value)
 
     @app.delete("/api/model-configs/{config_id}", status_code=204)
     def delete_model_config(config_id: UUID):

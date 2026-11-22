@@ -210,6 +210,8 @@ class ReferenceRemove(Contract):
 
 
 class GenerationSubmit(Contract):
+    count: int = Field(default=1, strict=True, ge=1, le=8, exclude_if=lambda value: value == 1,
+                       description='Number of candidates admitted together at the whole-action price.')
     specId: UUID = Field(description='Include its current generation_spec revision in expectedVersions.',
         json_schema_extra={'x-version-object-type': 'generation_spec'})
     expectedSpecRevision: Revision = Field(description='Must match the specId revision in expectedVersions.')
@@ -461,6 +463,13 @@ class QueryBase(Contract):
     projectId: UUID = Field(description='Owning project ID.')
 
 
+class GenerationQuoteQuery(QueryBase):
+    type: Literal['generation.quote'] = Field(description='Estimate the entire action without creating jobs.')
+    specId: UUID = Field(description='Generation specification to price.')
+    originItemId: UUID | None = Field(default=None, description='Canvas item that owns the draft.')
+    count: int = Field(default=1, strict=True, ge=1, le=8, description='Requested candidates.')
+
+
 class ProjectQuery(QueryBase):
     type: Literal['project.get'] = Field(description='Read the current project.')
 
@@ -501,7 +510,7 @@ class AssetPreviewQuery(QueryBase):
     objectId: UUID = Field(description='Asset ID.')
 
 
-Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
+Query = Annotated[GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
                   CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
 
 

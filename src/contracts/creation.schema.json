@@ -3738,6 +3738,52 @@
         "title": "CommandReceipt",
         "type": "object"
       },
+      "ConnectionPrice": {
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "description": "What the configured service bills for.",
+            "enum": [
+              "request",
+              "input_character",
+              "input_second",
+              "requested_second",
+              "output_second"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "Price for one billing unit.",
+            "title": "Rate"
+          },
+          "currency": {
+            "description": "Currency of the service price.",
+            "enum": [
+              "USD",
+              "CNY"
+            ],
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit",
+          "rate",
+          "currency"
+        ],
+        "title": "ConnectionPrice",
+        "type": "object"
+      },
       "ContainerBinding": {
         "additionalProperties": false,
         "properties": {
@@ -4233,6 +4279,7 @@
                 "asset.usage": "#/$defs/AssetUsageQuery",
                 "canvas.status": "#/$defs/CanvasStatusQuery",
                 "canvas.versions": "#/$defs/VersionsQuery",
+                "generation.quote": "#/$defs/GenerationQuoteQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
                 "object.get": "#/$defs/ObjectQuery",
@@ -4241,6 +4288,9 @@
               "propertyName": "type"
             },
             "oneOf": [
+              {
+                "$ref": "#/$defs/GenerationQuoteQuery"
+              },
               {
                 "$ref": "#/$defs/ProjectQuery"
               },
@@ -5628,6 +5678,65 @@
         "title": "GenerationFailure",
         "type": "object"
       },
+      "GenerationQuoteQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.quote",
+            "description": "Estimate the entire action without creating jobs.",
+            "title": "Type",
+            "type": "string"
+          },
+          "specId": {
+            "description": "Generation specification to price.",
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "originItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas item that owns the draft.",
+            "title": "Originitemid"
+          },
+          "count": {
+            "default": 1,
+            "description": "Requested candidates.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "specId"
+        ],
+        "title": "GenerationQuoteQuery",
+        "type": "object"
+      },
       "GenerationSpecBase": {
         "additionalProperties": false,
         "properties": {
@@ -5759,6 +5868,14 @@
       "GenerationSubmit": {
         "additionalProperties": false,
         "properties": {
+          "count": {
+            "default": 1,
+            "description": "Number of candidates admitted together at the whole-action price.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
           "specId": {
             "description": "Include its current generation_spec revision in expectedVersions.",
             "format": "uuid",
@@ -8657,7 +8774,6 @@
       },
       "ModelConfigPublic": {
         "additionalProperties": false,
-        "description": "Application-level, never embedded in an editable project's credential data.",
         "properties": {
           "kind": {
             "description": "Business object or media type.",
@@ -8774,6 +8890,18 @@
             ],
             "default": null,
             "description": "Supported video generation capabilities."
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConnectionPrice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "User-specified price for this exact model connection."
           },
           "id": {
             "description": "Stable object ID.",
@@ -9878,6 +10006,105 @@
           }
         },
         "title": "Point",
+        "type": "object"
+      },
+      "PriceLine": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Model operation being priced.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "modelConfigId": {
+            "description": "Selected model connection.",
+            "format": "uuid",
+            "title": "Modelconfigid",
+            "type": "string"
+          },
+          "modelId": {
+            "description": "Provider model receiving the request.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "source": {
+            "description": "Origin of the price.",
+            "enum": [
+              "connection",
+              "official",
+              "local",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Price revision or dated official source.",
+            "title": "Sourceversion"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConnectionPrice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Native unit price, when known."
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Billing units or bounded maximum for one candidate.",
+            "title": "Quantity"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Estimated amount for this step of one candidate.",
+            "title": "Amount"
+          }
+        },
+        "required": [
+          "operation",
+          "modelConfigId",
+          "modelId",
+          "source"
+        ],
+        "title": "PriceLine",
         "type": "object"
       },
       "Project": {
@@ -11877,6 +12104,39 @@
           "spec"
         ],
         "title": "SpecWrite",
+        "type": "object"
+      },
+      "SpendQuote": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "Number of fixed candidates in this action.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "inputFingerprint": {
+            "description": "Identity of the effective model inputs.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Inputfingerprint",
+            "type": "string"
+          },
+          "lines": {
+            "description": "Individual provider calls per candidate, in execution order.",
+            "items": {
+              "$ref": "#/$defs/PriceLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "inputFingerprint",
+          "lines"
+        ],
+        "title": "SpendQuote",
         "type": "object"
       },
       "StackCanvasItem": {
@@ -15821,6 +16081,7 @@
             "asset.usage": "#/$defs/AssetUsageQuery",
             "canvas.status": "#/$defs/CanvasStatusQuery",
             "canvas.versions": "#/$defs/VersionsQuery",
+            "generation.quote": "#/$defs/GenerationQuoteQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
             "object.get": "#/$defs/ObjectQuery",
@@ -15829,6 +16090,9 @@
           "propertyName": "type"
         },
         "oneOf": [
+          {
+            "$ref": "#/$defs/GenerationQuoteQuery"
+          },
           {
             "$ref": "#/$defs/ProjectQuery"
           },
@@ -19830,6 +20094,44 @@
         "title": "CommandReceipt",
         "type": "object"
       },
+      "ConnectionPrice": {
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "description": "What the configured service bills for.",
+            "enum": [
+              "request",
+              "input_character",
+              "input_second",
+              "requested_second",
+              "output_second"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "rate": {
+            "description": "Price for one billing unit.",
+            "title": "Rate",
+            "type": "string"
+          },
+          "currency": {
+            "description": "Currency of the service price.",
+            "enum": [
+              "USD",
+              "CNY"
+            ],
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit",
+          "rate",
+          "currency"
+        ],
+        "title": "ConnectionPrice",
+        "type": "object"
+      },
       "ContainerBinding": {
         "additionalProperties": false,
         "properties": {
@@ -20327,6 +20629,7 @@
                 "asset.usage": "#/$defs/AssetUsageQuery",
                 "canvas.status": "#/$defs/CanvasStatusQuery",
                 "canvas.versions": "#/$defs/VersionsQuery",
+                "generation.quote": "#/$defs/GenerationQuoteQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
                 "object.get": "#/$defs/ObjectQuery",
@@ -20335,6 +20638,9 @@
               "propertyName": "type"
             },
             "oneOf": [
+              {
+                "$ref": "#/$defs/GenerationQuoteQuery"
+              },
               {
                 "$ref": "#/$defs/ProjectQuery"
               },
@@ -21778,6 +22084,67 @@
         "title": "GenerationFailure",
         "type": "object"
       },
+      "GenerationQuoteQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.quote",
+            "description": "Estimate the entire action without creating jobs.",
+            "title": "Type",
+            "type": "string"
+          },
+          "specId": {
+            "description": "Generation specification to price.",
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "originItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas item that owns the draft.",
+            "title": "Originitemid"
+          },
+          "count": {
+            "default": 1,
+            "description": "Requested candidates.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "specId",
+          "originItemId",
+          "count"
+        ],
+        "title": "GenerationQuoteQuery",
+        "type": "object"
+      },
       "GenerationSpecBase": {
         "additionalProperties": false,
         "properties": {
@@ -21916,6 +22283,14 @@
       "GenerationSubmit": {
         "additionalProperties": false,
         "properties": {
+          "count": {
+            "default": 1,
+            "description": "Number of candidates admitted together at the whole-action price.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
           "specId": {
             "description": "Include its current generation_spec revision in expectedVersions.",
             "format": "uuid",
@@ -24956,7 +25331,6 @@
       },
       "ModelConfigPublic": {
         "additionalProperties": false,
-        "description": "Application-level, never embedded in an editable project's credential data.",
         "properties": {
           "kind": {
             "description": "Business object or media type.",
@@ -25073,6 +25447,18 @@
             ],
             "default": null,
             "description": "Supported video generation capabilities."
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConnectionPrice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "User-specified price for this exact model connection."
           },
           "id": {
             "description": "Stable object ID.",
@@ -26197,6 +26583,101 @@
           "y"
         ],
         "title": "Point",
+        "type": "object"
+      },
+      "PriceLine": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Model operation being priced.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "modelConfigId": {
+            "description": "Selected model connection.",
+            "format": "uuid",
+            "title": "Modelconfigid",
+            "type": "string"
+          },
+          "modelId": {
+            "description": "Provider model receiving the request.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "source": {
+            "description": "Origin of the price.",
+            "enum": [
+              "connection",
+              "official",
+              "local",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Price revision or dated official source.",
+            "title": "Sourceversion"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConnectionPrice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Native unit price, when known."
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Billing units or bounded maximum for one candidate.",
+            "title": "Quantity"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Estimated amount for this step of one candidate.",
+            "title": "Amount"
+          }
+        },
+        "required": [
+          "operation",
+          "modelConfigId",
+          "modelId",
+          "source",
+          "sourceVersion",
+          "price",
+          "quantity",
+          "amount"
+        ],
+        "title": "PriceLine",
         "type": "object"
       },
       "Project": {
@@ -28252,6 +28733,39 @@
           "spec"
         ],
         "title": "SpecWrite",
+        "type": "object"
+      },
+      "SpendQuote": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "Number of fixed candidates in this action.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "inputFingerprint": {
+            "description": "Identity of the effective model inputs.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Inputfingerprint",
+            "type": "string"
+          },
+          "lines": {
+            "description": "Individual provider calls per candidate, in execution order.",
+            "items": {
+              "$ref": "#/$defs/PriceLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "inputFingerprint",
+          "lines"
+        ],
+        "title": "SpendQuote",
         "type": "object"
       },
       "StackCanvasItem": {
@@ -32373,6 +32887,7 @@
             "asset.usage": "#/$defs/AssetUsageQuery",
             "canvas.status": "#/$defs/CanvasStatusQuery",
             "canvas.versions": "#/$defs/VersionsQuery",
+            "generation.quote": "#/$defs/GenerationQuoteQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
             "object.get": "#/$defs/ObjectQuery",
@@ -32381,6 +32896,9 @@
           "propertyName": "type"
         },
         "oneOf": [
+          {
+            "$ref": "#/$defs/GenerationQuoteQuery"
+          },
           {
             "$ref": "#/$defs/ProjectQuery"
           },
