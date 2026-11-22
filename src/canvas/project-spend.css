@@ -1,0 +1,20 @@
+.cw-spend { position: relative; font-size: 13px; }
+.cw-spend-toggle, .cw-spend-panel, .cw-spend-form input, .cw-spend-form select, .cw-spend-card input {
+  border: 1px solid #cad0d7; border-radius: 8px; background: white; color: #283240;
+}
+.cw-spend-toggle { min-height: 36px; padding: 0 10px; cursor: pointer; }
+.cw-spend-panel { padding: 14px; box-shadow: 0 5px 20px #2736471a; }
+.cw-spend-canvas .cw-spend-panel { position: absolute; bottom: 44px; left: 0; width: min(350px, 82vw); max-height: 72vh; overflow: auto; z-index: 12; }
+.cw-spend-panel h3, .cw-spend-panel p { margin: 0 0 8px; }
+.cw-spend-panel details, .cw-spend-estimate { margin: 6px 0; }
+.cw-spend-panel summary, .cw-spend-estimate summary { cursor: pointer; }
+.cw-spend-card { border-top: 1px solid #d7dce2; padding: 10px 0; }
+.cw-spend-lines { list-style: none; padding: 0; margin: 5px 0 9px; }
+.cw-spend-lines li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 8px; padding: 3px 0; overflow-wrap: anywhere; }
+.cw-spend-lines small { width: 100%; color: #515f70; }
+.cw-spend-actions, .cw-spend-form { display: flex; flex-wrap: wrap; gap: 7px; margin: 7px 0; }
+.cw-spend-form { flex-direction: column; align-items: stretch; }
+.cw-spend-form label, .cw-spend-card label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cw-spend-form input, .cw-spend-form select, .cw-spend-card input { width: 9em; padding: 4px; }
+.cw-spend-actions button, .cw-spend-form button { background: #edf1f5; color: #233245; padding: 5px 10px; border: 0; border-radius: 6px; cursor: pointer; }
+.cw-spend-estimate { font-size: 12px; color: #465363; }

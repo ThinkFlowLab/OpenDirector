@@ -219,6 +219,9 @@ class Client:
         if value.get("status") == "rejected":
             emit(value)
             raise typer.Exit(1)
+        if value.get("status") == "awaiting_confirmation":
+            value["reviewUrl"] = f"{str(self.http.base_url).rstrip('/')}/ai-tool/ai-canvas/{self.project}?spendReview={value['spendRequestId']}"
+            value["next"] = {"description": "Review the batch in the project window. Query spend.status to read the current decision."}
         if value.get("status") == "accepted" and value.get("jobIds"):
             value = {**value, "next": {
                 "description": "Wait for each accepted job to finish. On timeout, run the same wait command again.",

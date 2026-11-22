@@ -117,6 +117,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     origin: ResultSource,
     _title: string,
     resultMode: GenerationResultMode = "replace",
+    count = 1,
   ): Promise<string[]> => {
     const id = crypto.randomUUID();
     let jobIds: string[] = [];
@@ -179,12 +180,15 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
         resultMode === "additional" ? "candidate_only" : "if_current",
         request.batchId,
         run.controller.signal,
+        count,
       );
       if (run.controller.signal.aborted) {
         // Once sent, await the original receipt before cancelling its jobs.
         // Never abort delivery and mint a replacement command.
         for (const jobId of receipt.jobIds)
           await creationClient(origin.documentId).control(jobId, "cancel");
+      } else if (receipt.status === "awaiting_confirmation") {
+        notify(t("spend.waiting"));
       } else if (receipt.status === "accepted") {
         jobIds = [...(receipt.jobIds ?? [])];
         notify(t("canvas.workspace.toast.generationSubmitted"));
@@ -550,17 +554,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       return Promise.resolve<string[]>([]);
     }
     const batchId = plan.count > 1 ? crypto.randomUUID() : undefined;
-    const runs: Promise<string[]>[] = [];
-    for (let index = 0; index < plan.count; index++)
-      runs.push(
-        runServiceTask(
-          { ...plan.request, batchId, executionSlot: index },
-          plan.origin,
-          plan.label,
-          index === 0 ? "replace" : "additional",
-        ),
-      );
-    return Promise.all(runs).then((ids) => ids.flat());
+    return runServiceTask({ ...plan.request, batchId }, plan.origin, plan.label, "replace", plan.count);
   };
   const cancelServiceRuns = (nodeId: string) => {
     for (const job of jobs)

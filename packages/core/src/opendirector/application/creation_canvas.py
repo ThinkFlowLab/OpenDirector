@@ -850,7 +850,12 @@ class CreationCanvas:
             if self.generation is None:
                 raise ProjectError('Generation service unavailable.', 503)
             quote = await asyncio.to_thread(self.generation.quote, query.projectId, query.specId, query.count, query.originItemId)
-            return dict(quote=quote.model_dump(mode='json'), fingerprint=quote.fingerprint())
+            from opendirector.domain.creation.spend import spend_summary, spend_decision
+            summary = spend_summary(await asyncio.to_thread(self.projects.snapshot, query.projectId))
+            total = quote.total(summary['policy'].currency)
+            return to_jsonable_python(dict(quote=quote, fingerprint=quote.fingerprint(), amount=total,
+                projectAfter=None if total is None else summary['settled'] + summary['held'] + total,
+                currency=summary['policy'].currency, reason=spend_decision(summary, quote)))
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
         if query.type == 'asset.preview':

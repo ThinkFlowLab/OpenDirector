@@ -8,6 +8,7 @@ import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
+import { ProjectSpend } from "./ProjectSpend";
 import { AssistantReply } from "./AssistantReply";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
@@ -412,6 +413,7 @@ export function AssistantPanel({
             </p>
           </div>
         )}
+        {open && <ProjectSpend projectId={documentId} placement="chat" onSettings={onOpenSettings} />}
         {value.messages.map((message, index) => {
           const previous = value.messages[index - 1];
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&

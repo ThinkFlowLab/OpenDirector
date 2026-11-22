@@ -1,4 +1,5 @@
 import { projectDisplayName } from "../projectDisplayName";
+import { ProjectSpend } from "../ProjectSpend";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
@@ -1203,6 +1204,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       {!ready && <div className="cw-loading canvas-loading-message"><span className="canvas-loading-spinner" aria-hidden="true" />{t("canvas.workspace.loading.opening")}</div>}
 
       <div className="cw-bottom-left">
+        {ready && <ProjectSpend key={doc.id} projectId={doc.id} placement="canvas" onSettings={() => { setSettingsCategory("models"); setSettingsOpen(true); }} />}
         <div className="cw-settings-control">
           <IconButton
             name="settings"
@@ -1872,6 +1874,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               />
             ) : (
               <NodeComposer
+                projectId={doc.id}
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}

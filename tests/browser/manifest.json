@@ -1,5 +1,7 @@
 {
   "scripts": [
+    { "file": "project_spend.mjs", "httpGenerationFixture": true, "lanes": ["extendedHttpFixture"],
+      "note": "Bilingual batch pricing and confirmation with a loopback image provider." },
     {
       "file": "fasth3_capability_flow.mjs",
       "helper": true
