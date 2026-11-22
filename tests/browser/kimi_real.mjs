@@ -119,7 +119,10 @@ try {
     await page.locator(".cw-model-setup-row")
       .filter({ hasText: locale === "zh-CN" ? "文本模型" : "Text model" })
       .getByRole("button").click();
-    await page.getByRole("button", { name: locale === "zh-CN" ? "对话" : "Chat", exact: true }).click();
+    const modelCategories = page.getByRole("navigation", {
+      name: locale === "zh-CN" ? "模型用途" : "Model categories", exact: true,
+    });
+    await modelCategories.getByRole("button", { name: locale === "zh-CN" ? "对话" : "Chat", exact: true }).click();
     await page.getByRole("button", { name: locale === "zh-CN" ? "添加服务" : "Add service", exact: true }).click();
     await page.getByRole("combobox", { name: locale === "zh-CN" ? "提供商" : "Provider", exact: true }).click();
     await page.getByRole("listbox", { name: locale === "zh-CN" ? "提供商" : "Provider", exact: true })
