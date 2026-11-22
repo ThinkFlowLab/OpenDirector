@@ -32,6 +32,7 @@ export const generation = {
   "spend.reported": "Provider charge",
   "spend.price": "Unit price",
   "spend.automatic": "Automatic",
+  "spend.mediaToolPrice": "Media tool call price",
   "spend.unit": "Billing unit",
   "spend.previewStopped": "The selection preview stopped. Check its call history in Project spend.",
   "spend.priorUnknown": "Earlier calls have no confirmed amount in the project currency. The available budget for this batch is unknown.",

@@ -32,6 +32,7 @@ export const generation = {
   "spend.reported": "服务报告金额",
   "spend.price": "单价",
   "spend.automatic": "自动",
+  "spend.mediaToolPrice": "媒体工具调用单价",
   "spend.unit": "计费单位",
   "spend.previewStopped": "选区预览已停止，可在工程费用中查看调用记录。",
   "spend.priorUnknown": "先前的调用仍有费用无法用工程币种合计，暂时无法确定本批的可用预算。",

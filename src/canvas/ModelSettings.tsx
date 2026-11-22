@@ -199,9 +199,10 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
                         error={member.availability?.reasonCode === "query_failed" ? catalog.availabilityError || undefined : undefined}
                         onRefresh={() => void catalog.refreshAvailability([member.id], true)} />)}
                     </details>
-                    {model.kind !== "agent" && <details className="cw-model-availability-details"><summary>{t("spend.price")}</summary>
+                    <details className="cw-model-availability-details">
+                      <summary>{t(model.kind === "agent" ? "spend.mediaToolPrice" : "spend.price")}</summary>
                       {members.map(member => <ModelPriceEditor key={member.id} model={member} refresh={catalog.refresh} />)}
-                    </details>}
+                    </details>
                     <div className="cw-model-service-bottom">
                       <span>
                         {providerLabel(model)}{" "}

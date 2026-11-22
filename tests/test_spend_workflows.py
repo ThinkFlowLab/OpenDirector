@@ -22,7 +22,7 @@ from opendirector.integrations.providers import GenerationProviders
 from test_creation_canvas_service import project, send, ver
 from test_creation_generation_service import anyio_backend
 from test_creation_parameters import done, png
-from test_tool_tasks import SAM3, ZIMAGE, configure, images_server, segmentation_server, upload
+from test_tool_tasks import CHAT, SAM3, ZIMAGE, configure, images_server, segmentation_server, upload
 
 
 @pytest.mark.anyio
@@ -186,26 +186,40 @@ def test_a_translation_request_does_not_receive_the_tool_source_video():
 @pytest.mark.anyio
 async def test_selection_review_reuses_masks_and_accounts_physical_calls(project):
     store, pid, session = project
-    configs = configure(store, SAM3)
-    model = configs.list()[0]
-    configs.set_price(model['id'], dict(unit='request', rate='.40', currency='USD'))
+    configs = configure(store, SAM3, CHAT)
+    for model in configs.list():
+        rate = '.03' if model['kind'] == 'agent' else '.40'
+        configs.set_price(model['id'], dict(unit='request', rate=rate, currency='USD'))
     asset = upload(store, str(pid), session, 'source.png', png())
-    requests = []
+    requests, translations = [], []
+    segment = segmentation_server(requests, {'person': [(.9, (0, 0, 12, 16))]})
+
+    def provider(request):
+        if request.url.path == '/v1/chat/completions':
+            translations.append(json.loads(request.content)['messages'][-1]['content'])
+            return httpx.Response(200, json={'choices': [{'message': {'content': 'guitar'}}]})
+        return segment(request)
+
     service = ToolTasks(store.local, configs, CreationToolAssets(store), projects=store,
-        transport=httpx.MockTransport(segmentation_server(requests, {'person':[(.9, (0, 0, 12, 16))]})))
+                        transport=httpx.MockTransport(provider))
     runner = CreationGeneration(store, configs)
     runner.tools = service
     try:
         await runner.execute(policy(store, pid, threshold='.50'), session=session)
-        value = dict(id=str(uuid4()), sourceAssetId=asset, prompt='person, animal')
+        value = dict(id=str(uuid4()), sourceAssetId=asset, prompt='person, 吉他')
         answer = await service.selection_preview(str(pid), value, session)
-        assert answer['status'] == 'awaiting_confirmation' and not requests and not store.snapshot(pid).spendCalls
+        assert answer['status'] == 'awaiting_confirmation' and not requests and not translations
+        assert not store.snapshot(pid).spendCalls
         waiting = store.snapshot(pid).spendRequests[-1]
-        assert waiting.quote.total('USD') == Decimal('.80')
+        assert waiting.quote.total('USD') == Decimal('.83')
         await runner.execute(review(pid, waiting), session=session)
         result = await service.selection_preview(str(pid), value, session)
-        assert result['instances'] and len(requests) == 2 and not service.list(str(pid))
-        assert review_status(store.snapshot(pid))['settled'] == Decimal('.80')
+        assert result['instances'] and requests == ['person', 'guitar'] and not service.list(str(pid))
+        assert len(translations) == 1 and '吉他' in translations[0]
+        calls = store.snapshot(pid).spendCalls
+        assert [(call.line.operation, call.calculated) for call in calls] == [
+            ('image.segment', Decimal('.40')), ('image.segment', Decimal('.40')), ('text.chat', Decimal('.03'))]
+        assert review_status(store.snapshot(pid))['settled'] == Decimal('.83')
     finally:
         await service.close()
         await runner.close()

@@ -40,11 +40,12 @@ const service = createServer(async (req, res) => {
 service.listen(0, "127.0.0.1");
 await once(service, "listening");
 const browser = await launchBrowser();
-let model;
+let model, translator;
 try {
   model = await call("/api/model-configs", { kind: "image", modelId: "review-image", url: `http://127.0.0.1:${service.address().port}/v1`,
     authMode: "none", connectionType: "api", protocol: "openai", capabilityAutoCheck: false });
-  await call(`/api/model-configs/${model.id}/price`, { unit: "request", rate: "0.40", currency: "USD" }, "PUT");
+  translator = await call("/api/model-configs", { kind: "agent", modelId: "review-translation", url: `http://127.0.0.1:${service.address().port}/v1`,
+    authMode: "none", connectionType: "api", protocol: "openai", capabilityAutoCheck: false });
   for (const locale of ["zh-CN", "en-US"]) {
     const en = locale === "en-US", pid = crypto.randomUUID(), path = `/api/creation/projects/${pid}`;
     await call(path + "/commands", { type: "project.create", commandId: crypto.randomUUID(), projectId: pid, payload: { name: "Spend " + pid.slice(0, 8) } });
@@ -58,6 +59,25 @@ try {
       localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
     }, locale);
     await page.goto(`${web}/ai-tool/ai-canvas/${pid}`);
+    await page.getByRole("button", {name: en ? "Settings" : "设置", exact: true}).click();
+    await page.getByRole("button", {name: en ? "Model connections" : "模型接入", exact: true}).click();
+    await page.locator(".cw-model-setup-row").filter({hasText: en ? "Image model" : "图片模型"}).getByRole("button").click();
+    for (const [connection, rate] of [[model, "0.40"], [translator, "0.03"]]) {
+      const label = en ? "Unit price" : "单价";
+      const helper = connection.id === translator.id;
+      if (helper) await page.locator(".cw-model-categories").getByRole("button", {name: en ? "Chat" : "对话", exact: true}).click();
+      const serviceCard = page.locator(".cw-model-service").filter({has: page.locator(".cw-model-chip", {hasText: connection.modelId})});
+      await serviceCard.locator("summary").filter({hasText: helper ? (en ? "Media tool call price" : "媒体工具调用单价") : label}).click();
+      const form = serviceCard.locator(".cw-spend-form").filter({hasText: connection.modelId});
+      await form.getByLabel(label, {exact: true}).fill(rate);
+      await form.getByRole("button", {name: en ? "Save" : "保存", exact: true}).click();
+      await form.getByRole("status").filter({hasText: en ? "Saved" : "已保存"}).waitFor();
+      const saved = (await call("/api/model-configs")).find(value => value.id === connection.id);
+      assert.equal(Number(saved.price.rate), Number(rate));
+      assert.equal(saved.price.unit, "request");
+      assert.equal(saved.price.currency, "USD");
+    }
+    await page.getByRole("button", {name: en ? "Close settings" : "关闭设置", exact: true}).click();
     const toggle = page.locator(".cw-spend-toggle");
     await toggle.click();
     await page.getByText(en ? "Spending controls" : "费用设置", { exact: true }).click();
@@ -229,5 +249,7 @@ try {
 } finally {
   await browser.close();
   service.close();
-  if (model) await call(`/api/model-configs/${model.id}`, null, "DELETE");
+  for (const connection of [model, translator]) {
+    if (connection) await call(`/api/model-configs/${connection.id}`, null, "DELETE");
+  }
 }
