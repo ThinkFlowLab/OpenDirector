@@ -4,6 +4,65 @@
   "projectFormatVersion": 2,
   "input": {
     "$defs": {
+      "AdvanceGroupCommand": {
+        "additionalProperties": false,
+        "description": "Continue an accepted workflow with its completed results.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "spend.advanceGroup",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupAdvance",
+            "description": "Continue an accepted workflow with its completed results."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "AdvanceGroupCommand",
+        "type": "object"
+      },
       "ArtifactPublish": {
         "additionalProperties": false,
         "description": "Publish a file from a server-owned execution context without generating media.",
@@ -4137,6 +4196,7 @@
                 "creation.batch": "#/$defs/BatchCommand",
                 "editor.create": "#/$defs/EditorCreateCommand",
                 "editor.save": "#/$defs/EditorSaveCommand",
+                "generation.group": "#/$defs/GenerationGroupCommand",
                 "generation.submit": "#/$defs/GenerationSubmitCommand",
                 "generationSpec.create": "#/$defs/SpecCreateCommand",
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
@@ -4156,8 +4216,11 @@
                 "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
                 "result.select": "#/$defs/ResultSelectCommand",
+                "spend.advanceGroup": "#/$defs/AdvanceGroupCommand",
+                "spend.observe": "#/$defs/SpendObservationCommand",
                 "spend.policy": "#/$defs/SpendPolicyCommand",
                 "spend.review": "#/$defs/SpendReviewCommand",
+                "spend.tool": "#/$defs/ToolSpendCommand",
                 "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
               },
               "propertyName": "type"
@@ -4254,10 +4317,22 @@
                 "$ref": "#/$defs/ReferenceRemoveCommand"
               },
               {
+                "$ref": "#/$defs/ToolSpendCommand"
+              },
+              {
+                "$ref": "#/$defs/SpendObservationCommand"
+              },
+              {
                 "$ref": "#/$defs/SpendPolicyCommand"
               },
               {
                 "$ref": "#/$defs/SpendReviewCommand"
+              },
+              {
+                "$ref": "#/$defs/GenerationGroupCommand"
+              },
+              {
+                "$ref": "#/$defs/AdvanceGroupCommand"
               },
               {
                 "$ref": "#/$defs/GenerationSubmitCommand"
@@ -5708,6 +5783,85 @@
         "title": "GenerationFailure",
         "type": "object"
       },
+      "GenerationGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "members": {
+            "description": "Workflow members in canvas order.",
+            "items": {
+              "$ref": "#/$defs/GroupMember"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "title": "GenerationGroup",
+        "type": "object"
+      },
+      "GenerationGroupCommand": {
+        "additionalProperties": false,
+        "description": "Quote and run a complete canvas workflow.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.group",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GenerationGroup",
+            "description": "Quote and run a complete canvas workflow."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GenerationGroupCommand",
+        "type": "object"
+      },
       "GenerationQuoteQuery": {
         "additionalProperties": false,
         "properties": {
@@ -6045,6 +6199,33 @@
         "title": "GenerationSubmitCommand",
         "type": "object"
       },
+      "GroupAdvance": {
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "description": "Original group instruction.",
+            "format": "uuid",
+            "title": "Workflowid",
+            "type": "string"
+          },
+          "items": {
+            "description": "Newly runnable items.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "workflowId",
+          "items"
+        ],
+        "title": "GroupAdvance",
+        "type": "object"
+      },
       "GroupCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -6167,6 +6348,47 @@
           "kind"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupMember": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Canvas item to run.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "specId": {
+            "description": "Generation specification owned by the item.",
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "count": {
+            "default": 1,
+            "description": "Candidates requested for this item.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "after": {
+            "default": [],
+            "description": "Upstream group items whose adopted results this input needs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "After",
+            "type": "array"
+          }
+        },
+        "required": [
+          "itemId",
+          "specId"
+        ],
+        "title": "GroupMember",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -10059,6 +10281,19 @@
             "title": "Modelid",
             "type": "string"
           },
+          "providerUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Endpoint for this quoted connection.",
+            "title": "Providerurl"
+          },
           "source": {
             "description": "Origin of the price.",
             "enum": [
@@ -10069,6 +10304,19 @@
             ],
             "title": "Source",
             "type": "string"
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Published source for an official price.",
+            "title": "Sourceurl"
           },
           "sourceVersion": {
             "anyOf": [
@@ -10094,6 +10342,16 @@
             ],
             "default": null,
             "description": "Native unit price, when known."
+          },
+          "quantityBasis": {
+            "default": "fixed",
+            "description": "Whether the quoted quantity is an upper bound.",
+            "enum": [
+              "fixed",
+              "maximum"
+            ],
+            "title": "Quantitybasis",
+            "type": "string"
           },
           "quantity": {
             "anyOf": [
@@ -12235,6 +12493,24 @@
             "description": "Metered units reported for the call.",
             "title": "Usage"
           },
+          "usageSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "execution",
+                  "provider",
+                  "media"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Origin of the quantity used for settlement.",
+            "title": "Usagesource"
+          },
           "calculated": {
             "anyOf": [
               {
@@ -12278,6 +12554,157 @@
           "createdAt"
         ],
         "title": "SpendCall",
+        "type": "object"
+      },
+      "SpendObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "callId": {
+            "description": "Stable physical call receiving evidence.",
+            "format": "uuid",
+            "title": "Callid",
+            "type": "string"
+          },
+          "state": {
+            "description": "Observed execution state.",
+            "enum": [
+              "submitted",
+              "completed",
+              "released"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "request",
+                  "input_character",
+                  "input_second",
+                  "requested_second",
+                  "output_second"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Unit of observed provider usage.",
+            "title": "Unit"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provider units or measured output length.",
+            "title": "Usage"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Verified provider amount in the quoted currency.",
+            "title": "Reported"
+          },
+          "evidence": {
+            "default": "execution",
+            "description": "Source of the observation.",
+            "enum": [
+              "execution",
+              "provider",
+              "media"
+            ],
+            "title": "Evidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "callId",
+          "state"
+        ],
+        "title": "SpendObservation",
+        "type": "object"
+      },
+      "SpendObservationCommand": {
+        "additionalProperties": false,
+        "description": "Record evidence from a model operation.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "spend.observe",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpendObservation",
+            "description": "Record evidence from a model operation."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "SpendObservationCommand",
         "type": "object"
       },
       "SpendPolicy": {
@@ -12393,6 +12820,35 @@
       "SpendQuote": {
         "additionalProperties": false,
         "properties": {
+          "fromUpstream": {
+            "default": false,
+            "description": "Inputs are newly resolved upstream results.",
+            "title": "Fromupstream",
+            "type": "boolean"
+          },
+          "candidates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Total candidates across distinct group members.",
+            "title": "Candidates"
+          },
+          "deferred": {
+            "default": [],
+            "description": "Workflow items awaiting upstream inputs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Deferred",
+            "type": "array"
+          },
           "count": {
             "description": "Number of fixed candidates in this action.",
             "maximum": 8,
@@ -12444,6 +12900,91 @@
             "minimum": 1,
             "title": "Revision",
             "type": "integer"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USD",
+                  "CNY"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project currency when this quote was requested.",
+            "title": "Currency"
+          },
+          "specId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fixed generation specification for a candidate batch.",
+            "title": "Specid"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas batch identity for member validation.",
+            "title": "Batchid"
+          },
+          "workflowId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Original group action owning this decision.",
+            "title": "Workflowid"
+          },
+          "groupItems": {
+            "default": [],
+            "description": "Fixed workflow items included in this decision.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Groupitems",
+            "type": "array"
+          },
+          "toolTask": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen media tool dispatch, without credentials. The project journal owns its acceptance.",
+            "title": "Tooltask"
           },
           "versions": {
             "description": "Input object versions fixed when the request was made.",
@@ -12655,6 +13196,20 @@
             "format": "uuid",
             "title": "Projectid",
             "type": "string"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Include the media service calls for this assistant turn.",
+            "title": "Agentrunid"
           },
           "type": {
             "const": "spend.status",
@@ -15195,6 +15750,83 @@
         "title": "ToolSelection",
         "type": "object"
       },
+      "ToolSpendCommand": {
+        "additionalProperties": false,
+        "description": "Admit a frozen media tool recipe with its service costs.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "spend.tool",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/ToolSpendInput",
+            "description": "Admit a frozen media tool recipe with its service costs."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "ToolSpendCommand",
+        "type": "object"
+      },
+      "ToolSpendInput": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "description": "Validated media tool submission, including its stable task ID.",
+            "title": "Request",
+            "type": "object"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "ToolSpendInput",
+        "type": "object"
+      },
       "TransformFrame": {
         "additionalProperties": false,
         "properties": {
@@ -16453,6 +17085,7 @@
             "creation.batch": "#/$defs/BatchCommand",
             "editor.create": "#/$defs/EditorCreateCommand",
             "editor.save": "#/$defs/EditorSaveCommand",
+            "generation.group": "#/$defs/GenerationGroupCommand",
             "generation.submit": "#/$defs/GenerationSubmitCommand",
             "generationSpec.create": "#/$defs/SpecCreateCommand",
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
@@ -16472,8 +17105,11 @@
             "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
             "result.select": "#/$defs/ResultSelectCommand",
+            "spend.advanceGroup": "#/$defs/AdvanceGroupCommand",
+            "spend.observe": "#/$defs/SpendObservationCommand",
             "spend.policy": "#/$defs/SpendPolicyCommand",
             "spend.review": "#/$defs/SpendReviewCommand",
+            "spend.tool": "#/$defs/ToolSpendCommand",
             "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
           },
           "propertyName": "type"
@@ -16570,10 +17206,22 @@
             "$ref": "#/$defs/ReferenceRemoveCommand"
           },
           {
+            "$ref": "#/$defs/ToolSpendCommand"
+          },
+          {
+            "$ref": "#/$defs/SpendObservationCommand"
+          },
+          {
             "$ref": "#/$defs/SpendPolicyCommand"
           },
           {
             "$ref": "#/$defs/SpendReviewCommand"
+          },
+          {
+            "$ref": "#/$defs/GenerationGroupCommand"
+          },
+          {
+            "$ref": "#/$defs/AdvanceGroupCommand"
           },
           {
             "$ref": "#/$defs/GenerationSubmitCommand"
@@ -16785,6 +17433,67 @@
   },
   "output": {
     "$defs": {
+      "AdvanceGroupCommand": {
+        "additionalProperties": false,
+        "description": "Continue an accepted workflow with its completed results.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "spend.advanceGroup",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupAdvance",
+            "description": "Continue an accepted workflow with its completed results."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "AdvanceGroupCommand",
+        "type": "object"
+      },
       "ArtifactPublish": {
         "additionalProperties": false,
         "description": "Publish a file from a server-owned execution context without generating media.",
@@ -21031,6 +21740,7 @@
                 "creation.batch": "#/$defs/BatchCommand",
                 "editor.create": "#/$defs/EditorCreateCommand",
                 "editor.save": "#/$defs/EditorSaveCommand",
+                "generation.group": "#/$defs/GenerationGroupCommand",
                 "generation.submit": "#/$defs/GenerationSubmitCommand",
                 "generationSpec.create": "#/$defs/SpecCreateCommand",
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
@@ -21050,8 +21760,11 @@
                 "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
                 "result.select": "#/$defs/ResultSelectCommand",
+                "spend.advanceGroup": "#/$defs/AdvanceGroupCommand",
+                "spend.observe": "#/$defs/SpendObservationCommand",
                 "spend.policy": "#/$defs/SpendPolicyCommand",
                 "spend.review": "#/$defs/SpendReviewCommand",
+                "spend.tool": "#/$defs/ToolSpendCommand",
                 "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
               },
               "propertyName": "type"
@@ -21148,10 +21861,22 @@
                 "$ref": "#/$defs/ReferenceRemoveCommand"
               },
               {
+                "$ref": "#/$defs/ToolSpendCommand"
+              },
+              {
+                "$ref": "#/$defs/SpendObservationCommand"
+              },
+              {
                 "$ref": "#/$defs/SpendPolicyCommand"
               },
               {
                 "$ref": "#/$defs/SpendReviewCommand"
+              },
+              {
+                "$ref": "#/$defs/GenerationGroupCommand"
+              },
+              {
+                "$ref": "#/$defs/AdvanceGroupCommand"
               },
               {
                 "$ref": "#/$defs/GenerationSubmitCommand"
@@ -22658,6 +23383,87 @@
         "title": "GenerationFailure",
         "type": "object"
       },
+      "GenerationGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "members": {
+            "description": "Workflow members in canvas order.",
+            "items": {
+              "$ref": "#/$defs/GroupMember"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "title": "GenerationGroup",
+        "type": "object"
+      },
+      "GenerationGroupCommand": {
+        "additionalProperties": false,
+        "description": "Quote and run a complete canvas workflow.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.group",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GenerationGroup",
+            "description": "Quote and run a complete canvas workflow."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GenerationGroupCommand",
+        "type": "object"
+      },
       "GenerationQuoteQuery": {
         "additionalProperties": false,
         "properties": {
@@ -23011,6 +23817,33 @@
         "title": "GenerationSubmitCommand",
         "type": "object"
       },
+      "GroupAdvance": {
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "description": "Original group instruction.",
+            "format": "uuid",
+            "title": "Workflowid",
+            "type": "string"
+          },
+          "items": {
+            "description": "Newly runnable items.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "workflowId",
+          "items"
+        ],
+        "title": "GroupAdvance",
+        "type": "object"
+      },
       "GroupCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -23144,6 +23977,49 @@
           "binding"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupMember": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Canvas item to run.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "specId": {
+            "description": "Generation specification owned by the item.",
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "count": {
+            "default": 1,
+            "description": "Candidates requested for this item.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "after": {
+            "default": [],
+            "description": "Upstream group items whose adopted results this input needs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "After",
+            "type": "array"
+          }
+        },
+        "required": [
+          "itemId",
+          "specId",
+          "count",
+          "after"
+        ],
+        "title": "GroupMember",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -27180,6 +28056,19 @@
             "title": "Modelid",
             "type": "string"
           },
+          "providerUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Endpoint for this quoted connection.",
+            "title": "Providerurl"
+          },
           "source": {
             "description": "Origin of the price.",
             "enum": [
@@ -27190,6 +28079,19 @@
             ],
             "title": "Source",
             "type": "string"
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Published source for an official price.",
+            "title": "Sourceurl"
           },
           "sourceVersion": {
             "anyOf": [
@@ -27215,6 +28117,16 @@
             ],
             "default": null,
             "description": "Native unit price, when known."
+          },
+          "quantityBasis": {
+            "default": "fixed",
+            "description": "Whether the quoted quantity is an upper bound.",
+            "enum": [
+              "fixed",
+              "maximum"
+            ],
+            "title": "Quantitybasis",
+            "type": "string"
           },
           "quantity": {
             "anyOf": [
@@ -29404,6 +30316,24 @@
             "description": "Metered units reported for the call.",
             "title": "Usage"
           },
+          "usageSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "execution",
+                  "provider",
+                  "media"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Origin of the quantity used for settlement.",
+            "title": "Usagesource"
+          },
           "calculated": {
             "anyOf": [
               {
@@ -29440,10 +30370,160 @@
           "createdAt",
           "state",
           "usage",
+          "usageSource",
           "calculated",
           "reported"
         ],
         "title": "SpendCall",
+        "type": "object"
+      },
+      "SpendObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "callId": {
+            "description": "Stable physical call receiving evidence.",
+            "format": "uuid",
+            "title": "Callid",
+            "type": "string"
+          },
+          "state": {
+            "description": "Observed execution state.",
+            "enum": [
+              "submitted",
+              "completed",
+              "released"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "request",
+                  "input_character",
+                  "input_second",
+                  "requested_second",
+                  "output_second"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Unit of observed provider usage.",
+            "title": "Unit"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provider units or measured output length.",
+            "title": "Usage"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Verified provider amount in the quoted currency.",
+            "title": "Reported"
+          },
+          "evidence": {
+            "default": "execution",
+            "description": "Source of the observation.",
+            "enum": [
+              "execution",
+              "provider",
+              "media"
+            ],
+            "title": "Evidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "callId",
+          "state",
+          "unit",
+          "usage",
+          "reported",
+          "evidence"
+        ],
+        "title": "SpendObservation",
+        "type": "object"
+      },
+      "SpendObservationCommand": {
+        "additionalProperties": false,
+        "description": "Record evidence from a model operation.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "spend.observe",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpendObservation",
+            "description": "Record evidence from a model operation."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "SpendObservationCommand",
         "type": "object"
       },
       "SpendPolicy": {
@@ -29558,6 +30638,35 @@
       "SpendQuote": {
         "additionalProperties": false,
         "properties": {
+          "fromUpstream": {
+            "default": false,
+            "description": "Inputs are newly resolved upstream results.",
+            "title": "Fromupstream",
+            "type": "boolean"
+          },
+          "candidates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Total candidates across distinct group members.",
+            "title": "Candidates"
+          },
+          "deferred": {
+            "default": [],
+            "description": "Workflow items awaiting upstream inputs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Deferred",
+            "type": "array"
+          },
           "count": {
             "description": "Number of fixed candidates in this action.",
             "maximum": 8,
@@ -29609,6 +30718,91 @@
             "minimum": 1,
             "title": "Revision",
             "type": "integer"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USD",
+                  "CNY"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project currency when this quote was requested.",
+            "title": "Currency"
+          },
+          "specId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fixed generation specification for a candidate batch.",
+            "title": "Specid"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas batch identity for member validation.",
+            "title": "Batchid"
+          },
+          "workflowId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Original group action owning this decision.",
+            "title": "Workflowid"
+          },
+          "groupItems": {
+            "default": [],
+            "description": "Fixed workflow items included in this decision.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Groupitems",
+            "type": "array"
+          },
+          "toolTask": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen media tool dispatch, without credentials. The project journal owns its acceptance.",
+            "title": "Tooltask"
           },
           "versions": {
             "description": "Input object versions fixed when the request was made.",
@@ -29826,6 +31020,20 @@
             "title": "Projectid",
             "type": "string"
           },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Include the media service calls for this assistant turn.",
+            "title": "Agentrunid"
+          },
           "type": {
             "const": "spend.status",
             "description": "Read policy, totals, coverage and pending human decisions.",
@@ -29836,6 +31044,7 @@
         "required": [
           "queryId",
           "projectId",
+          "agentRunId",
           "type"
         ],
         "title": "SpendStatusQuery",
@@ -32485,6 +33694,85 @@
         "title": "ToolSelection",
         "type": "object"
       },
+      "ToolSpendCommand": {
+        "additionalProperties": false,
+        "description": "Admit a frozen media tool recipe with its service costs.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "spend.tool",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/ToolSpendInput",
+            "description": "Admit a frozen media tool recipe with its service costs."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "ToolSpendCommand",
+        "type": "object"
+      },
+      "ToolSpendInput": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "description": "Validated media tool submission, including its stable task ID.",
+            "title": "Request",
+            "type": "object"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "ToolSpendInput",
+        "type": "object"
+      },
       "TransformFrame": {
         "additionalProperties": false,
         "properties": {
@@ -33800,6 +35088,7 @@
             "creation.batch": "#/$defs/BatchCommand",
             "editor.create": "#/$defs/EditorCreateCommand",
             "editor.save": "#/$defs/EditorSaveCommand",
+            "generation.group": "#/$defs/GenerationGroupCommand",
             "generation.submit": "#/$defs/GenerationSubmitCommand",
             "generationSpec.create": "#/$defs/SpecCreateCommand",
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
@@ -33819,8 +35108,11 @@
             "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
             "result.select": "#/$defs/ResultSelectCommand",
+            "spend.advanceGroup": "#/$defs/AdvanceGroupCommand",
+            "spend.observe": "#/$defs/SpendObservationCommand",
             "spend.policy": "#/$defs/SpendPolicyCommand",
             "spend.review": "#/$defs/SpendReviewCommand",
+            "spend.tool": "#/$defs/ToolSpendCommand",
             "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
           },
           "propertyName": "type"
@@ -33917,10 +35209,22 @@
             "$ref": "#/$defs/ReferenceRemoveCommand"
           },
           {
+            "$ref": "#/$defs/ToolSpendCommand"
+          },
+          {
+            "$ref": "#/$defs/SpendObservationCommand"
+          },
+          {
             "$ref": "#/$defs/SpendPolicyCommand"
           },
           {
             "$ref": "#/$defs/SpendReviewCommand"
+          },
+          {
+            "$ref": "#/$defs/GenerationGroupCommand"
+          },
+          {
+            "$ref": "#/$defs/AdvanceGroupCommand"
           },
           {
             "$ref": "#/$defs/GenerationSubmitCommand"

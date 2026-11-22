@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import get_args
 from uuid import UUID, uuid5
 
+from pydantic_core import to_jsonable_python
+from opendirector.application.creation_spend import review_status
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from opendirector.domain.creation.base import agent_command_id
 from opendirector.application.creation_artifacts import publish_artifact
@@ -28,7 +30,7 @@ from opendirector.infrastructure.execution_files import execution_file
 from opendirector.installation import SOURCE_ROOT, BUNDLED
 
 ROOT = SOURCE_ROOT or BUNDLED
-EXCLUDED = {'spend.policy', 'spend.review', 'project.create', 'project.trash', 'project.restore', 'asset.import', 'job.checkpoint',
+EXCLUDED = {'spend.advanceGroup', 'spend.tool', 'spend.observe', 'spend.policy', 'spend.review', 'project.create', 'project.trash', 'project.restore', 'asset.import', 'job.checkpoint',
             'canvas.applyEdit', 'canvas.publishMedia', 'timeline.publishRender'}
 
 QUERY_MODELS = get_args(get_args(Query)[0])
@@ -58,6 +60,7 @@ COMMANDS = {name: model for name, model in COMMAND_MODELS.items()
 for command_name, command_model in COMMANDS.items():
     assert command_model.__doc__ and command_model.__doc__.strip(), f'Missing command metadata: {command_name}'
 SYSTEM = '''You are OpenDirector, a video creation assistant.
+Before paid media generation query generation.quote for the complete candidate count and describe the estimated service cost and project total. Use generation.submit with that count. For awaiting_confirmation, report the batch, amounts and any shortfall from spend.status. Wait for a human decision in this project's canvas or chat. Never split a batch to avoid confirmation.
 Respond directly when the user's request can be answered without project state or tool execution.
 When the task needs project capabilities, use the harness's native shell tool to discover and run the opendirector executable on PATH.
 Before using the project CLI, locate opendirector through the shell (Get-Command opendirector in PowerShell, command -v opendirector in POSIX shells), then execute opendirector --help.
@@ -381,6 +384,8 @@ class AgentTools:
                 raise ProjectError('技能资源必须是不超过 64 KB 的文本文件。')
             return await asyncio.to_thread(resolved.read_text, encoding='utf-8')
         command_type = TypeAdapter(str).validate_python(arguments['type'], strict=True)
+        if command_type not in COMMANDS:
+            raise ProjectError('This action requires the project window.', 403)
         model = COMMANDS[command_type]
         if name == 'command_schema':
             schema = model.model_json_schema()
@@ -431,7 +436,7 @@ class AgentTools:
             'commandId': str(agent_command_id(turn_id, call_id))})
         if command.type == 'creation.batch' and any(operation.type not in COMMANDS for operation in command.payload.operations):
             raise ProjectError('批量命令包含未开放的 Agent 操作。', 403)
-        if command.type == 'generation.submit':
+        if command.type in {'generation.submit', 'generation.group'}:
             receipt = await self.generation.execute(command, session=session, source='agent', agent_origin=(turn_id, call_id))
         elif command.type in {'job.cancel', 'job.recover'}:
             receipt = await self.generation.execute(command, session=session, source='agent')
@@ -451,4 +456,11 @@ class AgentTools:
                 receipt = await asyncio.to_thread(self.assets.execute, command, session=session, source='agent', provenance=provenance)
         else:
             receipt = await asyncio.to_thread(self.projects.execute, command, session=session, source='agent')
-        return receipt.model_dump(mode='json')
+        result = receipt.model_dump(mode='json')
+        if command.type in {'generation.submit', 'generation.group'} and receipt.status != 'rejected':
+            summary = await asyncio.to_thread(lambda: review_status(self.projects.snapshot(project_id)))
+            pending = next((entry for entry in summary['pending'] if entry['request'].id == receipt.spendRequestId), None)
+            result['spend'] = to_jsonable_python(dict(currency=summary['policy'].currency, settled=summary['settled'],
+                held=summary['held'], available=summary['available'], review=(
+                    {k: v for k, v in pending.items() if k != 'request'} | {'quote': pending['request'].quote} if pending else None)))
+        return result

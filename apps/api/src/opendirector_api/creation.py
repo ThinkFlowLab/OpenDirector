@@ -131,7 +131,7 @@ def creation_routes(projects: CreationProjects, generation=None):
         session = str(x_opendirector_session) if x_opendirector_session else None
         if value.type == 'artifact.publish':
             raise ProjectError('产物发布需要服务端执行上下文，不能通过路径直接访问本机文件。', 403)
-        if value.type == 'job.checkpoint':
+        if value.type in {'job.checkpoint', 'spend.observe', 'spend.tool', 'spend.advanceGroup'}:
             raise ProjectError('任务执行事实只能由后台写入。', 403)
         if x_canvas_import is not None and value.type != 'asset.import':
             raise ProjectError('归档来源只能随素材导入声明。', 400)
@@ -140,7 +140,7 @@ def creation_routes(projects: CreationProjects, generation=None):
             raise ProjectError('归档来源必须是 generated 或 edited。', 400)
         if value.type in {'spend.review', 'spend.policy'} and request.headers.get('sec-fetch-site') != 'same-origin':
             raise ProjectError('Review spending in the local project window.', 403)
-        if value.type in {'generation.submit', 'spend.review', 'spend.policy', 'job.cancel', 'job.recover'}:
+        if value.type in {'generation.submit', 'generation.group', 'spend.review', 'spend.policy', 'job.cancel', 'job.recover'}:
             if generation is None:
                 raise ProjectError('任务服务不可用。', 503)
             receipt = await generation.execute(value, session=session)

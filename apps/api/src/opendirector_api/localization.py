@@ -14,6 +14,9 @@ from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
+    'spend_quote_changed': 'The request, price or balance changed. Review the current batch.',
+    'spend_cap': 'This batch exceeds the available project budget.',
+    'spend_unknown': 'Set a price in the project currency to determine the maximum cost.',
     "desktop_auth_required": "The desktop connection has expired. Reopen the application.",
     'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
     'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
@@ -147,7 +150,8 @@ def localized_error_for_language(
     if specific is not None:
         return specific
     if not wants_english_language(language):
-        return chinese
+        return {'spend_quote_changed': '请求、价格或余额已变更，请重新核对本批报价。', 'spend_cap': '本批费用超过工程可用预算。',
+                'spend_unknown': '请设置使用工程币种的单价，以确定本批费用上限。'}.get(code, chinese)
     if code == 'tool_model_missing':
         return missing_tool_model_message(required_capability, english=True)
     if code.startswith(('capability_', 'image_input_', 'tool_source_')):

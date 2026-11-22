@@ -39,6 +39,10 @@ class ToolInputError(ProjectError):
         super().__init__(message, 422, code=code)
         self.params = {'label': label}
 
+def concept_parts(text):
+    return list(dict.fromkeys(item.strip() for item in re.split(r'[,，、;；\n]+', text) if item.strip()))[:16]
+
+
 class ToolContext:
     """What a recipe may use: inputs, model capabilities and progress reporting."""
 
@@ -121,11 +125,11 @@ class ToolContext:
 
     async def concepts(self, text: str, default: tuple[str, ...]) -> list[tuple[str, str]]:
         """(English concept, label) pairs from a comma-separated description; segmentation models read English."""
-        parts = list(dict.fromkeys(item.strip() for item in re.split(r'[,，、;；\n]+', text) if item.strip()))
+        parts = concept_parts(text)
         if not parts:
             return [(CONCEPTS.get(item, item), item) for item in default]
         pairs = []
-        for part in parts[:16]:
+        for part in parts:
             english = CONCEPTS.get(part) or (part if part.isascii() else None)
             if english is None and self._chat is not None:
                 try:

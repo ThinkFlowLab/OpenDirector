@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from .base import Contract, Digest, ObjectVersion, ProjectEntity, digest
 
@@ -23,14 +23,20 @@ class PriceLine(Contract):
     operation: str = Field(description='Model operation being priced.')
     modelConfigId: UUID = Field(description='Selected model connection.')
     modelId: str = Field(description='Provider model receiving the request.')
+    providerUrl: str | None = Field(default=None, exclude_if=lambda v: v is None, description='Endpoint for this quoted connection.')
     source: Literal['connection', 'official', 'local', 'unknown'] = Field(description='Origin of the price.')
+    sourceUrl: str | None = Field(default=None, exclude_if=lambda v: v is None, description='Published source for an official price.')
     sourceVersion: str | None = Field(default=None, description='Price revision or dated official source.')
     price: ConnectionPrice | None = Field(default=None, description='Native unit price, when known.')
+    quantityBasis: Literal['fixed', 'maximum'] = Field(default='fixed', exclude_if=lambda v: v == 'fixed', description='Whether the quoted quantity is an upper bound.')
     quantity: Money | None = Field(default=None, description='Billing units or bounded maximum for one candidate.')
     amount: Money | None = Field(default=None, description='Estimated amount for this step of one candidate.')
 
 
 class SpendQuote(Contract):
+    fromUpstream: bool = Field(default=False, exclude_if=lambda v: not v, description='Inputs are newly resolved upstream results.')
+    candidates: int | None = Field(default=None, exclude_if=lambda v: v is None, description='Total candidates across distinct group members.')
+    deferred: tuple[UUID, ...] = Field(default=(), exclude_if=lambda v: not v, description='Workflow items awaiting upstream inputs.')
     count: int = Field(ge=1, le=8, description='Number of fixed candidates in this action.')
     inputFingerprint: Digest = Field(description='Identity of the effective model inputs.')
     lines: tuple[PriceLine, ...] = Field(description='Individual provider calls per candidate, in execution order.')
@@ -39,6 +45,10 @@ class SpendQuote(Contract):
         if any(line.amount is None or (line.amount and line.price.currency != currency) for line in self.lines):
             return None
         return sum((line.amount for line in self.lines), Decimal(0)) * self.count
+
+    def subtotals(self):
+        currencies = {line.price.currency for line in self.lines if line.price is not None and line.amount is not None}
+        return {c: sum((line.amount for line in self.lines if line.price and line.price.currency == c and line.amount is not None), Decimal(0)) * self.count for c in sorted(currencies)}
 
     def fingerprint(self):
         return digest(self)
@@ -50,7 +60,18 @@ class SpendPolicy(Contract):
     cap: Money | None = Field(default=None, description='Maximum settled and reserved service spend.')
 
 
+class ToolSpendInput(Contract):
+    request: dict[str, JsonValue] = Field(description='Validated media tool submission, including its stable task ID.')
+
+
 class SpendRequest(ProjectEntity):
+    currency: Currency | None = Field(default=None, exclude_if=lambda v: v is None, description='Project currency when this quote was requested.')
+    specId: UUID | None = Field(default=None, exclude_if=lambda v: v is None, description='Fixed generation specification for a candidate batch.')
+    batchId: UUID | None = Field(default=None, exclude_if=lambda v: v is None, description='Canvas batch identity for member validation.')
+    workflowId: UUID | None = Field(default=None, exclude_if=lambda v: v is None, description='Original group action owning this decision.')
+    groupItems: tuple[UUID, ...] = Field(default=(), exclude_if=lambda v: not v, description='Fixed workflow items included in this decision.')
+    toolTask: dict[str, JsonValue] | None = Field(default=None, exclude_if=lambda v: v is None,
+        description='Frozen media tool dispatch, without credentials. The project journal owns its acceptance.')
     versions: tuple[ObjectVersion, ...] = Field(description='Input object versions fixed when the request was made.')
     quote: SpendQuote = Field(description='Exact batch covered by this request.')
     createdAt: datetime = Field(description='Time the project requested a review.')
@@ -66,6 +87,7 @@ class SpendCall(ProjectEntity):
     createdAt: datetime = Field(description='Time the reservation was created.')
     state: Literal['reserved', 'submitted', 'completed', 'released'] = Field(default='reserved', description='State of the provider call.')
     usage: Money | None = Field(default=None, description='Metered units reported for the call.')
+    usageSource: Literal['execution', 'provider', 'media'] | None = Field(default=None, description='Origin of the quantity used for settlement.')
     calculated: Money | None = Field(default=None, description='Amount calculated from confirmed usage and the agreed rate.')
     reported: Money | None = Field(default=None, description='Charge explicitly reported by the provider in the line currency.')
 
@@ -86,34 +108,74 @@ class SpendReview(Contract):
     newCap: Money | None = Field(default=None, description='Raise the project cap in the same transaction as admission.')
 
 
-def spend_summary(snapshot):
-    policy = snapshot.project.spendPolicy or SpendPolicy()
-    settled, held = Decimal(0), Decimal(0)
-    missing = 0
-    owners = set()
-    for call in snapshot.spendCalls:
-        owners.add(call.ownerId)
+class SpendObservation(Contract):
+    callId: UUID = Field(description='Stable physical call receiving evidence.')
+    state: Literal['submitted', 'completed', 'released'] = Field(description='Observed execution state.')
+    unit: Unit | None = Field(default=None, description='Unit of observed provider usage.')
+    usage: Money | None = Field(default=None, description='Provider units or measured output length.')
+    reported: Money | None = Field(default=None, description='Verified provider amount in the quoted currency.')
+    evidence: Literal['execution', 'provider', 'media'] = Field(default='execution', description='Source of the observation.')
+
+
+def observed_call(call, observation):
+    """Repeated transfer and download events cannot charge or release a call twice."""
+    state = observation.state
+    if ((state in {'released', 'submitted'} and call.state != 'reserved') or
+            (call.state == 'released' and observation.evidence != 'provider')):
+        return call
+    changes = dict(state=state)
+    price = call.line.price
+    if state == 'completed' and price is not None:
+        if observation.reported is not None:
+            changes['reported'] = observation.reported
+        if observation.unit == price.unit and observation.usage is not None:
+            if call.usageSource != 'provider' or observation.evidence == 'provider':
+                changes.update(usage=observation.usage, usageSource=observation.evidence, calculated=price.rate * observation.usage)
+        elif call.calculated is None and call.line.quantityBasis == 'fixed' and price.unit != 'output_second' and call.line.quantity is not None:
+            changes.update(usage=call.line.quantity, usageSource='execution', calculated=call.line.amount)
+    edited = call.model_copy(update=changes)
+    return call if edited == call else edited.model_copy(update={'revision': call.revision + 1})
+
+
+def call_totals(calls, currency):
+    settled, held, missing = Decimal(0), Decimal(0), 0
+    for call in calls:
         amount = call.accounted()
-        if amount is None or (amount and call.line.price.currency != policy.currency):
+        if amount is None or (amount and call.line.price.currency != currency):
             missing += 1
         elif call.state == 'completed' and (call.calculated is not None or call.reported is not None):
             settled += amount
         else:
             held += amount
-    legacy = sum(j.execution.kind != 'text' and j.id not in owners for j in snapshot.jobs)
-    return dict(policy=policy, settled=settled, held=held, available=None if policy.cap is None else policy.cap-settled-held,
-                unknown=missing, legacy=legacy, since=min((c.createdAt for c in snapshot.spendCalls), default=None))
+    return dict(settled=settled, held=held, unknown=missing)
+
+
+def spend_summary(snapshot):
+    policy = snapshot.project.spendPolicy or SpendPolicy()
+    totals = call_totals(snapshot.spendCalls, policy.currency)
+    owners = {call.ownerId for call in snapshot.spendCalls}
+    return dict(policy=policy, **totals,
+        available=None if policy.cap is None else policy.cap - totals['settled'] - totals['held'],
+        legacy=sum(j.execution.kind != 'text' and j.id not in owners for j in snapshot.jobs),
+        since=min((c.createdAt for c in snapshot.spendCalls), default=None))
 
 
 def spend_decision(summary, quote):
     policy = summary['policy']
     amount = quote.total(policy.currency)
+    controlled = policy.cap is not None or policy.threshold is not None
     if amount == 0:
-        return 'ready'
+        return 'upstream_confirmation' if controlled and quote.deferred else 'ready'
     if amount is None:
         return 'unpriced' if policy.cap is not None else 'unknown_confirmation' if policy.threshold is not None else 'ready'
+    if policy.cap is not None and summary['unknown']:
+        return 'unpriced'
     if policy.cap is not None and amount > summary['available']:
         return 'over_cap'
+    if controlled and quote.deferred:
+        return 'upstream_confirmation'
+    if controlled and quote.fromUpstream:
+        return 'confirmation'
     if policy.threshold is not None and amount > policy.threshold:
         return 'confirmation'
     return 'ready'
@@ -122,7 +184,7 @@ def spend_decision(summary, quote):
 # These synchronous retail prices cover every supported output specification
 # on the mainland endpoint. A proxy or a different API receives no default.
 OFFICIAL_URL = 'https://open.bigmodel.cn/api/paas/v4'
-OFFICIAL_SOURCE = 'https://docs.bigmodel.cn/cn/guide/start/pricing#2026-11-22'
+OFFICIAL_SOURCE = 'https://docs.bigmodel.cn/cn/guide/start/pricing'
 OFFICIAL_PRICES = {
     ('openai', 'glm-image', 'image'): ('request', '0.10'),
     ('bigmodel_video', 'cogvideox-3', 'video'): ('request', '1'),
@@ -130,7 +192,7 @@ OFFICIAL_PRICES = {
 }
 
 
-def price_line(config, operation, quantities):
+def price_line(config, operation, quantities, *, bounded=()):
     """Count only units for which the effective request supplies a bound."""
     version = None
     price = None
@@ -143,7 +205,7 @@ def price_line(config, operation, quantities):
     elif (config['url'].rstrip('/') == OFFICIAL_URL and
           (row := OFFICIAL_PRICES.get((config['protocol'], config['modelId'], operation)))):
         price = ConnectionPrice(unit=row[0], rate=row[1], currency='CNY')
-        source, version = 'official', OFFICIAL_SOURCE
+        source, version = 'official', '2026-11-22'
     else:
         source = 'unknown'
     quantity = None if price is None else {'request': 1, **quantities}.get(price.unit)
@@ -151,5 +213,6 @@ def price_line(config, operation, quantities):
     amount = None if price is None or units is None else price.rate * units
     if price is not None and price.rate == 0:
         amount = Decimal(0)
-    return PriceLine(operation=operation, modelConfigId=config['id'], modelId=config['modelId'],
-                     source=source, sourceVersion=version, price=price, quantity=units, amount=amount)
+    return PriceLine(operation=operation, modelConfigId=config['id'], modelId=config['modelId'], providerUrl=config.get('url'),
+                     source=source, sourceVersion=version, sourceUrl=OFFICIAL_SOURCE if source == 'official' else None, price=price,
+                     quantityBasis='maximum' if price and (price.unit == 'output_second' or price.unit in bounded) else 'fixed', quantity=units, amount=amount)

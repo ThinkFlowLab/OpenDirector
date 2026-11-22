@@ -12,6 +12,8 @@ from opendirector.ports.gateway import gateway
 from opendirector.integrations.model_adapters import adapter_for
 from opendirector.media.async_work import blocking
 
+from . import creation_spend, tool_spend
+
 logger = logging.getLogger(__name__)
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
 
@@ -84,6 +86,8 @@ class ToolTaskLifecycle:
             call = next(value for value in calls if value['id'] == call_id)
             if call['state'] in {'succeeded', 'failed', 'cancelled'}:
                 return task
+            if changes.get('state') == 'succeeded' and call.get('spendCallId'):
+                creation_spend.observe(self.projects, project_id, call['spendCallId'], 'completed')
             call.update(changes)
             updates = {'modelCalls': calls}
             if task.get('cancelRequested'):
@@ -112,6 +116,11 @@ class ToolTaskLifecycle:
                 call = dict(id=str(uuid5(UUID(task_id), f'model-call-{len(calls)}')), capability=capability,
                             kind='video' if capability in {'video.generate', 'video.first_frame', 'video.edit'} else 'request',
                             state='submitting', externalTaskId=None, cancellation='not_requested')
+                ordinal = sum(c['capability'] == capability for c in calls)
+                spend_id = tool_spend.begin_call(self.projects, project_id, task_id, capability, ordinal,
+                    lambda: self._model(capability, task.get('modelConfigIds', {}).get(capability))[0])
+                if spend_id is not None:
+                    call['spendCallId'] = str(spend_id)
                 self._change(project_id, task_id, {'modelCalls': [*calls, call]})
                 return call
         call = await blocking(begin)
@@ -337,8 +346,47 @@ class ToolTaskLifecycle:
                 except (OSError, ProjectError):
                     logger.warning('工具远端状态核对未完成：%s', tid, exc_info=True)
 
+    def _restore_admissions(self):
+        """Restore a tool if the worker stopped after the project commit and before the task file."""
+        ready = []
+        for project in self.projects.list_projects()['projects']:
+            pid = str(project['id'])
+            with self.store.transaction():
+                directory = self._directory(pid)
+                snapshot = self.projects.snapshot(pid)
+                for request in snapshot.spendRequests:
+                    task = request.toolTask
+                    if request.status != 'accepted' or not task:
+                        continue
+                    task_id = task['id']
+                    if task['tool'] == 'selection-preview':
+                        folder = self.store.state_dir / 'selection-previews' / pid
+                        path = folder / (task_id + '.json')
+                        cached = gateway().read_json(path) if path.is_file() else {}
+                        if cached.get('status') not in {'completed', 'interrupted'} and not self._owner_alive({**task, 'workerId': cached.get('workerId')}):
+                            folder.mkdir(parents=True, exist_ok=True)
+                            gateway().write_json(path, {'status': 'interrupted'})
+                            tool_spend.release_unused(self.projects, pid, task_id)
+                        continue
+                    if gateway().child(self._folder(directory, create=False), task_id + '.json').is_file():
+                        continue
+                    task = {**task, 'workerId': self.worker_id}
+                    records = self.assets._records(directory, pid)
+                    calls = [c for c in snapshot.spendCalls if str(c.ownerId) == task_id]
+                    if all(c.state == 'reserved' for c in calls) and all(a in records for a in task['sourceAssetIds']):
+                        self.accepting.add((pid, task_id))
+                        ready.append((task, directory, records))
+                    else:
+                        task.update(status='interrupted', localState='stopped', phase=None)
+                        tool_spend.release_unused(self.projects, pid, task_id)
+                    self._write(directory, task)
+        return ready
+
     async def start(self):
         await blocking(self._ensure_owner)
+        for task, directory, records in await blocking(self._restore_admissions):
+            self._schedule(task, directory, records)
+            self.accepting.discard((task['projectId'], task['id']))
         await self.recover()
         async def maintain():
             while True:

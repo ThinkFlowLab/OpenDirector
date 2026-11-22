@@ -24,7 +24,7 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
 from test_creation_canvas_service import project, media, send, ver
 from test_creation_generation_service import anyio_backend
-from generation_helpers import prepared
+from generation_helpers import policy, prepared, review
 
 
 def png(size=(32, 24), color='blue'):
@@ -395,7 +395,11 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
             ('score', 0.20), ('music', 0.44 if mode == 'melody' else 1.20)]
         assert float(quote.total('USD')) == (0.64 if mode == 'melody' else 1.40)
         assert store.snapshot(pid) == before and calls == []
-        _,receipt=await submit(project,runner,target,spec_id)
+        await runner.execute(policy(store, pid, threshold='0.50'), session=project[2])
+        _, waiting = await submit(project, runner, target, spec_id)
+        snapshot = store.snapshot(pid)
+        assert waiting.status == 'awaiting_confirmation' and not snapshot.jobs and not snapshot.spendCalls and calls == []
+        receipt = await runner.execute(review(pid, snapshot.spendRequests[-1]), session=project[2])
         assert receipt.status=='accepted',receipt
         await done(runner)
         job=store.snapshot(pid).jobs[-1]
@@ -414,6 +418,40 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
                                                       'url':'http://score.invalid/v1','protocol':'vllm_omni_score','connectionType':'self_hosted'}
         assert [ref.asset.assetId for ref in job.inputSnapshot.references]==[asset.id]
     finally: await runner.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('fail_at', ['score', 'music'])
+async def test_reference_music_keeps_separate_evidence_when_a_request_times_out(project, fail_at):
+    store, pid, session = project
+    requests = []
+    def provider(request):
+        step = 'score' if request.url.path.endswith('/transcriptions') else 'music'
+        requests.append(step)
+        if step == fail_at:
+            raise httpx.ReadTimeout('response lost', request=request)
+        return httpx.Response(200, json={'text': SCORE})
+    runner, item, spec_id = setup(project, 'audio', dict(creationType='music'), provider,
+        protocol='vllm_omni_music', model='m-a-p/YuE2-3B')
+    score = score_model(project)
+    try:
+        item, _ = follow_recording(project, item, spec_id, recording())
+        music = next(s.modelConfigId for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+        for config_id, rate in ((score['id'], '.20'), (music, '.44')):
+            runner.configs.set_price(str(config_id), dict(unit='request', rate=rate, currency='USD'))
+        await runner.execute(policy(store, pid, threshold='.50'), session=session)
+        await submit(project, runner, item, spec_id)
+        waiting = store.snapshot(pid).spendRequests[-1]
+        assert not requests
+        await runner.execute(review(pid, waiting), session=session)
+        await done(runner)
+        assert requests == (['score'] if fail_at == 'score' else ['score', 'music'])
+        calls = store.snapshot(pid).spendCalls
+        assert [c.state for c in calls] == (['submitted', 'released'] if fail_at == 'score' else ['completed', 'submitted'])
+        if fail_at == 'music':
+            assert str(calls[0].calculated) == '0.20' and calls[1].calculated is None
+    finally:
+        await runner.close()
 
 
 @pytest.mark.anyio

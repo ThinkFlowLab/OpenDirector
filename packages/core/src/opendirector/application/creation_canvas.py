@@ -845,17 +845,13 @@ class CreationCanvas:
     async def query(self, query: Query) -> JsonValue:
         if query.type == 'spend.status':
             from opendirector.application.creation_spend import review_status
-            return to_jsonable_python(await asyncio.to_thread(lambda: review_status(self.projects.snapshot(query.projectId))))
+            return to_jsonable_python(await asyncio.to_thread(lambda: review_status(self.projects.snapshot(query.projectId), query.agentRunId)))
         if query.type == 'generation.quote':
             if self.generation is None:
                 raise ProjectError('Generation service unavailable.', 503)
             quote = await asyncio.to_thread(self.generation.quote, query.projectId, query.specId, query.count, query.originItemId)
-            from opendirector.domain.creation.spend import spend_summary, spend_decision
-            summary = spend_summary(await asyncio.to_thread(self.projects.snapshot, query.projectId))
-            total = quote.total(summary['policy'].currency)
-            return to_jsonable_python(dict(quote=quote, fingerprint=quote.fingerprint(), amount=total,
-                projectAfter=None if total is None else summary['settled'] + summary['held'] + total,
-                currency=summary['policy'].currency, reason=spend_decision(summary, quote)))
+            from opendirector.application.creation_spend import quote_view
+            return to_jsonable_python(quote_view(await asyncio.to_thread(self.projects.snapshot, query.projectId), quote))
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
         if query.type == 'asset.preview':

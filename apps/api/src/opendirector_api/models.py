@@ -117,6 +117,7 @@ class ToolTaskCreate(Model):
 
 
 class ImageSelectionCreate(Model):
+    id: UUID | None = None
     sourceAssetId: UUID
     prompt: str = Field(default='', max_length=2000)
     boxes: list[ToolBox] = Field(default_factory=list, max_length=64)

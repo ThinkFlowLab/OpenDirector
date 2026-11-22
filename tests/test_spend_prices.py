@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from opendirector.domain.creation.spend import OFFICIAL_URL, SpendQuote, price_line
+from opendirector.domain.creation.spend import OFFICIAL_URL, SpendCall, SpendObservation, SpendQuote, observed_call, price_line
 
 
 def test_connection_price_takes_precedence_and_an_alias_is_unpriced():
@@ -20,3 +21,17 @@ def test_connection_price_takes_precedence_and_an_alias_is_unpriced():
 def test_missing_metered_quantity_is_unknown_even_with_a_price():
     config = dict(id=uuid4(), modelId='speech', price=dict(unit='output_second', rate='0.01', currency='USD'))
     assert price_line(config, 'speech', {}).amount is None
+
+
+def test_output_usage_and_late_provider_charge_replace_only_the_same_call():
+    model = dict(id=uuid4(), modelId='music', price=dict(unit='output_second', rate='0.02', currency='USD'))
+    call = SpendCall(id=uuid4(), projectId=uuid4(), ownerId=uuid4(), createdAt=datetime.now(timezone.utc),
+                     line=price_line(model, 'music', {'output_second': 22}))
+    def observation(**facts):
+        return SpendObservation(callId=call.id, state='completed', **facts)
+    measured = observed_call(call, observation(unit='output_second', usage=18, evidence='media'))
+    assert measured.line.amount == Decimal('0.44') and measured.calculated == Decimal('0.36')
+    reported = observation(unit='output_second', usage=18, evidence='provider', reported='0.35')
+    corrected = observed_call(measured, reported)
+    assert corrected.usageSource == 'provider' and corrected.accounted() == Decimal('0.35')
+    assert observed_call(corrected, reported) == observed_call(corrected, observation(unit='output_second', usage=19, evidence='media')) == corrected

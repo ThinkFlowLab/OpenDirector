@@ -2,6 +2,11 @@
 // Names without Input describe normalized JSON output; Input permits declared defaults.
 // Runtime constraints and cross-object validation are enforced by the Python contracts.
 
+export interface AdvanceGroupCommandInput extends CommandBaseInput {
+  readonly type: "spend.advanceGroup";
+  readonly payload: GroupAdvanceInput;
+}
+
 export interface ArtifactPublishInput extends ContractInput {
   readonly path: string;
   readonly name: string;
@@ -440,7 +445,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | SpendPolicyCommandInput | SpendReviewCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | ToolSpendCommandInput | SpendObservationCommandInput | SpendPolicyCommandInput | SpendReviewCommandInput | GenerationGroupCommandInput | AdvanceGroupCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
   readonly query: SpendStatusQueryInput | GenerationQuoteQueryInput | ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
   readonly event: ProjectEventInput;
@@ -576,6 +581,15 @@ export interface GenerationFailureInput {
   readonly providerStatus?: "failed" | "cancelled" | "expired" | null;
 }
 
+export interface GenerationGroupInput extends ContractInput {
+  readonly members: ReadonlyArray<GroupMemberInput>;
+}
+
+export interface GenerationGroupCommandInput extends CommandBaseInput {
+  readonly type: "generation.group";
+  readonly payload: GenerationGroupInput;
+}
+
 export interface GenerationQuoteQueryInput extends QueryBaseInput {
   readonly type: "generation.quote";
   readonly specId: string;
@@ -612,9 +626,21 @@ export interface GenerationSubmitCommandInput extends CommandBaseInput {
   readonly payload: GenerationSubmitInput;
 }
 
+export interface GroupAdvanceInput extends ContractInput {
+  readonly workflowId: string;
+  readonly items: ReadonlyArray<string>;
+}
+
 export interface GroupCanvasItemInput extends CanvasItemBaseInput {
   readonly kind: "group";
   readonly binding?: ContainerBindingInput;
+}
+
+export interface GroupMemberInput extends ContractInput {
+  readonly itemId: string;
+  readonly specId: string;
+  readonly count?: number;
+  readonly after?: ReadonlyArray<string>;
 }
 
 export interface HistoryRedoCommandInput extends CommandBaseInput {
@@ -1012,9 +1038,12 @@ export interface PriceLineInput extends ContractInput {
   readonly operation: string;
   readonly modelConfigId: string;
   readonly modelId: string;
+  readonly providerUrl?: string | null;
   readonly source: "connection" | "official" | "local" | "unknown";
+  readonly sourceUrl?: string | null;
   readonly sourceVersion?: string | null;
   readonly price?: ConnectionPriceInput | null;
+  readonly quantityBasis?: "fixed" | "maximum";
   readonly quantity?: number | string | null;
   readonly amount?: number | string | null;
 }
@@ -1274,8 +1303,23 @@ export interface SpendCallInput extends ProjectEntityInput {
   readonly createdAt: string;
   readonly state?: "reserved" | "submitted" | "completed" | "released";
   readonly usage?: number | string | null;
+  readonly usageSource?: "execution" | "provider" | "media" | null;
   readonly calculated?: number | string | null;
   readonly reported?: number | string | null;
+}
+
+export interface SpendObservationInput extends ContractInput {
+  readonly callId: string;
+  readonly state: "submitted" | "completed" | "released";
+  readonly unit?: "request" | "input_character" | "input_second" | "requested_second" | "output_second" | null;
+  readonly usage?: number | string | null;
+  readonly reported?: number | string | null;
+  readonly evidence?: "execution" | "provider" | "media";
+}
+
+export interface SpendObservationCommandInput extends CommandBaseInput {
+  readonly type: "spend.observe";
+  readonly payload: SpendObservationInput;
 }
 
 export interface SpendPolicyInput extends ContractInput {
@@ -1290,12 +1334,21 @@ export interface SpendPolicyCommandInput extends CommandBaseInput {
 }
 
 export interface SpendQuoteInput extends ContractInput {
+  readonly fromUpstream?: boolean;
+  readonly candidates?: number | null;
+  readonly deferred?: ReadonlyArray<string>;
   readonly count: number;
   readonly inputFingerprint: string;
   readonly lines: ReadonlyArray<PriceLineInput>;
 }
 
 export interface SpendRequestInput extends ProjectEntityInput {
+  readonly currency?: "USD" | "CNY" | null;
+  readonly specId?: string | null;
+  readonly batchId?: string | null;
+  readonly workflowId?: string | null;
+  readonly groupItems?: ReadonlyArray<string>;
+  readonly toolTask?: Readonly<Record<string, JsonValueInput>> | null;
   readonly versions: ReadonlyArray<ObjectVersionInput>;
   readonly quote: SpendQuoteInput;
   readonly createdAt: string;
@@ -1319,6 +1372,7 @@ export interface SpendReviewCommandInput extends CommandBaseInput {
 }
 
 export interface SpendStatusQueryInput extends QueryBaseInput {
+  readonly agentRunId?: string | null;
   readonly type: "spend.status";
 }
 
@@ -1601,6 +1655,15 @@ export interface ToolSelectionInput extends ContractInput {
   readonly boxes?: ReadonlyArray<SelectionBoxInput>;
 }
 
+export interface ToolSpendCommandInput extends CommandBaseInput {
+  readonly type: "spend.tool";
+  readonly payload: ToolSpendInputInput;
+}
+
+export interface ToolSpendInputInput extends ContractInput {
+  readonly request: Readonly<Record<string, JsonValueInput>>;
+}
+
 export interface TransformFrameInput extends ContractInput {
   readonly id: string;
   readonly time: number;
@@ -1721,7 +1784,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | SpendPolicyCommandInput | SpendReviewCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | ToolSpendCommandInput | SpendObservationCommandInput | SpendPolicyCommandInput | SpendReviewCommandInput | GenerationGroupCommandInput | AdvanceGroupCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -1734,6 +1797,11 @@ export type RoleActionInput = "configure_generation" | "save_manual_text" | "upl
 export type ModelKindInput = "agent" | "image" | "video" | "audio" | "vision";
 
 export type VideoModeInput = "first_frame" | "reference" | "continuation";
+
+export interface AdvanceGroupCommand extends CommandBase {
+  readonly type: "spend.advanceGroup";
+  readonly payload: GroupAdvance;
+}
 
 export interface ArtifactPublish extends Contract {
   readonly path: string;
@@ -2173,7 +2241,7 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | SpendPolicyCommand | SpendReviewCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | ToolSpendCommand | SpendObservationCommand | SpendPolicyCommand | SpendReviewCommand | GenerationGroupCommand | AdvanceGroupCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
   readonly query: SpendStatusQuery | GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
   readonly event: ProjectEvent;
@@ -2309,6 +2377,15 @@ export interface GenerationFailure {
   readonly providerStatus?: "failed" | "cancelled" | "expired" | null;
 }
 
+export interface GenerationGroup extends Contract {
+  readonly members: ReadonlyArray<GroupMember>;
+}
+
+export interface GenerationGroupCommand extends CommandBase {
+  readonly type: "generation.group";
+  readonly payload: GenerationGroup;
+}
+
 export interface GenerationQuoteQuery extends QueryBase {
   readonly type: "generation.quote";
   readonly specId: string;
@@ -2345,9 +2422,21 @@ export interface GenerationSubmitCommand extends CommandBase {
   readonly payload: GenerationSubmit;
 }
 
+export interface GroupAdvance extends Contract {
+  readonly workflowId: string;
+  readonly items: ReadonlyArray<string>;
+}
+
 export interface GroupCanvasItem extends CanvasItemBase {
   readonly kind: "group";
   readonly binding: ContainerBinding;
+}
+
+export interface GroupMember extends Contract {
+  readonly itemId: string;
+  readonly specId: string;
+  readonly count: number;
+  readonly after: ReadonlyArray<string>;
 }
 
 export interface HistoryRedoCommand extends CommandBase {
@@ -2744,9 +2833,12 @@ export interface PriceLine extends Contract {
   readonly operation: string;
   readonly modelConfigId: string;
   readonly modelId: string;
+  readonly providerUrl?: string | null;
   readonly source: "connection" | "official" | "local" | "unknown";
+  readonly sourceUrl?: string | null;
   readonly sourceVersion: string | null;
   readonly price: ConnectionPrice | null;
+  readonly quantityBasis?: "fixed" | "maximum";
   readonly quantity: string | null;
   readonly amount: string | null;
 }
@@ -3006,8 +3098,23 @@ export interface SpendCall extends ProjectEntity {
   readonly createdAt: string;
   readonly state: "reserved" | "submitted" | "completed" | "released";
   readonly usage: string | null;
+  readonly usageSource: "execution" | "provider" | "media" | null;
   readonly calculated: string | null;
   readonly reported: string | null;
+}
+
+export interface SpendObservation extends Contract {
+  readonly callId: string;
+  readonly state: "submitted" | "completed" | "released";
+  readonly unit: "request" | "input_character" | "input_second" | "requested_second" | "output_second" | null;
+  readonly usage: string | null;
+  readonly reported: string | null;
+  readonly evidence: "execution" | "provider" | "media";
+}
+
+export interface SpendObservationCommand extends CommandBase {
+  readonly type: "spend.observe";
+  readonly payload: SpendObservation;
 }
 
 export interface SpendPolicy extends Contract {
@@ -3022,12 +3129,21 @@ export interface SpendPolicyCommand extends CommandBase {
 }
 
 export interface SpendQuote extends Contract {
+  readonly fromUpstream?: boolean;
+  readonly candidates?: number | null;
+  readonly deferred?: ReadonlyArray<string>;
   readonly count: number;
   readonly inputFingerprint: string;
   readonly lines: ReadonlyArray<PriceLine>;
 }
 
 export interface SpendRequest extends ProjectEntity {
+  readonly currency?: "USD" | "CNY" | null;
+  readonly specId?: string | null;
+  readonly batchId?: string | null;
+  readonly workflowId?: string | null;
+  readonly groupItems?: ReadonlyArray<string>;
+  readonly toolTask?: Readonly<Record<string, JsonValue>> | null;
   readonly versions: ReadonlyArray<ObjectVersion>;
   readonly quote: SpendQuote;
   readonly createdAt: string;
@@ -3051,6 +3167,7 @@ export interface SpendReviewCommand extends CommandBase {
 }
 
 export interface SpendStatusQuery extends QueryBase {
+  readonly agentRunId: string | null;
   readonly type: "spend.status";
 }
 
@@ -3333,6 +3450,15 @@ export interface ToolSelection extends Contract {
   readonly boxes: ReadonlyArray<SelectionBox>;
 }
 
+export interface ToolSpendCommand extends CommandBase {
+  readonly type: "spend.tool";
+  readonly payload: ToolSpendInput;
+}
+
+export interface ToolSpendInput extends Contract {
+  readonly request: Readonly<Record<string, JsonValue>>;
+}
+
 export interface TransformFrame extends Contract {
   readonly id: string;
   readonly time: number;
@@ -3453,7 +3579,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | SpendPolicyCommand | SpendReviewCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | ToolSpendCommand | SpendObservationCommand | SpendPolicyCommand | SpendReviewCommand | GenerationGroupCommand | AdvanceGroupCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 

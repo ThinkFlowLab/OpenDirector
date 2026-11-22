@@ -80,6 +80,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                 availability.probe.close()
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.5", lifespan=lifespan)
+    creation_generation.tools = creation_tools
     app.include_router(creation_routes(creation_projects, creation_generation))
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider, active=active_agents))
     app.include_router(library_routes(creation_projects))
@@ -300,6 +301,10 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         return creation_tools.catalog()
 
     def register_selection_route(service, prefix):
+        @app.get(prefix + '/{task_id}')
+        def selection_result(project_id: UUID, task_id: UUID, x_opendirector_session: str = Header()):
+            return service.selection_result(str(project_id), str(task_id), identifier(x_opendirector_session))
+
         @app.post(prefix)
         async def image_selection(project_id: UUID, value: ImageSelectionCreate, request: Request,
                                   x_opendirector_session: str = Header()):
@@ -331,6 +336,10 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         @app.get(prefix)
         def tool_tasks(project_id: UUID):
             return {'tasks': service.list(str(project_id))}
+
+        @app.post(prefix + '/quote')
+        def quote_tool(project_id: UUID, value: ToolTaskCreate, x_opendirector_session: str = Header()):
+            return service.quote(str(project_id), value.model_dump(mode='json', exclude_none=True), identifier(x_opendirector_session))
 
         @app.post(prefix, status_code=202)
         async def submit(project_id: UUID, value: ToolTaskCreate, x_opendirector_session: str = Header()):

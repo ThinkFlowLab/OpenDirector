@@ -1,12 +1,13 @@
 import asyncio
 import base64
+import shutil
 from decimal import Decimal
 from uuid import uuid4
 
 import httpx
 import pytest
 
-from generation_helpers import command
+from generation_helpers import command, policy, review
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_spend import review_status
 from opendirector.domain.creation.commands import parse_command
@@ -14,7 +15,7 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
-from test_creation_canvas_service import project, ver
+from test_creation_canvas_service import project, send, ver
 from test_creation_generation_service import anyio_backend
 from test_creation_parameters import done, png
 
@@ -51,19 +52,8 @@ async def test_threshold_equality_unknown_cancellation_and_price_changes(project
         await runner.close()
 
 
-def policy(store, pid, **values):
-    return parse_command(dict(type='spend.policy', commandId=uuid4(), projectId=pid,
-        expectedVersions=[ver('project', store.snapshot(pid).project)], payload=values))
-
-
-def review(pid, request, *, project_record=None, **values):
-    return parse_command(dict(type='spend.review', commandId=uuid4(), projectId=pid,
-        expectedVersions=[*request.versions, ver('spend_request', request), *([ver('project', project_record)] if project_record else [])],
-        payload=dict(requestId=request.id, fingerprint=request.quote.fingerprint(), decision='approve') | values))
-
-
 @pytest.mark.anyio
-async def test_atomic_batch_approval_race_replay_and_cap_raise(project):
+async def test_atomic_batch_approval_race_replay_and_cap_raise(project, tmp_path):
     store, pid, session = project
     configs = ModelConfigs(store.local.repository)
     model = configs.save('image', 'http://fixture.invalid/v1', 'fixture', '', connection_type='self_hosted', auth_mode='none')
@@ -85,6 +75,9 @@ async def test_atomic_batch_approval_race_replay_and_cap_raise(project):
             assert waiting.status == 'awaiting_confirmation' and not waiting.jobIds
         snap = store.snapshot(pid)
         assert not snap.jobs and not snap.spendCalls and not calls
+        member = batch.model_copy(update={'commandId': uuid4(), 'payload': batch.payload.model_copy(update={'count': 1, 'batchId': batch.commandId})})
+        assert (await runner.execute(member, session=session)).status == 'rejected'
+        assert not calls and not store.snapshot(pid).jobs
         first, second = [review(pid, request) for request in snap.spendRequests]
         answers = await asyncio.gather(*(runner.execute(r, session=session) for r in (first, second)))
         assert sorted(r.status for r in answers) == ['accepted', 'rejected'], [r.issues for r in answers]
@@ -107,6 +100,24 @@ async def test_atomic_batch_approval_race_replay_and_cap_raise(project):
         reopened = CreationProjects(LocalProjects(store.local.repository)).snapshot(pid)
         assert len(calls) == len(reopened.jobs) == len(reopened.spendCalls) == 6
         assert reopened.project.spendPolicy.cap == Decimal('2.4')
+        assert review_status(reopened)['held'] == 0
+        assert review_status(reopened)['settled'] == Decimal('2.40')
+        item = reopened.canvasItems[0]
+        changed = send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', item)],
+                       itemId=item.id, title='Archive check')
+        assert changed.status == 'applied'
+        item = next(i for i in store.snapshot(pid).canvasItems if i.id == item.id)
+        assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', item)],
+                    targetCommandId=changed.commandId).status == 'applied'
+        assert store.snapshot(pid).spendCalls == reopened.spendCalls
+        # A complete project backup retains its identity and historical amounts.
+        archive = CreationProjects(LocalProjects(tmp_path / 'restored'))
+        original_dir = runner.directory(pid)
+        archive.root.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(original_dir, archive.root / original_dir.name)
+        assert archive.snapshot(pid).spendCalls == reopened.spendCalls
+        shutil.copytree(original_dir, archive.root / (original_dir.name + ' copy'))
+        assert not archive.list_projects()['projects']
     finally:
         gate.set()
         await runner.close()

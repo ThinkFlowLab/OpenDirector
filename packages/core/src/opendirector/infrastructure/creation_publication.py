@@ -102,7 +102,7 @@ class CommitPublication:
         event = ProjectEvent(projectId=command.projectId, cursor=snapshot.eventCursor, commandId=command.commandId,
                              source=source, changed=changed, jobIds=job_ids) if changed else None
         waiting = next((item['version'].id for item in changed if item['version'].objectType == 'spend_request'
-                        and item['change'] == 'created'), None)
+                        and item['change'] == 'created' and any(r.id == item['version'].id and r.status == 'pending' for r in snapshot.spendRequests)), None)
         receipt = CommandReceipt(spendRequestId=waiting, commandId=command.commandId, projectId=command.projectId,
             inputFingerprint=command_fingerprint(command), status='rejected' if issue else 'awaiting_confirmation' if waiting else 'accepted' if job_ids else 'applied' if changed else 'noop',
             changed=[item['version'] for item in changed], jobIds=job_ids, issues=[issue] if issue else [], eventCursor=snapshot.eventCursor)
