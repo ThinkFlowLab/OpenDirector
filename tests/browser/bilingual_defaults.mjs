@@ -20,6 +20,14 @@ try {
   const projectName = page.locator(".cw-project-name");
   const welcome = page.locator("#welcome-language");
   const setup = page.locator("dialog.cw-welcome");
+  async function checkModeChoices(groupName, current, next) {
+    const choices = setup.getByRole("group", { name: groupName, exact: true });
+    for (const label of [current, next]) {
+      assert.ok(await choices.getByText(label, { exact: true }).isVisible());
+    }
+    assert.ok(await choices.getByRole("radio", { name: current, exact: true }).isChecked());
+    await choices.getByRole("radio", { name: next, exact: true }).check();
+  }
   await page.route("**/assistant/runtimes/default/status", (route) => route.fulfill({ json: {
     id: "default", label: "Default Agent", group: "default", modelSource: "settings",
     modelOverride: false, available: true, status: "ready",
@@ -27,16 +35,14 @@ try {
   await projectName.filter({ hasText: /^未命名项目$/ }).waitFor();
   await page.getByRole("heading", { name: "欢迎使用 OpenDirector" }).waitFor();
   assert.ok(await page.getByRole("button", { name: "开始设置" }).isVisible());
-  assert.ok(await setup.getByRole("radio", { name: "画布模式", exact: true }).isChecked());
-  await setup.getByRole("radio", { name: "纯净模式", exact: true }).check();
+  await checkModeChoices("创作方式", "画布创作", "对话创作");
   assert.ok(await setup.getByRole("button", { name: "进入工作区", exact: true }).isVisible());
   const chineseCanvas = page.getByRole("img", { name: "OpenDirector 画布截图：六个分镜和下方的剪辑时间线" });
   await chineseCanvas.evaluate((element) => element.decode());
   const chineseCanvasSrc = await chineseCanvas.getAttribute("src");
   await welcome.selectOption("en-US");
   await page.getByRole("heading", { name: "Welcome to OpenDirector" }).waitFor();
-  assert.ok(await setup.getByRole("radio", { name: "Agent mode", exact: true }).isChecked());
-  await setup.getByRole("radio", { name: "Canvas mode", exact: true }).check();
+  await checkModeChoices("Creation mode", "Create with chat", "Create on canvas");
   const englishCanvas = page.getByRole("img", { name: "OpenDirector canvas screenshot with six storyboard shots and the editing timeline below" });
   await englishCanvas.evaluate((element) => element.decode());
   assert.notEqual(await englishCanvas.getAttribute("src"), chineseCanvasSrc);

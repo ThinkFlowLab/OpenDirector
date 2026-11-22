@@ -160,6 +160,10 @@ try {
 
   for (const locale of ["zh-CN", "en-US"]) {
     await setLocale(locale);
+    const switcher = page.getByRole("group", { name: locale === "zh-CN" ? "创作方式" : "Creation mode", exact: true });
+    for (const label of locale === "zh-CN" ? ["对话", "画布"] : ["Chat", "Canvas"]) {
+      assert.equal(await switcher.getByRole("button", { name: label, exact: true }).innerText(), label);
+    }
     for (const value of ["agent", "canvas", "agent", "canvas"]) {
       await selectMode(value);
       await assertLayout(value);

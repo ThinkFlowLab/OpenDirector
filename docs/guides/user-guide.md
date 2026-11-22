@@ -2,17 +2,17 @@
 
 [English](user-guide.md) · [简体中文](user-guide.zh-CN.md) · [Back to README](../../README.md)
 
-## Choose a creation mode
+## Choose how to create
 
-On the welcome screen, choose **Agent mode** or **Canvas mode**. Canvas mode is preselected on your first visit. Choose **Enter workspace** to open your project immediately, or **Get started** to set up the assistant and pick your first tasks. Both buttons save the selected mode in this browser. If you have already finished setup, your project opens directly and you can switch modes in the top bar.
+On the welcome screen, choose **Create with chat** or **Create on canvas**. The canvas option is preselected on your first visit. Choose **Enter workspace** to open your project immediately, or **Get started** to set up the assistant and pick your first tasks. Both buttons save your choice in this browser. Once you have finished setup, your project opens directly. Select **Chat** or **Canvas** in the top bar to switch at any time.
 
-- **Agent mode** centers the chat so you can describe a goal and work with the assistant. Press `Shift` twice to focus the input. To inspect or edit nodes and the timeline, switch to Canvas mode.
-- **Canvas mode** places chat on the left and the canvas on the right, with a default 1:2 split. Drag the divider to resize the chat, or double-click it to restore the default width. Use **Collapse AI chat** to hide the chat and **Chat with AI** to bring it back.
-- In a narrow window, Canvas mode shows one area at a time. Use **Show canvas** and **Chat with AI** to switch between them.
+- **Create with chat** centers the conversation so you can describe a goal and work with the assistant. Press `Shift` twice to focus the input. Select **Canvas** in the top bar to inspect or edit nodes and the timeline.
+- **Create on canvas** places chat on the left and the canvas on the right, with a default 1:2 split. Drag the divider to resize the chat, or double-click it to restore the default width. Use **Collapse AI chat** to hide the chat and **Chat with AI** to bring it back.
+- In a narrow window, **Canvas** shows one area at a time. Use **Show canvas** and **Chat with AI** to switch between them.
 
 Both modes share the same project, conversation, draft and attachments. Switching modes preserves the canvas view and keeps replies and generation tasks running without submitting them again.
 
-Change the interface language in **Settings → General → Language**. Agent mode has a settings button in the top bar; Canvas mode has one at the bottom left. The assistant's reply language follows your question.
+Change the interface language in **Settings → General → Language**. In **Chat**, the settings button is in the top bar. In **Canvas**, it is at the bottom left. The assistant's reply language follows your question.
 
 ## Connect models
 
@@ -152,13 +152,13 @@ Codex web search citations appear as numbered source links when the search resul
 
 Click a source number to view its full URL in a bordered information card, then choose **Copy link** or **Open link**. Close the card with the button at its top right, by pressing `Esc`, or by clicking outside it.
 
-Use the chat in either creation mode, select a chat model, and describe what you want to create. If the chat is collapsed in Canvas mode, click **Chat with AI** to reopen it. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
+Use the chat in either creation mode, select a chat model, and describe what you want to create. If the chat is collapsed in **Canvas**, click **Chat with AI** to reopen it. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
 Use **New conversation** at the top of the panel to start a separate chat. **Conversation history** lets you search and switch between this canvas's conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices; the active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
 
 - Press `Enter` to send, or `Shift+Enter` for a new line.
 - You can stop the response while it is being generated.
-- In Canvas mode, click **Collapse AI chat** to hide the chat panel. Drag its right edge to resize it, or double-click the edge to restore the default width.
+- In **Canvas**, click **Collapse AI chat** to hide the chat panel. Drag its right edge to resize it, or double-click the edge to restore the default width.
 
 Asset generation may continue after the reply ends. Check its progress in **Generation history**.
 

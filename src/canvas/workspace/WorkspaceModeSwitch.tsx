@@ -23,7 +23,7 @@ export function WorkspaceModeSwitch({
           aria-pressed={mode === value}
           onClick={() => onChange(value)}
         >
-          {t(`workspaceModes.${value}`)}
+          {t(`workspaceModes.short.${value}`)}
         </button>
       ))}
     </div>

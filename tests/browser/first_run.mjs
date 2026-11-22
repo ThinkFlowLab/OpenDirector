@@ -75,8 +75,8 @@ try {
   const welcome = page.locator("dialog.cw-welcome");
   const welcomeTitle = welcome.getByRole("heading", { name: "Welcome to OpenDirector" });
   const getStarted = welcome.getByRole("button", { name: "Get started" });
-  const canvasMode = welcome.getByRole("radio", { name: "Canvas mode", exact: true });
-  const agentMode = welcome.getByRole("radio", { name: "Agent mode", exact: true });
+  const canvasMode = welcome.getByRole("radio", { name: "Create on canvas", exact: true });
+  const agentMode = welcome.getByRole("radio", { name: "Create with chat", exact: true });
   const savedMode = () => page.evaluate(() => localStorage.getItem("opendirector.workspaceMode.v1"));
   const assistantTitle = welcome.getByRole("heading", { name: "Connect an LLM" });
   const chooseHarness = async () => {

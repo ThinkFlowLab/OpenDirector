@@ -339,7 +339,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   const finishFirstRun = () => {
     pendingFirstNodes.current = null;
     dismissModelSetup();
-    // Narrow canvas mode opens on the canvas; Agent mode always shows its chat.
+    // On narrow screens, open the canvas pane. The chat layout always shows the conversation.
     if (assistantLayout.mobile) setAssistantOpen(false);
     const url = new URL(window.location.href);
     if (url.searchParams.get("setup") === "welcome") {
