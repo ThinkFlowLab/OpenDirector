@@ -1,6 +1,6 @@
 .cw-spend { position: relative; font-size: 13px; }
 .cw-spend-toggle, .cw-spend-panel, .cw-spend-form input, .cw-spend-form select, .cw-spend-card input {
-  border: 1px solid #cad0d7; border-radius: 8px; background: white; color: #283240;
+  border: 1px solid var(--settings-border); border-radius: 8px; background: var(--settings-surface); color: var(--settings-text);
 }
 .cw-spend-toggle { min-height: 36px; padding: 0 10px; cursor: pointer; }
 .cw-spend-panel { padding: 14px; box-shadow: 0 5px 20px #2736471a; }
@@ -8,14 +8,16 @@
 .cw-spend-panel h3, .cw-spend-panel p { margin: 0 0 8px; }
 .cw-spend-panel details, .cw-spend-estimate { margin: 6px 0; }
 .cw-spend-panel summary, .cw-spend-estimate summary { cursor: pointer; }
-.cw-spend-card { border-top: 1px solid #d7dce2; padding: 10px 0; }
+.cw-spend-card { border-top: 1px solid var(--settings-border); padding: 10px 0; }
 .cw-spend-lines { list-style: none; padding: 0; margin: 5px 0 9px; }
 .cw-spend-lines li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 8px; padding: 3px 0; overflow-wrap: anywhere; }
-.cw-spend-lines small { width: 100%; color: #515f70; }
+.cw-spend-lines small { width: 100%; color: var(--settings-muted); }
 .cw-spend-actions, .cw-spend-form { display: flex; flex-wrap: wrap; gap: 7px; margin: 7px 0; }
 .cw-spend-form { flex-direction: column; align-items: stretch; }
 .cw-spend-form label, .cw-spend-card label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cw-spend-form input, .cw-spend-form select, .cw-spend-card input { width: 9em; padding: 4px; }
-.cw-spend-actions button, .cw-spend-form button { background: #edf1f5; color: #233245; padding: 5px 10px; border: 0; border-radius: 6px; cursor: pointer; }
-.cw-group-estimate { width: max-content; max-width: 320px; max-height: 32vh; overflow: auto; background: white; border: 1px solid #cad0d7; border-radius: 8px; padding: 5px 9px; pointer-events: auto; }
-.cw-spend-estimate { font-size: 12px; color: #465363; }
+.cw-spend-actions button, .cw-spend-form button { background: var(--settings-active); color: var(--settings-text); padding: 5px 10px; border: 0; border-radius: 6px; cursor: pointer; }
+.cw-group-estimate { width: max-content; max-width: 320px; max-height: 32vh; overflow: auto; background: var(--settings-surface); border: 1px solid var(--settings-border); border-radius: 8px; padding: 5px 9px; pointer-events: auto; }
+.cw-spend-actions button:hover, .cw-spend-form button:hover { background: var(--settings-hover); }
+.cw-spend-actions button:disabled { opacity: .55; cursor: default; }
+.cw-spend-estimate { font-size: 12px; color: var(--settings-text); }

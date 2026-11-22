@@ -1,7 +1,8 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
   "spend.title": "工程费用",
-  "spend.estimate": "{count} 个候选 · 预计 {amount}",
+  "spend.estimate": { one: "{count} 个候选 · 预计 {amount}", other: "{count} 个候选 · 预计 {amount}" },
+  "spend.batchLine": "每个 {amount} × {count}",
   "spend.after": "工程预计合计 {amount}",
   "spend.unknown": "价格未知",
   "spend.newCap": "新的工程上限",

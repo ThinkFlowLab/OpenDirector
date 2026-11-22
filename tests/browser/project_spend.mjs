@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { launchBrowser } from "./engine.mjs";
 
 const web = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
@@ -54,6 +54,7 @@ try {
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(locale => {
       localStorage.setItem("opendirector.locale.v1", locale);
+      localStorage.setItem("opendirector.theme.v1", locale === "en-US" ? "light" : "dark");
       localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
     }, locale);
     await page.goto(`${web}/ai-tool/ai-canvas/${pid}`);
@@ -111,6 +112,7 @@ try {
     if (!await assistant.isVisible()) await page.locator(".cw-chat-button").click();
     const card = assistant.locator(".cw-spend-card");
     await card.getByText(/0\.80/).waitFor();
+    await card.getByText(en ? /0\.40 each × 3/ : /每个.*0\.40 × 3/).waitFor();
     await card.getByRole("button", {name: en ? "Cancel request" : "取消申请"}).click();
     await until(() => call(path), s => s.spendRequests.at(-1).status === "cancelled");
     assert.equal(posts.length - before, 3);
@@ -118,6 +120,7 @@ try {
     assert.equal(third.status, "awaiting_confirmation");
     const current = assistant.locator(`[data-spend-request="${third.spendRequestId}"]`);
     await current.getByLabel(en ? "New project cap" : "新的工程上限").fill("2.40");
+    if (process.env.CREATION_SCREENSHOTS) await assistant.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-review-${locale}.png`});
     await current.getByRole("button", {name: en ? "Raise cap and run this batch" : "提高上限并运行本批"}).click();
     const raised = await until(() => call(path), s => s.jobs.length === 6 && s.jobs.every(j => j.status === "succeeded"));
     assert.equal(Number(raised.project.spendPolicy.cap), 2.4);
@@ -148,6 +151,7 @@ try {
     await groupNode.click({position: {x: 12, y: 14}});
     await page.locator(".cw-group-estimate summary").filter({hasText: "0.80"}).click();
     assert.equal(await page.locator(".cw-group-estimate li").count(), 2);
+    if (process.env.CREATION_SCREENSHOTS) await page.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-workflow-${locale}.png`});
     assert.equal((await call(groupPath)).jobs.length, 0);
     assert.equal(posts.length - before, 6);
     await page.evaluate(async pid => {
@@ -165,6 +169,34 @@ try {
     assert.equal(posts.length - before, 6);
     assert.deepEqual(errors, []);
     console.log(locale, "two-step workflow preview USD 0.80, entire workflow cancelled with zero calls");
+    if (en) {
+      const session = await page.evaluate(() => sessionStorage.getItem("opendirector.session.v1"));
+      const cli = (args, input) => new Promise((resolve, reject) => {
+        const child = execFile(process.env.PYTHON ?? "python", ["-m", "opendirector.cli", "--url", api, "--project", grouped,
+          "--session", session, ...args], {encoding: "utf8", timeout: 20000}, (error, stdout, stderr) => {
+          if (error) reject(new Error(stderr || stdout || error.message));
+          else resolve(stdout);
+        });
+        child.stdin.end(JSON.stringify(input));
+      }).then(JSON.parse);
+      const saved = await call(groupPath);
+      const spec = saved.generationSpecs[0], item = saved.canvasItems.find(i => i.binding.objectRef?.id === spec.id);
+      const quote = await cli(["query", "generation.quote", "--file", "-"], {specId: spec.id, originItemId: item.id, count: 3});
+      assert.equal(Number(quote.amount), 1.2);
+      const body = {expectedVersions: [{objectType:"canvas_item", id:item.id, revision:item.revision}, {objectType:"generation_spec", id:spec.id, revision:spec.revision}],
+        payload:{specId:spec.id, expectedSpecRevision:spec.revision, originItemId:item.id, count:3}};
+      const args = ["--operation-id", crypto.randomUUID(), "generation", "submit", "--file", "-"];
+      const waiting = await cli(args, body);
+      assert.equal(waiting.status, "awaiting_confirmation");
+      assert.equal((await cli(args, body)).spendRequestId, waiting.spendRequestId);
+      assert.ok(waiting.reviewUrl.endsWith(`/ai-tool/ai-canvas/${grouped}?spendReview=${waiting.spendRequestId}`));
+      const cliCard = page.locator(`.cw-spend-canvas [data-spend-request="${waiting.spendRequestId}"]`);
+      await cliCard.getByRole("button", {name: "Cancel request"}).click();
+      await until(() => call(groupPath), s => s.spendRequests.at(-1).status === "cancelled");
+      assert.equal((await call(groupPath)).jobs.length, 0);
+      assert.equal(posts.length - before, 6);
+      console.log("Standalone CLI over HTTP: USD 1.20, replayed request, browser cancellation and zero calls");
+    }
     await page.close();
   }
 } finally {

@@ -1,7 +1,8 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
   "spend.title": "Project spend",
-  "spend.estimate": "{count} candidate(s) · {amount} estimated",
+  "spend.estimate": { one: "{count} candidate · {amount} estimated", other: "{count} candidates · {amount} estimated" },
+  "spend.batchLine": "{amount} each × {count}",
   "spend.after": "Project total {amount}",
   "spend.unknown": "Unknown price",
   "spend.newCap": "New project cap",

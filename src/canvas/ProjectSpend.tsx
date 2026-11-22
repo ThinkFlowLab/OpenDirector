@@ -16,14 +16,17 @@ function useSnapshot(projectId: string) {
 }
 
 function money(value: string, currency: string, locale: string) {
-  return new Intl.NumberFormat(locale, { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 12 }).format(Number(value));
+  return new Intl.NumberFormat(locale, { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 20 }).format(Number(value));
 }
 
 function QuoteLines({ quote }: { quote: SpendQuote }) {
   const { t, locale } = useI18n();
   return <ul className="cw-spend-lines">{quote.lines.map((line, index) => <li key={index}>
     <span>{t(`spend.operation.${line.operation}` as "spend.operation.image")} · {line.modelId}</span>
-    <span>{line.price && line.amount != null ? money(line.amount, line.price.currency, locale) : t("spend.unknown")}</span>
+    <span>{line.price && line.amount != null
+      ? quote.count > 1 ? t("spend.batchLine", {amount: money(line.amount, line.price.currency, locale), count: quote.count})
+        : money(line.amount, line.price.currency, locale)
+      : t("spend.unknown")}</span>
     {line.price == null && <small>{t("spend.noRate")}</small>}
     {line.price && line.amount == null && <small>{t("spend.missingUnits")}</small>}
     {line.price && <small>{t(`spend.source.${line.source}`)} · {line.quantityBasis === "maximum" && "≤ "}{line.quantity ?? "?"} × {line.price.rate} {line.price.currency} / {t(`spend.unit.${line.price.unit}`)}{line.sourceUrl && <> · <a href={line.sourceUrl} target="_blank" rel="noreferrer">{line.sourceVersion}</a></>}</small>}
