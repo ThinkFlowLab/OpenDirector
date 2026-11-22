@@ -342,6 +342,7 @@ export function AssistantPanel({
   const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
     new URLSearchParams({
       traceProject: documentId,
+      ...(value.conversationId ? { conversation: value.conversationId } : {}),
       turn: latestUser.id,
       runtime: latestReply.runtime === "default" ? "opencode" : latestReply.runtime ?? "opencode",
       ...(latestReply.status === "streaming" ? { live: "1" } : {}),
@@ -435,6 +436,7 @@ export function AssistantPanel({
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&
             previous?.role === "user" && new URLSearchParams({
               traceProject: documentId,
+              ...(value.conversationId ? { conversation: value.conversationId } : {}),
               turn: previous.id,
               runtime: message.runtime === "default" ? "opencode" : message.runtime ?? "opencode",
             });
@@ -446,7 +448,9 @@ export function AssistantPanel({
             {message.role === "assistant" && (
               <div className="cw-assistant-message-heading">
                 OpenDirector
-                {message.model && <small>{message.runtime === "deepseek"
+                {(message.modelIsCliDefault || message.model) && <small>{message.modelIsCliDefault
+                  ? t("assistant.agent.cliDefault")
+                  : message.runtime === "deepseek" && message.model
                   ? (deepseekLabels[message.model] ?? "DeepSeek Harness")
                   : message.model}</small>}
               </div>
@@ -773,7 +777,7 @@ export function AssistantPanel({
           </div>
         </form>
         <div className="cw-assistant-footnote">
-          {!chat.loaded ? (
+          {chat.availabilityIssue ? chat.availabilityIssue : !chat.loaded ? (
             chat.changing
               ? t("assistant.panel.switching")
               : chat.error

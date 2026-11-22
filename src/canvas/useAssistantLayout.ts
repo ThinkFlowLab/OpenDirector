@@ -9,6 +9,7 @@ import {
 } from "react";
 
 const KEY = "opendirector.assistant-layout.v1";
+const DESKTOP_MIN_WIDTH = 320;
 const MAX_WIDTH = 720;
 const COLLAPSE_AT = 200;
 const GUTTER = 28;
@@ -42,13 +43,14 @@ export function useAssistantLayout(
   } | null>(null);
   const mobile = viewport <= 700;
   const defaultWidth = Math.max(COLLAPSE_AT + 1, viewport / 3 - GUTTER);
+  const minWidth = window.opendirectorDesktop ? DESKTOP_MIN_WIDTH : COLLAPSE_AT;
   const maxWidth = Math.min(
     Math.max(MAX_WIDTH, defaultWidth),
     Math.max(COLLAPSE_AT + 1, viewport - 360 - GUTTER),
   );
   const width = mobile
     ? Math.max(1, viewport - GUTTER)
-    : Math.min(preferredWidth ?? defaultWidth, maxWidth);
+    : Math.min(Math.max(preferredWidth ?? defaultWidth, minWidth), maxWidth);
   const stop = () => {
     drag.current = null;
     setDragging(false);
@@ -56,9 +58,11 @@ export function useAssistantLayout(
   useLayoutEffect(() => {
     const host = root.current;
     if (!host) return;
-    const measure = () => setViewport(host.clientWidth);
+    // The native project sidebar takes space from the header and both columns.
+    const surface = host.querySelector<HTMLElement>(".cw-topbar") ?? host;
+    const measure = () => setViewport(surface.clientWidth);
     const observer = new ResizeObserver(measure);
-    observer.observe(host);
+    observer.observe(surface);
     measure();
     return () => observer.disconnect();
   }, [root]);

@@ -125,8 +125,10 @@ def test_failed_video_download_keeps_remote_task_for_recovery_without_resubmissi
 
 
 @pytest.mark.parametrize('fail_first', [False, True])
-def test_video_download_preserves_original_bytes_and_recovers_without_resubmission(context, fail_first):
-    store, session, project, configs, _ = context
+@pytest.mark.parametrize('model', ['FastH3-Omni', 'MiniMaxAI/MiniMax-H3'])
+def test_video_download_preserves_original_bytes_and_recovers_without_resubmission(context, fail_first, model):
+    store, session, project, configs, saved = context
+    config = configs.save('video', saved['url'], model, '', saved['id'], connection_type='self_hosted', protocol='vllm_omni')
     requests = []
     original = mp4(seconds=107 / 24)
 
@@ -144,10 +146,11 @@ def test_video_download_preserves_original_bytes_and_recovers_without_resubmissi
         manager = CreationGeneration(store, configs)
         manager.provider = GenerationProviders(manager.store, httpx.MockTransport(respond), .001)
         try:
-            manager._launch(*prepared(manager, (store, project['id'], session), context[4],
+            manager._launch(*prepared(manager, (store, project['id'], session), config,
                 parameters={'videoMode': 'reference', 'durationSeconds': 4.33}))
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
             initial = tasks(manager, project['id'])[0]
+            frozen = store.snapshot(project['id']).jobs[0].inputSnapshot
             if fail_first:
                 assert initial['status'] == 'failed' and initial['recovery'] == 'remote' and initial['resumeAllowed'] is True
                 await manager.recover(project['id'], initial['id'])
@@ -155,6 +158,8 @@ def test_video_download_preserves_original_bytes_and_recovers_without_resubmissi
             task = tasks(manager, project['id'])[0]
             assert task['status'] == 'succeeded' and task['id'] == initial['id']
             assert task['externalTaskId'] == 'paid-remote-job' and task['assetId']
+            assert task['parameters'] == initial['parameters']
+            assert store.snapshot(project['id']).jobs[0].inputSnapshot == frozen
             stream, asset = manager.assets.open_media(project['id'], task['assetId'])
             with stream:
                 assert stream.read() == original

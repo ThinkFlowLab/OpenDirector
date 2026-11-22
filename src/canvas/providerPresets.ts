@@ -205,6 +205,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     authMode: "bearer",
   },
   {
+    id: "atlascloud",
+    name: "Atlas Cloud",
+    kinds: ["agent"],
+    url: "https://api.atlascloud.ai/v1",
+    protocol: "openai",
+    connectionType: "api",
+    authMode: "bearer",
+  },
+  {
     id: "zhipu",
     logoOrganization: "zai-org",
     name: "智谱 BigModel",
@@ -312,11 +321,13 @@ export function providerPresetFor(model: ModelConfig): string {
 
 export function providerOptions(
   kind: ModelKind,
+  allowProtocol?: (protocol: ModelConfig["protocol"]) => boolean,
 ): Pick<
   ProviderPreset,
   "id" | "name" | "logoOrganization" | "group" | "optionLabel"
 >[] {
-  return PROVIDER_PRESETS.filter((preset) => preset.kinds.includes(kind)).map(
+  return PROVIDER_PRESETS.filter((preset) => preset.kinds.includes(kind) &&
+    (!allowProtocol || allowProtocol(preset.protocol))).map(
     (preset) => ({
       ...preset,
       name: providerName(preset.name),

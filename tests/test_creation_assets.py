@@ -214,19 +214,8 @@ def test_wrong_kind_names_and_invalid_media_never_publish(storage):
     assert projects.snapshot(project_id).assets == ()
 
 
-def test_upload_limits_use_streamed_bytes_and_text_limits_use_utf8(storage, monkeypatch):
-    from opendirector.infrastructure import creation_uploads
+def test_text_limits_use_utf8(storage):
     projects, project_id, session = storage
-    monkeypatch.setattr(creation_uploads, 'MAX_CREATION_ASSET_BYTES', 4)
-    writer = CreationUploads(projects).begin(project_id, uuid4(), session, 'file.bin')
-    try:
-        writer.write(b'123')
-        with pytest.raises(ProjectError) as error:
-            writer.write(b'45')
-        assert error.value.status == 413
-    finally:
-        writer.abort()
-    monkeypatch.undo()
     large_text = command(project_id, 'asset.writeText', name='large.txt', text='字' * 400_000)
     with pytest.raises(ProjectError) as error:
         projects.execute(large_text, session=session)

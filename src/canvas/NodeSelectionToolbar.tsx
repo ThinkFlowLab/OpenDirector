@@ -12,6 +12,7 @@ import type { ToolGlyphName } from "./toolGlyphs";
 import { TooltipButton } from "./TooltipButton";
 import { GridSplitOptions, SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
+import type { GroupLayout } from "./operations";
 import type { CanvasToolId } from "./toolCatalog";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
@@ -46,7 +47,25 @@ export interface NodeSelectionToolbarProps {
   onRename?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
+  /** Group actions: run the members' generation workflow, ungroup, arrange, recolor. */
+  onRunWorkflow?: () => void;
+  workflowRunning?: boolean;
+  onUngroup?: () => void;
+  onLayout?: (layout: GroupLayout) => void;
+  onGroupColor?: (color: string) => void;
 }
+
+/** Group background presets; "" restores the default style. */
+export const GROUP_COLORS: readonly [string, MessageKey][] = [
+  ["", "canvas.selection.group.colorDefault"],
+  ["#8b8f9a", "canvas.selection.group.colorGray"],
+  ["#e5484d", "canvas.selection.group.colorRed"],
+  ["#f76b15", "canvas.selection.group.colorOrange"],
+  ["#ffc53d", "canvas.selection.group.colorYellow"],
+  ["#30a46c", "canvas.selection.group.colorGreen"],
+  ["#3e63dd", "canvas.selection.group.colorBlue"],
+  ["#8e4ec6", "canvas.selection.group.colorPurple"],
+];
 
 type Action = {
   id: string;
@@ -68,6 +87,10 @@ type MenuOption = {
   run?: () => void;
   grid?: boolean;
   disabled?: boolean;
+  /** Color swatch shown instead of the icon; "" draws the default swatch. */
+  swatch?: string;
+  /** Marks the current choice, such as the active background color. */
+  checked?: boolean;
 };
 type OpenMenu = {
   nodeId: string;
@@ -122,6 +145,11 @@ export function NodeSelectionToolbar({
   onRename,
   onDuplicate,
   onDelete,
+  onRunWorkflow,
+  workflowRunning = false,
+  onUngroup,
+  onLayout,
+  onGroupColor,
 }: NodeSelectionToolbarProps) {
   const t = useT();
   const toolbar = useRef<HTMLDivElement>(null);
@@ -190,7 +218,38 @@ export function NodeSelectionToolbar({
         disabled: locked,
       });
   };
-  if (node.type === "image") {
+  if (node.type === "group") {
+    if (onRunWorkflow)
+      editing.push({
+        id: "run-workflow",
+        label: workflowRunning ? t("canvas.selection.group.running") : t("canvas.selection.group.run"),
+        icon: "play",
+        run: onRunWorkflow,
+        disabled: workflowRunning || locked,
+      });
+    if (onUngroup)
+      editing.push({ id: "ungroup", label: t("canvas.selection.group.ungroup"), icon: "group", run: onUngroup, disabled: locked });
+    if (onLayout)
+      addMenu("layout", t("canvas.selection.group.layout"), "grid", [
+        { id: "grid", label: t("canvas.selection.group.layoutGrid"), icon: "grid", run: () => onLayout("grid") },
+        { id: "row", label: t("canvas.selection.group.layoutRow"), icon: "referenceArrowsHorizontal", run: () => onLayout("row") },
+        { id: "column", label: t("canvas.selection.group.layoutColumn"), icon: "referenceArrowsVertical", run: () => onLayout("column") },
+      ]);
+    if (onGroupColor)
+      addMenu(
+        "group-color",
+        t("canvas.selection.group.color"),
+        "palette",
+        GROUP_COLORS.map(([color, label]) => ({
+          id: `color-${color || "default"}`,
+          label: t(label),
+          icon: "palette",
+          swatch: color,
+          checked: (node.color ?? "") === color,
+          run: () => onGroupColor(color),
+        })),
+      );
+  } else if (node.type === "image") {
     for (const [tool, labelKey, icon, glyph] of imageTools)
       addTool(tool, t(labelKey), icon, glyph);
     addMenu(
@@ -371,17 +430,18 @@ export function NodeSelectionToolbar({
       run: onPreview,
       iconOnly: true,
     });
-  if (onDownload && (hasMedia || node.type === "text"))
+  if (onDownload && (hasMedia || node.type === "text" || node.type === "group"))
     outputs.push({
       id: "download",
-      label: t("common.download"),
+      label: node.type === "group" ? t("canvas.selection.group.download") : t("common.download"),
       icon: "download",
       run: onDownload,
       iconOnly: true,
     });
 
   const organization: Action[] = [];
-  if (onRename)
+  // A group's bar holds only its own actions; rename and delete stay in the context menu.
+  if (onRename && node.type !== "group")
     organization.push({
       id: "rename",
       label: t("common.rename"),
@@ -390,7 +450,7 @@ export function NodeSelectionToolbar({
       iconOnly: true,
       disabled: locked,
     });
-  if (onDuplicate)
+  if (onDuplicate && node.type !== "group")
     organization.push({
       id: "duplicate",
       label: t("canvas.selection.duplicate"),
@@ -398,7 +458,7 @@ export function NodeSelectionToolbar({
       run: onDuplicate,
       iconOnly: true,
     });
-  if (onDelete)
+  if (onDelete && node.type !== "group")
     organization.push({
       id: "delete",
       label: t("canvas.selection.deleteNode"),
@@ -495,13 +555,13 @@ export function NodeSelectionToolbar({
                 }
                 shortcut={action.id === "output" ? (navigator.platform.includes("Mac") ? "⌘ Enter" : "Ctrl Enter") : undefined}
                 label={
-                  action.disabled
+                  action.disabled && locked
                     ? t("canvas.selection.locked", { label: action.label })
                     : action.label
                 }
                 tooltipSide="top"
                 // Labelled buttons already show their text; only icons and lock reasons need a tooltip.
-                showTooltip={Boolean(action.iconOnly || action.disabled)}
+                showTooltip={Boolean(action.iconOnly || (action.disabled && locked))}
                 className={`${action.iconOnly ? "is-icon-only" : ""}${action.destructive ? " is-destructive" : ""}`}
                 disabled={action.disabled}
                 onClick={(event) => {
@@ -590,7 +650,8 @@ export function NodeSelectionToolbar({
               <TooltipButton
                 key={option.id}
                 data-action={option.id}
-                role="menuitem"
+                role={option.checked === undefined ? "menuitem" : "menuitemradio"}
+                aria-checked={option.checked}
                 aria-label={option.label}
                 label={
                   option.disabled
@@ -612,12 +673,21 @@ export function NodeSelectionToolbar({
                   }
                 }}
               >
-                <CanvasIcon name={option.icon} size={17} />
+                {option.swatch !== undefined ? (
+                  <span
+                    className={`cw-selection-swatch${option.swatch ? "" : " is-default"}`}
+                    style={option.swatch ? { background: option.swatch } : undefined}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <CanvasIcon name={option.icon} size={17} />
+                )}
                 <span>
                   <span>{option.label}</span>
                   {option.description && <small>{option.description}</small>}
                 </span>
                 {option.grid && <CanvasIcon name="chevronRight" size={13} />}
+                {option.checked && <CanvasIcon name="check" size={14} />}
               </TooltipButton>
             ))
           )}

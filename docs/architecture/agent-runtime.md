@@ -57,6 +57,31 @@ Default 的模型网关在 `agent-runs/<turn-id>.model.jsonl` 记录实际转发
 
 停止或流连接断开时，适配层终止进程组，Gateway 关闭新调用入口并等待已接受操作结束；API 保存部分回复并释放运行占用。业务操作以各自回执确认，远端生成任务仍通过任务取消命令处理。
 
+## Agent 来源追溯
+
+Agent 的 `generation.submit` 接受任务时，把本轮标识和工具调用标识写入 Job 自身：
+
+| 字段 | 含义 |
+| --- | --- |
+| `agentRunId` | 提交该任务的 Agent 轮次（turn）ID |
+| `agentCallId` | 该轮内的工具调用 ID，CLI 调用形如 `cli:<id>` |
+
+两个字段同时存在或同时缺失，缺失时不出现在序列化结果中，旧数据的序列化不变。命令 ID 仍由 `agent_command_id(agentRunId, agentCallId)`（即 UUID5）推导，也是幂等键；Command 本身没有新增字段，指纹和幂等规则不变。来源与 Job、回执、快照、事件在同一次提交中落盘，经提交日志恢复后仍在。`job.cancel`、`job.recover` 不改写来源。
+
+两个方向的查询都只读取已提交的工程数据，不读取 Agent 轨迹：
+
+- Job → 轮次：`job.get` 或工程快照中的 `agentRunId`、`agentCallId`。
+- 轮次 → Job：`GET /api/creation/projects/{project_id}/assistant/turns/{turn_id}/jobs`，返回该轮提交的 Job（按创建时间、ID 排序）：`jobId`、`callId`、`commandId`、`status`、`phase`、`recovery`、`resumeAllowed`、`cancelRequested`、`remoteCancellation`、`errorDetails`、`asset`、`adopted`。工程不存在按既有错误语义返回 404；轮次没有任务返回空列表。该路由与轨迹路由一样不申请编辑会话，不执行、不重放命令，也不启动 Provider。
+
+兼容性：
+
+- 此前创建的 Job 没有来源，只能通过 Agent 轨迹追溯；不回填。
+- 旧工程在新版本中可正常打开。
+- 含来源字段的工程不能被更早的 OpenDirector 版本打开：Job 模型禁止未知字段，旧版会以存储不可用拒绝该工程。项目格式没有版本号或降级机制，按 [AGENTS.md](../../AGENTS.md) 的约定不静默忽略字段，也不提供兼容层。需要回退版本时，先备份工程目录。
+- Agent 轨迹是调试文件，不是业务事实来源，删除它不影响上述查询。
+
+English summary: a Job created by an Agent `generation.submit` records `agentRunId` (turn) and `agentCallId` (tool call), both or neither, and omits them when absent so existing jobs serialize unchanged. The command ID is still `uuid5(run id, call id)` and no Command field was added. Job to turn uses `job.get` or the snapshot. Turn to jobs uses the read-only `GET .../assistant/turns/{turn_id}/jobs`, which reads the committed snapshot, needs no editing session, never replays a command and does not read the Agent trace. Jobs created before this change have no origin and remain traceable only through the trace. Older OpenDirector builds reject a project containing these fields because Job forbids unknown fields; the project format has no version or downgrade mechanism, so back up a project before opening it with an older build.
+
 ## 原生工具权限
 
 | Harness | 执行约束 |
@@ -69,4 +94,14 @@ Default 的模型网关在 `agent-runs/<turn-id>.model.jsonl` 记录实际转发
 
 工具允许列表与操作系统沙箱提供不同约束。业务工具独立校验工程范围和输入；原生文件访问权限不授予直接改写工程存储的业务权限。
 
+Windows 上的 Codex 启动显式设置 `windows.sandbox="elevated"`，避免隔离启动忽略用户配置后，`workspace-write` 降为只读并拦截 Shell。保留沙箱约束，不绕过审批或沙箱。PowerShell 使用 `Get-Command opendirector` 发现 CLI，POSIX Shell 使用 `command -v opendirector`。
+
+On Windows, Codex explicitly sets `windows.sandbox="elevated"` so ignoring user configuration does not downgrade `workspace-write` to read-only and block Shell execution. Sandbox restrictions remain enabled. Discover the CLI with `Get-Command opendirector` in PowerShell or `command -v opendirector` in POSIX shells.
+
 CLI 通过环境变量中的本轮本地 Socket 地址连接业务网关，不使用连接令牌或凭据文件。网关继续校验工程范围、轮次生命周期及业务输入。
+
+## 对话轨迹页 / Conversation trace page
+
+轨迹页 `/?traceProject=…&conversation=…&turn=…` 在一页内按顺序列出一个对话的全部已执行轮次，每轮可独立展开，展开时才读取该轮日志与关联 Job。轮次索引来自只读接口 `GET .../assistant/conversations/{conversation_id}/trace`，它解析当前对话、已归档对话和 `reusedCreateIds` 别名，只返回轮次元数据（序号、用户输入摘要、运行时、状态），不读取日志正文，不激活对话，不获取编辑租约。轮次由持久化的身份关系确定：用户消息与 id 为 `uuid5(用户消息 id, 'assistant')` 的助手消息成对才算已执行的一轮；没有该助手记录的用户消息（例如排队中、未执行）不出现。每轮使用自己记录的运行时选择日志源和解析器，仅 Default（opencode）显示模型原始请求。`GET .../traces/{turn_id}/conversation` 供旧的单轮链接查找所属对话；找不到时保持原单轮页面。
+
+English summary: the trace page lists every executed turn of a conversation, expanded one at a time, and reads a turn's logs and linked Jobs only when it is opened. The turn index comes from the read-only `GET .../assistant/conversations/{conversation_id}/trace`, which resolves current, archived and aliased (`reusedCreateIds`) conversation ids and returns metadata only (number, input summary, runtime, status). It never reads log bodies, activates a conversation or takes a lease. A turn is a user message paired with the assistant message whose id is `uuid5(user id, 'assistant')`, so queued or never executed user messages are not listed. Each turn uses its own recorded runtime for the log source and parser, and raw model requests are offered for the Default (opencode) runtime only. `GET .../traces/{turn_id}/conversation` lets old single-turn links find their conversation; when none is found the single-turn page remains.

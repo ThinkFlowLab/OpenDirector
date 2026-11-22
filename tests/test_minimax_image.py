@@ -11,7 +11,9 @@ from PIL import Image
 
 from opendirector.domain.capabilities import ImageRequest
 from opendirector.domain.generation import GenerationError
+from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.generation_capability_parameters import generation_capability_parameters
 from opendirector.integrations.model_adapters import adapter_for
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.application.creation_generation import CreationGeneration
@@ -79,6 +81,36 @@ def test_image_generation_and_ordered_edits(tmp_path, model):
     assert calls[0][1]['size'] == '2720x1536'
     expected = [{'image_url': 'data:image/png;base64,' + base64.b64encode(data).decode()} for data in (first, second)]
     assert calls[0][1]['images'] == calls[2][1]['images'] == expected
+    adapter = adapter_for(config)
+    projections = [
+        generation_capability_parameters(config, 'image', {'size': '2720x1536'}, has_images=True),
+        adapter.image_parameters(1024, 1024, has_images=False),
+        adapter.image_parameters(1024, 1024, has_images=True),
+    ]
+    actual = [{key: value for key, value in body.items() if key not in {'model', 'prompt', 'images'}}
+              for _, body in calls]
+    checked = [{key: value for key, value in item.items() if key not in {'width', 'height'}}
+               for item in projections]
+    assert checked == actual
+
+
+@pytest.mark.parametrize('field', ['mask', 'reference'])
+def test_unsupported_auxiliary_image_is_not_silently_dropped(tmp_path, field):
+    configs = ModelConfigs(tmp_path)
+    saved = configs.save('image', URL, MODELS[0], 'test-key', protocol='openai')
+    config = configs.resolve(saved['id'], 'image')
+    calls = []
+
+    def respond(request):
+        calls.append(request.method)
+        return (httpx.Response(200, content=png('blue')) if request.method == 'GET'
+                else httpx.Response(200, json={'data': [{'url': RESULT}]}))
+
+    adapter = adapter_for(config, httpx.MockTransport(respond))
+    with pytest.raises(ProjectError) as failure:
+        asyncio.run(adapter.image(config, ImageRequest('Edit', 128, 128, png('red'), **{field: png('blue')})))
+    assert failure.value.code == 'image_input_mask'
+    assert calls == []
 
 
 def test_submission_timeout_does_not_retry(tmp_path):

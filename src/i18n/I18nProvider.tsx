@@ -1,3 +1,4 @@
+import "../desktop.ts";
 /** React binding for the locale catalog. */
 import {
   createContext,
@@ -58,6 +59,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   useEffect(() => {
+    window.opendirectorDesktop?.setLocale(locale);
     document.title = translate(locale, "app.title");
     const description = document.querySelector<HTMLMetaElement>(
       'meta[name="description"]',

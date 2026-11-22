@@ -63,6 +63,7 @@ def freeze_inputs(service, project_id, value):
                 raise ProjectError('工具来源已变化，不能用旧选区提交新素材。', 409)
         sources.append(asset_ref(asset).model_dump(mode='json'))
     first = service.assets.assets.get(project_id, value['sourceAssetIds'][0])
+    auxiliary_assets = {}
     for key in ('maskAssetId', 'annotationAssetId'):
         if value.get(key):
             auxiliary = service.assets.assets.get(project_id, value[key])
@@ -70,6 +71,7 @@ def freeze_inputs(service, project_id, value):
             if (auxiliary.kind != 'image' or first.kind != 'image'
                     or (auxiliary.metadata.width, auxiliary.metadata.height) != (first.metadata.width, first.metadata.height)):
                 raise ProjectError('选区或标注尺寸与实际来源图片不一致。', 422)
+            auxiliary_assets[key] = asset_ref(auxiliary).model_dump(mode='json')
     for box in value.get('boxes', []):
         if (first.kind not in {'image', 'video'} or box['x'] < 0 or box['y'] < 0 or box['width'] <= 0 or box['height'] <= 0
                 or box['x'] + box['width'] > first.metadata.width or box['y'] + box['height'] > first.metadata.height):
@@ -81,6 +83,7 @@ def freeze_inputs(service, project_id, value):
             raise ProjectError('工具结果占位节点已变化。', 409)
     return dict(draftSnapshot=document.model_dump(mode='json') if document else None,
                 draftBinding=value.get('draft'), sourceAssets=sources,
+                auxiliaryAssets=auxiliary_assets,
                 targetSnapshot=target.model_dump(mode='json') if target else None,
                 targetIntent=target_intent(snapshot, target) if target else None)
 

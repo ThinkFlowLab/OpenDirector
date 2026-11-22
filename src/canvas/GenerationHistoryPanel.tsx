@@ -27,6 +27,7 @@ export function GenerationHistoryPanel({
   authoritative?: boolean;
 }) {
   const { t, locale } = useI18n();
+  const durationFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 });
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
@@ -162,6 +163,16 @@ export function GenerationHistoryPanel({
                   : labels[job.status]}
           </small>
           {job.message && <small>{job.message}</small>}
+          {job.videoDuration?.requestedSeconds !== undefined && (
+            <small>{t("generation.history.requestedDuration", {
+              seconds: durationFormat.format(job.videoDuration.requestedSeconds),
+            })}</small>
+          )}
+          {job.videoDuration?.resultSeconds !== undefined && (
+            <small>{t("generation.history.resultDuration", {
+              seconds: durationFormat.format(job.videoDuration.resultSeconds),
+            })}</small>
+          )}
           {job.preview?.state === "pending" && <small>{t("generation.history.readingPreview")}</small>}
           <div className="cw-history-thumbnails">
             {job.outputs?.map((output, i) =>

@@ -51,7 +51,9 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   jobs: GenerationJob[];
   setJobs: Dispatch<SetStateAction<GenerationJob[]>>;
   readJobs: (signal?: AbortSignal) => Promise<GenerationJob[]>;
+  recoverServiceTask: (job: GenerationJob) => Promise<void>;
   command: (value: CanvasCommand) => void;
+  commitCanvasCommand: (value: CanvasCommand, failureMessage: string) => Promise<void>;
   change: (fn: (document: CanvasDocument) => CanvasDocument) => void;
   begin: () => void;
   end: () => void;
@@ -68,6 +70,9 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
     throwOnFailure?: boolean,
   ) => Promise<boolean>;
   historyRef: RefObject<CanvasHistory>;
+  mounted: RefObject<boolean>;
+  historyWriteVersion: RefObject<number>;
+  historyRenderVersion: number;
   selectedRef: RefObject<string[]>;
   actionSessionRef: RefObject<WorkspaceActionSession | null>;
   lockedIds: Set<string>;
@@ -85,7 +90,7 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   root: RefObject<HTMLDivElement | null>;
   canvasRegion: RefObject<HTMLDivElement | null>;
   workspaceMode: WorkspaceMode;
-  changeWorkspaceMode: (mode: WorkspaceMode) => void;
+  changeWorkspaceMode: (mode: WorkspaceMode) => boolean;
   assistantVisible: boolean;
   canvasVisible: boolean;
   composerElement: RefObject<HTMLDivElement | null>;

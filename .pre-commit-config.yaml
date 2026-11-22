@@ -17,6 +17,8 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
       - id: end-of-file-fixer
+        # Keep Google Search Console verification files byte-for-byte.
+        exclude: '^website/google[0-9a-f]{16}\.html$'
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: trailing-whitespace

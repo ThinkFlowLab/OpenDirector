@@ -1,7 +1,9 @@
 import { workspaceModes } from "./workspaceModes.ts";
+import { availability } from "./availability.ts";
 import { voiceLibrary } from "./voiceLibrary.ts";
 import { trace } from "./trace.ts";
 import { modelSetup } from "./modelSetup.ts";
+import { firstRun } from "./firstRun.ts";
 import { api } from "./api.ts";
 import { assistant } from "./assistant.ts";
 import { canvas } from "./canvas.ts";
@@ -22,9 +24,11 @@ import { tools } from "./tools.ts";
 export const zhCN = {
   ...common,
   ...workspaceModes,
+  ...availability,
   ...voiceLibrary,
   ...settings,
   ...modelSetup,
+  ...firstRun,
   ...trace,
   ...canvas,
   ...canvasShell,

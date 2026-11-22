@@ -76,3 +76,5 @@ __pycache__/
 
 /build/
 /packages/core/src/opendirector/_bundled/
+/apps/desktop/runtime/
+/apps/desktop/build/

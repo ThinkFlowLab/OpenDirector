@@ -139,6 +139,7 @@ export const generation = {
   "generation.reference.connected": "引用已连接节点",
   "generation.reference.upload": "上传节点参考",
   "generation.reference.title": "{role}：{title}",
+  "generation.reference.readingContext": "文本朗读不把这些参考作为模型输入，仍可查看或移除。",
 
   "generation.action.cancel": "取消生成",
   "generation.action.submit": "提交生成",
@@ -175,6 +176,8 @@ export const generation = {
   "generation.history.empty": "暂无此类型的生成历史。",
   "generation.history.selectJob": "选择历史{title}",
   "generation.history.readingPreview": "正在读取结果预览…",
+  "generation.history.requestedDuration": "请求时长：{seconds} 秒",
+  "generation.history.resultDuration": "成片时长：{seconds} 秒",
   "generation.history.query": "继续查询原任务",
   "generation.history.cancelCloud": "取消云端任务",
   "generation.history.cancelTool": "停止工具任务",

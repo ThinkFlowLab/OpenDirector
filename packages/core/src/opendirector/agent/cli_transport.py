@@ -17,7 +17,7 @@ def environment(work, socket, bridge_env=None):
     cli_bin = work / '.opendirector-bin'
     cli_bin.mkdir(exist_ok=True)
     if os.name == 'nt':
-        (cli_bin / 'opendirector.cmd').write_text(f'@"{sys.executable}" -m opendirector.cli %*\n')
+        (cli_bin / 'opendirector.cmd').write_text(f'@"{sys.executable}" -X utf8 -m opendirector.cli %*\n')
     else:
         launcher = cli_bin / 'opendirector'
         launcher.write_text('#!/bin/sh\nexec ' + shlex.join([sys.executable, '-m', 'opendirector.cli']) + ' "$@"\n')

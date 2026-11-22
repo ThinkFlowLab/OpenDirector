@@ -1,12 +1,12 @@
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { traceCategory, isThinkingTokenEstimate, readableTraceValue } from "./traceCategory.ts";
 
-import { normalizeClaudeTrace } from "./claudeTrace.ts";
-import { normalizeCodexTrace } from "./codexTrace.ts";
-import { normalizeDeepseekTrace } from "./deepseekTrace.ts";
+import { initialTurn, normalizeTrace, runtimeName, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
+
+import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
 
 import "./assistant-trace.css";
 
@@ -183,22 +183,43 @@ function TraceEntries({ traces, rawModel }: { traces: string[]; rawModel: boolea
   });
 }
 
-export default function AssistantTracePage({ params }: { params: URLSearchParams }) {
-  const project = params.get("traceProject") ?? "";
-  const turn = params.get("turn") ?? "";
-  const runtime = params.get("runtime") ?? "opencode";
-  const live = params.get("live") === "1";
+function TraceJobs({ jobs }: { jobs: TurnJob[] }) {
+  const t = useT();
+  return (
+    <section className="cw-trace-jobs" aria-label={t("trace.jobs.title")}>
+      <h2>{t("trace.jobs.title")}</h2>
+      {jobs.map((job) => {
+        const view = turnJobView(job, t);
+        return (
+          <div key={view.key} className="cw-trace-row cw-trace-job">
+            <span className={`cw-trace-badge is-job-${view.status}`}>{view.statusText}</span>
+            <span className="cw-trace-preview">
+              <code>{job.jobId}</code>
+              {[view.assetText, view.adoptedText, view.cancelText, view.errorText]
+                .filter(Boolean).map((text) => ` · ${text}`).join("")}
+            </span>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function TurnTrace({ project, turn, runtime, live }: {
+  project: string; turn: string; runtime: string; live: boolean;
+}) {
   const [input, setInput] = useState<string | null>(null);
   const [traces, setTraces] = useState<string[]>([]);
   const [showModel, setShowModel] = useState(false);
   const rawModel = runtime === "opencode" && showModel;
   const [status, setStatus] = useState<number | null>(null);
+  const [jobs, setJobs] = useState<TurnJob[]>([]);
   const t = useT();
 
   useEffect(() => {
     const controller = new AbortController();
     const [projectPath, turnPath] = [project, turn].map(encodeURIComponent);
-    const sources = runtime === "opencode" ? ["model", runtime] : [runtime];
+    const sources = traceSources(runtime);
     setInput(null);
     const traceUrl = `/api/creation/projects/${projectPath}/assistant/traces/${turnPath}`;
     const options = { headers: { "X-OpenDirector-Request": "1" }, signal: controller.signal };
@@ -209,18 +230,23 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
     }).catch(() => {});
     setStatus(null);
     setTraces([]);
+    setJobs([]);
     let timer: number | undefined;
     async function refresh() {
       try {
         if (live && document.hidden) return;
+        const jobsRequest = fetch(`/api/creation/projects/${projectPath}/assistant/turns/${turnPath}/jobs`, options)
+          .then(readTurnJobs, () => [] as TurnJob[]);
         const snapshots = await Promise.all(sources.map(async (name) => {
           const response = await fetch(`${traceUrl}/${encodeURIComponent(name)}`, options);
           const body = response.ok ? await response.text() : "";
-          return { status: response.status, body: name === "deepseek" ? normalizeDeepseekTrace(body) : name === "codex" ? normalizeCodexTrace(body) : name === "claude" ? normalizeClaudeTrace(body) : body };
+          return { status: response.status, body: normalizeTrace(name, body) };
         }));
+        const nextJobs = await jobsRequest;
         const status = snapshots.some((item) => item.status === 200) ? 200 : snapshots[0].status;
         if (controller.signal.aborted) return;
         setStatus(status);
+        setJobs((previous) => JSON.stringify(previous) === JSON.stringify(nextJobs) ? previous : nextJobs);
         const bodies = snapshots.map((item) => item.body);
         setTraces((previous) => bodies.every((body, index) => body === previous[index]) ? previous : bodies);
       } catch {
@@ -237,10 +263,7 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
   }, [project, turn, live, runtime]);
 
   return (
-    <main className="cw-trace-page">
-      <header className="cw-trace-header">
-      <h1>{t("trace.title")}</h1>
-      <p><code>{turn}</code></p>
+    <>
       {runtime === "opencode" && (
         <nav className="cw-trace-tabs" aria-label={t("trace.views")}>
           <button type="button" aria-pressed={!rawModel} onClick={() => setShowModel(false)}>
@@ -251,7 +274,6 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
           </button>
         </nav>
       )}
-      </header>
       {!rawModel && input !== null && <TraceRow kind="user" summary={input} value={input} />}
       {status === 200 ? (
         rawModel && !traces[0]?.trim() ? (
@@ -264,6 +286,128 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
           status === 404 && live ? t("trace.waiting") :
           status === 404 ? t("trace.notFound") :
           t("trace.loadFailed")}</p>
+      )}
+      {jobs.length > 0 && <TraceJobs jobs={jobs} />}
+    </>
+  );
+}
+
+const STATUS_KEYS: Record<ConversationTurn["status"], MessageKey> = {
+  streaming: "trace.turn.status.streaming", complete: "trace.turn.status.complete",
+  stopped: "trace.turn.status.stopped", interrupted: "trace.turn.status.interrupted",
+};
+
+function ConversationTrace({ project, target, turns }: {
+  project: string; target: string; turns: ConversationTurn[];
+}) {
+  const t = useT();
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [loaded, setLoaded] = useState<Set<string>>(() => new Set());
+  const placed = useRef(false);
+  const initial = initialTurn(turns, target);
+
+  function toggle(id: string, value: boolean) {
+    setOpen((previous) => {
+      if (previous.has(id) === value) return previous;
+      const next = new Set(previous);
+      if (value) next.add(id); else next.delete(id);
+      return next;
+    });
+    if (value) setLoaded((previous) => previous.has(id) ? previous : new Set(previous).add(id));
+  }
+  function reveal(id: string) {
+    toggle(id, true);
+    window.requestAnimationFrame(() => document.getElementById(`turn-${id}`)?.scrollIntoView({ block: "start" }));
+  }
+  useEffect(() => {
+    if (placed.current || !initial) return;
+    placed.current = true;
+    reveal(initial);
+  }, [initial]);
+
+  return (
+    <>
+      <nav className="cw-trace-turnnav" aria-label={t("trace.turns.nav")}>
+        {turns.map((item) => (
+          <button key={item.id} type="button" aria-pressed={open.has(item.id)}
+            title={item.text} onClick={() => reveal(item.id)}>{item.number}</button>
+        ))}
+      </nav>
+      {turns.length === 0 && <p role="status">{t("trace.turns.empty")}</p>}
+      {turns.map((item) => (
+        <details key={item.id} id={`turn-${item.id}`} className="cw-trace-turn"
+          open={open.has(item.id)} onToggle={(event) => toggle(item.id, event.currentTarget.open)}>
+          <summary>
+            <span className="cw-trace-turn-number">{t("trace.turn.number", { number: item.number })}</span>
+            <span className="cw-trace-preview">{item.text}</span>
+            <span className="cw-trace-turn-meta">
+              <span>{runtimeName(item.runtime)}</span>
+              <span className={`cw-trace-badge is-turn-${item.status}`}>{t(STATUS_KEYS[item.status])}</span>
+            </span>
+          </summary>
+          {loaded.has(item.id) && (
+            <TurnTrace project={project} turn={item.id} runtime={traceRuntime(item.runtime)}
+              live={item.status === "streaming"} />
+          )}
+        </details>
+      ))}
+    </>
+  );
+}
+
+export default function AssistantTracePage({ params }: { params: URLSearchParams }) {
+  const project = params.get("traceProject") ?? "";
+  const turn = params.get("turn") ?? "";
+  const runtime = params.get("runtime") ?? "opencode";
+  const live = params.get("live") === "1";
+  const requested = params.get("conversation");
+  // undefined: not resolved yet. null: no conversation could be found, show the single turn.
+  const [conversation, setConversation] = useState<{ id: string; turns: ConversationTurn[] } | null | undefined>();
+  const t = useT();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const base = `/api/creation/projects/${encodeURIComponent(project)}/assistant`;
+    const options = { headers: { "X-OpenDirector-Request": "1" }, signal: controller.signal };
+    async function load() {
+      try {
+        let id = requested;
+        if (!id && turn) {
+          const found = await fetch(`${base}/traces/${encodeURIComponent(turn)}/conversation`, options);
+          if (found.ok) id = ((await found.json()) as { conversationId: string }).conversationId;
+        }
+        const response = id ? await fetch(`${base}/conversations/${encodeURIComponent(id)}/trace`, options) : null;
+        if (controller.signal.aborted) return;
+        if (!response?.ok) return setConversation((previous) => previous === undefined ? null : previous);
+        const body = await response.json() as { conversationId: string; turns: ConversationTurn[] };
+        setConversation((previous) => JSON.stringify(previous) === JSON.stringify(body) ? previous : { id: body.conversationId, turns: body.turns });
+        if (body.turns.some((item) => item.status === "streaming"))
+          timer = window.setTimeout(load, 2000);
+      } catch {
+        if (!controller.signal.aborted) setConversation((previous) => previous === undefined ? null : previous);
+      }
+    }
+    void load();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [project, turn, requested]);
+
+  // A link to a turn that the conversation does not list keeps the single-turn view.
+  const listed = conversation?.turns.some((item) => item.id === turn) ?? false;
+  const wide = conversation && (listed || !turn);
+  return (
+    <main className="cw-trace-page">
+      <header className="cw-trace-header">
+        <h1>{wide ? t("trace.conversationTitle") : t("trace.title")}</h1>
+        {!wide && <p><code>{turn}</code></p>}
+      </header>
+      {conversation === undefined ? <p role="status">{t("trace.loading")}</p> : wide ? (
+        <ConversationTrace project={project} target={turn} turns={conversation.turns} />
+      ) : (
+        <TurnTrace project={project} turn={turn} runtime={runtime} live={live} />
       )}
     </main>
   );

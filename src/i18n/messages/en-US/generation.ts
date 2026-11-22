@@ -148,6 +148,7 @@ export const generation = {
   "generation.reference.connected": "Reference connected node",
   "generation.reference.upload": "Upload node reference",
   "generation.reference.title": "{role}: {title}",
+  "generation.reference.readingContext": "Text-to-speech does not send these references to the model. You can still inspect or remove them.",
 
   "generation.action.cancel": "Cancel generation",
   "generation.action.submit": "Generate",
@@ -187,6 +188,8 @@ export const generation = {
   "generation.history.empty": "No generation history of this type.",
   "generation.history.selectJob": "Select history {title}",
   "generation.history.readingPreview": "Reading result preview…",
+  "generation.history.requestedDuration": "Requested duration: {seconds} s",
+  "generation.history.resultDuration": "Result duration: {seconds} s",
   "generation.history.query": "Check the original task again",
   "generation.history.cancelCloud": "Cancel cloud task",
   "generation.history.cancelTool": "Stop tool task",

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-17T06:40:00Z",
+  "items": [
+    {
+      "id": "image-canvas",
+      "title": {
+        "zh-CN": "图像创作示例画布",
+        "en-US": "Image creation example canvas"
+      },
+      "summary": {
+        "zh-CN": "图片生成、主体替换与参考素材的入门示例",
+        "en-US": "Image generation, subject replacement and references"
+      },
+      "url": "https://lz.qaiu.top/parser?url=https://wwbks.lanzouv.com/i1BWT4ga8c6h&pwd=4b6t",
+      "filename": "图像创作示例画布.zip",
+      "bytes": 27582888,
+      "contentKind": "zip-wrapper",
+      "inner": {
+        "entry": "图像创作示例画布.canvas",
+        "bytes": 27689522,
+        "archiveVersion": 2,
+        "assets": 5,
+        "nodes": 12
+      }
+    },
+    {
+      "id": "video-canvas",
+      "title": {
+        "zh-CN": "视频创作示例画布",
+        "en-US": "Video creation example canvas"
+      },
+      "summary": {
+        "zh-CN": "时间线、文生视频与图生视频的组合示例",
+        "en-US": "Timeline with text-to-video and image-to-video"
+      },
+      "url": "https://lz.qaiu.top/parser?url=https://wwbks.lanzouv.com/iUPML4ga8bch&pwd=905a",
+      "filename": "视频创作示例画布.zip",
+      "bytes": 26086524,
+      "contentKind": "zip-wrapper",
+      "inner": {
+        "entry": "视频创作示例画布.canvas",
+        "bytes": 26128975,
+        "archiveVersion": 2,
+        "assets": 9,
+        "nodes": 17
+      }
+    }
+  ]
+}

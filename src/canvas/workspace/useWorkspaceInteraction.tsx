@@ -1,5 +1,5 @@
 import { type Connection, type Edge, type NodeChange, type OnConnectEnd } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { errorMessage } from "../../backend/api.ts";
 
 import { CanvasContextMenu } from "../CanvasContextMenu";
@@ -651,7 +651,17 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
           !lockedIds.has(n.id) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
-        style: { width: n.width, height: n.height },
+        style: {
+          width: n.width,
+          height: n.height,
+          // A colored group tints its fill and border (#rrggbb plus alpha).
+          ...(n.type === "group" && n.color
+            ? {
+                "--cw-group-fill": `${n.color}24`,
+                "--cw-group-border": `${n.color}b3`,
+              }
+            : {}),
+        } as CSSProperties,
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: t("canvas.workspace.aria.nodeLabel", {
           kind: t(nodeKindKeys[n.type]),
@@ -758,10 +768,11 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   };
 
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = event.target as HTMLElement;
+    if (!canvasVisible || el.closest("dialog[open]")) return;
     bypassSnapping.current = event.metaKey || event.ctrlKey;
     if (bypassSnapping.current) clearGuides();
-    if (!canvasVisible || !ready || switchPending.current || event.nativeEvent.isComposing) return;
-    const el = event.target as HTMLElement;
+    if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
     // Tool shortcuts also work when a canvas menu owns focus, while editors
@@ -790,7 +801,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
+        ".od-desktop-navigation,.cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
       )
     )
       return;

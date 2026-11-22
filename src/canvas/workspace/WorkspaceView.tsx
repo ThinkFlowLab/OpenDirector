@@ -1,9 +1,11 @@
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
+import { projectDisplayName } from "../projectDisplayName";
+import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, useEffect, type CSSProperties } from "react";
-import { createNode } from "../model.ts";
+import { Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
+import { createNode, type CanvasNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
@@ -18,8 +20,18 @@ import { TimelinePackageImport, exportTimelinePackage as exportNativeTimelinePac
 import { readLocalResource } from "../timelineExport.ts";
 import { timelinePublication } from "../../backend/timelinePublication";
 import { acknowledgeToolPlacement, cancelToolTask } from "../../backend/tools.ts";
-import { createWorkspaceProject, listWorkspaceProjects, openExampleWorkspaceProject, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
-import { exampleDocument, exampleProjectTitle, studyImage } from "../assets";
+import { createWorkspaceProject, listWorkspaceProjects, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
+import { studyImage } from "../assets";
+import { ExampleCanvasDialog } from "./example/ExampleCanvasDialog.tsx";
+import {
+  IMAGE_EXAMPLE_ID,
+  VIDEO_EXAMPLE_ID,
+  availableExamples,
+  loadExampleCatalog,
+  type ExampleEntry,
+} from "./example/exampleCatalog.ts";
+import { exampleFailureText, examplePercent } from "./example/exampleFailure.ts";
+import { useExampleImport } from "./example/useExampleImport.ts";
 
 import { AssistantPanel } from "../AssistantPanel";
 import { CanvasActionsContext } from "../CanvasActionsContext";
@@ -67,13 +79,15 @@ import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
 import { TextNodeWindow } from "../TextNodeWindow";
 import { SelectionBarAnchor } from "../SelectionBarAnchor";
 import { NodeTaskPanel } from "../NodeTaskPanel";
-import { unstackSelection } from "../operations";
+import { layoutGroup, orderNodesForCanvas, unstackSelection, type GroupLayout } from "../operations";
 
 import { ProjectSelector } from "../ProjectSelector";
 import "../settings.css";
 import { dismissModelSetup } from "../ModelSetup";
 
 import { WelcomeScreen } from "../WelcomeScreen";
+import { firstRunCapabilities } from "../firstRunModels";
+import { newNodeGenerationSettings } from "../modelResolution";
 import { SettingsDialog } from "../SettingsDialog";
 import { alignNodes, type Alignment } from "../snapping";
 import { StackEditor } from "../StackEditor";
@@ -93,8 +107,9 @@ import { VideoActionEditor } from "../VideoActionEditor";
 import { captureVideoEndpoint, extractVideoAudio } from "../videoActionRuntime";
 import "../workspace.css";
 import "../workspace-modes.css";
+import "../desktop-chrome.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
-import { DirectorStage, IconButton, helpShortcuts, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
+import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
@@ -129,6 +144,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     closeAction,
     closeEditor,
     command,
+    commitCanvasCommand,
     commitEditorData,
     composerElement,
     composerExpanded,
@@ -146,6 +162,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     dismiss,
     doc,
     downloadNode,
+    downloadGroup,
+    runGroupWorkflow,
     editProjectNameId,
     editing,
     editorMode,
@@ -174,6 +192,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     historyReplaying,
     importActionResultFiles,
     importActionResults,
+    importCanvasArchive,
     importCanvasSource,
     importDocument,
     importFiles,
@@ -216,6 +235,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     projectRenaming,
     projected,
     readJobs,
+    recoverServiceTask,
     ready,
     referenceEdges,
     referencePreviews,
@@ -308,6 +328,81 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   } = rt;
 
 
+  /**
+   * Example canvases: one cached catalog feeds both the empty-state buttons and
+   * the picker in the project menu.
+   */
+  const [exampleEntries, setExampleEntries] = useState<ExampleEntry[] | null>(null);
+  const [welcomeExampleId, setWelcomeExampleId] = useState<string | null>(null);
+  const [firstRunArriving, setFirstRunArriving] = useState(false);
+  const pendingFirstNodes = useRef<{ projectId: string; selection: string; nodes: CanvasNode[] } | null>(null);
+  const finishFirstRun = () => {
+    pendingFirstNodes.current = null;
+    dismissModelSetup();
+    // Narrow canvas mode opens on the canvas; Agent mode always shows its chat.
+    if (assistantLayout.mobile) setAssistantOpen(false);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("setup") === "welcome") {
+      url.searchParams.delete("setup");
+      window.history.replaceState(window.history.state, "", url);
+    }
+    setFirstRunArriving(window.matchMedia("(prefers-reduced-motion: no-preference)").matches);
+    setWelcomeOpen(false);
+  };
+  const [exampleLoading, setExampleLoading] = useState(false);
+  const exampleCatalog = useRef<Promise<ExampleEntry[]> | null>(null);
+  const loadExamples = () =>
+    (exampleCatalog.current ??= loadExampleCatalog().then((result) =>
+      availableExamples(result.catalog),
+    ));
+  const openExamplePicker = async () => {
+    if (exampleLoading) return;
+    setExampleLoading(true);
+    try {
+      setExampleEntries(await loadExamples());
+    } finally {
+      setExampleLoading(false);
+    }
+  };
+  const welcomeExampleImport = useExampleImport({
+    importCanvas: async (archive) => {
+      const { switched } = await importCanvasArchive(archive);
+      if (!switched) throw new Error(t("canvas.workspace.error.importNotApplied"));
+      finishFirstRun();
+    },
+  });
+  const openWelcomeExample = async () => {
+    const entries = await loadExamples();
+    const entry = entries.find((item) => item.id === VIDEO_EXAMPLE_ID) ?? entries[0];
+    if (!entry) throw new Error(t("canvas.example.dialog.empty"));
+    setWelcomeExampleId(entry.id);
+    await welcomeExampleImport.start(entry);
+  };
+  const exampleImport = useExampleImport({ importCanvas: importCanvasArchive });
+  const [exampleMissing, setExampleMissing] = useState(false);
+  const runExampleButton = async (id: string) => {
+    setExampleMissing(false);
+    exampleImport.reset(IMAGE_EXAMPLE_ID);
+    exampleImport.reset(VIDEO_EXAMPLE_ID);
+    const entry = (await loadExamples()).find((item) => item.id === id);
+    if (!entry) {
+      setExampleMissing(true);
+      return;
+    }
+    // A finished import switches the document, so the bar disappears with it.
+    if (await exampleImport.start(entry)) exampleImport.reset(entry.id);
+  };
+  const exampleButtonStatus =
+    exampleImport.statuses[IMAGE_EXAMPLE_ID] ??
+    exampleImport.statuses[VIDEO_EXAMPLE_ID];
+  const exampleBusy =
+    exampleButtonStatus?.phase === "downloading" ||
+    exampleButtonStatus?.phase === "importing";
+  const exampleProgress = exampleButtonStatus
+    ? examplePercent(exampleButtonStatus)
+    : null;
+
+
   const outputState = timelineOutput.state;
   const outputSource = outputState ? doc.nodes.find((node) => node.id === outputState.itemId) : undefined;
   const existingOutput = outputState ? projected.nodes.find((node: { id: string }) => node.id === outputState.output.id) : undefined;
@@ -341,6 +436,85 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     rt.revealCreatedNodes.current([output], doc.nodes.some((node) => node.id === output.id) ? doc.nodes : [...doc.nodes, output]);
   }, [outputState?.output.id]);
 
+  const [workflowGroups, setWorkflowGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const runWorkflow = (groupId: string) => {
+    if (workflowGroups.has(groupId)) return;
+    setWorkflowGroups((current) => new Set(current).add(groupId));
+    void (runGroupWorkflow(groupId) as Promise<void>).finally(() =>
+      setWorkflowGroups((current) => {
+        const next = new Set(current);
+        next.delete(groupId);
+        return next;
+      }),
+    );
+  };
+
+  // Canvas locking is no longer offered. Locks saved while it was available are
+  // released the first time this browser opens the project, parents first (a
+  // locked group blocks its children). Later locks from the Agent or the API
+  // are kept and can be released from the context menu.
+  const unlockedOnOpen = useRef<string | null>(null);
+  useEffect(() => {
+    // The startup placeholder and empty projects have nothing to release.
+    if (unlockedOnOpen.current === doc.id || !doc.nodes.length) return;
+    unlockedOnOpen.current = doc.id;
+    const key = `opendirector.legacyLocksReleased:${doc.id}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+    } catch {
+      return; // Without storage the open-time release could repeat; keep locks.
+    }
+    const locked = orderNodesForCanvas(doc.nodes).filter((node) => node.locked);
+    if (!locked.length) return;
+    command({
+      type: "batch",
+      commands: locked.map((node) => ({
+        type: "update-node",
+        id: node.id,
+        patch: { locked: false },
+      })),
+    });
+  }, [doc.id, doc.nodes]);
+
+  const desktop = !!window.opendirectorDesktop;
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(() => {
+    try { return desktop && localStorage.getItem("opendirector.desktop.sidebar.v1") === "open"; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    if (!desktop) return;
+    try { localStorage.setItem("opendirector.desktop.sidebar.v1", desktopSidebarOpen ? "open" : "closed"); }
+    catch { notify(t("desktop.sidebar.saveFailed")); }
+  }, [desktop, desktopSidebarOpen]);
+  const createDesktopProject = () => {
+    const id = crypto.randomUUID();
+    void switchDocument(async () => {
+      const { projects } = await listWorkspaceProjects();
+      const names = new Set(projects.map(project => project.name));
+      const base = t("canvas.project.defaultName");
+      let name = base;
+      for (let suffix = 2; names.has(name); suffix++) name = `${base} ${suffix}`;
+      const project = await createWorkspaceProject(name, id);
+      const document = await openWorkspaceProject(project);
+      await saveWorkspaceDocument(document);
+      return document;
+    }).then(success => { if (success) setEditProjectNameId(id); });
+  };
+
+  const [showSwitching, setShowSwitching] = useState(false);
+  useEffect(() => {
+    if (!switching) {
+      setShowSwitching(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowSwitching(true), 200);
+    return () => window.clearTimeout(timer);
+  }, [switching]);
+  const switchingStatus = switching && showSwitching
+    ? t("canvas.workspace.loading.switching")
+    : "";
+
   const workspace = (
     <div
       inert={!ready || switching}
@@ -348,6 +522,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}${spacePressed ? " cw-workspace-space-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
+      data-desktop-sidebar={desktop && desktopSidebarOpen ? "open" : "closed"}
       data-edge-motion={pageVisible && canvasVisible}
       data-assistant-open={assistantVisible}
       data-workspace-mode={workspaceMode}
@@ -477,25 +652,13 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           <ProjectSelector
             currentId={doc.id}
             editNameForId={editProjectNameId}
-            name={doc.title}
+            name={projectDisplayName(t, doc.title, doc.defaultNameIndex)}
             disabled={!ready || switching || projectRenaming}
             onSelect={(project) =>
               switchDocument(() => openWorkspaceProject(project))
             }
-            onCreate={() => {
-              const id = crypto.randomUUID();
-              void switchDocument(async () => {
-                const { projects } = await listWorkspaceProjects();
-                const names = new Set(projects.map(project => project.name));
-                const base = t("canvas.project.defaultName");
-                let name = base;
-                for (let suffix = 2; names.has(name); suffix++) name = `${base} ${suffix}`;
-                const project = await createWorkspaceProject(name, id);
-                const document = await openWorkspaceProject(project);
-                await saveWorkspaceDocument(document);
-                return document;
-              }).then(success => { if (success) setEditProjectNameId(id); });
-            }}
+            onCreate={createDesktopProject}
+            onExamples={() => void openExamplePicker()}
             onRename={renameCurrentProject}
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}
@@ -527,7 +690,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           {workspaceMode === "canvas" && <NodeInfoButton nodes={doc.nodes} />}
           <span className="cw-save-status" title={saveStatusText}>
             <i className={saveStatus.state === "saved" ? "saved" : ""} />
-            {saveStatusText}
+            {desktop && desktopSidebarOpen ? saveStatusText : switchingStatus || saveStatusText}
           </span>
           {saveStatus.state === "failed" && (
             <div className="cw-save-conflict-actions">
@@ -610,9 +773,19 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             name="settings" label={t("canvas.workspace.toolbar.settings")}
             onClick={() => { setSettingsCategory("general"); setSettingsOpen(true); }}
           />}
+          {desktop && window.opendirectorDesktop?.showMore && <IconButton name="more" label={t("common.more")} tooltipSide="bottom"
+            onClick={() => window.opendirectorDesktop?.showMore?.()} />}
           <WorkspaceModeSwitch mode={workspaceMode} onChange={changeWorkspaceMode} />
         </div>
       </header>
+      {desktop && <DesktopSidebar open={desktopSidebarOpen} currentId={doc.id}
+        switchingStatus={switchingStatus}
+        disabled={!ready || switching || projectRenaming}
+        onToggle={() => setDesktopSidebarOpen(value => !value)}
+        onCreate={createDesktopProject}
+        onDelete={deleteProject}
+        onSelect={project => switchDocument(() => openWorkspaceProject(project))}
+        onSettings={() => setSettingsOpen(true)} />}
       <div className="cw-canvas-region" ref={canvasRegion} data-testid="canvas-region"
         inert={!canvasVisible} aria-hidden={!canvasVisible} data-visible={canvasVisible}>
       <CanvasPlaybackProvider
@@ -975,7 +1148,6 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           }}
         />
       )}
-
       <CanvasToolRail
         holdCollapsed={false}
         items={[
@@ -1031,20 +1203,54 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               {t("canvas.workspace.empty.configureModels")}
             </button>
             <button
-              onClick={() => {
-                void switchDocument(
-                  () =>
-                    openExampleWorkspaceProject(
-                      exampleProjectTitle(locale),
-                      () => exampleDocument(locale),
-                    ),
-                  true,
-                );
-              }}
+              disabled={exampleBusy}
+              onClick={() => void runExampleButton(IMAGE_EXAMPLE_ID)}
             >
-              {t("canvas.workspace.empty.example")} <span>↗</span>
+              <CanvasIcon name="image" size={15} />
+              {t("canvas.workspace.empty.tryImage")}
+            </button>
+            <button
+              disabled={exampleBusy}
+              onClick={() => void runExampleButton(VIDEO_EXAMPLE_ID)}
+            >
+              <CanvasIcon name="video" size={15} />
+              {t("canvas.workspace.empty.tryVideo")}
             </button>
           </div>
+          {exampleBusy && exampleButtonStatus && (
+            <div
+              className="cw-empty-example-status"
+              role="status"
+              aria-live="polite"
+            >
+              <progress
+                className="cw-example-progress"
+                aria-label={t("canvas.example.progress.label")}
+                {...(exampleProgress === null
+                  ? {}
+                  : {
+                      value: exampleButtonStatus.received ?? 0,
+                      max: exampleButtonStatus.total ?? 1,
+                    })}
+              />
+              <span>
+                {exampleButtonStatus.phase === "importing"
+                  ? t("canvas.example.state.importing")
+                  : exampleProgress === null
+                    ? t("canvas.example.state.downloading")
+                    : t("canvas.example.state.downloadingPercent", {
+                        percent: exampleProgress,
+                      })}
+              </span>
+            </div>
+          )}
+          {(exampleMissing || exampleButtonStatus?.phase === "failed") && (
+            <small className="cw-empty-example-error" role="alert">
+              {exampleMissing
+                ? t("canvas.example.error.unknown")
+                : exampleFailureText(t, exampleButtonStatus!)}
+            </small>
+          )}
           <small>{t("canvas.workspace.empty.tagline")}</small>
         </div>
       )}
@@ -1375,7 +1581,33 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               } else openEditor(single, mode);
             }}
             onPreview={() => setPreview(single)}
-            onDownload={() => downloadNode(single)}
+            onDownload={() =>
+              single.type === "group" ? void downloadGroup(single) : downloadNode(single)
+            }
+            onRunWorkflow={single.type === "group" ? () => runWorkflow(single.id) : undefined}
+            workflowRunning={workflowGroups.has(single.id)}
+            onUngroup={single.type === "group" ? ungroup : undefined}
+            onLayout={
+              single.type === "group"
+                ? (layout: GroupLayout) => {
+                    if (doc.nodes.some((node) => node.parentId === single.id && lockedIds.has(node.id))) {
+                      notify(t("canvas.workspace.toast.unlockFirst"));
+                      return;
+                    }
+                    change((d) => layoutGroup(d, single.id, layout));
+                  }
+                : undefined
+            }
+            onGroupColor={
+              single.type === "group"
+                ? (color: string) =>
+                    command({
+                      type: "update-node",
+                      id: single.id,
+                      patch: { color: color || undefined },
+                    })
+                : undefined
+            }
             onAssistant={showAssistant}
             onExpand={
               single.type === "text"
@@ -1417,7 +1649,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               ...selectionPresentation.placement?.composer,
               width:
                 activeAction.tool === "image-presets"
-                  ? Math.min(440, selectionPresentation.composerWidth)
+                  ? Math.min(470, selectionPresentation.composerWidth)
                   : selectionPresentation.composerWidth,
               maxHeight: selectionPresentation.composerMaxHeight,
               transform: selectionPresentation.composerTransform,
@@ -1675,6 +1907,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 incoming={composerIncoming}
                 referenceControls={generationReferenceControls(composerNode)}
                 models={backendCatalog.models}
+                onCheckModels={backendCatalog.refreshAvailability}
                 onUpdate={(patch) =>
                   command({
                     type: "update-node",
@@ -1720,6 +1953,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 }}
                 running={composerRunning}
                 backendModels={backendCatalog.models}
+                onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}
               />
             )}
@@ -1785,74 +2019,26 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 })),
               )}
               <hr />
-              {menuButton(
-                single && lockedIds.has(single.id) && !single.locked
-                  ? t("canvas.workspace.menu.groupLocked")
-                  : single?.locked
-                    ? t("canvas.workspace.menu.unlock")
-                    : t("canvas.workspace.menu.lock"),
-                "lock",
-                () => {
-                  if (single && lockedIds.has(single.id) && !single.locked) {
-                    notify(t("canvas.workspace.toast.unlockGroupFirst"));
-                    return;
-                  }
+              {/* Locking is not offered, but a node locked by the Agent, the API or an
+                  undo of the open-time unlock must still be recoverable. */}
+              {selected.some((id) => lockedIds.has(id)) &&
+                menuButton(t("canvas.workspace.menu.unlock"), "unlock", () => {
+                  const byId = new Map(doc.nodes.map((node) => [node.id, node]));
+                  const targets = new Set<string>();
+                  for (const id of selected)
+                    for (let node = byId.get(id); node; node = node.parentId ? byId.get(node.parentId) : undefined)
+                      if (node.locked) targets.add(node.id);
                   command({
                     type: "batch",
-                    commands: selected.map((id) => ({
-                      type: "update-node",
-                      id,
-                      patch: {
-                        locked: !doc.nodes.find((n) => n.id === id)?.locked,
-                      },
-                    })),
+                    commands: orderNodesForCanvas(doc.nodes)
+                      .filter((node) => targets.has(node.id))
+                      .map((node) => ({ type: "update-node" as const, id: node.id, patch: { locked: false } })),
                   });
-                },
-              )}
+                })}
               {single?.type === "stack" &&
                 menuButton(t("canvas.workspace.menu.unstack"), "stack", () =>
                   change((d) => unstackSelection(d, selected)),
                 )}
-              {menuButton(t("canvas.workspace.menu.moveToFront"), "arrow", () =>
-                command({
-                  type: "reorder-nodes",
-                  ids: selected,
-                  direction: "front",
-                }),
-              )}
-              {menuButton(
-                t("canvas.workspace.menu.moveForward"),
-                "arrow",
-                () =>
-                  command({
-                    type: "reorder-nodes",
-                    ids: selected,
-                    direction: "forward",
-                  }),
-                "⌘ ]",
-              )}
-              {menuButton(
-                t("canvas.workspace.menu.moveBackward"),
-                "arrow",
-                () =>
-                  command({
-                    type: "reorder-nodes",
-                    ids: selected,
-                    direction: "backward",
-                  }),
-                "⌘ [",
-              )}
-              {menuButton(
-                t("canvas.workspace.menu.moveToBack"),
-                "arrow",
-                () =>
-                  command({
-                    type: "reorder-nodes",
-                    ids: selected,
-                    direction: "back",
-                  }),
-                "⌘ ⇧ [",
-              )}
               {single &&
                 ["image", "video", "audio", "file"].includes(single.type) &&
                 !lockedIds.has(single.id) &&
@@ -2147,10 +2333,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                           return;
                         }
                         {
-                          await creationClient(doc.id).control(
-                            job.taskId,
-                            action,
-                          );
+                          if (action === "recover") await recoverServiceTask(job);
+                          else await creationClient(doc.id).control(job.taskId, action);
                           return;
                         }
                       } catch (error) {
@@ -2311,11 +2495,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         </button>
       )}
 
-      {ready && (
+      {ready && !welcomeOpen && (
         <AssistantPanel
           key={doc.id}
           documentId={doc.id}
-          documentTitle={doc.title}
+          documentTitle={projectDisplayName(t, doc.title, doc.defaultNameIndex)}
           catalog={backendCatalog}
           nodes={[...doc.nodes, ...(doc.hiddenNodes ?? [])]}
           visibleNodes={doc.nodes}
@@ -2750,16 +2934,69 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             onClose={closeEditor}
           />
         )}
+      {firstRunArriving && (
+        <div className="cw-first-run-arrival" aria-hidden="true" onAnimationEnd={() => setFirstRunArriving(false)} />
+      )}
       {welcomeOpen && <WelcomeScreen
         catalog={backendCatalog}
-        onSkip={() => { dismissModelSetup(); setWelcomeOpen(false); }}
+        projectId={doc.id}
+        workspaceMode={workspaceMode}
+        onChooseMode={changeWorkspaceMode}
+        onEnterWorkspace={finishFirstRun}
+        exampleStatus={welcomeExampleId ? welcomeExampleImport.statuses[welcomeExampleId] : undefined}
+        onExamples={openWelcomeExample}
+        onCancelExample={() => {
+          if (welcomeExampleId) welcomeExampleImport.cancel(welcomeExampleId);
+        }}
+        onImport={async (files) => {
+          if (!(await importFiles(files, undefined, true))) {
+            throw new Error(t("canvas.workspace.error.importNotApplied"));
+          }
+          finishFirstRun();
+        }}
+        onCreate={async (selections) => {
+          const current = historyRef.current.present;
+          const selection = JSON.stringify(selections.map(({ capability, model }) => [capability, model.id]));
+          // Keep the same node identities when retrying an uncertain save.
+          if (pendingFirstNodes.current?.projectId !== current.id || pendingFirstNodes.current.selection !== selection) {
+            const origin = center();
+            const nodes = selections.map(({ capability, model }) => {
+              const kind = firstRunCapabilities[capability];
+              return createNode(kind, origin, { settings: newNodeGenerationSettings(kind, [model]) });
+            });
+            pendingFirstNodes.current = {
+              projectId: current.id,
+              selection,
+              nodes: arrangeNodes(nodes, nodes.map((node) => node.id)),
+            };
+          }
+          const { nodes } = pendingFirstNodes.current;
+          const missing = nodes.filter((node) => !current.nodes.some((item) => item.id === node.id));
+          if (missing.length) {
+            await commitCanvasCommand({
+              type: "batch",
+              commands: missing.map((node) => ({ type: "add-nodes", nodes: [node], titlePrefix: t(nodeKindKeys[node.type]) })),
+            }, t("firstRun.createFailed"));
+          }
+          finishFirstRun();
+          setSelected(nodes.map((node) => node.id));
+          if (nodes.length === 1) focusSelection(nodes[0].id);
+          else rt.revealCreatedNodes.current(nodes, [...current.nodes, ...missing]);
+        }}
       />}
       {settingsOpen && (
         <SettingsDialog
           catalog={backendCatalog}
           theme={theme}
           initialCategory={settingsCategory}
-          onClose={() => { dismissModelSetup(); setSettingsOpen(false); }}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {exampleEntries && (
+        <ExampleCanvasDialog
+          entries={exampleEntries}
+          onClose={() => setExampleEntries(null)}
+          onImport={(archive) => importCanvasArchive(archive)}
         />
       )}
       {help && (
@@ -2846,7 +3083,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           onInsert={insertLibraryItems}
         />
       )}
-      {(!ready || switching) && (
+      {!ready && (
         <div className="canvas-loading-screen" role="status">
           {initializationError ? (
             <div role="alert">
@@ -2857,7 +3094,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           ) : (
             <span className="canvas-loading-message">
               <span className="canvas-loading-spinner" aria-hidden="true" />
-              {t(switching ? "canvas.workspace.loading.switching" : "canvas.workspace.loading.opening")}
+              {t("canvas.workspace.loading.opening")}
             </span>
           )}
         </div>

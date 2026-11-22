@@ -1,7 +1,7 @@
 /** Panels, assistant shortcut, menus, and welcome. */
 import { doubleShiftDetector } from "../doubleShift.ts";
 import { useEffect, useRef } from "react";
-import { modelSetupMissing, shouldShowModelSetup } from "../ModelSetup";
+import { shouldShowModelSetup } from "../ModelSetup";
 
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import type { Panel } from "./workspaceChrome.tsx";
@@ -10,7 +10,6 @@ import type { Panel } from "./workspaceChrome.tsx";
 export function useWorkspaceChrome(rt: WorkspaceRuntime) {
   const {
     assistantOpen,
-    backendCatalog,
     menu,
     ready,
     referenceTarget,
@@ -29,16 +28,16 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
   } = rt;
 
   useEffect(() => {
-    if (setupChecked.current || !backendCatalog.connected) return;
+    if (setupChecked.current || !ready) return;
     setupChecked.current = true;
     const preview = new URLSearchParams(window.location.search).get("setup");
     if (preview === "models") {
       setSettingsCategory("models");
       setSettingsOpen(true);
-    } else if (preview === "welcome" || (shouldShowModelSetup() && modelSetupMissing(backendCatalog.models).length > 0)) {
+    } else if (preview === "welcome" || shouldShowModelSetup()) {
       setWelcomeOpen(true);
     }
-  }, [backendCatalog.connected, backendCatalog.models]);
+  }, [ready, setupChecked, setSettingsCategory, setSettingsOpen, setWelcomeOpen]);
   const showAssistant = () => {
     setAssistantOpen(true);
     if (selected.length) setAssistantSelectionRequest((n) => n + 1);

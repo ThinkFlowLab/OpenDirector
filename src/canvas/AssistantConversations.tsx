@@ -3,7 +3,6 @@ import type { ConversationSummary } from "../backend/chat";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { CONVERSATION_TITLE_KEYS } from "./creationPreviewText.ts";
 
 /** Session navigation stays inside the assistant, independent of canvas projects. */
 export function AssistantConversations({
@@ -39,17 +38,12 @@ export function AssistantConversations({
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const titleText = (item?: ConversationSummary) =>
+    item?.title ?? t(item?.messageCount ? "assistant.sessions.media" : "assistant.sessions.new");
   const shown = items.filter((item) =>
-    item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+    titleText(item).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
-  const titleText = (value?: string) => {
-    if (!value) return t("assistant.sessions.new");
-    const key = CONVERSATION_TITLE_KEYS[value];
-    return key ? t(key) : value;
-  };
-  const title = titleText(
-    items.find((item) => item.id === activeId)?.title,
-  );
+  const title = titleText(items.find((item) => item.id === activeId));
   const closeHistory = (focus = false) => {
     setOpen(false);
     if (focus)
@@ -210,11 +204,11 @@ export function AssistantConversations({
                   className="cw-assistant-session-row"
                   aria-current={item.id === activeId ? "true" : undefined}
                   disabled={!!disabledReason}
-                  title={titleText(item.title)}
+                  title={titleText(item)}
                   onClick={() => void choose(item.id)}
                 >
                   <span className="cw-assistant-session-details">
-                    <strong>{titleText(item.title)}</strong>
+                    <strong>{titleText(item)}</strong>
                     <small>
                       {item.messageCount
                         ? t("assistant.sessions.messageCount", {

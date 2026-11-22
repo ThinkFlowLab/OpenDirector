@@ -207,6 +207,18 @@ def test_native_desktop_model_overlay_is_private_and_respects_acp_overrides(tmp_
     assert [row['id'] for row in json.loads(Path(args[-1]).read_text())] == ['skill-filesystem']
 
 
+def test_acp_default_uses_the_official_image_capable_route(tmp_path, monkeypatch):
+    private = tmp_path / 'private'
+    private.mkdir()
+    monkeypatch.setenv('DSH_HOME', str(tmp_path / 'empty-home'))
+    monkeypatch.setattr(deepseek.shutil, 'which', lambda _: '/installed/dsh')
+    arguments = deepseek.arguments(private)
+    patch = json.loads(Path(arguments[-1]).read_text())
+    assert next(row['config'] for row in patch if row['id'] == 'acp') == {
+        'provider': 'deepseek-official', 'model': 'deepseek-flash',
+    }
+
+
 def test_selected_model_efforts_keep_native_default_identity(cli, monkeypatch):
     monkeypatch.setenv('DEEPSEEK_TEST', 'efforts')
     rows = asyncio.run(deepseek.model_choices('route/other'))

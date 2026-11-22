@@ -139,9 +139,29 @@ try {
       target: target.id,
       originalAsset: old.id,
       newAsset: written.assetId,
+      previewAsset: client.snapshot.jobs[0].asset.assetId,
     };
   });
   await page.unroute(bootstrap);
+  const previewResponses = [];
+  page.on("response", response => {
+    if (response.url().includes(`/assets/${fixture.previewAsset}/thumbnail`))
+      previewResponses.push({ url: response.url(), status: response.status() });
+  });
+  // Optional fault probes exercise the same wait and diagnostic as the journey.
+  const previewProbe = process.env.HISTORY_PREVIEW_PROBE;
+  if (previewProbe) {
+    assert.ok(["delay", "missing"].includes(previewProbe));
+    await page.route(`**/assets/${fixture.previewAsset}/thumbnail`, async route => {
+      if (previewProbe === "missing")
+        await route.fulfill({ status: 404, contentType: "application/json",
+          body: JSON.stringify({ detail: "History preview probe missing" }) });
+      else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await route.continue();
+      }
+    });
+  }
   await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   const source = page.locator(`.react-flow__node[data-id="${fixture.source}"]`);
@@ -242,9 +262,29 @@ try {
   assert.equal(fixedBounds.width, 560);
   assert.equal(fixedBounds.height, 210);
 
-  const layout = await dialog
-    .locator(".cw-version-details")
-    .first()
+  const details = dialog.locator(
+    `.cw-version-entry[data-version-asset-id="${generatedAssets[0]}"] .cw-version-details`,
+  );
+  try {
+    await details.locator("img").waitFor({ state: "visible", timeout: 10000 });
+    await page.waitForFunction(assetId => {
+      const image = document.querySelector(
+        `.cw-version-entry[data-version-asset-id="${assetId}"] .cw-version-details img`,
+      );
+      return image instanceof HTMLImageElement && image.complete &&
+        image.naturalWidth > 0 && image.naturalHeight > 0;
+    }, generatedAssets[0], { timeout: 10000 });
+  } catch (error) {
+    throw new Error(`History preview unavailable: ${JSON.stringify({
+      assetId: generatedAssets[0], responses: previewResponses,
+      media: await details.locator(".cw-version-media").allTextContents(),
+      images: await details.locator("img").evaluateAll(images => images.map(image => ({
+        src: image.currentSrc || image.src, complete: image.complete,
+        width: image.naturalWidth, height: image.naturalHeight,
+      }))),
+    })}`, { cause: error });
+  }
+  const layout = await details
     .evaluate((element) => {
       const preview = element.children[0].getBoundingClientRect();
       const composer = element.children[1].getBoundingClientRect();

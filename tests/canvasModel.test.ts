@@ -548,3 +548,21 @@ test("empty media cards use the agreed shapes and adopt the file aspect once kno
     [audio.width, audio.height],
   );
 });
+
+test("a group color change is a business content change", () => {
+  const group = createNode("group");
+  const document = { ...createDocument("Colors"), nodes: [group] };
+  const colored = { ...document, nodes: [{ ...group, color: "#3e63dd" }] };
+  assert.equal(sameCanvasContent(document, colored), false);
+  assert.equal(
+    sameCanvasContent(colored, { ...document, nodes: [{ ...group, color: "#3e63dd" }] }),
+    true,
+  );
+  // Clearing the color back to the default is also saved.
+  assert.equal(
+    sameCanvasContent(colored, { ...document, nodes: [{ ...group, color: undefined }] }),
+    false,
+  );
+  assert.equal(parseDocument(colored).ok, true);
+  assert.equal(parseDocument({ ...document, nodes: [{ ...group, color: "blue" }] }).ok, false);
+});

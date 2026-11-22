@@ -19,12 +19,12 @@ from opendirector.integrations.generation_errors import checked, protocol_failur
 from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.bigmodel_video import BigModelVideoGeneration
-from opendirector.integrations.vllm_omni import FPS, VllmOmniGeneration, video_frame_parameters
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload
+from opendirector.integrations.fasth3 import generation_fields as fasth3_generation_fields
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
-from opendirector.integrations.model_adapters import BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech, VllmOmniMusic, VllmOmniScore, ZhipuSpeech
+from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech,
+                                                    VllmOmniMusic, VllmOmniScore, ZhipuSpeech, image_parts)
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
-from opendirector.integrations.model_adapters import OpenAISpeech, VllmOmniMusic, VllmOmniScore, image_parts
-from opendirector.domain.capabilities import MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
 
 
@@ -175,28 +175,26 @@ class GenerationProviders(VolcengineGeneration):
                         prepared = await asyncio.to_thread(generation_references, self.store, task, config)
                         files = []
                         fast = input_rules(config)['profile'] == 'fasth3-omni'
-                        for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
-                            if source_kind in {'image', 'video', 'audio'}:
-                                files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
+                        frame_indices = prepared.get('frameIndices')
+                        if frame_indices is not None:
+                            files = [('input_references', _upload(image, 'first_frame' if index == 0 else 'last_frame'))
+                                     for index, image in zip(frame_indices, prepared['images'], strict=True)]
+                        else:
+                            for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
+                                if source_kind in {'image', 'video', 'audio'}:
+                                    files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
                         parameters = task['parameters']
                         form = {'model': config['modelId'], 'prompt': prepared['prompt']}
-                        if fast:
-                            if 'duration' in parameters or 'seconds' in parameters or 'num_frames' in parameters:
-                                frames = video_frame_parameters(float(parameters.get('duration', parameters.get('seconds', 5))),
-                                                                parameters.get('fps', FPS), parameters.get('num_frames'))
-                                form.update({key: str(value) for key, value in frames.items()})
-                        elif 'duration' in parameters:
+                        if not fast and 'duration' in parameters:
                             seconds = parameters['duration']
                             if config['protocol'] == 'vllm_omni':
                                 validate_video_duration(config, seconds)
                             form['seconds'] = str(int(seconds)) if float(seconds).is_integer() else str(seconds)
                         if 'size' in parameters: form['size'] = parameters['size']
                         if fast:
-                            form.update({
-                                'size': parameters.get('size', '832x480'),
-                                'num_inference_steps': '8', 'guidance_scale': '1', 'fps': '24',
-                                'seed': str(parameters.get('seed', 1234)),
-                                'extra_params': json.dumps({'task': 'ref2va', 'audio_flow_shift': 3})})
+                            values, extra = fasth3_generation_fields(parameters, frame_indices=frame_indices)
+                            form.update({key: str(value) for key, value in values.items()})
+                            form['extra_params'] = json.dumps(extra)
                         # Force multipart even for an empty reference list.
                         value = await self._json(client, 'POST', url, config, data=form, files=files or {'_multipart': (None, '1')})
                         external_id = value['id']

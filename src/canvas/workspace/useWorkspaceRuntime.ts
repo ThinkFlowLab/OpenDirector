@@ -119,16 +119,19 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   const [workspaceMode, setWorkspaceMode] = useState(readWorkspaceMode);
   const preferenceWarningShown = useRef(false);
   const changeWorkspaceMode = (mode: WorkspaceMode) => {
-    if (mode === workspaceMode) return;
-    pointerGesture.current.cancel();
-    flowSurface.current?.cancel();
-    runtime.references?.cancel();
-    runtime.setMenu(null);
-    setWorkspaceMode(mode);
-    if (!saveWorkspaceMode(mode) && !preferenceWarningShown.current) {
+    if (mode !== workspaceMode) {
+      pointerGesture.current.cancel();
+      flowSurface.current?.cancel();
+      runtime.references?.cancel();
+      runtime.setMenu(null);
+      setWorkspaceMode(mode);
+    }
+    const saved = saveWorkspaceMode(mode);
+    if (!saved && !preferenceWarningShown.current) {
       preferenceWarningShown.current = true;
       notify(t("workspaceModes.preferenceFailed"));
     }
+    return saved;
   };
   const editorOrigin = useRef<ResultSource | null>(null);
   const mediaPublications = useRef(
@@ -162,11 +165,17 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   );
   const toolCatalog = useToolCatalog(
     backendCatalog.connected,
-    backendCatalog.models,
+    backendCatalog.availabilityRevision,
+    t,
   );
   const setupChecked = useRef(false);
   const theme = useTheme();
   const serviceRuns = useRef(new Map<string, ServiceRun>());
+  // Jobs seen running in this session. Only their results can still be
+  // arriving; historical, undone or version-switched results are never pending.
+  const watchedJobs = useRef(new Set<string>());
+  for (const job of jobs)
+    if (!job.tool && job.status === "running") watchedJobs.current.add(job.id);
   const generationByNode = useMemo(
     () =>
       generationActivities(
@@ -181,8 +190,15 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
               ),
           ),
           ...jobActivities(
-            jobs.filter((job) => !job.tool),
+            jobs
+              .filter((job) => !job.tool)
+              .map((job) =>
+                job.deliveredAssetId && !watchedJobs.current.has(job.id)
+                  ? { ...job, deliveredAssetId: undefined }
+                  : job,
+              ),
             doc.id,
+            doc.nodes,
           ),
           ...jobActivities(
             jobs.filter((job) => job.tool),
@@ -191,7 +207,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         ],
         doc.id,
       ),
-    [activeGenerations, doc.id, jobs],
+    [activeGenerations, doc.id, doc.nodes, jobs],
   );
   const clipboard = useRef<CanvasFragment | null>(null);
   const clipboardMedia = useRef<ClipboardMedia | null>(null);

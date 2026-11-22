@@ -35,7 +35,9 @@ def assistant(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
     monkeypatch.setattr(agent, 'skills', empty_skills)
     from opendirector.infrastructure.model_configs import ModelConfigs
-    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model'})
+    config = {'id': str(uuid4()), 'modelId': 'test-model', 'kind': 'agent', 'url': 'http://models.test/v1',
+              'connectionType': 'api', 'protocol': 'openai', 'authMode': 'none', 'apiKey': ''}
+    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: dict(config))
     with TestClient(create_app(LocalProjects(tmp_path)), headers={
         'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
         pid = str(uuid4())
@@ -127,7 +129,7 @@ def test_create_reuses_an_empty_active_session_instead_of_accumulating(assistant
     listing = client.get(path + '/conversations').json()
     assert listing['activeId'] == first_id
     assert listing['items'] == [
-        {'id': first_id, 'title': '新会话', 'messageCount': 0, 'hasDraft': False},
+        {'id': first_id, 'title': None, 'messageCount': 0, 'hasDraft': False},
     ]
     # Whitespace-only draft is still an empty session and must be reused.
     assert client.put(path + '/draft', json={'conversationId': first_id,
@@ -346,7 +348,7 @@ def test_history_identifies_unsent_drafts_and_replays_creation_without_duplicate
     assert client.post(path + '/conversations', json={'id': second}).json() == created
     items = client.get(path + '/conversations').json()['items']
     assert items == [
-        {'id': second, 'title': '新会话', 'messageCount': 0, 'hasDraft': False},
+        {'id': second, 'title': None, 'messageCount': 0, 'hasDraft': False},
         {'id': first, 'title': '海边短片草稿', 'messageCount': 0, 'hasDraft': True},
     ]
     restored = client.post(path + f'/conversations/{first}/activate').json()

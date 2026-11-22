@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="{{locale}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}}</title>
+  <meta name="description" content="{{description}}">
+  <link rel="canonical" href="{{canonical}}">
+  {{alternates}}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="OpenDirector">
+  <meta property="og:locale" content="{{ogLocale}}">
+  <meta property="og:url" content="{{canonical}}">
+  <meta property="og:title" content="{{title}}">
+  <meta property="og:description" content="{{description}}">
+  <meta property="og:image" content="{{shareImage}}">
+  <meta property="og:image:alt" content="{{preview}}">
+  <link rel="icon" href="{{siteRoot}}logo.png">
+  <link rel="stylesheet" href="{{siteRoot}}site.css">
+  <link rel="stylesheet" href="{{siteRoot}}showcase.css">
+  <script type="module" src="{{siteRoot}}site.mjs"></script>
+  <script type="module" src="{{siteRoot}}ambient.mjs"></script>
+</head>
+<body id="page-top">
+  <header class="top">
+    <a class="brand" href="#page-top"><img src="{{siteRoot}}logo.png" width="26" height="26" alt="">OpenDirector</a>
+    <nav class="nav" aria-label="{{navigation}}">
+      <div class="languages" role="group" aria-label="{{language}}">
+        <a href="{{chineseHref}}" lang="zh-CN" data-lang="zh-CN"{{chineseCurrent}}>中文</a>
+        <a href="{{englishHref}}" lang="en-US" data-lang="en-US"{{englishCurrent}}>EN</a>
+      </div>
+      <div class="scroll-actions" inert>
+        <a class="nav-github" href="https://github.com/ThinkFlowLab/OpenDirector">
+          <svg aria-hidden="true" fill="currentColor" width="16" height="16" viewBox="0 0 16 16"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </nav>
+  </header>
+  <main>
+    <div class="opening">
+      <div class="hero-light" aria-hidden="true"><canvas></canvas></div>
+      <section class="shell hero" aria-labelledby="headline">
+        <h1 id="headline">OpenDirector</h1>
+        <p class="tagline">{{headline}}</p>
+        <p class="intro">{{intro}}</p>
+        <div class="actions" id="download">
+          <a class="primary" href="#install-heading"{{primaryHidden}}>{{source}}</a>
+          <details{{menuHidden}}>
+            <summary class="primary"><span>{{downloads}}</span></summary>
+            <div class="download-panel">
+              <ul>{{desktopOptions}}</ul>
+            </div>
+          </details>
+        </div>
+      </section>
+      <figure class="shell preview">
+        <div class="canvas-stage">
+          <a class="canvas-image" href="{{siteRoot}}canvas.jpg" aria-label="{{fullCanvas}}"><img src="{{siteRoot}}canvas.jpg" alt="{{preview}}" width="1280" height="720" fetchpriority="high"></a>
+          <div class="canvas-shots"></div>
+          <div class="canvas-timeline" aria-hidden="true"><i></i></div>
+          <div class="canvas-output" aria-hidden="true">
+            <img alt="" hidden>
+            <video muted playsinline preload="none" width="572" height="322" hidden></video>
+          </div>
+        </div>
+        <figcaption><span>{{projectCaption}}</span>
+          <a href="#film">{{filmLink}}</a>
+        </figcaption>
+      </figure>
+    </div>
+    <section class="shell workflow" id="film" aria-labelledby="workflow-heading">
+      <div class="film-heading">
+        <h2 id="workflow-heading">{{workflow}}</h2>
+        <p>{{filmIntro}}</p>
+      </div>
+      <div class="screening">
+        <div class="film-player">
+          <video controls playsinline preload="none" width="1280" height="720" src="{{siteRoot}}film/we-can-still-win.mp4" poster="{{siteRoot}}film/poster.jpg" aria-labelledby="workflow-heading"></video>
+          <div class="film-spec"><span>{{finalCut}}</span><span>01:00 · 720p · 24 fps</span></div>
+        </div>
+        <div class="shot-board">
+          <h3 id="shots-title">{{shots}}</h3>
+          <div class="shots" role="group" aria-labelledby="shots-title">
+            <button type="button" class="film-shot" data-at="0" aria-pressed="true">
+              <img src="{{siteRoot}}film/shot-0.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot0}}</span><time>0:00</time></span>
+            </button>
+            <button type="button" class="film-shot" data-at="10" aria-pressed="false">
+              <img src="{{siteRoot}}film/shot-1.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot1}}</span><time>0:10</time></span>
+            </button>
+            <button type="button" class="film-shot" data-at="20" aria-pressed="false">
+              <img src="{{siteRoot}}film/shot-2.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot2}}</span><time>0:20</time></span>
+            </button>
+            <button type="button" class="film-shot" data-at="30" aria-pressed="false">
+              <img src="{{siteRoot}}film/shot-3.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot3}}</span><time>0:30</time></span>
+            </button>
+            <button type="button" class="film-shot" data-at="40" aria-pressed="false">
+              <img src="{{siteRoot}}film/shot-4.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot4}}</span><time>0:40</time></span>
+            </button>
+            <button type="button" class="film-shot" data-at="50" aria-pressed="false">
+              <img src="{{siteRoot}}film/shot-5.jpg" loading="lazy" width="300" height="168" alt="">
+              <span class="shot-caption"><span>{{shot5}}</span><time>0:50</time></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="shell install" aria-labelledby="install-heading">
+      <h2 id="install-heading">{{otherInstall}}</h2>
+      <div class="install-methods">
+        <article>
+          <h3>{{aiInstall}}</h3>
+          <p>{{aiBody}}</p>
+          <div class="install-snippet">
+            <code>{{installPrompt}}</code>
+            <button type="button" data-copy aria-live="polite">{{copy}}</button>
+          </div>
+        </article>
+        <article>
+          <h3>{{source}}</h3>
+          <p>{{sourceBody}}</p>
+          <div class="install-snippet">
+            <code>git clone https://github.com/ThinkFlowLab/OpenDirector.git</code>
+            <button type="button" data-copy aria-live="polite">{{copy}}</button>
+          </div>
+          <a href="{{installHref}}">{{guide}}</a>
+        </article>
+      </div>
+    </section>
+  </main>
+  <footer class="shell footer">
+    <span>OpenDirector</span>
+    {{desktopNotes}}
+    <a href="{{aiInstallHref}}">{{aiInstall}}</a>
+    <a href="{{installHref}}">{{guide}}</a>
+  </footer>
+</body>
+</html>

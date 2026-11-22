@@ -1,3 +1,4 @@
+import { availabilityBlocker } from "../backend/availability.ts";
 import type { ModelConfig } from "../backend/rules.ts";
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 import type { CanvasDocument, CanvasNode, AgentNodeSettings } from "./model.ts";
@@ -21,6 +22,8 @@ export function agentGenerationBlocker(
 ) {
   if (!model || model.kind !== "agent")
     return tNow("errors.text.noAgent");
+  const capabilityIssue = availabilityBlocker(model, "text_response");
+  if (capabilityIssue) return capabilityIssue;
   if (!node.data.prompt.trim()) return tNow("errors.text.promptRequired");
   const settings = agentNodeSettings(node);
   if (
