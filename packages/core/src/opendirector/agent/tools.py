@@ -247,7 +247,9 @@ def tools() -> list[dict]:
          'additionalProperties': False}))
     query_schema = TypeAdapter(Query).json_schema()
     query_schema['type'] = 'object'
-    for definition in query_schema['$defs'].values():
+    # The host supplies IDs on the query envelope. Nested workflow members keep their own schema.
+    for branch in query_schema['oneOf']:
+        definition = query_schema['$defs'][branch['$ref'].rsplit('/', 1)[-1]]
         for field in ('queryId', 'projectId'):
             definition['properties'].pop(field)
             definition['required'].remove(field)

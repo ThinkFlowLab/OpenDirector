@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from generation_helpers import command, policy, review
-from opendirector.agent.tools import AgentTools
+from opendirector.agent.tools import AgentTools, tools as agent_tool_schemas
 from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_spend import review_status
@@ -130,6 +130,14 @@ async def test_no_budget_runs_independent_group_members_even_when_other_members_
         assert len(posts) == run['completed'] == 1 and run['skipped'] == 2 and run['state'] == 'incomplete'
     finally:
         await runner.close()
+
+
+def test_agent_can_discover_the_complete_workflow_quote_schema():
+    query = next(t['function']['parameters'] for t in agent_tool_schemas() if t['function']['name'] == 'query')
+    group = query['$defs']['GroupQuoteQuery']
+    assert 'workflow' in group['required']
+    assert 'projectId' not in group['properties'] and 'queryId' not in group['properties']
+    assert set(query['$defs']['GroupMember']['required']) == {'itemId', 'specId'}
 
 
 @pytest.mark.anyio
