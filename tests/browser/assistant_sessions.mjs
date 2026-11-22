@@ -303,13 +303,13 @@ try {
   );
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x - 240, y, { steps: 5 });
+  await page.mouse.move(x + 240, y, { steps: 5 });
   await page.mouse.up();
   const wideRows = await rows();
   const wideBounds = await resize.boundingBox();
   await page.mouse.move(wideBounds.x + wideBounds.width / 2, y);
   await page.mouse.down();
-  await page.mouse.move(x + 170, y, { steps: 5 });
+  await page.mouse.move(x - 170, y, { steps: 5 });
   await page.mouse.up();
   assert.ok(await rows() > wideRows, "Suggested reply buttons should wrap as the panel narrows");
   await resize.press("End");
