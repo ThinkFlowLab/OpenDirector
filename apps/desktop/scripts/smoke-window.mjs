@@ -1,5 +1,5 @@
 import { guardLargeVideoDataUrl, largeVideoState, verifyLargeVideoBytes } from './large-video.mjs';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, clipboard } from 'electron';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -82,6 +82,14 @@ export async function smokeWindow({ window, host, getLocale }) {
   window.focus();
   window.webContents.focus();
   await waitFor(() => window.isFocused(), 'Desktop window could not take focus before search');
+  // Chromium asks the embedder for a clipboard permission before an
+  // asynchronous write, and the name depends on the activation: clipboard-read
+  // without one, clipboard-sanitized-write when a click triggered the write.
+  // Both paths are checked so a policy that only covers the scripted one cannot
+  // pass while every copy button a user presses fails.
+  await waitFor(() => window.webContents.executeJavaScript('document.hasFocus()'), 'Renderer did not take document focus before the clipboard check');
+  await assertClipboardWrite(window, 'opendirector-smoke', false);
+  await assertClipboardWrite(window, 'opendirector-smoke-click', true);
   await window.webContents.executeJavaScript("document.querySelector('.od-sidebar-search-toggle').click()");
   await waitFor(() => window.webContents.executeJavaScript("document.activeElement === document.querySelector('.od-sidebar-search')"), 'Project search did not take focus');
   const firstProject = await window.webContents.executeJavaScript("document.querySelector('.od-project-sidebar nav button span').textContent");
@@ -253,6 +261,15 @@ export async function smokeWindow({ window, host, getLocale }) {
   window.close();
   if (window.isVisible() || !(await host.inspect())) throw new Error('Closing a window stopped the Host');
   return result;
+}
+
+async function assertClipboardWrite(window, text, userGesture) {
+  await window.webContents.executeJavaScript(
+    `navigator.clipboard.writeText(${JSON.stringify(text)}).then(() => true, error => { throw new Error('Clipboard write was rejected: ' + error.name); })`, userGesture);
+  // The renderer promise settles before the system clipboard holds the value:
+  // an immediate read still returns the previous contents, which measured
+  // intermittently for a click-activated write.
+  await waitFor(async () => (await clipboard.readText()) === text, `Clipboard write did not reach the system clipboard: ${text}`, 20);
 }
 
 async function smokeLargeVideo(window, host, projectId, fixture, firstLaunch) {

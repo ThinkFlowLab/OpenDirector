@@ -18,6 +18,8 @@ The main process starts the bundled Python runtime and gives the Host a fresh cr
 
 The renderer requests application pages, media, and API resources through `opendirector://app`. The main process forwards those requests to the Host with the launch credential. The Host checks the credential before it serves the request. The renderer runs with Node integration off and context isolation on. A preload bridge exposes specific desktop operations, including edit-session registration and language and export status updates.
 
+Renderer permissions are denied by default with an explicit allow list in [`permissions.mjs`](../../apps/desktop/src/permissions.mjs), limited to `opendirector://app`: the two clipboard names `navigator.clipboard.writeText` can request and the two fullscreen names `requestFullscreen` uses. The requested clipboard name depends on the activation, so both are granted; the fullscreen names are granted because a denial leaves the request promise unsettled and the player's button silently does nothing. The installed smoke test writes to the system clipboard from both a scripted and a click-activated renderer call and compares the result in the main process. Granting a new renderer permission is a policy change, not a UI detail.
+
 ## The Host owns project state
 
 The Host uses the same project storage, command validation, and edit-session rules as the standalone API. The desktop shell handles window behavior and opens native dialogs for file input and downloads.

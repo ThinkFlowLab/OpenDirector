@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { Host, ownedURL, proxyRequest } from './host.mjs';
 import { messages, localeFor } from './locale.mjs';
 import { registerCommand, commandPath } from './command.mjs';
+import { permissionGranted } from './permissions.mjs';
 
 app.setName('OpenDirector');
 const desktopChrome = ['darwin', 'win32'].includes(process.platform);
@@ -133,7 +134,10 @@ async function start() {
   });
   await host.ready;
   const ownedSession = session.fromPartition('persist:opendirector');
-  ownedSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  ownedSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(permissionGranted(permission, details.requestingUrl ?? contents.getURL())));
+  ownedSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
+    permissionGranted(permission, requestingOrigin));
   let projectSubscription;
   ownedSession.protocol.handle('opendirector', request => proxyRequest(request, host, async (url, options) => {
     const pathname = new URL(url).pathname;
