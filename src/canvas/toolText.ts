@@ -62,6 +62,8 @@ const EN: Record<string, string> = {
   "背景声（近似）": "Background (approximate)",
   "三视图": "Three-view",
   "人物三视图": "Character three-view",
+  "人物四视图": "Character four-view",
+  "脸部强调": "Face emphasis",
   "面部三视图": "Face three-view",
   "产品三视图": "Product three-view",
   "连续分镜图": "Storyboard sequence",

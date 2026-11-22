@@ -237,6 +237,15 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       ),
     [],
   );
+  const commitCanvasCommand = async (value: CanvasCommand, failureMessage: string) => {
+    const current = historyRef.current;
+    if (switchPending.current) throw new Error(failureMessage);
+    const next = executeCommand(current, value, frameCapabilities.current).present;
+    invalidateScheduledAutosave();
+    if (!(await persist(next, false))) throw new Error(saveError.current || failureMessage);
+    if (historyRef.current.present.id !== next.id) throw new Error(failureMessage);
+    command(value);
+  };
 
   const replayHistory = (forward = false) => {
     if (historyReplayQueue.current) {
@@ -298,14 +307,16 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       const fitAll =
         fit ||
         (next.viewPersisted === false && next.nodes.length > 0);
-      requestAnimationFrame(() => {
+      if (flow.viewportInitialized) {
         void flow.setViewport(next.viewport);
-        if (fitAll)
-          requestAnimationFrame(
-            () =>
-              void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }),
-          );
-      });
+      } else {
+        requestAnimationFrame(() => void flow.setViewport(next.viewport));
+      }
+      if (fitAll) {
+        requestAnimationFrame(() =>
+          void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }),
+        );
+      }
     },
     [flow],
   );
@@ -375,19 +386,16 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       );
       if (!project) throw new Error(t("canvas.workspace.error.projectMissing"));
       const renamed = await renameWorkspaceProject(project, name);
-      const document = { ...historyRef.current.present, title: renamed.name };
+      const projectFields = { title: renamed.name, defaultNameIndex: renamed.defaultNameIndex };
+      const withProjectName = (document: CanvasDocument) => ({ ...document, ...projectFields });
+      const document = withProjectName(historyRef.current.present);
       // Project metadata must stay consistent across canvas undo/redo.
       setHistory((current) => ({
         ...current,
-        present: { ...current.present, title: renamed.name },
-        past: current.past.map((item) => ({ ...item, title: renamed.name })),
-        future: current.future.map((item) => ({
-          ...item,
-          title: renamed.name,
-        })),
-        transaction: current.transaction
-          ? { ...current.transaction, title: renamed.name }
-          : null,
+        present: withProjectName(current.present),
+        past: current.past.map(withProjectName),
+        future: current.future.map(withProjectName),
+        transaction: current.transaction ? withProjectName(current.transaction) : null,
       }));
       await saveWorkspaceDocument(document);
     } finally {
@@ -639,6 +647,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   }, [doc, persist, ready]);
   rt.generationReferenceControls = generationReferenceControls;
   rt.command = command;
+  rt.commitCanvasCommand = commitCanvasCommand;
   rt.change = change;
   rt.invalidateScheduledAutosave = invalidateScheduledAutosave;
   rt.begin = begin;

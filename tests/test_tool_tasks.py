@@ -139,7 +139,9 @@ def test_catalog_reports_availability_by_capability(project):
     assert {'image.edit', 'video.first_frame', 'audio.speech', 'text.chat'} <= set(configured['capabilities'])
     assert any(field['key'] == 'preset' and field['options'] for field in tools['image-presets']['fields'])
     preset_field = next(field for field in tools['image-presets']['fields'] if field['key'] == 'preset')
-    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '面部三视图', '产品三视图', '连续分镜图', '多机位']
+    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '人物四视图', '面部三视图', '产品三视图', '连续分镜图', '多机位']
+    emphasis = next(field for field in tools['image-presets']['fields'] if field['key'] == 'faceEmphasis')
+    assert emphasis['type'] == 'boolean' and emphasis['required'] is False
 
 
 def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
@@ -281,6 +283,7 @@ def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project)
 
 @pytest.mark.parametrize('preset,count,size', [
     ('three-view', 1, (2048, 1152)),
+    ('four-view', 1, (3456, 1152)),
     ('face-three-view', 1, (3456, 1152)),
     ('product-three-view', 1, (2048, 1152)),
     ('storyboard', 4, (2048, 1152)),
@@ -311,6 +314,26 @@ def test_image_presets_reframe_portrait_reference_and_register_each_result(proje
         assert '朝向相反、左右镜像对称'.encode() in calls[0]
     elif preset == 'product-three-view':
         assert '近正交投影'.encode() in calls[0]
+    elif preset == 'four-view':
+        assert '正面全身、右侧90度全身、背面全身、正脸特写'.encode() in calls[0]
+        assert '下巴以上完全在画框外'.encode() not in calls[0]
+
+
+@pytest.mark.parametrize('preset,crops_front_and_side', [('four-view', True), ('three-view', False)])
+def test_face_emphasis_only_affects_the_four_view_preset(project, preset, crops_front_and_side):
+    store, project_id, session = project
+    configs = configure(store, ZIMAGE)
+    source = upload(store, project_id, session, 'portrait.png', png((64, 96)))
+    calls = []
+    task = run(store, configs, httpx.MockTransport(images_server(calls)), project_id, session,
+               {'tool': 'image-presets', 'sourceAssetIds': [source],
+                'parameters': {'preset': preset, 'faceEmphasis': True}})
+    assert task['status'] == 'succeeded', task.get('error')
+    assert len(task['outputs']) == len(calls) == 1
+    assert ('下巴以上完全在画框外'.encode() in calls[0]) == crops_front_and_side
+    if crops_front_and_side:
+        assert '第三格拍完整的背面全身'.encode() in calls[0]
+        assert '第四格拍清晰的正脸头肩特写'.encode() in calls[0]
 
 
 def test_submission_rejects_tools_without_a_capable_model(project):

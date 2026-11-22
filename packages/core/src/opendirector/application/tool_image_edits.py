@@ -183,6 +183,12 @@ PRESETS = {
         '全部自然站立、双臂放松，同一高度与地面基线，完整呈现头顶到鞋底，不裁头、不切脚、不遮挡、不重叠。'
         '若原图仅有半身，依据可见服装合理补全下半身，补全部分在三个视角保持一致。'
         '保持参考图画风，纯净浅灰背景、均匀柔光、弱透视，无剧情场景、文字、标签、水印、分割线或额外视图。',)),
+    'four-view': ImagePreset('人物四视图', (
+        '根据参考图生成一张同一人物的横版四视图设定板。'
+        '从左到右依次为正面全身、右侧90度全身、背面全身、正脸特写，四个视图并排分开。'
+        '前三格自然站立，头顶到鞋底完整，同一比例与地面基线；最右格只展示正面头肩，清楚呈现正脸。'
+        '各视图保持同一人物、发型、服装和配饰。若参考图只展示半身，合理补全下半身并保持一致。'
+        '保持参考图画风、浅灰背景、均匀柔光，无文字、分割线、水印或额外视图。',), (3456, 1152)),
     'face-three-view': ImagePreset('面部三视图', (
         '以参考图人物的面部为唯一身份依据，生成同一人物的面部三视图参考板。'
         '3:1超宽横版画面均分为三个等宽区域，从左至右严格排列：正面、左侧90度、右侧90度。'
@@ -210,10 +216,23 @@ PRESETS = {
                                 '把机位升高到主体上方，高角度俯拍')),
 }
 
+FOUR_VIEW_FACE_EMPHASIS = (
+    '根据参考图生成同一人物的横版四格设定板，四张独立取景的照片从左到右并排。'
+    '第一格为正面、第二格为右侧90度。两格都降低取景范围，画框上缘正好切在下巴下沿，'
+    '脖子从顶边进入画面，从颈部一直拍到鞋底；下巴以上完全在画框外。'
+    '前两格顶边紧贴颈部，不在颈部上方留空；保持平直透视，不仰拍，不用面罩。'
+    '第三格拍完整的背面全身，从头顶到鞋底。第四格拍清晰的正脸头肩特写，保留参考人物的完整五官。'
+    '保持同一人物、体型、发型、服装、配饰和参考图画风。若参考图只展示半身，合理补全下半身并保持一致。'
+    '浅灰背景、均匀柔光，无文字、分割线、水印或额外视图。'
+)
+
 async def image_presets(ctx: ToolContext):
     image = _source_image(ctx)
-    preset = PRESETS[ctx.choice('preset', PRESETS)]
+    key = ctx.choice('preset', PRESETS)
+    preset = PRESETS[key]
     title, prompts = preset.title, preset.prompts
+    if key == 'four-view' and ctx.parameters.get('faceEmphasis') is True:
+        prompts = (FOUR_VIEW_FACE_EMPHASIS,)
     outputs = []
     for index, instruction in enumerate(prompts, 1):
         await ctx.progress(f'正在生成{title}（{index}/{len(prompts)}）')

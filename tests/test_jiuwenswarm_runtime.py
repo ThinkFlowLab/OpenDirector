@@ -50,13 +50,17 @@ assert '*' not in request['agent']['tools']
 assert 'skill_tool' in request['agent']['tools']
 assert request['mcp'] == []
 assert request['skills'] == ['example']
+prompt = request['input']
+assert '3 to 5 distinct suggestions' in prompt, 'missing suggested reply count'
+assert 'at most 80 characters per suggestion' in prompt, 'missing suggested reply length limit'
+assert '[opendirector-replies]: #' in prompt.splitlines(), 'missing suggested reply marker'
 sid='native-session'
-if 'Continue plan' in request['input']:
- assert request['session_id']==sid and 'Save plan' not in request['input']
+if 'Continue plan' in prompt:
+ assert request['session_id']==sid and 'Save plan' not in prompt
 else:
  assert 'session_id' not in request
 workspace_marker = Path('.continuation-test')
-if 'Continue plan' in request['input']:
+if 'Continue plan' in prompt:
  assert workspace_marker.read_text() == str(Path.cwd())
 else:
  workspace_marker.write_text(str(Path.cwd()))

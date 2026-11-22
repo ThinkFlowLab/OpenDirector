@@ -6,7 +6,7 @@
  * offline. `public/` is not an option here — the packaged server only mounts
  * `/assets` and `/fonts`.
  */
-import bundledCatalog from "./example-canvases.json" with { type: "json" };
+import bundledCatalog from "../../../../apps/api/src/opendirector_api/example-canvases.json" with { type: "json" };
 
 export interface ExampleText {
   "zh-CN": string;

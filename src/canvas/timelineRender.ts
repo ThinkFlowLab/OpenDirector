@@ -1,3 +1,4 @@
+import { desktopExportStarted } from "../desktop.ts";
 import {
   AudioBufferSink,
   BlobSource,
@@ -49,6 +50,7 @@ export async function renderTimelineMp4(
   const disposeInputs = () => inputs.forEach((input) => input.dispose());
   signal.addEventListener("abort", disposeInputs, { once: true });
   let fonts: TimelineFontSession | undefined;
+  const exportFinished = desktopExportStarted();
   try {
     fonts = await prepareTimelineFonts(timeline, signal);
     for (const segment of segments) {
@@ -261,6 +263,7 @@ export async function renderTimelineMp4(
         : {}),
     });
   } finally {
+    exportFinished();
     fonts?.dispose();
     signal.removeEventListener("abort", disposeInputs);
     disposeInputs();

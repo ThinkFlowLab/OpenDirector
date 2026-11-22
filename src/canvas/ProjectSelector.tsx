@@ -1,3 +1,4 @@
+import { projectDisplayName } from "./projectDisplayName";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
@@ -206,7 +207,13 @@ export function ProjectSelector({
   useEffect(() => {
     if (!open) setActions(null);
   }, [open]);
-  const filteredProjects = projects.filter(project => project.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const needle = query.trim().toLocaleLowerCase();
+  const filteredProjects = projects
+    .map((project) => ({
+      project,
+      displayName: projectDisplayName(t, project.name, project.defaultNameIndex),
+    }))
+    .filter(({ displayName }) => displayName.toLocaleLowerCase().includes(needle));
   useEffect(() => {
     if (open) searchInput.current?.focus();
     else setQuery("");
@@ -389,14 +396,14 @@ export function ProjectSelector({
                 {t("canvas.project.loading")}
               </p>
             ) : (
-              filteredProjects.map((project) => (
+              filteredProjects.map(({ project, displayName }) => (
                 <div className="cw-project-row" key={project.id}>
                   <button
                     role="menuitemradio"
                     aria-checked={project.id === currentId}
                     disabled={disabled || busy}
                     className="cw-project-option"
-                    title={project.name}
+                    title={displayName}
                     onClick={async () => {
                       if (project.id === currentId) {
                         setOpen(false);
@@ -417,7 +424,7 @@ export function ProjectSelector({
                       <CanvasIcon name="group" size={18} />
                     </span>
                     <span className="cw-project-option-name">
-                      {project.name}
+                      {displayName}
                     </span>
                     {project.id === currentId && (
                       <span className="cw-project-check">
@@ -436,7 +443,7 @@ export function ProjectSelector({
                     }}
                     disabled={disabled || busy}
                     aria-label={t("canvas.project.actionsFor", {
-                      name: project.name,
+                      name: displayName,
                     })}
                     title={t("canvas.project.actions")}
                     aria-haspopup="menu"
@@ -546,7 +553,7 @@ export function ProjectSelector({
       )}
       {deleteTarget && (
         <ProjectDeleteDialog
-          name={deleteTarget.name}
+          name={projectDisplayName(t, deleteTarget.name, deleteTarget.defaultNameIndex)}
           recycleBin={recycleBin}
           onClose={() => setDeleteTarget(null)}
           onSubmit={async () => {

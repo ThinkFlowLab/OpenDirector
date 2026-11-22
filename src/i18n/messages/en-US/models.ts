@@ -138,6 +138,7 @@ export const models = {
   "models.service.minimaxNote":
     "The model list comes from the built-in declaration. Loading it does not verify the key or create a video task.",
   "models.service.save": "Save service",
+  "models.service.saveAndContinue": "Save and continue",
   "models.service.testing": "Testing…",
   "models.service.testPassed": "Passed in {seconds} s",
   "models.service.noOutputPreset":

@@ -7,7 +7,7 @@ from pydantic import Field, model_validator
 from opendirector.domain.projects import ProjectError
 
 from .assets import AssetRef
-from .base import CanvasItemVersion, Contract, Identifier, Point, Positive, ProjectEntity, unique
+from .base import CanvasColor, CanvasItemVersion, Contract, Identifier, Point, Positive, ProjectEntity, unique
 from .generation import FollowingSource, GenerationSpec, ResolvedReference, validate_generation
 from .models import ModelConfigPublic
 
@@ -103,6 +103,7 @@ class CanvasItemBase(ProjectEntity):
     height: Positive = Field(default=198, description='Height in pixels.')
     zIndex: int = Field(default=0, strict=True, description='Canvas stacking order.')
     locked: bool = Field(default=False, description='Whether edits to this object are blocked.')
+    color: CanvasColor | None = Field(default=None, exclude_if=lambda value: not value, description='Group background color in #RRGGBB format.')
     visible: bool = Field(default=True, description='Whether this object is displayed.')
     parentId: UUID | None = Field(default=None, description='Parent canvas group ID, or null for the root.')
     tags: tuple[Identifier, ...] = Field(default=(), description='User-defined search tags.')

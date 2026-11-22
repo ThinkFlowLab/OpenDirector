@@ -617,6 +617,8 @@ export function createCanvasToolTask(
   selection?: ToolSelection,
 ): CanvasToolTask {
   let parameters = { ...values };
+  if (tool === "image-presets" && values.preset !== "four-view")
+    delete parameters.faceEmphasis;
   if (tool === "multi-size") {
     const preset = multiSizePresets.find(
       (size) => size.ratio === values.aspectRatio,

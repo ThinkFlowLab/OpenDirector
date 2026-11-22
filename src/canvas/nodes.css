@@ -367,8 +367,8 @@
   cursor: default;
 }
 .cw-node-group {
-  background: rgba(157, 164, 179, 0.035);
-  border: 1px dashed #6c6f7b;
+  background: var(--cw-group-fill, rgba(157, 164, 179, 0.035));
+  border: 1px dashed var(--cw-group-border, #6c6f7b);
   border-radius: var(--cw-node-radius);
 }
 .cw-workspace .react-flow__node-group {

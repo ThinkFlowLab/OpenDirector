@@ -154,6 +154,23 @@ test("dynamic options and unknown task protocols cannot be guessed into a valid 
   );
 });
 
+test("face emphasis only accompanies the four-view preset", () => {
+  assert.deepEqual(
+    createCanvasToolTask("image-presets", [source.nodeId], {
+      preset: "four-view",
+      faceEmphasis: true,
+    }).parameters,
+    { preset: "four-view", faceEmphasis: true },
+  );
+  assert.deepEqual(
+    createCanvasToolTask("image-presets", [source.nodeId], {
+      preset: "three-view",
+      faceEmphasis: true,
+    }).parameters,
+    { preset: "three-view" },
+  );
+});
+
 test("observed marketing presets derive exact pixels while custom dimensions remain explicit", () => {
   const confirmed = { available: true, parametersConfirmed: true };
   for (const [aspectRatio, outputWidth, outputHeight] of [

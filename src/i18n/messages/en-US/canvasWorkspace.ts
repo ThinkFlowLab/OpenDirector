@@ -122,6 +122,17 @@ export const canvasWorkspace = {
   "canvas.workspace.selection.duplicate": "Duplicate",
   "canvas.workspace.selection.deleteSelected": "Delete selection",
 
+  "canvas.workspace.group.noRunnableNodes": "No runnable generation nodes in this group. Choose a model and enter a prompt first.",
+  "canvas.workspace.group.workflowStarted": {
+    one: "Running the workflow: {count} node.",
+    other: "Running the workflow: {count} nodes.",
+  },
+  "canvas.workspace.group.workflowDone": {
+    one: "Workflow finished: {count} node generated.",
+    other: "Workflow finished: all {count} nodes generated.",
+  },
+  "canvas.workspace.group.workflowIncomplete": "Workflow finished: {succeeded} succeeded, {failed} failed, {skipped} skipped (failed upstream or reference cycle).",
+
   "canvas.workspace.menu.rename": "Rename",
   "canvas.workspace.menu.addDownstream": "Add downstream node",
   "canvas.workspace.menu.copy": "Copy",

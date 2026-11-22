@@ -279,6 +279,13 @@ try {
     .locator(".iae-segment")
     .getByRole("button", { name: "标记", exact: true })
     .click();
+  const annotation = page.locator("canvas.iae-ink");
+  await annotation.waitFor();
+  const mark = await annotation.boundingBox();
+  await page.mouse.move(mark.x + mark.width * 0.35, mark.y + mark.height * 0.45);
+  await page.mouse.down();
+  await page.mouse.move(mark.x + mark.width * 0.55, mark.y + mark.height * 0.55, { steps: 6 });
+  await page.mouse.up();
   await page.locator(".iae-generate").click();
   await until(async () => lookupLost, Boolean, "lost task lookup");
   await page.reload();
@@ -290,6 +297,19 @@ try {
       rows.length === 2 && rows.every((row) => row.status === "succeeded"),
     "accepted original attempt",
   );
+  const annotationId = sent[0].annotationAssetId;
+  assert.ok(annotationId, "painted annotation was uploaded before submission");
+  const annotationAsset = (await state()).assets.find((asset) => asset.id === annotationId);
+  assert.equal(annotationAsset?.metadata.mimeType, "image/png");
+  const annotationResponse = await fetch(
+    `${api}/api/creation/projects/${projectId}/assets/${annotationId}/content`,
+    { headers: { "X-OpenDirector-Request": "1" } },
+  );
+  assert.ok(annotationResponse.ok);
+  const bytes = await annotationResponse.arrayBuffer();
+  assert.equal(bytes.byteLength, annotationAsset.metadata.size);
+  const digest = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+  assert.equal(annotationAsset.fingerprint, `sha256:${digest}`);
   assert.equal(sent[0].maskAssetId, continuedMaskId);
   await open(output.canvasItemId);
   await prompt().fill("New edits must not replace the unknown request");
@@ -314,7 +334,7 @@ try {
   await page.unroute(path);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS tool draft: real painted mask, saved parameters, reload, frozen input, source provenance, adopted output, independent continued editing and unknown submission replay after reload.",
+    "PASS tool draft: real painted mask and annotation upload, saved parameters, reload, frozen input, source provenance, adopted output, independent continued editing and unknown submission replay after reload.",
   );
 } finally {
   await browser.close();

@@ -106,6 +106,9 @@ export function NodeTaskPanel({
         ? t("tools.nodeTask.presetNote")
         : (toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.notConnected")));
     const models = capability?.models?.["image.edit"] ?? [];
+    const faceEmphasis = parameters.preset === "four-view"
+      ? capability?.fields?.find((field) => field.key === "faceEmphasis")
+      : undefined;
     return (
       <section
         className="cw-node-task-panel cw-preset-task-panel"
@@ -148,6 +151,18 @@ export function NodeTaskPanel({
                 </option>
               ))}
             </select>
+          )}
+          {faceEmphasis && (
+            <label className="cw-preset-task-checkbox">
+              <input
+                type="checkbox"
+                checked={parameters.faceEmphasis === true}
+                onChange={(event) =>
+                  change(faceEmphasis.key, event.target.checked)
+                }
+              />
+              {translateToolText(locale, faceEmphasis.label)}
+            </label>
           )}
           <span className="cw-preset-task-note" role="status">
             {note}

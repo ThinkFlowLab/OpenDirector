@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import socket
 import shlex
+import subprocess
 import sys
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -297,6 +298,14 @@ class LogLevel(str, Enum):
 
 PortOption = Annotated[int, typer.Option(min=1, max=65535, help="Local API port.")]
 WebPortOption = Annotated[int, typer.Option(min=1, max=65535, help="Vite development port.")]
+
+
+@app.command("desktop", help="Open the desktop application installed with this terminal command. / 打开此终端命令所属的桌面应用。")
+def desktop():
+    executable = os.environ.get('OPENDIRECTOR_DESKTOP_EXECUTABLE')
+    if not executable or not Path(executable).is_file():
+        raise typer.BadParameter('Install the command from the desktop application menu. / 请从桌面应用菜单安装终端命令。')
+    subprocess.Popen([executable], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 @app.command("serve", help="Start the API and serve the built application.")
@@ -701,7 +710,11 @@ def query(ctx: typer.Context, kind: str,
 
 
 def read_file(path):
-    value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
+    if str(path) == "-":
+        source = sys.stdin.buffer.read().decode("utf-8-sig")
+    else:
+        source = path.read_text(encoding="utf-8-sig")
+    value = json.loads(source)
     if not isinstance(value, dict):
         raise ValueError("Expected a JSON object.")
     return value

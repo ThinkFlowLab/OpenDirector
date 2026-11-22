@@ -81,3 +81,22 @@
 .cw-trace-job .cw-trace-preview { white-space: normal; overflow-wrap: anywhere; }
 .cw-trace-badge.is-job-succeeded { background: #254034; color: #91d6ab; }
 .cw-trace-badge.is-job-failed, .cw-trace-badge.is-job-interrupted { background: #4d2a2a; color: #f0a3a3; }
+
+.cw-trace-tabs { padding: 8px 20px; }
+.cw-trace-turnnav { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 20px; border-bottom: 1px solid #3c3c3c; background: #272727; }
+.cw-trace-turnnav button { min-width: 28px; border: 1px solid #444; border-radius: 4px; padding: 2px 8px; background: transparent; color: #bbb; font: inherit; cursor: pointer; }
+.cw-trace-turnnav button:hover { background: #303030; }
+.cw-trace-turnnav button[aria-pressed="true"] { border-color: #4d5d6d; background: #303c48; color: #d6e8f7; }
+.cw-trace-turn { border-bottom: 1px solid #444; scroll-margin-top: 48px; }
+.cw-trace-turn > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 20px; background: #2a2a2a; cursor: pointer; font-weight: 600; }
+.cw-trace-turn > summary:hover, .cw-trace-turn[open] > summary { background: #303030; }
+.cw-trace-turn-number { white-space: nowrap; }
+.cw-trace-turn-meta { display: flex; align-items: center; gap: 8px; color: #aaa; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.cw-trace-badge.is-turn-streaming { background: #30415c; color: #a6c7ff; }
+.cw-trace-badge.is-turn-complete { background: #254034; color: #91d6ab; }
+.cw-trace-badge.is-turn-stopped { background: #473829; color: #f0c38b; }
+.cw-trace-badge.is-turn-interrupted { background: #4d2a2a; color: #f0a3a3; }
+@media (max-width: 600px) {
+  .cw-trace-turn > summary { grid-template-columns: auto minmax(0, 1fr); }
+  .cw-trace-turn-meta { grid-column: 1 / -1; }
+}

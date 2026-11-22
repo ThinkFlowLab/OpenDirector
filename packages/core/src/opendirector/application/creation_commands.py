@@ -36,7 +36,7 @@ class CreationCommands:
 
         def rename(snapshot):
             name = project_name(command.payload.name)
-            if snapshot.project.name == name:
+            if snapshot.project.name == name and snapshot.project.defaultNameIndex is None:
                 return snapshot
             data = snapshot.model_dump()
             data['project'] = dict(id=snapshot.project.id, name=name, revision=snapshot.project.revision + 1)

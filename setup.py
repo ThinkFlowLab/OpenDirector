@@ -18,7 +18,7 @@ setup(
     packages=find_packages('packages/core/src') + find_packages('apps/api/src'),
     package_dir={'opendirector': 'packages/core/src/opendirector',
                  'opendirector_api': 'apps/api/src/opendirector_api'},
-    package_data={'opendirector': ['_bundled/**/*']},
+    package_data={'opendirector': ['_bundled/**/*'], 'opendirector_api': ['example-canvases.json']},
     include_package_data=True,
     distclass=BundledDistribution,
     cmdclass={'bdist_wheel': PlatformWheel},

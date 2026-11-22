@@ -966,8 +966,9 @@ try {
       assert.equal(await page.locator('.cw-model-option img[title="MiniMax"]').count(), 2);
       await page.screenshot({ path: `${output}/${locale}-minimax-provider.png`, fullPage: true });
       await page.getByRole("button", { name: L.addModel, exact: true }).click();
-      await page.locator("#manual-model-id").fill("speech-2.8-unknown");
-      await page.locator("#manual-model-id").press("Enter");
+      const manualModel = page.locator(".cw-model-manual input");
+      await manualModel.fill("speech-2.8-unknown");
+      await manualModel.press("Enter");
       await page.getByRole("button", { name: L.saveService, exact: true }).click();
       await page.getByRole("alert").filter({ hasText: L.unsupportedModel }).waitFor();
       await page.screenshot({ path: `${output}/${locale}-minimax-unsupported.png`, fullPage: true });
