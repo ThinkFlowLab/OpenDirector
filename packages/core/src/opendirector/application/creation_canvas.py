@@ -25,6 +25,9 @@ from opendirector.domain.rule_facts import FRAME_IMAGE_LIMIT
 from opendirector.domain.projects import ProjectError
 from opendirector.ports.gateway import gateway
 
+DELIVERY_GUIDANCE = ('Inspect this existing asset directly. Local copies and extracted inspection frames do not need '
+    'publishing or new canvas items. Publish only new deliverables; create another display only when requested.')
+
 COLLECTIONS = {'canvas_item': 'canvasItems', 'generation_spec': 'generationSpecs',
                'reference': 'references', 'editor_document': 'editorDocuments',
                'asset': 'assets', 'job': 'jobs', 'result': 'results'}
@@ -727,6 +730,56 @@ class CreationCanvas:
                 'errorDetails', 'technicalCheck', 'cancelRequested', 'adopted', 'asset'}) for job in jobs],
             'asset': asset.model_dump(mode='json') if asset else None}
 
+    TERMINAL_JOB_STATES = frozenset({'succeeded', 'failed', 'cancelled', 'interrupted'})
+
+    def job_states(self, project_id: UUID, object_ids: tuple[UUID, ...] = ()) -> dict:
+        """Read the requested jobs and their deliveries from one snapshot; unfinished jobs when none are named."""
+        snapshot = self.projects.snapshot(project_id)
+        jobs = {job.id: job for job in snapshot.jobs}
+        if object_ids:
+            missing = [str(identity) for identity in object_ids if identity not in jobs]
+            if missing:
+                raise ContractError('missing_object', '未找到该对象或历史版本。', missing[0])
+            selected = [jobs[identity] for identity in object_ids]
+        else:
+            selected = [job for job in snapshot.jobs if job.status not in self.TERMINAL_JOB_STATES]
+        results_by_asset = {}
+        for result in snapshot.results:
+            results_by_asset.setdefault(result.asset.assetId, []).append(result)
+        adopted_results = {spec.currentResultId for spec in snapshot.generationSpecs if spec.currentResultId}
+        views = []
+        for job in selected:
+            view = job.model_dump(mode='json', include={'id', 'revision', 'status', 'phase', 'asset',
+                'errorDetails', 'recovery', 'resumeAllowed', 'cancelRequested', 'adopted', 'originItemId',
+                'externalTaskId', 'createdAt'})
+            if job.status == 'succeeded' and job.asset:
+                results = results_by_asset.get(job.asset.assetId, ())
+                specs = {result.specId for result in results if result.id in adopted_results}
+                items = [item for item in snapshot.canvasItems if
+                    (item.binding.role == 'generation' and item.binding.objectRef.id in specs
+                     and not item.binding.materialOverride) or
+                    (item.binding.role == 'material' and item.binding.objectRef.assetId == job.asset.assetId)]
+                view['delivery'] = {'registered': True, 'asset': view['asset'],
+                    'adopted': any(result.id in adopted_results for result in results),
+                    'canvasItems': [item.model_dump(mode='json', include={'id', 'revision', 'visible',
+                        'position', 'width', 'height'}) for item in items], 'guidance': DELIVERY_GUIDANCE}
+            views.append(view)
+        return {'jobs': views, 'terminal': all(job.status in self.TERMINAL_JOB_STATES for job in selected)}
+
+    async def wait_jobs(self, project_id: UUID, object_ids: tuple[UUID, ...] = (), wait_seconds: float = 0,
+                        until: str = 'all') -> dict:
+        """Answer for a whole set of jobs with at most one snapshot read per poll tick."""
+        deadline = asyncio.get_running_loop().time() + wait_seconds
+        while True:
+            state = await asyncio.to_thread(self.job_states, project_id, object_ids)
+            jobs = state['jobs']
+            settled = state['terminal'] or (bool(jobs) and until == 'any' and any(
+                job['status'] in self.TERMINAL_JOB_STATES for job in jobs))
+            remaining = deadline - asyncio.get_running_loop().time()
+            if settled or remaining <= 0:
+                return state
+            await asyncio.sleep(min(0.5, remaining))
+
     async def wait_item_status(self, project_id: UUID, item_id: UUID, wait_seconds: float = 0) -> dict:
         current = await asyncio.to_thread(self.item_status, project_id, item_id)
         deadline = asyncio.get_running_loop().time() + wait_seconds
@@ -844,6 +897,8 @@ class CreationCanvas:
     async def query(self, query: Query) -> JsonValue:
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
+        if query.type == 'job.status':
+            return await self.wait_jobs(query.projectId, query.objectIds, query.waitSeconds, query.until)
         if query.type == 'asset.preview':
             target = self.projects.local.state_dir / 'previews' / str(query.projectId)
             return await asyncio.to_thread(CreationAssets(self.projects).preview, query.projectId, query.objectId, target)

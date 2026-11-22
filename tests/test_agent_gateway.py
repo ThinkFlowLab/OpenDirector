@@ -378,3 +378,25 @@ async def test_default_runtime_accepts_cli_command_without_help_state(gateway, m
     arguments = {'type': 'canvas.show', 'payload': {}}
     assert not (await gateway.call('first', 'execute_command', arguments)).error
     assert calls == ['execute_command']
+
+
+@pytest.mark.anyio
+async def test_read_only_query_answers_while_a_write_holds_the_execution_slot(gateway, monkeypatch):
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def execute(*args):
+        if args[4] == 'query':
+            return {'jobs': [], 'terminal': True}
+        entered.set()
+        await release.wait()
+        return {'status': 'accepted'}
+    monkeypatch.setattr(gateway.business, 'execute', execute)
+    write = asyncio.create_task(gateway.call('submit', 'execute_command', {'type': 'generation.submit', 'payload': {}}))
+    await entered.wait()
+    queued = asyncio.create_task(gateway.call('submit-again', 'execute_command', {'type': 'generation.submit', 'payload': {}}))
+    await asyncio.sleep(0.05)
+    assert not queued.done()
+    answer = await asyncio.wait_for(gateway.call('poll', 'query', {'type': 'job.status'}), 1)
+    assert answer.value['terminal'] is True
+    release.set()
+    await asyncio.gather(write, queued)
+    await gateway.close()

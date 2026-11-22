@@ -1,5 +1,6 @@
 """One turn's tool admission, replay and receipts, independent of transport."""
 import asyncio
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 import json
@@ -32,6 +33,11 @@ class ToolResult:
                 **({'code': code} if self.error and isinstance(code, str) else {})}
 
 
+# Reads are answered from immutable snapshots, so a wait cannot block unrelated
+# work; writes still hold the turn's single execution slot.
+READ_ONLY_QUERIES = frozenset({'job.status', 'job.get', 'object.get', 'canvas.status'})
+
+
 class ToolGateway:
     def __init__(self, business: AgentTools, run: RunContext):
         self.business = business
@@ -62,7 +68,8 @@ class ToolGateway:
         return await asyncio.shield(task)
 
     async def execute(self, call_id: str, name: str, arguments: dict[str, JsonValue]) -> ToolResult:
-        async with self.execution_lock:
+        read_only = name == 'query' and arguments.get('type') in READ_ONLY_QUERIES
+        async with (nullcontext() if read_only else self.execution_lock):
             try:
                 if self.closed:
                     raise ProjectError('本轮工具入口已关闭。', 409)

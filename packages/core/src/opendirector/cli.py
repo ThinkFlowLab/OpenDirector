@@ -21,6 +21,7 @@ import typer
 from typer._click.exceptions import UsageError
 
 from opendirector.agent.tools import COMMANDS, command_help
+from opendirector.application.creation_canvas import DELIVERY_GUIDANCE
 from opendirector.domain.creation.commands import COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
@@ -221,10 +222,9 @@ class Client:
             raise typer.Exit(1)
         if value.get("status") == "accepted" and value.get("jobIds"):
             value = {**value, "next": {
-                "description": "Wait for each accepted job to finish. On timeout, run the same wait command again.",
+                "description": "Wait for every accepted job in one call. On timeout, run the same wait command again.",
                 "commands": [shlex.join(["opendirector", "--url", str(self.http.base_url).rstrip("/"),
-                    "--project", value["projectId"], "job", "wait", job_id, "--timeout", "60"])
-                    for job_id in value["jobIds"]],
+                    "--project", value["projectId"], "job", "wait", *value["jobIds"], "--timeout", "60"])],
             }}
         canvas_versions = {item["id"]: item["revision"] for item in value.get("changed", [])
                            if item["objectType"] == "canvas_item"}
@@ -266,7 +266,7 @@ class Client:
             result = {**result, "delivery": {"registered": True, "asset": result["asset"],
                 "adopted": bool(adopted_specs), "canvasItems": [{key: item[key] for key in
                     ("id", "revision", "visible", "position", "width", "height")} for item in items],
-                "guidance": "Inspect this existing asset directly. Local copies and extracted inspection frames do not need publishing or new canvas items. Publish only new deliverables; create another display only when requested."}}
+                "guidance": DELIVERY_GUIDANCE}}
         return result
 
 
@@ -332,10 +332,38 @@ def emit(value):
     typer.echo(json.dumps(value, ensure_ascii=False, indent=2))
 
 
-@group("project").command("show", help="Read the current authoritative project snapshot.")
-def project_show(ctx: typer.Context):
+def summarize(snapshot):
+    """Identity and status of every object, without bodies the agent rarely needs."""
+    return {
+        "project": {key: snapshot["project"][key] for key in ("id", "name", "revision") if key in snapshot["project"]},
+        "counts": {key: len(snapshot.get(key, ())) for key in
+                   ("assets", "generationSpecs", "references", "canvasItems", "editorDocuments", "jobs", "results")},
+        "assets": [{"id": asset["id"], "kind": asset["kind"], "name": asset["name"],
+                    "durationSeconds": asset.get("metadata", {}).get("durationSeconds"),
+                    "width": asset.get("metadata", {}).get("width"), "height": asset.get("metadata", {}).get("height")}
+                   for asset in snapshot.get("assets", ())],
+        "canvasItems": [{"id": item["id"], "revision": item["revision"], "kind": item.get("kind"),
+                         "title": item.get("title"), "visible": item.get("visible", True),
+                         "binding": {"role": item["binding"]["role"],
+                                     "objectRef": item["binding"].get("objectRef", {}).get("id") or
+                                                  item["binding"].get("objectRef", {}).get("assetId")} }
+                        for item in snapshot.get("canvasItems", ())],
+        "generationSpecs": [{"id": spec["id"], "revision": spec["revision"],
+                             "modelConfigId": spec.get("modelConfigId"), "currentResultId": spec.get("currentResultId"),
+                             "purpose": spec.get("purpose")} for spec in snapshot.get("generationSpecs", ())],
+        "jobs": [{"id": job["id"], "revision": job["revision"], "status": job["status"], "phase": job.get("phase")}
+                 for job in snapshot.get("jobs", ())],
+        "results": [{"id": result["id"], "assetId": result["asset"]["assetId"], "jobId": result["jobId"]}
+                    for result in snapshot.get("results", ())],
+    }
+
+
+@group("project").command("show", help="Read the current authoritative project snapshot, or only identities and status with --summary.")
+def project_show(ctx: typer.Context,
+                 summary: Annotated[bool, typer.Option("--summary", help="Print identities, revisions and status without full records.")] = False):
     ctx.obj.command = ctx.command_path
-    emit(ctx.obj.snapshot())
+    snapshot = ctx.obj.snapshot()
+    emit(summarize(snapshot) if summary else snapshot)
 
 
 @group("project").command("list", help="List available projects.")
@@ -675,24 +703,63 @@ def job_show(ctx: typer.Context, job_id: UUID):
     emit(ctx.obj.query("job.get", objectId=str(job_id)))
 
 
-@group("job").command("wait", help="Wait for a job to reach a terminal state.")
-def job_wait(ctx: typer.Context, job_id: UUID,
+TERMINAL_JOB_STATES = frozenset({"succeeded", "failed", "cancelled", "interrupted"})
+WAIT_WINDOW = 100  # Seconds of waiting answered by one server call.
+
+
+@group("job").command("wait", help="Wait for one or more jobs to finish; one server call per wait window, not per job.")
+def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Argument(
+                 help="Generation job IDs. Omit them with --all.")] = None,
+             all_jobs: Annotated[bool, typer.Option("--all", help="Wait for every unfinished job in this project.")] = False,
              timeout: Annotated[float, typer.Option(min=0, help="Maximum wait in seconds.")] = 300):
     import time
     ctx.obj.command = ctx.command_path
+    ids = tuple(job_ids or ())
+    if not ids and not all_jobs:
+        raise typer.BadParameter("Pass job IDs or --all.")
     deadline = time.monotonic() + timeout
     while True:
-        result = ctx.obj.query("job.get", objectId=str(job_id))
-        job = result.get("job", result)
-        if job.get("status") in {"succeeded", "failed", "cancelled", "interrupted"}:
-            emit(result)
-            if job["status"] != "succeeded":
+        remaining = max(0.0, deadline - time.monotonic())
+        result = ctx.obj.query("job.status", objectIds=[str(identity) for identity in ids],
+            waitSeconds=min(WAIT_WINDOW, remaining), until="all")
+        jobs = result.get("jobs", [])
+        failed = [job for job in jobs if job["status"] in TERMINAL_JOB_STATES and job["status"] != "succeeded"]
+        if jobs and all(job["status"] in TERMINAL_JOB_STATES for job in jobs) or not jobs:
+            emit({"jobs": jobs, "completed": len(jobs), "failed": len(failed)})
+            if failed:
                 raise typer.Exit(1)
             return
         if time.monotonic() >= deadline:
-            emit(result)
+            emit({"jobs": jobs, "completed": len(jobs) - len([job for job in jobs if job["status"] not in TERMINAL_JOB_STATES]),
+                "failed": len(failed), "timeout": True})
             raise typer.Exit(2)
-        time.sleep(min(1, max(0, deadline - time.monotonic())))
+
+
+@app.command("capabilities", help="List every business command with its required fields; one call replaces per-command --help discovery.")
+def capabilities(compact: Annotated[bool, typer.Option("--compact", help="Only names, summaries and required fields.")] = False):
+    from typing import get_args
+    from opendirector.domain.creation.commands import Query as QueryModel
+    commands = []
+    for kind, model in COMMAND_MODELS.items():
+        if kind not in COMMANDS:
+            continue
+        namespace, action = kind.split(".", 1)
+        schema = model.model_fields["payload"].annotation.model_json_schema()
+        branches = schema.get("anyOf") or schema.get("oneOf")
+        entry = {"command": f"{kebab(namespace)} {kebab(action)}", "type": kind,
+                 "summary": (model.__doc__ or "").strip().splitlines()[0],
+                 "required": sorted({field for branch in branches or (schema,)
+                                     for field in branch.get("required", ())})}
+        if branches:
+            entry["branches"] = [branch.get("description", branch.get("title", "variant")) for branch in branches]
+        if not compact:
+            entry["fields"] = list(schema.get("properties", {}))
+        commands.append(entry)
+    queries = sorted({type_name for model in get_args(get_args(QueryModel)[0])
+                      for type_name in getattr(model.model_fields["type"].annotation, "__args__", ())})
+    emit({"commands": commands, "queries": queries,
+          "wait": "opendirector job wait --all",
+          "next": "Accepted receipts return ready-to-run next commands with current revisions."})
 
 
 @app.command("query", help="Read project objects, versions, previews or execution status.")

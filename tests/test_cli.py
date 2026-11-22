@@ -6,11 +6,12 @@ import shlex
 import subprocess
 import sys
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 import httpx
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from opendirector import cli
@@ -345,10 +346,9 @@ def test_accepted_cli_receipt_provides_wait_commands(monkeypatch):
     try:
         result = client.execute("generation.submit", {})
         commands = result["next"]["commands"]
-        assert len(commands) == 2
-        for job_id, command in zip(jobs, commands):
-            assert shlex.split(command) == ["opendirector", "--url", "http://localhost:18765",
-                "--project", project, "job", "wait", job_id, "--timeout", "60"]
+        assert len(commands) == 1
+        assert shlex.split(commands[0]) == ["opendirector", "--url", "http://localhost:18765",
+            "--project", project, "job", "wait", *jobs, "--timeout", "60"]
         assert "next" not in receipt
     finally:
         client.http.close()
@@ -476,3 +476,96 @@ def test_timeline_default_font_is_offline_and_does_not_open_a_project(monkeypatc
     assert value['version'] == '2.004'
     assert value['fingerprint'] == 'sha256:' + sha256(path.read_bytes()).hexdigest()
     assert not (tmp_path / 'unused').exists()
+
+
+def wait_context(monkeypatch, states):
+    """Record every server call job wait makes."""
+    from types import SimpleNamespace
+    calls = []
+    states = list(states)
+
+    def query(kind, **arguments):
+        calls.append((kind, arguments))
+        return states.pop(0) if len(states) > 1 else states[0]
+    return SimpleNamespace(command_path="job wait", obj=SimpleNamespace(command="", query=query)), calls
+
+
+TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
+
+
+def test_job_wait_covers_every_job_in_one_call_per_window(monkeypatch, capsys):
+    jobs = [str(uuid4()), str(uuid4())]
+    context, calls = wait_context(monkeypatch, [
+        {"jobs": [{"id": jobs[0], "status": "running"}, {"id": jobs[1], "status": "queued"}]},
+        {"jobs": [{"id": jobs[0], "status": "succeeded"}, {"id": jobs[1], "status": "succeeded"}]},
+    ])
+    cli.job_wait(context, [UUID(job) for job in jobs], False, 300)
+    assert [kind for kind, _ in calls] == ["job.status", "job.status"]
+    assert calls[0][1]["objectIds"] == jobs
+    assert calls[0][1]["until"] == "all"
+    assert calls[0][1]["waitSeconds"] == cli.WAIT_WINDOW
+    emitted = json.loads(capsys.readouterr().out)
+    assert emitted["completed"] == 2 and emitted["failed"] == 0
+
+
+def test_job_wait_all_waits_for_unfinished_jobs_without_naming_ids(monkeypatch, capsys):
+    job = str(uuid4())
+    context, calls = wait_context(monkeypatch, [{"jobs": [{"id": job, "status": "succeeded"}]}])
+    cli.job_wait(context, None, True, 30)
+    assert calls[0][1]["objectIds"] == []
+    assert json.loads(capsys.readouterr().out)["completed"] == 1
+
+
+def test_job_wait_reports_failure_and_timeout_with_distinct_exit_codes(monkeypatch, capsys):
+    job = str(uuid4())
+    failed, _ = wait_context(monkeypatch, [{"jobs": [{"id": job, "status": "failed"}]}])
+    with pytest.raises(typer.Exit) as error:
+        cli.job_wait(failed, [UUID(job)], False, 30)
+    assert error.value.exit_code == 1
+    assert json.loads(capsys.readouterr().out)["failed"] == 1
+    running, _ = wait_context(monkeypatch, [{"jobs": [{"id": job, "status": "running"}]}])
+    with pytest.raises(typer.Exit) as error:
+        cli.job_wait(running, [UUID(job)], False, 0)
+    assert error.value.exit_code == 2
+    assert json.loads(capsys.readouterr().out)["timeout"] is True
+
+
+def test_project_show_summary_keeps_every_identity_without_record_bodies(monkeypatch, capsys):
+    from types import SimpleNamespace
+    def asset(index):
+        return {"id": str(uuid4()), "revision": 1, "kind": "image", "name": f"asset-{index}",
+                "metadata": {"width": 2048, "height": 2048, "durationSeconds": None},
+                "fingerprint": "sha256:" + "a" * 64, "provenance": {"prompt": "x" * 4096}, "source": {"path": "/tmp/asset.png"}}
+    snapshot = {"project": {"id": str(uuid4()), "name": "Demo", "revision": 7},
+                "assets": [asset(index) for index in range(40)],
+                "canvasItems": [{"id": str(uuid4()), "revision": 2, "kind": "image", "visible": True,
+                                 "position": {"x": 0, "y": 0}, "width": 352, "height": 198,
+                                 "binding": {"role": "generation", "objectRef": {"id": str(uuid4())}}}],
+                "generationSpecs": [{"id": str(uuid4()), "revision": 3, "purpose": "generation",
+                                     "modelConfigId": str(uuid4()), "currentResultId": None}],
+                "jobs": [{"id": str(uuid4()), "revision": 2, "status": "succeeded", "phase": "complete"}],
+                "results": [{"id": str(uuid4()), "jobId": str(uuid4()), "asset": {"assetId": str(uuid4())}}],
+                "references": [], "editorDocuments": []}
+    context = SimpleNamespace(command_path="project show", obj=SimpleNamespace(command="", snapshot=lambda: snapshot))
+    cli.project_show(context, True)
+    summary = json.loads(capsys.readouterr().out)
+    assert len(summary["assets"]) == 40 and summary["assets"][0]["width"] == 2048
+    assert summary["project"]["revision"] == 7
+    assert summary["counts"]["assets"] == 40
+    assert "fingerprint" not in summary["assets"][0] and "provenance" not in summary["assets"][0]
+    assert len(json.dumps(summary)) * 4 < len(json.dumps(snapshot))
+
+
+def test_capabilities_lists_commands_and_query_types_once(help_color):
+    result = CliRunner().invoke(cli.app, ["capabilities", "--compact"])
+    assert result.exit_code == 0, result.output
+    digest = json.loads(result.output)
+    kinds = {entry["type"]: entry for entry in digest["commands"]}
+    assert {"generation.submit", "canvas.createGeneration", "generationSpec.update", "job.cancel"} <= set(kinds)
+    assert all(entry["command"].count(" ") >= 1 and entry["summary"] for entry in digest["commands"])
+    assert kinds["canvas.show"]["required"] == ["item"]
+    assert kinds["generation.submit"]["required"] == ["expectedSpecRevision", "specId"]
+    assert "fields" not in kinds["generation.submit"]
+    assert {"job.status", "job.get", "canvas.status"} <= set(digest["queries"])
+    assert digest["wait"] == "opendirector job wait --all"
+    assert "opendirector --help" not in result.output

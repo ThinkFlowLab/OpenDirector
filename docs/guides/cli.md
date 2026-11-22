@@ -28,14 +28,21 @@ opendirector --project PROJECT_UUID video create   --model MODEL_CONFIG_UUID   -
 ```bash
 opendirector --project PROJECT_UUID generation submit   --spec-id SPEC_UUID   --expected-spec-revision 1   --origin-item-id ITEM_UUID   --expected-version generation_spec:SPEC_UUID:1   --expected-version canvas_item:ITEM_UUID:1
 opendirector --project PROJECT_UUID job show JOB_UUID
-opendirector --project PROJECT_UUID job wait JOB_UUID --timeout 300
+opendirector --project PROJECT_UUID job wait JOB_UUID... --timeout 300
+opendirector --project PROJECT_UUID job wait --all --timeout 300
 ```
+
+`job wait` 接受多个任务身份，`--all` 等待当前工程全部未结束任务，并在一次等待窗口内用一次服务端查询回答整组任务；返回每个任务的 `status`、`phase` 和成功后已登记的 `delivery`。需要减少等待调用次数时优先用 `--all`，不要为每个任务分别启动一次等待。
+
+`opendirector capabilities` 一次输出全部业务命令、摘要与必填字段，`--compact` 省略非必填字段名。Agent 用它替代逐条执行 `--help` 的发现过程；仅在单个字段结构不清楚时用 `--help-field` 展开。`opendirector project show --summary` 输出对象身份、版本与状态而不含完整记录，工程较大时可避免结果被截断以及重复读取。
 
 业务命令按对象分组，参数名使用短横线。复杂参数可使用 JSON 参数，或通过 `--file command.json` 读取含 `payload`、`expectedVersions` 和可选 `expectedPreview` 的对象。`--file -` 从标准输入读取。命令帮助包含从 Pydantic 业务契约派生的参数说明与示例。`--help-field PATH` 展开帮助中返回的结构化字段路径，例如 `opendirector canvas show --help-field payload.item@image.binding`。
 
-CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其列表，视频节点创建回执同时返回包含当前版本的下一步提交命令。参数解析错误直接显示该子命令的完整用法。成功退出码为 0，拒绝或执行失败为 1，参数解析错误及等待任务超时为 2。生成接受回执会在 `next.commands` 返回对应的 `job wait` 命令，带入服务地址、工程和任务身份。建议按回执等待；60 秒窗口超时后可以再次执行同一等待命令。`job wait` 超时结束等待，任务继续由后台执行。
+CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其列表，视频节点创建回执同时返回包含当前版本的下一步提交命令。参数解析错误直接显示该子命令的完整用法。成功退出码为 0，拒绝或执行失败为 1，参数解析错误及等待任务超时为 2。生成接受回执会在 `next.commands` 返回一条覆盖本次全部任务的 `job wait` 命令，带入服务地址、工程和任务身份。建议按回执等待；等待窗口超时后可以再次执行同一命令。`job wait` 超时结束等待，任务继续由后台执行。
 
 修改命令可在子命令前传 `--operation-id UUID`。相同身份及输入重试复用原回执，输入不同则拒绝。文件导入重放也核对登记文件的内容指纹。需要跨进程恢复暂存上传时，预先通过 `--session UUID` 保持相同会话身份。结果未知时先查询回执，再决定后续操作。
+
+读取类查询 `job.get`、`object.get`、`canvas.status` 与 `job.status` 不占用本轮执行锁，因此等待任务不会阻塞同轮其他工具调用。`job.status` 是 `job wait` 使用的批量查询：一次快照读取回答整组任务，并按需等待终态。
 
 普通终端写入申请独立编辑租约，完成后释放。工程已在其他窗口编辑时会返回占用错误。使用 `--session UUID` 表示沿用已有授权会话，CLI 完成后保留该会话。
 
