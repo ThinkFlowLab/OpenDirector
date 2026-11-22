@@ -1,11 +1,12 @@
 """Service prices are decimal amounts in their original currency."""
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field
 
-from .base import Contract, Digest, digest
+from .base import Contract, Digest, ObjectVersion, ProjectEntity, digest
 
 Currency = Literal['USD', 'CNY']
 Money = Annotated[Decimal, Field(ge=0, max_digits=24, decimal_places=12, allow_inf_nan=False)]
@@ -41,6 +42,81 @@ class SpendQuote(Contract):
 
     def fingerprint(self):
         return digest(self)
+
+
+class SpendPolicy(Contract):
+    currency: Currency = Field(default='USD', description='Currency of the project spending limits.')
+    threshold: Money | None = Field(default=None, description='Require confirmation strictly above this batch amount.')
+    cap: Money | None = Field(default=None, description='Maximum settled and reserved service spend.')
+
+
+class SpendRequest(ProjectEntity):
+    versions: tuple[ObjectVersion, ...] = Field(description='Input object versions fixed when the request was made.')
+    quote: SpendQuote = Field(description='Exact batch covered by this request.')
+    createdAt: datetime = Field(description='Time the project requested a review.')
+    status: Literal['pending', 'accepted', 'cancelled'] = Field(default='pending', description='Human review status.')
+    agentRunId: UUID | None = Field(default=None, description='Originating assistant turn.')
+    agentCallId: str | None = Field(default=None, description='Originating assistant tool call.')
+    decisionId: UUID | None = Field(default=None, description='Durable command that resolved this request.')
+
+
+class SpendCall(ProjectEntity):
+    ownerId: UUID = Field(description='Generation job or media tool task that owns this call.')
+    line: PriceLine = Field(description='Original native-currency estimate for this physical call.')
+    createdAt: datetime = Field(description='Time the reservation was created.')
+    state: Literal['reserved', 'submitted', 'completed', 'released'] = Field(default='reserved', description='State of the provider call.')
+    usage: Money | None = Field(default=None, description='Metered units reported for the call.')
+    calculated: Money | None = Field(default=None, description='Amount calculated from confirmed usage and the agreed rate.')
+    reported: Money | None = Field(default=None, description='Charge explicitly reported by the provider in the line currency.')
+
+    def accounted(self):
+        if self.state == 'released':
+            return Decimal(0)
+        for amount in (self.reported, self.calculated, self.line.amount):
+            if amount is not None:
+                return amount
+        return None
+
+
+class SpendReview(Contract):
+    requestId: UUID = Field(description='Original batch request.')
+    fingerprint: Digest = Field(description='Reviewed input and price fingerprint.')
+    decision: Literal['approve', 'cancel'] = Field(description='Human decision for this exact action.')
+    acceptUnknown: bool = Field(default=False, description='Explicitly accepts this unpriced action with no project cap.')
+    newCap: Money | None = Field(default=None, description='Raise the project cap in the same transaction as admission.')
+
+
+def spend_summary(snapshot):
+    policy = snapshot.project.spendPolicy or SpendPolicy()
+    settled, held = Decimal(0), Decimal(0)
+    missing = 0
+    owners = set()
+    for call in snapshot.spendCalls:
+        owners.add(call.ownerId)
+        amount = call.accounted()
+        if amount is None or (amount and call.line.price.currency != policy.currency):
+            missing += 1
+        elif call.state == 'completed' and (call.calculated is not None or call.reported is not None):
+            settled += amount
+        else:
+            held += amount
+    legacy = sum(j.execution.kind != 'text' and j.id not in owners for j in snapshot.jobs)
+    return dict(policy=policy, settled=settled, held=held, available=None if policy.cap is None else policy.cap-settled-held,
+                unknown=missing, legacy=legacy, since=min((c.createdAt for c in snapshot.spendCalls), default=None))
+
+
+def spend_decision(summary, quote):
+    policy = summary['policy']
+    amount = quote.total(policy.currency)
+    if amount == 0:
+        return 'ready'
+    if amount is None:
+        return 'unpriced' if policy.cap is not None else 'unknown_confirmation' if policy.threshold is not None else 'ready'
+    if policy.cap is not None and amount > summary['available']:
+        return 'over_cap'
+    if policy.threshold is not None and amount > policy.threshold:
+        return 'confirmation'
+    return 'ready'
 
 
 # These synchronous retail prices cover every supported output specification

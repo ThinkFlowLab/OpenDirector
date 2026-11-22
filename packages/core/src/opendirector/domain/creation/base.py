@@ -53,7 +53,7 @@ class ProjectEntity(Contract):
 
 
 class ObjectVersion(Contract):
-    objectType: Literal['project', 'asset', 'generation_spec', 'reference', 'canvas_item', 'editor_document', 'job', 'result'] = Field(description='Referenced business object type.')
+    objectType: Literal['project', 'asset', 'generation_spec', 'reference', 'canvas_item', 'editor_document', 'job', 'result', 'spend_request', 'spend_call'] = Field(description='Referenced business object type.')
     id: UUID = Field(description='Stable object ID.')
     revision: Revision = Field(description='Current object revision for optimistic concurrency.')
 

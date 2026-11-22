@@ -843,6 +843,9 @@ class CreationCanvas:
                     hiddenItemIds=[i.id for i in snapshot.canvasItems if i.id not in visible], edges=edges, capabilities=capabilities)
 
     async def query(self, query: Query) -> JsonValue:
+        if query.type == 'spend.status':
+            from opendirector.application.creation_spend import review_status
+            return to_jsonable_python(await asyncio.to_thread(lambda: review_status(self.projects.snapshot(query.projectId))))
         if query.type == 'generation.quote':
             if self.generation is None:
                 raise ProjectError('Generation service unavailable.', 503)

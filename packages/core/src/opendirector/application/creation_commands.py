@@ -39,7 +39,7 @@ class CreationCommands:
             if snapshot.project.name == name and snapshot.project.defaultNameIndex is None:
                 return snapshot
             data = snapshot.model_dump()
-            data['project'] = dict(id=snapshot.project.id, name=name, revision=snapshot.project.revision + 1)
+            data['project'].update(name=name, defaultNameIndex=None, revision=snapshot.project.revision + 1)
             return ProjectSnapshot.model_validate(data)
 
         return projects.commit(command, rename, session=session, source=source)

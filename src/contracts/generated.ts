@@ -406,7 +406,8 @@ export interface CommandReceiptInput extends ContractInput {
   readonly commandId: string;
   readonly projectId: string;
   readonly inputFingerprint: string;
-  readonly status: "applied" | "accepted" | "noop" | "rejected";
+  readonly status: "applied" | "accepted" | "noop" | "rejected" | "awaiting_confirmation";
+  readonly spendRequestId?: string | null;
   readonly changed?: ReadonlyArray<ObjectVersionInput>;
   readonly jobIds?: ReadonlyArray<string>;
   readonly issues?: ReadonlyArray<ContractIssueInput>;
@@ -427,7 +428,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "spend_quote_changed" | "spend_cap" | "spend_unknown" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -439,9 +440,9 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | SpendPolicyCommandInput | SpendReviewCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: GenerationQuoteQueryInput | ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: SpendStatusQueryInput | GenerationQuoteQueryInput | ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -954,7 +955,7 @@ export interface ObjectQueryInput extends QueryBaseInput {
 }
 
 export interface ObjectVersionInput extends ContractInput {
-  readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result";
+  readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result" | "spend_request" | "spend_call";
   readonly id: string;
   readonly revision: number;
 }
@@ -1019,6 +1020,7 @@ export interface PriceLineInput extends ContractInput {
 }
 
 export interface ProjectInput extends ContractInput {
+  readonly spendPolicy?: SpendPolicyInput | null;
   readonly id: string;
   readonly revision?: number;
   readonly name: string;
@@ -1081,6 +1083,8 @@ export interface ProjectSnapshotInput extends ContractInput {
   readonly jobs?: ReadonlyArray<JobInput>;
   readonly results?: ReadonlyArray<ResultVersionInput>;
   readonly eventCursor?: number;
+  readonly spendRequests?: ReadonlyArray<SpendRequestInput>;
+  readonly spendCalls?: ReadonlyArray<SpendCallInput>;
   readonly undoClearedThrough?: number;
 }
 
@@ -1264,10 +1268,58 @@ export interface SpecWriteInput extends ContractInput {
   readonly spec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
 }
 
+export interface SpendCallInput extends ProjectEntityInput {
+  readonly ownerId: string;
+  readonly line: PriceLineInput;
+  readonly createdAt: string;
+  readonly state?: "reserved" | "submitted" | "completed" | "released";
+  readonly usage?: number | string | null;
+  readonly calculated?: number | string | null;
+  readonly reported?: number | string | null;
+}
+
+export interface SpendPolicyInput extends ContractInput {
+  readonly currency?: "USD" | "CNY";
+  readonly threshold?: number | string | null;
+  readonly cap?: number | string | null;
+}
+
+export interface SpendPolicyCommandInput extends CommandBaseInput {
+  readonly type: "spend.policy";
+  readonly payload: SpendPolicyInput;
+}
+
 export interface SpendQuoteInput extends ContractInput {
   readonly count: number;
   readonly inputFingerprint: string;
   readonly lines: ReadonlyArray<PriceLineInput>;
+}
+
+export interface SpendRequestInput extends ProjectEntityInput {
+  readonly versions: ReadonlyArray<ObjectVersionInput>;
+  readonly quote: SpendQuoteInput;
+  readonly createdAt: string;
+  readonly status?: "pending" | "accepted" | "cancelled";
+  readonly agentRunId?: string | null;
+  readonly agentCallId?: string | null;
+  readonly decisionId?: string | null;
+}
+
+export interface SpendReviewInput extends ContractInput {
+  readonly requestId: string;
+  readonly fingerprint: string;
+  readonly decision: "approve" | "cancel";
+  readonly acceptUnknown?: boolean;
+  readonly newCap?: number | string | null;
+}
+
+export interface SpendReviewCommandInput extends CommandBaseInput {
+  readonly type: "spend.review";
+  readonly payload: SpendReviewInput;
+}
+
+export interface SpendStatusQueryInput extends QueryBaseInput {
+  readonly type: "spend.status";
 }
 
 export interface StackCanvasItemInput extends EditorCanvasItemInput {
@@ -1669,7 +1721,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | SpendPolicyCommandInput | SpendReviewCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -2087,7 +2139,8 @@ export interface CommandReceipt extends Contract {
   readonly commandId: string;
   readonly projectId: string;
   readonly inputFingerprint: string;
-  readonly status: "applied" | "accepted" | "noop" | "rejected";
+  readonly status: "applied" | "accepted" | "noop" | "rejected" | "awaiting_confirmation";
+  readonly spendRequestId?: string | null;
   readonly changed: ReadonlyArray<ObjectVersion>;
   readonly jobIds: ReadonlyArray<string>;
   readonly issues: ReadonlyArray<ContractIssue>;
@@ -2108,7 +2161,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "spend_quote_changed" | "spend_cap" | "spend_unknown" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2120,9 +2173,9 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | SpendPolicyCommand | SpendReviewCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
+  readonly query: SpendStatusQuery | GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2634,7 +2687,7 @@ export interface ObjectQuery extends QueryBase {
 }
 
 export interface ObjectVersion extends Contract {
-  readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result";
+  readonly objectType: "project" | "asset" | "generation_spec" | "reference" | "canvas_item" | "editor_document" | "job" | "result" | "spend_request" | "spend_call";
   readonly id: string;
   readonly revision: number;
 }
@@ -2699,6 +2752,7 @@ export interface PriceLine extends Contract {
 }
 
 export interface Project extends Contract {
+  readonly spendPolicy?: SpendPolicy | null;
   readonly id: string;
   readonly revision: number;
   readonly name: string;
@@ -2761,6 +2815,8 @@ export interface ProjectSnapshot extends Contract {
   readonly jobs: ReadonlyArray<Job>;
   readonly results: ReadonlyArray<ResultVersion>;
   readonly eventCursor: number;
+  readonly spendRequests?: ReadonlyArray<SpendRequest>;
+  readonly spendCalls?: ReadonlyArray<SpendCall>;
   readonly undoClearedThrough: number;
 }
 
@@ -2944,10 +3000,58 @@ export interface SpecWrite extends Contract {
   readonly spec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
 }
 
+export interface SpendCall extends ProjectEntity {
+  readonly ownerId: string;
+  readonly line: PriceLine;
+  readonly createdAt: string;
+  readonly state: "reserved" | "submitted" | "completed" | "released";
+  readonly usage: string | null;
+  readonly calculated: string | null;
+  readonly reported: string | null;
+}
+
+export interface SpendPolicy extends Contract {
+  readonly currency: "USD" | "CNY";
+  readonly threshold: string | null;
+  readonly cap: string | null;
+}
+
+export interface SpendPolicyCommand extends CommandBase {
+  readonly type: "spend.policy";
+  readonly payload: SpendPolicy;
+}
+
 export interface SpendQuote extends Contract {
   readonly count: number;
   readonly inputFingerprint: string;
   readonly lines: ReadonlyArray<PriceLine>;
+}
+
+export interface SpendRequest extends ProjectEntity {
+  readonly versions: ReadonlyArray<ObjectVersion>;
+  readonly quote: SpendQuote;
+  readonly createdAt: string;
+  readonly status: "pending" | "accepted" | "cancelled";
+  readonly agentRunId: string | null;
+  readonly agentCallId: string | null;
+  readonly decisionId: string | null;
+}
+
+export interface SpendReview extends Contract {
+  readonly requestId: string;
+  readonly fingerprint: string;
+  readonly decision: "approve" | "cancel";
+  readonly acceptUnknown: boolean;
+  readonly newCap: string | null;
+}
+
+export interface SpendReviewCommand extends CommandBase {
+  readonly type: "spend.review";
+  readonly payload: SpendReview;
+}
+
+export interface SpendStatusQuery extends QueryBase {
+  readonly type: "spend.status";
 }
 
 export interface StackCanvasItem extends EditorCanvasItem {
@@ -3349,7 +3453,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | SpendPolicyCommand | SpendReviewCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 

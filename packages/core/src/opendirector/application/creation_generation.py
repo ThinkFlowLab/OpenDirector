@@ -14,6 +14,7 @@ from uuid import uuid4, uuid5
 
 from filelock import FileLock, Timeout
 
+from opendirector.application import creation_spend
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.voice_library import VoiceLibrary
@@ -446,8 +447,8 @@ class CreationGeneration(GenerationRuntime):
         _, job, config, task, records = self._propose_job(before, command)
         return self._quote_job(job, config, task, records, count)
 
-    def prepare(self, command, *, session=None, source='ui', agent_origin=None):
-        replay = self.projects.replay(command)
+    def prepare(self, command, *, session=None, source='ui', agent_origin=None, review=None):
+        replay = self.projects.replay(review or command)
         if replay is not None:
             return replay
         # Voice registries are remote services. Probe outside the catalog/file
@@ -475,9 +476,18 @@ class CreationGeneration(GenerationRuntime):
                 voice_failure = error
         checks = voice_spec, voice_config, voice_failure, capability_identity, capability_failure
         def accept(before):
+            if review is not None:
+                validate_command(command, before)
             data, job, config, task, records = self._propose_job(before, command, agent_origin=agent_origin, checks=checks)
             if command.payload.count > 1 and job.inputSnapshot.spec.kind not in {'image', 'video'}:
                 raise ContractError('invalid_input', 'Multiple candidates require an image or video model.')
+            quote = self._quote_job(job, config, task, records, command.payload.count)
+            decision = creation_spend.decide(before, command, quote, agent_origin, review)
+            if review is None and decision is not before:
+                return decision
+            data['project'] = decision.project.model_dump(mode='json')
+            data['spendRequests'] = decision.spendRequests
+            calls = list(before.spendCalls)
             for index in range(command.payload.count):
                 candidate = job
                 if index:
@@ -490,12 +500,40 @@ class CreationGeneration(GenerationRuntime):
                 if command.payload.count > 1:
                     candidate = candidate.model_copy(update=dict(batchId=job.batchId or command.commandId))
                 data['jobs'].append(candidate.model_dump(mode='json'))
+                calls.extend(creation_spend.reserve_calls(candidate.id, candidate.projectId, quote))
+            data['spendCalls'] = calls
             return ProjectSnapshot.model_validate(data)
-        return self.projects.commit(command, accept, session=session, source=source)
+        return self.projects.commit(review or command, accept, session=session, source=source)
 
     async def execute(self, command, *, session=None, source='ui', agent_origin=None):
-        if command.type == 'generation.submit':
-            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source, agent_origin=agent_origin))
+        if command.type == 'spend.policy':
+            if source != 'ui':
+                raise ProjectError('Review spending in the project window.', 403)
+            return await asyncio.to_thread(self.projects.commit, command,
+                lambda before: creation_spend.save_policy(before, command.payload), session=session)
+        original, review = command, None
+        if command.type == 'spend.review':
+            if source != 'ui':
+                raise ProjectError('Review spending in the project window.', 403)
+            replay = self.projects.replay(command)
+            if replay:
+                return replay
+            request = creation_spend.get_request(self.projects.snapshot(command.projectId), command.payload.requestId)
+            if request.status != 'pending':
+                raise ProjectError('This request has already been reviewed.', 409)
+            if command.payload.decision == 'cancel':
+                def cancel_request(before):
+                    current = creation_spend.get_request(before, request.id)
+                    if current.status != 'pending' or current.quote.fingerprint() != command.payload.fingerprint:
+                        raise ContractError('spend_quote_changed', 'The request changed.')
+                    return creation_spend.resolve(before, current, command.commandId, 'cancelled')
+                return await asyncio.to_thread(self.projects.commit, command, cancel_request, session=session)
+            original = next(r.command for r in self.projects.records(command.projectId) if r.command.commandId == request.id)
+            agent_origin = (request.agentRunId, request.agentCallId) if request.agentRunId else None
+            review = command
+        if original.type == 'generation.submit':
+            pending = asyncio.create_task(asyncio.to_thread(self.prepare, original, session=session, source=source,
+                                                            agent_origin=agent_origin, review=review))
             async def finish():
                 try:
                     receipt = await pending

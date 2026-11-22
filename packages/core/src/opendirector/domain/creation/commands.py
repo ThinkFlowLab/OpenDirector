@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field, TypeAdapter, create_model, model_validat
 from .assets import AssetRef, MediaMetadata
 from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
 from .canvas import CanvasItem
+from .spend import SpendPolicy, SpendReview
 from .editors import EditorDocument
 from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
 from .generation import GenerationSpec, Job, PromptPart, Reference
@@ -291,7 +292,7 @@ class CommandBase(Contract):
     def required_versions(self) -> list[tuple[str, UUID]]:
         payload = self.payload
         required = []
-        if self.type in {'project.rename', 'project.trash', 'project.restore'}:
+        if self.type in {'project.rename', 'project.trash', 'project.restore', 'spend.policy'}:
             required = [('project', self.projectId)]
         elif self.type == 'canvas.publishMedia':
             required = [('canvas_item', payload.itemId), *[('asset', o.asset.assetId) for o in payload.outputs]]
@@ -358,6 +359,8 @@ _COMMANDS = (
     ('ReferenceUpdateCommand', 'reference.update', ReferenceWrite, 'Update a generation reference.'),
     ('ReferenceRestoreCommand', 'reference.restore', ReferenceWrite, 'Restore a generation reference.'),
     ('ReferenceRemoveCommand', 'reference.remove', ReferenceRemove, 'Deactivate a generation reference.'),
+    ('SpendPolicyCommand', 'spend.policy', SpendPolicy, 'Set project service spending controls.'),
+    ('SpendReviewCommand', 'spend.review', SpendReview, 'Record a human decision on a fixed request.'),
     ('GenerationSubmitCommand', 'generation.submit', GenerationSubmit, 'Submit a generation job with fixed inputs and an adoption policy.'),
     ('JobCancelCommand', 'job.cancel', JobControl, 'Request cancellation of an existing job.'),
     ('JobRecoverCommand', 'job.recover', JobControl, 'Recover an existing job without creating a new attempt.'),
@@ -409,7 +412,7 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+IssueCode = Literal[TimelineIssueCode, 'spend_quote_changed', 'spend_cap', 'spend_unknown', 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
@@ -440,7 +443,8 @@ class CommandReceipt(Contract):
     commandId: UUID = Field(description='Stable command ID for idempotent replay.')
     projectId: UUID = Field(description='Owning project ID.')
     inputFingerprint: Digest = Field(description='Fingerprint of the fixed execution input.')
-    status: Literal['applied', 'accepted', 'noop', 'rejected'] = Field(description='Current operation lifecycle state.')
+    status: Literal['applied', 'accepted', 'noop', 'rejected', 'awaiting_confirmation'] = Field(description='Current operation lifecycle state.')
+    spendRequestId: UUID | None = Field(default=None, exclude_if=lambda v: v is None, description='Batch awaiting a human spend decision.')
     changed: tuple[ObjectVersion, ...] = Field(default=(), description='Business objects changed by the operation.')
     jobIds: tuple[UUID, ...] = Field(default=(), description='Generation jobs associated with this operation.')
     issues: tuple[ContractIssue, ...] = Field(default=(), description='Validation or execution issues.')
@@ -468,6 +472,10 @@ class GenerationQuoteQuery(QueryBase):
     specId: UUID = Field(description='Generation specification to price.')
     originItemId: UUID | None = Field(default=None, description='Canvas item that owns the draft.')
     count: int = Field(default=1, strict=True, ge=1, le=8, description='Requested candidates.')
+
+
+class SpendStatusQuery(QueryBase):
+    type: Literal['spend.status'] = Field(description='Read policy, totals, coverage and pending human decisions.')
 
 
 class ProjectQuery(QueryBase):
@@ -510,7 +518,7 @@ class AssetPreviewQuery(QueryBase):
     objectId: UUID = Field(description='Asset ID.')
 
 
-Query = Annotated[GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
+Query = Annotated[SpendStatusQuery | GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
                   CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
 
 

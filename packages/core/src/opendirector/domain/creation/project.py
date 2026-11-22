@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from .assets import Asset, AssetRef
+from .spend import SpendCall, SpendPolicy, SpendRequest
 from .base import Contract, NonNegative, ObjectVersion, Point, ProjectEntity, Revision, unique
 from .canvas import CanvasItem, EditorBinding, GenerationBinding, MaterialBinding, MediaCanvasItem
 from .editors import EditorDocument, MediaEditDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
@@ -13,6 +14,7 @@ from ..rule_facts import TIMELINE_DURATION_EPSILON
 
 
 class Project(Contract):
+    spendPolicy: SpendPolicy | None = Field(default=None, exclude_if=lambda v: v is None, description='Optional service spend controls.')
     id: UUID = Field(description='Stable object ID.')
     revision: Revision = Field(default=1, description='Current object revision for optimistic concurrency.')
     name: str = Field(min_length=1, max_length=100, pattern=r'\S', description='User-visible name.')
@@ -62,6 +64,8 @@ class ProjectSnapshot(Contract):
     jobs: tuple[Job, ...] = Field(default=(), description='Immutable generation execution records.')
     results: tuple[ResultVersion, ...] = Field(default=(), description='Generated result candidates and adoption history.')
     eventCursor: int = Field(default=0, strict=True, ge=0, description='Latest committed project event cursor.')
+    spendRequests: tuple[SpendRequest, ...] = Field(default=(), exclude_if=lambda v: not v, description='Recorded decisions on fixed generation batches.')
+    spendCalls: tuple[SpendCall, ...] = Field(default=(), exclude_if=lambda v: not v, description='One reservation and its subsequent evidence per model call.')
     undoClearedThrough: int = Field(default=0, strict=True, ge=0, description='Event cursor through which undo history was cleared.')
 
     @model_validator(mode='after')
@@ -69,7 +73,7 @@ class ProjectSnapshot(Contract):
         if self.undoClearedThrough > self.eventCursor:
             raise ValueError('Undo clearing cannot point beyond the committed cursor')
         collections = (self.assets, self.generationSpecs, self.references, self.canvasItems,
-                       self.editorDocuments, self.jobs, self.results)
+                       self.editorDocuments, self.jobs, self.results, self.spendRequests, self.spendCalls)
         objects = [obj for collection in collections for obj in collection]
         unique([self.project.id, *(obj.id for obj in objects)], 'project object IDs')
         if any(obj.projectId != self.project.id for obj in objects):

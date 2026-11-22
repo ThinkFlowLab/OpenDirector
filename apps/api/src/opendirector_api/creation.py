@@ -138,7 +138,9 @@ def creation_routes(projects: CreationProjects, generation=None):
         imported_from = x_canvas_import if x_canvas_import in {'generated', 'edited'} else None
         if x_canvas_import is not None and imported_from is None:
             raise ProjectError('归档来源必须是 generated 或 edited。', 400)
-        if value.type in {'generation.submit', 'job.cancel', 'job.recover'}:
+        if value.type in {'spend.review', 'spend.policy'} and request.headers.get('sec-fetch-site') != 'same-origin':
+            raise ProjectError('Review spending in the local project window.', 403)
+        if value.type in {'generation.submit', 'spend.review', 'spend.policy', 'job.cancel', 'job.recover'}:
             if generation is None:
                 raise ProjectError('任务服务不可用。', 503)
             receipt = await generation.execute(value, session=session)

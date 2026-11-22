@@ -28,7 +28,7 @@ from opendirector.infrastructure.execution_files import execution_file
 from opendirector.installation import SOURCE_ROOT, BUNDLED
 
 ROOT = SOURCE_ROOT or BUNDLED
-EXCLUDED = {'project.create', 'project.trash', 'project.restore', 'asset.import', 'job.checkpoint',
+EXCLUDED = {'spend.policy', 'spend.review', 'project.create', 'project.trash', 'project.restore', 'asset.import', 'job.checkpoint',
             'canvas.applyEdit', 'canvas.publishMedia', 'timeline.publishRender'}
 
 QUERY_MODELS = get_args(get_args(Query)[0])
