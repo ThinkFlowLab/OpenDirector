@@ -330,7 +330,7 @@ try {
       submitReceipt = await response.json();
       assert.equal(
         submitReceipt.status,
-        "applied",
+        "accepted",
         JSON.stringify(submitReceipt),
       );
       finished = await until(
