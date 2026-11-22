@@ -8,14 +8,16 @@ export interface QuoteView {
   currency: SpendPolicy["currency"];
   amount: string | null;
   projectAfter: string | null;
+  subtotals: Record<string, string>;
 }
 
 export interface PendingSpend {
   request: SpendRequest;
   fingerprint: string;
-  reason: "ready" | "confirmation" | "unknown_confirmation" | "unpriced" | "over_cap";
+  reason: "ready" | "stale" | "upstream_confirmation" | "confirmation" | "unknown_confirmation" | "unpriced" | "over_cap";
   amount: string | null;
   shortfall: string | null;
+  subtotals: Record<string, string>;
 }
 
 export interface SpendStatus {
@@ -28,6 +30,7 @@ export interface SpendStatus {
   since: string | null;
   projectRevision: number;
   pending: PendingSpend[];
+  turn?: { callCount: number; settled: string; held: string; unknown: number };
 }
 
 export function spendQuery<T>(projectId: string, type: "spend.status" | "generation.quote", fields = {}, signal?: AbortSignal) {

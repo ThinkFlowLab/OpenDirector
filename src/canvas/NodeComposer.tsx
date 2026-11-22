@@ -288,7 +288,7 @@ export function NodeComposer({
     >
       <div className="cw-composer-body">
         {projectId && config && canRun && <GenerationEstimate projectId={projectId} itemId={selectedNode.id} modelId={config.id}
-          prompt={settings.prompt ?? ""} count={mode === "audio" ? 1 : settings.count ?? 1} priceRevision={JSON.stringify(backendModels.map(m => m.price))} />}
+          draft={settings} prompt={settings.prompt ?? ""} count={mode === "audio" ? 1 : settings.count ?? 1} priceRevision={JSON.stringify(backendModels.map(m => m.price))} />}
         {firstLast && (
           <div className="cw-frame-slots" aria-label={t("generation.frame.title")}>
             {(

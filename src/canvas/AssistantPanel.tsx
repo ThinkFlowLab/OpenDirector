@@ -8,7 +8,7 @@ import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
-import { ProjectSpend } from "./ProjectSpend";
+import { ProjectSpend, TurnSpend } from "./ProjectSpend";
 import { AssistantReply } from "./AssistantReply";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
@@ -438,6 +438,7 @@ export function AssistantPanel({
                   : message.model}</small>}
               </div>
             )}
+            {open && message.role === "assistant" && previous?.role === "user" && <TurnSpend projectId={documentId} turnId={previous.id} />}
             <div className="cw-assistant-message-text">
               {message.role === "assistant" ? (
                 <AssistantReply message={message} thinking={chat.thinkingNow} t={t} />

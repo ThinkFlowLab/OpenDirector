@@ -123,6 +123,16 @@ Selected voices are saved in the project; favorites are saved as browser prefere
 
 Agents use the same validation through `voice_list`, `voice_create`, and `voice_delete`. The [business CLI](cli.md) also exposes `voice list`, `voice create`, and `voice delete`.
 
+## Project spending
+
+Open **Project spend** on the canvas. A generation estimate lists the selected model, pricing unit, candidate count and batch total. Reference music lists transcription of the source recording and generation of the music separately. Following the recording uses the effective duration limit shown by the music model. For editing tools, expand the estimate to see each model call.
+
+In **Model connections**, set a unit price and currency for an individual model. This takes precedence over the built-in official price for an exact service endpoint and model. A self-hosted connection defaults to zero service fees. Unknown charges and different currencies remain visible separately. The ledger covers media service calls. Equipment costs and assistant subscriptions are separate expenses.
+
+Set **Confirm above** for human review when an entire batch exceeds that amount. **Project cap** also counts accepted calls awaiting settlement. Review the batch in the canvas or chat. When the cap is insufficient, the card shows the balance and shortfall. Raising the cap and starting the batch is one action. With a cap enabled, calls with an unknown maximum require a price in the project currency. If a workflow needs an upstream result, review its runnable steps first and then the downstream estimate based on the saved result. The CLI returns the local review link and supports `query spend.status`.
+
+Spend history retains the original estimate, any charge calculated from confirmed usage, and any amount explicitly reported by the service. A lost response leaves the call pending verification. Restoring a full project backup retains these records. Importing an asset into a new project starts with that project's own usage history. Undo applies to creative edits.
+
 ## Monitor and manage generation tasks
 
 Open **Generation history** at the top right to view task progress, results, and failure details.

@@ -94,8 +94,37 @@ try {
     assert.equal(new Set(completed.jobs.map(job => job.id)).size, 3);
     assert.equal(posts.length - before, 3);
     assert.ok(posts.slice(before).every(post => post.prompt === "Blue" && post.n === 1));
+    assert.ok(completed.spendCalls.every(c => c.state === "completed" && Number(c.calculated) === 0.4));
+    // Put the second batch above the remaining cap, then review it from chat.
+    const controls = page.locator(".cw-spend-canvas");
+    const cap = controls.getByLabel(en ? "Project cap" : "工程上限", {exact: true});
+    if (!await cap.isVisible()) await controls.getByText(en ? "Spending controls" : "费用设置", {exact:true}).click();
+    await cap.fill("2");
+    await controls.getByRole("button", {name: en ? "Save" : "保存", exact: true}).click();
+    await until(() => call(path), s => Number(s.project.spendPolicy?.cap) === 2);
+    const second = () => page.evaluate(async ({pid, itemId}) => {
+      const {creationClient} = await import("/src/backend/creationClient.ts");
+      return creationClient(pid).submit(itemId, "if_current", undefined, undefined, 3);
+    }, {pid, itemId});
+    assert.equal((await second()).status, "awaiting_confirmation");
+    const assistant = page.locator("#canvas-assistant");
+    if (!await assistant.isVisible()) await page.locator(".cw-chat-button").click();
+    const card = assistant.locator(".cw-spend-card");
+    await card.getByText(/0\.80/).waitFor();
+    await card.getByRole("button", {name: en ? "Cancel request" : "取消申请"}).click();
+    await until(() => call(path), s => s.spendRequests.at(-1).status === "cancelled");
+    assert.equal(posts.length - before, 3);
+    const third = await second();
+    assert.equal(third.status, "awaiting_confirmation");
+    const current = assistant.locator(`[data-spend-request="${third.spendRequestId}"]`);
+    await current.getByLabel(en ? "New project cap" : "新的工程上限").fill("2.40");
+    await current.getByRole("button", {name: en ? "Raise cap and run this batch" : "提高上限并运行本批"}).click();
+    const raised = await until(() => call(path), s => s.jobs.length === 6 && s.jobs.every(j => j.status === "succeeded"));
+    assert.equal(Number(raised.project.spendPolicy.cap), 2.4);
+    assert.equal(raised.spendCalls.length, 6);
+    assert.equal(posts.length - before, 6);
     assert.deepEqual(errors, []);
-    console.log(locale, "USD 1.20 shown; 0 calls pending; 3 jobs and 3 provider requests");
+    console.log(locale, "USD 1.20 batch, zero calls pending, cancellation, USD 0.40 shortfall, chat approval, six settled calls");
     await page.close();
   }
 } finally {

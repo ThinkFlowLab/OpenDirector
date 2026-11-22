@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { errorMessage } from "../../backend/api.ts";
-import { creationClient } from "../../backend/creationClient.ts";
+import { creationClient, objectVersion } from "../../backend/creationClient.ts";
 import { type GenerationRequest } from "../../backend/generation.ts";
 import { modelLabel } from "../../backend/rules.ts";
 import { workspaceProjection } from "../../backend/workspace.ts";
@@ -16,7 +16,7 @@ import { imageAnnotationPayload } from "../imageActionPayload";
 import { appendPendingResult, removePendingResult, validateNodeActionSource, type GenerationResultMode, type LinkedMediaResult, type ResultSource } from "../linkedResults";
 import { type CanvasNode } from "../model";
 import { groupDescendants } from "../operations";
-import { runWorkflowSteps } from "../groupWorkflow";
+import { runWorkflowSteps, workflowDependencies } from "../groupWorkflow";
 import { getNodeGenerationSettings } from "../NodeComposer";
 import { serviceGenerationPlan, textGenerationPlan } from "../workspaceInteraction.ts";
 import { generationPrepareBlock } from "./entryPoints.ts";
@@ -384,6 +384,11 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
         },
         run.controller.signal,
       );
+      if (submitted.spendRequestId) {
+        setJobs(await readJobs());
+        notify(t("spend.waiting"));
+        return;
+      }
       Object.assign(run, submitted);
       updateJob(id, { taskId: submitted.taskId });
       setJobs(await readJobs());
@@ -729,6 +734,29 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     );
     if (!steps.length) {
       notify(t("canvas.workspace.group.noRunnableNodes"));
+      return;
+    }
+    const client = creationClient(document.id);
+    const policy = client.snapshot.project.spendPolicy;
+    if (policy && (policy.cap != null || policy.threshold != null)) {
+      try {
+        if (!await persist(document)) return;
+        const snapshot = await client.refresh();
+        const dependencies = workflowDependencies(steps.map(node => node.id), document.edges);
+        const members = steps.map(node => {
+          const item = snapshot.canvasItems.find(i => i.id === node.id);
+          const specId = item?.binding.role === "generation" ? item.binding.objectRef.id :
+            item && "draftSpec" in item.binding ? item.binding.draftSpec?.id : undefined;
+          const spec = snapshot.generationSpecs.find(s => s.id === specId);
+          if (!item || !spec) throw new Error(t("errors.backend.noGenerationConfig"));
+          const count = node.type === "image" || node.type === "video" ? getNodeGenerationSettings(node, backendCatalog.models).count ?? 1 : 1;
+          return { item, spec, count };
+        });
+        const receipt = await client.command("generation.group", {
+          members: members.map(({item, spec, count}) => ({ itemId: item.id, specId: spec.id, count, after: [...dependencies.get(item.id)!] })),
+        }, members.flatMap(({item, spec}) => [objectVersion("canvas_item", item), objectVersion("generation_spec", spec)]));
+        notify(receipt.status === "awaiting_confirmation" ? t("spend.waiting") : t("canvas.workspace.group.workflowStarted", { count: steps.length }));
+      } catch (failure) { notify(errorMessage(failure)); }
       return;
     }
     notify(t("canvas.workspace.group.workflowStarted", { count: steps.length }));

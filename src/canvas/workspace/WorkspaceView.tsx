@@ -1,5 +1,6 @@
 import { projectDisplayName } from "../projectDisplayName";
-import { ProjectSpend } from "../ProjectSpend";
+import type { ModelConfig } from "../../backend/rules.ts";
+import { ProjectSpend, ToolEstimate } from "../ProjectSpend";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
@@ -1725,6 +1726,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 onGenerate={(task) => void runToolTask(activeAction, task)}
               />
             )}
+            <ToolEstimate projectId={doc.id} itemId={actionNode.id} tool={activeAction.tool} priceRevision={JSON.stringify(backendCatalog.models.map((m: ModelConfig) => m.price))} />
           </div>
         </>
       )}
