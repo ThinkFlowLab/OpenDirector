@@ -287,8 +287,6 @@ export function NodeComposer({
       onEscape={() => setPanel(null)}
     >
       <div className="cw-composer-body">
-        {projectId && config && canRun && <GenerationEstimate projectId={projectId} itemId={selectedNode.id} modelId={config.id}
-          draft={settings} prompt={settings.prompt ?? ""} count={mode === "audio" ? 1 : settings.count ?? 1} priceRevision={JSON.stringify(backendModels.map(m => m.price))} />}
         {firstLast && (
           <div className="cw-frame-slots" aria-label={t("generation.frame.title")}>
             {(
@@ -502,6 +500,19 @@ export function NodeComposer({
             {t("generation.bigmodel.watermarkWaiver")}
           </p>
         )}
+      {projectId && config && canRun && (
+        <div className="cw-composer-quote">
+          <GenerationEstimate
+            projectId={projectId}
+            itemId={selectedNode.id}
+            modelId={config.id}
+            draft={settings}
+            prompt={settings.prompt ?? ""}
+            count={mode === "audio" ? 1 : settings.count ?? 1}
+            priceRevision={JSON.stringify(backendModels.map(model => model.price))}
+          />
+        </div>
+      )}
       <div className="cw-composer-footer">
         <div className="cw-composer-options">
           <SearchableSelect

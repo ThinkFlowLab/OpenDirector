@@ -76,12 +76,39 @@ try {
     }, { pid, modelId: model.id });
     await page.locator(`.react-flow__node[data-id="${itemId}"]`).click();
     const composer = page.locator(".cw-generation-composer");
+    // Let the real quotation reach the browser between pointer down and pointer up.
+    let releaseQuote;
+    const waitForRelease = new Promise(resolve => { releaseQuote = resolve; });
+    const quotePath = "**" + path + "/queries";
+    const isBatchQuote = request => {
+      const body = request.postDataJSON();
+      return body?.type === "generation.quote" && body.count === 3;
+    };
+    await page.route(quotePath, async route => {
+      if (!isBatchQuote(route.request())) return route.continue();
+      const response = await route.fetch();
+      await waitForRelease;
+      await route.fulfill({response});
+    });
+    const pendingQuote = page.waitForRequest(request => request.url().endsWith(path + "/queries") && isBatchQuote(request));
     await composer.locator(".cw-parameter-trigger").click();
     await page.locator(".cw-count-options").getByRole("button", { name: "3", exact: true }).click();
     await composer.locator(".cw-parameter-trigger").click();
-    await composer.locator(".cw-spend-estimate summary").filter({ hasText: "1.20" }).waitFor();
+    await pendingQuote;
+    const run = composer.locator("button.cw-run-button");
+    await run.hover();
+    const initial = await run.boundingBox();
+    await page.mouse.move(initial.x + initial.width / 2, initial.y + initial.height / 2);
     const before = posts.length;
-    await composer.locator("button.cw-run-button").click();
+    await page.mouse.down();
+    releaseQuote();
+    await composer.locator(".cw-spend-estimate summary").filter({ hasText: "1.20" }).waitFor();
+    const quoted = await run.boundingBox();
+    if (process.env.CREATION_SCREENSHOTS) await composer.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-composer-${locale}.png`});
+    await page.mouse.up();
+    const movement = Math.hypot(quoted.x - initial.x, quoted.y - initial.y);
+    assert.ok(movement <= 1, `Run moved by ${movement}px as the quote arrived`);
+    await page.unroute(quotePath);
     await toggle.filter({ hasText: "(1)" }).or(toggle.filter({ hasText: "（1）" })).waitFor();
     const pending = await call(path);
     assert.equal(pending.jobs.length, 0);
@@ -127,7 +154,7 @@ try {
     assert.equal(raised.spendCalls.length, 6);
     assert.equal(posts.length - before, 6);
     assert.deepEqual(errors, []);
-    console.log(locale, "USD 1.20 batch, zero calls pending, cancellation, USD 0.40 shortfall, chat approval, six settled calls");
+    console.log(locale, `Run moved ${movement}px while quoting; USD 1.20 batch, zero calls pending, cancellation, USD 0.40 shortfall, chat approval, six settled calls`);
     const grouped = crypto.randomUUID(), groupPath = `/api/creation/projects/${grouped}`;
     await call(groupPath + "/commands", {type: "project.create", commandId: crypto.randomUUID(), projectId: grouped, payload: {name: "Workflow " + grouped.slice(0, 8)}});
     await page.goto(`${web}/ai-tool/ai-canvas/${grouped}`);

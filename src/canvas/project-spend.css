@@ -2,6 +2,7 @@
 .cw-spend-toggle, .cw-spend-panel, .cw-spend-form input, .cw-spend-form select, .cw-spend-card input {
   border: 1px solid var(--settings-border); border-radius: 8px; background: var(--settings-surface); color: var(--settings-text);
 }
+.cw-bottom-left:has(.cw-spend-canvas) { z-index: 19; }
 .cw-spend-toggle { min-height: 36px; padding: 0 10px; cursor: pointer; }
 .cw-spend-panel { padding: 14px; box-shadow: 0 5px 20px #2736471a; }
 .cw-spend-canvas .cw-spend-panel { position: absolute; bottom: 44px; left: 0; width: min(350px, 82vw); max-height: 72vh; overflow: auto; z-index: 12; }
@@ -17,6 +18,17 @@
 .cw-spend-form label, .cw-spend-card label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cw-spend-form input, .cw-spend-form select, .cw-spend-card input { width: 9em; padding: 4px; }
 .cw-spend-actions button, .cw-spend-form button { background: var(--settings-active); color: var(--settings-text); padding: 5px 10px; border: 0; border-radius: 6px; cursor: pointer; }
+.cw-composer-quote {
+  flex: 0 0 auto;
+  min-height: 1.5em;
+  max-height: 28vh;
+  overflow: auto;
+  margin: 6px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--settings-muted);
+}
+.cw-composer-quote .cw-spend-estimate { margin: 0; }
 .cw-group-estimate { width: max-content; max-width: 320px; max-height: 32vh; overflow: auto; background: var(--settings-surface); border: 1px solid var(--settings-border); border-radius: 8px; padding: 5px 9px; pointer-events: auto; }
 .cw-spend-actions button:hover, .cw-spend-form button:hover { background: var(--settings-hover); }
 .cw-spend-actions button:disabled { opacity: .55; cursor: default; }

@@ -2,6 +2,8 @@
 export const generation = {
   "spend.title": "Project spend",
   "spend.estimate": { one: "{count} candidate · {amount} estimated", other: "{count} candidates · {amount} estimated" },
+  "spend.estimating": "Calculating estimate…",
+  "spend.estimateUnavailable": "Estimate unavailable",
   "spend.batchLine": "{amount} each × {count}",
   "spend.after": "Project total {amount}",
   "spend.unknown": "Unknown price",

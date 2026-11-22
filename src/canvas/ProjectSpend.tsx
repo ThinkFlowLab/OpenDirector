@@ -63,7 +63,7 @@ export function GenerationEstimate({ projectId, itemId, count, modelId, prompt, 
 }) {
   const { t, locale } = useI18n();
   const snapshot = useSnapshot(projectId);
-  const [result, setResult] = useState<{ key: string; value: QuoteView }>();
+  const [result, setResult] = useState<{ key: string; value: QuoteView | null }>();
   const item = snapshot?.canvasItems.find(i => i.id === itemId);
   const specId = item?.binding.role === "generation" ? item.binding.objectRef.id :
     item && "draftSpec" in item.binding ? item.binding.draftSpec?.id : undefined;
@@ -81,11 +81,13 @@ export function GenerationEstimate({ projectId, itemId, count, modelId, prompt, 
     const timer = window.setTimeout(() => {
       void spendQuery<QuoteView>(projectId, "generation.quote", { specId, originItemId: itemId, count }, abort.signal)
         .then(value => { if (!abort.signal.aborted) setResult({ key, value }); })
-        .catch(() => { if (!abort.signal.aborted) setResult(undefined); });
+        .catch(() => { if (!abort.signal.aborted) setResult({ key, value: null }); });
     }, 180);
     return () => { clearTimeout(timer); abort.abort(); };
   }, [projectId, itemId, specId, count, matches, key]);
-  if (!matches || result?.key !== key) return null;
+  if (!matches) return null;
+  if (result?.key !== key) return <span aria-busy="true">{t("spend.estimating")}</span>;
+  if (!result.value) return <span>{t("spend.estimateUnavailable")}</span>;
   const { amount, currency, projectAfter, quote } = result.value;
   return <details className="cw-spend-estimate">
     <summary>{t("spend.estimate", { count, amount: amount == null ? t("spend.unknown") : money(amount, currency, locale) })}

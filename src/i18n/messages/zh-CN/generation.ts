@@ -2,6 +2,8 @@
 export const generation = {
   "spend.title": "工程费用",
   "spend.estimate": { one: "{count} 个候选 · 预计 {amount}", other: "{count} 个候选 · 预计 {amount}" },
+  "spend.estimating": "正在估算费用…",
+  "spend.estimateUnavailable": "暂时无法估价",
   "spend.batchLine": "每个 {amount} × {count}",
   "spend.after": "工程预计合计 {amount}",
   "spend.unknown": "价格未知",
