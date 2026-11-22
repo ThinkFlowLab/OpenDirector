@@ -510,7 +510,7 @@ class CreationGeneration(GenerationRuntime):
         def accept(before):
             if review is not None:
                 validate_command(command, before)
-            elif any(r.status == 'pending' and (
+            elif command.payload.specId in creation_spend.pending_workflow_specs(before) or any(r.status == 'pending' and (
                 command.payload.batchId is not None and command.payload.batchId in (r.id, r.batchId, r.workflowId)
                 or r.specId == command.payload.specId and command.payload.count < r.quote.count
             ) for r in before.spendRequests):

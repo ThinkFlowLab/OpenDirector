@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { errorMessage } from "../../backend/api.ts";
-import { creationClient, objectVersion } from "../../backend/creationClient.ts";
+import { creationClient } from "../../backend/creationClient.ts";
 import { type GenerationRequest } from "../../backend/generation.ts";
 import { modelLabel } from "../../backend/rules.ts";
 import { workspaceProjection } from "../../backend/workspace.ts";
@@ -15,9 +15,8 @@ import { lockedNodeIds } from "../hierarchy";
 import { imageAnnotationPayload } from "../imageActionPayload";
 import { appendPendingResult, removePendingResult, validateNodeActionSource, type GenerationResultMode, type LinkedMediaResult, type ResultSource } from "../linkedResults";
 import { type CanvasNode } from "../model";
-import { groupDescendants } from "../operations";
-import { runWorkflowSteps, workflowDependencies } from "../groupWorkflow";
-import { getNodeGenerationSettings } from "../NodeComposer";
+import { workflowRequest, workflowSteps } from "./workflowMembers.ts";
+import { getNodeGenerationSettings } from "../generationSettings.ts";
 import { serviceGenerationPlan, textGenerationPlan } from "../workspaceInteraction.ts";
 import { generationPrepareBlock } from "./entryPoints.ts";
 import { JobFailureNotifications } from "./jobFailureNotifications.ts";
@@ -643,149 +642,22 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     );
     return none;
   };
-  /** Latest render's generation entry point; a workflow outlives the render that started it. */
-  const prepareLatest = useRef(prepareGeneration);
-  prepareLatest.current = prepareGeneration;
-  /**
-   * Resolves once every job is terminal (true when one succeeded), or false
-   * when the canvas has switched to another project.
-   */
-  const awaitJobs = (documentId: string, jobIds: readonly string[]) =>
-    new Promise<boolean>((resolve) => {
-      const client = creationClient(documentId);
-      const terminal = ["succeeded", "failed", "cancelled", "interrupted"];
-      let finish = () => {};
-      const check = () => {
-        if (!mounted.current || historyRef.current.present.id !== documentId) {
-          finish();
-          resolve(false);
-          return;
-        }
-        const states = jobIds.map(
-          (id) => client.snapshot.jobs.find((job) => job.id === id)?.status,
-        );
-        if (!states.every((status) => status && terminal.includes(status))) return;
-        finish();
-        resolve(states.includes("succeeded"));
-      };
-      const stop = client.listen(check);
-      const poll = setInterval(check, 1000);
-      finish = () => {
-        stop();
-        clearInterval(poll);
-      };
-      check();
-    });
-  /**
-   * Waits until the canvas shows the result the service adopted for the node,
-   * so a downstream step reads the new content (for example generated text
-   * used as its prompt). Resolves false when no result was adopted (a
-   * candidate-only result, or inputs edited while running), after three
-   * minutes, or when the canvas switched project.
-   */
-  const awaitDisplayed = (documentId: string, nodeId: string, jobIds: readonly string[]) =>
-    new Promise<boolean>((resolve) => {
-      const snapshot = creationClient(documentId).snapshot;
-      const adopted = new Set(
-        snapshot.jobs.filter((job) => jobIds.includes(job.id) && job.adopted).map((job) => job.id),
-      );
-      const assets = new Set(
-        snapshot.results
-          .filter((result) => adopted.has(result.jobId))
-          .map((result) => result.asset.assetId),
-      );
-      if (!assets.size) {
-        resolve(false);
-        return;
-      }
-      const started = Date.now();
-      const check = () => {
-        const present = historyRef.current.present;
-        const node = present.nodes.find((candidate) => candidate.id === nodeId);
-        const done =
-          present.id === documentId && node && assets.has(node.data.backendAssetId ?? "")
-            ? true
-            : !mounted.current || present.id !== documentId || !node || Date.now() - started > 180_000
-              ? false
-              : undefined;
-        if (done === undefined) return;
-        clearInterval(poll);
-        resolve(done);
-      };
-      const poll = setInterval(check, 200);
-      check();
-    });
-  /**
-   * Runs a group's generation nodes. A node waits for the members it
-   * references, directly or through non-generating nodes, and is skipped when
-   * one of them fails; independent nodes run concurrently. Submissions go one
-   * at a time, as the project's command queue would serialize them anyway, so
-   * each starts from the canvas the previous one left behind.
-   */
   const runGroupWorkflow = async (groupId: string) => {
     const document = historyRef.current.present;
-    const steps = groupDescendants(document.nodes, groupId).filter((node) =>
-      isWorkflowStep(
-        node,
-        document.edges.some(
-          (edge) => edge.target === node.id && edge.intent !== "post_edit_result",
-        ),
-      ),
-    );
-    if (!steps.length) {
+    if (!workflowSteps(document, groupId).length) {
       notify(t("canvas.workspace.group.noRunnableNodes"));
       return;
     }
-    const client = creationClient(document.id);
-    const policy = client.snapshot.project.spendPolicy;
-    if (policy && (policy.cap != null || policy.threshold != null)) {
-      try {
-        if (!await persist(document)) return;
-        const snapshot = await client.refresh();
-        const dependencies = workflowDependencies(steps.map(node => node.id), document.edges);
-        const members = steps.map(node => {
-          const item = snapshot.canvasItems.find(i => i.id === node.id);
-          const specId = item?.binding.role === "generation" ? item.binding.objectRef.id :
-            item && "draftSpec" in item.binding ? item.binding.draftSpec?.id : undefined;
-          const spec = snapshot.generationSpecs.find(s => s.id === specId);
-          if (!item || !spec) throw new Error(t("errors.backend.noGenerationConfig"));
-          const count = node.type === "image" || node.type === "video" ? getNodeGenerationSettings(node, backendCatalog.models).count ?? 1 : 1;
-          return { item, spec, count };
-        });
-        const receipt = await client.command("generation.group", {
-          members: members.map(({item, spec, count}) => ({ itemId: item.id, specId: spec.id, count, after: [...dependencies.get(item.id)!] })),
-        }, members.flatMap(({item, spec}) => [objectVersion("canvas_item", item), objectVersion("generation_spec", spec)]));
-        notify(receipt.status === "awaiting_confirmation" ? t("spend.waiting") : t("canvas.workspace.group.workflowStarted", { count: steps.length }));
-      } catch (failure) { notify(errorMessage(failure)); }
-      return;
-    }
-    notify(t("canvas.workspace.group.workflowStarted", { count: steps.length }));
-    let submissions: Promise<unknown> = Promise.resolve();
-    const result = await runWorkflowSteps(
-      steps.map((node) => node.id),
-      document.edges,
-      async (id) => {
-        const submitted = submissions.then(() =>
-          historyRef.current.present.id === document.id
-            ? prepareLatest.current(id)
-            : [],
-        );
-        submissions = submitted.catch(() => undefined);
-        const jobIds = await submitted;
-        if (!jobIds.length || !(await awaitJobs(document.id, jobIds))) return false;
-        return awaitDisplayed(document.id, id, jobIds);
-      },
-    );
-    if (historyRef.current.present.id !== document.id) return;
-    notify(
-      result.failed.length || result.skipped.length
-        ? t("canvas.workspace.group.workflowIncomplete", {
-            succeeded: result.succeeded.length,
-            failed: result.failed.length,
-            skipped: result.skipped.length,
-          })
-        : t("canvas.workspace.group.workflowDone", { count: steps.length }),
-    );
+    try {
+      if (!await persist(document)) return;
+      const client = creationClient(document.id);
+      const workflow = workflowRequest(document, groupId, await client.refresh(), backendCatalog.models);
+      if (!workflow) throw new Error(t("errors.backend.noGenerationConfig"));
+      // The project budget may have changed in another window since this render.
+      const receipt = await client.command("generation.group", {members: workflow.members}, workflow.versions);
+      notify(receipt.status === "awaiting_confirmation" ? t("spend.waiting") :
+        t("canvas.workspace.group.workflowStarted", {count: workflow.members.length}));
+    } catch (failure) { notify(errorMessage(failure)); }
   };
   const importActionResultFiles = async (files: File[]) => {
     const binding = resultBinding.current;
@@ -862,15 +734,4 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   rt.runGroupWorkflow = runGroupWorkflow;
   rt.importActionResultFiles = importActionResultFiles;
   rt.cancelResultImport = cancelResultImport;
-}
-
-/**
- * Group members a workflow run generates: nodes with a configured model and a
- * prompt (media may instead take their prompt from connected references).
- */
-function isWorkflowStep(node: CanvasNode, referenced: boolean): boolean {
-  const prompt = Boolean(node.data.prompt?.trim() || node.data.promptContent?.length);
-  if (node.type === "text") return Boolean(node.data.agentSettings?.modelConfigId && prompt);
-  if (!["image", "video", "audio"].includes(node.type)) return false;
-  return Boolean(node.data.settings?.modelConfigId && (prompt || referenced));
 }

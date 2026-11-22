@@ -125,6 +125,46 @@ try {
     assert.equal(posts.length - before, 6);
     assert.deepEqual(errors, []);
     console.log(locale, "USD 1.20 batch, zero calls pending, cancellation, USD 0.40 shortfall, chat approval, six settled calls");
+    const grouped = crypto.randomUUID(), groupPath = `/api/creation/projects/${grouped}`;
+    await call(groupPath + "/commands", {type: "project.create", commandId: crypto.randomUUID(), projectId: grouped, payload: {name: "Workflow " + grouped.slice(0, 8)}});
+    await page.goto(`${web}/ai-tool/ai-canvas/${grouped}`);
+    await page.locator(".cw-spend-toggle").waitFor();
+    const groupId = await page.evaluate(async ({pid, modelId}) => {
+      const {creationClient, objectVersion} = await import("/src/backend/creationClient.ts");
+      const client = creationClient(pid), groupId = crypto.randomUUID();
+      await client.command("canvas.show", {item: {id: groupId, projectId: pid, kind: "group", title: "Workflow", width: 820, height: 420, position: {x: 0, y: 0}}});
+      for (const [i, prompt] of ["First panel", "Second panel"].entries()) {
+        const specId = crypto.randomUUID();
+        const parent = client.snapshot.canvasItems.find(item => item.id === groupId);
+        await client.command("canvas.createGeneration", {
+          spec: {id: specId, projectId: pid, kind: "image", purpose: "generation", modelConfigId: modelId, prompt, parameters: {size: "1024x1024"}},
+          item: {id: crypto.randomUUID(), projectId: pid, kind: "image", parentId: groupId, position: {x: 60 + i * 360, y: 80},
+            binding: {role: "generation", objectRef: {id: specId}}},
+        }, [objectVersion("canvas_item", parent)]);
+      }
+      return groupId;
+    }, {pid: grouped, modelId: model.id});
+    const groupNode = page.locator(`.react-flow__node[data-id="${groupId}"]`);
+    await groupNode.click({position: {x: 12, y: 14}});
+    await page.locator(".cw-group-estimate summary").filter({hasText: "0.80"}).click();
+    assert.equal(await page.locator(".cw-group-estimate li").count(), 2);
+    assert.equal((await call(groupPath)).jobs.length, 0);
+    assert.equal(posts.length - before, 6);
+    await page.evaluate(async pid => {
+      const {creationClient, objectVersion} = await import("/src/backend/creationClient.ts");
+      const client = creationClient(pid);
+      await client.command("spend.policy", {threshold: "0.60", currency: "USD"}, [objectVersion("project", client.snapshot.project)]);
+    }, grouped);
+    await page.getByRole("button", {name: en ? "Run workflow" : "运行工作流", exact: true}).click();
+    const groupPending = await until(() => call(groupPath), s => s.spendRequests?.some(r => r.status === "pending"));
+    assert.equal(groupPending.spendRequests.at(-1).groupItems.length, 2);
+    assert.equal(groupPending.jobs.length, 0);
+    await page.locator(".cw-spend-toggle").click();
+    await page.locator(".cw-spend-canvas .cw-spend-card").getByRole("button", {name: en ? "Cancel request" : "取消申请"}).click();
+    await until(() => call(groupPath), s => s.spendRequests.at(-1).status === "cancelled");
+    assert.equal(posts.length - before, 6);
+    assert.deepEqual(errors, []);
+    console.log(locale, "two-step workflow preview USD 0.80, entire workflow cancelled with zero calls");
     await page.close();
   }
 } finally {

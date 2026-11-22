@@ -36,6 +36,7 @@ class PriceLine(Contract):
 class SpendQuote(Contract):
     fromUpstream: bool = Field(default=False, exclude_if=lambda v: not v, description='Inputs are newly resolved upstream results.')
     candidates: int | None = Field(default=None, exclude_if=lambda v: v is None, description='Total candidates across distinct group members.')
+    skipped: tuple[UUID, ...] = Field(default=(), exclude_if=lambda v: not v, description='Workflow items blocked by a failed dependency or reference cycle.')
     deferred: tuple[UUID, ...] = Field(default=(), exclude_if=lambda v: not v, description='Workflow items awaiting upstream inputs.')
     count: int = Field(ge=1, le=8, description='Number of fixed candidates in this action.')
     inputFingerprint: Digest = Field(description='Identity of the effective model inputs.')
@@ -155,7 +156,7 @@ def spend_summary(snapshot):
     totals = call_totals(snapshot.spendCalls, policy.currency)
     owners = {call.ownerId for call in snapshot.spendCalls}
     return dict(policy=policy, **totals,
-        available=None if policy.cap is None else policy.cap - totals['settled'] - totals['held'],
+        available=None if policy.cap is None or totals['unknown'] else policy.cap - totals['settled'] - totals['held'],
         legacy=sum(j.execution.kind != 'text' and j.id not in owners for j in snapshot.jobs),
         since=min((c.createdAt for c in snapshot.spendCalls), default=None))
 
@@ -169,7 +170,7 @@ def spend_decision(summary, quote):
     if amount is None:
         return 'unpriced' if policy.cap is not None else 'unknown_confirmation' if policy.threshold is not None else 'ready'
     if policy.cap is not None and summary['unknown']:
-        return 'unpriced'
+        return 'prior_unknown'
     if policy.cap is not None and amount > summary['available']:
         return 'over_cap'
     if controlled and quote.deferred:

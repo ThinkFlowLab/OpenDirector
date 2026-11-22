@@ -845,7 +845,19 @@ class CreationCanvas:
     async def query(self, query: Query) -> JsonValue:
         if query.type == 'spend.status':
             from opendirector.application.creation_spend import review_status
-            return to_jsonable_python(await asyncio.to_thread(lambda: review_status(self.projects.snapshot(query.projectId), query.agentRunId)))
+            def status():
+                snapshot = self.projects.snapshot(query.projectId)
+                result = review_status(snapshot, query.agentRunId)
+                if query.agentRunId is None and self.generation is not None and self.generation.tools is not None:
+                    owners = {str(call.ownerId) for call in snapshot.spendCalls}
+                    result['legacy'] += self.generation.tools.untracked_calls(str(query.projectId), owners)
+                return result
+            return to_jsonable_python(await asyncio.to_thread(status))
+        if query.type == 'generation.groupQuote':
+            if self.generation is None:
+                raise ProjectError('Generation service unavailable.', 503)
+            from opendirector.application.creation_groups import preview
+            return to_jsonable_python(await asyncio.to_thread(preview, self.generation, query))
         if query.type == 'generation.quote':
             if self.generation is None:
                 raise ProjectError('Generation service unavailable.', 503)

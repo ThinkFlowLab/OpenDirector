@@ -1,4 +1,5 @@
-import type { GenerationSettings } from "./model.ts";
+import { workflowRequest } from "./workspace/workflowMembers.ts";
+import type { CanvasDocument, GenerationSettings } from "./model.ts";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { errorMessage, json, request } from "../backend/api.ts";
 import { creationClient, objectVersion } from "../backend/creationClient.ts";
@@ -90,6 +91,34 @@ export function GenerationEstimate({ projectId, itemId, count, modelId, prompt, 
   </details>;
 }
 
+export function GroupEstimate({ document, groupId, models }: {
+  document: CanvasDocument; groupId: string; models: readonly ModelConfig[];
+}) {
+  const { t, locale } = useI18n();
+  const snapshot = useSnapshot(document.id);
+  const workflow = snapshot && workflowRequest(document, groupId, snapshot, models);
+  const members = workflow && JSON.stringify(workflow.members);
+  const key = JSON.stringify([document.id, members, snapshot?.eventCursor, models.map(model => model.price)]);
+  const [result, setResult] = useState<{ key: string; value: QuoteView }>();
+  useEffect(() => {
+    if (!members) return;
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => {
+      void spendQuery<QuoteView>(document.id, "generation.groupQuote", {workflow: {members: JSON.parse(members)}}, abort.signal)
+        .then(value => { if (!abort.signal.aborted) setResult({ key, value }); }).catch(() => {});
+    }, 180);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [document.id, members, key]);
+  if (!result || result.key !== key) return null;
+  const { quote, currency, amount, subtotals } = result.value;
+  return <details className="cw-spend-estimate cw-group-estimate">
+    <summary>{t("spend.estimate", {count: quote.candidates ?? quote.count, amount: amount == null ? t("spend.unknown") : money(amount, currency, locale)})}
+      {!!quote.deferred?.length && <> · {t("spend.awaitingInputs", {count: quote.deferred.length})}</>}
+      {!!quote.skipped?.length && <> · {t("spend.skippedSteps", {count: quote.skipped.length})}</>}
+    </summary>{amount == null && <Subtotals values={subtotals} />}<QuoteLines quote={quote} />
+  </details>;
+}
+
 export function ToolEstimate({ projectId, itemId, tool, priceRevision }: {
   projectId: string; itemId: string; tool: string; priceRevision: string;
 }) {
@@ -149,14 +178,16 @@ function ReviewCard({ projectId, entry, status, onSettings, onChange }: {
     <strong>{t("spend.estimate", { count: batch.quote.candidates ?? batch.quote.count, amount: entry.amount == null ? t("spend.unknown") : money(entry.amount, currency, locale) })}</strong>
     {entry.amount == null && <Subtotals values={entry.subtotals} />}<QuoteLines quote={batch.quote} />
     {!!batch.quote.deferred?.length && <p>{t("spend.deferred", { count: batch.quote.deferred.length })}</p>}
+    {!!batch.quote.skipped?.length && <p>{t("spend.skippedSteps", {count: batch.quote.skipped.length})}</p>}
     {reason === "over_cap" && <>
       <p>{t("spend.shortfall", { cap: money(status.policy.cap!, currency, locale), available: money(status.available!, currency, locale), missing: money(entry.shortfall!, currency, locale) })}</p>
       <label>{t("spend.newCap")} <input type="number" step="any" min="0" value={newCap} onChange={e => setNewCap(e.target.value)} /></label>
     </>}
     {reason === "unpriced" && <p>{t("spend.needPrice")}</p>}
+    {reason === "prior_unknown" && <p>{t("spend.priorUnknown")}</p>}
     {reason === "stale" && <p>{t("spend.stale")}</p>}
     <div className="cw-spend-actions">
-      {reason === "stale" ? null : reason === "unpriced" ? onSettings && <button onClick={onSettings}>{t("spend.connections")}</button> :
+      {reason === "stale" || reason === "prior_unknown" ? null : reason === "unpriced" ? onSettings && <button onClick={onSettings}>{t("spend.connections")}</button> :
         <button disabled={busy || (reason === "over_cap" && !newCap)} onClick={() => void decide("approve")}>
           {t(reason === "over_cap" ? "spend.raiseRun" : reason === "unknown_confirmation" ? "spend.allowUnknown" : batch.quote.deferred?.length ? "spend.runUpstream" : "spend.approve")}
         </button>}
@@ -228,6 +259,9 @@ export function ProjectSpend({ projectId, placement, onSettings }: {
         {placement !== "chat" && <>
           <details><summary>{t("spend.controls")}</summary><PolicyForm key={JSON.stringify(status.policy)} projectId={projectId} status={status} /></details>
           <details><summary>{t("spend.log")}</summary>
+            {(status.workflows ?? []).map(run => <p key={run.id}>{t("spend.workflowProgress", {
+              completed: run.completed, total: run.total, state: t(`spend.workflowState.${run.state}`),
+            })}{run.skipped > 0 && <> · {t("spend.skippedSteps", {count: run.skipped})}</>}</p>)}
             {status.since && <small>{t("spend.since", { date: new Date(status.since).toLocaleString(locale) })}</small>}
             <ul className="cw-spend-lines">{[...(snapshot?.spendCalls ?? [])].reverse().map(call => <li key={call.id}>
               <span>{t(`spend.operation.${call.line.operation}` as "spend.operation.image")} · {call.line.modelId} · {t(`spend.state.${call.state}`)}</span>

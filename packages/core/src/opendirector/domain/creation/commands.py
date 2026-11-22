@@ -498,6 +498,11 @@ class QueryBase(Contract):
     projectId: UUID = Field(description='Owning project ID.')
 
 
+class GroupQuoteQuery(QueryBase):
+    type: Literal['generation.groupQuote'] = Field(description='Estimate runnable workflow members and list the steps waiting for upstream results.')
+    workflow: GenerationGroup = Field(description='The same workflow members and dependencies used for submission.')
+
+
 class GenerationQuoteQuery(QueryBase):
     type: Literal['generation.quote'] = Field(description='Estimate the entire action without creating jobs.')
     specId: UUID = Field(description='Generation specification to price.')
@@ -550,7 +555,7 @@ class AssetPreviewQuery(QueryBase):
     objectId: UUID = Field(description='Asset ID.')
 
 
-Query = Annotated[SpendStatusQuery | GenerationQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
+Query = Annotated[SpendStatusQuery | GenerationQuoteQuery | GroupQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
                   CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
 
 

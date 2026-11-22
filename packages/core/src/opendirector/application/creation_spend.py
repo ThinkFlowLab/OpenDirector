@@ -1,4 +1,5 @@
 """Project-scoped admission. All callers invoke these decisions under the project commit lock."""
+from collections import defaultdict
 from datetime import datetime, timezone
 from uuid import uuid4, uuid5
 
@@ -13,8 +14,40 @@ def quote_view(snapshot, quote):
     summary = spend_summary(snapshot)
     total = quote.total(summary['policy'].currency)
     return dict(quote=quote, fingerprint=quote.fingerprint(), amount=total, subtotals=quote.subtotals(),
-        projectAfter=None if total is None else summary['settled'] + summary['held'] + total,
+        projectAfter=None if total is None or summary['unknown'] else summary['settled'] + summary['held'] + total,
         currency=summary['policy'].currency, reason=spend_decision(summary, quote))
+
+
+def workflow_status(snapshot, agent_run_id=None):
+    requests = defaultdict(list)
+    for request in snapshot.spendRequests:
+        if request.workflowId and (agent_run_id is None or request.agentRunId == agent_run_id):
+            requests[request.workflowId].append(request)
+    jobs = defaultdict(list)
+    for job in snapshot.jobs:
+        if job.batchId in requests:
+            jobs[job.batchId].append(job)
+    results = []
+    for workflow_id, decisions in requests.items():
+        first, latest = decisions[0], decisions[-1]
+        members = set((*first.groupItems, *first.quote.deferred, *first.quote.skipped))
+        admitted = {item for decision in decisions if decision.status == 'accepted' for item in decision.groupItems}
+        completed = {job.originItemId for job in jobs[workflow_id] if job.adopted and job.status == 'succeeded'}
+        active = {job.originItemId for job in jobs[workflow_id] if job.status in {'queued', 'running'}}
+        failed = admitted - completed - active
+        skipped = set(latest.quote.skipped)
+        if latest.status in {'pending', 'cancelled'}:
+            state = 'waiting' if latest.status == 'pending' else 'cancelled'
+        elif active or (members - admitted - skipped and not failed):
+            state = 'running'
+        elif failed or skipped:
+            state = 'incomplete'
+            skipped = members - admitted
+        else:
+            state = 'completed'
+        results.append(dict(id=workflow_id, items=sorted(members), state=state, completed=len(completed),
+                            failed=len(failed), skipped=len(skipped), total=len(members)))
+    return results
 
 
 def review_status(snapshot, agent_run_id=None):
@@ -28,7 +61,7 @@ def review_status(snapshot, agent_run_id=None):
         reason = spend_decision(summary, request.quote)
         pending.append(dict(request=request, fingerprint=request.quote.fingerprint(), reason='stale' if request.currency and request.currency != policy.currency else reason, amount=total, subtotals=request.quote.subtotals(),
             shortfall=total-summary['available'] if reason == 'over_cap' else None))
-    result = dict(**summary, projectRevision=snapshot.project.revision, pending=pending)
+    result = dict(**summary, projectRevision=snapshot.project.revision, pending=pending, workflows=workflow_status(snapshot, agent_run_id))
     if agent_run_id is not None:
         owners = {j.id for j in snapshot.jobs if j.agentRunId == agent_run_id}
         calls = [call for call in snapshot.spendCalls if call.ownerId in owners]
@@ -50,6 +83,19 @@ def get_request(snapshot, request_id):
     return request
 
 
+def pending_workflow_specs(snapshot):
+    item_ids = {item_id for request in snapshot.spendRequests if request.workflowId and request.status == 'pending'
+                for item_id in (*request.groupItems, *request.quote.deferred)}
+    specs = set()
+    for item in snapshot.canvasItems:
+        if item.id in item_ids:
+            binding = item.binding
+            ref = binding.objectRef if binding.role == 'generation' else getattr(binding, 'draftSpec', None)
+            if ref:
+                specs.add(ref.id)
+    return specs
+
+
 def decide(before, command, quote, agent_origin, review=None):
     summary = spend_summary(before)
     reason = spend_decision(summary, quote)
@@ -67,6 +113,8 @@ def decide(before, command, quote, agent_origin, review=None):
         raise ContractError('spend_quote_changed', 'The project currency changed. Request a new estimate.')
     if request.status != 'pending' or selection.fingerprint != request.quote.fingerprint() or selection.fingerprint != quote.fingerprint():
         raise ContractError('spend_quote_changed', 'The request or its price changed. Request a new estimate.')
+    if reason == 'prior_unknown':
+        raise ContractError('spend_unknown', 'Earlier charges cannot be totalled in the project currency.')
     if reason == 'unpriced' or (reason == 'unknown_confirmation' and not selection.acceptUnknown):
         raise ContractError('spend_unknown', 'A bounded price in the project currency is required.')
     if selection.newCap is not None:

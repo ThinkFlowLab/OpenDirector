@@ -338,6 +338,16 @@ def recording(seconds=3):
     return subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',f'sine=frequency=330:sample_rate=48000','-t',str(seconds),'-ac','2','-threads','1','-f','mp3','pipe:1'],capture_output=True,check=True).stdout
 
 
+def pcm_recording(seconds):
+    # PCM gives ffprobe the same exact duration on every supported platform.
+    import wave
+    buffer = BytesIO()
+    with wave.open(buffer, 'wb') as audio:
+        audio.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+        audio.writeframes(bytes(seconds * 8000 * 2))
+    return buffer.getvalue()
+
+
 def follow_recording(project, target, spec_id, data, name='reference.mp3'):
     """Connect an imported recording to the music node, as a canvas edge does."""
     store, pid, session = project
@@ -364,13 +374,7 @@ def score_model(project, url='http://score.invalid/v1'):
 async def test_music_follows_a_reference_recording_through_its_transcribed_score(project,mode):
     store,pid,_=project
     calls=[]
-    # PCM has an exact measured duration across ffprobe versions; MP3 has encoder padding.
-    reference = BytesIO()
-    import wave
-    with wave.open(reference, 'wb') as audio:
-        audio.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
-        audio.writeframes(bytes(20 * 8000 * 2))
-    reference = reference.getvalue()
+    reference = pcm_recording(20)
     def handler(request):
         if request.url.path=='/v1/audio/transcriptions':
             assert request.url.host=='score.invalid'
@@ -418,6 +422,37 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
                                                       'url':'http://score.invalid/v1','protocol':'vllm_omni_score','connectionType':'self_hosted'}
         assert [ref.asset.assetId for ref in job.inputSnapshot.references]==[asset.id]
     finally: await runner.close()
+
+
+@pytest.mark.anyio
+async def test_music_quote_preserves_known_subtotals_and_omits_unused_score(project):
+    store, pid, session = project
+    runner, item, spec_id = setup(project, 'audio', dict(creationType='music', durationSeconds=60),
+        lambda request: pytest.fail('A price query contacted the provider'), protocol='vllm_omni_music', model='m-a-p/YuE2-3B')
+    score = score_model(project)
+    music = next(s.modelConfigId for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+    try:
+        runner.configs.set_price(str(music), dict(currency='USD', rate='.02', unit='requested_second'))
+        solo = runner.quote(pid, spec_id, origin=item.id)
+        assert [line.operation for line in solo.lines] == ['music'] and float(solo.total('USD')) == 1.20
+        item, _ = follow_recording(project, item, spec_id, pcm_recording(20), 'reference.wav')
+        free_score = runner.quote(pid, spec_id, origin=item.id)
+        assert free_score.lines[0].source == 'local' and free_score.lines[0].amount == 0 and float(free_score.total('USD')) == .44
+        runner.configs.set_price(score['id'], dict(currency='USD', rate='.01', unit='input_second'))
+        runner.configs.set_price(str(music), dict(currency='CNY', rate='.02', unit='requested_second'))
+        mixed = runner.quote(pid, spec_id, origin=item.id)
+        assert mixed.total('USD') is None and {c: float(v) for c, v in mixed.subtotals().items()} == {'USD': .2, 'CNY': .44}
+        runner.configs.set_price(str(music), dict(currency='USD', rate='.02', unit='input_character'))
+        partial = runner.quote(pid, spec_id, origin=item.id)
+        assert partial.lines[1].amount is None and float(partial.subtotals()['USD']) == .20 and partial.total('USD') is None
+        await runner.execute(policy(store, pid, cap='10'), session=session)
+        _, waiting = await submit(project, runner, item, spec_id)
+        assert waiting.status == 'awaiting_confirmation'
+        snapshot = store.snapshot(pid)
+        denied = await runner.execute(review(pid, snapshot.spendRequests[-1], acceptUnknown=True), session=session)
+        assert denied.status == 'rejected' and not store.snapshot(pid).jobs and not store.snapshot(pid).spendCalls
+    finally:
+        await runner.close()
 
 
 @pytest.mark.anyio

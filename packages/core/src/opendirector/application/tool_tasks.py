@@ -260,6 +260,15 @@ class ToolTasks(ToolTaskLifecycle):
         tasks = [self._read_task(project_id, gateway().child(folder, path.name)) for path in folder.glob('*.json')]
         return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
 
+    def untracked_calls(self, project_id, tracked_owners):
+        folder = self._folder(self._directory(project_id), create=False)
+        total = 0
+        for path in folder.glob('*.json'):
+            if path.stem not in tracked_owners:
+                task = gateway().read_json(gateway().child(folder, path.name))
+                total += len(task.get('modelCalls', ()))
+        return total
+
     def placement(self, project_id, task_id, state, session, *, policy="if_current"):
         # Serialize acknowledgement with task writes/project moves. This never
         # adopts a GenerationSpec result or changes a terminal execution state.

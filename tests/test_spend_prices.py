@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from opendirector.domain.creation.spend import OFFICIAL_URL, SpendCall, SpendObservation, SpendQuote, observed_call, price_line
+from opendirector.domain.creation.spend import OFFICIAL_URL, SpendCall, SpendObservation, SpendPolicy, SpendQuote, observed_call, price_line, spend_decision
 
 
 def test_connection_price_takes_precedence_and_an_alias_is_unpriced():
@@ -21,6 +21,12 @@ def test_connection_price_takes_precedence_and_an_alias_is_unpriced():
 def test_missing_metered_quantity_is_unknown_even_with_a_price():
     config = dict(id=uuid4(), modelId='speech', price=dict(unit='output_second', rate='0.01', currency='USD'))
     assert price_line(config, 'speech', {}).amount is None
+
+
+def test_prior_unpriced_calls_explain_why_a_known_charge_cannot_use_the_cap():
+    model = dict(id=uuid4(), modelId='image', price=dict(unit='request', rate='.4', currency='USD'))
+    batch = SpendQuote(count=1, inputFingerprint='0' * 64, lines=[price_line(model, 'image', {})])
+    assert spend_decision(dict(policy=SpendPolicy(cap='4'), unknown=1, available=Decimal(4)), batch) == 'prior_unknown'
 
 
 def test_output_usage_and_late_provider_charge_replace_only_the_same_call():

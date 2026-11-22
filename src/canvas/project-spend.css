@@ -17,4 +17,5 @@
 .cw-spend-form label, .cw-spend-card label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cw-spend-form input, .cw-spend-form select, .cw-spend-card input { width: 9em; padding: 4px; }
 .cw-spend-actions button, .cw-spend-form button { background: #edf1f5; color: #233245; padding: 5px 10px; border: 0; border-radius: 6px; cursor: pointer; }
+.cw-group-estimate { width: max-content; max-width: 320px; max-height: 32vh; overflow: auto; background: white; border: 1px solid #cad0d7; border-radius: 8px; padding: 5px 9px; pointer-events: auto; }
 .cw-spend-estimate { font-size: 12px; color: #465363; }

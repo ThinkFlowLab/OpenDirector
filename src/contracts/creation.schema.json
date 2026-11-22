@@ -4380,6 +4380,7 @@
                 "asset.usage": "#/$defs/AssetUsageQuery",
                 "canvas.status": "#/$defs/CanvasStatusQuery",
                 "canvas.versions": "#/$defs/VersionsQuery",
+                "generation.groupQuote": "#/$defs/GroupQuoteQuery",
                 "generation.quote": "#/$defs/GenerationQuoteQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
@@ -4395,6 +4396,9 @@
               },
               {
                 "$ref": "#/$defs/GenerationQuoteQuery"
+              },
+              {
+                "$ref": "#/$defs/GroupQuoteQuery"
               },
               {
                 "$ref": "#/$defs/ProjectQuery"
@@ -6389,6 +6393,41 @@
           "specId"
         ],
         "title": "GroupMember",
+        "type": "object"
+      },
+      "GroupQuoteQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.groupQuote",
+            "description": "Estimate runnable workflow members and list the steps waiting for upstream results.",
+            "title": "Type",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/$defs/GenerationGroup",
+            "description": "The same workflow members and dependencies used for submission."
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "workflow"
+        ],
+        "title": "GroupQuoteQuery",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -12839,6 +12878,16 @@
             "description": "Total candidates across distinct group members.",
             "title": "Candidates"
           },
+          "skipped": {
+            "default": [],
+            "description": "Workflow items blocked by a failed dependency or reference cycle.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
           "deferred": {
             "default": [],
             "description": "Workflow items awaiting upstream inputs.",
@@ -17269,6 +17318,7 @@
             "asset.usage": "#/$defs/AssetUsageQuery",
             "canvas.status": "#/$defs/CanvasStatusQuery",
             "canvas.versions": "#/$defs/VersionsQuery",
+            "generation.groupQuote": "#/$defs/GroupQuoteQuery",
             "generation.quote": "#/$defs/GenerationQuoteQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
@@ -17284,6 +17334,9 @@
           },
           {
             "$ref": "#/$defs/GenerationQuoteQuery"
+          },
+          {
+            "$ref": "#/$defs/GroupQuoteQuery"
           },
           {
             "$ref": "#/$defs/ProjectQuery"
@@ -21924,6 +21977,7 @@
                 "asset.usage": "#/$defs/AssetUsageQuery",
                 "canvas.status": "#/$defs/CanvasStatusQuery",
                 "canvas.versions": "#/$defs/VersionsQuery",
+                "generation.groupQuote": "#/$defs/GroupQuoteQuery",
                 "generation.quote": "#/$defs/GenerationQuoteQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
@@ -21939,6 +21993,9 @@
               },
               {
                 "$ref": "#/$defs/GenerationQuoteQuery"
+              },
+              {
+                "$ref": "#/$defs/GroupQuoteQuery"
               },
               {
                 "$ref": "#/$defs/ProjectQuery"
@@ -24020,6 +24077,41 @@
           "after"
         ],
         "title": "GroupMember",
+        "type": "object"
+      },
+      "GroupQuoteQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generation.groupQuote",
+            "description": "Estimate runnable workflow members and list the steps waiting for upstream results.",
+            "title": "Type",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/$defs/GenerationGroup",
+            "description": "The same workflow members and dependencies used for submission."
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "workflow"
+        ],
+        "title": "GroupQuoteQuery",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -30657,6 +30749,16 @@
             "description": "Total candidates across distinct group members.",
             "title": "Candidates"
           },
+          "skipped": {
+            "default": [],
+            "description": "Workflow items blocked by a failed dependency or reference cycle.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
           "deferred": {
             "default": [],
             "description": "Workflow items awaiting upstream inputs.",
@@ -35272,6 +35374,7 @@
             "asset.usage": "#/$defs/AssetUsageQuery",
             "canvas.status": "#/$defs/CanvasStatusQuery",
             "canvas.versions": "#/$defs/VersionsQuery",
+            "generation.groupQuote": "#/$defs/GroupQuoteQuery",
             "generation.quote": "#/$defs/GenerationQuoteQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
@@ -35287,6 +35390,9 @@
           },
           {
             "$ref": "#/$defs/GenerationQuoteQuery"
+          },
+          {
+            "$ref": "#/$defs/GroupQuoteQuery"
           },
           {
             "$ref": "#/$defs/ProjectQuery"
