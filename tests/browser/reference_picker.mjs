@@ -1,4 +1,5 @@
 /** Isolated fixture only: native caret movement, dismissal and asset labels. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -163,10 +164,7 @@ try {
   const checked = [];
   const persistedReferences = [];
   for (const kind of ["图片", "视频"]) {
-    await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", { name: `添加${kind}`, exact: true })
-      .click();
+    await addCanvasNode(page, kind);
     const editor = page.getByRole("textbox", {
       name: "生成提示词",
       exact: true,

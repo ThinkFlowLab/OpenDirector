@@ -96,6 +96,7 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
         ?.focus({ preventScroll: true });
     }
     const close = (event: PointerEvent) => {
+      if (event.target instanceof Node && menu.trigger?.contains(event.target)) return;
       if (
         !(event.target instanceof Element) ||
         !event.target.closest(".cw-context-menu")

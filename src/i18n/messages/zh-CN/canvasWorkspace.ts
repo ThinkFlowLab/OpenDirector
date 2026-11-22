@@ -84,10 +84,9 @@ export const canvasWorkspace = {
   "canvas.workspace.toolbar.help": "使用帮助",
   "canvas.workspace.toolbar.chat": "与 AI 对话",
 
-  "canvas.workspace.empty.title": "你的故事，由你执导",
-  "canvas.workspace.empty.hint": "双击画布创建节点，或拖入你的素材",
-  "canvas.workspace.empty.configureModels": "配置模型",
-  "canvas.workspace.empty.tagline": "参考连接 · 自由编排 · 本机自动保存",
+  "canvas.workspace.empty.title": "空白画布",
+  "canvas.workspace.empty.hint": "从左侧「添加节点」开始，或将素材拖到画布上。",
+  "canvas.workspace.empty.browseExamples": "浏览示例画布",
 
   "canvas.workspace.loading.opening": "正在打开画布…",
   "canvas.workspace.loading.switching": "正在切换画布…",
@@ -418,6 +417,4 @@ export const canvasWorkspace = {
   "canvas.example.state.downloadingPercent": "正在下载… {percent}%",
   "canvas.example.progress.label": "下载进度",
   // The empty canvas imports the two hosted samples directly.
-  "canvas.workspace.empty.tryImage": "体验图片示例",
-  "canvas.workspace.empty.tryVideo": "体验视频示例",
 } as const;

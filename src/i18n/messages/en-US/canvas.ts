@@ -24,7 +24,7 @@ export const canvas = {
   "canvas.menu.redo": "Redo",
   "canvas.menu.undo": "Undo",
   "canvas.rail.tools": "Canvas creation tools",
-  "canvas.rail.add": "Add {label}",
+  "canvas.rail.addNode": "Add node",
   "canvas.rail.assets": "Asset library",
   "canvas.rail.upload": "Upload",
   "canvas.rail.uploadLocal": "Upload local asset",

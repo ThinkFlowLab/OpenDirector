@@ -83,12 +83,10 @@ export const canvasWorkspace = {
   "canvas.workspace.toolbar.help": "Help",
   "canvas.workspace.toolbar.chat": "Chat with AI",
 
-  "canvas.workspace.empty.title": "Your story, directed by you",
+  "canvas.workspace.empty.title": "Empty canvas",
   "canvas.workspace.empty.hint":
-    "Double-click the canvas to create a node, or drop in your assets",
-  "canvas.workspace.empty.configureModels": "Configure models",
-  "canvas.workspace.empty.tagline":
-    "Reference connections · Free arrangement · Autosaved locally",
+    "Choose Add node on the left, or drag your files onto the canvas.",
+  "canvas.workspace.empty.browseExamples": "Browse example canvases",
 
   "canvas.workspace.loading.opening": "Opening canvas…",
   "canvas.workspace.loading.switching": "Switching canvas…",
@@ -463,6 +461,4 @@ export const canvasWorkspace = {
   "canvas.example.state.downloadingPercent": "Downloading… {percent}%",
   "canvas.example.progress.label": "Download progress",
   // The empty canvas imports the two hosted samples directly.
-  "canvas.workspace.empty.tryImage": "Try image example",
-  "canvas.workspace.empty.tryVideo": "Try video example",
 } as const;

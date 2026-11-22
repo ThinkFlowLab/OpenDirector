@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright-core");
@@ -28,8 +29,7 @@ try {
   await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
   const nodes = page.locator(".react-flow__node");
   const selected = page.locator(".react-flow__node.selected");
-  const addVideo = page.getByRole("button", { name: "添加视频", exact: true });
-  await addVideo.click();
+  await addCanvasNode(page, "视频");
   await selected.waitFor();
   const source = await selected.getAttribute("data-id");
   await page.keyboard.press("Control+c");
@@ -41,7 +41,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 1);
   assert.equal(await nodes.first().getAttribute("data-id"), source);
 
-  await addVideo.click();
+  await addCanvasNode(page, "视频");
   await selected.waitFor();
   await page.keyboard.press("Backspace");
   await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 1);

@@ -50,12 +50,18 @@ export function CreationMenuContent({
   onAssets,
   onUpload,
   allowedKinds,
-}: CreationActions & { allowedKinds?: readonly CanvasNodeKind[] }) {
+  nodesOnly = false,
+}: CreationActions & {
+  allowedKinds?: readonly CanvasNodeKind[];
+  nodesOnly?: boolean;
+}) {
   const t = useT();
   return (
     <>
       <div className="cw-menu-caption">{t("canvas.menu.newNode")}</div>
-      {CANVAS_CREATION_TOOLS.map((tool) =>
+      {CANVAS_CREATION_TOOLS.filter(
+        (tool) => !nodesOnly || !tool.unavailable,
+      ).map((tool) =>
         tool.unavailable ? (
           <TooltipButton
             key={tool.kind}
@@ -73,6 +79,9 @@ export function CreationMenuContent({
           <button
             key={tool.kind}
             role="menuitem"
+            aria-keyshortcuts={
+              nodesOnly && tool.kind === "text" ? "T" : undefined
+            }
             disabled={Boolean(
               allowedKinds && !allowedKinds.includes(tool.kind),
             )}
@@ -85,10 +94,13 @@ export function CreationMenuContent({
           >
             <CanvasIcon name={tool.icon} size={18} />
             <span>{t(tool.labelKey)}</span>
+            {nodesOnly && tool.kind === "text" && (
+              <kbd aria-hidden="true">T</kbd>
+            )}
           </button>
         ),
       )}
-      {!allowedKinds && (
+      {!allowedKinds && !nodesOnly && (
         <>
           <hr />
           <button role="menuitem" onClick={onAssets}>
@@ -108,6 +120,7 @@ export function CreationMenuContent({
 export function CanvasCreationMenu({
   x,
   y,
+  anchor,
   mode,
   canPaste,
   canUndo,
@@ -120,6 +133,7 @@ export function CanvasCreationMenu({
 }: CreationActions & {
   x: number;
   y: number;
+  anchor?: HTMLButtonElement;
   mode: "create" | "context";
   canPaste: boolean;
   canUndo: boolean;
@@ -165,7 +179,11 @@ export function CanvasCreationMenu({
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!root.current?.contains(target) && !submenu.current?.contains(target))
+      if (
+        !root.current?.contains(target) &&
+        !submenu.current?.contains(target) &&
+        !anchor?.contains(target)
+      )
         close.current();
     };
     document.addEventListener("pointerdown", dismiss, true);
@@ -173,7 +191,7 @@ export function CanvasCreationMenu({
       document.removeEventListener("pointerdown", dismiss, true);
       cancelClose();
     };
-  }, []);
+  }, [anchor]);
   useLayoutEffect(() => {
     root.current
       ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
@@ -197,15 +215,15 @@ export function CanvasCreationMenu({
         closeSubmenu();
         trigger.current?.focus();
       } else {
-        root.current
-          ?.closest<HTMLElement>(".cw-workspace")
-          ?.focus({ preventScroll: true });
+        (anchor ?? root.current?.closest<HTMLElement>(".cw-workspace"))?.focus({
+          preventScroll: true,
+        });
         close.current();
       }
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [expanded]);
+  }, [expanded, anchor]);
   const run = (action: () => void) => {
     action();
     onClose();
@@ -223,6 +241,7 @@ export function CanvasCreationMenu({
       <CanvasContextMenu
         x={x}
         y={y}
+        anchor={anchor}
         className="cw-canvas-menu"
         aria-label={
           mode === "create"
@@ -230,16 +249,27 @@ export function CanvasCreationMenu({
             : t("canvas.menu.canvasActions")
         }
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
+          if (
+            anchor &&
+            event.key.toLowerCase() === "t" &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            creationActions.onCreate("text");
+          } else if (event.key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
             if (expanded) {
               closeSubmenu();
               trigger.current?.focus();
             } else {
-              root.current
-                ?.closest<HTMLElement>(".cw-workspace")
-                ?.focus({ preventScroll: true });
+              (
+                anchor ?? root.current?.closest<HTMLElement>(".cw-workspace")
+              )?.focus({ preventScroll: true });
               onClose();
             }
           } else menuKeys(event);
@@ -252,7 +282,12 @@ export function CanvasCreationMenu({
   return (
     <>
       {mode === "create"
-        ? shell(<CreationMenuContent {...creationActions} />)
+        ? shell(
+            <CreationMenuContent
+              {...creationActions}
+              nodesOnly={Boolean(anchor)}
+            />,
+          )
         : shell(
             <>
               <button

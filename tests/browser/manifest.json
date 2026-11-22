@@ -1,6 +1,10 @@
 {
   "scripts": [
     {
+      "file": "canvas_creation.mjs",
+      "helper": true
+    },
+    {
       "file": "fasth3_capability_flow.mjs",
       "helper": true
     },

@@ -1,7 +1,7 @@
 import type { MessageKey } from "../i18n/types";
 import type { CanvasNodeKind } from "./model.ts";
 
-/** Keep the creation menu and the left rail in the same order. */
+/** Shared node types and labels for canvas creation menus. */
 export const CANVAS_CREATION_TOOLS: readonly {
   kind: CanvasNodeKind;
   labelKey: MessageKey;

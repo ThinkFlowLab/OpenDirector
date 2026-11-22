@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** UI -> saved intent -> frozen request -> real media -> reload, with isolated models. */
 import assert from "node:assert/strict";
@@ -86,13 +87,7 @@ try {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
-    await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", {
-        name: { image: "添加图片", video: "添加视频", audio: "添加音频" }[kind],
-        exact: true,
-      })
-      .click();
+    await addCanvasNode(page, { image: "图片", video: "视频", audio: "音频" }[kind]);
     await chooseGenerationModel(page, `config:${config.id}`);
     await page
       .getByRole("textbox", {

@@ -20,6 +20,7 @@ export type WorkspacePanel = "assets" | "search" | "history" | null;
 
 export type WorkspaceMenu = {
   mode?: "create" | "context";
+  trigger?: HTMLButtonElement;
   x: number;
   y: number;
   world: Point;

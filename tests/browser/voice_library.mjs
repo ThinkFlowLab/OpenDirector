@@ -1,4 +1,5 @@
 /** Full bilingual voice-library UI with real storage/media and mocked provider HTTP. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir } from "node:fs/promises";
@@ -152,8 +153,7 @@ const copy = {
     url: "Service URL (Base URL)", saveService: "Save service", manage: "Manage",
     addModel: "Add manually", unsupportedModel: "Unsupported MiniMax speech model. Choose a model from the preset.",
     cancel: "Cancel", closeSettings: "Close settings",
-    tools: "Canvas creation tools",
-    add: "Add Audio",
+    nodeType: "Audio",
     model: "Generation model",
     prompt: "Text to read",
     textLimit: "This model accepts up to 3000 prompt characters. Shorten the prompt and try again.",
@@ -192,8 +192,7 @@ const copy = {
     url: "服务地址（Base URL）", saveService: "保存服务", manage: "管理",
     addModel: "手动添加", unsupportedModel: "不支持该 MiniMax 语音型号，请选择预设中的型号。",
     cancel: "取消", closeSettings: "关闭设置",
-    tools: "画布创作工具",
-    add: "添加音频",
+    nodeType: "音频",
     model: "生成模型",
     prompt: "朗读文本",
     textLimit: "当前模型的提示词最多 3000 个字符，请缩短后重试。",
@@ -308,10 +307,7 @@ try {
         timeout: reopenTimeout,
       });
       await waitForSaved(page, L.saved);
-      await page
-        .getByRole("toolbar", { name: L.tools })
-        .getByRole("button", { name: L.add, exact: true })
-        .click();
+      await addCanvasNode(page, L.nodeType);
       await selectModel(normal);
       await page
         .getByRole("textbox", { name: L.prompt, exact: true })

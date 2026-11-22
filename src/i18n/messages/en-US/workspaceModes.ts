@@ -6,4 +6,5 @@ export const workspaceModes = {
   "workspaceModes.short.canvas": "Canvas",
   "workspaceModes.preferenceFailed": "Switched modes. This browser could not save your preference.",
   "workspaceModes.showCanvas": "Show canvas",
+  "workspaceModes.floatOnCanvas": "Float on canvas",
 } as const;

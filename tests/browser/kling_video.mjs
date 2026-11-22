@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -56,7 +57,7 @@ const copy = {
     close: "Close settings",
     summary: "Text-to-video / first-last frame / image references",
     flashSummary: "Text-to-video / first frame / image references",
-    addVideo: "Add Video",
+    videoNode: "Video",
     saved: "Saved on this device",
     first: "Choose First frame",
     last: "Choose Last frame",
@@ -76,7 +77,7 @@ const copy = {
     close: "关闭设置",
     summary: "文生视频 / 首尾帧 / 图片参考",
     flashSummary: "文生视频 / 首帧 / 图片参考",
-    addVideo: "添加视频",
+    videoNode: "视频",
     saved: "已保存到本机",
     first: "选择首帧",
     last: "选择尾帧",
@@ -132,9 +133,7 @@ try {
       await page.locator(".cw-chat-button").getAttribute("aria-expanded"),
       "false",
     );
-    await page
-      .getByRole("button", { name: text.addVideo, exact: true })
-      .click();
+    await addCanvasNode(page, text.videoNode);
     const initial = await until(
       snapshot,
       (value) => value.generationSpecs.length === 1,
@@ -200,9 +199,7 @@ try {
     await page.getByRole("button", { name: text.close, exact: true }).click();
     await page.reload();
     await page.getByText(text.saved, { exact: true }).waitFor();
-    await page
-      .getByRole("button", { name: text.addVideo, exact: true })
-      .click();
+    await addCanvasNode(page, text.videoNode);
     const defaults = await until(
       snapshot,
       (value) => value.generationSpecs.length === 2,
@@ -510,9 +507,7 @@ try {
         await unopened.locator(".cw-chat-button").getAttribute("aria-expanded"),
         "false",
       );
-      await unopened
-        .getByRole("button", { name: text.addVideo, exact: true })
-        .click();
+      await addCanvasNode(unopened, text.videoNode);
       const defaultAfterAdding = await until(
         () => call(`/api/creation/projects/${unopenedId}`),
         (value) => value.generationSpecs.length === 1,
@@ -530,9 +525,7 @@ try {
         (value) => Boolean(value.modelSelections?.video),
         "assistant picker persisted",
       );
-      await unopened
-        .getByRole("button", { name: text.addVideo, exact: true })
-        .click();
+      await addCanvasNode(unopened, text.videoNode);
       const afterLoading = await until(
         () => call(`/api/creation/projects/${unopenedId}`),
         (value) => value.generationSpecs.length === 2,

@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Real image/layer editing against the isolated creation fixture; no model calls. */
 import assert from "node:assert/strict";
@@ -86,10 +87,7 @@ async function apply() {
 try {
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await saved();
-  await page
-    .getByRole("toolbar", { name: "Canvas creation tools" })
-    .getByRole("button", { name: "Add Image", exact: true })
-    .click();
+  await addCanvasNode(page, "Image");
   await chooseGenerationModel(page, { label: "fixture-image" });
   await page
     .getByRole("textbox", { name: "Prompt", exact: true })

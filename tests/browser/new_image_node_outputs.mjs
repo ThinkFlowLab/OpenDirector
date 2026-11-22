@@ -2,6 +2,7 @@
  * unsent draft never makes the canvas query fail (#86).
  * Uses the isolated creation_server.py; no generation is submitted.
  */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { launchBrowser } from "./engine.mjs";
 
@@ -98,10 +99,7 @@ try {
     .getByText("已保存到本机", { exact: true })
     .waitFor({ state: "attached" });
 
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加图片", exact: true })
-    .click();
+  await addCanvasNode(page, "图片");
   assert.match(
     await page
       .getByRole("combobox", { name: "生成模型", exact: true })

@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { launchBrowser } from "./engine.mjs";
@@ -31,12 +32,12 @@ const errors = [];
 try {
   for (const locale of ["zh-CN", "en-US"]) {
     const labels = locale === "zh-CN" ? {
-      saved: "已保存到本机", toolbar: "画布创作工具", add: "添加图片",
+      saved: "已保存到本机", nodeType: "图片",
       prompt: "生成提示词", parameters: "生成参数", panel: "生成参数设置",
       close: "关闭参数", quality: "图片质量", values: ["自动", "低", "中", "高"],
       generate: "提交生成",
     } : {
-      saved: "Saved on this device", toolbar: "Canvas creation tools", add: "Add Image",
+      saved: "Saved on this device", nodeType: "Image",
       prompt: "Prompt", parameters: "Generation settings", panel: "Generation settings",
       close: "Close settings", quality: "Image quality", values: ["Auto", "Low", "Medium", "High"],
       generate: "Generate",
@@ -64,7 +65,7 @@ try {
     try {
       await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
       await page.getByText(labels.saved, { exact: true }).waitFor();
-      await page.getByRole("toolbar", { name: labels.toolbar }).getByRole("button", { name: labels.add, exact: true }).click();
+      await addCanvasNode(page, labels.nodeType);
       await chooseGenerationModel(page, `config:${models[0].id}`);
       await page.getByRole("textbox", { name: labels.prompt, exact: true }).fill("A lighthouse by the sea");
       const open = () => page.getByRole("button", { name: labels.parameters, exact: true }).click();

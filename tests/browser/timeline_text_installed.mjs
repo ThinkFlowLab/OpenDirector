@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { spawnOwned as spawn, stopOwned, installedServerEnv } from "./host.mjs";
 /** Actual installed-wheel UI; no Vite, repository imports, models, or user projects. */
 import assert from "node:assert/strict";
@@ -114,10 +115,7 @@ try {
   });
   await page.goto(base + `/ai-tool/ai-canvas/${pid}`);
   await page.getByText("Saved on this device", { exact: true }).waitFor();
-  await page
-    .getByRole("toolbar", { name: "Canvas creation tools", exact: true })
-    .getByRole("button", { name: "Add Timeline", exact: true })
-    .click();
+  await addCanvasNode(page, "Timeline");
   const state = async () =>
     await (
       await page.request.get(base + `/api/creation/projects/${pid}`, {

@@ -1,4 +1,5 @@
 /** Selection owns canvas shortcuts; only explicit editing owns text input. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { chooseGenerationModel } from "./model_picker.mjs";
 const { chromium } = await import(
@@ -72,10 +73,7 @@ try {
       await saved();
       return snapshot;
     }
-    await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", { name: `添加${kind}`, exact: true })
-      .click();
+    await addCanvasNode(page, kind);
     const original = (await count(1)).canvasItems[0];
     const specId =
       original.binding.draftSpec?.id ?? original.binding.objectRef?.id;

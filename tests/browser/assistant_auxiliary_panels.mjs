@@ -1,6 +1,7 @@
 /** Search/history preserve chat visibility and work alongside it (#118).
  * Run against creation_server.py --assistant-fixture; no real models are used.
  */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -270,10 +271,7 @@ try {
     .click();
   await api("/creation-test-gate", { open: false });
   await api("/creation-test-assistant-gate", { open: false });
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加图片", exact: true })
-    .click();
+  await addCanvasNode(page, "图片");
   await chooseGenerationModel(page, { label: "fixture-image" });
   await page
     .getByRole("textbox", { name: "生成提示词", exact: true })

@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Shared full-workflow prelude: genuine UI upload, reference, candidate and layers. */
 import assert from "node:assert/strict";
@@ -17,10 +18,7 @@ export async function creationJourney(
     (await state()).canvasItems.find((i) => i.kind === "image"),
   );
   await saved();
-  await page
-    .getByRole("toolbar", { name: "Canvas creation tools" })
-    .getByRole("button", { name: "Add Image", exact: true })
-    .click();
+  await addCanvasNode(page, "Image");
   const target = await until(async () =>
     (await state()).canvasItems.find(
       (i) => i.kind === "image" && i.id !== source.id,

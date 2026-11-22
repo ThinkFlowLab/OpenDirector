@@ -7,6 +7,7 @@ import type { BackendModels } from "../backend/models";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
+import "./assistant-workspace.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
 import { AssistantReply } from "./AssistantReply";
 import { AssistantConversations } from "./AssistantConversations";
@@ -52,7 +53,7 @@ function kindOf(asset: ChatAsset) {
         : "text";
 }
 
-/** OpenDirector conversation tools in an OpenDirector floating canvas window. */
+/** Shared conversation and composer for chat creation and the canvas assistant. */
 export function AssistantPanel({
   documentId,
   documentTitle,
@@ -90,6 +91,7 @@ export function AssistantPanel({
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
   const { value, setValue } = chat;
+  const showSessionSidebar = !collapsible && layout.canShowSessionSidebar;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
@@ -352,6 +354,9 @@ export function AssistantPanel({
     <aside
       id="canvas-assistant"
       className={`cw-assistant-panel${dragOver ? " is-drag-over" : ""}`}
+      data-session-sidebar={showSessionSidebar || undefined}
+      data-floating={layout.floating || undefined}
+      style={layout.floatingStyle}
       aria-label={t("assistant.panel.aria")}
       hidden={!open}
       onScrollCapture={() => setMediaPreview(null)}
@@ -392,7 +397,8 @@ export function AssistantPanel({
       <AssistantConversations
         key={`${documentId}:${open}`}
         activeId={value.conversationId}
-        hasMessages={!!value.messages.length}
+        messageCount={value.messages.length}
+        hasDraft={Boolean(value.draft.trim() || value.assets.length || value.skills?.length)}
         projectTitle={documentTitle}
         items={chat.threads}
         loading={chat.threadsLoading}
@@ -405,6 +411,8 @@ export function AssistantPanel({
         onChange={changeConversation}
         onClose={onClose}
         collapsible={collapsible}
+        sidebar={showSessionSidebar}
+        placement={collapsible && !layout.mobile ? layout : undefined}
       />
       <div
         className="cw-assistant-log"
@@ -447,6 +455,7 @@ export function AssistantPanel({
           >
             {message.role === "assistant" && (
               <div className="cw-assistant-message-heading">
+                {!collapsible && <img src={openDirectorLogo} width={20} height={20} alt="" />}
                 OpenDirector
                 {(message.modelIsCliDefault || message.model) && <small>{message.modelIsCliDefault
                   ? t("assistant.agent.cliDefault")
@@ -700,13 +709,20 @@ export function AssistantPanel({
           <div className="cw-assistant-toolbar">
             <button
               type="button"
-              className="cw-assistant-icon-button"
+              className="cw-assistant-icon-button cw-assistant-upload"
               aria-label={t("assistant.panel.upload")}
               title={t("assistant.panel.uploadHint")}
               disabled={referenceDisabled || value.assets.length >= 64}
               onClick={() => fileInput.current?.click()}
             >
-              <span className="cw-assistant-symbol cw-assistant-symbol-plus" aria-hidden="true">+</span>
+              {collapsible ? (
+                <span className="cw-assistant-symbol cw-assistant-symbol-plus" aria-hidden="true">+</span>
+              ) : (
+                <>
+                  <CanvasIcon name="upload" size={16} />
+                  <span>{t("assistant.panel.upload")}</span>
+                </>
+              )}
             </button>
             <button
               type="button"
@@ -805,7 +821,7 @@ export function AssistantPanel({
           )}
         </div>
       </div>
-      {collapsible && !layout.mobile && (
+      {collapsible && !layout.mobile && !layout.floating && (
         <div
           className="cw-assistant-resizer"
           role="separator"

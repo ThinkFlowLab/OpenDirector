@@ -119,6 +119,19 @@ const icons: Record<string, ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
   cube: <path d="m12 3 9 5v8l-9 5-9-5V8Zm-9 5 9 5 9-5M12 13v8" />,
   collapse: <path d="m21 3-6 6m0-5v5h5M3 21l6-6m-5 0h5v5" />,
+  grip: <path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" strokeWidth="3.2" />,
+  floatPanel: (
+    <>
+      <path d="M20 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" />
+      <rect x="10" y="11" width="11" height="10" rx="2" />
+    </>
+  ),
+  dockLeft: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16m7-11-3 3 3 3" />
+    </>
+  ),
   thinking: (
     <path d="M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 3H9c0-1 0-2-1-3Z" />
   ),

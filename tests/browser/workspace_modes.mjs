@@ -1,6 +1,7 @@
 /** Mode changes preserve the same workspace and running work (#386).
  * Requires creation_server.py --assistant-fixture; no real models are used.
  */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -74,6 +75,8 @@ try {
   const canvas = page.getByTestId("canvas-region");
   const assistant = page.locator("#canvas-assistant");
   const editor = assistant.locator('[contenteditable="true"]').first();
+  const moveChat = assistant.locator(".cw-assistant-move-handle");
+  const placement = assistant.locator(".cw-assistant-placement-toggle");
   const mode = (value) => page.getByTestId(`workspace-mode-${value}`);
   const settleLayout = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const selectMode = async (value) => {
@@ -91,13 +94,27 @@ try {
     const current = await page.locator("html").getAttribute("lang");
     await page.getByRole("button", { name: current === "zh-CN" ? "设置" : "Settings", exact: true }).click();
     await page.locator("#settings-language").selectOption(locale);
+    const theme = locale === "zh-CN" ? "dark" : "light";
+    await page.locator("#settings-theme").selectOption(theme);
     await page.locator(".cw-settings-close").click();
     assert.equal(await page.locator("html").getAttribute("lang"), locale);
+    assert.equal(await page.locator("html").getAttribute("data-theme"), theme);
   }
   async function screenshot(name) {
     if (!process.env.CREATION_SCREENSHOTS) return;
     await mkdir(process.env.CREATION_SCREENSHOTS, { recursive: true });
     await page.screenshot({ path: join(process.env.CREATION_SCREENSHOTS, `workspace-${name}.png`) });
+  }
+  async function dragChat(destination) {
+    const handle = await moveChat.boundingBox();
+    const start = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    const end = destination(start);
+    await page.mouse.move(end.x, end.y, { steps: 8 });
+    await page.mouse.up();
+    await settleLayout();
+    return assistant.boundingBox();
   }
   async function assertLayout(value) {
     const chat = await assistant.boundingBox();
@@ -110,8 +127,17 @@ try {
     } else {
       assert.equal(await canvas.isVisible(), false, "agent mode hides the canvas");
       assert.equal(await canvas.locator(".react-flow__node").evaluateAll((nodes) => nodes.some((node) => node.checkVisibility({ opacityProperty: true, visibilityProperty: true }))), false, "React Flow children must not paint through the hidden canvas");
-      assert.ok(Math.abs(chat.x + chat.width / 2 - page.viewportSize().width / 2) < 20, "agent chat is centered");
-      assert.ok(chat.width <= 860, "wide agent chat keeps a readable width");
+      const sidebar = await assistant.getByRole("navigation").boundingBox();
+      assert.ok(sidebar && Math.abs(sidebar.x - chat.x) <= 1, "conversation history is visible at the left");
+      assert.equal(await assistant.locator(".cw-assistant-header").isVisible(), false);
+      const contentLeft = sidebar.x + sidebar.width;
+      const contentRight = chat.x + chat.width;
+      for (const column of [assistant.locator(".cw-assistant-log"), assistant.locator(".cw-assistant-composer")]) {
+        const box = await column.boundingBox();
+        assert.ok(box && box.x >= contentLeft && box.x + box.width <= contentRight);
+        assert.ok(box.width <= 961, "messages and input keep a readable width");
+        assert.ok(Math.abs(box.x + box.width / 2 - (contentLeft + contentRight) / 2) < 3, "messages and input are centered beside the history");
+      }
     }
   }
 
@@ -127,7 +153,7 @@ try {
   await settleLayout();
   await until(conversation, (value) => !!value.modelSelections.agent, "default agent model must be ready");
 
-  await page.getByRole("toolbar", { name: "画布创作工具" }).getByRole("button", { name: "添加图片", exact: true }).click();
+  await addCanvasNode(page, "图片");
   await chooseGenerationModel(page, { label: "fixture-image" });
   const prompt = "Keep the node composer prompt across modes";
   await page.getByRole("textbox", { name: "生成提示词", exact: true }).fill(prompt);
@@ -160,6 +186,48 @@ try {
 
   for (const locale of ["zh-CN", "en-US"]) {
     await setLocale(locale);
+    const zh = locale === "zh-CN";
+    const floatLabel = zh ? "浮动聊天" : "Float chat";
+    const dockLabel = zh ? "停靠到左侧" : "Dock chat to the left";
+    assert.ok(await assistant.getByRole("button", { name: floatLabel, exact: true }).isVisible());
+    const docked = await assistant.boundingBox();
+    const undocked = await dragChat(({ x, y }) => ({ x: x + 240, y: y + 110 }));
+    assert.equal(await assistant.getAttribute("data-floating"), "true", "dragging the docked handle detaches chat");
+    assert.ok(undocked.x > docked.x + 50 && undocked.y > docked.y + 40);
+    const expandedCanvas = await canvas.boundingBox();
+    assert.ok(expandedCanvas.x < 2 && expandedCanvas.width >= page.viewportSize().width - 2, "the floating chat releases its canvas column");
+    const offset = await dragChat(({ x, y }) => ({ x: x + 76, y: y - 44 }));
+    assert.ok(Math.abs(offset.x - undocked.x - 76) <= 2 && Math.abs(offset.y - undocked.y + 44) <= 2, "the panel follows the pointer on both axes");
+    await moveChat.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowDown");
+    await settleLayout();
+    const nudged = await assistant.boundingBox();
+    assert.ok(nudged.x < offset.x && nudged.y > offset.y, "arrow keys move the floating chat");
+    const view = page.viewportSize();
+    const lowerRight = await dragChat(() => ({ x: view.width - 1, y: view.height - 1 }));
+    assert.ok(lowerRight.x + lowerRight.width <= view.width && lowerRight.y + lowerRight.height <= view.height);
+    assert.ok(lowerRight.x + lowerRight.width >= view.width - 32 && lowerRight.y + lowerRight.height >= view.height - 32, "the bottom and right edges clamp to the workspace");
+    const upperLeft = await dragChat(() => ({ x: 1, y: 1 }));
+    const topbar = await page.locator(".cw-topbar").boundingBox();
+    assert.ok(upperLeft.x >= 0 && upperLeft.x <= 32 && upperLeft.y >= topbar.y + topbar.height && upperLeft.y <= topbar.y + topbar.height + 32, "the handle stays below the top bar and inside the left edge");
+    await assistant.getByRole("button", { name: dockLabel, exact: true }).click();
+    await assertLayout("canvas");
+    assert.deepEqual(await viewport(), savedViewport, "moving chat does not move the canvas");
+    assert.deepEqual(await selection(), selected);
+    assert.equal(await editorText(), draftText);
+    assert.equal(await editor.evaluate((element) => element === window.__workspaceModeEditor), true);
+    const rail = canvas.getByRole("toolbar", { name: zh ? "画布创作工具" : "Canvas creation tools" });
+    assert.equal(await rail.getByRole("button").count(), 3);
+    const add = rail.getByRole("button", { name: zh ? "添加节点" : "Add node", exact: true });
+    await add.click();
+    const nodeMenu = page.getByRole("menu", { name: zh ? "新建节点" : "New node", exact: true });
+    for (const name of zh ? ["文本", "图片", "视频", "音频", "时间线", "主体"] : ["Text", "Image", "Video", "Audio", "Timeline", "Subject"]) {
+      assert.ok(await nodeMenu.getByRole("menuitem", { name, exact: true }).isVisible());
+    }
+    assert.equal(await nodeMenu.getByRole("menuitem").count(), 6);
+    await page.keyboard.press("Escape");
+    assert.equal(await add.evaluate((element) => element === document.activeElement), true);
     const switcher = page.getByRole("group", { name: locale === "zh-CN" ? "创作方式" : "Creation mode", exact: true });
     for (const label of locale === "zh-CN" ? ["对话", "画布"] : ["Chat", "Canvas"]) {
       assert.equal(await switcher.getByRole("button", { name: label, exact: true }).innerText(), label);
@@ -181,6 +249,13 @@ try {
     await screenshot(`${locale}-canvas`);
     await selectMode("agent");
     await screenshot(`${locale}-agent`);
+    await page.getByTestId("workspace-float-chat").click();
+    await page.locator('#canvas-assistant[data-floating="true"]').waitFor();
+    assert.equal(await workspace.getAttribute("data-workspace-mode"), "canvas");
+    assert.equal(await editor.evaluate((element) => element === window.__workspaceModeEditor), true);
+    assert.equal(await editorText(), draftText);
+    await placement.click();
+    await selectMode("agent");
     // Hidden canvas handlers must not act on its retained selection.
     await mode("agent").focus();
     await page.keyboard.press("Delete");
@@ -203,6 +278,19 @@ try {
   await setLocale("zh-CN");
   assert.equal(await page.locator(".cw-language-toggle").isVisible(), false);
   assert.equal(await page.evaluate(() => localStorage.getItem("opendirector.workspaceMode.v1")), "agent");
+  const history = assistant.getByRole("navigation", { name: "历史会话" });
+  const search = history.getByRole("textbox", { name: "搜索会话" });
+  await search.fill("missing-conversation-title");
+  await history.getByText("没有找到匹配的会话", { exact: true }).waitFor();
+  await search.fill("");
+  await history.getByRole("button", { name: "新建会话", exact: true }).click();
+  const nextChat = await until(conversation, (value) => value.conversationId !== savedChat.conversationId, "sidebar opens a new conversation");
+  assert.deepEqual(nextChat.assets, []);
+  await until(editorText, (value) => value === "", "new conversation has a fresh editor");
+  await history.getByRole("button", { name: /有草稿/ }).click();
+  const restored = await until(conversation, (value) => value.conversationId === savedChat.conversationId, "sidebar restores the original conversation");
+  assert.deepEqual(restored.assets, savedChat.assets);
+  await until(editorText, (value) => value === draftText, "sidebar restores the original draft");
   await page.reload();
   await page.locator('.cw-workspace[aria-busy="false"]').waitFor();
   await editor.waitFor();
@@ -213,6 +301,17 @@ try {
   await selectMode("canvas");
 
   // Narrow layouts still expose both mode controls and the same input instance.
+  await placement.click();
+  await moveChat.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await settleLayout();
+  const savedFloat = await assistant.boundingBox();
+  await page.reload();
+  await page.locator('.cw-workspace[aria-busy="false"]').waitFor();
+  await page.locator('#canvas-assistant[data-floating="true"]').waitFor();
+  await until(() => assistant.boundingBox(), (box) => Math.abs(box.x - savedFloat.x) <= 2 && Math.abs(box.y - savedFloat.y) <= 2, "reload restores the floating position");
+  await until(editorText, (value) => value === draftText, "reload preserves the floating chat draft");
   await editor.evaluate((element) => { window.__workspaceModeEditor = element; });
   for (const width of [600, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -225,11 +324,22 @@ try {
         assert.ok(button.x >= 0 && button.x + button.width <= width, "mode buttons stay inside the narrow window");
       }
       assert.equal(await editor.evaluate((element) => element === window.__workspaceModeEditor && element.isContentEditable), true);
+      assert.equal(await assistant.getByRole("navigation").count(), 0);
+      assert.equal(await page.getByTestId("workspace-float-chat").isVisible(), false);
+      assert.ok(await assistant.locator(".cw-assistant-header").isVisible());
+      const historyName = locale === "zh-CN" ? "历史会话" : "Conversation history";
+      const history = assistant.getByRole("button", { name: historyName, exact: true });
+      await history.click();
+      await assistant.getByRole("dialog", { name: historyName }).getByRole("textbox").waitFor();
+      await page.keyboard.press("Escape");
+      assert.equal(await history.getAttribute("aria-expanded"), "false");
       await editor.click({ trial: true });
       assert.equal(await editorText(), draftText);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "narrow page must not overflow horizontally");
       await screenshot(`${locale}-${width}-agent`);
       await selectMode("canvas");
+      assert.notEqual(await assistant.getAttribute("data-floating"), "true");
+      assert.equal(await placement.isVisible(), false);
       await page.locator(".cw-narrow-region-toggle").click();
       assert.equal(await canvas.isVisible(), true);
       assert.equal(await assistant.isVisible(), false);
@@ -243,6 +353,10 @@ try {
   await page.setViewportSize({ width: 1720, height: 1120 });
   await setLocale("zh-CN");
   await selectMode("canvas");
+  await page.locator('#canvas-assistant[data-floating="true"]').waitFor();
+  const restoredFloat = await assistant.boundingBox();
+  assert.ok(Math.abs(restoredFloat.x - savedFloat.x) <= 2 && Math.abs(restoredFloat.y - savedFloat.y) <= 2, "returning to a wide window restores the floating position");
+  await placement.click();
 
   // The earlier narrow-window checks deliberately preserve the zoom/pan.
   // Start this separate execution scenario by explicitly fitting the canvas.
@@ -302,6 +416,9 @@ try {
   const turn = await until(conversation, (value) => !!value.activeTurnId && value.messages.at(-1)?.status === "streaming", "assistant turn must be running");
   await editor.fill(draft);
   const runningCommandCount = commands.length;
+  await placement.click();
+  await dragChat(({ x, y }) => ({ x: x + 80, y: y + 30 }));
+  await placement.click();
   for (const value of ["agent", "canvas", "agent", "canvas"]) {
     await selectMode(value);
     assert.equal(await editor.evaluate((element) => element === window.__workspaceModeEditor), true);
@@ -339,12 +456,33 @@ try {
       }
       await page.waitForFunction(() => !document.querySelector(".cw-toast"));
       await screenshot(`${locale}-canvas-final`);
+      await placement.click();
+      await dragChat(() => ({ x: 1370, y: 200 }));
+      await screenshot(`${locale}-floating-chat`);
+      await placement.click();
       await selectMode("agent");
       await screenshot(`${locale}-agent-final`);
     }
   }
+  // A node created while chat covers the center must still have a reachable surface.
+  await selectMode("canvas");
+  await placement.click();
+  const screen = page.viewportSize();
+  await dragChat(() => ({ x: screen.width * 0.5, y: screen.height * 0.25 }));
+  const oldIds = new Set((await state()).canvasItems.map((item) => item.id));
+  const textKind = await page.locator("html").getAttribute("lang") === "zh-CN" ? "文本" : "Text";
+  await addCanvasNode(page, textKind);
+  const withText = await until(state, (value) => value.canvasItems.some((item) => !oldIds.has(item.id)), "text node created beside floating chat");
+  const created = withText.canvasItems.find((item) => !oldIds.has(item.id));
+  await page.waitForFunction((nodeId) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    if (!node) return false;
+    const box = node.getBoundingClientRect();
+    return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+  }, created.id);
+  await placement.click();
   assert.deepEqual(errors, []);
-  console.log("PASS workspace modes: bilingual layout, persistent preference, same input/draft/reference/session, viewport/selection and uninterrupted tasks");
+  console.log("PASS workspace modes: bilingual chat docking, dragging, keyboard movement, bounds, persistence, shared draft and uninterrupted tasks");
 } catch (error) {
   console.error(error);
   if (page) console.error({ page: (await page.locator("body").innerText()).slice(-6000) });

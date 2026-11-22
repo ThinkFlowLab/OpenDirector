@@ -76,6 +76,9 @@ export const assistant = {
   "assistant.panel.pendingDisabled": "The input is unavailable right now. Please wait.",
   "assistant.panel.pendingHint": "Click the message to insert; click outside or press Esc to cancel",
   "assistant.panel.resize": "Resize AI chat",
+  "assistant.panel.float": "Float chat",
+  "assistant.panel.dock": "Dock chat to the left",
+  "assistant.panel.moveHint": "Drag to move chat, or use the arrow keys. Hold Shift to move farther.",
   "assistant.panel.resizeValue": "{width} pixels; shrink to 200 pixels to collapse",
   "assistant.panel.resizeHint": "Drag to resize; double-click to restore the default width",
 

@@ -11,8 +11,38 @@ import {
   centeredViewport,
   selectionPlacement,
   selectionViewport,
+  visibleSelectionArea,
   type SelectionChrome,
 } from "./selectionPresentation";
+
+function floatingPanelRect(host: HTMLElement | null): Rect | null {
+  const floating = host?.closest(".cw-workspace")?.querySelector(
+    '#canvas-assistant[data-floating="true"]:not([hidden])',
+  );
+  if (!host || !floating) return null;
+  const canvas = host.getBoundingClientRect();
+  const panel = floating.getBoundingClientRect();
+  return {
+    x: panel.left - canvas.left - 8,
+    y: panel.top - canvas.top - 8,
+    width: panel.width + 16,
+    height: panel.height + 16,
+  };
+}
+
+function fitOutsidePanel(
+  bounds: Rect, view: Viewport, chrome: SelectionChrome, panel: Rect | null,
+): SelectionChrome {
+  const safe = visibleSelectionArea(bounds, view, chrome, panel);
+  if (safe === chrome.safe) return chrome;
+  return {
+    ...chrome, safe,
+    toolbar: { ...chrome.toolbar, width: Math.min(chrome.toolbar.width, safe.width) },
+    composer: chrome.scaleComposer ? chrome.composer : {
+      ...chrome.composer, width: Math.min(chrome.composer.width, safe.width),
+    },
+  };
+}
 
 /** One geometry owner for the node, upper action bar and lower generator. */
 export function useSelectionPresentation({
@@ -58,10 +88,12 @@ export function useSelectionPresentation({
   const [measurement, setMeasurement] = useState<{
     key: string;
     obscured: boolean;
+    fullSafe: Rect;
     chrome: SelectionChrome;
   }>({
     key: "",
     obscured: false,
+    fullSafe: { x: 80, y: 72, width: 0, height: 0 },
     chrome: {
       safe: { x: 80, y: 72, width: 0, height: 0 },
       toolbar: { width: 0, height: 0 },
@@ -73,6 +105,7 @@ export function useSelectionPresentation({
   useLayoutEffect(() => {
     const host = root.current;
     if (!host) return;
+    const startingViewport = flow.getViewport();
     const measure = () => {
       const rect = host.getBoundingClientRect();
       const panels = [...host.querySelectorAll(".cw-side-panel,.cw-assistant-panel:not([hidden])")];
@@ -106,15 +139,20 @@ export function useSelectionPresentation({
             : (box?.height ?? 0),
         };
       };
+      const measured: SelectionChrome = {
+        safe,
+        toolbar: size(toolbar.current),
+        composer: size(composer.current, scaleComposer),
+        scaleComposer,
+      };
+      const overlay = floatingPanelRect(host);
       const next = {
         key: measurementKey,
         obscured: covered,
-        chrome: {
-          safe,
-          toolbar: size(toolbar.current),
-          composer: size(composer.current, scaleComposer),
-          scaleComposer,
-        },
+        fullSafe: safe,
+        chrome: bounds && overlay
+          ? fitOutsidePanel(bounds, selectionViewport(bounds, startingViewport, measured), measured, overlay)
+          : measured,
       };
       setMeasurement((previous) =>
         JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
@@ -220,9 +258,13 @@ export function useSelectionPresentation({
     preserveViewportKey,
   ]);
 
-  const placement = bounds
+  let placement = bounds
     ? selectionPlacement(bounds, viewport, chrome)
     : null;
+  // A manually panned node is still editable anywhere on the canvas.
+  if (bounds && placement && !placement.visible && chrome.safe !== measurement.fullSafe) {
+    placement = selectionPlacement(bounds, viewport, { ...chrome, safe: measurement.fullSafe });
+  }
   return {
     userNavigation: () => {
       stopPresentation();
@@ -230,25 +272,28 @@ export function useSelectionPresentation({
     },
     fitSelection: (maxZoom = 1.5) => {
       if (!bounds || obscured || !chrome.safe.width) return;
+      const full = { ...chrome, safe: measurement.fullSafe };
       const view = { ...flow.getViewport(), zoom: maxZoom };
-      // The explicit Fit command may enlarge; normal selection only contains.
-      const center = {
-        x: chrome.safe.x + chrome.safe.width / 2,
-        y: chrome.safe.y + chrome.safe.height / 2,
-      };
-      view.x = center.x - (bounds.x + bounds.width / 2) * maxZoom;
-      view.y = center.y - (bounds.y + bounds.height / 2) * maxZoom;
+      const proposed = centeredViewport(bounds, view, full);
+      const visible = fitOutsidePanel(bounds, proposed, full, floatingPanelRect(root.current));
+      const safe = visible.safe;
+      view.x = safe.x + safe.width / 2 - (bounds.x + bounds.width / 2) * maxZoom;
+      view.y = safe.y + safe.height / 2 - (bounds.y + bounds.height / 2) * maxZoom;
       origin.current = {
         key: JSON.stringify([nodeId, focusRequest, panel]),
         viewport: view,
       };
-      present(selectionViewport(bounds, view, chrome));
+      present(selectionViewport(bounds, view, visible));
     },
     reveal: (bounds: Rect) => {
       if (obscured || !chrome.safe.width) return;
-      present(centeredViewport(bounds, flow.getViewport(), {
-        safe: chrome.safe, toolbar: { width: 0, height: 0 }, composer: { width: 0, height: 0 },
-      }));
+      const view = flow.getViewport();
+      const full = {
+        safe: measurement.fullSafe, toolbar: { width: 0, height: 0 }, composer: { width: 0, height: 0 },
+      };
+      const proposed = centeredViewport(bounds, view, full);
+      const visible = fitOutsidePanel(bounds, proposed, full, floatingPanelRect(root.current));
+      present(visible === full ? proposed : centeredViewport(bounds, view, visible));
     },
     placement,
     mediaRect: mediaBounds

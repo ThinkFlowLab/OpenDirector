@@ -7,6 +7,11 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import {
+  useFloatingAssistant,
+  type AssistantSurface,
+} from "./useFloatingAssistant";
+import type { WorkspaceMode } from "./workspaceMode";
 
 const KEY = "opendirector.assistant-layout.v1";
 const DESKTOP_MIN_WIDTH = 320;
@@ -32,9 +37,16 @@ export function useAssistantLayout(
   root: RefObject<HTMLDivElement | null>,
   open: boolean,
   onCollapse: () => void,
+  mode: WorkspaceMode,
 ) {
   const [preferredWidth, setPreferredWidth] = useState(readWidth);
-  const [viewport, setViewport] = useState(window.innerWidth);
+  const [surface, setSurface] = useState<AssistantSurface>(() => ({
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const viewport = surface.width;
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{
     x: number;
@@ -51,6 +63,11 @@ export function useAssistantLayout(
   const width = mobile
     ? Math.max(1, viewport - GUTTER)
     : Math.min(Math.max(preferredWidth ?? defaultWidth, minWidth), maxWidth);
+  const floatingLayout = useFloatingAssistant(
+    mode === "canvas" && open && !mobile,
+    surface,
+    width,
+  );
   const stop = () => {
     drag.current = null;
     setDragging(false);
@@ -59,20 +76,40 @@ export function useAssistantLayout(
     const host = root.current;
     if (!host) return;
     // The native project sidebar takes space from the header and both columns.
-    const surface = host.querySelector<HTMLElement>(".cw-topbar") ?? host;
-    const measure = () => setViewport(surface.clientWidth);
+    const topbar = host.querySelector<HTMLElement>(".cw-topbar");
+    if (!topbar) return;
+    const measure = () => {
+      const bounds = host.getBoundingClientRect();
+      const header = topbar.getBoundingClientRect();
+      const next = {
+        left: header.left - bounds.left,
+        top: header.bottom - bounds.top,
+        width: topbar.clientWidth,
+        height: Math.max(0, bounds.bottom - header.bottom),
+      };
+      setSurface((previous) =>
+        previous.left === next.left &&
+        previous.top === next.top &&
+        previous.width === next.width &&
+        previous.height === next.height
+          ? previous
+          : next,
+      );
+    };
     const observer = new ResizeObserver(measure);
-    observer.observe(surface);
+    observer.observe(host);
+    observer.observe(topbar);
     measure();
     return () => observer.disconnect();
   }, [root]);
   useEffect(() => {
+    if (dragging) return;
     try {
       localStorage.setItem(KEY, JSON.stringify({ width: preferredWidth }));
     } catch {
       /* The active layout remains usable without storage. */
     }
-  }, [preferredWidth]);
+  }, [preferredWidth, dragging]);
   useEffect(() => {
     document.body.classList.toggle("cw-resizing-assistant", dragging);
     return () => document.body.classList.remove("cw-resizing-assistant");
@@ -120,11 +157,14 @@ export function useAssistantLayout(
     }
   };
   return {
+    ...floatingLayout,
     width,
     maxWidth,
     mobile,
+    canShowSessionSidebar: viewport >= 900,
     dragging,
-    columnWidth: open && !mobile ? width + GUTTER : 0,
+    columnWidth:
+      open && !mobile && !floatingLayout.floating ? width + GUTTER : 0,
     resizer: {
       onPointerDown,
       onPointerMove,

@@ -3,6 +3,7 @@
  * ZHIPU_API_KEY for a funded BigModel account, and ZHIPU_SAMPLE pointing to a 3–30 s WAV.
  * Contacts the real service and incurs charges; it deletes the voice it creates.
  */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
 import { launchBrowser } from "./engine.mjs";
@@ -27,11 +28,11 @@ async function until(check, attempts = 900) {
   throw Error("Expected state was not observed");
 }
 const copy = {
-  "zh-CN": { tools: "画布创作工具", add: "添加音频", model: "生成模型", prompt: "朗读文本", library: "音色库",
+  "zh-CN": { nodeType: "音频", model: "生成模型", prompt: "朗读文本", library: "音色库",
     mine: "我的音色", create: "创建音色", name: "音色名称", recording: "参考录音", transcript: "录音逐字稿（选填）",
     generate: "提交生成", saved: "已保存到本机", delete: "删除音色",
     presetText: "这是 OpenDirector 使用智谱预置音色彤彤生成的旁白。", cloneText: "这是使用刚刚复刻的音色生成的旁白。" },
-  "en-US": { tools: "Canvas creation tools", add: "Add Audio", model: "Generation model", prompt: "Text to read",
+  "en-US": { nodeType: "Audio", model: "Generation model", prompt: "Text to read",
     library: "Voice library", mine: "My voices", create: "Create voice", name: "Voice name", recording: "Reference recording",
     transcript: "Recording transcript (optional)", generate: "Generate", saved: "Saved on this device", delete: "Delete voice",
     presetText: "OpenDirector narration with the Zhipu preset voice Tongtong.", cloneText: "Narration with the voice that was just cloned." },
@@ -75,7 +76,7 @@ try {
     };
     await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`);
     await page.getByText(L.saved, { exact: true }).waitFor();
-    await page.getByRole("toolbar", { name: L.tools }).getByRole("button", { name: L.add, exact: true }).click();
+    await addCanvasNode(page, L.nodeType);
     await page.getByRole("combobox", { name: L.model, exact: true }).click();
     await page.getByRole("listbox", { name: L.model, exact: true }).locator(`[data-option-id="config:${config.id}"]`).click();
     await until(async () => (await state()).generationSpecs[0]?.modelConfigId === config.id);

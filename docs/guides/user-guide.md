@@ -6,8 +6,8 @@
 
 On the welcome screen, choose **Create with chat** or **Create on canvas**. The canvas option is preselected on your first visit. Choose **Enter workspace** to open your project immediately, or **Get started** to set up the assistant and pick your first tasks. Both buttons save your choice in this browser. Once you have finished setup, your project opens directly. Select **Chat** or **Canvas** in the top bar to switch at any time.
 
-- **Create with chat** centers the conversation so you can describe a goal and work with the assistant. Press `Shift` twice to focus the input. Select **Canvas** in the top bar to inspect or edit nodes and the timeline.
-- **Create on canvas** places chat on the left and the canvas on the right, with a default 1:2 split. Drag the divider to resize the chat, or double-click it to restore the default width. Use **Collapse AI chat** to hide the chat and **Chat with AI** to bring it back.
+- In **Create with chat**, use the composer at the bottom to describe a goal or attach a reference. On wide screens, the sidebar lists this project's conversations. Select **Float on canvas** in the top bar to keep chatting while you edit. In a smaller window, open **Conversation history** from the chat header and switch workspaces using **Canvas** in the top bar. Press `Shift` twice to focus the composer.
+- **Create on canvas** opens with chat on the left and the canvas on the right in a 1:2 split. On a wide screen, drag the chat title to place the conversation anywhere over the canvas, or select **Float chat**. Select **Dock chat to the left** to return to the split view.
 - In a narrow window, **Canvas** shows one area at a time. Use **Show canvas** and **Chat with AI** to switch between them.
 
 Both modes share the same project, conversation, draft and attachments. Switching modes preserves the canvas view and keeps replies and generation tasks running without submitting them again.
@@ -84,11 +84,11 @@ The first launch creates an untitled canvas. Later launches can restore the most
 
 - Click the project name at the top left to rename it. Press `Enter` or click elsewhere to save, or press `Esc` to cancel.
 - Click the arrow next to the name to switch projects. Choose **New canvas project** to create one.
-- On an empty canvas, click **Configure models** to open **Settings → Model connections**.
-- Click **Try image example** or **Try video example** on an empty canvas to import a hosted sample: it downloads with a progress bar, imports as a new project and opens it. A download that is a ZIP around a single `.canvas` file is unwrapped automatically, and a page returned instead of a file is reported rather than imported. The project menu's **Example canvases** row opens the full list, with sizes and a manual-import link for a sample that cannot be downloaded.
-- Use the left toolbar or double-click empty canvas space to create text, image, video, audio, timeline, or subject nodes.
+- Choose **Add node** in the left toolbar, then pick text, image, video, audio, timeline, or subject. To place the node at a particular spot, double-click that spot on the empty canvas and choose its type. With the canvas focused, press `T` to add a text node directly.
+- To explore a complete project, select **Browse example canvases** on an empty canvas or **Example canvases** in the project menu. The list shows sample sizes and download progress, and offers manual download links where available. Importing a sample opens a new project. A ZIP containing one `.canvas` file is unpacked automatically. If a download returns a webpage, the picker reports the error.
+- To connect a generation model, open **Settings → Model connections**.
 - Right-click empty canvas space to create a node, paste, undo, or redo.
-- Click **Upload** on the left or drag files onto the canvas to add assets. Use **Asset library** to choose existing assets.
+- Click **Upload** on the left or drag files onto the canvas to add assets. Click **Asset library** to choose existing material.
 - Single-image HEIC and HEIF photos are supported; multi-image files and sequences are rejected. OpenDirector retains the original file and creates an oriented, full-resolution PNG for browser display. Downloads, canvas archives and timeline media packages retain the original. Files must decode successfully and contain at most 25 million pixels. If an original is unavailable, exporting reports an error instead of substituting the display preview.
 - Double-click a node's name to rename it. Double-click its content to open the appropriate editor or preview.
 
@@ -154,11 +154,12 @@ Click a source number to view its full URL in a bordered information card, then 
 
 Use the chat in either creation mode, select a chat model, and describe what you want to create. If the chat is collapsed in **Canvas**, click **Chat with AI** to reopen it. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
-Use **New conversation** at the top of the panel to start a separate chat. **Conversation history** lets you search and switch between this canvas's conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices; the active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
+Use **New conversation** to start a separate chat. Search for an earlier conversation in the chat sidebar, or open **Conversation history** from the chat header when the sidebar is hidden. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices. The active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
 
 - Press `Enter` to send, or `Shift+Enter` for a new line.
 - You can stop the response while it is being generated.
-- In **Canvas**, click **Collapse AI chat** to hide the chat panel. Drag its right edge to resize it, or double-click the edge to restore the default width.
+- In **Canvas**, use **Collapse AI chat** and **Chat with AI** to hide and reopen the panel. When docked, drag its right edge to resize it or double-click the edge to restore the default width.
+- To move chat with the keyboard, focus its title and press an arrow key. Hold `Shift` to move farther. Your browser remembers the floating position and restores it when there is enough room.
 
 Asset generation may continue after the reply ends. Check its progress in **Generation history**.
 

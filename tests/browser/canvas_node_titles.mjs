@@ -1,4 +1,5 @@
 /** Isolated API/Vite: hidden sources reserve default node numbers. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -69,9 +70,6 @@ try {
   await page.unroute(bootstrap);
   await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
-  const add = page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加图片", exact: true });
   const savedTitle = async (title) => {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
@@ -91,10 +89,11 @@ try {
     }
     throw new Error(`Default title was not persisted: ${title}`);
   };
-  await add.click();
+  await addCanvasNode(page, "图片");
   await savedTitle("图片 5");
   // Two requests in one browser callback must use sequential applied state.
-  await add.evaluate((button) => {
+  await page.getByRole("button", { name: "添加节点", exact: true }).click();
+  await page.getByRole("menuitem", { name: "图片", exact: true }).evaluate((button) => {
     button.click();
     button.click();
   });
@@ -127,7 +126,7 @@ try {
       .count(),
     0,
   );
-  await add.click();
+  await addCanvasNode(page, "图片");
   await savedTitle("图片 9");
   assert.deepEqual(errors, []);
   console.log(

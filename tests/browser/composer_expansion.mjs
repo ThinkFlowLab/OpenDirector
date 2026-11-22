@@ -1,4 +1,5 @@
 /** Isolated fixture only: compact spacing and an expanded editor keep one draft. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { chooseGenerationModel } from "./model_picker.mjs";
@@ -55,10 +56,7 @@ try {
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   const checked = [];
   for (const kind of ["视频", "图片"]) {
-    await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", { name: `添加${kind}`, exact: true })
-      .click();
+    await addCanvasNode(page, kind);
     if (kind === "图片") {
       const model = (await call("/api/model-configs")).find(
         (model) => model.modelId === "Qwen/Qwen-Image-2.1",

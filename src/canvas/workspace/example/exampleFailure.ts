@@ -1,4 +1,4 @@
-/** One sentence per example failure, shared by the picker and the empty-state buttons. */
+/** Localize download and import failures for the example picker and first-run setup. */
 import type { Translate } from "../../../i18n/I18nProvider.tsx";
 import type { ExampleStatus } from "./useExampleImport.ts";
 

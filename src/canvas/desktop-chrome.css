@@ -226,8 +226,8 @@ html[data-desktop-chrome] .cw-workspace .cw-assistant-panel {
   left: calc(var(--od-sidebar-width) + 14px);
 }
 html[data-desktop-chrome] .cw-workspace[data-workspace-mode="agent"] .cw-assistant-panel {
-  width: min(800px, calc(100% - var(--od-sidebar-width) - 28px));
-  left: calc(var(--od-sidebar-width) + max(14px, (100% - var(--od-sidebar-width) - 800px) / 2));
+  top: var(--desktop-toolbar-height);
+  left: var(--od-sidebar-width);
 }
 html[data-desktop-chrome] .cw-workspace[data-narrow="true"][data-workspace-mode="canvas"] .cw-assistant-panel {
   bottom: 62px;

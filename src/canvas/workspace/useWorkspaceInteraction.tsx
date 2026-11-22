@@ -624,7 +624,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       pointerGesture.current.moved ||
       !selectionControls,
     controlsKey: `${assistantOpen}:${assistantLayout.width}:${hasComposer}:${hasToolbar}:${composerExpanded}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
-    preserveViewportKey: `${workspaceMode}:${canvasVisible}:${assistantOpen}:${assistantLayout.width}`,
+    preserveViewportKey: `${workspaceMode}:${canvasVisible}:${assistantOpen}:${assistantLayout.columnWidth}`,
   });
   revealCreatedNodes.current = (nodes, allNodes) => {
     if (!canvasVisible || switchPending.current || viewportMoving.current || interacting || pointerGesture.current.active ||

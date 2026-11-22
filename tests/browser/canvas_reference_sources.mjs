@@ -235,6 +235,17 @@ try {
       fixture.source,
     );
     await page.locator(".react-flow__edge").first().waitFor();
+    // The edge is optimistic. Start the next mention after the first reference
+    // is stored and the picker has returned the caret to the prompt.
+    await page.waitForFunction(async ({ projectId, sourceId }) => {
+      if (document.activeElement?.getAttribute("aria-label") !== "生成提示词") return false;
+      const response = await fetch(`/api/creation/projects/${projectId}`, {
+        headers: { "X-OpenDirector-Request": "1" },
+      });
+      if (!response.ok) throw new Error(`Project read failed: ${response.status}`);
+      const project = await response.json();
+      return project.references.some((ref) => ref.active && ref.source.id === sourceId);
+    }, { projectId: fixture.id, sourceId: fixture.source }, { polling: 100 });
     await editor.press("End");
     await editor.press("Enter");
     await editor.pressSequentially("@");

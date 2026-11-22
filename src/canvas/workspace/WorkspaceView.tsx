@@ -24,13 +24,11 @@ import { createWorkspaceProject, listWorkspaceProjects, openWorkspaceProject, sa
 import { studyImage } from "../assets";
 import { ExampleCanvasDialog } from "./example/ExampleCanvasDialog.tsx";
 import {
-  IMAGE_EXAMPLE_ID,
   VIDEO_EXAMPLE_ID,
   availableExamples,
   loadExampleCatalog,
   type ExampleEntry,
 } from "./example/exampleCatalog.ts";
-import { exampleFailureText, examplePercent } from "./example/exampleFailure.ts";
 import { useExampleImport } from "./example/useExampleImport.ts";
 
 import { AssistantPanel } from "../AssistantPanel";
@@ -328,10 +326,6 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   } = rt;
 
 
-  /**
-   * Example canvases: one cached catalog feeds both the empty-state buttons and
-   * the picker in the project menu.
-   */
   const [exampleEntries, setExampleEntries] = useState<ExampleEntry[] | null>(null);
   const [welcomeExampleId, setWelcomeExampleId] = useState<string | null>(null);
   const [firstRunArriving, setFirstRunArriving] = useState(false);
@@ -378,30 +372,6 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setWelcomeExampleId(entry.id);
     await welcomeExampleImport.start(entry);
   };
-  const exampleImport = useExampleImport({ importCanvas: importCanvasArchive });
-  const [exampleMissing, setExampleMissing] = useState(false);
-  const runExampleButton = async (id: string) => {
-    setExampleMissing(false);
-    exampleImport.reset(IMAGE_EXAMPLE_ID);
-    exampleImport.reset(VIDEO_EXAMPLE_ID);
-    const entry = (await loadExamples()).find((item) => item.id === id);
-    if (!entry) {
-      setExampleMissing(true);
-      return;
-    }
-    // A finished import switches the document, so the bar disappears with it.
-    if (await exampleImport.start(entry)) exampleImport.reset(entry.id);
-  };
-  const exampleButtonStatus =
-    exampleImport.statuses[IMAGE_EXAMPLE_ID] ??
-    exampleImport.statuses[VIDEO_EXAMPLE_ID];
-  const exampleBusy =
-    exampleButtonStatus?.phase === "downloading" ||
-    exampleButtonStatus?.phase === "importing";
-  const exampleProgress = exampleButtonStatus
-    ? examplePercent(exampleButtonStatus)
-    : null;
-
 
   const outputState = timelineOutput.state;
   const outputSource = outputState ? doc.nodes.find((node) => node.id === outputState.itemId) : undefined;
@@ -769,6 +739,24 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             }}
           />
           </div>
+          {workspaceMode === "agent" && !assistantLayout.mobile && (
+            <button
+              type="button"
+              className="cw-float-on-canvas"
+              data-testid="workspace-float-chat"
+              onClick={() => {
+                assistantLayout.enableFloating();
+                setAssistantOpen(true);
+                changeWorkspaceMode("canvas");
+                requestAnimationFrame(() =>
+                  root.current?.querySelector<HTMLElement>(".cw-assistant-move-handle")?.focus({ preventScroll: true }),
+                );
+              }}
+            >
+              <CanvasIcon name="floatPanel" size={16} />
+              {t("workspaceModes.floatOnCanvas")}
+            </button>
+          )}
           {workspaceMode === "agent" && <IconButton
             name="settings" label={t("canvas.workspace.toolbar.settings")}
             onClick={() => { setSettingsCategory("general"); setSettingsOpen(true); }}
@@ -1149,109 +1137,31 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         />
       )}
       <CanvasToolRail
-        holdCollapsed={false}
-        items={[
-          ...CANVAS_CREATION_TOOLS.map((tool) => ({
-            name: tool.kind,
-            icon: tool.icon,
-            label: t(tool.labelKey),
-            actionLabel: tool.unavailable
-              ? t(tool.labelKey)
-              : t("canvas.rail.add", { label: t(tool.labelKey) }),
-            shortcut: tool.kind === "text" ? "T" : undefined,
-            unavailable: tool.unavailable,
-            onClick: tool.unavailable ? undefined : () => addNode(tool.kind),
-          })),
-          {
-            name: "folder",
-            icon: "rail-folder",
-            label: t("canvas.rail.assets"),
-            preserveCollapsedOnFocusRestore: true,
-            separatorBefore: true,
-            active: libraryOpen,
-            onClick: () => setLibraryOpen(true),
-          },
-          {
-            name: "upload",
-            icon: "rail-upload",
-            label: t("canvas.rail.upload"),
-            preserveCollapsedOnFocusRestore: true,
-            actionLabel: t("canvas.rail.uploadLocal"),
-            shortcut: navigator.platform.includes("Mac")
-              ? "Meta+O"
-              : "Control+O",
-            onClick: () => openFilePicker(),
-          },
-        ]}
+        menuOpen={Boolean(menu?.trigger)}
+        libraryOpen={libraryOpen}
+        onToggleMenu={(trigger) => {
+          if (menu?.trigger === trigger) {
+            setMenu(null);
+            return;
+          }
+          const { right, top } = trigger.getBoundingClientRect();
+          setMenu({ mode: "create", trigger, x: right, y: top, world: center() });
+        }}
+        onAssets={() => setLibraryOpen(true)}
+        onUpload={() => openFilePicker()}
       />
       {!doc.nodes.length && ready && (
         <div className="cw-empty">
-          <div className="cw-aurora" />
-          <div className="cw-empty-orb">
-            <CanvasIcon name="clapperboard" size={56} />
-          </div>
           <h1>{t("canvas.workspace.empty.title")}</h1>
           <p>{t("canvas.workspace.empty.hint")}</p>
-          <div>
-            <button
-              onClick={() => {
-                setSettingsCategory("models");
-                setSettingsOpen(true);
-              }}
-            >
-              <CanvasIcon name="model" size={15} />
-              {t("canvas.workspace.empty.configureModels")}
-            </button>
-            <button
-              disabled={exampleBusy}
-              onClick={() => void runExampleButton(IMAGE_EXAMPLE_ID)}
-            >
-              <CanvasIcon name="image" size={15} />
-              {t("canvas.workspace.empty.tryImage")}
-            </button>
-            <button
-              disabled={exampleBusy}
-              onClick={() => void runExampleButton(VIDEO_EXAMPLE_ID)}
-            >
-              <CanvasIcon name="video" size={15} />
-              {t("canvas.workspace.empty.tryVideo")}
-            </button>
-          </div>
-          {exampleBusy && exampleButtonStatus && (
-            <div
-              className="cw-empty-example-status"
-              role="status"
-              aria-live="polite"
-            >
-              <progress
-                className="cw-example-progress"
-                aria-label={t("canvas.example.progress.label")}
-                {...(exampleProgress === null
-                  ? {}
-                  : {
-                      value: exampleButtonStatus.received ?? 0,
-                      max: exampleButtonStatus.total ?? 1,
-                    })}
-              />
-              <span>
-                {exampleButtonStatus.phase === "importing"
-                  ? t("canvas.example.state.importing")
-                  : exampleProgress === null
-                    ? t("canvas.example.state.downloading")
-                    : t("canvas.example.state.downloadingPercent", {
-                        percent: exampleProgress,
-                      })}
-              </span>
-            </div>
-          )}
-          {(exampleMissing || exampleButtonStatus?.phase === "failed") && (
-            <small className="cw-empty-example-error" role="alert">
-              {exampleMissing
-                ? t("canvas.example.error.unknown")
-                : exampleFailureText(t, exampleButtonStatus!)}
-            </small>
-          )}
-          <small>{t("canvas.workspace.empty.tagline")}</small>
+          <button
+            type="button"
+            disabled={exampleLoading}
+            onClick={() => void openExamplePicker()}
+          >
+            {t("canvas.workspace.empty.browseExamples")}
+            <CanvasIcon name="chevronRight" size={14} />
+          </button>
         </div>
       )}
       {!ready && <div className="cw-loading canvas-loading-message"><span className="canvas-loading-spinner" aria-hidden="true" />{t("canvas.workspace.loading.opening")}</div>}
@@ -1967,6 +1877,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           x={menu.x}
           y={menu.y}
           mode={menu.mode ?? "context"}
+          anchor={menu.trigger}
           canPaste={Boolean(clipboard.current?.nodes.length)}
           canUndo={businessHistory.undo && !historyReplaying}
           canRedo={businessHistory.redo && !historyReplaying}

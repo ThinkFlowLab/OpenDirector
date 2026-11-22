@@ -230,7 +230,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         ?.querySelector<HTMLButtonElement>(".cw-chat-button")
         ?.focus(),
     );
-  });
+  }, workspaceMode);
   const assistantVisible = workspaceMode === "agent" || assistantOpen;
   const canvasVisible = workspaceMode === "canvas" && (!assistantLayout.mobile || !assistantOpen);
   const toolbarElement = useRef<HTMLDivElement>(null);

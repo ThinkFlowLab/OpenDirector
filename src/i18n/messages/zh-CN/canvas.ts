@@ -24,7 +24,7 @@ export const canvas = {
   "canvas.menu.redo": "重做",
   "canvas.menu.undo": "撤销",
   "canvas.rail.tools": "画布创作工具",
-  "canvas.rail.add": "添加{label}",
+  "canvas.rail.addNode": "添加节点",
   "canvas.rail.assets": "资产库",
   "canvas.rail.upload": "上传",
   "canvas.rail.uploadLocal": "上传本地素材",

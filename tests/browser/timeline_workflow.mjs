@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { spawnOwned as spawn, stopOwned, pythonExecutable, sourcePythonPath, executable } from "./host.mjs";
 /** Owns isolated API/Vite processes; restarts the API over the SAME project root. */
 import assert from "node:assert/strict";
@@ -375,10 +376,7 @@ try {
       releaseAssistant();
       await page.unroute(assistantPath);
     }
-    await page
-      .getByRole("toolbar", { name: "Canvas creation tools" })
-      .getByRole("button", { name: "Add Timeline", exact: true })
-      .click();
+    await addCanvasNode(page, "Timeline");
     const timelineItem = await until(async () =>
       (await state()).canvasItems.find((i) => i.kind === "timeline"),
     );

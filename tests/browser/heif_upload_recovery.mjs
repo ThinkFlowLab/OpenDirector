@@ -1,4 +1,5 @@
 /** HEIF upload failures and save acknowledgements, including the production build. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -77,8 +78,8 @@ try {
         if (freshNode) {
           await page.route("**/commands", commandRoute);
           await page.route("**/browser-image", previewRoute);
-          await page.getByRole("button", { name: mode === "video-reference"
-            ? (en ? "Add Video" : "添加视频") : (en ? "Add Image" : "添加图片"), exact: true }).click();
+          const label = mode === "video-reference" ? (en ? "Video" : "视频") : (en ? "Image" : "图片");
+          await addCanvasNode(page, label);
           targetNodeId = await page.locator(".react-flow__node").getAttribute("data-id");
           assert.ok(targetNodeId, "capture the original upload target identity");
         } else if (mode === "failure") await page.route("**/browser-image", previewRoute);

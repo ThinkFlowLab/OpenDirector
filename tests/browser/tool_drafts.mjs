@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Saved parameters and real PNG mask -> fixed tool input -> editable output. */
 import assert from "node:assert/strict";
@@ -67,10 +68,7 @@ async function open(id) {
 try {
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await saved();
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加图片", exact: true })
-    .click();
+  await addCanvasNode(page, "图片");
   await chooseGenerationModel(page, { label: "fixture-image" });
   await page
     .getByRole("textbox", { name: "生成提示词", exact: true })

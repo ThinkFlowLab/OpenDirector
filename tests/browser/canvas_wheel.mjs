@@ -1,4 +1,5 @@
 /** Isolated fixture only: modified wheels zoom only within the canvas region. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -193,10 +194,7 @@ try {
     page.getByRole("toolbar", { name: "节点操作", exact: true }),
     "node toolbar",
   );
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加视频", exact: true })
-    .click();
+  await addCanvasNode(page, "视频");
   const editor = page.getByRole("textbox", { name: "生成提示词", exact: true });
   await editor.fill(
     Array.from({ length: 60 }, (_, i) => `镜头${i + 1}：保持动作与镜头。`).join(

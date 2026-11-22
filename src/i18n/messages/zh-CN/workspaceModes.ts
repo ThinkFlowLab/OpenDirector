@@ -6,4 +6,5 @@ export const workspaceModes = {
   "workspaceModes.short.canvas": "画布",
   "workspaceModes.preferenceFailed": "已切换，本浏览器未能保存模式偏好。",
   "workspaceModes.showCanvas": "查看画布",
+  "workspaceModes.floatOnCanvas": "在画布中浮动",
 } as const;
