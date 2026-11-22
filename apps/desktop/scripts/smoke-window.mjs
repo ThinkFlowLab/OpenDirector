@@ -267,9 +267,14 @@ async function assertClipboardWrite(window, text, userGesture) {
   await window.webContents.executeJavaScript(
     `navigator.clipboard.writeText(${JSON.stringify(text)}).then(() => true, error => { throw new Error('Clipboard write was rejected: ' + error.name); })`, userGesture);
   // The renderer promise settles before the system clipboard holds the value:
-  // an immediate read still returns the previous contents, which measured
-  // intermittently for a click-activated write.
-  await waitFor(async () => (await clipboard.readText()) === text, `Clipboard write did not reach the system clipboard: ${text}`, 20);
+  // an immediate read still returns the previous contents, measured for the
+  // scripted write in the packaged application and intermittently for a click.
+  let actual = await clipboard.readText();
+  for (let attempt = 0; attempt < 20 && actual !== text; attempt++) {
+    await delay(100);
+    actual = await clipboard.readText();
+  }
+  if (actual !== text) throw new Error(`Clipboard write did not reach the system clipboard: expected ${text}, read ${JSON.stringify(actual)}`);
 }
 
 async function smokeLargeVideo(window, host, projectId, fixture, firstLaunch) {
