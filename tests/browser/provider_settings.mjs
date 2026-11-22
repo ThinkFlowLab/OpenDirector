@@ -23,6 +23,9 @@ await page.addInitScript(() => {
 });
 page.setDefaultTimeout(15000);
 const calls = [];
+const initialModelIds = new Set(
+  (await call("/api/model-configs")).map((model) => model.id),
+);
 page.on("request", (request) => calls.push(request.url()));
 try {
   const projectId = crypto.randomUUID();
@@ -36,19 +39,29 @@ try {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Model connections", exact: true }).click();
   await page.locator(".cw-model-setup-row").filter({ hasText: "Image model" }).getByRole("button").click();
-  for (const [category, interfaces] of [
-    ["Image", ["vLLM-Omni image API", "vLLM-Omni segmentation API"]],
-    ["Audio", ["vLLM-Omni speech synthesis API", "vLLM-Omni music generation API", "vLLM-Omni transcription API"]],
-    ["Chat", ["OpenAI compatible"]],
+  for (const [category, stageCount, defaultStage, endpoints] of [
+    ["Image", 2, "OpenAI-compatible API (including gpt-image and vLLM-Omni Z-Image-Turbo)", "Endpoints: /images/generations, /images/edits"],
+    ["Audio", 3, "OpenAI-compatible speech synthesis (including vLLM-Omni TTS)", "Endpoints: /audio/speech"],
+    ["Chat", 0, null, null],
   ]) {
     await page.getByRole("button", { name: category, exact: true }).click();
     await page.getByRole("button", { name: "Add service", exact: true }).click();
-    for (const name of interfaces) {
-      await page.getByRole("combobox", { name: "Provider", exact: true }).click();
-      assert.equal(await page.getByRole("listbox", { name: "Provider", exact: true }).getByRole("option").first().getAttribute("aria-label"), "OpenAI compatible");
-      assert.equal(await page.getByRole("option", { name: "Custom service", exact: true }).count(), 0);
-      await page.getByRole("option", { name, exact: true }).click();
-      assert.equal(await page.getByText("API protocol", { exact: true }).count(), 0);
+    await page.getByRole("combobox", { name: "Provider", exact: true }).click();
+    assert.equal(await page.getByRole("listbox", { name: "Provider", exact: true }).getByRole("option").first().getAttribute("aria-label"), "OpenAI compatible");
+    assert.equal(await page.getByRole("option", { name: "Custom service", exact: true }).count(), 0);
+    await page.getByRole("option", { name: "vLLM-Omni local service", exact: true }).click();
+    assert.equal(await page.getByText("API protocol", { exact: true }).count(), 0);
+    assert.equal(
+      await page.getByLabel("Service URL (Base URL)", { exact: true }).inputValue(),
+      "http://127.0.0.1:8000/v1",
+    );
+    const stage = page.getByRole("combobox", { name: "Stage", exact: true });
+    if (stageCount) {
+      assert.equal(await stage.locator("option").count(), stageCount);
+      assert.equal(await stage.locator("option:checked").innerText(), defaultStage);
+      assert.equal(await page.getByText(endpoints, { exact: true }).count(), 1);
+    } else {
+      assert.equal(await stage.count(), 0);
     }
     await page.screenshot({ path: `/tmp/provider-${category}.png` });
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -57,13 +70,24 @@ try {
   await page.getByRole("button", { name: "Add service", exact: true }).click();
   await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   assert.equal(await page.getByRole("option", { name: "Custom service", exact: true }).count(), 0);
-  assert.equal(await page.getByRole("group", { name: "vLLM-Omni compatible", exact: true }).getByRole("option").count(), 3);
-  for (const name of ["vLLM-Omni video API", "vLLM-Omni segmentation API", "vLLM-Omni depth API"]) {
-    await page.getByRole("option", { name, exact: true }).click();
-    assert.equal(await page.getByText("API protocol", { exact: true }).count(), 0);
-    assert.equal(await page.getByRole("combobox", { name: "Provider", exact: true }).innerText(), name);
-    await page.getByRole("combobox", { name: "Provider", exact: true }).click();
+  const omniGroup = page.getByRole("group", { name: "vLLM-Omni compatible", exact: true });
+  assert.equal(await omniGroup.getByRole("option").count(), 1);
+  assert.equal(await omniGroup.getByRole("option").first().getAttribute("aria-label"), "vLLM-Omni local service");
+  await page.getByRole("option", { name: "vLLM-Omni local service", exact: true }).click();
+  assert.equal(await page.getByText("API protocol", { exact: true }).count(), 0);
+  assert.equal(await page.getByRole("combobox", { name: "Provider", exact: true }).innerText(), "vLLM-Omni local service");
+  const videoStage = page.getByRole("combobox", { name: "Stage", exact: true });
+  assert.equal(await videoStage.locator("option").count(), 3);
+  for (const [label, endpoints] of [
+    ["Async /videos API (including vLLM-Omni)", "Endpoints: /videos"],
+    ["vLLM-Omni segmentation API (SAM 3)", "Endpoints: /images/segmentations, /videos/segmentations"],
+    ["vLLM-Omni depth API (Video Depth Anything)", "Endpoints: /videos/depth"],
+  ]) {
+    await videoStage.selectOption({ label });
+    assert.equal(await page.getByText(endpoints, { exact: true }).count(), 1);
   }
+  await videoStage.selectOption({ label: "Async /videos API (including vLLM-Omni)" });
+  await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.getByRole("textbox", { name: "Search Provider" }).fill("MiniMax");
   assert.equal(await page.getByRole("listbox", { name: "Provider", exact: true }).getByRole("option").count(), 1);
   await page.keyboard.press("Escape");
@@ -213,4 +237,12 @@ try {
   throw error;
 } finally {
   await browser.close();
+  // Leave the shared fixture catalogue as this workflow found it so later
+  // browser workflows do not inherit its saved services.
+  for (const model of await call("/api/model-configs").catch(() => [])) {
+    if (!initialModelIds.has(model.id))
+      await call(`/api/model-configs/${model.id}`, undefined, "DELETE").catch(
+        () => {},
+      );
+  }
 }

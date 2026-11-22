@@ -786,7 +786,11 @@ try {
     .getByText("Fixture catalogue unavailable", { exact: true }).waitFor();
   await page.unroute("**/api/model-configs");
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
-  await page.locator(`.react-flow__node[data-id="${itemId}"]`).click();
+  const canvasNode = page.locator(
+    `.react-flow__node[data-id="${itemId}"]`,
+  );
+  await canvasNode.waitFor({ timeout: 30000 });
+  await canvasNode.click();
   assert.equal(await page.locator(".cw-generation-composer button.cw-run-button").isEnabled(), true);
   assert.match(await page.locator(".cw-generation-composer").innerText(), /Preserve this prompt/);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
