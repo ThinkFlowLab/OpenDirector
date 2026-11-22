@@ -117,6 +117,8 @@ export const assistant = {
   "assistant.reply.plan": "执行计划",
   "assistant.reply.empty": "本次回复未生成内容。",
   "assistant.reply.copy": "复制",
+  "assistant.reply.suggestions": "建议回复",
+  "assistant.reply.useSuggestion": "用这条建议填写草稿",
   "assistant.reply.copyReply": "复制回复",
   "assistant.reply.copied": "已复制",
   "assistant.reply.copyFailed": "复制失败，请选择正文复制",

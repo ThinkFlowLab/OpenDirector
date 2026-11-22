@@ -318,6 +318,34 @@
 .cw-assistant-message-text {
   white-space: pre-wrap;
 }
+.cw-chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.cw-chat-suggestions button {
+  max-width: 100%;
+  padding: 5px 11px;
+  border: 1px solid var(--chat-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--chat-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.cw-chat-suggestions button:hover,
+.cw-chat-suggestions button:focus-visible {
+  background: var(--chat-hover);
+}
+.cw-chat-suggestions button:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 2px;
+}
 .cw-assistant-message-status {
   display: block;
   margin-top: 8px;

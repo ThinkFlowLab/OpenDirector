@@ -158,6 +158,16 @@ if args.assistant_fixture:
 
     async def fixture_agent(self, run):
         assistant_contexts.append(run.messages)
+        if run.messages[-1]['content'].partition('\n')[0] == '建议回复验收':
+            yield {'type': 'delta', 'text': (
+                '- 展开海边重逢的完整分镜\n'
+                '- 换一个安静克制的结尾\n'
+                '- 补一版黄昏海边的视觉参考\n'
+                f'- {"补充整份分镜的镜头和对白" * 8}\n\n'
+                '[opendirector-replies]: #'
+            )}
+            await assistant_gate.wait()
+            return
         yield {'type': 'delta', 'text': '已收到创作要求。'}
         await assistant_gate.wait()
         yield {'type': 'delta', 'text': '这是隔离测试回复。'}

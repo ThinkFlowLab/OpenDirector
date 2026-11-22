@@ -62,6 +62,10 @@ for line in sys.stdin:
  elif req['method']=='session/prompt':
   assert Path(os.environ['PWD']).samefile(Path.cwd())
   blocks=[block['text'] for block in req['params']['prompt']]
+  execution_context = blocks[0 if resumed else 1]
+  assert '3 to 5 distinct suggestions' in execution_context, 'missing suggested reply count'
+  assert 'at most 80 characters per suggestion' in execution_context, 'missing suggested reply length limit'
+  assert '[opendirector-replies]: #' in execution_context.splitlines(), 'missing suggested reply marker'
   if resumed:
    assert blocks[0].startswith('Execution directory:')
    assert not any('Conversation history' in block or 'You are OpenDirector' in block for block in blocks)
