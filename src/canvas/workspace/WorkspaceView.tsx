@@ -366,13 +366,22 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   const outputState = timelineOutput.state;
   const outputSource = outputState ? doc.nodes.find((node) => node.id === outputState.itemId) : undefined;
   const existingOutput = outputState ? projected.nodes.find((node: { id: string }) => node.id === outputState.output.id) : undefined;
+  const outputSize = {
+    width: existingOutput?.width ?? 352,
+    height: existingOutput?.height ?? 198,
+  };
   const pendingOutput = outputSource && outputState && outputState.phase !== "done"
     ? {
         id: outputState.output.id,
         type: "video" as const,
         position: outputState.output.position,
-        width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198,
-        style: { width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198 },
+        width: outputSize.width, height: outputSize.height,
+        // The injection is rebuilt on every render, so React Flow compares a new
+        // node object each time and resets `handleBounds` whenever `measured` is
+        // absent. The pending reference edge then has no path and disappears until
+        // the node is measured again, which a settled canvas never triggers.
+        measured: outputSize,
+        style: { width: outputSize.width, height: outputSize.height },
         selectable: false, draggable: false, connectable: false, deletable: false, focusable: false,
         data: {
           kind: "video" as const, title: outputState.output.title,
