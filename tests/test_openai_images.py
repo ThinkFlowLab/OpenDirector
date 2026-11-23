@@ -24,6 +24,9 @@ from opendirector.domain.generation import GenerationError
 from opendirector.integrations.model_adapters import OpenAIImages, adapter_for
 from opendirector.integrations.providers import GenerationProviders
 
+
+pytestmark = pytest.mark.cpu
+
 GPT_IMAGE = {'kind': 'image', 'url': 'https://api.openai.com/v1', 'modelId': 'gpt-image-1', 'protocol': 'openai'}
 KEY = 'sk-test-never-recorded'
 

@@ -14,7 +14,7 @@ def audit(profile, contract, manifest, *, require_executed=False):
         raise ValueError('Unsupported evidence or contract schema')
     scope = profile['metadata']
     if (not profile.get('collection_complete') or scope.get('paths') != ['tests']
-            or scope.get('selection') or scope.get('keyword') or profile['deselected_count']
+            or scope.get('selection') not in ('', 'cpu') or scope.get('keyword') or profile['deselected_count']
             or scope.get('ignore') or scope.get('ignore_glob')):
         raise ValueError('A complete, unfiltered tests/ inventory is required')
     cases = profile['tests']
@@ -22,6 +22,8 @@ def audit(profile, contract, manifest, *, require_executed=False):
     if len(ids) != len(set(ids)) or len(ids) != profile['collected_count']:
         raise ValueError('Duplicate or missing collected test identities')
     for case in cases:
+        if scope.get('selection') == 'cpu' and case.get('hardware') != ['cpu']:
+            raise ValueError('CPU inventory contains missing or non-CPU hardware: ' + case['nodeid'])
         layers = case['explicit_layers']
         if len(layers) > 1 or not set(layers) <= LAYERS:
             raise ValueError('Conflicting or unknown CI layer: ' + case['nodeid'])

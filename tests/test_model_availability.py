@@ -18,6 +18,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.capability_probe import CapabilityProbe
 
 
+pytestmark = pytest.mark.cpu
+
+
 NOW = 1794225600.0
 
 

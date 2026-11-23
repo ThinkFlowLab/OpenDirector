@@ -15,6 +15,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'

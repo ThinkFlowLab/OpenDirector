@@ -6,6 +6,9 @@ from test_model_availability import document, service
 from test_video_request_projection import reference, spec, video_config
 
 
+pytestmark = pytest.mark.cpu
+
+
 def configure_declaration(service, profile='video_to_video', *, inputs=None, support='supported'):
     configs, saved, state, availability = service
     config = video_config(configs, saved)

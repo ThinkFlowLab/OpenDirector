@@ -12,6 +12,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.media import processing
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize(('help_text', 'expected'), [
     (b'-fps_mode[:<stream_spec>]  set framerate mode\n', '-fps_mode'),
     (b'-fps_mode[:stream_specifier] fps_mode set framerate mode\n-vsync sync_mode set video sync\n', '-fps_mode'),

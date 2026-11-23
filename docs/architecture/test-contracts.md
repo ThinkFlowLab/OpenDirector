@@ -41,7 +41,7 @@ Business areas under `frontend/` and `python/` may expand with coverage. Move on
 | --- | --- | --- |
 | Directory / 目录 | `frontend`, `python`, `creation`, `agent`, etc. | Organization and discovery only; never pytest CI-layer marks. / 仅组织与发现，不是 pytest CI 层 mark。 |
 | CI layer / CI 层 | `ready`, `merge`, `nightly` | At most one per Python case; unmarked cases remain ready during migration. PR runs ready, queue runs ready + merge, nightly runs nightly plus intentional watchlist reruns after cutover. / 每个 Python 用例至多一个；迁移期未标记仍为 ready。切换后 PR 跑 ready，队列跑 ready + merge，nightly 跑 nightly 和明确的 watchlist 重跑。 |
-| Hardware platform / 机型 | Target `cpu`; accelerators and SKUs later / 目标 `cpu`，加速器与 SKU 后续 | Independent of the CI layer. Current default cases are CPU-only; registration/tagging/selection is follow-up work. Do not infer hardware from a folder or capability skip. / 与 CI 层正交；现有默认用例只需 CPU，注册、打标和筛选后续交付，不从目录或能力跳过推断机型。 |
+| Hardware platform / 机型 | `cpu`; reserved `gpu` / `cuda` / `rocm` / `xpu` / `npu` / CPU 与预留加速器 | Independent of the CI layer. Current default cases explicitly declare CPU. A collection hook defaults unmarked cases to CPU before selection and rejects multiple platforms. Do not infer hardware from a folder or capability skip. / 与 CI 层正交；现有默认用例显式标 CPU；收集时在筛选前为未标记用例补 CPU，拒绝多个机型标记，不从目录或能力跳过推断机型。 |
 | Capability / 能力 | `requires_ffmpeg`, `requires_posix` | Skip with a reason when unavailable; not lane or hardware selectors. / 缺能力时带原因跳过，不用于分车道或分机型。 |
 | Browser lane / 浏览器车道 | `gate`, `extended`, `extendedFixture`, `production`, `perf`, `manual` | Only `tests/browser/manifest.json` owns membership; these are not pytest marks. / 归属只由 manifest 管理，不是 pytest mark。 |
 

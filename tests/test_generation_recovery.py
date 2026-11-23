@@ -23,6 +23,9 @@ from opendirector.integrations.providers import GenerationProviders
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png():
     stream = io.BytesIO()
     Image.new('RGB', (16, 12)).save(stream, 'PNG')

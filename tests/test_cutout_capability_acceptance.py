@@ -18,6 +18,9 @@ from test_tool_native_mask import multipart
 from test_tool_tasks import configure, png, project, upload
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('mode', ['unsupported', 'closed', 'background_denied', 'allowed'])
 def test_cutout_checks_edit_request_and_replays_accepted_output(project, mode):
     store, pid, session = project

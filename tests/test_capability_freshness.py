@@ -8,6 +8,9 @@ from opendirector.application.model_availability import requests_for
 from test_model_availability import NOW, private, service
 
 
+pytestmark = pytest.mark.cpu
+
+
 def observed(age):
     return datetime.fromtimestamp(NOW - age, timezone.utc).isoformat()
 

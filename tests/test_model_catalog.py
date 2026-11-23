@@ -12,6 +12,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.model_configs import ModelConfigs
 
 
+pytestmark = pytest.mark.cpu
+
+
 class Store:
     def __init__(self, existing=None):
         self.existing = existing

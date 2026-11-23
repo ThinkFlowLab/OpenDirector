@@ -25,6 +25,12 @@ opendirector = "opendirector.cli:main"
 
 [tool.pytest.ini_options]
 markers = [
+  "cpu: CPU-only tests; default during hardware migration",
+  "gpu: reserved generic GPU platform",
+  "cuda: reserved CUDA platform",
+  "rocm: reserved ROCm platform",
+  "xpu: reserved XPU platform",
+  "npu: reserved NPU platform",
   "ready: fast deterministic checks for PR feedback",
   "merge: broader stubbed integration checks for the pre-merge gate",
   "nightly: timing-sensitive or opt-in external-service checks",

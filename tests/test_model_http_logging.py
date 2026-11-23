@@ -8,6 +8,9 @@ from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS
 from opendirector.integrations.generation_errors import transport_failure
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_logs_each_query_submission_poll_and_cancel(caplog):
     caplog.set_level('DEBUG', logger='opendirector.integrations.http_settings')
 

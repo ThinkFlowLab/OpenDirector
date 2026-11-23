@@ -63,15 +63,15 @@ jobs:
       - id: suite
         continue-on-error: true
         name: Full Python suite
-        run: python -m pytest tests -q -ra
+        run: python -m pytest tests -m cpu -q -ra
       - name: Collect failed test ids
         if: steps.suite.outcome == 'failure'
-        run: python -m pytest --lf --collect-only -q 2>/dev/null | grep '::' > failed-tests.txt || true
+        run: python -m pytest -m cpu --lf --collect-only -q 2>/dev/null | grep '::' > failed-tests.txt || true
       - id: rerun
         if: steps.suite.outcome == 'failure'
         continue-on-error: true
         name: Rerun failed subset once
-        run: python -m pytest --lf -q -ra
+        run: python -m pytest -m cpu --lf -q -ra
       - id: classify
         if: always()
         name: Classify outcome and probe flaky watchlist
@@ -83,7 +83,7 @@ jobs:
           if [ "${#IDS[@]}" -gt 0 ]; then
             watchlist=""
             for run in 1 2 3; do
-              if python -m pytest "${IDS[@]}" -q -ra >"/tmp/watchlist-run$run.log" 2>&1; then
+              if python -m pytest "${IDS[@]}" -m cpu -q -ra >"/tmp/watchlist-run$run.log" 2>&1; then
                 watchlist="$watchlist run$run=pass"
               else
                 watchlist="$watchlist run$run=fail"

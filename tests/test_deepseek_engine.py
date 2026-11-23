@@ -18,7 +18,7 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.agent.owner_rights import native_owner_access
 from opendirector_api.main import create_app
 
-pytestmark = pytest.mark.nightly
+pytestmark = [pytest.mark.cpu, pytest.mark.nightly]
 
 
 @pytest.mark.skipif(os.getenv('DEEPSEEK_ENGINE_TEST') != '1', reason='requires installed dsh CLI')

@@ -1,4 +1,6 @@
 """Agent timeline creates retain unique canvas-node provenance (issue #117)."""
+
+import pytest
 from uuid import uuid4
 
 from opendirector.application.creation_canvas import asset_ref
@@ -6,6 +8,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_assembly import upload_source
 from test_creation_canvas_service import project, send, ver
+
+
+pytestmark = pytest.mark.cpu
 
 
 def _clip(asset, clip_id, *, start=None):

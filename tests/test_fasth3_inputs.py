@@ -13,6 +13,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.integrations.fasth3 import native_prompt, video_parameters
 
 
+pytestmark = pytest.mark.cpu
+
+
 def source(kind, name, **extra):
     return {'id': str(uuid4()), 'name': name, 'kind': kind, 'type': kind + '/mp4', **extra}
 

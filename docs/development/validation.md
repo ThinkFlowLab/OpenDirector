@@ -53,9 +53,9 @@ Budgets measure stage wall time, not the sum of parallel job limits, and never j
 
 ### 过渡与必需检查 / Transition and required checks
 
-当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR、`merge_group: checks_requested` 和 main push 开启静态门禁；纯文档 PR / 合并组合按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，安全扫描见下方独立工作流；机型轴、合并队列强制配置与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR、`merge_group: checks_requested` 和 main push 开启静态门禁；纯文档 PR / 合并组合按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，安全扫描见下方独立工作流；机型轴已注册并选择 CPU，合并队列强制配置与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
 
-Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs, `merge_group: checks_requested` and main pushes. Documentation-only PRs and merge groups use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered. Security scanning uses the independent workflow below; hardware tagging, merge-queue enforcement and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs, `merge_group: checks_requested` and main pushes. Documentation-only PRs and merge groups use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered. Security scanning uses the independent workflow below; CPU hardware tagging and selection are active; merge-queue enforcement and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
 
 - 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
 - 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
@@ -679,3 +679,42 @@ PYTHONPATH=packages/core/src:apps/api/src python tests/browser/creation_server.p
 # In another terminal, with CREATION_WEB_URL / CREATION_API_URL set:
 node tests/browser/video_review_regressions.mjs
 ```
+
+
+### Hardware selection / 机型选择
+
+Current Python test modules explicitly declare `pytest.mark.cpu`, independently
+of ready/merge/nightly. The `ci_hardware` collection hook assigns CPU to unmarked
+migration cases **before** mark deselection. Multiple distinct platform marks,
+including inherited module/class/function marks, fail collection. Repeated CPU
+marks are harmless. Reserved accelerator marks are never relabeled CPU; this
+change adds no accelerator tests, jobs, credentials, or real-provider calls.
+
+当前 Python 模块显式标记 `cpu`，与 CI 层级正交。收集插件在 `-m` 筛选前为
+迁移期间未标记的用例补 CPU；模块、类、函数的机型标记合并后若有多个不同值，
+收集失败。重复 CPU 标记允许，预留加速器用例不会被改标 CPU。本改动不新增
+加速器测试、车道、凭证或真实模型调用。
+
+Release checks and nightly Python phases select `cpu`, including watchlist and
+bundled CLI phases. Existing layer expressions are intersected with CPU; the
+ready/merge/nightly cutover still waits for PR-7/PR-8. A CPU-only profile is
+accepted by the full layer audit only with zero deselections; introducing real
+non-CPU cases requires an independent full inventory and their explicit lanes.
+
+Release checks 与 nightly 的 Python 阶段（含 watchlist 和 bundled CLI）选择
+CPU，现有层级表达式与 CPU 取交集，尚不切换 ready/merge/nightly。完整层级核对
+仅在零排除时接受 CPU profile；未来加入非 CPU 用例时，必须配套独立完整清单
+及相应车道，不能用 CPU 子集冒充全量覆盖。
+
+```sh
+python -m pytest tests --collect-only -q --ci-profile=all.json
+python -m pytest tests --collect-only -q -m cpu --ci-profile=cpu.json
+python scripts/ci/check_test_layers.py --profile cpu.json
+```
+
+Compare raw test ID sets and layer assignments from both profiles. They must
+match for today's all-CPU suite; neither collection proves test execution.
+Timing JSON includes per-case hardware and aggregate hardware counts.
+
+比较两份 profile 的原始 ID 和层级；当前全 CPU 套件应完全一致，收集结果
+不代表测试执行通过。耗时 JSON 同时记录逐用例机型和机型汇总数量。

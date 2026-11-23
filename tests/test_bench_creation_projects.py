@@ -5,10 +5,15 @@ fixture at the configured 600-commit / 200-node scale took longer than
 ``LocalProjects.LEASE_SECONDS`` (#260). These tests shrink the lease so the same
 ratio is exercised without waiting a minute.
 """
+
+import pytest
 import importlib.util
 from pathlib import Path
 
 from opendirector.infrastructure.local_projects import LocalProjects
+
+
+pytestmark = pytest.mark.cpu
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/bench_creation_projects.py'

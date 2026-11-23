@@ -13,6 +13,9 @@ from opendirector import cli
 from opendirector.agent import windows_powershell
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize(('source', 'bom'), [
     ('stdin', b''),
     ('stdin', codecs.BOM_UTF8),

@@ -12,6 +12,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def project(tmp_path):
     store = CreationProjects(LocalProjects(tmp_path))
