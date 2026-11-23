@@ -580,6 +580,61 @@ def test_complete_moss_catalog_over_100_pages_has_no_voice_count_cutoff():
     assert [voice['voiceId'] for voice in result['voices']] == list(map(str, range(total)))
 
 
+@pytest.mark.parametrize('working_limit', [50, 100])
+def test_moss_catalog_and_explicit_pages_retry_gateway_failure_at_smaller_limit(working_limit):
+    value = moss_config()
+    scope = input_rules(value)['voiceLibrary']['connectionId']
+    calls = []
+
+    def handle(request):
+        cursor = request.url.params.get('after')
+        limit = int(request.url.params['limit'])
+        calls.append((cursor, limit))
+        if cursor == 'middle' and limit > working_limit:
+            return httpx.Response(502, json={'error': {'message': 'Gateway failed'}})
+        identity, next_cursor = {None: ('first', 'middle'), 'middle': ('second', 'end'),
+                                 'end': ('selected', None)}[cursor]
+        return httpx.Response(200, json={'data': [{'id': identity}], 'has_more': next_cursor is not None,
+                                        'next_cursor': next_cursor})
+
+    service = library(value, handle)
+    first_attempts = [(None, 150), ('middle', 150), ('middle', 100)]
+    if working_limit == 50:
+        first_attempts.append(('middle', 50))
+    expected = [*first_attempts, ('end', working_limit)]
+    catalog = service.list(value['id'], connection_id=scope)
+    assert [voice['voiceId'] for voice in catalog['voices']] == ['first', 'second', 'selected']
+    assert catalog['nextCursor'] is None and calls == expected
+    calls.clear()
+    service.validate_selection(value, 'selected', {'connectionId': scope, 'voiceId': 'selected'})
+    assert calls == expected
+    calls.clear()
+    page = service.list(value['id'], page_size=150, after='middle', connection_id=scope)
+    assert [voice['voiceId'] for voice in page['voices']] == ['second']
+    assert page['nextCursor'] == 'end' and calls == first_attempts[1:]
+
+
+@pytest.mark.parametrize('status,data,error_status,error_code,limits', [
+    (502, {}, 502, 'voice_provider_error', [150, 100, 50]),
+    (429, {}, 429, 'voice_provider_error', [150]),
+    (200, {'data': [], 'has_more': True}, 502, 'voice_provider_protocol', [150]),
+])
+def test_moss_explicit_page_preserves_errors_after_bounded_retries(status, data, error_status, error_code, limits):
+    value = moss_config()
+    scope = input_rules(value)['voiceLibrary']['connectionId']
+    calls = []
+
+    def handle(request):
+        assert request.url.params.get('after') == 'same-cursor'
+        calls.append(int(request.url.params['limit']))
+        return httpx.Response(status, json=data)
+
+    with pytest.raises(ProjectError) as error:
+        library(value, handle).list(value['id'], page_size=150, after='same-cursor', connection_id=scope)
+    assert (error.value.status, error.value.code) == (error_status, error_code)
+    assert calls == limits
+
+
 @pytest.mark.parametrize('args,status', [
     ({'after': 'two'}, 409), ({'after': 'two', 'connection_id': 'different'}, 409),
     ({'after': 'two', 'connection_id': 'current', 'page_size': None}, 422),
