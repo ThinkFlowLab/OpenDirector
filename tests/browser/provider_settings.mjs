@@ -107,6 +107,14 @@ try {
   await page.getByRole("button", { name: "Add service", exact: true }).waitFor();
   await page.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByRole("button", { name: "Add service", exact: true }).click();
+  assert.equal(
+    await page.getByLabel("Service URL (Base URL)", { exact: true }).inputValue(),
+    "https://api.openai.com/v1",
+  );
+  assert.equal(
+    await page.getByRole("checkbox", { name: "No key required", exact: true }).isChecked(),
+    false,
+  );
   await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.getByRole("option", { name: "DeepSeek", exact: true }).click();
   await page.getByLabel("API Key", { exact: true }).fill("fixture-only");

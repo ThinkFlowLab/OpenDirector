@@ -350,6 +350,20 @@ export function providerLabel(model: ModelConfig) {
   );
 }
 
+export function servicePresetDefaults(
+  presetId: string,
+  fallbackProtocol: ModelConfigInput["protocol"],
+) {
+  const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
+  return {
+    preset,
+    url: preset?.url ?? "",
+    protocol: preset?.protocol ?? fallbackProtocol,
+    connectionType: preset?.connectionType ?? ("self_hosted" as const),
+    authMode: preset?.authMode ?? ("none" as const),
+  };
+}
+
 export function matchingConnections(
   models: ModelConfig[],
   kind: ModelKind,
