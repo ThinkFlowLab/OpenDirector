@@ -17,7 +17,7 @@ export const library = {
   "library.processing": "Working…",
   "library.loading": "Loading media.",
   "library.reading": "Loading media…",
-  "library.issue.selectNode": "Select a node.",
+  "library.issue.selectNode": "Select at least one node.",
   "library.issue.selectItem": "Select an item.",
   "library.issue.selectSource": "Select a source first.",
   "library.issue.subjectUnavailable": "The selected subject is unavailable.",
