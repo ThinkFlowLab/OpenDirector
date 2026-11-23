@@ -4,6 +4,8 @@ Domain code keeps its Chinese copy for CLI and Agent traces. The HTTP boundary
 chooses an English message from the stable error code when the caller asks for
 English, so a missing translation never leaks Chinese into an English UI.
 """
+import re
+
 from fastapi import Request
 
 
@@ -98,6 +100,7 @@ ENGLISH_BY_CODE = {
     "role_restricted": "This item does not allow that operation.",
     "storage_unavailable": "A stored file is missing or has changed. Restore the file and try again.",
     "capability_unsupported": "This capability is not supported yet.",
+    "model_list_http_error": "Could not load the model list from the service.",
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",
     "project_open_elsewhere": "This project is open in another window. Close it there and try again.",
@@ -150,6 +153,10 @@ def localized_error_for_language(
         return chinese
     if code == 'tool_model_missing':
         return missing_tool_model_message(required_capability, english=True)
+    if code == 'model_list_http_error':
+        upstream_status = re.search(r'HTTP ([0-9]{3})', chinese)
+        if upstream_status:
+            return f'Could not load the model list (HTTP {upstream_status[1]}).'
     if code.startswith(('capability_', 'image_input_', 'tool_source_')):
         translated = english_capability_message(chinese)
         if translated:

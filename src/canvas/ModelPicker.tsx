@@ -14,6 +14,7 @@ export function ModelPicker({
   selected,
   loaded,
   loading,
+  loadsPreset,
   error,
   disabled,
   canFetch,
@@ -22,13 +23,13 @@ export function ModelPicker({
   onTest,
   results,
   renderDetails,
-  fetchLabel,
 }: {
   modelPlaceholder: string;
   available: string[];
   selected: string[];
   loaded: boolean;
   loading: boolean;
+  loadsPreset: boolean;
   error: string;
   disabled: boolean;
   canFetch: boolean;
@@ -37,7 +38,6 @@ export function ModelPicker({
   onTest?: (id: string) => void;
   results: Record<string, ModelTestResult>;
   renderDetails?: (id: string) => ReactNode;
-  fetchLabel?: string;
 }) {
   const t = useT();
   const manualFieldId = useId();
@@ -55,6 +55,17 @@ export function ModelPicker({
   );
   const allSelected =
     visible.length > 0 && visible.every((id) => selected.includes(id));
+  const fetchLabel = loadsPreset
+    ? "models.service.loadSupportedModels"
+    : loaded ? "generation.picker.refresh" : "generation.picker.fetch";
+  let status = "";
+  if (loading) {
+    status = t("generation.picker.fetching");
+  } else if (loaded && !error) {
+    status = available.length
+      ? t(loadsPreset ? "generation.picker.loadedPreset" : "generation.picker.fetched", { count: available.length })
+      : t("generation.picker.noReturned");
+  }
   const addManual = () => {
     const id = manualId.trim();
     if (!id || id.length > 200 || /[\x00-\x1f]/.test(id)) {
@@ -101,18 +112,21 @@ export function ModelPicker({
           <button
             type="button"
             className="cw-settings-button"
-            disabled={disabled || !canFetch}
+            disabled={disabled}
             onClick={onFetch}
           >
-            {loading
-              ? t("generation.picker.loading")
-              : (fetchLabel ??
-                (loaded
-                  ? t("generation.picker.refresh")
-                  : t("generation.picker.fetch")))}
+            {t(loading ? "generation.picker.loading" : fetchLabel)}
           </button>
         </div>
       </div>
+      <div role="status">
+        {status && <p className="cw-model-note">{status}</p>}
+      </div>
+      {error && (
+        <p className="cw-model-feedback" role="alert">
+          {error}
+        </p>
+      )}
       {manualOpen && (
         <div className="cw-model-manual">
           <label htmlFor={manualFieldId}>
@@ -160,11 +174,6 @@ export function ModelPicker({
           )}
         </div>
       )}
-      {error && (
-        <p className="cw-model-feedback" role="alert">
-          {t("generation.picker.retry", { error })}
-        </p>
-      )}
       {ids.length > 4 && (
         <>
           <div className="cw-model-filterbar">
@@ -209,15 +218,14 @@ export function ModelPicker({
       )}
       <div className="cw-model-options" aria-busy={loading}>
         {loading && !ids.length ? (
-          <div className="cw-model-empty-state" role="status">
+          <div className="cw-model-empty-state">
             <span className="cw-model-spinner" />
-            <strong>{t("generation.picker.fetching")}</strong>
             <p>{t("generation.picker.connecting")}</p>
           </div>
         ) : !ids.length ? (
           <div className="cw-model-empty-state">
             <CanvasIcon name="model" size={26} />
-            <strong>{loaded ? t("generation.picker.noReturned") : t("generation.picker.noneAdded")}</strong>
+            {!loaded && <strong>{t("generation.picker.noneAdded")}</strong>}
             <p>
               {loaded
                 ? t("generation.picker.manualHint")

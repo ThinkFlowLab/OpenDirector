@@ -70,6 +70,8 @@ export interface NodeComposerProps {
   onCheckModels?: (ids: readonly string[]) => Promise<void>;
   removeWatermark?: boolean;
   referenceControls?: GenerationReferenceControls;
+  /** Opens model settings on the category the node needs when none is configured. */
+  onConfigureModel?: (kind: "image" | "video" | "audio") => void;
 }
 
 export type ComposerSettings = GenerationSettings;
@@ -97,6 +99,7 @@ export function NodeComposer({
   onCheckModels,
   removeWatermark = false,
   referenceControls,
+  onConfigureModel,
 }: NodeComposerProps) {
   const { t } = useI18n();
   const [openPanel, setPanel] = useState<Panel>(null);
@@ -498,44 +501,64 @@ export function NodeComposer({
         )}
       <div className="cw-composer-footer">
         <div className="cw-composer-options">
-          <SearchableSelect
-            compact
-            label={t("generation.model.select")}
-            value={
-              backend ? `config:${settings.modelConfigId}` : "unconfigured"
-            }
-            disabled={running || serviceModels.length === 0}
-            onChange={chooseModel}
-            options={[
-              ...(!serviceModels.length
-                ? [
-                    {
-                      id: "unconfigured",
-                      name: t("generation.model.unconfiguredOption"),
-                    },
-                  ]
-                : []),
-              ...(backend && !config
-                ? [
-                    {
-                      id: `config:${settings.modelConfigId}`,
-                      name: `${
-                        settings.model === LOCAL_DEMO_MODEL
-                          ? t("generation.model.localDemo")
-                          : settings.model
-                      }${t("generation.model.unavailableTag")}`,
-                    },
-                  ]
-                : []),
-              ...serviceModels.map((item) => ({
-                id: `config:${item.id}`,
-                name: modelLabel(item),
-                modelId: item.modelId,
-                description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
-                group: providerLabel(item),
-              })),
-            ]}
-          />
+          {!serviceModels.length && onConfigureModel ? (
+            <button
+              type="button"
+              className="cw-parameter-trigger cw-model-setup-trigger"
+              disabled={running}
+              onClick={() => onConfigureModel(mode)}
+            >
+              <CanvasIcon name="model" size={15} />
+              <span>
+                {t(
+                  mode === "video"
+                    ? "modelSetup.videoAction"
+                    : mode === "audio"
+                      ? "modelSetup.audioAction"
+                      : "modelSetup.imageAction",
+                )}
+              </span>
+            </button>
+          ) : (
+            <SearchableSelect
+              compact
+              label={t("generation.model.select")}
+              value={
+                backend ? `config:${settings.modelConfigId}` : "unconfigured"
+              }
+              disabled={running || serviceModels.length === 0}
+              onChange={chooseModel}
+              options={[
+                ...(!serviceModels.length
+                  ? [
+                      {
+                        id: "unconfigured",
+                        name: t("generation.model.unconfiguredOption"),
+                      },
+                    ]
+                  : []),
+                ...(backend && !config
+                  ? [
+                      {
+                        id: `config:${settings.modelConfigId}`,
+                        name: `${
+                          settings.model === LOCAL_DEMO_MODEL
+                            ? t("generation.model.localDemo")
+                            : settings.model
+                        }${t("generation.model.unavailableTag")}`,
+                      },
+                    ]
+                  : []),
+                ...serviceModels.map((item) => ({
+                  id: `config:${item.id}`,
+                  name: modelLabel(item),
+                  modelId: item.modelId,
+                  description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
+                  group: providerLabel(item),
+                })),
+              ]}
+            />
+          )}
           <button
             type="button"
             className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}

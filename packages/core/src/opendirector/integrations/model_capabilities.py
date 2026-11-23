@@ -1,4 +1,4 @@
-"""Read an optional, explicit videoCapabilities extension on GET /models."""
+"""Read service model lists and resolve video capabilities."""
 import json
 import logging
 
@@ -23,18 +23,20 @@ async def read_service_models(config, transport=None):
         return [{'id': name, 'videoCapabilities': kling_capabilities(name)} for name in KLING_MODELS]
     if config.get('protocol') == 'minimax_video_v2':
         return [{'id': name} for name in MINIMAX_MODELS]
+    is_text_model = config.get('kind') == 'agent'
     try:
         async with httpx.AsyncClient(event_hooks=MODEL_HTTP_HOOKS, transport=transport, trust_env=trust_environment(config['url'], config=config),
                                      timeout=15, follow_redirects=False) as client:
             async with client.stream('GET', endpoint(config['url'], '/models'), headers=auth_headers(config)) as response:
                 if response.status_code != 200:
-                    raise ProjectError(f'读取模型声明失败（HTTP {response.status_code}），未修改配置。')
+                    raise ProjectError(f'读取模型声明失败（HTTP {response.status_code}），未修改配置。',
+                                       code='model_list_http_error' if is_text_model else None)
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
                     if len(data) > 1024 * 1024:
                         raise ProjectError('模型声明超过 1 MB，未修改配置。')
-                models = json.loads(data).get('data', [])
+                models = json.loads(data).get('data', None if is_text_model else [])
         if not isinstance(models, list) or any(not isinstance(item, dict) or not isinstance(item.get('id'), str)
                                                or not item['id'].strip() or len(item['id']) > 200 for item in models):
             raise ProjectError('服务返回的模型列表格式无效。')

@@ -607,12 +607,13 @@ Zhipu BigModel chat access uses the following checks. Browser commands connect t
 ```sh
 .venv/bin/python -m pytest tests/test_zhipu.py tests/test_model_configs.py -q
 node --test tests/providerPresets.test.ts
+CREATION_API_URL=http://127.0.0.1:8019 CREATION_WEB_URL=http://127.0.0.1:5179 node tests/browser/new_model_discovery.mjs
 CREATION_API_URL=http://127.0.0.1:8019 CREATION_WEB_URL=http://127.0.0.1:5179 node tests/browser/zhipu_provider.mjs
 ```
 
 The Python cases check how the shared thinking levels map to GLM reasoning_effort. GLM accepts only low, high and max for reasoning_effort. The auto level omits the parameter so the provider default applies, and an unknown level falls back to high as in the DeepSeek branch. Other hosts and the DeepSeek behavior stay unchanged.
 
-The browser case checks both display languages for the provider list and names, canonical URL prefill, GLM model preselection without remote discovery, manual addition of other model IDs, the saved connection reuse hint, save and reopen, key privacy in public model responses, and the assistant agent picker listing and keeping the selected Zhipu model. The browser never contacts open.bigmodel.cn and the API key is always a fixture value. Real streaming conversations, tool call execution and thinking level effects additionally require valid Zhipu credentials. Keep the conversation transcript, tool receipts and screenshots as evidence.
+The **New model discovery** case runs on its own with the isolated API and Vite. It verifies that a model absent from the preset appears after an authenticated `GET /models`, can be selected and saved, and remains selectable in the assistant. The **Zhipu model settings feedback** case checks both display languages for missing credentials, request progress, upstream failure, retry, empty responses, manual entry, and audio preset isolation. Both cases use local HTTP fixtures and synthetic keys. Real streaming conversations, tool calls, and thinking levels require a separate run with valid Zhipu credentials.
 
 智谱 BigModel GLM-TTS 接入使用以下检查：
 
