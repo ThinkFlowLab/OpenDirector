@@ -71,6 +71,15 @@
       "note": "Controls the model-stub gate; runs on its own fixture services."
     },
     {
+      "file": "trace_report_export.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Conversation Trace report download in both locales on the assistant fixture services. Linked Jobs are answered by page.route; every other request reaches the real API."
+    },
+    {
       "file": "assistant_run_navigation.mjs",
       "fixture": true,
       "previewSafe": true,
