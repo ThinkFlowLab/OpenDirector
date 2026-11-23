@@ -332,10 +332,25 @@ def emit(value):
     typer.echo(json.dumps(value, ensure_ascii=False, indent=2))
 
 
-@group("project").command("show", help="Read the current authoritative project snapshot.")
-def project_show(ctx: typer.Context):
+@group("project").command("show", help="Read the current authoritative project snapshot or a compact summary.")
+def project_show(ctx: typer.Context,
+                 view: Annotated[Literal["full", "summary"], typer.Option(help="Full snapshot or compact object summary.")] = "full",
+                 item_id: Annotated[list[UUID] | None, typer.Option(help="Scope output to specific canvas item UUIDs. Repeat for multiple items.")] = None):
     ctx.obj.command = ctx.command_path
-    emit(ctx.obj.snapshot())
+    if view == "full" and not item_id:
+        emit(ctx.obj.snapshot())
+        return
+    emit(ctx.obj.query("project.get", view=view, itemIds=[str(item) for item in (item_id or ())]))
+
+
+@group("generation").command("precheck", help="Validate and estimate generation configurations without creating jobs.")
+def generation_precheck(ctx: typer.Context,
+                        spec_id: Annotated[list[UUID], typer.Option(help="Target generation spec UUID. Repeat for batch precheck.")]):
+    ctx.obj.command = ctx.command_path
+    result = ctx.obj.query("generation.precheck", specIds=[str(item) for item in spec_id])
+    emit(result)
+    if not result.get("allReady", False):
+        raise typer.Exit(1)
 
 
 @group("project").command("list", help="List available projects.")

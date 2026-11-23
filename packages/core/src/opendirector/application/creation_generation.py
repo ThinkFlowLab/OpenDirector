@@ -32,6 +32,7 @@ from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.video_output import apply_video_resolution
+from opendirector.domain.voices import voice_library_capabilities
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.fasth3 import video_parameters
@@ -324,6 +325,282 @@ class CreationGeneration(GenerationRuntime):
                 remote.release()
             claim.release()
 
+    def _validate_spec_submission(
+        self,
+        snapshot: ProjectSnapshot,
+        spec,
+        *,
+        records: dict,
+        job_id,
+        origin_item_id=None,
+        previous_job_id=None,
+        agent_origin=None,
+        adoption_policy: str = 'if_current',
+        adoption_result_id=None,
+        adoption_material=None,
+        batch_id=None,
+        show_additional_result: bool = False,
+        prechecked_voice=None,
+        capability_identity=None,
+        capability_failure=None,
+        check_availability: bool = True,
+        wrap_provider_validate: bool = False,
+    ):
+        """Shared generation submission validation used by both prepare() and precheck()."""
+        config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
+        public = ModelConfigPublic.model_validate(
+            {key: value for key, value in config.items() if key != 'apiKey'}
+            | {'inputRules': self.availability.effective_input_rules(config)}
+        )
+        effective_spec, resolved = current_generation_inputs(snapshot, spec, public.inputRules)
+        effective_spec = execution_spec(effective_spec, resolved, public.inputRules)
+        try:
+            validate_generation(effective_spec, public, resolved, submitting=True)
+            if effective_spec.kind == 'audio' and effective_spec.parameters.creationType == 'audio':
+                if prechecked_voice is not None:
+                    old_spec, voice_spec, voice_config, voice_failure = prechecked_voice
+                    if old_spec != voice_spec or config != voice_config:
+                        raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', effective_spec.id)
+                    if voice_failure is not None:
+                        raise voice_failure
+                else:
+                    self.voices.validate_selection(config, effective_spec.parameters.voice, effective_spec.parameters.voiceSelection)
+            if capability_failure is not None:
+                raise capability_failure
+            if check_availability:
+                self.availability.require(config, generation_request(config, effective_spec, resolved), capability_identity)
+        except (ValueError, ProjectError) as error:
+            raise ContractError.from_error(error, effective_spec.id) from error
+        for reference in resolved:
+            if reference.transmission != 'context_only':
+                self.assets.reference_available(snapshot.project.id, reference.asset.assetId)
+        try:
+            self.provider.validate(effective_spec.kind, config)
+        except ProjectError as error:
+            if wrap_provider_validate:
+                raise ContractError.from_error(error, effective_spec.id) from error
+            raise
+        input_snapshot = InputSnapshot(
+            spec=effective_spec.model_copy(update={'currentResultId': None}),
+            model=ModelSnapshot(
+                modelConfigId=public.id,
+                inputRules=public.inputRules,
+                **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')},
+            ),
+            references=resolved,
+        )
+        # Use the same rendering, protocol validation and parameter resolver
+        # as the established adapters, with immutable media from the facade.
+        stub = Job(
+            id=job_id,
+            projectId=snapshot.project.id,
+            inputSnapshot=input_snapshot,
+            createdAt=datetime.now(timezone.utc),
+            inputFingerprint=input_snapshot.fingerprint(),
+            execution={'kind': effective_spec.kind, **({'size': '2K'} if effective_spec.kind == 'image' else {'format': 'mp3', 'sampleRate': 24000} if effective_spec.kind == 'audio' else {})},
+            originItemId=origin_item_id,
+            previousJobId=previous_job_id,
+            **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
+            adoptionPolicy=adoption_policy,
+            adoptionResultId=adoption_result_id,
+            adoptionMaterial=adoption_material,
+            batchId=batch_id,
+            showAdditionalResult=show_additional_result,
+        )
+        task = self.task(stub)
+        try:
+            if hasattr(self.provider, 'prepare_inputs'):
+                self.provider.prepare_inputs(str(snapshot.project.id), task, config)
+            parameters = self._parameters(effective_spec, config, task, records)
+            request_with_params = generation_request(config, effective_spec, resolved, parameters=parameters)
+            if check_availability:
+                self.availability.require(config, request_with_params, capability_identity)
+        except ProjectError as error:
+            raise ContractError.from_error(error, effective_spec.id) from error
+        return config, public, effective_spec, resolved, stub, parameters, request_with_params
+
+    def precheck(self, snapshot: ProjectSnapshot, spec_ids: tuple) -> dict:
+        """Side-effect-free generation precheck sharing submission validation and returning factual counts, durations, and service types."""
+        specs_by_id = {spec.id: spec for spec in snapshot.generationSpecs}
+        for spec_id in spec_ids:
+            if spec_id not in specs_by_id:
+                raise ContractError('missing_object', '业务对象不存在。', spec_id)
+        assets_by_id = {asset.id: asset for asset in snapshot.assets}
+        records = {str(asset.id): media_record(asset) for asset in snapshot.assets}
+        presentation = snapshot.model_dump(mode='json')
+
+        items = []
+        by_kind: dict[str, int] = {}
+        by_connection: dict[str, int] = {}
+        by_protocol: dict[str, int] = {}
+        estimated_video_seconds = 0.0
+        estimated_audio_seconds = 0.0
+        total_reference_bytes = 0
+        unchecked_total = 0
+
+        for spec_id in spec_ids:
+            spec = specs_by_id[spec_id]
+            by_kind[spec.kind] = by_kind.get(spec.kind, 0) + 1
+            issues: list[dict] = []
+            unchecked: list[dict] = []
+
+            owners = [
+                item for item in snapshot.canvasItems
+                if (item.binding.role == 'generation' and item.binding.objectRef.id == spec.id)
+                or (item.binding.role == 'empty' and item.binding.draftSpec and item.binding.draftSpec.id == spec.id)
+            ]
+            for owner in owners:
+                try:
+                    CreationCanvas._editable(presentation, owner.id)
+                except ContractError as error:
+                    issue = error.issue.model_dump(mode='json')
+                    issue['objectId'] = issue.get('objectId') or str(owner.id)
+                    issues.append(issue)
+
+            active_for_spec = sum(
+                job.inputSnapshot.spec.id == spec.id and job.status in {'queued', 'running'}
+                for job in snapshot.jobs
+            )
+            if active_for_spec >= 8:
+                issues.append({
+                    'code': 'revision_conflict',
+                    'message': '该配置的排队任务已达上限，请等待或取消原任务。',
+                    'objectId': str(spec.id),
+                })
+
+            config = None
+            rules_dict = None
+            public = None
+            resolved = ()
+            effective_spec = spec
+            parameters = None
+            request_with_params = None
+
+            if spec.modelConfigId is None:
+                issues.append({'code': 'invalid_input', 'message': '请选择生成模型。', 'objectId': str(spec.id)})
+            else:
+                try:
+                    config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
+                    rules_dict = self.availability.effective_input_rules(config)
+                    public = ModelConfigPublic.model_validate(
+                        {key: val for key, val in config.items() if key != 'apiKey'} | {'inputRules': rules_dict}
+                    )
+                    by_connection[public.connectionType] = by_connection.get(public.connectionType, 0) + 1
+                    by_protocol[public.protocol] = by_protocol.get(public.protocol, 0) + 1
+                    projected, resolved = current_generation_inputs(snapshot, spec, public.inputRules)
+                    effective_spec = execution_spec(projected, resolved, public.inputRules)
+                except (ContractError, ProjectError, ValueError) as error:
+                    converted = ContractError.from_error(error, spec.id).issue.model_dump(mode='json')
+                    converted['objectId'] = converted.get('objectId') or str(spec.id)
+                    issues.append(converted)
+
+            if public is not None and config is not None and not any(i.get('code') == 'reference_invalid' for i in issues):
+                try:
+                    _, _, effective_spec, resolved, _, parameters, request_with_params = self._validate_spec_submission(
+                        snapshot,
+                        spec,
+                        records=records,
+                        job_id=uuid5(spec.id, 'precheck'),
+                        origin_item_id=owners[0].id if owners else None,
+                        prechecked_voice=None,
+                        capability_identity=None,
+                        capability_failure=None,
+                        check_availability=True,
+                        wrap_provider_validate=True,
+                    )
+                except (ContractError, ProjectError, ValueError) as error:
+                    converted = ContractError.from_error(error, spec.id).issue.model_dump(mode='json')
+                    converted['objectId'] = converted.get('objectId') or str(spec.id)
+                    issues.append(converted)
+
+            if config is not None and public is not None:
+                availability_req = request_with_params or generation_request(config, effective_spec, resolved)
+                if availability_req is not None:
+                    decision = self.availability.decision(config, availability_req)
+                    if decision['status'] == 'unknown':
+                        unchecked.append({
+                            'check': 'model_availability',
+                            'reasonCode': decision['reasonCode'],
+                        })
+                if (effective_spec.kind == 'audio'
+                        and effective_spec.parameters.creationType == 'audio'
+                        and voice_library_capabilities(config) is None
+                        and effective_spec.parameters.voice):
+                    unchecked.append({
+                        'check': 'voice_selection',
+                        'reasonCode': 'voice_library_unsupported',
+                    })
+
+            ref_bytes = 0
+            ref_count = 0
+            for ref in resolved:
+                if ref.transmission == 'context_only':
+                    continue
+                ref_count += 1
+                asset = assets_by_id.get(ref.asset.assetId)
+                if asset is not None:
+                    ref_bytes += asset.metadata.size
+            total_reference_bytes += ref_bytes
+
+            duration_estimate = None
+            if parameters is not None and parameters.get('duration') is not None:
+                duration_estimate = float(parameters['duration'])
+            elif effective_spec.kind == 'video':
+                default_dur = (
+                    rules_dict['videoCapabilities']['defaultDuration']
+                    if rules_dict and (rules_dict.get('videoCapabilities') or {}).get('defaultDuration') is not None
+                    else 5.0
+                )
+                duration_estimate = float(effective_spec.parameters.durationSeconds or default_dur)
+            elif effective_spec.kind == 'audio' and effective_spec.parameters.creationType == 'music':
+                duration_estimate = float(effective_spec.parameters.durationSeconds or DEFAULT_MUSIC_SECONDS)
+
+            if duration_estimate is not None:
+                if effective_spec.kind == 'video':
+                    estimated_video_seconds += duration_estimate
+                elif effective_spec.kind == 'audio':
+                    estimated_audio_seconds += duration_estimate
+            unchecked_total += len(unchecked)
+
+            items.append({
+                'specId': str(spec.id),
+                'specRevision': spec.revision,
+                'originItemId': str(owners[0].id) if owners else None,
+                'kind': spec.kind,
+                'ready': not issues,
+                'modelConfigId': str(spec.modelConfigId) if spec.modelConfigId else None,
+                'modelId': public.modelId if public else None,
+                'protocol': public.protocol if public else None,
+                'connectionType': public.connectionType if public else None,
+                'videoMode': effective_spec.parameters.videoMode if effective_spec.kind == 'video' else None,
+                'creationType': effective_spec.parameters.creationType if effective_spec.kind == 'audio' else None,
+                'estimatedDurationSeconds': duration_estimate,
+                'referenceCount': ref_count,
+                'referenceBytes': ref_bytes,
+                'activeJobs': active_for_spec,
+                'uncheckedRequirements': unchecked,
+                'issues': issues,
+            })
+
+        ready_count = sum(1 for entry in items if entry['ready'])
+        return {
+            'totalSpecs': len(items),
+            'readySpecs': ready_count,
+            'blockedSpecs': len(items) - ready_count,
+            'allReady': ready_count == len(items),
+            'byKind': by_kind,
+            'byConnectionType': by_connection,
+            'byProtocol': by_protocol,
+            'serviceTypes': sorted(by_connection),
+            'estimatedVideoSeconds': round(estimated_video_seconds, 3),
+            'estimatedAudioSeconds': round(estimated_audio_seconds, 3),
+            'estimatedTotalDurationSeconds': round(estimated_video_seconds + estimated_audio_seconds, 3),
+            'totalReferenceBytes': total_reference_bytes,
+            'activeJobsInProject': sum(1 for job in snapshot.jobs if job.status in {'queued', 'running'}),
+            'uncheckedRequirementsCount': unchecked_total,
+            'items': items,
+        }
+
     def prepare(self, command, *, session=None, source='ui', agent_origin=None):
         replay = self.projects.replay(command)
         if replay is not None:
@@ -382,50 +659,27 @@ class CreationGeneration(GenerationRuntime):
                 spec_data['revision'] += 1
             intermediate = ProjectSnapshot.model_validate(data)
             spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
-            config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
-            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
-            spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
-            spec = execution_spec(spec, resolved, public.inputRules)
-            try:
-                validate_generation(spec, public, resolved, submitting=True)
-                if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
-                    if old != voice_spec or config != voice_config:
-                        raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)
-                    if voice_failure is not None:
-                        raise voice_failure
-                if capability_failure is not None:
-                    raise capability_failure
-                if capability_identity is not None:
-                    self.availability.require(config, generation_request(config, spec, resolved), capability_identity)
-            except (ValueError, ProjectError) as error:
-                raise ContractError.from_error(error, spec.id) from error
-            for reference in resolved:
-                if reference.transmission != 'context_only':
-                    self.assets.reference_available(command.projectId, reference.asset.assetId)
-            self.provider.validate(spec.kind, config)
-            snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
-                model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
-                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved)
-            # Use the same rendering, protocol validation and parameter resolver
-            # as the established adapters, with immutable media from the facade.
-            stub = Job(id=uuid5(command.commandId, 'job'), projectId=command.projectId, inputSnapshot=snapshot,
-                createdAt=datetime.now(timezone.utc),
-                inputFingerprint=snapshot.fingerprint(), execution={'kind': spec.kind, **({'size': '2K'} if spec.kind == 'image' else {'format': 'mp3', 'sampleRate': 24000} if spec.kind == 'audio' else {})},
-                originItemId=origin, previousJobId=command.payload.previousJobId,
-                **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
-                adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
-                batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
-            task = self.task(stub)
             records = {str(a.id): media_record(a) for a in before.assets}
-            try:
-                if hasattr(self.provider, 'prepare_inputs'):
-                    self.provider.prepare_inputs(str(command.projectId), task, config)
-                parameters = self._parameters(spec, config, task, records)
-                if capability_identity is not None:
-                    self.availability.require(config, generation_request(config, spec, resolved, parameters=parameters), capability_identity)
-            except ProjectError as error:
-                raise ContractError.from_error(error, spec.id) from error
-            job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
+            config, _, effective_spec, _, stub, parameters, _ = self._validate_spec_submission(
+                intermediate,
+                spec,
+                records=records,
+                job_id=uuid5(command.commandId, 'job'),
+                origin_item_id=origin,
+                previous_job_id=command.payload.previousJobId,
+                agent_origin=agent_origin,
+                adoption_policy=command.payload.adoptionPolicy,
+                adoption_result_id=old.currentResultId,
+                adoption_material=material,
+                batch_id=command.payload.batchId,
+                show_additional_result=command.payload.showAdditionalResult,
+                prechecked_voice=(old, voice_spec, voice_config, voice_failure),
+                capability_identity=capability_identity,
+                capability_failure=capability_failure,
+                check_availability=capability_identity is not None,
+                wrap_provider_validate=False,
+            )
+            job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(effective_spec.kind, parameters, config)})
             data['jobs'].append(job.model_dump(mode='json'))
             return ProjectSnapshot.model_validate(data)
         return self.projects.commit(command, accept, session=session, source=source)

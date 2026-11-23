@@ -42,6 +42,25 @@ CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其�
 Agent 的 Shell 通过 PATH 使用同一个 `opendirector`。宿主提供受令牌保护的本轮连接、工程范围、编辑会话和执行目录，文件登记限制在本轮执行目录。每次调用产生业务活动及回执，供聊天与轨迹页展示。
 
 
+## 紧凑工程索引与生成前预检
+
+多节点工程中，先用紧凑摘要定位目标画布项、对象版本与活动任务，再按 `--item-id` 读取局部对象树，避免在每轮 Agent 上下文中反复装载完整历史与长提示词。批量或长时长提交前，通过 `generation precheck` 执行无副作用预检（不创建任务、不增加版本），复用提交校验提前检查模型协议、音色选择、已缓存能力状态、锁定状态、排队上限、素材可用性，并输出任务数、预计时长、服务类型及尚未检查项（`uncheckedRequirements`），由授权流程决定是否需要额外确认。
+
+```bash
+opendirector --project PROJECT_UUID project show --view summary
+opendirector --project PROJECT_UUID project show --item-id ITEM_UUID
+opendirector --project PROJECT_UUID generation precheck --spec-id SPEC_UUID_1 --spec-id SPEC_UUID_2
+```
+
+`generation precheck` 全部通过时退出码为 0，任一配置存在阻断问题时输出完整报告并返回退出码 1。Agent 工具 `read_project`（支持 `view` 与 `itemIds`）和 `query`（`generation.precheck`）共用同一后端查询契约。
+
+### Compact project views and generation precheck
+
+On multi-node projects, inspect `--view summary` first to locate canvas items, object revisions, and active jobs, then scope reads with `--item-id` so Agent turns do not repeatedly load unrelated long prompts and historical results. Before submitting batch or long-duration generations, run `generation precheck` to share submission validation (model rules, voice selection, cached capability availability, locks, queue limits, and reference availability) without creating jobs or commits, returning factual task counts, estimated durations, service types, and any explicit `uncheckedRequirements` while leaving confirmation policy to the authorization flow.
+
+`generation precheck` exits with code 0 when every configuration is ready, or prints the diagnostic report and exits with code 1 when any configuration is blocked. The Agent tools `read_project` (`view`, `itemIds`) and `query` (`generation.precheck`) call the same backend query service.
+
+
 ## 检查已有生成结果
 
 `job show` / `job wait` 在任务成功后返回 `delivery`：已登记的 AssetRef、当前采用状态及展示该素材的画布项。生成成功不等于质量验收；Agent 应检查现有素材。复制到执行目录做媒体探测、抽帧和审看不需要重新发布，也不应为同一次交付新增画布项。编辑产生的新交付文件才需要登记；独立副本展示应有用户要求。

@@ -179,13 +179,20 @@ def creation_routes(projects: CreationProjects, generation=None):
         return canvas.projection(project_id)
 
     @router.post('/projects/{project_id}/queries')
-    async def query(project_id: UUID, value: CreationQuery):
+    async def query(project_id: UUID, value: CreationQuery, request: Request):
         if value.projectId != project_id:
             raise ProjectError('查询不属于当前工程。')
-        result = await canvas.query(value)
+        result = await canvas.query(value, generation=generation)
         if value.type == 'asset.preview' and 'preview' in result:
             result['preview'].pop('path')
             result['preview']['url'] = f'/api/creation/projects/{project_id}/assets/{value.objectId}/preview'
+        if value.type == 'generation.precheck' and isinstance(result, dict):
+            language = request.headers.get('accept-language')
+            for item in result.get('items', ()):
+                for issue in item.get('issues', ()):
+                    issue['message'] = localized_error_for_language(
+                        language, chinese=issue['message'], status=422, code=issue['code'],
+                    )
         return result
 
     @router.get('/projects/{project_id}/assets/{asset_id}/preview')

@@ -841,20 +841,199 @@ class CreationCanvas:
         return dict(snapshot=snapshot, visibleItemIds=[i.id for i in snapshot.canvasItems if i.id in visible],
                     hiddenItemIds=[i.id for i in snapshot.canvasItems if i.id not in visible], edges=edges, capabilities=capabilities)
 
-    async def query(self, query: Query) -> JsonValue:
+    def project_view(self, snapshot: ProjectSnapshot, *, view: str = 'full', item_ids: tuple[UUID, ...] = (), availability=None):
+        if view == 'full' and not item_ids:
+            return snapshot
+        items_by_id = {item.id: item for item in snapshot.canvasItems}
+        for requested in item_ids:
+            if requested not in items_by_id:
+                raise ContractError('missing_object', '业务对象不存在。', requested)
+        selected_items = [items_by_id[requested] for requested in item_ids] if item_ids else list(snapshot.canvasItems)
+        selected_item_ids = {item.id for item in selected_items}
+        specs_by_id = {spec.id: spec for spec in snapshot.generationSpecs}
+        docs_by_id = {doc.id: doc for doc in snapshot.editorDocuments}
+
+        spec_ids = set()
+        doc_ids = set()
+        for item in selected_items:
+            if item.binding.role == 'generation':
+                spec_ids.add(item.binding.objectRef.id)
+            elif item.binding.role == 'empty' and item.binding.draftSpec:
+                spec_ids.add(item.binding.draftSpec.id)
+            elif item.binding.role == 'editor':
+                doc_ids.add(item.binding.objectRef.id)
+            for editor_ref in getattr(item, 'editors', ()):
+                doc_ids.add(editor_ref.id)
+        if not item_ids:
+            spec_ids = set(specs_by_id)
+            doc_ids = set(docs_by_id)
+
+        selected_specs = [spec for spec in snapshot.generationSpecs if spec.id in spec_ids]
+        selected_refs = [ref for ref in snapshot.references if ref.active and ref.targetSpecId in spec_ids]
+        for ref in selected_refs:
+            if ref.binding == 'follow_current' and ref.source.id in items_by_id:
+                source_item = items_by_id[ref.source.id]
+                if source_item.kind == 'subject':
+                    doc_ids.add(source_item.binding.objectRef.id)
+        selected_docs = [doc for doc in snapshot.editorDocuments if doc.id in doc_ids]
+        selected_results = [result for result in snapshot.results if result.specId in spec_ids]
+        selected_jobs = [job for job in snapshot.jobs if not item_ids or job.originItemId in selected_item_ids
+                         or job.inputSnapshot.spec.id in spec_ids]
+
+        if item_ids:
+            linked_asset_ids = {ref.assetId for ref in asset_references(
+                (selected_items, selected_specs, selected_refs, selected_docs, selected_results, selected_jobs))}
+            for item in selected_items:
+                current = current_asset(snapshot, item)
+                if current is not None:
+                    linked_asset_ids.add(current.id)
+            for ref in selected_refs:
+                if ref.binding == 'follow_current' and ref.source.id in items_by_id:
+                    source_asset = current_asset(snapshot, items_by_id[ref.source.id])
+                    if source_asset is not None:
+                        linked_asset_ids.add(source_asset.id)
+            selected_assets = [asset for asset in snapshot.assets if asset.id in linked_asset_ids]
+        else:
+            selected_assets = list(snapshot.assets)
+
+        if view == 'full':
+            return {
+                'format': snapshot.format,
+                'formatVersion': snapshot.formatVersion,
+                'project': snapshot.project.model_dump(mode='json'),
+                'scopedItemIds': [str(item_id) for item_id in item_ids],
+                'assets': [asset.model_dump(mode='json') for asset in selected_assets],
+                'generationSpecs': [spec.model_dump(mode='json') for spec in selected_specs],
+                'references': [ref.model_dump(mode='json') for ref in selected_refs],
+                'canvasItems': [item.model_dump(mode='json') for item in selected_items],
+                'editorDocuments': [doc.model_dump(mode='json') for doc in selected_docs],
+                'jobs': [job.model_dump(mode='json') for job in selected_jobs],
+                'results': [result.model_dump(mode='json') for result in selected_results],
+                'eventCursor': snapshot.eventCursor,
+                'undoClearedThrough': snapshot.undoClearedThrough,
+            }
+
+        visible = visible_item_ids(snapshot)
+        active_jobs = [job for job in selected_jobs if job.status in {'queued', 'running', 'interrupted'}]
+        active_ref_counts: dict[UUID, int] = {}
+        for ref in snapshot.references:
+            if ref.active:
+                active_ref_counts[ref.targetSpecId] = active_ref_counts.get(ref.targetSpecId, 0) + 1
+        canvas_summary = []
+        for item in selected_items:
+            owner_spec_id = (item.binding.objectRef.id if item.binding.role == 'generation' else
+                             item.binding.draftSpec.id if item.binding.role == 'empty' and item.binding.draftSpec else None)
+            spec = specs_by_id.get(owner_spec_id) if owner_spec_id else None
+            related_jobs = [job for job in reversed(snapshot.jobs) if job.originItemId == item.id
+                            or (owner_spec_id is not None and job.inputSnapshot.spec.id == owner_spec_id)]
+            running_job = next((job for job in related_jobs if job.status in {'queued', 'running'}), None)
+            status_job = running_job or (related_jobs[0] if related_jobs else None)
+            asset = current_asset(snapshot, item)
+            canvas_summary.append({
+                'id': str(item.id),
+                'kind': item.kind,
+                'title': item.title,
+                'revision': item.revision,
+                'visible': item.id in visible,
+                'locked': item.locked,
+                'parentId': str(item.parentId) if item.parentId else None,
+                'position': item.position.model_dump(mode='json'),
+                'width': item.width,
+                'height': item.height,
+                'bindingRole': item.binding.role,
+                'specId': str(spec.id) if spec else None,
+                'specRevision': spec.revision if spec else None,
+                'modelConfigId': str(spec.modelConfigId) if spec and spec.modelConfigId else None,
+                'currentResultId': str(spec.currentResultId) if spec and spec.currentResultId else None,
+                'activeReferenceCount': active_ref_counts.get(spec.id, 0) if spec else 0,
+                'promptPreview': (spec.prompt or '')[:120] if spec else None,
+                'currentAssetId': str(asset.id) if asset else None,
+                'editorId': str(item.binding.objectRef.id) if item.binding.role == 'editor' else None,
+                'status': status_job.status if status_job else 'idle',
+            })
+        model_entries = (
+            availability.catalog() if availability is not None
+            else gateway().models(self.projects.local.repository).list()
+        )
+        result = {
+            'view': 'summary',
+            'project': snapshot.project.model_dump(mode='json'),
+            'eventCursor': snapshot.eventCursor,
+            'counts': {
+                'canvasItems': len(snapshot.canvasItems),
+                'visibleCanvasItems': len(visible),
+                'generationSpecs': len(snapshot.generationSpecs),
+                'activeReferences': sum(1 for ref in snapshot.references if ref.active),
+                'assets': len(snapshot.assets),
+                'editorDocuments': len(snapshot.editorDocuments),
+                'jobs': len(snapshot.jobs),
+                'activeJobs': sum(1 for job in snapshot.jobs if job.status in {'queued', 'running', 'interrupted'}),
+                'results': len(snapshot.results),
+            },
+            'canvasItems': canvas_summary,
+            'assets': [{
+                'id': str(asset.id),
+                'name': asset.name,
+                'kind': asset.kind,
+                'revision': asset.revision,
+                'fingerprint': asset.fingerprint,
+                'size': asset.metadata.size,
+                'durationSeconds': asset.metadata.durationSeconds,
+                'width': asset.metadata.width,
+                'height': asset.metadata.height,
+                'hasAudio': asset.metadata.hasAudio,
+            } for asset in selected_assets],
+            'editorDocuments': [{
+                'id': str(doc.id),
+                'kind': doc.kind,
+                'revision': doc.revision,
+            } for doc in selected_docs],
+            'activeJobs': [{
+                'id': str(job.id),
+                'revision': job.revision,
+                'status': job.status,
+                'phase': job.phase,
+                'specId': str(job.inputSnapshot.spec.id),
+                'originItemId': str(job.originItemId) if job.originItemId else None,
+            } for job in active_jobs],
+            'models': [{
+                'id': model['id'],
+                'kind': model['kind'],
+                'modelId': model['modelId'],
+                'protocol': model.get('protocol'),
+                'connectionType': model.get('connectionType'),
+                'videoAdapter': model.get('videoAdapter'),
+                **({'availabilityStatus': model['availability']['status']}
+                   if isinstance(model.get('availability'), dict) else {}),
+            } for model in model_entries],
+        }
+        if item_ids:
+            result['scopedItemIds'] = [str(item_id) for item_id in item_ids]
+        return result
+
+    def generation_precheck(self, snapshot: ProjectSnapshot, spec_ids: tuple[UUID, ...], *, generation=None) -> dict:
+        if generation is None:
+            from opendirector.application.creation_generation import CreationGeneration
+            generation = CreationGeneration(self.projects, gateway().models(self.projects.local.repository))
+        return generation.precheck(snapshot, spec_ids)
+
+    async def query(self, query: Query, *, generation=None) -> JsonValue:
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
         if query.type == 'asset.preview':
             target = self.projects.local.state_dir / 'previews' / str(query.projectId)
             return await asyncio.to_thread(CreationAssets(self.projects).preview, query.projectId, query.objectId, target)
-        return to_jsonable_python(await asyncio.to_thread(self.query_snapshot, query))
+        return to_jsonable_python(await asyncio.to_thread(self.query_snapshot, query, generation=generation))
 
-    def query_snapshot(self, query):
+    def query_snapshot(self, query, *, generation=None):
         from opendirector.application.creation_history import CreationHistory
         snapshot = self.projects.snapshot(query.projectId)
         history = CreationHistory(self.projects)
         if query.type == 'project.get':
-            return snapshot
+            availability = getattr(generation, 'availability', None)
+            return self.project_view(snapshot, view=query.view, item_ids=query.itemIds, availability=availability)
+        if query.type == 'generation.precheck':
+            return self.generation_precheck(snapshot, query.specIds, generation=generation)
         if query.type == 'generationSpec.versions':
             return history.versions(query.projectId, query.objectId)
         if query.type == 'canvas.versions':

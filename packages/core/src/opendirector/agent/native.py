@@ -364,6 +364,7 @@ class NativeRuntime:
                         for task in model.active:
                             task.cancel()
                         await asyncio.gather(*model.active, return_exceptions=True)
+                        model.close()
                     if runtime == 'deepseek' and pump and not pump.done():
                         while not queue.empty():
                             queue.get_nowait()
