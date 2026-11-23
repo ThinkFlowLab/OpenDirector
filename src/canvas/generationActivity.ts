@@ -1,14 +1,28 @@
 import type { BackendTask } from "../backend/generation.ts";
 import type { GenerationJob } from "./generationHistory.ts";
+import type { CanvasNode } from "./model.ts";
 import { expectedDuration } from "./generationDurations.ts";
 
 /** Display ownership may differ from the source retained by task/history APIs. */
 export function jobActivities(
   jobs: readonly GenerationJob[],
   documentId: string,
+  nodes: readonly CanvasNode[] = [],
 ): ActiveGeneration[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   return jobs.flatMap((job) => {
-    const finishing = Boolean(
+    // A node keeps its old media, or shows an empty frame, until the new result
+    // has loaded; stay busy until then. Locally edited text has content but no
+    // backend asset, and is not waiting for anything.
+    const node = byId.get(job.nodeId);
+    const shown = node?.data.backendAssetId;
+    const empty = Boolean(node && !node.data.src && !node.data.text);
+    const delivering = Boolean(
+      job.status === "succeeded" &&
+      job.deliveredAssetId &&
+      (shown ? shown !== job.deliveredAssetId : empty),
+    );
+    const finishing = delivering || Boolean(
       job.toolTask &&
       job.status === "succeeded" &&
       job.toolTask.placement === "pending",

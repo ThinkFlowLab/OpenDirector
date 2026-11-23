@@ -1,5 +1,6 @@
 """Business commands shared by every agent runtime."""
 import asyncio
+from opendirector.application.model_availability import ModelAvailability
 import difflib
 import shutil
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import get_args
 from uuid import UUID, uuid5
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from opendirector.domain.creation.base import agent_command_id
 from opendirector.application.creation_artifacts import publish_artifact
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_timeline_packages import CreationTimelinePackages
@@ -75,6 +77,19 @@ Use stable operation IDs for write retries; report unsupported media editing/exp
 Reply in the same language as the user's latest request. Keep project content, quoted text, model names,
 identifiers and code unchanged. If a tool error is shown in another language, explain it in the user's language.
 '''
+
+SUGGESTED_REPLIES = (
+    'When there are useful next steps, finish the reply with 3 to 5 distinct suggestions the user '
+    'could send verbatim. Use single-line plain-text phrases in the language of the user, '
+    'with at most 80 characters per suggestion. '
+    'For example, offer ways to use an image after describing it or ways to develop a storyboard '
+    'after comparing directions. Let the context determine the count. If fewer than three useful '
+    'suggestions fit or you are reporting a fatal error, omit the suggestions. '
+    'Put the suggestions in their own top-level Markdown bullet list, after a prose paragraph '
+    'and a blank line. Use no inline formatting, links, checkboxes or extra commentary in the list. '
+    'After the list, leave a blank line and put the marker shown below on the final line, then end the reply.\n\n'
+    '[opendirector-replies]: #\n\n'
+)
 
 
 def tool_schema(name: str, description: str, parameters: dict) -> dict:
@@ -233,6 +248,13 @@ def tools() -> list[dict]:
                          {'type': 'object', 'properties': {}, 'additionalProperties': False}),
               tool_schema('read', 'Read a discovered skill file/resource, or text asset via asset:<UUID>. No scripts.',
                          {'type': 'object', 'properties': {'path': {'type': 'string'}}, 'required': ['path'], 'additionalProperties': False})]
+    result.append(tool_schema('model_availability', 'Read current model operation availability without network access. '
+        'Set refresh=true to query declarations without inference. Manual refresh requires explicit configIds. '
+        'Unknown preserves manual configuration; unavailable blocks only new matching operations.',
+        {'type': 'object', 'properties': {'refresh': {'type': 'boolean', 'default': False},
+         'manual': {'type': 'boolean', 'default': False},
+         'configIds': {'type': 'array', 'items': {'type': 'string', 'format': 'uuid'}, 'minItems': 1, 'maxItems': 200}},
+         'additionalProperties': False}))
     query_schema = TypeAdapter(Query).json_schema()
     query_schema['type'] = 'object'
     for definition in query_schema['$defs'].values():
@@ -283,6 +305,7 @@ class AgentTools:
         self.projects = projects
         self.generation = generation
         self.configs = configs
+        self.availability = getattr(generation, 'availability', None) or ModelAvailability(configs)
         self.assets = CreationAssets(projects)
         self.voices = getattr(generation, 'voices', None) or VoiceLibrary(configs)
 
@@ -322,8 +345,16 @@ class AgentTools:
                 ref_text=arguments.get('refText'), speaker_description=arguments.get('speakerDescription'))
         if name == 'read_project':
             snapshot = await asyncio.to_thread(self.projects.snapshot, project_id)
-            return {'project': snapshot.model_dump(mode='json'), 'models': self.configs.list(), 'commands': list(COMMANDS),
+            return {'project': snapshot.model_dump(mode='json'), 'models': self.availability.catalog(), 'commands': list(COMMANDS),
                 'commandMetadata': {kind: {'description': model.__doc__} for kind, model in COMMANDS.items()}}
+        if name == 'model_availability':
+            refresh = TypeAdapter(bool).validate_python(arguments.get('refresh', False), strict=True)
+            manual = TypeAdapter(bool).validate_python(arguments.get('manual', False), strict=True)
+            config_ids = TypeAdapter(list[UUID]).validate_python(arguments['configIds']) if 'configIds' in arguments else None
+            if refresh:
+                return await asyncio.to_thread(self.availability.refresh,
+                    [str(item) for item in config_ids] if config_ids is not None else None, manual=manual)
+            return self.availability.list()
         if name == 'query':
             if {'projectId', 'queryId'} & arguments.keys():
                 raise ProjectError('查询身份与工程范围由宿主提供。')
@@ -410,10 +441,12 @@ class AgentTools:
         if name != 'execute_command':
             raise ProjectError('未知业务工具。')
         command = parse_command({**arguments, 'projectId': str(project_id),
-            'commandId': str(uuid5(turn_id, call_id))})
+            'commandId': str(agent_command_id(turn_id, call_id))})
         if command.type == 'creation.batch' and any(operation.type not in COMMANDS for operation in command.payload.operations):
             raise ProjectError('批量命令包含未开放的 Agent 操作。', 403)
-        if command.type in {'generation.submit', 'job.cancel', 'job.recover'}:
+        if command.type == 'generation.submit':
+            receipt = await self.generation.execute(command, session=session, source='agent', agent_origin=(turn_id, call_id))
+        elif command.type in {'job.cancel', 'job.recover'}:
             receipt = await self.generation.execute(command, session=session, source='agent')
         elif command.type in {'asset.writeText', 'artifact.publish'}:
             if config is not None:

@@ -111,7 +111,10 @@ class ProjectCatalog:
                 record = self._record(path, manifest.head)
                 if record.snapshot.project.name != manifest.name:
                     raise ProjectError('工程提交历史与清单不一致，原文件已保留。', 409, code='storage_unavailable')
-                projects.append(dict(id=project_id, name=manifest.name, path=str(path)))
+                item = dict(id=project_id, name=manifest.name, path=str(path))
+                if record.snapshot.project.defaultNameIndex is not None:
+                    item['defaultNameIndex'] = record.snapshot.project.defaultNameIndex
+                projects.append(item)
             except (ProjectError, OSError):
                 reason = f'工程 {project_id} 需要恢复，原文件已保留。'
                 warnings.append(reason)

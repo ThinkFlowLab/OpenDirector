@@ -10,6 +10,7 @@ import {
 
 const KEY = "opendirector.assistant-layout.v1";
 const DEFAULT_WIDTH = 420;
+const DESKTOP_MIN_WIDTH = 320;
 const MAX_WIDTH = 720;
 const COLLAPSE_AT = 200;
 
@@ -44,12 +45,15 @@ export function useAssistantLayout(
   );
   const mobile = bounds.viewport <= 700;
   const headerSpace = bounds.viewport - bounds.heading - bounds.actions - 72;
-  const belowHeader = mobile || headerSpace <= COLLAPSE_AT;
+  const desktop = Boolean(window.opendirectorDesktop);
+  const belowHeader = desktop || mobile || headerSpace <= COLLAPSE_AT;
   const maxWidth = Math.min(
     MAX_WIDTH,
     belowHeader ? bounds.viewport - (mobile ? 20 : 28) : headerSpace,
   );
-  const width = mobile ? maxWidth : Math.min(preferredWidth, maxWidth);
+  const width = mobile
+    ? maxWidth
+    : Math.min(Math.max(preferredWidth, desktop ? DESKTOP_MIN_WIDTH : COLLAPSE_AT), maxWidth);
 
   const stop = () => {
     drag.current = null;

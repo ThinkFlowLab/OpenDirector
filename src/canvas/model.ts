@@ -258,6 +258,8 @@ export interface CanvasNode {
   width: number;
   height: number;
   locked?: boolean;
+  /** Group background color (#rrggbb); absent means the default group style. */
+  color?: string;
   zIndex?: number;
   /** Child positions are relative to their parent's top-left corner. */
   parentId?: string;
@@ -283,6 +285,7 @@ export interface CanvasDocument {
   version: 1;
   id: string;
   title: string;
+  defaultNameIndex?: number | null;
   nodes: CanvasNode[];
   /** Logical sources remain usable when their presentation is hidden. */
   hiddenNodes?: CanvasNode[];

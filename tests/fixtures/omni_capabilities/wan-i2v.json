@@ -1,0 +1,1344 @@
+{
+  "object": "omni.capabilities",
+  "schema_version": 1,
+  "observed_at": "2026-11-12T02:21:57.270897Z",
+  "models": [
+    {
+      "id": "public-primary",
+      "stage_ids": [
+        "0"
+      ],
+      "operations": {
+        "chat": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_response",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/chat/completions",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "image_response",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/chat/completions",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "audio_response",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/chat/completions",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "image_generation": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_to_image",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/images/generations",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "image_edit": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "image_to_image",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/images/edits",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "video_generation": {
+          "support": "supported",
+          "exposure": "enabled",
+          "reason_code": "model_declared",
+          "profiles": [
+            {
+              "id": "text_to_video",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos/sync",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "websocket",
+                  "method": "WEBSOCKET",
+                  "path": "/v1/realtime/video",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "image_to_video",
+              "support": "supported",
+              "required_inputs": [
+                "text",
+                "image"
+              ],
+              "outputs": [
+                "video"
+              ],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos",
+                  "exposure": "enabled",
+                  "request": {
+                    "inputs": {
+                      "text": {
+                        "support": "supported",
+                        "min_count": 1
+                      },
+                      "image": {
+                        "support": "supported",
+                        "min_count": 1,
+                        "max_count": 1
+                      },
+                      "first_frame": {
+                        "support": "supported",
+                        "min_count": 0,
+                        "max_count": 1
+                      },
+                      "last_frame": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "source_video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      }
+                    },
+                    "required_any_of": [],
+                    "parameters": {
+                      "width": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "height": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "num_frames": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "fps": {
+                        "support": "supported",
+                        "type": "number",
+                        "minimum": 1.0
+                      }
+                    }
+                  }
+                },
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos/sync",
+                  "exposure": "enabled",
+                  "request": {
+                    "inputs": {
+                      "text": {
+                        "support": "supported",
+                        "min_count": 1
+                      },
+                      "image": {
+                        "support": "supported",
+                        "min_count": 1,
+                        "max_count": 1
+                      },
+                      "first_frame": {
+                        "support": "supported",
+                        "min_count": 0,
+                        "max_count": 1
+                      },
+                      "last_frame": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "source_video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      }
+                    },
+                    "required_any_of": [],
+                    "parameters": {
+                      "width": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "height": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "num_frames": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "fps": {
+                        "support": "supported",
+                        "type": "number",
+                        "minimum": 1.0
+                      }
+                    }
+                  }
+                },
+                {
+                  "transport": "websocket",
+                  "method": "WEBSOCKET",
+                  "path": "/v1/realtime/video",
+                  "exposure": "enabled",
+                  "request": {
+                    "inputs": {
+                      "text": {
+                        "support": "supported",
+                        "min_count": 1
+                      },
+                      "image": {
+                        "support": "supported",
+                        "min_count": 1,
+                        "max_count": 1
+                      },
+                      "first_frame": {
+                        "support": "supported",
+                        "min_count": 0,
+                        "max_count": 1
+                      },
+                      "last_frame": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "source_video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      }
+                    },
+                    "required_any_of": [],
+                    "parameters": {
+                      "width": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "height": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "num_frames": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "fps": {
+                        "support": "supported",
+                        "type": "number",
+                        "minimum": 1.0
+                      }
+                    }
+                  }
+                }
+              ],
+              "reason_code": "model_declared",
+              "constraints": {},
+              "request": {
+                "inputs": {
+                  "text": {
+                    "support": "supported",
+                    "min_count": 1
+                  },
+                  "image": {
+                    "support": "supported",
+                    "min_count": 1,
+                    "max_count": 1
+                  },
+                  "first_frame": {
+                    "support": "supported",
+                    "min_count": 0,
+                    "max_count": 1
+                  },
+                  "last_frame": {
+                    "support": "supported",
+                    "min_count": 0,
+                    "max_count": 1
+                  }
+                },
+                "required_any_of": [],
+                "parameters": {}
+              }
+            },
+            {
+              "id": "video_to_video",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos/sync",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "websocket",
+                  "method": "WEBSOCKET",
+                  "path": "/v1/realtime/video",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "speech": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_to_speech",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/speech",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "lyrics_to_music",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/speech",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "caption_to_audio",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/speech",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "audio_generation": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_to_audio",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/generate",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        }
+      }
+    },
+    {
+      "id": "public-alias",
+      "stage_ids": [
+        "0"
+      ],
+      "operations": {
+        "chat": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_response",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/chat/completions",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "image_response",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/chat/completions",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "audio_response",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/chat/completions",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "image_generation": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_to_image",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/images/generations",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "image_edit": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "image_to_image",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/images/edits",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "video_generation": {
+          "support": "supported",
+          "exposure": "enabled",
+          "reason_code": "model_declared",
+          "profiles": [
+            {
+              "id": "text_to_video",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos/sync",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "websocket",
+                  "method": "WEBSOCKET",
+                  "path": "/v1/realtime/video",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "image_to_video",
+              "support": "supported",
+              "required_inputs": [
+                "text",
+                "image"
+              ],
+              "outputs": [
+                "video"
+              ],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos",
+                  "exposure": "enabled",
+                  "request": {
+                    "inputs": {
+                      "text": {
+                        "support": "supported",
+                        "min_count": 1
+                      },
+                      "image": {
+                        "support": "supported",
+                        "min_count": 1,
+                        "max_count": 1
+                      },
+                      "first_frame": {
+                        "support": "supported",
+                        "min_count": 0,
+                        "max_count": 1
+                      },
+                      "last_frame": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "source_video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      }
+                    },
+                    "required_any_of": [],
+                    "parameters": {
+                      "width": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "height": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "num_frames": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "fps": {
+                        "support": "supported",
+                        "type": "number",
+                        "minimum": 1.0
+                      }
+                    }
+                  }
+                },
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos/sync",
+                  "exposure": "enabled",
+                  "request": {
+                    "inputs": {
+                      "text": {
+                        "support": "supported",
+                        "min_count": 1
+                      },
+                      "image": {
+                        "support": "supported",
+                        "min_count": 1,
+                        "max_count": 1
+                      },
+                      "first_frame": {
+                        "support": "supported",
+                        "min_count": 0,
+                        "max_count": 1
+                      },
+                      "last_frame": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "source_video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      }
+                    },
+                    "required_any_of": [],
+                    "parameters": {
+                      "width": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "height": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "num_frames": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "fps": {
+                        "support": "supported",
+                        "type": "number",
+                        "minimum": 1.0
+                      }
+                    }
+                  }
+                },
+                {
+                  "transport": "websocket",
+                  "method": "WEBSOCKET",
+                  "path": "/v1/realtime/video",
+                  "exposure": "enabled",
+                  "request": {
+                    "inputs": {
+                      "text": {
+                        "support": "supported",
+                        "min_count": 1
+                      },
+                      "image": {
+                        "support": "supported",
+                        "min_count": 1,
+                        "max_count": 1
+                      },
+                      "first_frame": {
+                        "support": "supported",
+                        "min_count": 0,
+                        "max_count": 1
+                      },
+                      "last_frame": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "source_video": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "video_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      },
+                      "audio_noise_mask": {
+                        "support": "unsupported",
+                        "max_count": 0
+                      }
+                    },
+                    "required_any_of": [],
+                    "parameters": {
+                      "width": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "height": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "num_frames": {
+                        "support": "supported",
+                        "type": "integer",
+                        "minimum": 1.0
+                      },
+                      "fps": {
+                        "support": "supported",
+                        "type": "number",
+                        "minimum": 1.0
+                      }
+                    }
+                  }
+                }
+              ],
+              "reason_code": "model_declared",
+              "constraints": {},
+              "request": {
+                "inputs": {
+                  "text": {
+                    "support": "supported",
+                    "min_count": 1
+                  },
+                  "image": {
+                    "support": "supported",
+                    "min_count": 1,
+                    "max_count": 1
+                  },
+                  "first_frame": {
+                    "support": "supported",
+                    "min_count": 0,
+                    "max_count": 1
+                  },
+                  "last_frame": {
+                    "support": "supported",
+                    "min_count": 0,
+                    "max_count": 1
+                  }
+                },
+                "required_any_of": [],
+                "parameters": {}
+              }
+            },
+            {
+              "id": "video_to_video",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/videos/sync",
+                  "exposure": "enabled"
+                },
+                {
+                  "transport": "websocket",
+                  "method": "WEBSOCKET",
+                  "path": "/v1/realtime/video",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "speech": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_to_speech",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/speech",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "lyrics_to_music",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/speech",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            },
+            {
+              "id": "caption_to_audio",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/speech",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        },
+        "audio_generation": {
+          "support": "unsupported",
+          "exposure": "enabled",
+          "reason_code": "model_not_supported",
+          "profiles": [
+            {
+              "id": "text_to_audio",
+              "support": "unsupported",
+              "required_inputs": [],
+              "outputs": [],
+              "routes": [
+                {
+                  "transport": "http",
+                  "method": "POST",
+                  "path": "/v1/audio/generate",
+                  "exposure": "enabled"
+                }
+              ],
+              "reason_code": "model_not_supported",
+              "constraints": {}
+            }
+          ],
+          "execution": {
+            "state": "unpaused",
+            "scope": "deployment",
+            "observed_at": "2026-11-12T02:21:57.270897Z"
+          }
+        }
+      }
+    }
+  ],
+  "stages": [
+    {
+      "id": "0",
+      "type": "diffusion",
+      "depends_on": []
+    }
+  ],
+  "routes": [
+    {
+      "transport": "http",
+      "method": "DELETE",
+      "path": "/v1/audio/voices/{name}",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "DELETE",
+      "path": "/v1/videos/{video_id}",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/audio/voices",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/models",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/omni/capabilities",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/realtime/sessions/{session_id}/status",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/responses/{response_id}",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/videos",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/videos/{video_id}",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "GET",
+      "path": "/v1/videos/{video_id}/content",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/audio/generate",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/audio/speech",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/audio/speech/batch",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/audio/voices",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/chat/completions/batch",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/chat/completions/derender",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/chat/completions/render",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/completions",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/completions/derender",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/completions/render",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/decisions",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/images/edits",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/images/generations",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/images/segmentations",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/messages",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/messages/count_tokens",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/messages/render",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/omni/sleep",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/omni/wakeup",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/realtime/sessions",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/realtime/sessions/{session_id}/close",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/realtime/sessions/{session_id}/reset",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/realtime/sessions/{session_id}/step",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/responses",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/responses/render",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/responses/{response_id}/cancel",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/run",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/systemone",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/videos",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/videos/depth",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/videos/segmentations",
+      "exposure": "unknown"
+    },
+    {
+      "transport": "http",
+      "method": "POST",
+      "path": "/v1/videos/sync",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "websocket",
+      "method": "WEBSOCKET",
+      "path": "/v1/audio/speech/stream",
+      "exposure": "disabled"
+    },
+    {
+      "transport": "websocket",
+      "method": "WEBSOCKET",
+      "path": "/v1/duplex",
+      "exposure": "disabled"
+    },
+    {
+      "transport": "websocket",
+      "method": "WEBSOCKET",
+      "path": "/v1/realtime",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "websocket",
+      "method": "WEBSOCKET",
+      "path": "/v1/realtime/robot/openpi",
+      "exposure": "disabled"
+    },
+    {
+      "transport": "websocket",
+      "method": "WEBSOCKET",
+      "path": "/v1/realtime/video",
+      "exposure": "enabled"
+    },
+    {
+      "transport": "websocket",
+      "method": "WEBSOCKET",
+      "path": "/v1/video/chat/stream",
+      "exposure": "disabled"
+    }
+  ]
+}

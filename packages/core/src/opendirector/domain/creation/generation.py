@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue, model_validator
 
 from opendirector.domain.minimax_models import MINIMAX_MODELS
+from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationFailure, ResultCheck
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import (
@@ -306,9 +307,13 @@ class Job(ProjectEntity):
     adoptionMaterial: AssetRef | None = Field(default=None, description='Material version reserved for adoption.')
     adopted: bool = Field(default=False, description='Whether the generated result was adopted.')
     adapterParameters: dict[str, JsonValue] = Field(default_factory=dict, description='Fixed provider-specific execution parameters.')
+    agentRunId: UUID | None = Field(default=None, exclude_if=lambda value: value is None, description='Agent turn that submitted this job; omitted for jobs not submitted by an Agent.')
+    agentCallId: str | None = Field(default=None, min_length=1, max_length=512, exclude_if=lambda value: value is None, description='Tool call within that turn that submitted this job; the command ID derives from both.')
 
     @model_validator(mode='after')
     def execution_identity(self):
+        if (self.agentRunId is None) != (self.agentCallId is None):
+            raise ValueError('Agent run and call identity are recorded together')
         if self.showAdditionalResult and (self.originItemId is None or self.adoptionPolicy != 'candidate_only'):
             raise ValueError('Additional result display requires an origin and candidate-only adoption')
         if self.inputSnapshot.spec.projectId != self.projectId:
@@ -428,6 +433,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         count = sum(ref.asset.kind == kind for ref in transmitted)
         if count > limit:
             label = {'image': '图片', 'video': '视频', 'audio': '音频'}[kind]
+            if kind == 'image':
+                raise ProjectError(f'最多支持 {limit} 张图片，当前为 {count} 张。', code='image_input_count')
             raise ValueError(f'{label}参考素材数量超过上限。')
     if spec.kind == 'image':
         from opendirector.domain.image_output import resolve_image_output

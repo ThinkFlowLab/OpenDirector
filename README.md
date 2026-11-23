@@ -13,11 +13,15 @@
 
 # OpenDirector
 
+**[Download OpenDirector](https://thinkflowlab.github.io/OpenDirector/#download)** for Apple Silicon Macs and Windows x64 PCs.
+
 **From an idea to a downloadable short film: generate through chat, organize on a canvas, edit media, and export from a timeline.**
 
 OpenDirector is an AI video creation workspace that runs locally and is accessed through your browser. Discuss ideas with the assistant and generate assets, organize and iterate on them on the canvas, edit images, video, and audio, then arrange your material on a timeline and export an MP4.
 
 Use it to explore visual ideas, refine assets, and make short films. Projects stay on your machine; generation uses the provider APIs or self-hosted model services you choose.
+
+[Official website](https://thinkflowlab.github.io/OpenDirector/en/) · [Download for macOS or Windows](https://thinkflowlab.github.io/OpenDirector/en/#download) · [Watch the example film](https://thinkflowlab.github.io/OpenDirector/en/#film) · [Installation guide](docs/guides/installation.md)
 
 [News](#news) · [Example film](#example-film-we-can-still-win) · [Quick start](#quick-start) · [Documentation](#documentation) · [Community](#community) · [Contributing](#contributing)
 
@@ -30,7 +34,7 @@ Use it to explore visual ideas, refine assets, and make short films. Projects st
 - **Work with AI**: Describe what you want to create, reference canvas assets, and ask the assistant to save text or generate content with your configured models.
 - **Canvas and reference assets**: Upload files, connect nodes, or use `@` to add references. Organize assets in one place and review generation history.
 - **Media editing**: Crop, adjust colors, and work with layers and clips. AI tools such as image extension, erasing, and background removal depend on the connected models' capabilities.
-- **Image presets**: Select an image, choose Character three-view, Face three-view, Product three-view, Storyboard, or Multi-camera from **Presets**, then click **Generate** in the single-row panel. Three-view presets produce one reference sheet each; Storyboard and Multi-camera produce four separate images each, using landscape layouts and retaining a connection to the source.
+- **Image presets**: Select an image, choose Character three-view, Character four-view, Face three-view, Product three-view, Storyboard, or Multi-camera from **Presets**, then click **Generate**. Character four-view adds a frontal close-up to the right of the full-body front, side, and rear views. Enable **Face emphasis** to ask the model to frame the front and side views from the chin down, keeping the full rear view and frontal close-up. The view presets each produce one reference sheet; Storyboard and Multi-camera each produce four separate images connected to the source.
 - **Timeline editing**: Arrange assets, adjust start and end points, speed, and volume, then preview and render an MP4. You can also export JSON, FCPXML, and asset bundles.
 - **Local projects, your choice of models**: The canvas saves automatically to your machine. Configure multiple models for a service and switch between them as needed.
 
@@ -53,6 +57,10 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 [Download the original film (MP4, 15.7 MiB)](docs/guides/assets/dota2-short-film.mp4?raw=true) · 60 seconds · 1280 × 720 · 24 fps · Music: 《岁月神偷》.
 
 ## Quick start
+
+### Install the desktop app
+
+[Download the installer](https://thinkflowlab.github.io/OpenDirector/en/#download) for macOS (Apple Silicon) or Windows (x64). Install and open OpenDirector.
 
 ### Install with AI
 

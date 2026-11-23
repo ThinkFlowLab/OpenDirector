@@ -147,11 +147,17 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   );
   const toolCatalog = useToolCatalog(
     backendCatalog.connected,
-    backendCatalog.models,
+    backendCatalog.availabilityRevision,
+    t,
   );
   const setupChecked = useRef(false);
   const theme = useTheme();
   const serviceRuns = useRef(new Map<string, ServiceRun>());
+  // Jobs seen running in this session. Only their results can still be
+  // arriving; historical, undone or version-switched results are never pending.
+  const watchedJobs = useRef(new Set<string>());
+  for (const job of jobs)
+    if (!job.tool && job.status === "running") watchedJobs.current.add(job.id);
   const generationByNode = useMemo(
     () =>
       generationActivities(
@@ -166,8 +172,15 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
               ),
           ),
           ...jobActivities(
-            jobs.filter((job) => !job.tool),
+            jobs
+              .filter((job) => !job.tool)
+              .map((job) =>
+                job.deliveredAssetId && !watchedJobs.current.has(job.id)
+                  ? { ...job, deliveredAssetId: undefined }
+                  : job,
+              ),
             doc.id,
+            doc.nodes,
           ),
           ...jobActivities(
             jobs.filter((job) => job.tool),
@@ -176,7 +189,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         ],
         doc.id,
       ),
-    [activeGenerations, doc.id, jobs],
+    [activeGenerations, doc.id, doc.nodes, jobs],
   );
   const clipboard = useRef<CanvasFragment | null>(null);
   const clipboardMedia = useRef<ClipboardMedia | null>(null);

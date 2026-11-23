@@ -35,8 +35,11 @@ async def bounded(response, *, stage, secrets=(), limit=MAX_ASSET_BYTES):
 
 async def _public_result_url(url):
     """Pin an unconfigured download to checked public DNS answers, retaining TLS identity."""
-    return await public_target(url, unsafe=lambda: protocol_failure('download'),
-                               unresolved=lambda: transport_failure('download'))
+    return await public_target(url,
+        unsafe=lambda: protocol_failure('download',
+            message='生成结果地址无效或指向非公网地址，下载已停止。',
+            suggestion='请检查服务返回的地址或本机域名解析设置，再恢复原任务的下载。'),
+        unresolved=lambda: transport_failure('download'))
 
 
 class VolcengineGeneration:

@@ -17,6 +17,7 @@ import {
 import { translateTool, translateToolText } from "./toolText.ts";
 import { displayNodeTitle } from "./nodeTitle.ts";
 import { useI18n } from "../i18n/I18nProvider";
+import { toolReasonText } from "./toolReasonText.ts";
 import "./node-task-panel.css";
 
 /** A single source-bound operation using the service's capability catalog. */
@@ -103,8 +104,11 @@ export function NodeTaskPanel({
       errors[0] ??
       (runnable
         ? t("tools.nodeTask.presetNote")
-        : (capability?.reason ?? t("tools.nodeTask.notConnected")));
+        : (toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.notConnected")));
     const models = capability?.models?.["image.edit"] ?? [];
+    const faceEmphasis = parameters.preset === "four-view"
+      ? capability?.fields?.find((field) => field.key === "faceEmphasis")
+      : undefined;
     return (
       <section
         className="cw-node-task-panel cw-preset-task-panel"
@@ -147,6 +151,18 @@ export function NodeTaskPanel({
                 </option>
               ))}
             </select>
+          )}
+          {faceEmphasis && (
+            <label className="cw-preset-task-checkbox">
+              <input
+                type="checkbox"
+                checked={parameters.faceEmphasis === true}
+                onChange={(event) =>
+                  change(faceEmphasis.key, event.target.checked)
+                }
+              />
+              {translateToolText(locale, faceEmphasis.label)}
+            </label>
           )}
           <span className="cw-preset-task-note" role="status">
             {note}
@@ -304,7 +320,7 @@ export function NodeTaskPanel({
       <p className="cw-node-task-note">
         {runnable
           ? (errors[0] ?? t("tools.nodeTask.remoteNote"))
-          : `${capability?.reason ?? t("tools.nodeTask.unavailable")}${t("tools.nodeTask.saveHint")}`}
+          : `${toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.unavailable")} ${t("tools.nodeTask.saveHint")}`}
       </p>
       <footer>
         <TooltipButton
@@ -352,7 +368,7 @@ export function NodeTaskPanel({
           title={
             runnable
               ? errors[0]
-              : (capability?.reason ?? t("tools.nodeTask.notConnected"))
+              : (toolReasonText(capability?.reason, t) ?? t("tools.nodeTask.notConnected"))
           }
           onClick={() => {
             onDraftChange(task);

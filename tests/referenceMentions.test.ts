@@ -6,7 +6,9 @@ import { createNode } from "../src/canvas/model.ts";
 import { referenceCandidates } from "../src/canvas/referenceCandidates.ts";
 import {
   insertMention,
+  isCaretNavigationKey,
   mentionCategories,
+  mentionDismissAfterEvent,
   mentionRange,
   slashRange,
   nodeMentionOptions,
@@ -142,4 +144,44 @@ test("skill slash commands follow the caret after text and atomic references", (
 
 test("choosing a skill from the middle of a slash token replaces the complete token", () => {
   assert.deepEqual(slashRange("\ufffc /character 后文", 7), {start: 2, end: 12, query: "char"});
+});
+
+test("a dismissed mention stays closed until the caret leaves and returns", () => {
+  const mention = 1;
+  assert.equal(isCaretNavigationKey("ArrowRight"), true);
+  assert.equal(isCaretNavigationKey("ArrowRight", true), false);
+  assert.equal(isCaretNavigationKey("a"), false);
+
+  const stayed = mentionDismissAfterEvent(mention, false, mention);
+  assert.deepEqual(stayed, {
+    dismissedStart: mention,
+    leftSinceDismiss: false,
+    open: false,
+  });
+
+  const left = mentionDismissAfterEvent(mention, false, null);
+  assert.deepEqual(left, {
+    dismissedStart: null,
+    leftSinceDismiss: false,
+    open: false,
+  });
+  const returned = mentionDismissAfterEvent(
+    left.dismissedStart,
+    left.leftSinceDismiss,
+    mention,
+  );
+  assert.deepEqual(returned, {
+    dismissedStart: null,
+    leftSinceDismiss: false,
+    open: true,
+  });
+
+  // Coalesced 2 → 3 → 2: the outside caret is never reported, but a
+  // navigation key has already marked the leave.
+  const coalesced = mentionDismissAfterEvent(mention, true, mention);
+  assert.deepEqual(coalesced, {
+    dismissedStart: null,
+    leftSinceDismiss: false,
+    open: true,
+  });
 });

@@ -33,6 +33,14 @@ function fixture() {
   };
 }
 
+test("the history projection retains the execution revision used by confirmed recovery", () => {
+  const { snapshot, active } = fixture();
+  const job = { ...active, status: "failed" as const, revision: 17 };
+  const projected = creationJobs({ ...snapshot, jobs: [job] })[0]!;
+  assert.equal(projected.revision, 17);
+  assert.equal(projected.status, "failed");
+});
+
 test("a slow old preview cannot delay preparation or cancellation metadata", async () => {
   const { snapshot, active } = fixture();
   const asset = snapshot.assets.find(
@@ -198,4 +206,24 @@ test("video history shows measured duration separately before the preview loads"
   assert.deepEqual(row?.videoDuration, { requestedSeconds: 4, resultSeconds: 107 / 24 });
   const [withoutResult] = creationJobs({ ...completed, results: [] });
   assert.deepEqual(withoutResult?.videoDuration, { requestedSeconds: 4, resultSeconds: undefined });
+});
+
+test("a succeeded job names the result its origin node now shows", () => {
+  const { snapshot } = fixture();
+  const job = { ...snapshot.jobs[0]!, originItemId: "00000000-0000-0000-0000-000000000033" };
+  const delivered = (value: ProjectSnapshot) =>
+    creationJobs({ ...value, jobs: [job] })[0]!.deliveredAssetId;
+  assert.equal(delivered(snapshot), "00000000-0000-0000-0000-00000000000f");
+  // Another current result, or a running job, has nothing delivered yet.
+  assert.equal(
+    delivered({
+      ...snapshot,
+      generationSpecs: snapshot.generationSpecs.map((spec) => ({ ...spec, currentResultId: null })),
+    }),
+    undefined,
+  );
+  assert.equal(
+    creationJobs({ ...snapshot, jobs: [{ ...job, status: "running" as const }] })[0]!.deliveredAssetId,
+    undefined,
+  );
 });

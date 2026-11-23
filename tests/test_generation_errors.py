@@ -20,6 +20,16 @@ SECRET = 'private-key-never-record'
 SIGNED_URL = 'https://cdn.test/output?signature=secret-signature'
 
 
+def test_unknown_429_does_not_diagnose_account_quota():
+    from opendirector.integrations.generation_errors import provider_failure
+    error = provider_failure({'error': {'code': '1305', 'message': 'service overloaded'}},
+                             stage='submit', http_status=429)
+    assert error.details.category == 'rate_limit' and error.details.providerCode == '1305'
+    assert '服务繁忙' in error.details.message and '稍后' in error.details.suggestion
+    assert '配额受限' not in error.details.message
+    assert '不会自动重新提交' in str(error)
+
+
 @pytest.fixture
 def project(tmp_path):
     store, pid, session = new_project(tmp_path)

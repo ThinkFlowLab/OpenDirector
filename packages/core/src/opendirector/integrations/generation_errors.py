@@ -17,7 +17,7 @@ _REASONS = {
     'authentication': ('生成服务鉴权失败。', '请在设置中检查 API Key。'),
     'permission': ('生成服务拒绝了访问请求。', '请检查 API Key 是否正确及有效、模型调用权限和服务安全策略。'),
     'quota': ('模型账户余额或套餐额度不足。', '请核对账户余额和套餐额度。'),
-    'rate_limit': ('模型调用频率或配额受限。', '请核对调用频率及套餐额度后再操作。'),
+    'rate_limit': ('模型服务繁忙或请求受限。', '请稍后再试；若持续发生，请检查服务状态、调用频率和账户额度。'),
     'temporary': ('生成服务暂时不可用。', '请先核对已有任务，再处理当前步骤。'),
     'provider': ('生成服务未能完成当前操作。', '请核对原任务；错误码和请求标识可用于向供应商排查。'),
 }
@@ -183,10 +183,10 @@ def transport_failure(stage, *, timeout=False, status=None):
         status=status or (504 if timeout else 503))
 
 
-def protocol_failure(stage, *, message='生成服务返回了无法识别或不完整的结果。'):
+def protocol_failure(stage, *, message='生成服务返回了无法识别或不完整的结果。', suggestion=None):
     context = MODEL_JOB_CONTEXT.get()
     logger.error(f'model.error {json.dumps({"project_id": context[0] if context else None, "job_id": context[1] if context else None, "stage": stage, "error_type": "ProtocolError"})}')
     unknown = stage == 'submit'
     return GenerationError(GenerationFailure(category='submission_unknown' if unknown else 'protocol', stage=stage,
         message=message,
-        suggestion='请先核对请求是否已被接收，避免重复生成。' if unknown else '请核对原任务状态和接口协议。'))
+        suggestion=suggestion or ('请先核对请求是否已被接收，避免重复生成。' if unknown else '请核对原任务状态和接口协议。')))

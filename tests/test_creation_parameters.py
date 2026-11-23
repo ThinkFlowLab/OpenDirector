@@ -282,6 +282,55 @@ async def test_recovered_music_job_sends_the_seed_fixed_at_acceptance(project,mo
     assert [call['seed'] for call in calls]==[7] and job.execution.seed==7
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize('seed_constraint,accepted', [
+    ({'support': 'supported', 'type': 'integer', 'enum': [7]}, True),
+    ({'support': 'supported', 'type': 'integer', 'enum': [8]}, False),
+    ({'support': 'unsupported'}, False),
+])
+async def test_music_checks_the_seed_that_is_saved_and_sent(project, monkeypatch, seed_constraint, accepted):
+    from opendirector.application.model_availability import ModelAvailability
+    from opendirector.integrations.capability_probe import CapabilityProbe
+    from test_model_availability import document
+
+    store, pid, session = project
+    calls, checked = [], []
+    monkeypatch.setattr(creation_generation, 'new_seed', lambda: 7)
+    model = 'MiniMaxAI/MiniMax-Music3'
+    runner, target, spec_id = setup(project, 'audio', dict(creationType='music', lyrics='A test song'),
+        music_server(calls), protocol='vllm_omni_music', model=model)
+    declaration = document('speech', 'lyrics_to_music', '/v1/audio/speech', 'audio', model=model)
+    route = declaration['models'][0]['operations']['speech']['profiles'][0]['routes'][0]
+    route['request'] = {'parameters': {'seed': seed_constraint}}
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    runner.availability = ModelAvailability(runner.configs, probe)
+    require = runner.availability.require
+
+    def check(config, request, prepared=None):
+        checked.append(dict(request.parameters))
+        return require(config, request, prepared)
+
+    monkeypatch.setattr(runner.availability, 'require', check)
+    before = store.snapshot(pid)
+    try:
+        command, receipt = await submit(project, runner, target, spec_id)
+        assert receipt.status == ('accepted' if accepted else 'rejected'), receipt
+        if accepted:
+            await done(runner)
+            job = store.snapshot(pid).jobs[-1]
+            assert job.status == 'succeeded', job.errorDetails
+            assert checked[-1]['seed'] == job.adapterParameters['seed'] == job.execution.seed == calls[0]['seed'] == 7
+            assert await runner.execute(command, session=session) == receipt
+            assert len(calls) == len(store.snapshot(pid).jobs) == 1
+        else:
+            after = store.snapshot(pid)
+            assert not after.jobs and calls == []
+            assert after.generationSpecs == before.generationSpecs and after.assets == before.assets
+    finally:
+        await runner.close()
+        probe.close()
+
+
 SCORE = 'X:1\nM:4/4\nL:1/16\nK:A\nV: Vocal\nA4A2F2A4A2F2|\n'
 
 

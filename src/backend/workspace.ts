@@ -40,6 +40,7 @@ export interface WorkspaceProject {
   id: string;
   name: string;
   path: string;
+  defaultNameIndex?: number;
 }
 export interface UnreadableWorkspaceProject {
   id: string | null;
@@ -59,6 +60,17 @@ export interface WorkspaceCleanupResult {
 const lastKey = "opendirector.lastUnifiedFilesystemProject";
 /** The project selector opens and closes often; the list is cheap to reuse. */
 const PROJECTS_KEY = "workspace:projects";
+const projectCatalogChanges = new EventTarget();
+
+export function subscribeWorkspaceProjects(onChange: () => void) {
+  projectCatalogChanges.addEventListener("change", onChange);
+  return () => projectCatalogChanges.removeEventListener("change", onChange);
+}
+
+function invalidateWorkspaceProjects() {
+  invalidateCached(PROJECTS_KEY);
+  projectCatalogChanges.dispatchEvent(new Event("change"));
+}
 
 export const listWorkspaceProjects = (read: { fresh?: boolean } = {}) =>
   cachedRequest<WorkspaceProjectList>(
@@ -117,10 +129,10 @@ export async function saveWorkspaceDocument(
   return;
 }
 
-export async function createWorkspaceProject(name: string, id: string) {
+export async function createWorkspaceProject(name: string, id: string, defaultNameIndex?: number) {
   // Unified creation does not acquire a lease; projection.open does that.
-  await creationClient(id).command("project.create", { name });
-  invalidateCached(PROJECTS_KEY);
+  await creationClient(id).command("project.create", { name, defaultNameIndex });
+  invalidateWorkspaceProjects();
   return (await listWorkspaceProjects()).projects.find(
     (project) => project.id === id,
   )!;
@@ -240,7 +252,7 @@ export function initializeWorkspace() {
     if (!projects.length) {
       const id = crypto.randomUUID();
       try {
-        projects = [await createWorkspaceProject(tNow("errors.backend.untitled"), id)];
+        projects = [await createWorkspaceProject(tNow("errors.backend.untitled"), id, 1)];
       } catch (error) {
         // Another window may have created the default directory concurrently.
         if (!(error instanceof ApiError && error.status === 409)) throw error;
@@ -253,6 +265,7 @@ export function initializeWorkspace() {
                 await createWorkspaceProject(
                   tNow("errors.backend.untitledSuffix", { suffix }),
                   id,
+                  suffix,
                 ),
               ];
             } catch (conflict) {
@@ -291,7 +304,7 @@ export async function renameWorkspaceProject(
   } finally {
     if (current) await openBackendProject(project.id, name).catch(() => {});
   }
-  invalidateCached(PROJECTS_KEY);
+  invalidateWorkspaceProjects();
   return (await listWorkspaceProjects()).projects.find(
     (item) => item.id === project.id,
   )!;
@@ -348,5 +361,5 @@ export async function trashWorkspaceProject(
   }
   creationClient(project.id).close();
   projections.delete(project.id);
-  invalidateCached(PROJECTS_KEY);
+  invalidateWorkspaceProjects();
 }

@@ -7,6 +7,7 @@ import type {
   ToolField,
   ToolParameters,
 } from "../canvas/toolCatalog.ts";
+import { dataUrlToBlob } from "../canvas/downloadAssets.ts";
 import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
 import { ApiError, errorMessage, json, request } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
@@ -17,6 +18,8 @@ import {
 } from "../canvas/toolTaskText.ts";
 import { toolReasonText } from "../canvas/toolReasonText.ts";
 import { tNow } from "../i18n/messages.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "../canvas/assistantTranslate.ts";
 import {
   EXTENSIONS,
   fileName,
@@ -39,6 +42,7 @@ export interface ToolCatalogEntry {
   id: CanvasToolId;
   available: boolean;
   reason?: string;
+  reasonCode?: string;
   note: string;
   parametersConfirmed: boolean;
   fields: ToolField[];
@@ -167,7 +171,7 @@ export interface ToolRequest {
 }
 
 /** Availability and service-supplied options for every tool, refreshed with the model list. */
-export function useToolCatalog(connected: boolean, revision: unknown) {
+export function useToolCatalog(connected: boolean, revision: unknown, t: Translate = defaultTranslate) {
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
   const [error, setError] = useState("");
   const [selectionPreview, setSelectionPreview] = useState<{
@@ -180,16 +184,8 @@ export function useToolCatalog(connected: boolean, revision: unknown) {
         tools: ToolCatalogEntry[];
         selectionPreview?: { available: boolean; reason?: string };
       }>("/tools");
-      setTools(
-        value.tools.map((entry) => ({
-          ...entry,
-          reason: toolReasonText(entry.reason),
-        })),
-      );
-      setSelectionPreview({
-        ...(value.selectionPreview ?? { available: false }),
-        reason: toolReasonText(value.selectionPreview?.reason),
-      });
+      setTools(value.tools);
+      setSelectionPreview(value.selectionPreview ?? { available: false });
       setError("");
     } catch (failure) {
       setTools([]);
@@ -204,19 +200,22 @@ export function useToolCatalog(connected: boolean, revision: unknown) {
       setSelectionPreview({ available: false });
     }
   }, [connected, revision, refresh]);
+  const displayedTools = tools.map((entry) => ({ ...entry, reason: toolReasonText(entry.reason, t, entry.reasonCode) }));
   const capabilities: ToolCapabilities = Object.fromEntries(
-    tools.map((entry) => [
+    displayedTools.map((entry) => [
       entry.id,
       {
         available: entry.available,
         reason: entry.reason,
+        reasonCode: entry.reasonCode,
         fields: entry.fields,
         models: entry.models,
         parametersConfirmed: entry.parametersConfirmed,
       },
     ]),
   );
-  return { tools, capabilities, selectionPreview, error, refresh };
+  return { tools: displayedTools, capabilities,
+    selectionPreview: { ...selectionPreview, reason: toolReasonText(selectionPreview.reason, t) }, error, refresh };
 }
 
 /** Sources and masks become project assets once; identical files are reused. */
@@ -245,6 +244,9 @@ export async function uploadAsset(
             : blob.type.startsWith("audio/")
               ? "audio"
               : "image",
+          undefined,
+          undefined,
+          signal,
         )
       ).assetId
     );
@@ -298,7 +300,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
         : value.maskDataUrl
           ? await uploadAsset(
               projectId,
-              await (await fetch(value.maskDataUrl, { signal })).blob(),
+              dataUrlToBlob(value.maskDataUrl),
               tNow("errors.tools.selectionAsset"),
               signal,
             )
@@ -306,7 +308,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
     const annotationAssetId = value.annotatedDataUrl
       ? await uploadAsset(
           projectId,
-          await (await fetch(value.annotatedDataUrl, { signal })).blob(),
+          dataUrlToBlob(value.annotatedDataUrl),
           tNow("errors.tools.annotationAsset"),
           signal,
         )

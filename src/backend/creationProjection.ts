@@ -1,5 +1,6 @@
 /** React Flow is a projection. These adapters translate typed editor/media
  * values; no browser URL is ever put into the authoritative project. */
+import { dataUrlToBlob } from "../canvas/downloadAssets.ts";
 import type {
   Asset,
   AssetRef,
@@ -73,6 +74,7 @@ const presentationFields = [
   "height",
   "zIndex",
   "locked",
+  "color",
   "parentId",
 ] as const;
 const extension: Record<string, string> = {
@@ -93,18 +95,21 @@ export class CreationProjection {
   private importHandles = new Map<string, string>();
   private timelineImportSources = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
+  private pendingSpecIds = new Map<string, string>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
     this.client = client;
   }
 
   async importFile(file: File, signal?: AbortSignal): Promise<CanvasResource> {
-    const { mimeType } = classifyImportFile(file);
-    if (mimeType !== "image/heic" && mimeType !== "image/heif")
+    const { kind, mimeType } = classifyImportFile(file);
+    if (kind !== "video" && kind !== "audio" &&
+        mimeType !== "image/heic" && mimeType !== "image/heif")
       return readEditorResource(file, signal);
     signal?.throwIfAborted();
-    const ref = await this.client.importBlob(file, file.name, "image");
+    const ref = await this.client.importBlob(file, file.name, kind, undefined, undefined, signal);
     signal?.throwIfAborted();
+    // The Host probes original bytes, so audio and video never need a data URL.
     // Failed previews must not be saved as empty generation nodes.
     await this.client.mediaUrl(ref.assetId, { signal });
     return this.resource(ref);
@@ -167,6 +172,7 @@ export class CreationProjection {
         if (!resource.src) throw new Error(tNow("errors.backend.mediaEmpty"));
         let blob: Blob;
         if (existing) blob = await this.client.blob(existing.id);
+        else if (/^data:/i.test(resource.src)) blob = dataUrlToBlob(resource.src);
         else {
           const response = await fetch(resource.src);
           if (!response.ok)
@@ -579,6 +585,7 @@ export class CreationProjection {
     const document = {
       ...createDocument(snapshot.project.name),
       id: snapshot.project.id,
+      defaultNameIndex: snapshot.project.defaultNameIndex,
     };
     const view = await this.client.view();
     document.viewport = view.viewport;
@@ -597,6 +604,7 @@ export class CreationProjection {
           width: item.width,
           height: item.height,
           locked: item.locked,
+          ...(item.color ? { color: item.color } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -942,8 +950,11 @@ export class CreationProjection {
     node: CanvasNode,
     current?: GenerationSpec,
   ): GenerationSpecInput {
+    const id = current?.id ?? this.pendingSpecIds.get(node.id) ?? crypto.randomUUID();
+    // Preserve the batch payload when an unacknowledged draft save is retried.
+    if (!current) this.pendingSpecIds.set(node.id, id);
     const common = {
-      id: current?.id ?? crypto.randomUUID(),
+      id,
       projectId: this.client.id,
       revision: current?.revision ?? 1,
       purpose: current?.purpose ?? "draft",
@@ -1602,6 +1613,7 @@ export class CreationProjection {
               height: node.height,
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
+              ...(node.color ? { color: node.color } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,
@@ -1621,6 +1633,7 @@ export class CreationProjection {
           height: node.height,
           zIndex: node.zIndex ?? 0,
           locked: node.locked ?? false,
+          color: node.color ?? "",
           parentId: node.parentId ?? null,
         };
         const oldPresentation = {
@@ -1629,6 +1642,7 @@ export class CreationProjection {
           height: old?.height,
           zIndex: old?.zIndex ?? 0,
           locked: old?.locked ?? false,
+          color: old?.color ?? "",
           parentId: old?.parentId ?? null,
         };
         const changedFields = presentationFields.filter(
@@ -2112,6 +2126,7 @@ export class CreationProjection {
     // Business acknowledgement cannot be undone by a view preference failure.
     this.basis = this.client.snapshot;
     this.baseline = document;
+    this.pendingSpecIds.clear();
     if (options.saveView === false) return operations.length > 0;
     await this.saveView(document);
     return operations.length > 0;

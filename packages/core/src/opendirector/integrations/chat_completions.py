@@ -11,8 +11,11 @@ from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, provider_failure, transport_failure
 
 
+CHAT_MAX_TOKENS = 8192
+
+
 def chat_payload(config: dict, messages: list[dict], thinking: str) -> dict:
-    value = {"model": config["modelId"], "messages": messages, "stream": True, "max_tokens": 8192}
+    value = {"model": config["modelId"], "messages": messages, "stream": True, "max_tokens": CHAT_MAX_TOKENS}
     thinking_map = {"auto": "high", "low": "low", "medium": "high", "high": "max"}
     hostname = urlsplit(config["url"]).hostname
     if hostname == "api.deepseek.com":

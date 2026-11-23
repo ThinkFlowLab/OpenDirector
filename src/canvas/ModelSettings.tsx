@@ -1,7 +1,8 @@
-import { ModelSetup, modelSetupMissing, type SetupKind } from "./ModelSetup";
+import { ModelAvailabilityCard } from "./ModelAvailabilityCard";
+import { ModelSetup } from "./ModelSetup";
 import { ModelLogo } from "./ModelLogo";
 import { providerLabel } from "./providerPresets";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { errorMessage } from "../backend/api.ts";
 import { MODEL_KINDS, type BackendModels } from "../backend/models.ts";
 import type { ModelConfig } from "../backend/rules.ts";
@@ -10,7 +11,7 @@ import { ModelServiceForm, type SettingsModelKind } from "./ModelServiceForm";
 import { CanvasIcon } from "./CanvasIcon";
 import "./model-settings.css";
 
-export function ModelSettings({ catalog, onClose, guided = false }: { catalog: BackendModels; onClose: () => void; guided?: boolean }) {
+export function ModelSettings({ catalog, onClose }: { catalog: BackendModels; onClose: () => void }) {
   const t = useT();
   const [category, setCategory] = useState<SettingsModelKind | null>(null);
   const [editing, setEditing] = useState<{
@@ -44,28 +45,16 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
       models.findIndex((item) => item.providerId === model.providerId) ===
         index,
   );
-  const [skipped, setSkipped] = useState<SetupKind[]>([]);
-  const missing = modelSetupMissing(catalog.models);
-  const pending = missing.filter(kind => !skipped.includes(kind));
-  function skipItem(kind: SetupKind) {
-    setSkipped(current => current.includes(kind) ? current : [...current, kind]);
-    const next = pending.find(item => item !== kind);
-    if (!next) { onClose(); return; }
-    setEditing(null);
-    setCategory(next ?? null);
-    setDeleting(null);
-    setError("");
-  }
-  const currentMissing = category !== null && missing.includes(category);
+  const visibleIds = models.map((model) => model.id).join(",");
+  const checkAvailability = catalog.refreshAvailability;
+  useEffect(() => {
+    if (visibleIds && catalog.connected) void checkAvailability(visibleIds.split(","));
+  }, [visibleIds, catalog.connected, checkAvailability]);
   if (category === null) return <div className="cw-model-settings">
-    <ModelSetup catalog={catalog} onClose={onClose} onConfigure={setCategory} skipped={skipped} onSkipItem={guided ? skipItem : undefined} />
+    <ModelSetup catalog={catalog} onClose={onClose} onConfigure={setCategory} />
   </div>;
   return (
     <div className="cw-model-settings">
-      {guided && <div className="cw-model-guide-progress" role="status">
-        <span>{t("modelSetup.count", { count: 4 - missing.length, total: 4 })}</span>
-        <p>{t(editing ? "modelSetup.guideSave" : currentMissing ? "modelSetup.guideAdd" : "modelSetup.guideNext")}</p>
-      </div>}
       {!catalog.connected && (
         <div className="cw-settings-notice" role="alert">
           <span>{catalog.error || t("models.readFailed")}</span>
@@ -185,6 +174,13 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
                       ))}
                       {members.length > 3 && <span>+{members.length - 3}</span>}
                     </div>
+                    <details className="cw-model-availability-details">
+                      <summary>{t("availability.title")}</summary>
+                      {members.map((member) => <ModelAvailabilityCard key={member.id} title={member.modelId}
+                        value={member.availability} checking={catalog.checkingIds.has(member.id)}
+                        error={member.availability?.reasonCode === "query_failed" ? catalog.availabilityError || undefined : undefined}
+                        onRefresh={() => void catalog.refreshAvailability([member.id], true)} />)}
+                    </details>
                     <div className="cw-model-service-bottom">
                       <span>
                         {providerLabel(model)}{" "}
@@ -233,14 +229,6 @@ export function ModelSettings({ catalog, onClose, guided = false }: { catalog: B
             </div>
           </>
         ))}
-      {guided && !editing && <footer className="cw-model-guide-footer">
-        {currentMissing && <button className="cw-settings-button cw-settings-button-quiet" onClick={() => skipItem(category)}>{t("modelSetup.skipItem")}</button>}
-        <button className="cw-settings-button cw-settings-button-primary" disabled={!catalog.connected} onClick={() => {
-          if (currentMissing) setEditing({ kind: category });
-          else if (pending[0]) { setCategory(pending[0]); setDeleting(null); setError(""); }
-          else onClose();
-        }}>{currentMissing ? t("models.services.add") : pending[0] ? t("modelSetup.nextModel", { model: t(`modelSetup.${pending[0]}`) }) : t("modelSetup.done")}</button>
-      </footer>}
     </div>
   );
 }

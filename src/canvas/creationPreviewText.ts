@@ -5,9 +5,3 @@ export const PREVIEW_LABEL_KEYS: Record<string, MessageKey> = {
   主体: "canvas.kind.subject",
   时间线首个画面: "canvas.preview.timelineFirstFrame",
 };
-
-/** Backend fallbacks for conversations without user text. */
-export const CONVERSATION_TITLE_KEYS: Record<string, MessageKey> = {
-  新对话: "assistant.sessions.untitled",
-  素材对话: "assistant.sessions.media",
-};

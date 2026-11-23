@@ -14,6 +14,7 @@ import {
 import { abortable } from "../backend/resilientRead.ts";
 import { toolHistoryJobs } from "../backend/tools.ts";
 import { type GenerationJob } from "./generationHistory";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 
 /** Each callback retains its project owner, including a service result arriving after switching. */
 export function useGenerationJobs(
@@ -21,9 +22,11 @@ export function useGenerationJobs(
   onError: (message: string) => void,
   connected = true,
 ) {
+  const { locale } = useI18n();
   const cache = useRef(new Map<string, GenerationJob[]>());
   const [revision, setRevision] = useState(0);
   const cacheCursors = useRef(new Map<string, number>());
+  const cacheLocales = useRef(new Map<string, string>());
   const reads = useRef(new Map<string, number>());
   const previews = useRef(new Map<string, Promise<void>>());
   const error = useRef(onError);
@@ -41,7 +44,8 @@ export function useGenerationJobs(
       };
       if (
         snapshot &&
-        snapshot.eventCursor > (cacheCursors.current.get(documentId) ?? -1)
+        (snapshot.eventCursor > (cacheCursors.current.get(documentId) ?? -1) ||
+          cacheLocales.current.get(documentId) !== locale)
       ) {
         const current = cache.current.get(documentId) ?? [];
         publish([
@@ -49,6 +53,9 @@ export function useGenerationJobs(
           ...current.filter((job) => job.tool),
         ]);
         cacheCursors.current.set(documentId, snapshot.eventCursor);
+        // Messages are a local projection. A language change must refresh them
+        // even when the persisted project has no new execution events.
+        cacheLocales.current.set(documentId, locale);
       }
       // Each preview hydrates independently. Late files only patch matching
       // preview identities, never status, phase, adoption or cancellation.
@@ -100,7 +107,7 @@ export function useGenerationJobs(
         publish(next);
       return cache.current.get(documentId) ?? [];
     },
-    [documentId, connected],
+    [documentId, connected, locale],
   );
   useEffect(() => {
     let active = true;

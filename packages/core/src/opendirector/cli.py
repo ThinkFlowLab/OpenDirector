@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import socket
 import shlex
+import subprocess
 import sys
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -299,6 +300,14 @@ PortOption = Annotated[int, typer.Option(min=1, max=65535, help="Local API port.
 WebPortOption = Annotated[int, typer.Option(min=1, max=65535, help="Vite development port.")]
 
 
+@app.command("desktop", help="Open the desktop application installed with this terminal command. / 打开此终端命令所属的桌面应用。")
+def desktop():
+    executable = os.environ.get('OPENDIRECTOR_DESKTOP_EXECUTABLE')
+    if not executable or not Path(executable).is_file():
+        raise typer.BadParameter('Install the command from the desktop application menu. / 请从桌面应用菜单安装终端命令。')
+    subprocess.Popen([executable], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 @app.command("serve", help="Start the API and serve the built application.")
 def serve(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info):
     from opendirector.launcher import start
@@ -351,6 +360,26 @@ def select_model(models, selector):
         raise ProjectError("Multiple model configurations match. Select a configuration UUID. Candidates: " +
                            json.dumps(candidates, ensure_ascii=False))
     return matches[0]
+
+
+@group('model').command('availability', help='Read model operation availability; optionally refresh declarations without running models.')
+def model_availability(ctx: typer.Context,
+                       refresh: Annotated[bool, typer.Option(help='Query configured services using automatic-check preferences.')] = False,
+                       model: Annotated[list[UUID] | None, typer.Option(help='Restrict to saved model configuration UUIDs.')] = None,
+                       manual: Annotated[bool, typer.Option(help='Explicitly check selected models even when automatic checks are disabled. Requires --refresh and --model.')] = False):
+    client = ctx.obj
+    client.command = ctx.command_path
+    if manual and (not refresh or not model):
+        raise typer.BadParameter('--manual requires --refresh and --model')
+    arguments = {'manual': manual}
+    if model:
+        arguments['configIds'] = [str(item) for item in model]
+    if client.live:
+        emit(client.call('model_availability', {**arguments, 'refresh': refresh}))
+    elif refresh:
+        emit(client.request('POST', '/api/model-configs/availability', json=arguments))
+    else:
+        emit(client.request('GET', '/api/model-configs/availability'))
 
 
 @group("model").command("list", help="Find model configurations by media kind or model name.")
@@ -681,7 +710,11 @@ def query(ctx: typer.Context, kind: str,
 
 
 def read_file(path):
-    value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
+    if str(path) == "-":
+        source = sys.stdin.buffer.read().decode("utf-8-sig")
+    else:
+        source = path.read_text(encoding="utf-8-sig")
+    value = json.loads(source)
     if not isinstance(value, dict):
         raise ValueError("Expected a JSON object.")
     return value

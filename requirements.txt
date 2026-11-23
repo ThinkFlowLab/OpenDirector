@@ -88,6 +88,8 @@ rich==15.0.0
     #   typer
 shellingham==1.5.4
     # via typer
+socksio==1.0.0
+    # via httpx
 starlette==1.8.0
     # via
     #   opendirector (pyproject.toml)

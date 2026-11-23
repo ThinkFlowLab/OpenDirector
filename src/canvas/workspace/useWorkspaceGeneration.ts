@@ -15,9 +15,12 @@ import { lockedNodeIds } from "../hierarchy";
 import { imageAnnotationPayload } from "../imageActionPayload";
 import { appendPendingResult, removePendingResult, validateNodeActionSource, type GenerationResultMode, type LinkedMediaResult, type ResultSource } from "../linkedResults";
 import { type CanvasNode } from "../model";
+import { groupDescendants } from "../operations";
+import { runWorkflowSteps } from "../groupWorkflow";
 import { getNodeGenerationSettings } from "../NodeComposer";
 import { serviceGenerationPlan, textGenerationPlan } from "../workspaceInteraction.ts";
 import { generationPrepareBlock } from "./entryPoints.ts";
+import { JobFailureNotifications } from "./jobFailureNotifications.ts";
 import { CANVAS_TOOLS, type CanvasToolTask } from "../toolCatalog";
 
 import { translateToolText } from "../toolText.ts";
@@ -56,6 +59,23 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     t,
     toolCatalog,
   } = rt;
+  const failureWatch = useRef({
+    documentId: doc.id,
+    notifications: new JobFailureNotifications(),
+  });
+  if (failureWatch.current.documentId !== doc.id)
+    failureWatch.current = {
+      documentId: doc.id,
+      notifications: new JobFailureNotifications(),
+    };
+  const failureNotifications = failureWatch.current.notifications;
+  const recoverServiceTask = async (job: Job) => {
+    if (!job.taskId) return;
+    const receipt = await creationClient(doc.id).control(job.taskId, "recover");
+    if (receipt.status !== "rejected" && job.revision !== undefined)
+      failureNotifications.recovered(job.id, job.revision);
+    setJobs(await readJobs());
+  };
 
   useEffect(() => {
     if (!arrivingNodes.size) return;
@@ -97,8 +117,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     origin: ResultSource,
     _title: string,
     resultMode: GenerationResultMode = "replace",
-  ) => {
+  ): Promise<string[]> => {
     const id = crypto.randomUUID();
+    let jobIds: string[] = [];
     const run: ServiceRun = {
       controller: new AbortController(),
       unified: true,
@@ -149,7 +170,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
         ),
       };
       change(() => configured);
-      if (!(await persist(configured))) return;
+      if (!(await persist(configured))) return [];
       run.controller.signal.throwIfAborted();
       run.phase = "submitting";
       refreshRunning();
@@ -164,8 +185,10 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
         // Never abort delivery and mint a replacement command.
         for (const jobId of receipt.jobIds)
           await creationClient(origin.documentId).control(jobId, "cancel");
-      } else if (receipt.status === "accepted")
+      } else if (receipt.status === "accepted") {
+        jobIds = [...(receipt.jobIds ?? [])];
         notify(t("canvas.workspace.toast.generationSubmitted"));
+      }
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError"))
         notify(errorMessage(error));
@@ -173,7 +196,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       serviceRuns.current.delete(id);
       refreshRunning();
     }
-    return;
+    return jobIds;
   };
   /** Submit once; the service ledger owns progress/history in both modes. */
   const runToolTask = async (origin: ResultSource, task: CanvasToolTask) => {
@@ -362,6 +385,10 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       setJobs(await readJobs());
     } catch (error) {
       const uncertain = error instanceof ToolSubmissionError && error.uncertain;
+      // Admission errors remain visible even if a project switch removes this
+      // local job. Claim first so its failed projection cannot also notify.
+      const report = !run.controller.signal.aborted &&
+        (uncertain || failureNotifications.claim(id));
       updateJob(id, {
         status: uncertain
           ? "running"
@@ -386,7 +413,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
         change(() => cleaned);
         await persist(cleaned);
       }
-      if (!run.controller.signal.aborted)
+      if (report)
         notify(`「${title}」：${errorMessage(error)}`);
     } finally {
       serviceRuns.current.delete(id);
@@ -419,20 +446,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   /** A job the service gives up on must say so: the node otherwise just stays
    * empty and the prompt looks like it did nothing. Failures that predate this
    * session are history, not news; a job we watched run always qualifies. */
-  const failureWatch = useRef({
-    mountedAt: Date.now(),
-    active: new Set<string>(),
-    reported: new Set<string>(),
-  });
   useEffect(() => {
-    const watch = failureWatch.current;
     for (const job of jobs) {
-      if (job.status === "running") watch.active.add(job.id);
-      if (job.status !== "failed" && job.status !== "interrupted") continue;
-      if (watch.reported.has(job.id)) continue;
-      const recent = (job.createdAt ?? 0) >= watch.mountedAt - 5_000;
-      if (!recent && !watch.active.has(job.id)) continue;
-      watch.reported.add(job.id);
+      if (!failureNotifications.observe(job)) continue;
       const node = [...doc.nodes, ...(doc.hiddenNodes ?? [])].find(
         (item) => item.id === (job.targetNodeId ?? job.nodeId),
       );
@@ -446,7 +462,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
           : t("generation.error.jobFailed", { name }),
       );
     }
-  }, [jobs, doc.nodes, doc.hiddenNodes, notify, t]);
+  }, [jobs, doc.nodes, doc.hiddenNodes, failureNotifications, notify, t]);
 
   const toolPlacementQueue = useRef<Promise<unknown>>(Promise.resolve());
   const placingTools = useRef(new Set<string>());
@@ -531,16 +547,20 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
     });
     if (plan.status === "blocked") {
       notify(plan.message ?? t("canvas.workspace.error.modelUnavailable"));
-      return;
+      return Promise.resolve<string[]>([]);
     }
     const batchId = plan.count > 1 ? crypto.randomUUID() : undefined;
+    const runs: Promise<string[]>[] = [];
     for (let index = 0; index < plan.count; index++)
-      void runServiceTask(
-        { ...plan.request, batchId, executionSlot: index },
-        plan.origin,
-        plan.label,
-        index === 0 ? "replace" : "additional",
+      runs.push(
+        runServiceTask(
+          { ...plan.request, batchId, executionSlot: index },
+          plan.origin,
+          plan.label,
+          index === 0 ? "replace" : "additional",
+        ),
       );
+    return Promise.all(runs).then((ids) => ids.flat());
   };
   const cancelServiceRuns = (nodeId: string) => {
     for (const job of jobs)
@@ -576,7 +596,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       return;
     }
   };
-  const prepareGeneration = (nodeId: string) => {
+  /** Starts a node's generation; resolves to the accepted job IDs (none when it did not start). */
+  const prepareGeneration = (nodeId: string): Promise<string[]> => {
+    const none = Promise.resolve<string[]>([]);
     const current = historyRef.current.present;
     const node = current.nodes.find((node) => node.id === nodeId);
     if (
@@ -590,8 +612,8 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
           ),
       }    )
     )
-      return;
-    if (!node) return;
+      return none;
+    if (!node) return none;
     const incoming = incomingNodes(current, nodeId);
     if (node.type === "text") {
       const plan = textGenerationPlan({
@@ -603,23 +625,144 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       });
       if (plan.status === "blocked") {
         notify(plan.message ?? t("canvas.workspace.error.agentUnavailable"));
-        return;
+        return none;
       }
-      void runServiceTask(plan.request, plan.origin, plan.label);
-      return;
+      return runServiceTask(plan.request, plan.origin, plan.label);
     }
 
     const settings = getNodeGenerationSettings(node, backendCatalog.models);
     if (settings.modelConfigId) {
       try {
-        runServiceGeneration(node, incoming);
+        return runServiceGeneration(node, incoming);
       } catch (error) {
         notify(errorMessage(error));
       }
-      return;
+      return none;
     }
     notify(
       t("canvas.workspace.error.noGenerationModel"),
+    );
+    return none;
+  };
+  /** Latest render's generation entry point; a workflow outlives the render that started it. */
+  const prepareLatest = useRef(prepareGeneration);
+  prepareLatest.current = prepareGeneration;
+  /**
+   * Resolves once every job is terminal (true when one succeeded), or false
+   * when the canvas has switched to another project.
+   */
+  const awaitJobs = (documentId: string, jobIds: readonly string[]) =>
+    new Promise<boolean>((resolve) => {
+      const client = creationClient(documentId);
+      const terminal = ["succeeded", "failed", "cancelled", "interrupted"];
+      let finish = () => {};
+      const check = () => {
+        if (!mounted.current || historyRef.current.present.id !== documentId) {
+          finish();
+          resolve(false);
+          return;
+        }
+        const states = jobIds.map(
+          (id) => client.snapshot.jobs.find((job) => job.id === id)?.status,
+        );
+        if (!states.every((status) => status && terminal.includes(status))) return;
+        finish();
+        resolve(states.includes("succeeded"));
+      };
+      const stop = client.listen(check);
+      const poll = setInterval(check, 1000);
+      finish = () => {
+        stop();
+        clearInterval(poll);
+      };
+      check();
+    });
+  /**
+   * Waits until the canvas shows the result the service adopted for the node,
+   * so a downstream step reads the new content (for example generated text
+   * used as its prompt). Resolves false when no result was adopted (a
+   * candidate-only result, or inputs edited while running), after three
+   * minutes, or when the canvas switched project.
+   */
+  const awaitDisplayed = (documentId: string, nodeId: string, jobIds: readonly string[]) =>
+    new Promise<boolean>((resolve) => {
+      const snapshot = creationClient(documentId).snapshot;
+      const adopted = new Set(
+        snapshot.jobs.filter((job) => jobIds.includes(job.id) && job.adopted).map((job) => job.id),
+      );
+      const assets = new Set(
+        snapshot.results
+          .filter((result) => adopted.has(result.jobId))
+          .map((result) => result.asset.assetId),
+      );
+      if (!assets.size) {
+        resolve(false);
+        return;
+      }
+      const started = Date.now();
+      const check = () => {
+        const present = historyRef.current.present;
+        const node = present.nodes.find((candidate) => candidate.id === nodeId);
+        const done =
+          present.id === documentId && node && assets.has(node.data.backendAssetId ?? "")
+            ? true
+            : !mounted.current || present.id !== documentId || !node || Date.now() - started > 180_000
+              ? false
+              : undefined;
+        if (done === undefined) return;
+        clearInterval(poll);
+        resolve(done);
+      };
+      const poll = setInterval(check, 200);
+      check();
+    });
+  /**
+   * Runs a group's generation nodes. A node waits for the members it
+   * references, directly or through non-generating nodes, and is skipped when
+   * one of them fails; independent nodes run concurrently. Submissions go one
+   * at a time, as the project's command queue would serialize them anyway, so
+   * each starts from the canvas the previous one left behind.
+   */
+  const runGroupWorkflow = async (groupId: string) => {
+    const document = historyRef.current.present;
+    const steps = groupDescendants(document.nodes, groupId).filter((node) =>
+      isWorkflowStep(
+        node,
+        document.edges.some(
+          (edge) => edge.target === node.id && edge.intent !== "post_edit_result",
+        ),
+      ),
+    );
+    if (!steps.length) {
+      notify(t("canvas.workspace.group.noRunnableNodes"));
+      return;
+    }
+    notify(t("canvas.workspace.group.workflowStarted", { count: steps.length }));
+    let submissions: Promise<unknown> = Promise.resolve();
+    const result = await runWorkflowSteps(
+      steps.map((node) => node.id),
+      document.edges,
+      async (id) => {
+        const submitted = submissions.then(() =>
+          historyRef.current.present.id === document.id
+            ? prepareLatest.current(id)
+            : [],
+        );
+        submissions = submitted.catch(() => undefined);
+        const jobIds = await submitted;
+        if (!jobIds.length || !(await awaitJobs(document.id, jobIds))) return false;
+        return awaitDisplayed(document.id, id, jobIds);
+      },
+    );
+    if (historyRef.current.present.id !== document.id) return;
+    notify(
+      result.failed.length || result.skipped.length
+        ? t("canvas.workspace.group.workflowIncomplete", {
+            succeeded: result.succeeded.length,
+            failed: result.failed.length,
+            skipped: result.skipped.length,
+          })
+        : t("canvas.workspace.group.workflowDone", { count: steps.length }),
     );
   };
   const importActionResultFiles = async (files: File[]) => {
@@ -683,6 +826,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   rt.revealResults = revealResults;
   rt.syncServiceResults = syncServiceResults;
   rt.runServiceTask = runServiceTask;
+  rt.recoverServiceTask = recoverServiceTask;
   rt.runToolTask = runToolTask;
   rt.observedRuns = observedRuns;
   rt.failureWatch = failureWatch;
@@ -693,6 +837,18 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   rt.runServiceGeneration = runServiceGeneration;
   rt.cancelServiceRuns = cancelServiceRuns;
   rt.prepareGeneration = prepareGeneration;
+  rt.runGroupWorkflow = runGroupWorkflow;
   rt.importActionResultFiles = importActionResultFiles;
   rt.cancelResultImport = cancelResultImport;
+}
+
+/**
+ * Group members a workflow run generates: nodes with a configured model and a
+ * prompt (media may instead take their prompt from connected references).
+ */
+function isWorkflowStep(node: CanvasNode, referenced: boolean): boolean {
+  const prompt = Boolean(node.data.prompt?.trim() || node.data.promptContent?.length);
+  if (node.type === "text") return Boolean(node.data.agentSettings?.modelConfigId && prompt);
+  if (!["image", "video", "audio"].includes(node.type)) return false;
+  return Boolean(node.data.settings?.modelConfigId && (prompt || referenced));
 }

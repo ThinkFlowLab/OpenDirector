@@ -2,6 +2,8 @@
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { getActiveLocale } from "../i18n/messages.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { capabilityErrorText } from "./capabilityErrorText.ts";
+import { availabilityReason } from "../backend/availability.ts";
 
 const CAPABILITY: Record<string, string> = {
   对话: "chat",
@@ -27,9 +29,13 @@ const NEED = /^需要接入具备「(.+)」能力的模型。$/;
 export function toolReasonText(
   text: string | undefined,
   t: Translate = defaultTranslate,
+  reasonCode?: string,
 ): string | undefined {
   if (!text || getActiveLocale() !== "en-US" || !/[\u3400-\u9fff]/.test(text))
     return text;
+  const capability = capabilityErrorText(text, t);
+  if (capability) return capability;
+  if (reasonCode) return availabilityReason(reasonCode);
   if (text.startsWith("接入图像分割模型")) {
     return t("errors.tools.needSelectionModel");
   }

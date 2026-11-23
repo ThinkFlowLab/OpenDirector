@@ -33,9 +33,14 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1050 } });
+const page = await browser.newPage({
+  locale: "zh-CN",
+  viewport: { width: 1500, height: 1050 },
+});
 // Skip the first-run model setup welcome; it covers the canvas.
-await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
+await page.addInitScript(() =>
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+);
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -136,7 +141,7 @@ try {
             },
           },
         ),
-        locked: true,
+        locked: false,
       };
       const savedDocument = await importWorkspaceDocument({
         ...createDocument(
@@ -163,6 +168,35 @@ try {
     await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}${""}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
+    // Imported locks are intentionally released on first open (#415).
+    // Exercise a current API lock after that open-time policy has completed.
+    await page.waitForFunction(
+      (id) =>
+        localStorage.getItem(`opendirector.legacyLocksReleased:${id}`) === "1",
+      fixture.id,
+    );
+    await page.evaluate(async ({ id, locked }) => {
+      const { creationClient } = await import("/src/backend/creationClient.ts");
+      const client = creationClient(id);
+      await client.refresh();
+      const item = client.snapshot.canvasItems.find(
+        (item) => item.id === locked,
+      );
+      const receipt = await client.command(
+        "canvas.update",
+        {
+          itemId: locked,
+          locked: true,
+        },
+        [{ objectType: "canvas_item", id: item.id, revision: item.revision }],
+      );
+      if (receipt.status !== "applied") throw Error(JSON.stringify(receipt));
+      if (
+        !client.snapshot.canvasItems.find((item) => item.id === locked)?.locked
+      )
+        throw Error("Subject lock was not persisted");
+    }, fixture);
+    await node(fixture.locked).locator(".cw-node-locked").waitFor();
     for (const [count, id] of fixture.images.entries()) {
       const card = node(id);
       assert.equal(

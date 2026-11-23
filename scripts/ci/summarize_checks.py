@@ -19,7 +19,7 @@ def main():
     docs_only = heavy == 'false'
     if docs_only and not (
         static_enabled and results['static']['result'] == 'success'
-        and os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
+        and os.environ.get('GITHUB_EVENT_NAME') in {'pull_request', 'merge_group'}
         and scope.get('scope-reason') == 'docs_only'
         and str(scope.get('changed-files', '')).isdigit()
         and int(scope['changed-files']) > 0
@@ -39,8 +39,8 @@ def main():
             failed.append(name)
     report = '\n'.join([
         '## Release checks / 发布检查', '',
-        ('Documentation-only PR: static passed; heavy checks intentionally skipped. / '
-         '纯文档 PR：静态通过，按明确范围跳过重检查。' if docs_only
+        ('Documentation-only PR / merge group: static passed; heavy checks intentionally skipped. / '
+         '纯文档 PR / 合并组合：静态通过，按明确范围跳过重检查。' if docs_only
          else 'Full checks required / 需要完整检查'),
         'Scope / 范围: ' + str(scope.get('scope-reason', 'full'))
         + '; changed paths / 变更路径数: ' + str(scope.get('changed-files', 'unknown')), '',

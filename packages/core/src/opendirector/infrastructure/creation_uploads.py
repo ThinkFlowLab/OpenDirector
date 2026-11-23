@@ -14,7 +14,7 @@ from opendirector.domain.creation.assets import MediaMetadata, UploadInfo
 from opendirector.domain.creation.base import Contract, Fingerprint, MediaKind
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_files import file_identity, upload_directory
-from opendirector.ports.files import MAX_CREATION_ASSET_BYTES, MAX_CREATION_TEXT_BYTES
+from opendirector.ports.files import MAX_CREATION_TEXT_BYTES
 from opendirector.infrastructure.creation_projects import directory, durable_json, sync_directory
 from opendirector.infrastructure.local_projects import child, read_json
 from opendirector.infrastructure.rename import rename_path
@@ -213,8 +213,6 @@ class UploadWriter:
 
     def write(self, chunk):
         self.size += len(chunk)
-        if self.size > MAX_CREATION_ASSET_BYTES:
-            raise ProjectError('工程素材应不超过 512 MiB。', 413)
         self.digest.update(chunk)
         self.stream.write(chunk)
 

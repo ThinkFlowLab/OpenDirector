@@ -223,11 +223,6 @@ export function generationReferenceIssue(
   t: Translate = defaultTranslate,
 ): string | null {
   if (
-    settings.mode === "audio" &&
-    (settings.audioCreationType === "music" || settings.audioMode === "tts")
-  )
-    return t("generation.issue.audioModeReference");
-  if (
     settings.mode === "video" &&
     settings.videoMode === "first-last" &&
     !["image", "text", "tool"].includes(node.data.kind)
@@ -259,6 +254,11 @@ export function generationReferenceIssue(
         : ["audio"];
   if (!allowed.includes(node.data.kind))
     return t("generation.issue.unsupportedKind");
+  if (
+    settings.mode === "audio" &&
+    (settings.audioCreationType === "music" || settings.audioMode === "tts")
+  )
+    return t("generation.issue.audioModeReference");
   if (node.type === "text")
     return node.data.text?.trim() ? null : t("generation.issue.textEmpty");
   return node.data.src && node.data.assetState !== "missing"
