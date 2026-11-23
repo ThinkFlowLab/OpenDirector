@@ -41,3 +41,14 @@ export function turnTimingLabel(
   const { status, duration } = turnTiming(turn, t);
   return duration === null ? null : `${status} · ${duration}`;
 }
+
+/**
+ * Chat line under a reply. AssistantPanel already prints "Reply stopped" / "Reply interrupted" for those
+ * statuses, so only a completed reply gets the status word; the other two show the bare duration.
+ */
+export function chatTurnTiming(
+  turn: { status: TurnStatus; durationMs?: number | null },
+  t: Translate,
+): string | null {
+  return turn.status === "complete" ? turnTimingLabel(turn, t) : turnTiming(turn, t).duration;
+}

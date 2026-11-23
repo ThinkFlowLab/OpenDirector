@@ -31,8 +31,8 @@ Each assistant message in `agent-runs/conversation.json` can carry:
 | State | `startedAt` | `finishedAt` / `durationMs` | Chat line | Trace page |
 | --- | --- | --- | --- | --- |
 | Complete | set | set | "Completed · 12.4 s" | Status badge and duration |
-| Stopped by the user | set | set | "Stopped · 3.1 s" | Status badge and duration |
-| Provider or runtime failure | set | set (the turn finishes as `interrupted`) | "Interrupted · duration" | Status badge and duration |
+| Stopped by the user | set | set | "Reply stopped" (existing line) plus "3.1 s" | Status badge and duration |
+| Provider or runtime failure | set | set (the turn finishes as `interrupted`) | "Reply interrupted" (existing line) plus duration | Status badge and duration |
 | Streaming (running) | set | absent | No timing line | Status badge only, no duration |
 | Interrupted by a restart or crash | set | absent | No timing line | Status badge and "Unavailable" |
 | Legacy turn from before this feature | absent | absent | No timing line | Status badge and "Unavailable" |

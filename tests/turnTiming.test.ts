@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatTurnDuration, turnTiming, turnTimingLabel, type TurnStatus } from "../src/canvas/turnTiming.ts";
+import { chatTurnTiming, formatTurnDuration, turnTiming, turnTimingLabel, type TurnStatus } from "../src/canvas/turnTiming.ts";
 import { traceRuntime, type ConversationTurn } from "../src/canvas/traceTurns.ts";
 import { setActiveLocale } from "../src/i18n/messages.ts";
 import { translateNow } from "../src/canvas/assistantTranslate.ts";
@@ -57,3 +57,12 @@ test("status wording is localized from the shared keys", () => {
 });
 
 setActiveLocale("en-US");
+
+test("chat line does not repeat the stopped or interrupted word the panel already shows", () => {
+  const t = ((key: string) => key) as never;
+  assert.equal(chatTurnTiming({ status: "complete", durationMs: 12400 }, t), "trace.turn.status.complete · 12.4 s");
+  assert.equal(chatTurnTiming({ status: "stopped", durationMs: 3100 }, t), "3.1 s");
+  assert.equal(chatTurnTiming({ status: "interrupted", durationMs: 820 }, t), "820 ms");
+  assert.equal(chatTurnTiming({ status: "stopped" }, t), null);
+  assert.equal(chatTurnTiming({ status: "streaming", durationMs: 5 }, t), null);
+});
