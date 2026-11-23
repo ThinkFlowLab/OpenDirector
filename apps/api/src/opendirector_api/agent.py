@@ -113,6 +113,11 @@ def reused_ids(value):
     return [str(item) for item in (value.get('reusedCreateIds') or [])]
 
 
+def _monotonic() -> float:
+    # Own indirection so turn timing never shares a patch point with other users of `time` in this module.
+    return time.monotonic()
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
@@ -150,7 +155,7 @@ class Conversations:
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
                before_begin=None) -> dict:
-        finish_mono, finish_at = (time.monotonic(), _utc_now()) if finish is not None else (None, None)
+        finish_mono, finish_at = (_monotonic(), _utc_now()) if finish is not None else (None, None)
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
@@ -176,7 +181,7 @@ class Conversations:
                 value['messages'].append(begin)
                 reply_id = str(uuid5(UUID(begin['id']), 'assistant'))
                 with self._started_lock:
-                    self._started[reply_id] = time.monotonic()
+                    self._started[reply_id] = _monotonic()
                 value['messages'].append({'id': reply_id,
                     'role': 'assistant', 'text': '', 'status': 'streaming', 'startedAt': _utc_now(),
                     **{key: begin[key] for key in ('model', 'modelIsCliDefault', 'runtime') if key in begin}})

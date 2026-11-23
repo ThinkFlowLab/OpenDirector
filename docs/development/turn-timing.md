@@ -88,3 +88,18 @@ Jobs of a turn come from the existing `/turns/{turn_id}/jobs` endpoint. It is re
 
 - #449 (time to first action, time to completion, tool overhead): these need new event timestamps. Slice B adds none and does not claim them.
 - #422 (Markdown export): export reuses the same turn fields. No export logic belongs in this work.
+
+### Relation to #469 (agent timing ledger)
+
+PR #469 (issue #449) records where a turn's time goes. The two features measure different things and do not share state.
+
+| | #469 `turnSeconds` | This work `durationMs` |
+| --- | --- | --- |
+| Purpose | Offline analysis of tool-call and start-up share | User-facing turn duration in Chat and Trace |
+| Start | `produce()` entry, before the turn is accepted | Acceptance, inside the `begin` transaction of `Conversations.update` |
+| End | `finally` of `produce()`, after the runtime stream ends | Entry of the `finish` update |
+| Unit and name | Seconds, `turnSeconds` | Integer milliseconds, `durationMs` |
+| Stored in | `agent-runs/timing/<turn>.json` (never in conversation history) | `agent-runs/conversation.json` assistant message |
+| Read by | `scripts/bench_turn_timing.py` | Trace API, Chat and Trace UI |
+
+The two windows differ by a few milliseconds to a few seconds (queueing, begin write, stop handling), so the numbers are not expected to match. Neither is derived from the other. Each keeps its own monotonic clock: #469's clock lives in `produce()` and a ledger of tool events, ours lives in `Conversations.update`, which is the only place that sees both the accept and the finish write. Persistence does not conflict: #469 writes a separate file, this work writes the message. Do not show `turnSeconds` in the UI and do not read `durationMs` in the ledger.

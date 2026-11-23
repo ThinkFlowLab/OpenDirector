@@ -88,3 +88,18 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 
 - #449（首次动作时间、完成时间、工具开销）：这些指标需要新的事件时间戳。Slice B 不新增，也不声称提供它们。
 - #422（Markdown 导出）：导出复用同样的轮次字段，本工作不包含导出逻辑。
+
+### 与 #469（Agent 计时账本）的关系
+
+PR #469（issue #449）记录一个轮次的时间花在哪里。两项功能度量的对象不同，不共享状态。
+
+| | #469 `turnSeconds` | 本工作 `durationMs` |
+| --- | --- | --- |
+| 目的 | 离线分析工具调用与启动开销占比 | Chat 与 Trace 中面向用户的轮次时长 |
+| 起点 | `produce()` 入口，早于轮次被接受 | 接受轮次时，位于 `Conversations.update` 的 `begin` 事务内 |
+| 终点 | `produce()` 的 `finally`，运行时流结束之后 | 进入 `finish` 更新时 |
+| 单位与命名 | 秒，`turnSeconds` | 整数毫秒，`durationMs` |
+| 存放位置 | `agent-runs/timing/<turn>.json`（不进入对话历史） | `agent-runs/conversation.json` 中的助手消息 |
+| 读取方 | `scripts/bench_turn_timing.py` | Trace API、Chat 与 Trace 界面 |
+
+两个窗口相差几毫秒到数秒（排队、begin 写入、停止处理），数值不要求一致，也不互相推导。各自保留单调时钟：#469 的时钟在 `produce()` 和工具事件账本中，本工作的时钟在 `Conversations.update`，那里是唯一同时看到接受与 finish 写入的位置。持久化不冲突：#469 写独立文件，本工作写消息。UI 不展示 `turnSeconds`，账本不读取 `durationMs`。

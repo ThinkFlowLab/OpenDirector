@@ -125,7 +125,7 @@ class Clock:
 @pytest.fixture
 def clock(monkeypatch):
     fake = Clock()
-    monkeypatch.setattr(agent, 'time', fake)
+    monkeypatch.setattr(agent, '_monotonic', fake.monotonic)
     monkeypatch.setattr(agent, '_utc_now', lambda: '2026-01-02T03:04:05.678Z')
     return fake
 
