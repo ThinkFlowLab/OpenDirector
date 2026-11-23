@@ -28,6 +28,17 @@ export async function showExistingItem(client: CreationClient, item: CanvasItem)
   return item.id;
 }
 
+/** Attach an unplaced timeline to the existing editor document. */
+export async function showTimelineEditorItem(client: CreationClient, editorId: string, revision: number, position: Point) {
+  const node = createNode("timeline", position);
+  await client.command("canvas.show", { item: {
+    id: node.id, projectId: client.id, kind: "timeline", title: node.data.title,
+    position, width: node.width, height: node.height,
+    binding: { role: "editor", objectRef: { objectType: "editor_document", kind: "timeline", id: editorId } },
+  } }, [objectVersion("editor_document", { id: editorId, revision })]);
+  return node.id;
+}
+
 export async function showNewAssetItem(
   client: CreationClient, asset: Asset, position: Point, specId?: string | null,
 ) {

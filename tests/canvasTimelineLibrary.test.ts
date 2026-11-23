@@ -36,6 +36,15 @@ const picture = {
   height: 64,
 };
 
+test("project-only media uses the asset identity before its bytes load", () => {
+  const timeline = createNode("timeline").data.timeline!;
+  const asset = { ...picture, assetId: "a1", src: undefined };
+  const canvas = { ...picture, assetId: "a1", src: "blob:loaded" };
+  assert.deepEqual(timelineLibraryResources(timeline, [], "all", "image", [asset]), [asset]);
+  assert.deepEqual(timelineLibraryResources(timeline, [canvas], "all", "image", [asset]), [canvas]);
+  assert.deepEqual(timelineLibraryResources(timeline, [], "canvas", "image", [asset]), []);
+});
+
 test("same bytes on canvas and in imported library remain available after final clip deletion and restore", () => {
   const canvasAsset = {
     ...picture,

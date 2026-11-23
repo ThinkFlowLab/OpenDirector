@@ -3,6 +3,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { useToolCatalog } from "../../backend/tools.ts";
 import type { Translate } from "../../i18n/I18nProvider.tsx";
 import type { Locale } from "../../i18n/types.ts";
+import type { ProjectEditorTarget } from "../assistantResultEditors.ts";
 import type { GenerationJob } from "../generationHistory.ts";
 import type { NodeGenerationActivity } from "../generationActivity.ts";
 import type { CanvasHistory } from "../history.ts";
@@ -37,6 +38,7 @@ type CanvasReferences = ReturnType<typeof useCanvasReferences>;
  */
 export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   doc: CanvasDocument;
+  openProjectEditor: (target: ProjectEditorTarget, signal?: AbortSignal) => Promise<void>;
   single: CanvasNode | null;
   composerNode: CanvasNode | undefined;
   textWindowNode: CanvasNode | undefined;

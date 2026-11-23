@@ -55,6 +55,57 @@ def send(client, path, conversation_id, text):
     return response
 
 
+
+def test_timeline_reply_uses_committed_tool_versions_and_survives_reopening(assistant, monkeypatch):
+    from opendirector.agent.gateway import ToolGateway
+    client, path, _ = assistant
+    cid = client.get(path).json()['conversationId']
+    editor_id, item_id = str(uuid4()), str(uuid4())
+
+    async def make_timeline(self, run):
+        gateway = ToolGateway(self.business, run)
+        document = {'id': editor_id, 'projectId': str(run.project_id), 'kind': 'timeline',
+                    'data': {'fps': 24, 'width': 128, 'height': 96, 'tracks': [{'id': 'v', 'kind': 'visual', 'title': 'Visual'}]}}
+        command = {'type': 'creation.batch', 'expectedVersions': [], 'payload': {'operations': [
+            {'type': 'editor.create', 'payload': {'document': document}},
+            {'type': 'canvas.show', 'payload': {'item': {'id': item_id, 'projectId': str(run.project_id),
+                'kind': 'timeline', 'title': 'Cut', 'binding': {'role': 'editor',
+                'objectRef': {'id': editor_id, 'kind': 'timeline'}}}}},
+        ]}}
+        try:
+            for _ in range(2):
+                outcome = await gateway.call('make-cut', 'execute_command', command)
+                assert outcome.value.get('status') == 'applied', outcome
+            # Another call with stale expectations cannot replace the committed revision.
+            stale = {'type': 'editor.save', 'payload': {'document': {**document, 'revision': 9}},
+                     'expectedVersions': [{'objectType': 'editor_document', 'id': editor_id, 'revision': 9}]}
+            rejected = await gateway.call('stale-cut', 'execute_command', stale)
+            assert rejected.value.get('status') == 'rejected', rejected
+            yield {'type': 'delta', 'text': 'Cut'}
+            raise RuntimeError('interrupted after the commit')
+        finally:
+            await gateway.close()
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', make_timeline)
+    reply = frames(send(client, path, cid, 'Edit'))[-1]['conversation']['messages'][-1]
+    assert reply['text'] == 'Cut'
+    assert reply['status'] == 'interrupted'
+    assert 'publishedAssets' not in reply
+    assert reply['publishedTimelines'] == {
+        'projectId': path.split('/')[-2],
+        'eventCursor': client.get(path.removesuffix('/assistant')).json()['eventCursor'],
+        'timelines': [{'editorId': editor_id, 'itemId': item_id, 'revision': 1, 'title': 'Cut'}],
+    }
+    async def discuss(self, run):
+        yield {'type': 'delta', 'text': editor_id}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', discuss)
+    later = frames(send(client, path, cid, 'Discuss'))[-1]['conversation']['messages']
+    assert 'publishedTimelines' not in later[-1]
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+    reopened = client.post(path + f'/conversations/{cid}/activate').json()
+    assert reopened['messages'][1]['publishedTimelines'] == reply['publishedTimelines']
+
+
 @pytest.mark.parametrize('interrupted', [False, True])
 def test_direct_publication_identity_survives_deletion_and_reopening(assistant, monkeypatch, interrupted):
     client, path, _ = assistant

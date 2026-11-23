@@ -1,4 +1,4 @@
-import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
+import { WorkspaceModeSwitch, focusAfterModeChange, preserveModeInput } from "./WorkspaceModeSwitch";
 import { WorkspacePreview } from "./WorkspacePreview";
 import { useChatResultLocation } from "./useChatResultLocation";
 import { projectDisplayName } from "../projectDisplayName";
@@ -12,6 +12,7 @@ import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
 import { request as apiRequest, errorMessage } from "../../backend/api.ts";
+import { projectAssetMetadata } from "../../backend/creationProjection.ts";
 import { creationClient, objectVersion } from "../../backend/creationClient.ts";
 import { showExistingItem } from "../canvasAssetPlacement.ts";
 
@@ -498,6 +499,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     ? t("canvas.workspace.loading.switching")
     : "";
 
+  const timelineOpen = editing?.type === "timeline" && editorMode === "default";
+  const modeSwitch = <WorkspaceModeSwitch mode={workspaceMode} onChange={changeWorkspaceMode} />;
   const workspace = (
     <div
       inert={!ready || switching}
@@ -757,12 +760,13 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               type="button"
               className="cw-float-on-canvas"
               data-testid="workspace-float-chat"
+              onPointerDown={preserveModeInput}
               onClick={() => {
                 assistantLayout.enableFloating();
                 setAssistantOpen(true);
                 changeWorkspaceMode("canvas");
                 requestAnimationFrame(() =>
-                  root.current?.querySelector<HTMLElement>(".cw-assistant-move-handle")?.focus({ preventScroll: true }),
+                  focusAfterModeChange(root.current?.querySelector<HTMLElement>(".cw-assistant-move-handle")),
                 );
               }}
             >
@@ -776,7 +780,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           />}
           {desktop && window.opendirectorDesktop?.showMore && <IconButton name="more" label={t("common.more")} tooltipSide="bottom"
             onClick={() => window.opendirectorDesktop?.showMore?.()} />}
-          <WorkspaceModeSwitch mode={workspaceMode} onChange={changeWorkspaceMode} />
+          {!timelineOpen && modeSwitch}
         </div>
       </header>
       {desktop && <DesktopSidebar open={desktopSidebarOpen} currentId={doc.id}
@@ -2031,9 +2035,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           key={`assets:${doc.id}`}
           projectId={doc.id}
           anchor={assetListAnchor.current}
-          position={center()}
           onClose={() => setPanel(null)}
-          onLocate={(id) => {
+          actions={{ kind: "canvas", position: center(), onLocate: (id) => {
             void workspaceProjection(doc.id)
               .read()
               .then((next) => {
@@ -2054,7 +2057,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 );
               })
               .catch((error) => notify(errorMessage(error)));
-          }}
+          } }}
         />
       )}
       {panel && !(panel === "search") && (
@@ -2421,6 +2424,23 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           collapsible={workspaceMode === "canvas"}
           layout={assistantLayout}
           selectionRequest={assistantSelectionRequest}
+          onCreateProjectTimeline={async () => {
+            const node = createNode("timeline", center());
+            await commitCanvasCommand({
+              type: "add-nodes", nodes: [node], titlePrefix: t(nodeKindKeys.timeline),
+            }, t("canvas.workspace.error.timelineUnsaved"));
+            return node.id;
+          }}
+          onOpenProjectTimeline={async (itemId) => {
+            const projectId = doc.id;
+            if (rt.doc.id !== projectId || rt.switchPending.current) return;
+            const snapshot = creationClient(projectId).snapshot;
+            const item = snapshot.canvasItems.find((candidate) => candidate.id === itemId);
+            const editorId = item?.binding.role === "editor" ? item.binding.objectRef.id : undefined;
+            const target = snapshot.editorDocuments.find((candidate) => candidate.id === editorId && candidate.kind === "timeline");
+            if (!target) throw new Error(t("timeline.package.targetMissing"));
+            await rt.openProjectEditor({ kind: "timeline", projectId, itemId, editorId: target.id, revision: target.revision });
+          }}
           onClose={() => {
             if (workspaceMode === "agent") return;
             setAssistantOpen(false);
@@ -2433,6 +2453,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           onTurnEnd={() => void syncServiceResults()}
           onPreviewResult={setPreview}
           onViewResultOnCanvas={viewChatResult}
+          onEditResult={rt.openProjectEditor}
           onModelSelections={setAssistantModels}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
@@ -2493,8 +2514,9 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         <WorkspacePreview key={preview.id} preview={preview}
           onDownloadNode={downloadNode} onClose={() => setPreview(null)} />
       )}
-      {editing && editorMode === "default" && editing.type === "timeline" && (
+      {timelineOpen && (
         <TimelineEditor
+          modeSwitch={modeSwitch}
           node={editing}
           latestNode={doc.nodes.find((node) => node.id === editing.id)}
           onRefreshFromProject={() => {
@@ -2510,6 +2532,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               setEditing(node);
             }
           }}
+          projectResources={creationClient(doc.id).snapshot.assets.map((asset) => projectAssetMetadata(asset))}
+          onReadProjectMedia={(assetId, signal) => creationClient(doc.id).mediaUrl(assetId, { signal })}
           resources={[
             ...resources,
             ...doc.nodes

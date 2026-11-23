@@ -2,6 +2,7 @@
 import { pinnedReferenceAssets } from "../pinnedReferenceAssets.ts";
 import { SaveQueue } from "../saveQueue.ts";
 import { useCallback, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { errorMessage } from "../../backend/api.ts";
 import { creationClient, CreationCommandError, itemSpec } from "../../backend/creationClient.ts";
 import { fingerprint } from "../../backend/generation.ts";
@@ -243,7 +244,9 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     invalidateScheduledAutosave();
     if (!(await persist(next, false))) throw new Error(saveError.current || failureMessage);
     if (historyRef.current.present.id !== next.id) throw new Error(failureMessage);
-    command(value);
+    // A caller may open an editor immediately and flush the current document.
+    // Publish the acknowledged command before that caller can read the old one.
+    flushSync(() => command(value));
   };
 
   const replayHistory = (forward = false) => {

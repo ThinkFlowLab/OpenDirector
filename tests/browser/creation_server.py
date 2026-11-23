@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 import subprocess
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from fastapi import Request
 from PIL import Image
@@ -28,6 +29,7 @@ from opendirector.integrations.providers import GenerationProviders
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', type=int, default=8019)
 parser.add_argument('--root', type=Path)
+parser.add_argument('--empty-models', action='store_true', help='Start a fresh local-editing fixture without model configurations')
 parser.add_argument('--assistant-fixture', action='store_true', help='Use a gated assistant response without a real model')
 parser.add_argument('--http-generation-fixture', action='store_true',
                     help='Use real generation adapters against loopback HTTP test servers only')
@@ -40,19 +42,20 @@ configs = ModelConfigs(root)
 # These configurations use the in-process adapters below and have no HTTP
 # capability service. Keep their checks explicit so they do not occupy the
 # bounded query workers used by a browser test's real capability fixture.
-if not configs.list():
-    for kind in ('agent', 'image'):
-        configs.save(kind, 'http://127.0.0.1:12345/v1', f'fixture-{kind}', '',
-                     connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
+if not args.empty_models:
+    if not configs.list():
+        for kind in ('agent', 'image'):
+            configs.save(kind, 'http://127.0.0.1:12345/v1', f'fixture-{kind}', '',
+                         connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
 
-# Test-only adapters let the real preview and tool services exercise owned
-# assets, model selection and cancellation without contacting a GPU endpoint.
-if not any(model['kind'] == 'vision' for model in configs.list()):
-    configs.save('vision', 'http://127.0.0.1:12345/v1', 'facebook/sam3', '',
-                 connection_type='self_hosted', protocol='vllm_omni', auth_mode='none', capability_auto_check=False)
-if not any(model['modelId'] == 'Qwen/Qwen-Image-2.1' for model in configs.list()):
-    configs.save('image', 'http://127.0.0.1:12345/v1', 'Qwen/Qwen-Image-2.1', '',
-                 connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
+    # Test-only adapters let the real preview and tool services exercise owned
+    # assets, model selection and cancellation without contacting a GPU endpoint.
+    if not any(model['kind'] == 'vision' for model in configs.list()):
+        configs.save('vision', 'http://127.0.0.1:12345/v1', 'facebook/sam3', '',
+                     connection_type='self_hosted', protocol='vllm_omni', auth_mode='none', capability_auto_check=False)
+    if not any(model['modelId'] == 'Qwen/Qwen-Image-2.1' for model in configs.list()):
+        configs.save('image', 'http://127.0.0.1:12345/v1', 'Qwen/Qwen-Image-2.1', '',
+                     connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
 selection_gate = asyncio.Event()
 selection_gate.set()
 selection_calls, image_edit_calls = [], []
@@ -160,6 +163,33 @@ if args.assistant_fixture:
     async def fixture_agent(self, run):
         assistant_contexts.append(run.messages)
         prompt = run.messages[-1]['content'].partition('\n')[0]
+        if prompt == 'Result card: timeline':
+            # A timeline-only delivery uses the same command and run ledger as an Agent turn.
+            editor_id, item_id = str(uuid4()), str(uuid4())
+            project_id = str(run.project_id)
+            gateway = ToolGateway(self.business, run)
+            try:
+                submitted = await gateway.call('result-card-timeline', 'execute_command', {
+                    'type': 'creation.batch', 'expectedVersions': [],
+                    'payload': {'operations': [
+                        {'type': 'editor.create', 'payload': {'document': {
+                            'id': editor_id, 'projectId': project_id, 'kind': 'timeline',
+                            'data': {'fps': 24, 'width': 128, 'height': 96, 'tracks': [
+                                {'id': 'visual', 'kind': 'visual', 'title': 'Agent cut track', 'clips': []},
+                            ]},
+                        }}},
+                        {'type': 'canvas.show', 'payload': {'item': {
+                            'id': item_id, 'projectId': project_id, 'kind': 'timeline', 'title': 'Agent cut',
+                            'binding': {'role': 'editor', 'objectRef': {'id': editor_id, 'kind': 'timeline'}},
+                        }}},
+                    ]},
+                })
+                if submitted.error:
+                    raise ProjectError(submitted.error)
+                yield {'type': 'delta', 'text': 'Timeline created.'}
+            finally:
+                await gateway.close()
+            return
         if prompt in {'Result card: if_current', 'Result card: candidate_only'}:
             # The model response is scripted. The job, provenance, persisted result
             # and adoption all go through the normal Agent command gateway.

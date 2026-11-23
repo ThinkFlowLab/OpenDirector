@@ -40,6 +40,7 @@ export const timeline = {
   "timeline.action.addedToCanvas": "Added to canvas",
   "timeline.pack.progress": "Packaging media {percent}%",
   "timeline.render.progress": "Rendering {percent}%",
+  "timeline.render.downloadStarted": "Download started",
   "timeline.render.done": "MP4 complete · {size} MB (timeline at render time)",
 
   "timeline.library.title": "Media library",

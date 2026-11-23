@@ -158,7 +158,10 @@ In **Create with chat**, assets the assistant writes to the project and complete
 
 - Select **Preview** to inspect that version, play video or audio, or download the original file.
 - Select **Reference in chat** to add that asset to your current draft. Add your instructions and send when ready.
+- Select **Edit media** to open the shared editor for the image, video, or audio on the card. Select **Open timeline** to edit a timeline associated with that asset. If several timelines use it, choose the one you want first. Closing the editor returns you to the conversation.
 - Select **View on canvas** to switch to the canvas and select the corresponding node. A hidden node is shown again. If no node displays that version yet, the canvas adds one for the existing asset. Viewing a candidate or earlier version preserves the generation node’s current result.
+
+For a local edit, open **Project assets** in the toolbar below the chat input. Search for an asset from this project and add it to your draft, or select **Import media** and **New timeline**. In the timeline editor, add the imported media to a track. You can save the edit, render an MP4 in the browser, publish it to the project, or download it. Import and local editing work before you send a message or configure a model.
 
 When the latest reply offers next steps, three to five suggested replies appear beneath it and stay visible as you type. Select one to fill the composer or replace the text you have already written. Attachments, references and skills stay in your draft. You can edit the text or undo the replacement. Press **Send** or `Enter` when you are ready.
 

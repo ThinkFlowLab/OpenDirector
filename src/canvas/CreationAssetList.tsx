@@ -6,6 +6,8 @@ import {
   objectVersion,
 } from "../backend/creationClient.ts";
 import { errorMessage, json, request } from "../backend/api.ts";
+import { classifyImportFile } from "./editorMedia.ts";
+import { readImportBatch } from "./importBatch.ts";
 import type { Point } from "./model.ts";
 import { findAssetItem, showExistingItem, showNewAssetItem } from "./canvasAssetPlacement.ts";
 import { CanvasIcon } from "./CanvasIcon.tsx";
@@ -77,15 +79,23 @@ interface Impact {
 export function CreationAssetList({
   projectId,
   anchor,
+  hidden = false,
   onClose,
-  onLocate,
-  position,
+  actions,
 }: {
   projectId: string;
   anchor: HTMLElement | null;
+  hidden?: boolean;
   onClose: () => void;
-  onLocate: (id: string) => void;
-  position: Point;
+  actions:
+    | { kind: "canvas"; onLocate: (id: string) => void; position: Point }
+    | {
+        kind: "chat";
+        referenceDisabled: boolean;
+        onReference: (asset: Asset) => void;
+        onCreateTimeline: () => Promise<string>;
+        onOpenTimeline: (itemId: string) => Promise<void>;
+      };
 }) {
   const t = useT();
   const previewLabel = (label: string) => {
@@ -131,6 +141,8 @@ export function CreationAssetList({
   const [loading, setLoading] = useState(true);
   const [listing, setListing] = useState<Listing | null>(null),
     [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [attempt, setAttempt] = useState(0);
@@ -139,6 +151,8 @@ export function CreationAssetList({
     impact: Impact;
   } | null>(null);
   const dialog = useRef<HTMLElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [createdTimelineId, setCreatedTimelineId] = useState<string | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -147,6 +161,7 @@ export function CreationAssetList({
     };
   }, []);
   useEffect(() => {
+    if (hidden) return;
     const dismiss = (event: PointerEvent) => {
       if (busy || !(event.target instanceof Node)) return;
       if (
@@ -172,7 +187,7 @@ export function CreationAssetList({
       document.removeEventListener("pointerdown", dismiss, true);
       document.removeEventListener("keydown", escape, true);
     };
-  }, [anchor, busy, onClose]);
+  }, [anchor, busy, hidden, onClose]);
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(text), 200);
     return () => window.clearTimeout(timer);
@@ -230,11 +245,11 @@ export function CreationAssetList({
   useEffect(clearPreview, [category, query, visibility, clearPreview]);
   const perform = async (action: () => Promise<void>) => {
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
       await action();
     } catch (reason) {
-      if (alive.current) setError(errorMessage(reason));
+      if (alive.current) setActionError(errorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -281,7 +296,26 @@ export function CreationAssetList({
       setAttempt((n) => n + 1);
     }
   };
+  const importFiles = async (files: File[]) => {
+    const client = creationClient(projectId);
+    setImporting(true);
+    const { failures } = await readImportBatch(files, async (file) => {
+      await client.importBlob(file, file.name, classifyImportFile(file).kind);
+    }, new AbortController().signal);
+    if (alive.current) {
+      setAttempt((value) => value + 1);
+      setImporting(false);
+    }
+    if (failures.length) throw new Error(failures.map(({ name, message }) =>
+      t("canvas.workspace.toast.assetIssue", { name, reason: message }),
+    ).join(t("canvas.workspace.list.separator")));
+  };
   const open = async (row: Row) => {
+    if (actions.kind === "chat") {
+      actions.onReference(row.asset);
+      onClose();
+      return;
+    }
     const client = creationClient(projectId);
     await client.refresh();
     const item = findAssetItem(client.snapshot, row.asset.id);
@@ -290,11 +324,17 @@ export function CreationAssetList({
       throw new Error(t("canvasNodes.assets.versionChanged"));
     }
     const itemId = item ? await showExistingItem(client, item)
-      : await showNewAssetItem(client, row.asset, position, row.specId);
-    onLocate(itemId);
+      : await showNewAssetItem(client, row.asset, actions.position, row.specId);
+    actions.onLocate(itemId);
     onClose();
   };
   const openNode = async (row: NodeRow) => {
+    if (actions.kind === "chat") {
+      if (row.kind === "timeline") await actions.onOpenTimeline(row.itemId);
+      else if (row.asset) actions.onReference(row.asset);
+      onClose();
+      return;
+    }
     const client = creationClient(projectId);
     await client.refresh();
     const item = client.snapshot.canvasItems.find(
@@ -305,7 +345,7 @@ export function CreationAssetList({
       throw new Error(t("canvasNodes.assets.nodeChanged"));
     }
     await showExistingItem(client, item);
-    onLocate(item.id);
+    actions.onLocate(item.id);
     onClose();
   };
   const labels: Record<string, MessageKey> = {
@@ -322,7 +362,10 @@ export function CreationAssetList({
     <>
       <aside
         ref={dialog}
+        hidden={hidden}
+        aria-busy={busy || loading}
         className="cw-creation-assets nodrag nopan nowheel"
+        data-actions={actions.kind}
         role="dialog"
         aria-label={t("canvasNodes.assets.title")}
         onKeyDown={(event) => event.stopPropagation()}
@@ -390,6 +433,32 @@ export function CreationAssetList({
           </>
         ) : (
           <>
+            {actions.kind === "chat" && (
+              <div className="cw-project-asset-actions">
+                <button disabled={busy} onClick={() => fileInput.current?.click()}>
+                  {t(importing ? "workspaceModes.importingMedia" : "workspaceModes.importMedia")}
+                </button>
+                <input ref={fileInput} hidden type="file" multiple data-project-import
+                  accept="image/*,.heic,.heif,video/*,audio/*,text/*,.md,.txt"
+                  aria-label={t("workspaceModes.importMedia")}
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    event.target.value = "";
+                    if (files.length) void perform(() => importFiles(files));
+                  }}
+                />
+                <button disabled={busy} data-create-timeline onClick={() => void perform(async () => {
+                  const itemId = createdTimelineId ?? await actions.onCreateTimeline();
+                  if (!alive.current) return;
+                  // Creation has committed. An opening failure must retry this item.
+                  setCreatedTimelineId(itemId);
+                  await actions.onOpenTimeline(itemId);
+                  onClose();
+                })}>
+                  {t(createdTimelineId ? "workspaceModes.retryOpenTimeline" : "workspaceModes.createTimeline")}
+                </button>
+              </div>
+            )}
             <div className="cw-creation-asset-filters">
               <input
                 autoFocus
@@ -483,7 +552,8 @@ export function CreationAssetList({
                         ? `asset-preview-${row.itemId}`
                         : undefined
                     }
-                    disabled={busy}
+                    data-open-timeline={actions.kind === "chat" && row.kind === "timeline" ? row.itemId : undefined}
+                    disabled={busy || (actions.kind === "chat" && row.kind !== "timeline" && (!row.asset || actions.referenceDisabled))}
                     onClick={() => void perform(() => openNode(row))}
                     onMouseEnter={(event) =>
                       showPreview(event.currentTarget, {
@@ -520,7 +590,9 @@ export function CreationAssetList({
                       {row.title}
                     </span>
                     <small>
-                      {row.visible
+                      {actions.kind === "chat"
+                        ? t(row.kind === "timeline" ? "canvas.workspace.menu.openEditor" : "workspaceModes.referenceAsset")
+                        : row.visible
                         ? t("canvasNodes.assets.locate")
                         : t("canvasNodes.assets.restore")}
                     </small>
@@ -533,7 +605,7 @@ export function CreationAssetList({
                 const name = owner?.title.trim() || row.asset.name;
                 return (
                   <div key={row.asset.id} className="cw-creation-asset-row">
-                    <input
+                    {actions.kind === "canvas" && <input
                       type="checkbox"
                       aria-label={t("canvasNodes.assets.select", { name })}
                       checked={selected.includes(row.asset.id)}
@@ -549,7 +621,7 @@ export function CreationAssetList({
                             : [...ids, row.asset.id],
                         )
                       }
-                    />
+                    />}
                     <button
                       className="cw-creation-asset-open"
                       aria-describedby={
@@ -558,7 +630,8 @@ export function CreationAssetList({
                           : undefined
                       }
                       title={row.asset.name}
-                      disabled={busy}
+                      data-reference-asset={actions.kind === "chat" ? row.asset.id : undefined}
+                      disabled={busy || (actions.kind === "chat" && (actions.referenceDisabled || row.asset.kind === "file"))}
                       onClick={() => void perform(() => open(row))}
                       onMouseEnter={(event) =>
                         showPreview(event.currentTarget, {
@@ -606,7 +679,9 @@ export function CreationAssetList({
                         {name}
                       </span>
                       <small>
-                        {owner?.visible
+                        {actions.kind === "chat"
+                          ? t("workspaceModes.referenceAsset")
+                          : owner?.visible
                           ? t("canvasNodes.assets.locate")
                           : owner
                             ? t("canvasNodes.assets.restore")
@@ -624,7 +699,7 @@ export function CreationAssetList({
                 </p>
               )}
             </div>
-            {(!!listing?.items.length || !!selected.length) && (
+            {actions.kind === "canvas" && (!!listing?.items.length || !!selected.length) && (
               <footer>
                 <button
                   disabled={busy || !listing?.items.length}
@@ -655,12 +730,13 @@ export function CreationAssetList({
             )}
           </>
         )}
-        {error && (
+        {(error || actionError) && (
           <p role="alert">
-            {error}
+            {actionError || error}
             <button
               disabled={busy}
               onClick={() => {
+                setActionError("");
                 if (deleting) void perform(() => inspect(deleting.ids));
                 else setAttempt((n) => n + 1);
               }}
@@ -670,7 +746,7 @@ export function CreationAssetList({
           </p>
         )}
       </aside>
-      {preview && (
+      {!hidden && preview && (
         <HoverPreview
           key={preview.id}
           projectId={projectId}

@@ -75,7 +75,7 @@ export function usePendingCanvasReferences(
       if (
         !latest.current ||
         target.closest(
-          "[data-pending-references],.cw-chat-reference-editor,.cw-chat-button,.cw-chat-result,.cw-preview",
+          '[data-pending-references],.cw-chat-reference-editor,.cw-chat-button,.cw-chat-result,.cw-preview,.cw-domain-overlay,[aria-modal="true"]',
         )
       )
         return;
@@ -93,10 +93,10 @@ export function usePendingCanvasReferences(
         return;
       }
       if (!latest.current || event.isComposing || event.keyCode === 229) return;
-      // Menus and modal previews own their dismissal.
+      // Menus and open editors own their dismissal, including ARIA-based modals.
       if (
         event.target instanceof Element &&
-        event.target.closest('[role="menu"],dialog:modal')
+        event.target.closest('[role="menu"],dialog:modal,[aria-modal="true"]')
       )
         return;
       event.preventDefault();

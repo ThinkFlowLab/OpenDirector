@@ -28,6 +28,8 @@ class RunContext:
     thinking: str = 'auto'
     runtime_model: str | None = None
     skills: list[dict[str, str]] = field(default_factory=list)
+    # Changed editor versions acknowledged by business tools during this turn.
+    edited_documents: dict[str, int] = field(default_factory=dict)
 
     def native_session_path(self) -> Path | None:
         if self.conversation_id is None:

@@ -7,4 +7,10 @@ export const workspaceModes = {
   "workspaceModes.preferenceFailed": "Switched modes. This browser could not save your preference.",
   "workspaceModes.showCanvas": "Show canvas",
   "workspaceModes.floatOnCanvas": "Float on canvas",
+  "workspaceModes.projectAssets": "Project assets",
+  "workspaceModes.importMedia": "Import media",
+  "workspaceModes.createTimeline": "New timeline",
+  "workspaceModes.retryOpenTimeline": "Retry opening the new timeline",
+  "workspaceModes.referenceAsset": "Reference in chat",
+  "workspaceModes.importingMedia": "Importing media…",
 } as const;

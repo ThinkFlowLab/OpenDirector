@@ -46,13 +46,14 @@ const state = () => api(root);
 const conversation = () => api(root + "/assistant");
 const browser = await launchBrowser();
 let page;
+const errors = [];
 try {
   page = await browser.newPage({
     locale: "zh-CN",
     viewport: { width: 1720, height: 1120 },
   });
   page.setDefaultTimeout(15000);
-  const errors = [], commands = [], stops = [];
+  const commands = [], stops = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => {
     if (/\/assistant\/turns\/[^/]+\/stop$/.test(request.url()))
@@ -190,13 +191,31 @@ try {
     const floatLabel = zh ? "浮动聊天" : "Float chat";
     const dockLabel = zh ? "停靠到左侧" : "Dock chat to the left";
     assert.ok(await assistant.getByRole("button", { name: floatLabel, exact: true }).isVisible());
+    const separator = assistant.getByRole("separator");
+    const originalWidth = Number(await separator.getAttribute("aria-valuenow"));
+    const split = await separator.boundingBox();
+    const splitX = split.x + split.width / 2;
+    const splitY = split.y + split.height / 2;
+    await page.mouse.move(splitX, splitY);
+    await page.mouse.down();
+    await page.mouse.move(splitX - 72, splitY, { steps: 5 });
+    await page.mouse.up();
+    await settleLayout();
+    const resizedWidth = Number(await separator.getAttribute("aria-valuenow"));
+    assert.ok(Math.abs(resizedWidth - originalWidth + 72) <= 2);
+    await separator.dblclick();
+    assert.equal(Number(await separator.getAttribute("aria-valuenow")), originalWidth);
     const docked = await assistant.boundingBox();
     const undocked = await dragChat(({ x, y }) => ({ x: x + 240, y: y + 110 }));
     assert.equal(await assistant.getAttribute("data-floating"), "true", "dragging the docked handle detaches chat");
     assert.ok(undocked.x > docked.x + 50 && undocked.y > docked.y + 40);
+    assert.deepEqual([undocked.width, undocked.height], [460, 620]);
+    assert.equal(await separator.count(), 0, "the split resizer is only available when docked");
     const expandedCanvas = await canvas.boundingBox();
     assert.ok(expandedCanvas.x < 2 && expandedCanvas.width >= page.viewportSize().width - 2, "the floating chat releases its canvas column");
     const offset = await dragChat(({ x, y }) => ({ x: x + 76, y: y - 44 }));
+    assert.deepEqual([offset.width, offset.height], [undocked.width, undocked.height]);
+    console.log("Chat layout", { locale, originalWidth, resizedWidth, undocked, offset });
     assert.ok(Math.abs(offset.x - undocked.x - 76) <= 2 && Math.abs(offset.y - undocked.y + 44) <= 2, "the panel follows the pointer on both axes");
     await moveChat.focus();
     await page.keyboard.press("ArrowLeft");
@@ -232,6 +251,58 @@ try {
     for (const label of locale === "zh-CN" ? ["对话", "画布"] : ["Chat", "Canvas"]) {
       assert.equal(await switcher.getByRole("button", { name: label, exact: true }).innerText(), label);
     }
+    // Mouse activation keeps the editor's backwards selection and collapsed caret.
+    await editor.focus();
+    await editor.evaluate((element) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      let text;
+      while ((text = walker.nextNode())) {
+        if (text.textContent.includes("Keep this draft")) {
+          getSelection().setBaseAndExtent(text, 9, text, 2);
+          return;
+        }
+      }
+      throw Error("missing draft text");
+    });
+    const inputSelection = () => editor.evaluate((element) => {
+      const selection = getSelection();
+      return [document.activeElement === element, element.contains(selection.anchorNode),
+        selection.anchorOffset, selection.focusOffset, selection.toString()];
+    });
+    const backwards = await inputSelection();
+    assert.deepEqual(backwards.slice(0, 4), [true, true, 9, 2]);
+    await selectMode("agent");
+    assert.deepEqual(await inputSelection(), backwards);
+    await page.keyboard.press("ArrowRight");
+    const caret = await inputSelection();
+    assert.equal(caret[2], caret[3]);
+    await selectMode("canvas");
+    assert.deepEqual(await inputSelection(), caret);
+    // Revealing a collapsed chat via the keyboard keeps navigation in the switch.
+    await separator.press("Home");
+    assert.equal(await assistant.isVisible(), false);
+    // The same toolbar field stays editable in both layouts. Blurring it would save.
+    await page.locator(".cw-project-name").click();
+    const rename = page.locator(".cw-project-name-field input");
+    await rename.fill("Unsaved project name");
+    await rename.evaluate((input) => input.setSelectionRange(2, 8, "backward"));
+    await selectMode("agent");
+    assert.deepEqual(await rename.evaluate((input) => [
+      input === document.activeElement, input.selectionStart, input.selectionEnd, input.selectionDirection,
+    ]), [true, 2, 8, "backward"]);
+    await selectMode("canvas");
+    assert.equal(await rename.inputValue(), "Unsaved project name");
+    await rename.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.matches(".cw-project-name"));
+    await mode("agent").focus();
+    await page.keyboard.press("Enter");
+    await settleLayout();
+    assert.equal(await mode("agent").evaluate((button) => document.activeElement === button), true);
+    await page.keyboard.press("Tab");
+    assert.equal(await mode("canvas").evaluate((button) => document.activeElement === button), true);
+    await page.keyboard.press("Enter");
+    await page.locator(".cw-chat-button").click();
+    await assertLayout("canvas");
     for (const value of ["agent", "canvas", "agent", "canvas"]) {
       await selectMode(value);
       await assertLayout(value);
@@ -249,11 +320,20 @@ try {
     await screenshot(`${locale}-canvas`);
     await selectMode("agent");
     await screenshot(`${locale}-agent`);
+    await editor.focus();
+    const beforeFloat = await inputSelection();
     await page.getByTestId("workspace-float-chat").click();
+    await settleLayout();
+    assert.deepEqual(await inputSelection(), beforeFloat);
     await page.locator('#canvas-assistant[data-floating="true"]').waitFor();
     assert.equal(await workspace.getAttribute("data-workspace-mode"), "canvas");
     assert.equal(await editor.evaluate((element) => element === window.__workspaceModeEditor), true);
     assert.equal(await editorText(), draftText);
+    await placement.click();
+    await selectMode("agent");
+    await page.getByTestId("workspace-float-chat").press("Enter");
+    await settleLayout();
+    assert.equal(await moveChat.evaluate((handle) => document.activeElement === handle), true);
     await placement.click();
     await selectMode("agent");
     // Hidden canvas handlers must not act on its retained selection.
@@ -481,11 +561,48 @@ try {
     return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
   }, created.id);
   await placement.click();
+  await setLocale("en-US");
+  await addCanvasNode(page, "Timeline");
+  await until(state, (value) => value.canvasItems.some((item) => item.kind === "timeline"), "timeline created");
+  const pending = assistant.locator("[data-pending-references]");
+  await pending.waitFor();
+  const pendingText = await pending.innerText();
+  const editTimeline = page.getByRole("button", { name: "Edit timeline", exact: true });
+  await editTimeline.press("Enter");
+  const dialog = page.locator(".cw-timeline-dialog");
+  await dialog.waitFor();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  assert.equal(await pending.innerText(), pendingText, "the modal owns Escape while a canvas reference is pending");
+  await editTimeline.press("Enter");
+  await dialog.waitFor();
+  await dialog.evaluate((el) => { window.__workspaceTimeline = el; });
+  const beforeDialogSwitch = commands.length;
+  for (const width of [1720, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await dialog.focus();
+    await page.keyboard.press("Tab");
+    const chatMode = dialog.getByRole("button", { name: "Chat", exact: true });
+    assert.equal(await chatMode.evaluate((el) => document.activeElement === el), true);
+    await page.keyboard.press("Enter");
+    await settleLayout();
+    assert.equal(await workspace.getAttribute("data-workspace-mode"), "agent");
+    await page.keyboard.press("Shift");
+    await page.keyboard.press("Shift");
+    assert.equal(await chatMode.evaluate((el) => document.activeElement === el), true);
+    await dialog.getByRole("button", { name: "Canvas", exact: true }).click();
+    assert.equal(await workspace.getAttribute("data-workspace-mode"), "canvas");
+    assert.equal(await dialog.evaluate((el) => el === window.__workspaceTimeline && el.contains(document.activeElement)), true);
+  }
+  assert.equal(commands.length, beforeDialogSwitch);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  assert.equal(await pending.innerText(), pendingText, "pointer interactions in the modal preserve the pending reference");
   assert.deepEqual(errors, []);
   console.log("PASS workspace modes: bilingual chat docking, dragging, keyboard movement, bounds, persistence, shared draft and uninterrupted tasks");
 } catch (error) {
   console.error(error);
-  if (page) console.error({ page: (await page.locator("body").innerText()).slice(-6000) });
+  if (page) console.error({ errors, page: (await page.locator("body").innerText()).slice(-6000) });
   throw error;
 } finally {
   try {

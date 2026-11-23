@@ -124,16 +124,66 @@ try {
     .waitFor();
 
   await editor.fill("海边草稿");
-  await panel.getByLabel("选择对话参考文件", { exact: true }).setInputFiles({
-    name: "story-reference.txt",
-    mimeType: "text/plain",
-    buffer: Buffer.from("A private reference for the first session"),
-  });
+  // Keep the real upload in flight across both layouts. Check its handle and
+  // registration, so a restart or an accepted upload with lost draft is visible.
+  const uploadPath = `**/projects/${projectId}/uploads/*`;
+  const uploadRequests = [];
+  let releaseUpload;
+  const uploadGate = new Promise((resolve) => { releaseUpload = resolve; });
+  const holdUpload = async (route) => {
+    const request = route.request();
+    uploadRequests.push({ method: request.method(), url: request.url() });
+    if (request.method() === "PUT") await uploadGate;
+    return route.continue();
+  };
+  await page.route(uploadPath, holdUpload);
+  const imports = [];
+  const recordImport = (request) => {
+    if (request.method() !== "POST" || !request.url().endsWith("/commands")) return;
+    const command = request.postDataJSON();
+    if (command.type === "asset.import") imports.push(command);
+  };
+  page.on("request", recordImport);
+  const messagesBeforeUpload = (await api(path)).messages;
+  try {
+    await panel.getByLabel("选择对话参考文件", { exact: true }).setInputFiles({
+      name: "story-reference.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("A private reference for the first session"),
+    });
+    await until(() => uploadRequests.length, Boolean, "Reference upload starts");
+    for (const mode of ["agent", "canvas"]) {
+      await page.getByTestId(`workspace-mode-${mode}`).click();
+      await until(
+        () => page.locator(".cw-workspace").getAttribute("data-workspace-mode"),
+        (value) => value === mode,
+        `Upload-time switch to ${mode} (page errors: ${errors.join(", ")})`,
+      );
+      const current = await api(path);
+      assert.equal(current.conversationId, first.conversationId);
+      assert.deepEqual(current.messages, messagesBeforeUpload);
+      assert.equal(current.assets.length, 0, "unacknowledged upload stays pending");
+    }
+  } finally {
+    releaseUpload();
+    await page.unroute(uploadPath, holdUpload);
+  }
   const draft = await until(
     () => api(path),
     (value) => value.draft.includes("海边草稿") && value.assets.length === 1,
     "Reference draft must persist",
   );
+  page.off("request", recordImport);
+  assert.deepEqual(uploadRequests.map(({ method }) => method), ["PUT"]);
+  assert.equal(imports.length, 1);
+  assert.equal(imports[0].projectId, projectId);
+  assert.equal(imports[0].payload.uploadHandle, uploadRequests[0].url.split("/").at(-1));
+  const imported = (await api(`/creation/projects/${projectId}`)).assets.find(
+    (asset) => asset.name === "story-reference.txt",
+  );
+  assert.equal(draft.assets[0].id, imported.id);
+  assert.equal(draft.conversationId, first.conversationId);
+  assert.deepEqual(draft.messages, messagesBeforeUpload);
   await create.click();
   const second = await until(
     () => api(path),
@@ -363,7 +413,9 @@ try {
   await editor.fill("建议回复验收");
   await send.click();
   await choiceButton.waitFor();
-  await panel.getByLabel("选择对话参考文件", { exact: true }).setInputFiles({
+  const chooser = page.waitForEvent("filechooser");
+  await panel.getByRole("button", { name: "上传参考", exact: true }).click();
+  await (await chooser).setFiles({
     name: "shot-notes.txt", mimeType: "text/plain", buffer: Buffer.from("Storyboard notes"),
   });
   const attached = await until(() => api(path), (value) => value.assets.length === 1, "Save attachment");

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { launchBrowser } from "./engine.mjs";
+import { playDownloadedMp4 } from "./play_downloaded_mp4.mjs";
 
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5180";
 const setupSession = crypto.randomUUID();
@@ -27,6 +28,114 @@ async function until(read, matches, label) {
     assert.ok(Date.now() < deadline, label);
     await new Promise(resolve => setTimeout(resolve, 80));
   }
+}
+
+async function verifyResultEditors({ page, card, result, projectId, command, state, conversation, locale }) {
+  const zh = locale === "zh-CN";
+  const button = (container, name) => container.getByRole("button", { name, exact: true });
+  const original = await conversation();
+  const chatMode = page.getByTestId("workspace-mode-agent");
+  await button(card, zh ? "编辑媒体" : "Edit media").click();
+  const media = page.locator(".cw-image-editor");
+  try {
+    await media.waitFor();
+  } catch (error) {
+    console.error("Result editor did not open", {
+      locale, card: await card.innerText(), workspace: await page.locator(".cw-workspace").getAttribute("data-workspace-mode"),
+      dialogs: await page.getByRole("dialog").allTextContents(),
+      alerts: await page.getByRole("alert").allTextContents(),
+    });
+    throw error;
+  }
+  const image = media.locator("canvas").first();
+  await until(() => image.evaluate(canvas => {
+    const pixel = canvas.getContext("2d").getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data;
+    return pixel[0] > 64 && pixel[1] < 32 && pixel[2] > 64;
+  }), Boolean, "the existing image editor must decode the pinned purple result");
+  await media.locator(".cw-editor-close").click();
+  await media.waitFor({ state: "hidden" });
+  assert.equal(await chatMode.getAttribute("aria-pressed"), "true");
+  assert.equal((await conversation()).conversationId, original.conversationId);
+
+  // Same title and source in two timelines; only their stable identities and edits differ.
+  const targets = [0.5, 1].map(duration => ({
+    itemId: crypto.randomUUID(), editorId: crypto.randomUUID(), duration,
+  }));
+  const session = await page.evaluate(() => sessionStorage.getItem("opendirector.session.v1"));
+  for (const { itemId, editorId, duration } of targets) {
+    const document = { id: editorId, projectId, kind: "timeline", data: {
+      fps: 12, width: 128, height: 96,
+      tracks: [{ id: "visual", kind: "visual", title: "Cut", clips: [{
+        id: "result-shot", inPoint: 0, outPoint: duration,
+        resource: { asset: result.asset, title: "Result shot" },
+      }] }],
+    } };
+    const item = { id: itemId, projectId, kind: "timeline", title: "Result cut",
+      binding: { role: "editor", objectRef: { id: editorId, kind: "timeline" } } };
+    assert.equal((await command("creation.batch", { operations: [
+      { type: "editor.create", payload: { document } }, { type: "canvas.show", payload: { item } },
+    ] }, [], session)).status, "applied");
+  }
+  await page.reload();
+  const choice = card.getByRole("combobox", { name: zh ? "时间线" : "Timeline", exact: true });
+  await choice.waitFor();
+  assert.equal(await choice.inputValue(), "", "multiple timelines require an explicit choice");
+  assert.ok(await button(card, zh ? "打开时间线" : "Open timeline").isDisabled());
+  const options = await choice.locator("option").evaluateAll(items => items.filter(item => item.value)
+    .map(item => ({ value: item.value, label: item.textContent })));
+  assert.deepEqual(new Set(options.map(option => option.value)), new Set(targets.map(item => item.itemId)));
+  assert.equal(new Set(options.map(option => option.label)).size, targets.length, "identically named targets must be distinguishable");
+  const target = targets[1];
+  await choice.selectOption(target.itemId);
+  await button(card, zh ? "打开时间线" : "Open timeline").click();
+  const timeline = page.locator(".cw-timeline-dialog");
+  const clip = timeline.locator(".cw-timeline-clip");
+  await clip.waitFor();
+  assert.ok((await clip.textContent()).includes("Result shot"));
+  const download = button(timeline, zh ? "下载 MP4" : "Download MP4");
+  const publish = button(timeline, zh ? "将合成视频加入画布" : "Add rendered video to canvas");
+  await button(timeline, zh ? "合成 MP4" : "Render MP4").click();
+  await download.waitFor({ timeout: 90000 });
+  assert.ok(!(await state()).assets.some(asset => asset.provenance.source === "rendered"));
+  const decoded = await playDownloadedMp4(page, download);
+  assert.equal(decoded.width, 128);
+  assert.equal(decoded.height, 96);
+  assert.ok(Math.abs(decoded.duration - target.duration) < 0.12);
+  assert.ok(decoded.pixel[0] > 64 && decoded.pixel[1] < 32 && decoded.pixel[2] > 64);
+
+  let rejected;
+  const refuse = async route => {
+    const body = route.request().postDataJSON();
+    if (body?.type !== "timeline.publishRender" || rejected) return route.continue();
+    rejected = body;
+    await route.fulfill({ status: 503, json: { detail: "fixture: retry publication" } });
+  };
+  await page.route("**/commands", refuse);
+  try {
+    await publish.click();
+    await timeline.getByRole("alert").filter({ hasText: "fixture: retry publication" }).waitFor();
+    assert.ok(await download.isEnabled());
+    assert.ok(!(await state()).assets.some(asset => asset.provenance.source === "rendered"));
+    const retry = page.waitForRequest(request => request.url().endsWith("/commands") &&
+      request.postDataJSON()?.type === "timeline.publishRender");
+    await publish.click();
+    assert.deepEqual((await retry).postDataJSON(), rejected);
+    await button(timeline, zh ? "已加入画布" : "Added to canvas").waitFor();
+  } finally {
+    await page.unroute("**/commands", refuse);
+  }
+  const snapshot = await state();
+  const output = snapshot.assets.filter(asset => asset.provenance.source === "rendered");
+  assert.equal(output.length, 1);
+  assert.equal(output[0].provenance.editorDocumentId, target.editorId);
+  assert.equal(output[0].provenance.sourceItemId, target.itemId);
+  assert.equal(output[0].fingerprint, decoded.fingerprint);
+  await button(timeline, zh ? "关闭编辑器" : "Close editor").click();
+  await timeline.waitFor({ state: "hidden" });
+  assert.equal(await chatMode.getAttribute("aria-pressed"), "true");
+  const returned = await conversation();
+  assert.equal(returned.conversationId, original.conversationId);
+  assert.deepEqual(returned.messages, original.messages);
 }
 
 const health = await api("/creation-test-health");
@@ -200,9 +309,30 @@ try {
       "the next turn must complete with the result reference");
     assert.equal(continued.messages[2].assets[0].id, result.asset.assetId);
     assert.equal(await cards.count(), 1, "reusing an asset as input must not make it an output of the new reply");
+    await verifyResultEditors({ page, card, result, projectId, command, state: () => api(root), conversation, locale });
+    await editor.fill("Result card: timeline");
+    await assistant.getByRole("button", { name: labels.send, exact: true }).click();
+    const delivered = await until(conversation, c => c.messages.length === 6 && c.messages.at(-1)?.status === "complete",
+      "the timeline-only Agent turn must finish");
+    const reply = delivered.messages.at(-1);
+    assert.equal(reply.publishedTimelines?.projectId, projectId);
+    const [target] = reply.publishedTimelines.timelines;
+    const project = await api(root);
+    assert.ok(project.editorDocuments.some(doc => doc.id === target.editorId && doc.revision === target.revision));
+    assert.ok(project.canvasItems.some(item => item.id === target.itemId && item.binding.objectRef.id === target.editorId));
+    const timelineCard = assistant.locator('[data-editor-id="' + target.editorId + '"]');
+    await page.reload();
+    await timelineCard.getByRole("button", { name: locale === "zh-CN" ? "打开时间线" : "Open timeline", exact: true }).click();
+    const timeline = page.locator(".cw-timeline-dialog");
+    await timeline.getByText("Agent cut track", { exact: true }).waitFor();
+    await timeline.getByRole("button", { name: locale === "zh-CN" ? "关闭编辑器" : "Close editor", exact: true }).click();
+    await timeline.waitFor({ state: "hidden" });
+    const returned = await conversation();
+    assert.equal(returned.conversationId, delivered.conversationId);
+    assert.deepEqual(returned.messages, delivered.messages);
     assert.deepEqual(errors, []);
     await page.close();
-    console.log(`PASS ${locale}: persisted result, preview bytes, draft reference and canvas identity (${labels.policy})`);
+    console.log(`PASS ${locale}: persisted result, media editing, canvas identity, chosen timeline, playable MP4, publication retry, and timeline-only reply (${labels.policy})`);
   }
 } finally {
   await api("/creation-test-gate", { body: { open: true } });

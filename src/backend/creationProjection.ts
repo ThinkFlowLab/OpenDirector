@@ -87,6 +87,17 @@ const extension: Record<string, string> = {
   "audio/wav": "wav",
 };
 
+export function projectAssetMetadata(asset: Asset, title = asset.name): CanvasResource {
+  return {
+    id: asset.id, assetId: asset.id, kind: asset.kind, title,
+    byteSize: asset.metadata.size,
+    mimeType: asset.metadata.mimeType,
+    width: asset.metadata.width ?? undefined,
+    height: asset.metadata.height ?? undefined,
+    durationSeconds: asset.metadata.durationSeconds ?? undefined,
+  };
+}
+
 export class CreationProjection {
   baseline!: CanvasDocument;
   basis!: ProjectSnapshot;
@@ -120,16 +131,8 @@ export class CreationProjection {
       (a) => a.id === ref.assetId,
     )!;
     return {
-      id: asset.id,
-      assetId: asset.id,
-      byteSize: asset.metadata.size,
-      kind: asset.kind as CanvasResource["kind"],
-      title: title ?? asset.name,
+      ...projectAssetMetadata(asset, title),
       src: await this.client.mediaUrl(asset.id).catch(() => undefined),
-      mimeType: asset.metadata.mimeType,
-      width: asset.metadata.width ?? undefined,
-      height: asset.metadata.height ?? undefined,
-      durationSeconds: asset.metadata.durationSeconds ?? undefined,
     };
   }
   async importResource(resource: {

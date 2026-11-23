@@ -59,17 +59,18 @@ export function timelineLibraryResources(
   canvasResources: readonly CanvasResource[],
   source: TimelineLibrarySource = "all",
   kind: TimelineLibraryKind = "all",
+  projectResources: readonly CanvasResource[] = [],
 ): CanvasResource[] {
   const owned =
     source === "canvas"
       ? canvasResources
       : source === "imported"
         ? timelineImportedAssets(timeline)
-        : [...canvasResources, ...timelineImportedAssets(timeline)];
+        : [...projectResources, ...canvasResources, ...timelineImportedAssets(timeline)];
   return [
     ...new Map(
       owned.map((resource) => [
-        `${resource.kind}:${resource.src ?? resource.id}`,
+        `${resource.kind}:${resource.assetId ?? resource.src ?? resource.id}`,
         resource,
       ]),
     ).values(),

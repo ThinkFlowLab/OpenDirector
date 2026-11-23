@@ -19,6 +19,14 @@
   box-shadow: 0 12px 40px #0006;
   font-size: 12px;
 }
+.cw-creation-assets[hidden] { display: none; }
+.cw-project-asset-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cw-project-asset-actions button { padding: 5px 8px; }
+.cw-workspace[data-workspace-mode="agent"] .cw-creation-assets { right: 16px; }
 .cw-asset-list-anchor {
   display: inline-flex;
 }

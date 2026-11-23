@@ -124,7 +124,7 @@ class Conversations:
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
-               finish_turn_id: UUID | None = None, before_begin=None) -> dict:
+               finish_turn_id: UUID | None = None, edited_documents: dict[str, int] | None = None, before_begin=None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, records = self.projects._load(db, project_id)
@@ -167,6 +167,19 @@ class Conversations:
                     if outputs:
                         finish = {**finish, 'publishedAssets': {'projectId': str(project_id),
                             'eventCursor': snapshot.eventCursor, 'assets': outputs}}
+                    if edited_documents:
+                        owners = {str(item.binding.objectRef.id): item for item in snapshot.canvasItems
+                                  if item.kind == 'timeline'}
+                        timelines = []
+                        for doc in snapshot.editorDocuments:
+                            revision = edited_documents.get(str(doc.id))
+                            if doc.kind == 'timeline' and revision is not None:
+                                owner = owners.get(str(doc.id))
+                                timelines.append({'editorId': str(doc.id), 'revision': revision,
+                                    'itemId': str(owner.id) if owner else None, 'title': owner.title if owner else ''})
+                        if timelines:
+                            finish = {**finish, 'publishedTimelines': {'projectId': str(project_id),
+                                'eventCursor': snapshot.eventCursor, 'timelines': timelines}}
                 value['messages'] = [finish if message['id'] == finish['id'] else message for message in value['messages']]
                 changed = True
             if changed:
@@ -486,6 +499,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
+                edited_documents = {}
                 sources = {}
                 previous_sources = {}
                 plan = None
@@ -523,6 +537,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                     run = RunContext(runtime=value.runtime, project_id=project_id, turn_id=value.id,
                         session=session, directory=directory, config=config, messages=context,
                         selected_skills=value.skills, thinking=value.thinking, model_selections=model_selections,
+                        edited_documents=edited_documents,
                         runtime_model=value.runtimeModel, skills=available, conversation_id=UUID(saved['conversationId']))
                     async with aclosing(runtimes.stream(run)) as stream:
                         async for event in stream:
@@ -576,7 +591,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                             'runtime': value.runtime, 'thinking': value.thinking, 'tools': activities,
                             'sources': list(sources.values()),
                             **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId,
-                            finish_turn_id=value.id)
+                            finish_turn_id=value.id, edited_documents=edited_documents)
                     else:
                         saved = None
                     events.put({'type': 'end', 'conversation': saved, 'error': error})

@@ -11,8 +11,10 @@ import "./assistant-experience.css";
 import "./assistant-workspace.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
 import { AssistantReply } from "./AssistantReply";
-import { AssistantResultCard } from "./AssistantResultCard";
+import type { ProjectEditorTarget } from "./assistantResultEditors.ts";
+import { AssistantResultCard, AssistantTimelineResultCard } from "./AssistantResultCard";
 import { useAssistantResults } from "./useAssistantResults.ts";
+import { CreationAssetList } from "./CreationAssetList.tsx";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
 import { ModelPicker } from "./AssistantPickers";
@@ -74,8 +76,11 @@ export function AssistantPanel({
   onModelSelections,
   onOpenSettings,
   onPrepareReferences,
+  onCreateProjectTimeline,
+  onOpenProjectTimeline,
   onPreviewResult,
   onViewResultOnCanvas,
+  onEditResult,
 }: {
   documentId: string;
   documentTitle: string;
@@ -93,13 +98,16 @@ export function AssistantPanel({
   onModelSelections?: (selections: ModelSelections) => void;
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
+  onCreateProjectTimeline: () => Promise<string>;
+  onOpenProjectTimeline: (itemId: string) => Promise<void>;
   onPreviewResult: (asset: Asset) => void;
+  onEditResult: (target: ProjectEditorTarget, signal?: AbortSignal) => Promise<void>;
   onViewResultOnCanvas: (asset: Asset, itemId?: string | null) => Promise<void>;
 }) {
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
   const { value, setValue } = chat;
-  const results = useAssistantResults(documentId, open && !collapsible, value.messages);
+  const { results, timelines, snapshot } = useAssistantResults(documentId, open && !collapsible, value.messages);
   const showSessionSidebar = !collapsible && layout.canShowSessionSidebar;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
@@ -121,6 +129,8 @@ export function AssistantPanel({
   const uploads = useReferenceUploads(documentId);
   const projectReferences = useProjectMentionAssets(documentId);
   const editor = useRef<ChatReferenceEditorHandle>(null);
+  const assetListAnchor = useRef<HTMLSpanElement>(null);
+  const [projectAssetsOpen, setProjectAssetsOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{assetId: string; anchor: DOMRect} | null>(null);
@@ -192,8 +202,10 @@ export function AssistantPanel({
   const previouslyOpen = useRef(open);
   const openFocusTarget = useRef<Element | null>(null);
   useEffect(() => {
-    if (open && !previouslyOpen.current)
-      openFocusTarget.current = document.activeElement;
+    if (open && !previouslyOpen.current) {
+      // A mode change can reveal chat while the user is still editing elsewhere.
+      openFocusTarget.current = collapsible ? document.activeElement : null;
+    }
     previouslyOpen.current = open;
     if (!open) {
       openFocusTarget.current = null;
@@ -203,8 +215,9 @@ export function AssistantPanel({
     const active = document.activeElement;
     // Loading a default-open chat must not dismiss a project menu or rename.
     // An explicit open retains focus intent until the user chooses another control.
-    if (active === document.body || active?.closest("#canvas-assistant") ||
-        active === openFocusTarget.current)
+    if (!active?.closest('[aria-modal="true"]') &&
+        (active === document.body || active?.closest("#canvas-assistant") ||
+         active === openFocusTarget.current))
       editor.current?.focus();
     openFocusTarget.current = null;
   }, [open, chat.loaded, value.conversationId]);
@@ -555,7 +568,14 @@ export function AssistantPanel({
                   onPreview={onPreviewResult}
                   onReference={referenceResult}
                   onViewOnCanvas={onViewResultOnCanvas}
+                  timelines={timelines.get(result.assetId) ?? []}
+                  onEdit={onEditResult}
                 />
+              ))}
+            {!collapsible && message.role === "assistant" && message.publishedTimelines?.projectId === documentId &&
+              message.publishedTimelines.timelines.map(result => (
+                <AssistantTimelineResultCard key={result.editorId} result={result} projectId={documentId}
+                  eventCursor={message.publishedTimelines?.eventCursor} snapshot={snapshot} onEdit={onEditResult} />
               ))}
             {trace && (
               <a className="cw-assistant-message-status cw-assistant-trace-link"
@@ -753,6 +773,16 @@ export function AssistantPanel({
           />
           <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />
           <div className="cw-assistant-toolbar">
+            {!collapsible && (
+              <span ref={assetListAnchor} className="cw-asset-list-anchor">
+                <button type="button" className="cw-assistant-icon-button" data-chat-project-assets
+                  aria-label={t("workspaceModes.projectAssets")} title={t("workspaceModes.projectAssets")}
+                  aria-haspopup="dialog" aria-expanded={projectAssetsOpen}
+                  onClick={() => setProjectAssetsOpen((previous) => !previous)}>
+                  <CanvasIcon name="folder" size={18} />
+                </button>
+              </span>
+            )}
             <button
               type="button"
               className="cw-assistant-icon-button cw-assistant-upload"
@@ -902,6 +932,19 @@ export function AssistantPanel({
           <span>{t("assistant.panel.dropHint")}</span>
         </div>
       )}
+      {projectAssetsOpen && <CreationAssetList
+        hidden={!open || collapsible}
+        projectId={documentId}
+        anchor={assetListAnchor.current}
+        onClose={() => setProjectAssetsOpen(false)}
+        actions={{
+          kind: "chat",
+          referenceDisabled: referenceDisabled || chat.changing,
+          onReference: referenceResult,
+          onCreateTimeline: onCreateProjectTimeline,
+          onOpenTimeline: onOpenProjectTimeline,
+        }}
+      />}
       {uploads.dialog}
     </aside>
   );

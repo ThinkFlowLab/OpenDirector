@@ -45,7 +45,7 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
   const assistantReturnFocus = useRef<HTMLElement | null>(null);
   const toggleAssistantShortcut = useRef(() => {});
   toggleAssistantShortcut.current = () => {
-    if (!ready || switching || document.querySelector("dialog[open], .cw-modal-backdrop")) return;
+    if (!ready || switching || document.querySelector('dialog[open], .cw-modal-backdrop, [aria-modal="true"]')) return;
     if (workspaceMode === "agent") {
       root.current?.querySelector<HTMLElement>(".cw-assistant-composer [contenteditable=true]")?.focus({ preventScroll: true });
       return;

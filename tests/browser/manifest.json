@@ -85,6 +85,16 @@
       "note": "Needs --assistant-fixture services; holds the fixture gate."
     },
     {
+      "file": "play_downloaded_mp4.mjs",
+      "helper": true
+    },
+    {
+      "file": "chat_local_editing.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"],
+      "note": "Edits and reopens imported project media from an unsent chat with an empty model catalog."
+    },
+    {
       "file": "assistant_result_cards.mjs",
       "fixture": true,
       "previewSafe": true,
@@ -100,6 +110,12 @@
         "production"
       ],
       "note": "Needs --assistant-fixture services."
+    },
+    {
+      "file": "workspace_mode_performance.mjs",
+      "previewSafe": true,
+      "lanes": ["manual"],
+      "note": "RFC #386 mode-switch timing in a production preview. Run alone on the target machine; prints first and warm samples for empty and twelve-image projects."
     },
     {
       "file": "workspace_modes.mjs",

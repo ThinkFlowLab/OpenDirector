@@ -1,3 +1,4 @@
+import type { ProjectSnapshot } from "../contracts/generated.ts";
 import type { CanvasDocument, CanvasNodeData } from "../canvas/model.ts";
 import { applyCommand } from "../canvas/model.ts";
 import { updateStack } from "../canvas/operations.ts";
@@ -28,11 +29,12 @@ export class CreationEditorSession {
     client: CreationClient,
     document: CanvasDocument,
     itemId: string,
+    basis: ProjectSnapshot = client.snapshot,
   ) {
     this.itemId = itemId;
     this.projection = new CreationProjection(client);
     this.projection.baseline = document;
-    this.projection.basis = client.snapshot;
+    this.projection.basis = basis;
     try {
       const saved = JSON.parse(
         sessionStorage.getItem(this.storageKey()) ?? "null",

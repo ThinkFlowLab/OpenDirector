@@ -1,20 +1,23 @@
-import type { CanvasNode } from "./model.ts";
 import { tNow } from "../i18n/messages.ts";
 
-export function indexNodes(
-  nodes: readonly CanvasNode[],
-): Map<string, CanvasNode> {
+interface HierarchyNode {
+  id: string;
+  parentId?: string | null;
+  locked?: boolean;
+}
+
+export function indexNodes<T extends HierarchyNode>(nodes: readonly T[]): Map<string, T> {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   if (byId.size !== nodes.length) throw new Error(tNow("errors.hierarchy.duplicate"));
   return byId;
 }
 
 /** Nearest parent first. Invalid hierarchies fail before any document changes. */
-export function ancestors(
-  node: CanvasNode,
-  byId: ReadonlyMap<string, CanvasNode>,
-): CanvasNode[] {
-  const result: CanvasNode[] = [];
+export function ancestors<T extends HierarchyNode>(
+  node: T,
+  byId: ReadonlyMap<string, T>,
+): T[] {
+  const result: T[] = [];
   const visited = new Set([node.id]);
   let parentId = node.parentId;
   while (parentId) {
@@ -30,8 +33,8 @@ export function ancestors(
 
 /** Locking a container protects its descendants without changing their own lock flags. */
 export function isNodeLocked(
-  node: CanvasNode,
-  byId: ReadonlyMap<string, CanvasNode>,
+  node: HierarchyNode,
+  byId: ReadonlyMap<string, HierarchyNode>,
 ): boolean {
   return (
     Boolean(node.locked) ||
@@ -39,7 +42,7 @@ export function isNodeLocked(
   );
 }
 
-export function lockedNodeIds(nodes: readonly CanvasNode[]): Set<string> {
+export function lockedNodeIds(nodes: readonly HierarchyNode[]): Set<string> {
   const byId = indexNodes(nodes);
   return new Set(
     nodes.filter((node) => isNodeLocked(node, byId)).map((node) => node.id),
