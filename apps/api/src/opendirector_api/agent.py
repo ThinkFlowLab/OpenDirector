@@ -187,7 +187,7 @@ class Conversations:
                     started = self._started.pop(finish['id'], None)
                 def stamped(message):
                     result = dict(finish)
-                    if message.get('startedAt') and not result.get('startedAt'):
+                    if message.get('startedAt'):
                         result['startedAt'] = message['startedAt']
                     if finish.get('status') in TIMED_STATUSES and started is not None:
                         result.setdefault('finishedAt', finish_at)
@@ -197,7 +197,13 @@ class Conversations:
                                      for message in value['messages']]
                 changed = True
             if changed:
-                durable_json(file, value)
+                try:
+                    durable_json(file, value)
+                except BaseException:
+                    if begin is not None:
+                        with self._started_lock:
+                            self._started.pop(reply_id, None)
+                    raise
             result = public_conversation(value)
         return with_trace_sources(result, directory)
 

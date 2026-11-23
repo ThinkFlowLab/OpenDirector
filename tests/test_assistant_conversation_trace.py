@@ -279,3 +279,25 @@ def test_streaming_and_finish_after_restart_keep_start_without_inventing_duratio
     assert done['startedAt'] == streaming['startedAt']
     assert 'finishedAt' not in done and 'durationMs' not in done
     assert client.get(f'{path}/conversations/{conversation}/trace').json()['turns'][0]['durationMs'] is None
+
+
+def test_finish_payload_cannot_override_the_stored_start(assistant, clock, tmp_path):
+    client, path, _ = assistant
+    project = UUID(path.split('/projects/')[1].split('/')[0])
+    conversations = agent.Conversations(CreationProjects(LocalProjects(tmp_path)))
+    turn = str(uuid4())
+    started = conversations.update(project, begin=begin_message(turn))['messages'][-1]['startedAt']
+    done = conversations.update(project, finish=finish_message(turn, startedAt='1999-01-01T00:00:00.000Z'))['messages'][-1]
+    assert done['startedAt'] == started
+
+
+def test_failed_begin_write_drops_the_monotonic_entry(assistant, tmp_path, monkeypatch):
+    client, path, _ = assistant
+    project = UUID(path.split('/projects/')[1].split('/')[0])
+    conversations = agent.Conversations(CreationProjects(LocalProjects(tmp_path)))
+    def fail(*args, **kwargs):
+        raise OSError('disk full')
+    monkeypatch.setattr(agent, 'durable_json', fail)
+    with pytest.raises(OSError):
+        conversations.update(project, begin=begin_message(str(uuid4())))
+    assert conversations._started == {}
