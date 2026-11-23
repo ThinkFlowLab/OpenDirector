@@ -3,6 +3,7 @@ import { SaveQueue } from "../saveQueue.ts";
 import { useKeyPress, useReactFlow, type Edge } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readWorkspaceMode, saveWorkspaceMode, type WorkspaceMode } from "../workspaceMode";
+import { dismissModelSetup, needsFirstCanvasSetup } from "../ModelSetup";
 import { useNodeVersionCounts } from "../NodeVersionHistory";
 
 import { CreationEditorSession } from "../../backend/creationEditorSession";
@@ -118,7 +119,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
     }
   })();
   const { notifications, notify, dismiss } = useCanvasNotifications();
-  const [workspaceMode, setWorkspaceMode] = useState(readWorkspaceMode);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => needsFirstCanvasSetup() ? "agent" : readWorkspaceMode());
   const preferenceWarningShown = useRef(false);
   const changeWorkspaceMode = (mode: WorkspaceMode) => {
     if (mode !== workspaceMode) {
@@ -128,6 +129,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
       runtime.setMenu(null);
       setWorkspaceMode(mode);
     }
+    if (mode === "canvas" && needsFirstCanvasSetup()) dismissModelSetup("canvas");
     const saved = saveWorkspaceMode(mode);
     if (!saved && !preferenceWarningShown.current) {
       preferenceWarningShown.current = true;

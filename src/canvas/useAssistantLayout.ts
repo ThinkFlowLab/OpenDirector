@@ -19,27 +19,32 @@ const MAX_WIDTH = 720;
 const COLLAPSE_AT = 200;
 const GUTTER = 28;
 
-function readWidth(): number | null {
+type DockSide = "left" | "right";
+type DockPreference = { width: number | null; side: DockSide };
+
+function readDockPreference(): DockPreference {
   try {
-    const width = JSON.parse(localStorage.getItem(KEY) ?? "null")?.width;
-    return typeof width === "number" &&
-      Number.isFinite(width) &&
-      width > COLLAPSE_AT
-      ? width
-      : null;
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    const width = saved?.width;
+    return {
+      width: typeof width === "number" && Number.isFinite(width) && width > COLLAPSE_AT ? width : null,
+      side: saved?.side === "right" ? "right" : "left",
+    };
   } catch {
-    return null;
+    return { width: null, side: "left" };
   }
 }
 
-/** A left conversation column; the default column occupies one third of the workspace. */
 export function useAssistantLayout(
   root: RefObject<HTMLDivElement | null>,
   open: boolean,
   onCollapse: () => void,
   mode: WorkspaceMode,
 ) {
-  const [preferredWidth, setPreferredWidth] = useState(readWidth);
+  const [dock, setDock] = useState(readDockPreference);
+  const { width: preferredWidth, side } = dock;
+  const setPreferredWidth = (width: number | null) => setDock(previous => ({ ...previous, width }));
+  const resizeDirection = side === "left" ? 1 : -1;
   const [surface, setSurface] = useState<AssistantSurface>(() => ({
     left: 0,
     top: 0,
@@ -105,11 +110,11 @@ export function useAssistantLayout(
   useEffect(() => {
     if (dragging) return;
     try {
-      localStorage.setItem(KEY, JSON.stringify({ width: preferredWidth }));
+      localStorage.setItem(KEY, JSON.stringify(dock));
     } catch {
       /* The active layout remains usable without storage. */
     }
-  }, [preferredWidth, dragging]);
+  }, [dock, dragging]);
   useEffect(() => {
     document.body.classList.toggle("cw-resizing-assistant", dragging);
     return () => document.body.classList.remove("cw-resizing-assistant");
@@ -135,7 +140,7 @@ export function useAssistantLayout(
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (drag.current)
       resize(
-        drag.current.width + event.clientX - drag.current.x,
+        drag.current.width + resizeDirection * (event.clientX - drag.current.x),
         drag.current.restore,
       );
   };
@@ -146,9 +151,9 @@ export function useAssistantLayout(
         : event.key === "End"
           ? maxWidth
           : event.key === "ArrowLeft"
-            ? width - 10
+            ? width - 10 * resizeDirection
             : event.key === "ArrowRight"
-              ? width + 10
+              ? width + 10 * resizeDirection
               : null;
     if (next !== null) {
       event.preventDefault();
@@ -158,10 +163,14 @@ export function useAssistantLayout(
   };
   return {
     ...floatingLayout,
+    side,
+    dockTo(next: DockSide) {
+      setDock(previous => ({ ...previous, side: next }));
+      if (floatingLayout.floating) floatingLayout.toggleFloating();
+    },
     width,
     maxWidth,
     mobile,
-    canShowSessionSidebar: viewport >= 900,
     dragging,
     columnWidth:
       open && !mobile && !floatingLayout.floating ? width + GUTTER : 0,

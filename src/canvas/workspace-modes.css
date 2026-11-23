@@ -1,7 +1,15 @@
 /* One project surface with stable conversation and editor instances. */
+.cw-workspace {
+  --chat-left-inset: var(--assistant-column-width, 0px);
+  --chat-right-inset: 0px;
+}
+.cw-workspace[data-chat-dock="right"] {
+  --chat-left-inset: 0px;
+  --chat-right-inset: var(--assistant-column-width);
+}
 .cw-canvas-region {
   position: absolute;
-  inset: 0 0 0 var(--assistant-column-width, 0px);
+  inset: 0 var(--chat-right-inset) 0 var(--chat-left-inset);
   overflow: clip;
   min-width: 0;
 }
@@ -70,11 +78,19 @@
   left: auto;
   right: 0;
 }
+.cw-workspace[data-chat-dock="right"] .cw-assistant-panel:not([data-floating]) {
+  left: auto;
+  right: 14px;
+}
+.cw-workspace[data-chat-dock="right"] .cw-assistant-resizer {
+  left: 0;
+  right: auto;
+}
 .cw-workspace[data-assistant-open="true"] .cw-side-panel:not(.from-left) {
   right: 20px;
 }
 .cw-workspace[data-workspace-mode="canvas"] .cw-creation-assets {
-  right: 20px;
+  right: calc(20px + var(--chat-right-inset));
   width: min(370px, calc(100vw - var(--assistant-column-width, 0px) - 40px));
 }
 .cw-canvas-region .cw-side-panel.from-left {

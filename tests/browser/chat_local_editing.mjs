@@ -45,13 +45,11 @@ try {
     await page.route("**/api/model-configs", route => route.request().method() === "GET"
       ? route.fulfill({ json: [] }) : route.continue());
   }
+  // A returning creator can edit local media after the model configuration is removed.
+  await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
   await page.goto(base + "/ai-tool/ai-canvas/" + projectId);
-  const welcome = page.locator("dialog.cw-welcome");
-  await welcome.getByRole("radio", { name: "Create with chat", exact: true }).check();
-  await welcome.getByRole("button", { name: "Enter workspace", exact: true }).click();
-  await welcome.waitFor({ state: "hidden" });
-  assert.equal(await page.evaluate(() => localStorage.getItem("opendirector.modelSetup.v1")), "dismissed");
   const mode = page.getByTestId("workspace-mode-agent");
+  await mode.click();
   const assets = page.locator(".cw-creation-assets");
   const openAssets = () => page.locator("button[data-chat-project-assets]").click();
   const draft = page.locator("#canvas-assistant").getByRole("textbox", { name: "Message content", exact: true });

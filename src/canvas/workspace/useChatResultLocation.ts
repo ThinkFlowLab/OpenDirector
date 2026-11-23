@@ -4,7 +4,7 @@ import { creationClient, currentAsset, visibleItems } from "../../backend/creati
 import { findAssetItem, showExistingItem, showNewAssetItem } from "../canvasAssetPlacement.ts";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 
-export function useChatResultLocation(rt: WorkspaceRuntime) {
+export function useChatResultLocation(rt: WorkspaceRuntime, requestCanvasEntry: () => boolean | Promise<boolean>) {
   const [destination, setDestination] = useState<{ projectId: string; itemId: string; assetId: string } | null>(null);
   const queue = useRef(Promise.resolve());
   const { doc, canvasVisible, workspaceMode } = rt;
@@ -34,7 +34,7 @@ export function useChatResultLocation(rt: WorkspaceRuntime) {
   const locate = async (asset: Asset, preferredId?: string | null) => {
     const active = () => rt.mounted.current && !rt.switchPending.current &&
       rt.doc.id === asset.projectId && rt.workspaceMode === workspaceMode;
-    if (!active()) return;
+    if (!active() || !await requestCanvasEntry() || !active()) return;
     const client = creationClient(asset.projectId);
     await rt.saveQueue.current?.wait();
     if (!active()) return;

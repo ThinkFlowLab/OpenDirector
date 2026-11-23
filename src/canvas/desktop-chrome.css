@@ -10,7 +10,7 @@ html[data-desktop-chrome] {
 }
 html[data-desktop-chrome] .cw-workspace .cw-canvas-region {
   top: var(--desktop-toolbar-height);
-  left: calc(var(--od-sidebar-width) + var(--assistant-column-width));
+  left: calc(var(--od-sidebar-width) + var(--chat-left-inset));
 }
 html[data-desktop-chrome] .cw-workspace .react-flow {
   background: #0d0d0d;
@@ -214,6 +214,8 @@ html[data-desktop-chrome][data-theme="light"] .od-project-sidebar nav button[ari
 html[data-desktop-chrome][data-desktop-fullscreen] .od-caption-actions { left: 12px; }
 html[data-desktop-chrome][data-desktop-fullscreen] [data-desktop-sidebar="open"] .od-caption-actions { left: 196px; }
 html[data-desktop-chrome][data-desktop-fullscreen] .cw-workspace[data-desktop-sidebar="closed"] .cw-topbar { padding-left: 92px; }
+html[data-desktop-chrome] .cw-workspace[data-workspace-mode="agent"] .cw-topbar { padding-left: 16px; }
+html[data-desktop-platform="darwin"]:not([data-desktop-fullscreen]) .cw-workspace[data-workspace-mode="agent"] .cw-topbar { padding-left: 92px; }
 @media (prefers-reduced-motion: reduce) {
   .od-project-sidebar, .od-caption-actions,
   html[data-desktop-chrome] .cw-workspace .cw-topbar { transition: none; }

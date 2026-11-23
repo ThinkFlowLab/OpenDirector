@@ -34,7 +34,8 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
     if (preview === "models") {
       setSettingsCategory("models");
       setSettingsOpen(true);
-    } else if (preview === "welcome" || shouldShowModelSetup()) {
+    }
+    if (preview === "welcome" || shouldShowModelSetup()) {
       setWelcomeOpen(true);
     }
   }, [ready, setupChecked, setSettingsCategory, setSettingsOpen, setWelcomeOpen]);

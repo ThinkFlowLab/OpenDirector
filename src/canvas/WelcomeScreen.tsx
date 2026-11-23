@@ -14,7 +14,7 @@ import welcomeCanvasEn from "../assets/welcome/canvas-en-US.webp";
 import { rememberAgentSelection, restoreAgentSelection } from "./agentPreferences";
 import { CanvasIcon } from "./CanvasIcon";
 import { HarnessLogo } from "./HarnessLogo";
-import { firstRunCapabilities, firstRunModelIssue, firstRunModelKind, type FirstRunCapability, type FirstRunMedia, type FirstRunSelection } from "./firstRunModels";
+import { firstRunCapabilities, firstRunModelIssue, firstRunModelKind, hasFirstCanvasModel, type FirstRunCapability, type FirstRunMedia, type FirstRunSelection } from "./firstRunModels";
 import { ModelServiceForm } from "./ModelServiceForm";
 import { exampleFailureText, examplePercent } from "./workspace/example/exampleFailure";
 import type { ExampleStatus } from "./workspace/example/useExampleImport";
@@ -32,8 +32,8 @@ const shortcutChoices = [
   { id: "import", icon: "rail-upload" },
   { id: "examples", icon: "canvas" },
 ] as const;
-type Screen = "intro" | "assistant" | "language" | "harness" | "tasks";
-const screenDepth: Record<Screen, number> = { intro: 0, assistant: 1, language: 2, harness: 2, tasks: 3 };
+type Screen = "intro" | "assistant" | "language" | "harness" | "mode" | "tasks";
+const screenDepth: Record<Screen, number> = { intro: 0, assistant: 1, language: 2, harness: 2, mode: 3, tasks: 4 };
 type ModelEditor = { capability: FirstRunCapability; existing?: ModelConfig };
 type SelectedTask = { type: "models" } | { type: "configure"; existing?: ModelConfig };
 type TaskAction = "create" | "import" | "examples";
@@ -73,12 +73,10 @@ function TaskOption({ capability, icon, title, description, checked, onChange }:
   );
 }
 
-export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode, onEnterWorkspace, onCreate, onImport, exampleStatus, onExamples, onCancelExample }: {
+export function WelcomeScreen({ catalog, projectId, onEnterWorkspace, onCreate, onImport, exampleStatus, onExamples, onCancelExample }: {
   catalog: BackendModels;
   projectId: string;
-  workspaceMode: WorkspaceMode;
-  onChooseMode: (mode: WorkspaceMode) => boolean;
-  onEnterWorkspace: () => void;
+  onEnterWorkspace: (mode: WorkspaceMode) => void;
   onCreate: (selections: FirstRunSelection[]) => Promise<void>;
   onImport: (files: File[]) => Promise<void>;
   exampleStatus?: ExampleStatus;
@@ -97,8 +95,6 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
   const focusAfterExample = useRef(false);
   const fieldGroup = useId();
   const [screen, setScreen] = useState<Screen>("intro");
-  const [selectedMode, setSelectedMode] = useState(workspaceMode);
-  const [modeSaveFailed, setModeSaveFailed] = useState(false);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [importReturns, setImportReturns] = useState(0);
   const [editing, setEditing] = useState<ModelEditor | null>(null);
@@ -131,6 +127,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
   const agents = languageModels.ready;
   const isIntro = screen === "intro";
   const isTaskStep = screen === "tasks";
+  const choosingWork = screen === "mode" || isTaskStep;
   const selected = taskChoices.flatMap(({ capability }) => {
     const task = tasks[capability];
     if (!task) return [];
@@ -142,6 +139,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
   const openEditors = selected.filter(({ task }) => task.type === "configure");
   const canUseCatalog = catalog.connected && !catalog.loading;
   const taskDisabled = !canUseCatalog || Boolean(taskAction) || lockedEditor !== null;
+  const canvasReady = isTaskStep && canUseCatalog && hasFirstCanvasModel(catalog.models);
   const downloadingExample = taskAction === "examples" && exampleStatus?.phase === "downloading";
   const exampleProgress = downloadingExample ? examplePercent(exampleStatus) : null;
   const updateEditorLock = useCallback((capability: FirstRunCapability, locked: boolean) => {
@@ -256,7 +254,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
       await saveChatDraft(projectId, next);
       rememberAgentSelection(projectId, { ...next, messages });
       setAssistant(label);
-      navigate("tasks");
+      navigate("mode");
     } catch (error) {
       setAssistantError(errorMessage(error));
     } finally {
@@ -266,7 +264,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
   }
 
   async function runTask(action: TaskAction, run: () => Promise<void>) {
-    if (!assistant || taskDisabled || taskRunning.current) return;
+    if (!assistant || !canvasReady || taskDisabled || taskRunning.current) return;
     taskRunning.current = true;
     setTaskAction(action);
     setTaskError("");
@@ -378,7 +376,8 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
     ? editingTitle
     : t(screen === "assistant" ? "firstRun.assistantTitle" :
       screen === "language" ? "firstRun.languageTitle" :
-      screen === "harness" ? "firstRun.harnessTitle" : "firstRun.tasksTitle");
+      screen === "harness" ? "firstRun.harnessTitle" :
+      screen === "mode" ? "firstRun.modeTitle" : "firstRun.tasksTitle");
   const catalogFeedback = catalog.loading
     ? <p className="cw-welcome-feedback cw-welcome-pending" role="status">{t("modelSetup.loading")}</p>
     : !catalog.connected && (
@@ -402,6 +401,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
     );
     const cancel = editing?.capability ?? activeEditor?.capability ?? openEditors.at(-1)?.capability;
     if (cancel) cancelModelButtons.current.get(cancel)?.click();
+    else if (isTaskStep) navigate("mode");
     else if (screen === "assistant") navigate("intro");
     else if (!isIntro) navigate("assistant");
   }
@@ -430,36 +430,14 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
             </select>
           </div>
         </header>
-        {modeSaveFailed && <p className="cw-welcome-feedback" role="status">{t("workspaceModes.preferenceFailed")}</p>}
         {isIntro ? (
           <main className="cw-welcome-intro">
             <div className="cw-welcome-intro-copy">
               <h1 id="welcome-title" ref={heading} tabIndex={-1}>{t("firstRun.welcomeTitle")}</h1>
               <p>{t("firstRun.welcomeIntro")}</p>
-              <fieldset className="cw-welcome-options cw-welcome-modes">
-                <legend>{t("workspaceModes.label")}</legend>
-                {(["agent", "canvas"] as const).map(mode => (
-                  <label key={mode} className="cw-welcome-option">
-                    <input type="radio" name={`${fieldGroup}-workspace-mode`} value={mode}
-                      checked={selectedMode === mode} onChange={() => setSelectedMode(mode)}
-                      aria-labelledby={`${fieldGroup}-${mode}`} aria-describedby={`${fieldGroup}-${mode}-hint`} />
-                    <span>
-                      <strong id={`${fieldGroup}-${mode}`}>{t(`workspaceModes.${mode}`)}</strong>
-                      <small id={`${fieldGroup}-${mode}-hint`}>{t(`firstRun.modeHint.${mode}`)}</small>
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-              <div className="cw-welcome-intro-actions">
-                <button type="button" className="cw-welcome-primary" onClick={() => {
-                  setModeSaveFailed(!onChooseMode(selectedMode));
-                  navigate("assistant");
-                }}>{t("firstRun.welcomeStart")}</button>
-                <button type="button" className="cw-welcome-secondary" onClick={() => {
-                  onChooseMode(selectedMode);
-                  onEnterWorkspace();
-                }}>{t("firstRun.enterWorkspace")}</button>
-              </div>
+              <button type="button" className="cw-welcome-primary" onClick={() => navigate("assistant")}>
+                {t("firstRun.welcomeStart")}
+              </button>
               {catalogFeedback}
             </div>
             <div className="cw-welcome-art">
@@ -473,8 +451,8 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
           </main>
         ) : <main className={`cw-welcome-content${isTaskStep ? " is-task-step" : ""}`}>
           <ol className="cw-welcome-steps" aria-label={t("firstRun.steps")}>
-            <li aria-current={!isTaskStep ? "step" : undefined}><span>{isTaskStep ? "✓" : "1"}</span>{t("firstRun.assistantTitle")}</li>
-            <li aria-current={isTaskStep ? "step" : undefined}><span>2</span>{t("firstRun.stepTask")}</li>
+            <li aria-current={!choosingWork ? "step" : undefined}><span>{choosingWork ? "✓" : "1"}</span>{t("firstRun.assistantTitle")}</li>
+            <li aria-current={choosingWork ? "step" : undefined}><span>2</span>{t(isTaskStep ? "firstRun.stepTask" : "workspaceModes.label")}</li>
           </ol>
           <div key={editing ? "language-editor" : screen} className="cw-welcome-stage">
             <h1 id="welcome-title" ref={heading} tabIndex={-1}>{title}</h1>
@@ -538,10 +516,32 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
                     : <button className="cw-welcome-secondary" disabled={saving || runtimeLoading} onClick={() => setRuntimeAttempt((attempt) => attempt + 1)}>{t("modelSetup.retry")}</button>}
                 </div>
               </>
+            ) : screen === "mode" ? (
+              <>
+                {assistant && <p className="cw-welcome-mode-connected">{t("firstRun.assistantSelected", { assistant })}</p>}
+                <fieldset className="cw-welcome-options cw-welcome-modes" disabled={!assistant || !canUseCatalog}>
+                  <legend className="sr-only">{t("workspaceModes.label")}</legend>
+                  {(["agent", "canvas"] as const).map(mode => (
+                    <button key={mode} type="button" className={`cw-welcome-option cw-welcome-mode-${mode}`}
+                      aria-labelledby={`${fieldGroup}-${mode}`} aria-describedby={`${fieldGroup}-${mode}-hint`}
+                      onClick={() => mode === "canvas" ? navigate("tasks") : onEnterWorkspace("agent")}>
+                      <CanvasIcon name={mode === "agent" ? "sparkle" : "canvas"} size={22} />
+                      <span>
+                        <strong id={`${fieldGroup}-${mode}`}>{t(`workspaceModes.${mode}`)}</strong>
+                        <small id={`${fieldGroup}-${mode}-hint`}>{t(`firstRun.modeHint.${mode}`)}</small>
+                      </span>
+                      <CanvasIcon name="arrowRight" size={18} />
+                    </button>
+                  ))}
+                </fieldset>
+                <div className="cw-welcome-actions">
+                  <button type="button" className="cw-welcome-secondary" onClick={() => navigate("assistant")}>{t("firstRun.back")}</button>
+                </div>
+              </>
             ) : (
               <>
                 <p className="cw-welcome-description">{t("firstRun.tasksHint")}</p>
-                {assistant && <p className="cw-welcome-connected">{t("firstRun.assistantSelected", { assistant })}</p>}
+                {!canvasReady && canUseCatalog && <p className="cw-welcome-feedback" role="status">{t("firstRun.canvasModelRequired")}</p>}
                 <fieldset className="cw-welcome-task-grid" disabled={taskDisabled}>
                   <legend className="sr-only">{t("firstRun.tasksTitle")}</legend>
                   {taskChoices.map((choice) => (
@@ -557,6 +557,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
                   ))}
                   {shortcutChoices.map((choice) => (
                     <button key={choice.id} type="button" className="cw-welcome-option cw-welcome-task-card is-compact"
+                      disabled={!canvasReady}
                       ref={choice.id === "examples" ? exampleButton : undefined}
                       aria-labelledby={`${fieldGroup}-${choice.id}`}
                       aria-describedby={`${fieldGroup}-${choice.id}-hint`}
@@ -604,7 +605,7 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
                 {!taskAction && exampleStatus?.phase === "failed" && (
                   <div className="cw-welcome-actions cw-welcome-example-controls">
                     <p className="cw-welcome-feedback" role="alert">{exampleFailureText(t, exampleStatus)}</p>
-                    <button className="cw-welcome-secondary" disabled={taskDisabled}
+                    <button className="cw-welcome-secondary" disabled={taskDisabled || !canvasReady}
                       onClick={() => void runTask("examples", onExamples)}>{t("canvas.example.action.retry")}</button>
                   </div>
                 )}
@@ -653,12 +654,17 @@ export function WelcomeScreen({ catalog, projectId, workspaceMode, onChooseMode,
                 })}
                 {selected.length > 0 && catalog.availabilityError && <p className="cw-welcome-feedback" role="alert">{catalog.availabilityError}</p>}
                 <div className="cw-welcome-actions cw-welcome-task-actions">
-                  <button className="cw-welcome-secondary" disabled={Boolean(taskAction) || openEditors.length > 0} onClick={() => navigate("assistant")}>
+                  <button className="cw-welcome-secondary" disabled={Boolean(taskAction) || openEditors.length > 0} onClick={() => navigate("mode")}>
                     {t("firstRun.back")}
                   </button>
-                  {selected.length > 0 && (
+                  {selected.length === 0 ? (
+                    <button className="cw-welcome-primary" disabled={!assistant || taskDisabled || !canvasReady}
+                      onClick={() => onEnterWorkspace("canvas")}>
+                      {t("firstRun.enterCanvas")}
+                    </button>
+                  ) : (
                     <button className="cw-welcome-primary"
-                      disabled={!assistant || taskDisabled || openEditors.length > 0 || selected.length !== selections.length}
+                      disabled={!assistant || !canvasReady || taskDisabled || openEditors.length > 0 || selected.length !== selections.length}
                       onClick={() => void runTask("create", () => onCreate(selections))}>
                       {t("firstRun.start")}
                     </button>

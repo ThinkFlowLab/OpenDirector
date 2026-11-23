@@ -85,10 +85,11 @@ import { layoutGroup, orderNodesForCanvas, unstackSelection, type GroupLayout } 
 
 import { ProjectSelector } from "../ProjectSelector";
 import "../settings.css";
-import { dismissModelSetup } from "../ModelSetup";
+import { dismissModelSetup, needsFirstCanvasSetup } from "../ModelSetup";
+import type { WorkspaceMode } from "../workspaceMode";
 
 import { WelcomeScreen } from "../WelcomeScreen";
-import { firstRunCapabilities } from "../firstRunModels";
+import { firstRunCapabilities, hasFirstCanvasModel } from "../firstRunModels";
 import { newNodeGenerationSettings } from "../modelResolution";
 import { SettingsDialog } from "../SettingsDialog";
 import { alignNodes, type Alignment } from "../snapping";
@@ -116,7 +117,6 @@ import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edge
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
-  const viewChatResult = useChatResultLocation(rt);
   const {
     actionMedia,
     actionNode,
@@ -332,14 +332,31 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     zoomMenu,
   } = rt;
 
+  const canvasEntry = useRef<((ready: boolean) => void) | null>(null);
+  function resolveCanvasEntry(ready: boolean) {
+    canvasEntry.current?.(ready);
+    canvasEntry.current = null;
+  }
+  useEffect(() => () => resolveCanvasEntry(false), [doc.id]);
+  const canvasModelReady = () => backendCatalog.connected && !backendCatalog.loading && hasFirstCanvasModel(backendCatalog.models);
+  function requestCanvasEntry(): boolean | Promise<boolean> {
+    if (!needsFirstCanvasSetup() || canvasModelReady()) return true;
+    if (canvasEntry.current) return false;
+    setSettingsCategory("models");
+    setSettingsModelKind("image");
+    setSettingsOpen(true);
+    return new Promise(resolve => { canvasEntry.current = resolve; });
+  }
+  const viewChatResult = useChatResultLocation(rt, requestCanvasEntry);
 
   const [exampleEntries, setExampleEntries] = useState<ExampleEntry[] | null>(null);
   const [welcomeExampleId, setWelcomeExampleId] = useState<string | null>(null);
   const [firstRunArriving, setFirstRunArriving] = useState(false);
   const pendingFirstNodes = useRef<{ projectId: string; selection: string; nodes: CanvasNode[] } | null>(null);
-  const finishFirstRun = () => {
+  const finishFirstRun = (mode: WorkspaceMode = "canvas") => {
     pendingFirstNodes.current = null;
-    dismissModelSetup();
+    dismissModelSetup(mode);
+    changeWorkspaceMode(mode);
     // On narrow screens, open the canvas pane. The chat layout always shows the conversation.
     if (assistantLayout.mobile) setAssistantOpen(false);
     const url = new URL(window.location.href);
@@ -464,6 +481,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   }, [doc.id, doc.nodes]);
 
   const desktop = !!window.opendirectorDesktop;
+  const showDesktopNavigation = desktop && workspaceMode === "canvas";
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(() => {
     try { return desktop && localStorage.getItem("opendirector.desktop.sidebar.v1") === "open"; }
     catch { return false; }
@@ -502,7 +520,9 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     : "";
 
   const timelineOpen = editing?.type === "timeline" && editorMode === "default";
-  const modeSwitch = <WorkspaceModeSwitch mode={workspaceMode} onChange={changeWorkspaceMode} />;
+  const modeSwitch = <WorkspaceModeSwitch mode={workspaceMode} onChange={async mode => {
+    if (mode !== "canvas" || await requestCanvasEntry()) changeWorkspaceMode(mode);
+  }} />;
   const workspace = (
     <div
       inert={!ready || switching}
@@ -510,9 +530,10 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}${spacePressed ? " cw-workspace-space-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
-      data-desktop-sidebar={desktop && desktopSidebarOpen ? "open" : "closed"}
+      data-desktop-sidebar={showDesktopNavigation && desktopSidebarOpen ? "open" : "closed"}
       data-edge-motion={pageVisible && canvasVisible}
       data-assistant-open={assistantVisible}
+      data-chat-dock={workspaceMode === "canvas" && !assistantLayout.mobile ? assistantLayout.side : undefined}
       data-workspace-mode={workspaceMode}
       data-narrow={assistantLayout.mobile}
       data-canvas-visible={canvasVisible}
@@ -678,7 +699,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           {workspaceMode === "canvas" && <NodeInfoButton nodes={doc.nodes} />}
           <span className="cw-save-status" title={saveStatusText}>
             <i className={saveStatus.state === "saved" ? "saved" : ""} />
-            {desktop && desktopSidebarOpen ? saveStatusText : switchingStatus || saveStatusText}
+            {showDesktopNavigation && desktopSidebarOpen ? saveStatusText : switchingStatus || saveStatusText}
           </span>
           {saveStatus.state === "failed" && (
             <div className="cw-save-conflict-actions">
@@ -763,7 +784,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               className="cw-float-on-canvas"
               data-testid="workspace-float-chat"
               onPointerDown={preserveModeInput}
-              onClick={() => {
+              onClick={async () => {
+                if (!await requestCanvasEntry()) return;
                 assistantLayout.enableFloating();
                 setAssistantOpen(true);
                 changeWorkspaceMode("canvas");
@@ -785,7 +807,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           {!timelineOpen && modeSwitch}
         </div>
       </header>
-      {desktop && <DesktopSidebar open={desktopSidebarOpen} currentId={doc.id}
+      {showDesktopNavigation && <DesktopSidebar open={desktopSidebarOpen} currentId={doc.id}
         switchingStatus={switchingStatus}
         disabled={!ready || switching || projectRenaming}
         onToggle={() => setDesktopSidebarOpen(value => !value)}
@@ -2852,8 +2874,6 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       {welcomeOpen && <WelcomeScreen
         catalog={backendCatalog}
         projectId={doc.id}
-        workspaceMode={workspaceMode}
-        onChooseMode={changeWorkspaceMode}
         onEnterWorkspace={finishFirstRun}
         exampleStatus={welcomeExampleId ? welcomeExampleImport.statuses[welcomeExampleId] : undefined}
         onExamples={openWelcomeExample}
@@ -2902,7 +2922,17 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           theme={theme}
           initialCategory={settingsCategory}
           initialModelKind={settingsModelKind}
+          canvasEntry={canvasEntry.current ? {
+            ready: canvasModelReady(),
+            onContinue: () => {
+              if (!canvasModelReady()) return;
+              setSettingsOpen(false);
+              setSettingsModelKind(null);
+              resolveCanvasEntry(true);
+            },
+          } : undefined}
           onClose={() => {
+            resolveCanvasEntry(false);
             setSettingsModelKind(null);
             setSettingsOpen(false);
           }}

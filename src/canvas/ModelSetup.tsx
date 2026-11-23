@@ -2,20 +2,23 @@ import type { BackendModels } from "../backend/models";
 import { isGenerationModel, type ModelConfig } from "../backend/rules";
 import { useI18n } from "../i18n/I18nProvider";
 import { CanvasIcon } from "./CanvasIcon";
+import type { WorkspaceMode } from "./workspaceMode";
 import "./model-setup.css";
 
 const kinds = ["agent", "image", "video", "audio"] as const;
 type SetupKind = typeof kinds[number];
 const preference = "opendirector.modelSetup.v1";
-let dismissed = false;
-export function dismissModelSetup() {
-  dismissed = true;
-  try { localStorage.setItem(preference, "dismissed"); } catch { /* Session fallback. */ }
+let sessionProgress: string | null = null;
+function modelSetupProgress() {
+  try { return sessionProgress ?? localStorage.getItem(preference); } catch { return sessionProgress; }
 }
-export function shouldShowModelSetup() {
-  if (dismissed) return false;
-  try { return !localStorage.getItem(preference); } catch { return true; }
+export function dismissModelSetup(mode: WorkspaceMode) {
+  const progress = mode === "agent" ? "chat-ready" : "dismissed";
+  try { localStorage.setItem(preference, progress); sessionProgress = null; }
+  catch { sessionProgress = progress; }
 }
+export function shouldShowModelSetup() { return !modelSetupProgress(); }
+export function needsFirstCanvasSetup() { return modelSetupProgress() === "chat-ready"; }
 function modelSetupMissing(models: ModelConfig[]) {
   return kinds.filter(kind => !models.some(model => model.kind === kind && isGenerationModel(model)));
 }

@@ -4,10 +4,10 @@
 
 ## Choose how to create
 
-On the welcome screen, choose **Create with chat** or **Create on canvas**. The canvas option is preselected on your first visit. Choose **Enter workspace** to open your project immediately, or **Get started** to set up the assistant and pick your first tasks. Both buttons save your choice in this browser. Once you have finished setup, your project opens directly. Select **Chat** or **Canvas** in the top bar to switch at any time.
+On first launch, select **Get started** and connect a language model or a ready local assistant. Choose **Create with chat** to start with an idea. You can open model settings during the conversation to add image, video, or audio models as needed. Choose **Create on canvas** to see the canvas starting options. Your first canvas requires one image or video generation model. An existing compatible model counts. You can then enter an empty canvas, start selected tasks, import media, or open an example. If you start in chat, you can complete this setup the first time you switch to the canvas.
 
-- In **Create with chat**, use the composer at the bottom to describe a goal or attach a reference. On wide screens, the sidebar lists this project's conversations. Select **Float on canvas** in the top bar to keep chatting while you edit. In a smaller window, open **Conversation history** from the chat header and switch workspaces using **Canvas** in the top bar. Press `Shift` twice to focus the composer.
-- **Create on canvas** opens with chat on the left and the canvas on the right in a 1:2 split. On a wide screen, drag the chat title to place the conversation anywhere over the canvas, or select **Float chat**. Select **Dock chat to the left** to return to the split view.
+- In **Create with chat**, use the composer to describe a goal or attach a reference. Open **Conversation history** from the chat header to search and switch conversations in this project. Desktop chat also uses the full workspace. Switch projects from the top bar. Select **Float on canvas** to keep chatting while you edit. Press `Shift` twice to focus the composer.
+- **Create on canvas** opens with chat on the left and the canvas on the right in a 1:2 split. Hover over the docking icon in the chat header or focus it with Tab to see which side it moves chat to. Select it to swap sides. On a wide screen, drag the chat title or select **Float chat** to position it over the canvas. Select either docking icon to return to split view on that side.
 - In a narrow window, **Canvas** shows one area at a time. Use **Show canvas** and **Chat with AI** to switch between them.
 
 Both modes share the same project, conversation, draft and attachments. Switching modes preserves the canvas view and keeps replies and generation tasks running without submitting them again.
@@ -165,11 +165,11 @@ For a local edit, open **Project assets** in the toolbar below the chat input. S
 
 When the latest reply offers next steps, three to five suggested replies appear beneath it and stay visible as you type. Select one to fill the composer or replace the text you have already written. Attachments, references and skills stay in your draft. You can edit the text or undo the replacement. Press **Send** or `Enter` when you are ready.
 
-Use **New conversation** to start a separate chat. Search for an earlier conversation in the chat sidebar, or open **Conversation history** from the chat header when the sidebar is hidden. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices. The active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
+Use **New conversation** to start a separate chat. In either mode, select **Conversation history** in the chat header to search and switch conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices. The active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
 
 - Press `Enter` to send, or `Shift+Enter` for a new line.
 - You can stop the response while it is being generated.
-- In **Canvas**, use **Collapse AI chat** and **Chat with AI** to hide and reopen the panel. When docked, drag its right edge to resize it or double-click the edge to restore the default width.
+- In **Canvas**, use **Collapse AI chat** and **Chat with AI** to hide and reopen the panel. When docked, drag the divider between chat and canvas to resize it or double-click the edge to restore the default width.
 - To move chat with the keyboard, focus its title and press an arrow key. Hold `Shift` to move farther. Your browser remembers the floating position and restores it when there is enough room.
 
 Asset generation may continue after the reply ends. Check its progress in **Generation history**.

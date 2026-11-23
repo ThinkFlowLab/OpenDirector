@@ -132,6 +132,12 @@ const icons: Record<string, ReactNode> = {
       <path d="M9 4v16m7-11-3 3 3 3" />
     </>
   ),
+  dockRight: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16m-7-11 3 3-3 3" />
+    </>
+  ),
   thinking: (
     <path d="M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 3H9c0-1 0-2-1-3Z" />
   ),

@@ -171,7 +171,8 @@ try {
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(language => {
-      localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+      if (!localStorage.getItem("opendirector.modelSetup.v1"))
+        localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
       localStorage.setItem("opendirector.locale.v1", language);
     }, locale);
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
@@ -242,6 +243,26 @@ try {
       await page.reload();
       await card.waitFor();
       await page.setViewportSize({ width: 600, height: 850 });
+    }
+    if (!adopted) {
+      const configs = "**/api/model-configs";
+      await page.route(configs, async route => {
+        const response = await route.fetch();
+        await route.fulfill({ response, json: (await response.json()).filter(model => model.kind === "agent") });
+      });
+      await page.evaluate(() => localStorage.setItem("opendirector.modelSetup.v1", "chat-ready"));
+      await page.reload();
+      await action(labels.locate).click();
+      const settings = page.locator("#settings-dialog");
+      await settings.waitFor();
+      assert.ok(await settings.getByRole("button", { name: "Enter canvas" }).isDisabled());
+      await page.keyboard.press("Escape");
+      await settings.waitFor({ state: "hidden" });
+      assert.equal(await mode("agent").getAttribute("aria-pressed"), "true");
+      assert.deepEqual((await api(root)).canvasItems, generated.canvasItems);
+      assert.deepEqual((await conversation()).draftContent, draft.draftContent);
+      await page.unroute(configs);
+      await page.reload();
     }
     await action(labels.locate).click();
     const selected = page.locator(".react-flow__node.selected");

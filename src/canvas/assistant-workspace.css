@@ -4,7 +4,6 @@
   --chat-reading-width: min(960px, calc(100% - var(--chat-inset) * 2));
   --chat-background: #121213;
   --chat-composer: #202022;
-  --chat-sidebar: #19191b;
   --chat-muted: #aaa9af;
   display: grid;
   grid-template:
@@ -19,61 +18,13 @@
 :root[data-theme="light"] [data-workspace-mode="agent"] .cw-assistant-panel {
   --chat-background: #fff;
   --chat-composer: #f7f7f9;
-  --chat-sidebar: #f4f4f6;
   --chat-surface: #efeff2;
   --chat-border: #dadade;
   --chat-hover: #e7e7eb;
   --chat-muted: #62636c;
 }
 
-[data-workspace-mode="agent"] .cw-assistant-panel[data-session-sidebar] {
-  grid-template:
-    "sessions messages" minmax(0, 1fr)
-    "sessions composer" auto / clamp(196px, 18%, 264px) minmax(0, 1fr);
-}
-
-[data-session-sidebar] .cw-assistant-session-history {
-  position: static;
-  grid-area: sessions;
-  max-height: none;
-  padding: 20px 12px;
-  border: 0;
-  border-inline-end: 1px solid var(--chat-border);
-  border-radius: 0;
-  background: var(--chat-sidebar);
-  box-shadow: none;
-}
-
-[data-session-sidebar] .cw-assistant-session-history .cw-assistant-new-session {
-  flex-shrink: 0;
-  justify-content: flex-start;
-  gap: 9px;
-  height: 40px;
-  margin: 0 2px 28px;
-  padding: 0 12px;
-  border: 1px solid var(--chat-border);
-  border-radius: 10px;
-  background: var(--chat-surface);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-[data-session-sidebar] .cw-assistant-session-history .cw-assistant-new-session:hover {
-  border-color: var(--chat-muted);
-}
-
-[data-session-sidebar] .cw-assistant-session-heading { padding: 0 6px 10px; }
-[data-session-sidebar] .cw-assistant-session-heading strong {
-  color: var(--chat-muted);
-  font-size: 12px;
-}
-[data-session-sidebar] .cw-assistant-session-search {
-  margin: 0 2px 10px;
-  padding: 8px 10px;
-}
-[data-session-sidebar] .cw-assistant-session-row { padding: 11px 10px; }
-
-[data-workspace-mode="agent"] .cw-assistant-header,
+[data-workspace-mode="agent"] .cw-assistant-sessions,
 [data-workspace-mode="agent"] .cw-assistant-log,
 [data-workspace-mode="agent"] .cw-assistant-composer-area {
   justify-self: center;
@@ -81,8 +32,20 @@
   min-width: 0;
 }
 
-[data-workspace-mode="agent"] .cw-assistant-header {
+[data-workspace-mode="agent"] .cw-assistant-sessions {
   grid-area: title;
+  display: block;
+  position: relative;
+  z-index: 2;
+}
+[data-workspace-mode="agent"] .cw-assistant-session-history {
+  top: 100%;
+  right: 0;
+  left: auto;
+  width: min(360px, 100%);
+  max-height: min(440px, calc(100dvh - 180px));
+}
+[data-workspace-mode="agent"] .cw-assistant-header {
   padding: clamp(12px, 2.5vh, 26px) 0 12px;
 }
 [data-workspace-mode="agent"] .cw-assistant-header h2 {
@@ -93,9 +56,6 @@
   grid-area: messages;
   gap: clamp(18px, 2.4vh, 32px);
   padding: 12px 0 24px;
-}
-[data-session-sidebar] .cw-assistant-log:not(:has(> .cw-assistant-welcome)) {
-  padding-top: clamp(24px, 4vh, 48px);
 }
 [data-workspace-mode="agent"] .cw-assistant-welcome {
   margin: auto;

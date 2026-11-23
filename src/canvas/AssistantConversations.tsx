@@ -5,6 +5,11 @@ import { TooltipButton } from "./TooltipButton";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { AssistantLayout } from "./useAssistantLayout";
 
+const dockControls = {
+  left: { icon: "dockLeft", label: "assistant.panel.dock" },
+  right: { icon: "dockRight", label: "assistant.panel.dockRight" },
+} as const;
+
 /** Session navigation stays inside the assistant, independent of canvas projects. */
 export function AssistantConversations({
   activeId,
@@ -20,7 +25,6 @@ export function AssistantConversations({
   onChange,
   onClose,
   collapsible = true,
-  sidebar = false,
   placement,
 }: {
   activeId?: string;
@@ -36,8 +40,7 @@ export function AssistantConversations({
   onChange: (id?: string, create?: boolean) => Promise<boolean>;
   onClose: () => void;
   collapsible?: boolean;
-  sidebar?: boolean;
-  placement?: Pick<AssistantLayout, "floating" | "toggleFloating" | "moveHandle">;
+  placement?: Pick<AssistantLayout, "floating" | "toggleFloating" | "moveHandle" | "side" | "dockTo">;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -45,6 +48,10 @@ export function AssistantConversations({
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const oppositeSide = placement?.side === "left" ? "right" : "left";
+  const floatControl = placement?.floating
+    ? dockControls[placement.side]
+    : { icon: "floatPanel", label: "assistant.panel.float" } as const;
   const titleText = (item?: ConversationSummary) =>
     item?.title ??
     t(
@@ -70,10 +77,6 @@ export function AssistantConversations({
 
   useEffect(() => {
     if (!open) return;
-    if (sidebar) {
-      setOpen(false);
-      return;
-    }
     search.current?.focus();
     const outside = (event: Event) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
@@ -84,7 +87,7 @@ export function AssistantConversations({
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("focusin", outside);
     };
-  }, [open, sidebar]);
+  }, [open]);
 
   const choose = async (id?: string, create = false) => {
     if (disabledReason) return;
@@ -94,34 +97,13 @@ export function AssistantConversations({
     }
   };
 
-  const newSession = (
-    <TooltipButton
-      className="cw-assistant-new-session"
-      label={disabledReason || t("assistant.sessions.create")}
-      aria-label={t("assistant.sessions.create")}
-      aria-disabled={!!disabledReason}
-      tooltipSide="bottom"
-      showTooltip={!sidebar || !!disabledReason}
-      onClick={() => void choose(undefined, true)}
-    >
-      <CanvasIcon name="plus" size={16} />
-      <span>
-        {t(
-          sidebar
-            ? "assistant.sessions.create"
-            : "assistant.sessions.createShort",
-        )}
-      </span>
-    </TooltipButton>
-  );
-
   return (
     <div
       className="cw-assistant-sessions"
       ref={root}
       onKeyDown={(event) => {
-        if (!open && !sidebar) return;
-        if (event.key === "Escape" && !sidebar) {
+        if (!open) return;
+        if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
           closeHistory(true);
@@ -152,93 +134,108 @@ export function AssistantConversations({
         }
       }}
     >
-      {!sidebar && (
-        <header className="cw-assistant-header">
-          {placement ? (
-            <h2
-              className="cw-assistant-move-handle"
-              tabIndex={0}
-              title={t("assistant.panel.moveHint")}
-              aria-description={t("assistant.panel.moveHint")}
-              aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
-              {...placement.moveHandle}
-              onPointerDown={(event) => {
-                if (open) closeHistory();
-                placement.moveHandle.onPointerDown(event);
-              }}
-            >
-              <CanvasIcon name="grip" size={16} />
-              <span>{title}</span>
-            </h2>
-          ) : (
-            <h2 title={title}>{title}</h2>
-          )}
-          <div className="cw-assistant-header-actions">
-            {newSession}
+      <header className="cw-assistant-header">
+        {placement ? (
+          <h2
+            className="cw-assistant-move-handle"
+            tabIndex={0}
+            title={t("assistant.panel.moveHint")}
+            aria-description={t("assistant.panel.moveHint")}
+            aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+            {...placement.moveHandle}
+            onPointerDown={(event) => {
+              if (open) closeHistory();
+              placement.moveHandle.onPointerDown(event);
+            }}
+          >
+            <CanvasIcon name="grip" size={16} />
+            <span>{title}</span>
+          </h2>
+        ) : (
+          <h2 title={title}>{title}</h2>
+        )}
+        <div className="cw-assistant-header-actions">
+          <TooltipButton
+            className="cw-assistant-new-session"
+            label={disabledReason || t("assistant.sessions.create")}
+            aria-label={t("assistant.sessions.create")}
+            aria-disabled={!!disabledReason}
+            tooltipSide="bottom"
+            onClick={() => void choose(undefined, true)}
+          >
+            <CanvasIcon name="plus" size={16} />
+            <span>{t("assistant.sessions.createShort")}</span>
+          </TooltipButton>
+          <TooltipButton
+            className="cw-assistant-icon-button"
+            label={t("assistant.sessions.history")}
+            data-session-history
+            tooltipSide="bottom"
+            showTooltip={!open}
+            aria-expanded={open}
+            aria-haspopup="dialog"
+            aria-controls={listId}
+            onClick={() => {
+              if (open) closeHistory();
+              else {
+                setQuery("");
+                setOpen(true);
+                onRefresh();
+              }
+            }}
+          >
+            <CanvasIcon name="history" size={18} />
+          </TooltipButton>
+          {placement && <>
             <TooltipButton
               className="cw-assistant-icon-button"
-              label={t("assistant.sessions.history")}
-              data-session-history
+              label={t(dockControls[oppositeSide].label)}
               tooltipSide="bottom"
-              showTooltip={!open}
-              aria-expanded={open}
-              aria-haspopup="dialog"
-              aria-controls={listId}
+              aria-controls="canvas-assistant"
               onClick={() => {
-                if (open) closeHistory();
-                else {
-                  setQuery("");
-                  setOpen(true);
-                  onRefresh();
-                }
+                closeHistory();
+                placement.dockTo(oppositeSide);
               }}
             >
-              <CanvasIcon name="history" size={18} />
+              <CanvasIcon name={dockControls[oppositeSide].icon} size={18} />
             </TooltipButton>
-            {placement && (
-              <TooltipButton
-                className="cw-assistant-icon-button cw-assistant-placement-toggle"
-                label={t(placement.floating ? "assistant.panel.dock" : "assistant.panel.float")}
-                tooltipSide="bottom"
-                aria-controls="canvas-assistant"
-                onClick={() => {
-                  if (open) closeHistory();
-                  placement.toggleFloating();
-                }}
-              >
-                <CanvasIcon name={placement.floating ? "dockLeft" : "floatPanel"} size={18} />
-              </TooltipButton>
-            )}
-            {collapsible && (
-              <TooltipButton
-                className="cw-assistant-collapse"
-                label={t("assistant.sessions.collapse")}
-                tooltipSide="bottom"
-                aria-controls="canvas-assistant"
-                aria-expanded="true"
-                onClick={onClose}
-              >
-                <CanvasIcon name="collapse" size={18} />
-              </TooltipButton>
-            )}
-          </div>
-        </header>
-      )}
-      {(open || sidebar) && (
+            <TooltipButton
+              className="cw-assistant-icon-button cw-assistant-placement-toggle"
+              label={t(floatControl.label)}
+              tooltipSide="bottom"
+              aria-controls="canvas-assistant"
+              onClick={() => {
+                closeHistory();
+                placement.toggleFloating();
+              }}
+            >
+              <CanvasIcon name={floatControl.icon} size={18} />
+            </TooltipButton>
+          </>}
+          {collapsible && (
+            <TooltipButton
+              className="cw-assistant-collapse"
+              label={t("assistant.sessions.collapse")}
+              tooltipSide="bottom"
+              aria-controls="canvas-assistant"
+              aria-expanded="true"
+              onClick={onClose}
+            >
+              <CanvasIcon name="collapse" size={18} />
+            </TooltipButton>
+          )}
+        </div>
+      </header>
+      {open && (
         <section
           id={listId}
           className="cw-assistant-session-history"
-          role={sidebar ? "navigation" : "dialog"}
+          role="dialog"
           aria-label={t("assistant.sessions.history")}
         >
-          {sidebar && newSession}
           <div className="cw-assistant-session-heading">
             <strong>{t("assistant.sessions.history")}</strong>
-            {!sidebar && (
-              <span title={projectTitle}>
-                {t("assistant.sessions.currentCanvas")}
-              </span>
-            )}
+            <span title={projectTitle}>{t("assistant.sessions.currentCanvas")}</span>
           </div>
           <label className="cw-assistant-session-search">
             <CanvasIcon name="search" size={16} />
@@ -262,7 +259,7 @@ export function AssistantConversations({
                 {t("assistant.sessions.retry")}
               </button>
             </div>
-          ) : loading && (!sidebar || !items.length) ? (
+          ) : loading ? (
             <p className="cw-assistant-session-notice" role="status">
               {t("assistant.sessions.loading")}
             </p>

@@ -147,6 +147,7 @@ try {
   await welcome.getByRole("button", { name: "开始设置", exact: true }).click();
   await welcome.getByRole("button", { name: "配置语言模型", exact: true }).click();
   await welcome.getByRole("button", { name: /^fixture-agent/ }).click();
+  await welcome.getByRole("button", { name: "画布创作", exact: true }).click();
   const openSample = welcome.getByRole("button", { name: "打开示例画布", exact: true });
   const videoTask = welcome.getByRole("checkbox", { name: "做一段视频" });
   await videoTask.check();

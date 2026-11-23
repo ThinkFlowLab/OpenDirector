@@ -76,6 +76,7 @@ export const assistant = {
   "assistant.panel.pendingHint": "点击正文插入，点击外部或 Esc 取消",
   "assistant.panel.resize": "调整 AI 对话宽度",
   "assistant.panel.float": "浮动聊天",
+  "assistant.panel.dockRight": "停靠到右侧",
   "assistant.panel.dock": "停靠到左侧",
   "assistant.panel.moveHint": "拖动标题或按方向键移动聊天，按住 Shift 可加大移动距离。",
   "assistant.panel.resizeValue": "{width} 像素；缩至 200 像素收起",

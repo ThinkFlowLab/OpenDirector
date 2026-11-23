@@ -11,6 +11,7 @@ import {
   resolveGenerationModel,
 } from "../src/canvas/modelResolution.ts";
 import { backendAspectRatios } from "../src/backend/rules.ts";
+import { hasFirstCanvasModel } from "../src/canvas/firstRunModels.ts";
 
 const config = (
   kind: ModelConfig["kind"],
@@ -39,6 +40,12 @@ const zeta = config("video", "zeta-video");
 const alpha = config("video", "alpha-video");
 const image = config("image", "alpha-image");
 const vision: ModelConfig = config("vision", "sam", { protocol: "openai" });
+
+test("first canvas entry requires an image or supported video generator", () => {
+  assert.equal(hasFirstCanvasModel([config("agent", "chat"), config("audio", "speech"), vision]), false);
+  assert.equal(hasFirstCanvasModel([image]), true);
+  assert.equal(hasFirstCanvasModel([alpha]), true);
+});
 
 test("a configured model that still exists is kept", () => {
   const resolution = resolveGenerationModel(

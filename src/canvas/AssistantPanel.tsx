@@ -108,7 +108,6 @@ export function AssistantPanel({
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
   const { value } = chat;
   const { results, timelines, snapshot } = useAssistantResults(documentId, open && !collapsible, value.messages);
-  const showSessionSidebar = !collapsible && layout.canShowSessionSidebar;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
@@ -393,7 +392,6 @@ export function AssistantPanel({
     <aside
       id="canvas-assistant"
       className={`cw-assistant-panel${dragOver ? " is-drag-over" : ""}`}
-      data-session-sidebar={showSessionSidebar || undefined}
       data-floating={layout.floating || undefined}
       style={layout.floatingStyle}
       aria-label={t("assistant.panel.aria")}
@@ -450,7 +448,6 @@ export function AssistantPanel({
         onChange={changeConversation}
         onClose={onClose}
         collapsible={collapsible}
-        sidebar={showSessionSidebar}
         placement={collapsible && !layout.mobile ? layout : undefined}
       />
       <div
