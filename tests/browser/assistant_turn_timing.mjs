@@ -36,13 +36,13 @@ const copy = {
   "en-US": {
     saved: "Saved on this device", panel: "AI chat", toolbar: "Chat with AI",
     editor: "Message content", send: "Send message", done: "Completed",
-    unavailable: "Unavailable", turns: "Turns", reply: "已收到创作要求。这是隔离测试回复。",
+    unavailable: "Unavailable", turns: "Turns", stopped: "Reply stopped", interrupted: "Reply interrupted", reply: "已收到创作要求。这是隔离测试回复。",
     messages: ["Beach film", "Forest film"],
   },
   "zh-CN": {
     saved: "已保存到本机", panel: "AI 对话", toolbar: "与 AI 对话",
     editor: "消息内容", send: "发送消息", done: "已完成",
-    unavailable: "不可用", turns: "轮次", reply: "已收到创作要求。这是隔离测试回复。",
+    unavailable: "不可用", turns: "轮次", stopped: "已停止回复", interrupted: "回复已中断", reply: "已收到创作要求。这是隔离测试回复。",
     messages: ["海边短片", "森林短片"],
   },
 };
@@ -183,6 +183,30 @@ try {
     const legacyPanel = await openPanel(page);
     await legacyPanel.getByText(words.reply, { exact: true }).first().waitFor();
     assert.equal(await legacyPanel.locator(".cw-assistant-turn-timing").count(), 0);
+    // Stopped and interrupted replies: Chat shows the bare duration beside the panel's own status line.
+    await page.unroute(new RegExp(`/projects/${projectId}/assistant$`), respondWithoutTiming);
+    const ended = [["interrupted", 820], ["stopped", 3100]];
+    await page.route(new RegExp(`/projects/${projectId}/assistant$`), async (route) => {
+      if (route.request().method() !== "GET") return route.continue().catch(() => {});
+      try {
+        const response = await route.fetch();
+        const body = await response.json();
+        const assistant = body.messages.filter((message) => message.role === "assistant");
+        for (const [index, [status, durationMs]] of ended.entries())
+          Object.assign(assistant[index], { status, durationMs });
+        await route.fulfill({ status: response.status(), json: body });
+      } catch {
+        await route.continue().catch(() => {});
+      }
+    });
+    await page.reload();
+    const endedPanel = await openPanel(page);
+    const endedTimings = endedPanel.locator(".cw-assistant-turn-timing");
+    await until(() => endedTimings.allTextContents(), (value) => value.length === 2, "Ended replies show timing");
+    assert.deepEqual(await endedTimings.allTextContents(), ["820 ms", "3.1 s"]);
+    assert.equal(await endedPanel.getByText(words.interrupted, { exact: true }).count(), 1);
+    assert.equal(await endedPanel.getByText(words.stopped, { exact: true }).count(), 1);
+    assert.equal(await endedPanel.getByText(words.done, { exact: false }).count(), 0, "Ended replies are not labelled Completed");
     await page.close();
   }
   console.log("assistant turn timing browser check passed");
