@@ -125,6 +125,8 @@ export function ModelServiceForm({
       : [],
   );
   const [modelIds, setModelIds] = useState<string[]>(selectedModels);
+  const [uncertainModels, setUncertainModels] = useState<string[]>([]);
+  const [unsupportedModels, setUnsupportedModels] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState("");
@@ -176,6 +178,8 @@ export function ModelServiceForm({
       patch.authMode !== undefined;
     if (connectionChanged) {
       setModelIds(selectedModels);
+      setUncertainModels([]);
+      setUnsupportedModels([]);
       setLoaded(false);
       setDiscoveryError("");
     }
@@ -203,11 +207,16 @@ export function ModelServiceForm({
     try {
       const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
       const presetModels = preset?.modelsByKind?.[kind];
-      const models = presetModels
-        ? [...presetModels]
-        : (await discoverModels(value, connection?.id)).models;
-      setModelIds(models);
-      if (presetModels && !connection) setSelectedModels(models);
+      const discovered = presetModels
+        ? { models: [...presetModels], uncertain: [], unsupported: [] }
+        : await discoverModels(value, connection?.id);
+      setModelIds(discovered.models);
+      setUncertainModels(discovered.uncertain);
+      setUnsupportedModels(discovered.unsupported);
+      setSelectedModels((current) =>
+        current.filter((id) => !discovered.unsupported.includes(id)),
+      );
+      if (presetModels && !connection) setSelectedModels(discovered.models);
       setLoaded(true);
       setConnectionOpen(false);
     } catch (failure) {
@@ -522,6 +531,9 @@ export function ModelServiceForm({
           modelPlaceholder={t("models.service.modelPlaceholder")}
           available={modelIds}
           selected={selectedModels}
+          uncertain={uncertainModels}
+          unsupportedCount={unsupportedModels.length}
+          categoryLabel={t(MODEL_KINDS.find((item) => item.id === kind)!.labelKey)}
           loaded={loaded}
           loading={discovering}
           error={discoveryError}
