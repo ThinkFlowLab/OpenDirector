@@ -6,7 +6,7 @@
 
 ## 安装并连接
 
-使用 **DSH 0.2.2-rc.1**、**Node.js 24.9.0 或更新版本**，并确保 `pnpm` 在 `PATH` 中。先按[安装指南](../../docs/guides/installation.zh-CN.md)启动 OpenDirector，再从本插件目录打包，并先创建带对话界面的 Web profile，再加入插件包：
+使用 **DSH 0.2.2-rc.1 或同系列更新版本（0.2 且低于 0.3）**、**Node.js 24.9.0 或更新版本**，并确保 `pnpm` 在 `PATH` 中。先按[安装指南](../../docs/guides/installation.zh-CN.md)启动 OpenDirector，再从本插件目录打包，并先创建带对话界面的 Web profile，再加入插件包：
 
 ```sh
 npm pack
@@ -147,4 +147,4 @@ node test/creation.integration.mjs
 
 这会检查创建工程、PNG候选落盘、采用与重放、编辑会话冲突，以及停用插件期间已接受任务继续完成。脚本先检查隔离夹具标记再写入；用 `OPENDIRECTOR_FIXTURE_URL` 可选择其他夹具端口。图片来自测试夹具，不调用模型服务。
 
-本包将 DSH 兼容版本固定为 `0.2.2-rc.1`。DSH 仍在开发预览阶段，升级宿主前应重新确认兼容性。OpenDirector 自身的运行环境要求以安装指南为准。
+本包将 DSH 兼容范围声明为 `>=0.2.2-rc.1 <0.3.0-0`（0.2 系列的最低版本要求，而不是精确锁定宿主版本）。DSH 仍在开发预览阶段，升级宿主前应重新确认兼容性。OpenDirector 自身的运行环境要求以安装指南为准。
