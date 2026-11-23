@@ -111,7 +111,11 @@ def video_service(clip, mode, *, model='MiniMaxAI/MiniMax-H3', generation_limit=
 
 
 @pytest.mark.parametrize('model', ['MiniMaxAI/MiniMax-H3', 'FastH3-Omni'])
-@pytest.mark.parametrize('seconds,frames,maximum', [(4.33, 104, 103), (4.33, 104, 104), (5, 120, 120), (107 / 24, 107, 107)])
+@pytest.mark.parametrize('seconds,frames,maximum', [
+    (4.33, 104, 103), (4.33, 104, 104),
+    pytest.param(5, 120, 120, marks=pytest.mark.merge),
+    (107 / 24, 107, 107),
+])
 def test_generation_frame_limit_matches_http_and_saved_execution(generation_project, clip, model, seconds, frames, maximum):
     from generation_helpers import command
     from opendirector.application.creation_generation import CreationGeneration
