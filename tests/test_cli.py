@@ -516,6 +516,38 @@ def test_job_wait_all_waits_for_unfinished_jobs_without_naming_ids(monkeypatch, 
     assert json.loads(capsys.readouterr().out)["completed"] == 1
 
 
+def test_job_wait_reports_a_failure_that_settles_while_it_waits(monkeypatch, capsys):
+    jobs = [str(uuid4()), str(uuid4())]
+    context, calls = wait_context(monkeypatch, [
+        {"jobs": [{"id": jobs[0], "status": "running"}, {"id": jobs[1], "status": "running"}]},
+        {"jobs": [{"id": jobs[0], "status": "succeeded"},
+                  {"id": jobs[1], "status": "failed", "errorDetails": {"category": "provider"}}]},
+    ])
+    with pytest.raises(typer.Exit) as error:
+        cli.job_wait(context, [UUID(job) for job in jobs], False, 300)
+    assert error.value.exit_code == 1
+    assert calls[1][1]["objectIds"] == jobs
+    emitted = json.loads(capsys.readouterr().out)
+    assert emitted["completed"] == 1 and emitted["failed"] == 1
+    assert emitted["jobs"][1]["errorDetails"] == {"category": "provider"}
+    assert "errorDetails" in emitted["note"]
+
+
+def test_job_wait_says_so_when_nothing_is_running(monkeypatch, capsys):
+    context, calls = wait_context(monkeypatch, [{"jobs": []}])
+    cli.job_wait(context, None, True, 30)
+    assert calls[0][1]["objectIds"] == []
+    emitted = json.loads(capsys.readouterr().out)
+    assert emitted["jobs"] == [] and emitted["completed"] == 0 and emitted["failed"] == 0
+    assert "still running" in emitted["note"]
+
+
+def test_a_wait_window_fits_the_agent_socket_timeout():
+    """One wait window plus its snapshot read must answer before the read times out."""
+    assert cli.WAIT_WINDOW + 60 <= cli.SOCKET_TIMEOUT
+    assert cli.WAIT_WINDOW > 0
+
+
 def test_job_wait_reports_failure_and_timeout_with_distinct_exit_codes(monkeypatch, capsys):
     job = str(uuid4())
     failed, _ = wait_context(monkeypatch, [{"jobs": [{"id": job, "status": "failed"}]}])
@@ -556,16 +588,52 @@ def test_project_show_summary_keeps_every_identity_without_record_bodies(monkeyp
     assert len(json.dumps(summary)) * 4 < len(json.dumps(snapshot))
 
 
+def test_project_show_summary_keeps_reference_and_editor_identities(monkeypatch, capsys):
+    """reference.update and editor.save take these IDs, so the summary must carry them."""
+    from types import SimpleNamespace
+    reference, document = str(uuid4()), str(uuid4())
+    snapshot = {"project": {"id": str(uuid4()), "name": "Demo", "revision": 7},
+                "references": [{"id": reference, "revision": 4, "targetSpecId": str(uuid4()),
+                                 "binding": "pinned", "role": "first_frame", "order": 2, "active": True,
+                                 "source": {"assetId": str(uuid4()), "fingerprint": "sha256:" + "b" * 64}}],
+                "editorDocuments": [{"id": document, "revision": 9, "kind": "timeline", "title": "Main",
+                                      "data": {"tracks": [1, 2, 3]}}]}
+    context = SimpleNamespace(command_path="project show", obj=SimpleNamespace(command="", snapshot=lambda: snapshot))
+    cli.project_show(context, True)
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["references"] == [{"id": reference, "revision": 4, "targetSpecId": snapshot["references"][0]["targetSpecId"],
+                                      "binding": "pinned", "role": "first_frame", "order": 2, "active": True}]
+    assert summary["editorDocuments"] == [{"id": document, "revision": 9, "kind": "timeline", "title": "Main"}]
+    assert summary["counts"]["references"] == 1 and summary["counts"]["editorDocuments"] == 1
+
+
 def test_capabilities_lists_commands_and_query_types_once(help_color):
     result = CliRunner().invoke(cli.app, ["capabilities", "--compact"])
     assert result.exit_code == 0, result.output
     digest = json.loads(result.output)
-    kinds = {entry["type"]: entry for entry in digest["commands"]}
+    kinds = {entry["type"]: entry for entry in digest["commands"] if entry.get("type")}
     assert {"generation.submit", "canvas.createGeneration", "generationSpec.update", "job.cancel"} <= set(kinds)
-    assert all(entry["command"].count(" ") >= 1 and entry["summary"] for entry in digest["commands"])
+    assert all(entry["summary"] and entry["command"].strip() == entry["command"] for entry in digest["commands"])
     assert kinds["canvas.show"]["required"] == ["item"]
     assert kinds["generation.submit"]["required"] == ["expectedSpecRevision", "specId"]
     assert "fields" not in kinds["generation.submit"]
     assert {"job.status", "job.get", "canvas.status"} <= set(digest["queries"])
     assert digest["wait"] == "opendirector job wait --all"
     assert "opendirector --help" not in result.output
+
+
+def test_capabilities_names_commands_that_have_no_command_model(help_color):
+    """Discovery must cover the parser, not only commands built from a model."""
+    result = CliRunner().invoke(cli.app, ["capabilities", "--compact"])
+    assert result.exit_code == 0, result.output
+    listed = {entry["command"]: entry for entry in json.loads(result.output)["commands"]}
+    assert {"job wait", "job show", "project show", "query", "model list", "model show",
+            "model availability", "asset import", "video create", "canvas add-material",
+            "canvas text create", "timeline import", "timeline export", "timeline default-font",
+            "voice list", "voice create", "voice delete"} <= set(listed)
+    assert listed["canvas add-material"]["required"] == ["asset", "x", "y"]
+    assert listed["job show"]["required"] == ["job_id"]
+    assert "options" not in listed["job show"]
+    detailed = json.loads(CliRunner().invoke(cli.app, ["capabilities"]).output)["commands"]
+    assert "--asset-id" not in [option.split()[-1] for entry in detailed for option in entry.get("options", ())]
+    assert "--object-id" in [option for entry in detailed for option in entry.get("options", ())]

@@ -32,9 +32,9 @@ opendirector --project PROJECT_UUID job wait JOB_UUID... --timeout 300
 opendirector --project PROJECT_UUID job wait --all --timeout 300
 ```
 
-`job wait` 接受多个任务身份，`--all` 等待当前工程全部未结束任务，并在一次等待窗口内用一次服务端查询回答整组任务；返回每个任务的 `status`、`phase` 和成功后已登记的 `delivery`。需要减少等待调用次数时优先用 `--all`，不要为每个任务分别启动一次等待。
+`job wait` 接受多个任务身份，`--all` 等待当前工程全部未结束任务，并在一次等待窗口内用一次服务端查询回答整组任务；返回每个任务的 `status`、`phase` 和成功后已登记的 `delivery`。需要减少等待调用次数时优先用 `--all`，不要为每个任务分别启动一次等待。等待组在第一次回答时确定并保持不变，因此等待期间结束的任务仍会被报告：失败任务计入 `failed`、携带 `errorDetails` 与 `recovery`，并以退出码 1 结束；整组结束时报错信息不会被静默省略。工程内没有未结束任务时返回 `jobs: []` 并在 `note` 中明确说明，不再让空结果看起来像全部成功；此时可用 `project show --summary` 查看每个任务最终状态。
 
-`opendirector capabilities` 一次输出全部业务命令、摘要与必填字段，`--compact` 省略非必填字段名。Agent 用它替代逐条执行 `--help` 的发现过程；仅在单个字段结构不清楚时用 `--help-field` 展开。`opendirector project show --summary` 输出对象身份、版本与状态而不含完整记录，工程较大时可避免结果被截断以及重复读取。
+`opendirector capabilities` 一次输出全部业务命令、摘要与必填字段（含未由命令契约生成、但已注册的 `job wait`、`query`、`model`、`asset import`、`timeline`、`voice` 等命令），`--compact` 省略非必填字段名与非必填选项。Agent 用它替代逐条执行 `--help` 的发现过程；仅在单个字段结构不清楚时用 `--help-field` 展开。`opendirector project show --summary` 输出对象身份、版本与状态而不含完整记录，工程较大时可避免结果被截断以及重复读取。
 
 业务命令按对象分组，参数名使用短横线。复杂参数可使用 JSON 参数，或通过 `--file command.json` 读取含 `payload`、`expectedVersions` 和可选 `expectedPreview` 的对象。`--file -` 从标准输入读取。命令帮助包含从 Pydantic 业务契约派生的参数说明与示例。`--help-field PATH` 展开帮助中返回的结构化字段路径，例如 `opendirector canvas show --help-field payload.item@image.binding`。
 

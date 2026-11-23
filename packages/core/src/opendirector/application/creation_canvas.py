@@ -766,12 +766,23 @@ class CreationCanvas:
             views.append(view)
         return {'jobs': views, 'terminal': all(job.status in self.TERMINAL_JOB_STATES for job in selected)}
 
+    def unfinished_jobs(self, project_id: UUID) -> tuple[UUID, ...]:
+        """The wait group a caller means by "everything that is still running now".
+
+        A wait is one interaction, so this is read once at its start. Re-reading
+        it on every poll would drop each job the moment it settles, and the
+        caller would never learn which of them failed.
+        """
+        return tuple(job.id for job in self.projects.snapshot(project_id).jobs
+                     if job.status not in self.TERMINAL_JOB_STATES)
+
     async def wait_jobs(self, project_id: UUID, object_ids: tuple[UUID, ...] = (), wait_seconds: float = 0,
                         until: str = 'all') -> dict:
         """Answer for a whole set of jobs with at most one snapshot read per poll tick."""
+        group = object_ids or await asyncio.to_thread(self.unfinished_jobs, project_id)
         deadline = asyncio.get_running_loop().time() + wait_seconds
         while True:
-            state = await asyncio.to_thread(self.job_states, project_id, object_ids)
+            state = await asyncio.to_thread(self.job_states, project_id, group)
             jobs = state['jobs']
             settled = state['terminal'] or (bool(jobs) and until == 'any' and any(
                 job['status'] in self.TERMINAL_JOB_STATES for job in jobs))

@@ -61,6 +61,39 @@ def group(name: str) -> typer.Typer:
     return groups[name]
 
 
+# Discovery must not fall behind the parser: commands that are not built from a
+# command model are described from the registered click command itself.
+HIDDEN_COMMANDS = frozenset({"capabilities", "serve", "dev", "desktop"})
+
+
+def registered_commands():
+    """Every registered subcommand with the fields it requires."""
+    from typer.main import get_command
+
+    def describe(label, command):
+        parameters = [parameter for parameter in command.params if parameter.name not in {"help", "ctx"}]
+        required = sorted(parameter.name for parameter in parameters if parameter.required)
+        options = [" ".join(getattr(parameter, "opts", ()) or ()) or str(parameter.name).upper()
+                   for parameter in parameters]
+        summary = (command.help or (command.callback.__doc__ if command.callback else "") or "").strip()
+        return {"command": label, "summary": summary.splitlines()[0] if summary else "",
+                "required": required, "options": options}
+
+    entries = []
+
+    def walk(label, command):
+        children = getattr(command, "commands", None)
+        if isinstance(children, dict):
+            for sub, child in children.items():
+                walk(f"{label} {sub}", child)
+        else:
+            entries.append(describe(label, command))
+
+    for name, command in get_command(app).commands.items():
+        walk(name, command)
+    return [entry for entry in entries if entry["command"] not in HIDDEN_COMMANDS]
+
+
 @group("timeline").command("default-font", help="Find the bundled timeline font without opening a project.")
 def timeline_default_font():
     from opendirector.installation import default_timeline_font
@@ -177,7 +210,7 @@ class Client:
         connection = (socket.create_connection((endpoint, int(self.gateway["OPENDIRECTOR_AGENT_PORT"])), timeout=15)
                       if endpoint else socket.socket(socket.AF_UNIX, socket.SOCK_STREAM))
         with connection:
-            connection.settimeout(120)
+            connection.settimeout(SOCKET_TIMEOUT)
             if not endpoint:
                 connection.connect(self.gateway["OPENDIRECTOR_AGENT_SOCKET"])
             connection.sendall((json.dumps({
@@ -355,6 +388,17 @@ def summarize(snapshot):
                  for job in snapshot.get("jobs", ())],
         "results": [{"id": result["id"], "assetId": result["asset"]["assetId"], "jobId": result["jobId"]}
                     for result in snapshot.get("results", ())],
+        # Identities only: reference.update and reference.remove take a reference
+        # ID, and editor.save takes an editor ID, so dropping these would make
+        # the summary the one read that cannot start an edit.
+        "references": [{"id": reference["id"], "revision": reference["revision"],
+                        "targetSpecId": reference["targetSpecId"], "binding": reference["binding"],
+                        "role": reference.get("role"), "order": reference.get("order"),
+                        "active": reference.get("active", True)}
+                       for reference in snapshot.get("references", ())],
+        "editorDocuments": [{"id": document["id"], "revision": document["revision"],
+                             "kind": document.get("kind"), "title": document.get("title")}
+                            for document in snapshot.get("editorDocuments", ())],
     }
 
 
@@ -704,7 +748,10 @@ def job_show(ctx: typer.Context, job_id: UUID):
 
 
 TERMINAL_JOB_STATES = frozenset({"succeeded", "failed", "cancelled", "interrupted"})
-WAIT_WINDOW = 100  # Seconds of waiting answered by one server call.
+WAIT_WINDOW = 60  # Seconds of waiting answered by one server call.
+# One wait window must fit inside the agent socket read timeout with room for
+# the snapshot read that answers it, so the timeout is derived, not guessed.
+SOCKET_TIMEOUT = WAIT_WINDOW + 60
 
 
 @group("job").command("wait", help="Wait for one or more jobs to finish; one server call per wait window, not per job.")
@@ -714,18 +761,29 @@ def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Arg
              timeout: Annotated[float, typer.Option(min=0, help="Maximum wait in seconds.")] = 300):
     import time
     ctx.obj.command = ctx.command_path
-    ids = tuple(job_ids or ())
-    if not ids and not all_jobs:
+    if not job_ids and not all_jobs:
         raise typer.BadParameter("Pass job IDs or --all.")
+    ids = [str(identity) for identity in (job_ids or ())]
     deadline = time.monotonic() + timeout
+    # The first answer also freezes the wait group: the server keeps reporting
+    # the same jobs, so a job that fails while we wait is still named below.
     while True:
         remaining = max(0.0, deadline - time.monotonic())
-        result = ctx.obj.query("job.status", objectIds=[str(identity) for identity in ids],
+        result = ctx.obj.query("job.status", objectIds=ids,
             waitSeconds=min(WAIT_WINDOW, remaining), until="all")
         jobs = result.get("jobs", [])
+        if not job_ids:
+            ids = [job["id"] for job in jobs]
         failed = [job for job in jobs if job["status"] in TERMINAL_JOB_STATES and job["status"] != "succeeded"]
-        if jobs and all(job["status"] in TERMINAL_JOB_STATES for job in jobs) or not jobs:
-            emit({"jobs": jobs, "completed": len(jobs), "failed": len(failed)})
+        settled = all(job["status"] in TERMINAL_JOB_STATES for job in jobs)
+        if settled:
+            report = {"jobs": jobs, "completed": len(jobs) - len(failed), "failed": len(failed)}
+            if not jobs:
+                report["note"] = ("No job in this project is still running. "
+                                  "project show --summary lists every job and its final status.")
+            elif failed:
+                report["note"] = "These jobs did not succeed; errorDetails names the cause and recovery says whether it can resume."
+            emit(report)
             if failed:
                 raise typer.Exit(1)
             return
@@ -755,6 +813,15 @@ def capabilities(compact: Annotated[bool, typer.Option("--compact", help="Only n
         if not compact:
             entry["fields"] = list(schema.get("properties", {}))
         commands.append(entry)
+    known = {entry["command"] for entry in commands}
+    for command in registered_commands():
+        if command["command"] not in known:
+            entry = {"command": command["command"], "summary": command["summary"],
+                     "required": command["required"]}
+            if not compact:
+                entry["options"] = command["options"]
+            commands.append(entry)
+    commands.sort(key=lambda entry: entry["command"])
     queries = sorted({type_name for model in get_args(get_args(QueryModel)[0])
                       for type_name in getattr(model.model_fields["type"].annotation, "__args__", ())})
     emit({"commands": commands, "queries": queries,

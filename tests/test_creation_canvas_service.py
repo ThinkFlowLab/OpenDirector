@@ -584,6 +584,30 @@ def test_wait_jobs_returns_on_any_or_all_and_stops_at_the_timeout(project, monke
     assert len(calls) == 2
 
 
+def test_wait_jobs_holds_the_group_it_started_with(project, monkeypatch):
+    """A job that settles while we wait is still reported, with its failure."""
+    import asyncio
+    store, pid, _ = project
+    jobs = seed_jobs(project, 2)
+    canvas = CreationCanvas(store)
+    seen = []
+
+    def states(project_id, object_ids=()):
+        seen.append(tuple(object_ids))
+        settled = len(seen) > 1
+        return {'jobs': [{'id': str(job.id), 'status': 'failed' if settled and index else 'queued',
+                          'errorDetails': {'category': 'provider'} if settled and index else None}
+                         for index, job in enumerate(jobs)], 'terminal': settled}
+
+    monkeypatch.setattr(canvas, 'job_states', states)
+    result = asyncio.run(canvas.wait_jobs(pid, (), 5, 'all'))
+    assert seen[0] == tuple(job.id for job in jobs)
+    assert seen[1] == seen[0]
+    assert [job['status'] for job in result['jobs']] == ['queued', 'failed']
+    assert result['jobs'][1]['errorDetails'] == {'category': 'provider'}
+    assert result['terminal'] is True
+
+
 def test_job_status_includes_delivery_from_the_same_snapshot():
     from types import SimpleNamespace
     from test_creation_contracts import project_example
