@@ -46,7 +46,7 @@ async function closePage(page) {
 }
 
 async function populateImages(browser, id) {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ locale: "en-US" });
   const session = crypto.randomUUID();
   const root = `/creation/projects/${id}`;
   const setupHeaders = { ...headers, "X-OpenDirector-Session": session };
