@@ -14,9 +14,10 @@ export interface QuoteView {
 export interface PendingSpend {
   request: SpendRequest;
   fingerprint: string;
-  reason: "ready" | "stale" | "upstream_confirmation" | "confirmation" | "unknown_confirmation" | "unpriced" | "prior_unknown" | "over_cap";
+  reason: "ready" | "stale" | "stale_inputs" | "upstream_confirmation" | "confirmation" | "unknown_confirmation" | "unpriced" | "prior_unknown" | "over_cap";
   amount: string | null;
   shortfall: string | null;
+  suggestedCap: string | null;
   subtotals: Record<string, string>;
 }
 
@@ -24,6 +25,7 @@ export interface SpendStatus {
   policy: SpendPolicy;
   held: string;
   settled: string;
+  settledBatch?: { kind: string; count: number };
   available: string | null;
   unknown: number;
   legacy: number;

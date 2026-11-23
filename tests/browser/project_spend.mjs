@@ -116,7 +116,7 @@ try {
     await composer.locator(".cw-parameter-trigger").click();
     await pendingQuote;
     const run = composer.locator("button.cw-run-button");
-    await run.hover();
+    await run.click({trial: true});
     const initial = await run.boundingBox();
     await page.mouse.move(initial.x + initial.width / 2, initial.y + initial.height / 2);
     const before = posts.length;
@@ -124,19 +124,37 @@ try {
     releaseQuote();
     await composer.locator(".cw-spend-estimate summary").filter({ hasText: "1.20" }).waitFor();
     const quoted = await run.boundingBox();
-    if (process.env.CREATION_SCREENSHOTS) await composer.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-composer-${locale}.png`});
     await page.mouse.up();
     const movement = Math.hypot(quoted.x - initial.x, quoted.y - initial.y);
     assert.ok(movement <= 1, `Run moved by ${movement}px as the quote arrived`);
     await page.unroute(quotePath);
     await toggle.filter({ hasText: "(1)" }).or(toggle.filter({ hasText: "（1）" })).waitFor();
+    if (process.env.CREATION_SCREENSHOTS && await composer.isVisible())
+      await composer.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-composer-${locale}.png`});
     const pending = await call(path);
     assert.equal(pending.jobs.length, 0);
     assert.equal(pending.spendCalls?.length ?? 0, 0);
     assert.equal(posts.length, before);
+    const controls = page.locator(".cw-spend-canvas");
+    const canvasCard = controls.locator(".cw-spend-card");
+    const collapsed = controls.locator('.cw-spend-toggle[aria-expanded="false"]');
     await toggle.click();
-    const approve = page.getByRole("button", { name: en ? "Run this batch" : "确认运行本批", exact: true });
-    await approve.click();
+    await canvasCard.waitFor();
+    await page.keyboard.press("Escape");
+    await collapsed.waitFor();
+    await toggle.click();
+    await controls.locator(".cw-spend-close").click();
+    await collapsed.waitFor();
+    await toggle.click();
+    await canvasCard.waitFor();
+    await page.locator(".react-flow__pane").click({position: {x: 80, y: 170}});
+    await collapsed.waitFor();
+    assert.equal((await call(path)).spendRequests.at(-1).status, "pending");
+    assert.equal(posts.length, before);
+    await toggle.click();
+    await canvasCard.locator(".cw-spend-confirm").click();
+    await collapsed.waitFor();
+    await page.locator(".cw-toast-stack").getByText(en ? "Batch submitted." : "本批任务已提交。", {exact: true}).waitFor();
     const completed = await until(() => call(path), s => s.jobs.length === 3 && s.jobs.every(j => j.status === "succeeded"));
     assert.equal(completed.spendCalls.length, 3);
     assert.equal(new Set(completed.jobs.map(job => job.id)).size, 3);
@@ -144,7 +162,7 @@ try {
     assert.ok(posts.slice(before).every(post => post.prompt === "Blue" && post.n === 1));
     assert.ok(completed.spendCalls.every(c => c.state === "completed" && Number(c.calculated) === 0.4));
     // Put the second batch above the remaining cap, then review it from chat.
-    const controls = page.locator(".cw-spend-canvas");
+    await toggle.click();
     const cap = controls.getByLabel(en ? "Project cap" : "工程上限", {exact: true});
     if (!await cap.isVisible()) await controls.getByText(en ? "Spending controls" : "费用设置", {exact:true}).click();
     await cap.fill("2");
@@ -158,17 +176,31 @@ try {
     const assistant = page.locator("#canvas-assistant");
     if (!await assistant.isVisible()) await page.locator(".cw-chat-button").click();
     const card = assistant.locator(".cw-spend-card");
-    await card.getByText(/0\.80/).waitFor();
-    await card.getByText(en ? /0\.40 each × 3/ : /每个.*0\.40 × 3/).waitFor();
-    await card.getByRole("button", {name: en ? "Cancel request" : "取消申请"}).click();
+    await card.getByText(en ? "Generate 3 images" : "生成 3 张图片", {exact: true}).waitFor();
+    assert.match(await card.locator(".cw-spend-unit").innerText(), /0\.40.*review-image/);
+    assert.match(await card.locator(".cw-spend-amount").innerText(), /1\.20/);
+    assert.match(await card.locator(".cw-spend-reason").innerText(), /0\.80.*0\.40/);
+    const sizes = await card.evaluate(el => {
+      const size = selector => getComputedStyle(el.querySelector(selector)).fontSize;
+      return {
+        title: size(".cw-spend-title"), amount: size(".cw-spend-amount"),
+        unit: size(".cw-spend-unit"), reason: size(".cw-spend-reason"),
+        balance: size(".cw-spend-metric strong"), action: size(".cw-spend-confirm"),
+      };
+    });
+    assert.equal(sizes.title, sizes.amount);
+    assert.deepEqual([sizes.unit, sizes.reason, sizes.balance], Array(3).fill(sizes.action));
+    await card.locator(".cw-spend-cancel").click();
     await until(() => call(path), s => s.spendRequests.at(-1).status === "cancelled");
     assert.equal(posts.length - before, 3);
     const third = await second();
     assert.equal(third.status, "awaiting_confirmation");
     const current = assistant.locator(`[data-spend-request="${third.spendRequestId}"]`);
-    await current.getByLabel(en ? "New project cap" : "新的工程上限").fill("2.40");
+    const raise = current.getByRole("button", {name: en ? /Raise.*2\.40.*generate/i : /将上限提高到.*2\.40.*并生成/});
+    await raise.waitFor();
+    assert.equal(await current.getByRole("spinbutton").count(), 0);
     if (process.env.CREATION_SCREENSHOTS) await assistant.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-review-${locale}.png`});
-    await current.getByRole("button", {name: en ? "Raise cap and run this batch" : "提高上限并运行本批"}).click();
+    await raise.click();
     const raised = await until(() => call(path), s => s.jobs.length === 6 && s.jobs.every(j => j.status === "succeeded"));
     assert.equal(Number(raised.project.spendPolicy.cap), 2.4);
     assert.equal(raised.spendCalls.length, 6);
@@ -211,7 +243,8 @@ try {
     assert.equal(groupPending.spendRequests.at(-1).groupItems.length, 2);
     assert.equal(groupPending.jobs.length, 0);
     await page.locator(".cw-spend-toggle").click();
-    await page.locator(".cw-spend-canvas .cw-spend-card").getByRole("button", {name: en ? "Cancel request" : "取消申请"}).click();
+    await canvasCard.locator(".cw-spend-cancel").click();
+    await collapsed.waitFor();
     await until(() => call(groupPath), s => s.spendRequests.at(-1).status === "cancelled");
     assert.equal(posts.length - before, 6);
     assert.deepEqual(errors, []);
@@ -237,9 +270,19 @@ try {
       assert.equal(waiting.status, "awaiting_confirmation");
       assert.equal((await cli(args, body)).spendRequestId, waiting.spendRequestId);
       assert.ok(waiting.reviewUrl.endsWith(`/ai-tool/ai-canvas/${grouped}?spendReview=${waiting.spendRequestId}`));
-      const cliCard = page.locator(`.cw-spend-canvas [data-spend-request="${waiting.spendRequestId}"]`);
-      await cliCard.getByRole("button", {name: "Cancel request"}).click();
+      // Release the editing lease before opening the CLI link in a fresh browser session.
+      await page.evaluate(async () => (await import("/src/backend/projects.ts")).releaseBackendProject());
+      await page.goto("about:blank");
+      const reviewPath = new URL(waiting.reviewUrl, web);
+      const reviewPage = await browser.newPage({locale: "en-US"});
+      await reviewPage.goto(web + reviewPath.pathname + reviewPath.search);
+      const selector = `.cw-spend-canvas [data-spend-request="${waiting.spendRequestId}"]`;
+      const welcome = reviewPage.getByRole("button", {name: "Explore first", exact: true});
+      await welcome.or(reviewPage.locator(selector)).first().waitFor();
+      if (await welcome.isVisible()) await welcome.click();
+      await reviewPage.locator(selector).getByRole("button", {name: "Cancel generation"}).click();
       await until(() => call(groupPath), s => s.spendRequests.at(-1).status === "cancelled");
+      await reviewPage.close();
       assert.equal((await call(groupPath)).jobs.length, 0);
       assert.equal(posts.length - before, 6);
       console.log("Standalone CLI over HTTP: USD 1.20, replayed request, browser cancellation and zero calls");

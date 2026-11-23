@@ -1,22 +1,23 @@
 import { workflowRequest } from "./workspace/workflowMembers.ts";
+import { generationOutput, money, uniformOutputPrice } from "./spendPresentation.ts";
+import { TooltipButton } from "./TooltipButton.tsx";
+import { CANVAS_TOOLS } from "./toolCatalog.ts";
+import { translateToolText } from "./toolText.ts";
 import type { CanvasDocument, GenerationSettings } from "./model.ts";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { errorMessage, json, request } from "../backend/api.ts";
 import { creationClient, objectVersion } from "../backend/creationClient.ts";
 import type { ModelConfig } from "../backend/rules.ts";
 import { spendQuery, type PendingSpend, type QuoteView, type SpendStatus } from "../backend/spend.ts";
 import type { ConnectionPrice, SpendPolicy, SpendQuote } from "../contracts/generated.ts";
 import { useI18n, useT } from "../i18n/I18nProvider";
+import { CanvasIcon } from "./CanvasIcon";
 import "./project-spend.css";
 
 function useSnapshot(projectId: string) {
   const client = creationClient(projectId);
   const subscribe = useCallback((notify: () => void) => client.listen(notify), [client]);
   return useSyncExternalStore(subscribe, () => client.snapshot);
-}
-
-function money(value: string, currency: string, locale: string) {
-  return new Intl.NumberFormat(locale, { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 20 }).format(Number(value));
 }
 
 function QuoteLines({ quote }: { quote: SpendQuote }) {
@@ -90,7 +91,7 @@ export function GenerationEstimate({ projectId, itemId, count, modelId, prompt, 
   if (!result.value) return <span>{t("spend.estimateUnavailable")}</span>;
   const { amount, currency, projectAfter, quote } = result.value;
   return <details className="cw-spend-estimate">
-    <summary>{t("spend.estimate", { count, amount: amount == null ? t("spend.unknown") : money(amount, currency, locale) })}
+    <summary>{t("spend.estimate", { action: t(`spend.action.${generationOutput(quote)}`, {count}), amount: amount == null ? t("spend.unknown") : money(amount, currency, locale) })}
       {projectAfter != null && <> · {t("spend.after", { amount: money(projectAfter, currency, locale) })}</>}
     </summary>{amount == null && <Subtotals values={result.value.subtotals} />}<QuoteLines quote={quote} />
   </details>;
@@ -117,7 +118,7 @@ export function GroupEstimate({ document, groupId, models }: {
   if (!result || result.key !== key) return null;
   const { quote, currency, amount, subtotals } = result.value;
   return <details className="cw-spend-estimate cw-group-estimate">
-    <summary>{t("spend.estimate", {count: quote.candidates ?? quote.count, amount: amount == null ? t("spend.unknown") : money(amount, currency, locale)})}
+    <summary>{t("spend.estimate", {action: t(`spend.action.${generationOutput(quote)}`, {count: quote.candidates ?? quote.count}), amount: amount == null ? t("spend.unknown") : money(amount, currency, locale)})}
       {!!quote.deferred?.length && <> · {t("spend.awaitingInputs", {count: quote.deferred.length})}</>}
       {!!quote.skipped?.length && <> · {t("spend.skippedSteps", {count: quote.skipped.length})}</>}
     </summary>{amount == null && <Subtotals values={subtotals} />}<QuoteLines quote={quote} />
@@ -155,15 +156,57 @@ export function ToolEstimate({ projectId, itemId, tool, priceRevision }: {
     {amount == null && <Subtotals values={subtotals} />}<QuoteLines quote={quote} /></details>;
 }
 
+function SpendBalances({ status }: { status: SpendStatus }) {
+  const { t, locale } = useI18n();
+  const { currency, cap } = status.policy;
+  const spent = money(status.settled, currency, locale);
+  const held = money(status.held, currency, locale);
+  const batch = status.settledBatch;
+  const spentHelp = batch && (batch.kind === "image" || batch.kind === "video")
+    ? t(`spend.spentHelp.${batch.kind}`, {count: batch.count, amount: spent})
+    : t("spend.spentHelp");
+  const heldHelp = status.unknown ? t("spend.heldHelp.unknown") : Number(status.held) === 0
+    ? t("spend.heldHelp.zero") : t("spend.heldHelp.active", {amount: held});
+  return <div className="cw-spend-balances">
+    <div className="cw-spend-metric"><span>{t("spend.cap")}</span><strong>{cap == null ? t("spend.off") : money(cap, currency, locale)}</strong></div>
+    {([["spend.spent", spent, spentHelp], ["spend.held", held, heldHelp]] as const).map(([label, amount, help]) =>
+      <TooltipButton key={label} label={help} aria-label={`${t(label)} ${amount}`} className="cw-spend-metric" showOnClick>
+        <span>{t(label)} <span aria-hidden="true">ⓘ</span></span><strong>{amount}</strong>
+      </TooltipButton>)}
+  </div>;
+}
+
 function ReviewCard({ projectId, entry, status, onSettings, onChange }: {
-  projectId: string; entry: PendingSpend; status: SpendStatus; onSettings?: () => void; onChange: () => void;
+  projectId: string; entry: PendingSpend; status: SpendStatus; onSettings?: () => void; onChange: (decision?: "approve" | "cancel") => void;
 }) {
   const { t, locale } = useI18n();
-  const [newCap, setNewCap] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const { request: batch, reason } = entry;
   const currency = status.policy.currency;
+  const { quote } = batch;
+  const output = generationOutput(quote);
+  const count = quote.candidates ?? quote.count;
+  const tool = batch.toolTask?.tool;
+  const toolName = CANVAS_TOOLS.find(item => item.id === tool)?.title;
+  const title = batch.toolTask
+    ? toolName ? translateToolText(locale, toolName) : t(tool === "selection-preview" ? "spend.selectionPreview" : "spend.mediaTool")
+    : t(`spend.action.${output}`, {count});
+  const unit = uniformOutputPrice(quote);
+  const unitPrice = unit && !batch.toolTask && output !== "tasks"
+    ? t(`spend.each.${output}`, {amount: money(unit.amount, unit.currency, locale), model: unit.model}) : undefined;
+  const runsSteps = Boolean(batch.toolTask || quote.deferred?.length);
+  const cap = entry.suggestedCap == null ? null : money(entry.suggestedCap, currency, locale);
+  let approvalLabel;
+  switch (reason) {
+    case "stale": case "stale_inputs": case "prior_unknown": case "unpriced": break;
+    case "over_cap":
+      if (cap != null) approvalLabel = t(runsSteps ? "spend.raiseRun" : "spend.raiseGenerate", {amount: cap});
+      break;
+    case "unknown_confirmation": approvalLabel = t("spend.allowUnknown"); break;
+    default:
+      approvalLabel = t(quote.deferred?.length ? "spend.runUpstream" : runsSteps ? "spend.approve" : "spend.generate");
+  }
   const decide = async (decision: "approve" | "cancel") => {
     setBusy(true);
     setError("");
@@ -174,29 +217,38 @@ function ReviewCard({ projectId, entry, status, onSettings, onChange }: {
       await creationClient(projectId).command("spend.review", {
         requestId: batch.id, fingerprint: entry.fingerprint, decision,
         acceptUnknown: decision === "approve" && reason === "unknown_confirmation",
-        ...(raising ? { newCap } : {}),
+        ...(raising ? { newCap: entry.suggestedCap } : {}),
       }, versions);
-    } catch (failure) { setError(errorMessage(failure)); }
-    finally { setBusy(false); onChange(); }
+      onChange(decision);
+    } catch (failure) { setError(errorMessage(failure)); onChange(); }
+    finally { setBusy(false); }
   };
   return <article className="cw-spend-card" data-spend-request={batch.id}>
-    <strong>{t("spend.estimate", { count: batch.quote.candidates ?? batch.quote.count, amount: entry.amount == null ? t("spend.unknown") : money(entry.amount, currency, locale) })}</strong>
-    {entry.amount == null && <Subtotals values={entry.subtotals} />}<QuoteLines quote={batch.quote} />
+    <div className="cw-spend-offer">
+      <div><h4 className="cw-spend-title">{title}</h4>{unitPrice && <div className="cw-spend-unit">{unitPrice}</div>}</div>
+      <div><span className="cw-spend-quote-label">{t("spend.batchEstimate")}</span>
+        <strong className="cw-spend-amount">{entry.amount == null ? t("spend.unknown") : money(entry.amount, currency, locale)}</strong>
+      </div>
+    </div>
+    {entry.amount == null && <Subtotals values={entry.subtotals} />}
+    {quote.lines.length > 0 && <details className="cw-spend-price-details" open={!unitPrice}>
+      <summary>{t("spend.priceDetails")}</summary><QuoteLines quote={quote} />
+    </details>}
     {!!batch.quote.deferred?.length && <p>{t("spend.deferred", { count: batch.quote.deferred.length })}</p>}
     {!!batch.quote.skipped?.length && <p>{t("spend.skippedSteps", {count: batch.quote.skipped.length})}</p>}
-    {reason === "over_cap" && <>
-      <p>{t("spend.shortfall", { cap: money(status.policy.cap!, currency, locale), available: money(status.available!, currency, locale), missing: money(entry.shortfall!, currency, locale) })}</p>
-      <label>{t("spend.newCap")} <input type="number" step="any" min="0" value={newCap} onChange={e => setNewCap(e.target.value)} /></label>
-    </>}
+    {reason === "over_cap" && <p className="cw-spend-reason">{t("spend.shortfall", {available: money(status.available!, currency, locale), missing: money(entry.shortfall!, currency, locale)})}
+      {cap == null && <> {t("spend.capOutOfRange")}</>}</p>}
     {reason === "unpriced" && <p>{t("spend.needPrice")}</p>}
     {reason === "prior_unknown" && <p>{t("spend.priorUnknown")}</p>}
     {reason === "stale" && <p>{t("spend.stale")}</p>}
+    {reason === "stale_inputs" && <p>{t("spend.staleInputs")}</p>}
+    <SpendBalances status={status} />
     <div className="cw-spend-actions">
-      {reason === "stale" || reason === "prior_unknown" ? null : reason === "unpriced" ? onSettings && <button onClick={onSettings}>{t("spend.connections")}</button> :
-        <button disabled={busy || (reason === "over_cap" && !newCap)} onClick={() => void decide("approve")}>
-          {t(reason === "over_cap" ? "spend.raiseRun" : reason === "unknown_confirmation" ? "spend.allowUnknown" : batch.quote.deferred?.length ? "spend.runUpstream" : "spend.approve")}
+      {reason === "unpriced" && onSettings && <button onClick={onSettings}>{t("spend.connections")}</button>}
+      {approvalLabel && <button className="cw-spend-confirm" disabled={busy} onClick={() => void decide("approve")}>
+          {approvalLabel}
         </button>}
-      <button disabled={busy} onClick={() => void decide("cancel")}>{t("spend.cancel")}</button>
+      <button className="cw-spend-cancel" disabled={busy} onClick={() => void decide("cancel")}>{t(runsSteps ? "spend.cancel" : "spend.cancelGeneration")}</button>
     </div>
     {error && <p role="alert">{error}</p>}
   </article>;
@@ -223,23 +275,57 @@ function PolicyForm({ projectId, status }: { projectId: string; status: SpendSta
   </form>;
 }
 
-export function ProjectSpend({ projectId, placement, onSettings }: {
-  projectId: string; placement: "canvas" | "chat"; onSettings?: () => void;
+export function ProjectSpend({ projectId, placement, onSettings, onNotify }: {
+  projectId: string; placement: "canvas" | "chat"; onSettings?: () => void; onNotify: (message: string) => void;
 }) {
   const { t, locale } = useI18n();
   const snapshot = useSnapshot(projectId);
-  const pendingCount = snapshot?.spendRequests?.filter(r => r.status === "pending").length ?? 0;
-  const [open, setOpen] = useState(() => placement === "canvas" && new URLSearchParams(window.location.search).has("spendReview"));
+  const pendingIds = new Set(snapshot?.spendRequests?.filter(r => r.status === "pending").map(r => r.id));
+  const pendingCount = pendingIds.size;
+  const [view, setView] = useState<"review" | "overview" | null>(() => {
+    const reviewId = new URLSearchParams(window.location.search).get("spendReview");
+    return placement === "canvas" && reviewId && pendingIds.has(reviewId) ? "review" : null;
+  });
+  const container = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState<SpendStatus>();
   const [error, setError] = useState("");
   const [revision, reload] = useState(0);
   useEffect(() => {
     if (placement !== "canvas") return;
-    const reveal = (event: Event) => { if ((event as CustomEvent).detail === projectId) setOpen(true); };
+    const reveal = (event: Event) => { if ((event as CustomEvent).detail === projectId) setView("review"); };
     window.addEventListener("opendirector:spend-review", reveal);
     return () => window.removeEventListener("opendirector:spend-review", reveal);
   }, [placement, projectId]);
-  const shown = open || (placement === "chat" && pendingCount > 0);
+  // The last request can also be resolved from chat or another client.
+  useEffect(() => {
+    if (view === "review" && pendingCount === 0) setView(null);
+  }, [view, pendingCount]);
+  useEffect(() => {
+    if (!view) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      // A modal (such as initial setup) owns the gesture; the canvas beneath it is inert.
+      if (target instanceof Element && !target.closest("dialog:modal") && !container.current?.contains(target))
+        setView(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      const focused = document.activeElement;
+      if (focused !== document.body && !container.current?.contains(focused)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setView(null);
+      toggle.current?.focus({preventScroll: true});
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [view]);
+  const shown = view === "overview" || ((view === "review" || placement === "chat") && pendingCount > 0);
   useEffect(() => {
     if (!shown || !snapshot) return;
     const abort = new AbortController();
@@ -248,22 +334,40 @@ export function ProjectSpend({ projectId, placement, onSettings }: {
     }).catch(failure => { if (!abort.signal.aborted) setError(errorMessage(failure)); });
     return () => abort.abort();
   }, [shown, projectId, snapshot, revision]);
+  const reviewed = (decision?: "approve" | "cancel") => {
+    reload(r => r + 1);
+    if (!decision) return;
+    onNotify(t(decision === "approve" ? "spend.reviewSubmitted" : "spend.reviewCancelled"));
+    if (placement === "canvas" && !creationClient(projectId).snapshot.spendRequests?.some(r => r.status === "pending")) {
+      setView(null);
+      if (document.activeElement === document.body || container.current?.contains(document.activeElement))
+        toggle.current?.focus({preventScroll: true});
+    }
+  };
   if (placement === "chat" && !pendingCount) return null;
-  return <div className={`cw-spend cw-spend-${placement}`}>
-    {placement === "canvas" && <button className="cw-spend-toggle" aria-expanded={shown} onClick={() => setOpen(!open)}>
+  const reviews = status?.pending.filter(entry => pendingIds.has(entry.request.id)) ?? [];
+  const panelId = `cw-spend-${projectId}-${placement}`;
+  return <div ref={container} className={`cw-spend cw-spend-${placement}`}>
+    {placement === "canvas" && <button ref={toggle} className="cw-spend-toggle" aria-expanded={shown} aria-controls={shown ? panelId : undefined}
+      onClick={() => setView(shown ? null : pendingCount ? "review" : "overview")}>
       {pendingCount ? t("spend.pending", { count: pendingCount }) : t("spend.title")}
     </button>}
-    {shown && <section aria-label={t("spend.title")} className="cw-spend-panel">
-      <h3>{t("spend.title")}</h3>
+    {shown && <section id={panelId} aria-label={t("spend.title")} className="cw-spend-panel">
+      <div className="cw-spend-heading"><h3>{t("spend.title")}</h3>
+        {placement === "canvas" && <button type="button" className="cw-spend-close" aria-label={t("common.close")}
+          onClick={() => { setView(null); toggle.current?.focus({preventScroll: true}); }}>
+          <CanvasIcon name="close" size={16} />
+        </button>}
+      </div>
       {error && <p role="alert">{error}</p>}
       {status && <>
-        <p>{t("spend.summary", { settled: money(status.settled, status.policy.currency, locale), held: money(status.held, status.policy.currency, locale) })}</p>
+        {!pendingCount && <SpendBalances status={status} />}
         {(status.legacy > 0 || status.unknown > 0) && <p>{t("spend.coverage", { count: status.legacy + status.unknown })}</p>}
-        {status.pending.filter(entry => snapshot?.spendRequests?.some(r => r.id === entry.request.id && r.status === "pending")).map(entry => <ReviewCard key={entry.request.id} projectId={projectId} status={status} entry={entry}
-          onSettings={onSettings} onChange={() => reload(r => r + 1)} />)}
+        {reviews.map(entry => <ReviewCard key={entry.request.id} projectId={projectId} status={status} entry={entry}
+          onSettings={onSettings} onChange={reviewed} />)}
         {placement !== "chat" && <>
-          <details><summary>{t("spend.controls")}</summary><PolicyForm key={JSON.stringify(status.policy)} projectId={projectId} status={status} /></details>
-          <details><summary>{t("spend.log")}</summary>
+          <details onToggle={e => { if (e.currentTarget.open) setView("overview"); }}><summary>{t("spend.controls")}</summary><PolicyForm key={JSON.stringify(status.policy)} projectId={projectId} status={status} /></details>
+          <details onToggle={e => { if (e.currentTarget.open) setView("overview"); }}><summary>{t("spend.log")}</summary>
             {(status.workflows ?? []).map(run => <p key={run.id}>{t("spend.workflowProgress", {
               completed: run.completed, total: run.total, state: t(`spend.workflowState.${run.state}`),
             })}{run.skipped > 0 && <> · {t("spend.skippedSteps", {count: run.skipped})}</>}</p>)}

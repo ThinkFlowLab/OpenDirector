@@ -68,6 +68,7 @@ export function AssistantPanel({
   onTurnEnd,
   onModelSelections,
   onOpenSettings,
+  onNotify,
   onPrepareReferences,
 }: {
   documentId: string;
@@ -84,6 +85,7 @@ export function AssistantPanel({
   /** Lets the canvas default new nodes to the model this dialog is using. */
   onModelSelections?: (selections: ModelSelections) => void;
   onOpenSettings: () => void;
+  onNotify: (message: string) => void;
   onPrepareReferences: () => Promise<boolean>;
 }) {
   const t = useT();
@@ -413,7 +415,7 @@ export function AssistantPanel({
             </p>
           </div>
         )}
-        {open && <ProjectSpend projectId={documentId} placement="chat" onSettings={onOpenSettings} />}
+        {open && <ProjectSpend projectId={documentId} placement="chat" onSettings={onOpenSettings} onNotify={onNotify} />}
         {value.messages.map((message, index) => {
           const previous = value.messages[index - 1];
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&

@@ -1211,7 +1211,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       {!ready && <div className="cw-loading canvas-loading-message"><span className="canvas-loading-spinner" aria-hidden="true" />{t("canvas.workspace.loading.opening")}</div>}
 
       <div className="cw-bottom-left">
-        {ready && <ProjectSpend key={doc.id} projectId={doc.id} placement="canvas" onSettings={() => { setSettingsCategory("models"); setSettingsOpen(true); }} />}
+        {ready && <ProjectSpend key={doc.id} projectId={doc.id} placement="canvas" onNotify={notify} onSettings={() => { setSettingsCategory("models"); setSettingsOpen(true); }} />}
         <div className="cw-settings-control">
           <IconButton
             name="settings"
@@ -2465,6 +2465,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             );
           }}
           onTurnEnd={() => void syncServiceResults()}
+          onNotify={notify}
           onModelSelections={setAssistantModels}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
