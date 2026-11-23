@@ -28,8 +28,8 @@ OpenDirector 是一个在本地运行、通过浏览器使用的 AI 视频创作
 <p>
   <a href="https://space.bilibili.com/3747582748658251">
     <img src="https://img.shields.io/badge/Bilibili-OpenDirector-00A1D6?logo=bilibili&amp;logoColor=white" alt="OpenDirector 官方 B 站账号" />
-  </a>
-</p>
+  </a> Visit our Bilibili to watch intros, tutorials, or share your creations with us!
+</p> 
 
 ## 最新动态
 
