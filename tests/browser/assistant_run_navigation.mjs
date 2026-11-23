@@ -109,10 +109,9 @@ try {
   });
   const editor = panel.getByRole("textbox", { name: "消息内容", exact: true });
   const show = async () => {
-    if (!(await panel.isVisible()))
-      await page
-        .getByRole("button", { name: "与 AI 对话", exact: true })
-        .click();
+    await page.locator('[data-testid="canvas-workspace"][aria-busy="false"]').waitFor();
+    const openChat = page.getByRole("button", { name: "与 AI 对话", exact: true, expanded: false });
+    if (await openChat.isVisible()) await openChat.click();
     await editor.waitFor();
   };
   const switchTo = async (name) => {
