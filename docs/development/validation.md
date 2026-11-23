@@ -244,9 +244,9 @@ The image browser workflow covers pinned, followed and mixed references. With an
 
 ## Agent 原生视觉读取 / Agent native visual inspection
 
-发布检查使用真实 Bundled、OpenCode、Codex、Claude Code、JiuwenSwarm 和 DeepSeek Harness CLI 以及本地模型夹具，检查原图和 FFmpeg 抽帧是否以正确顺序作为可解码图片到达模型。Bundled 还检查纯文本模型不会收到图片。CI 安装固定版本的外部 CLI，所需 CLI 缺失即失败。
+发布检查使用真实 Bundled、OpenCode、Codex、Claude Code、JiuwenSwarm 和 DeepSeek Harness CLI 以及本地模型夹具，检查原图和 FFmpeg 抽帧是否以正确顺序作为可解码图片到达模型。Bundled 还检查纯文本模型不会收到图片。CI 安装固定版本的外部 CLI，所需 CLI 缺失即失败。Pi 不在此门禁内：它依赖 release CI 未提供的本机服务商凭证。
 
-Release checks use the real Bundled, OpenCode, Codex, Claude Code, JiuwenSwarm and DeepSeek Harness CLIs with local model fixtures. They verify that decodable pixels from the still and FFmpeg frame reach the model in order. The Bundled check also verifies that a text-only model receives no pixels. CI installs pinned external CLI versions and fails if a required CLI is unavailable.
+Release checks use the real Bundled, OpenCode, Codex, Claude Code, JiuwenSwarm and DeepSeek Harness CLIs with local model fixtures. They verify that decodable pixels from the still and FFmpeg frame reach the model in order. The Bundled check also verifies that a text-only model receives no pixels. CI installs pinned external CLI versions and fails if a required CLI is unavailable. Pi stays out of this gate: it needs provider credentials that release CI does not provision.
 
 ```bash
 OPENDIRECTOR_HARNESS_CI=1 python -m pytest tests/test_agent_visual_gate.py::test_harness_native_visual_input

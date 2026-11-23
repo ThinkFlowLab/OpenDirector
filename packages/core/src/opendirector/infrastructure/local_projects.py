@@ -16,6 +16,11 @@ def child(directory: Path, name: str) -> Path:
     path = directory / name
     if path.is_symlink():
         raise ProjectError("项目内部文件不能是符号链接。", 409)
+    # The name often comes from a request. Keep the joined path lexical and inside
+    # the directory so `..` cannot reach a sibling project.
+    resolved, root = Path(os.path.abspath(path)), Path(os.path.abspath(directory))
+    if root != resolved and root not in resolved.parents:
+        raise ProjectError("项目内部文件必须位于项目目录内。", 409)
     return path
 
 
