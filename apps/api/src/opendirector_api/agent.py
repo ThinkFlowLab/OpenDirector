@@ -5,6 +5,7 @@ from dataclasses import replace
 import json
 import logging
 from pathlib import Path
+import time
 from typing import Annotated, Literal
 from uuid import UUID, uuid5
 
@@ -19,6 +20,7 @@ from opendirector.domain.creation.base import agent_command_id
 from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
+from opendirector.agent import timing as agent_timing
 from opendirector.domain.projects import ProjectError
 from opendirector.application.model_availability import requests_for
 from opendirector.domain.rule_facts import MAX_REFERENCES, PROMPT_MAX_LENGTH
@@ -473,6 +475,8 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
+                timing = {}
+                turn_started = time.monotonic()
                 sources = {}
                 previous_sources = {}
                 plan = None
@@ -527,8 +531,11 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                             if event['type'] == 'plan':
                                 plan = event['entries']
                             if event['type'] == 'tool':
+                                agent_timing.note(timing, event)
                                 previous = next((item for item in activities if item['id'] == event['id']), None)
-                                activity = {**{key: item for key, item in event.items() if key != 'type'},
+                                # `timing` is measurement, not history: keeping it out of the
+                                # activity list keeps the persisted turn the same shape it was.
+                                activity = {**{key: item for key, item in event.items() if key not in {'type', 'timing'}},
                                             'textOffset': previous['textOffset'] if previous else len(text)}
                                 if previous is None:
                                     activities.append(activity)
@@ -553,7 +560,10 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                             status=500, code='operation_rejected')
                     logger.exception(f'agent.turn.failed project_id={project_id} turn_id={value.id}')
                 finally:
+                    # Measurement is best effort: losing the ledger is acceptable,
+                    # losing the turn's reply is not.
                     if accepted:
+                        agent_timing.write(directory, value.id, timing, round(time.monotonic() - turn_started, 3))
                         for activity in activities:
                             if activity['status'] == 'running':
                                 activity['status'] = 'interrupted'
