@@ -96,6 +96,9 @@ from opendirector.domain.creation.assets import AssetProvenance
 from uuid import uuid4
 
 
+pytestmark = pytest.mark.cpu
+
+
 def timeline_document(project, tmp_path, *, font_bytes=None):
     store, pid, session = project
     path = tiny_font(tmp_path / 'fixture.ttf', characters='AB中')

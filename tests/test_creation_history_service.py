@@ -8,6 +8,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('transition', ['undo', 'redo'])
 @pytest.mark.parametrize('locked_owner', ['node', 'parent', 'second_owner'])
 @pytest.mark.parametrize('actor', ['ui', 'agent'])

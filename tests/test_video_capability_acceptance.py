@@ -24,6 +24,9 @@ from test_tool_tasks import png, project, sound_mp4, upload
 from test_creation_canvas_service import project as generation_project
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture(scope='module')
 def clip():
     return sound_mp4(5)

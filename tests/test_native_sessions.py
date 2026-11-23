@@ -8,6 +8,9 @@ from opendirector.agent.context import RunContext
 from process_helpers import directory_link
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('location', ['valid', 'outside', 'invalid_turn', 'missing', 'alias', 'absent'])
 def test_native_session_directory_requires_owned_turn_identity(tmp_path, location):
     run = RunContext(runtime='opencode', project_id=uuid4(), turn_id=uuid4(), session=str(uuid4()),

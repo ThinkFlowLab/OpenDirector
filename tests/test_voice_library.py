@@ -11,6 +11,9 @@ from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 
 
+pytestmark = pytest.mark.cpu
+
+
 def config(model='MOSS-TTS-Nano', **patch):
     return dict(id=str(uuid4()), kind='audio', url='http://voice.test/v1', modelId=model,
                 protocol='openai', connectionType='self_hosted', authMode='bearer', apiKey='private-key', **patch)

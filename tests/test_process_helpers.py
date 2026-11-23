@@ -8,6 +8,9 @@ from process_helpers import directory_link, native_user_directory
 from process_helpers import project_heartbeat
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_native_directory_uses_same_owner_and_is_idempotent(tmp_path):
     before = tmp_path.stat()
     report = native_user_directory(tmp_path)

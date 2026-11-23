@@ -23,6 +23,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def publication(tmp_path):
     projects = CreationProjects(LocalProjects(tmp_path))

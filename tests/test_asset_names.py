@@ -3,6 +3,9 @@ import pytest
 from opendirector.media.filenames import with_extension
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize(('name', 'suffix', 'expected'), [
     ('原版', 'mp4', '原版.mp4'),
     ('原版.mp4', 'mp4', '原版.mp4'),

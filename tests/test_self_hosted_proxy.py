@@ -12,6 +12,9 @@ from opendirector.integrations.http_settings import trust_environment
 from opendirector.integrations.providers import GenerationProviders
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('base, equivalent', [
     ('http://8.92.9.154:8094/v1', 'http://8.92.9.154:8094/videos/id/content'),
     ('http://192.168.1.20:8093/v1', 'http://192.168.1.20:8093/videos/id/content'),

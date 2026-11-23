@@ -12,6 +12,9 @@ from opendirector_api import agent
 from test_assistant_conversations import assistant, frames, send  # noqa: F401
 
 
+pytestmark = pytest.mark.cpu
+
+
 def conversation_file(tmp_path):
     return next(tmp_path.rglob('agent-runs/conversation.json'))
 

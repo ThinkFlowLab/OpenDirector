@@ -17,6 +17,9 @@ from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('resolution, ratio, expected', [
     ('480P', '16:9', '832x480'), ('480P', '9:16', '480x832'),
     ('768P', '16:9', '1344x768'), ('768P', '9:16', '768x1344'),

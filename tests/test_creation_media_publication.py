@@ -13,6 +13,9 @@ from test_creation_canvas_service import project, send, ver
 from test_creation_tool_drafts import png
 
 
+pytestmark = pytest.mark.cpu
+
+
 def prepared(project, count=2):
     store, pid, session = project
     assets = CreationToolAssets(store)
