@@ -124,3 +124,37 @@ acceptance before reducing the active full-suite bar.
 
 PR-5 只准备分类和覆盖保护。机型标记独立开发；PR-8 仍须等待机型轴与真实
 合并队列验收，现有全量门槛保持不变。
+
+## CPU platform axis / CPU 机型轴（2026-11-23）
+
+This pass starts at main `273153908edd068cde6c339a5fc98ebcbf604af9`.
+The same Windows environment collected 2,994 cases before hardware tagging.
+After tagging and adding 11 hardware/audit regressions, full collection and
+CPU-only collection both contain 3,005 cases with zero deselections. Every old
+raw ID and effective CI layer is preserved; all current cases explicitly inherit
+CPU from their test module. No cross-platform ID normalization is involved.
+The final partition is ready 2,936, merge 59, nightly 10.
+
+本轮基于上述 main。同一 Windows 环境修改前收集 2,994 项，显式机型标记及
+11 项新增回归后，全量与 CPU 筛选均收集 3,005 项，零排除。原始 ID 和原有
+CI 层级全部保持，现有用例均从测试模块显式继承 CPU，不做跨平台 ID 归一化。
+最终分类为 ready 2,936、merge 59、nightly 10。
+
+Collection tests exercise migration defaults before `-m` deselection, inherited
+platform conflicts (including conflicts that CPU selection would otherwise hide),
+reserved accelerator isolation, and preservation of the orthogonal layer axis.
+The full layer audit accepts a CPU profile only when collection is complete,
+no case was deselected, and every retained case has CPU hardware evidence.
+
+回归通过真实 pytest 子进程检查默认值先于筛选、继承机型冲突、CPU 筛选可能
+掩盖的冲突、预留加速器隔离，以及与层级轴的正交性。完整核对仅接受完整收集、
+零排除、逐项 CPU 证据齐全的 CPU profile。
+
+PR-7 live queue enforcement and PR-8 layer cutover remain separate work.
+The CPU selection includes the existing full layer set, bundled native checks
+and the nightly watchlist. Accelerator names are reserved; no accelerator job,
+paid model call or migration of the static workflow implementation is introduced.
+
+PR-7 的真实队列强制验收和 PR-8 的层级切换仍独立推进。本轮 CPU 筛选保留
+所有原有层级、bundled 原生检查和 nightly watchlist；只预留加速器名称，
+不新增加速器车道、付费模型调用，也不搬迁静态工作流实现。

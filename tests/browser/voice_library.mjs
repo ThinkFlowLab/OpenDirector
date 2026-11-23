@@ -119,6 +119,13 @@ const cloud = await call("/api/model-configs", {
   modelId: "moss-tts-1.5-flash",
   connectionType: "api",
 });
+const searchCloud = await call("/api/model-configs", {
+  ...common,
+  url: "https://api.mosi.cn/v1",
+  modelId: "moss-tts-1.0-pro",
+  connectionType: "api",
+  apiKey: "voice-search-fixture",
+});
 const [normal, nano, drama] = configs;
 assert.equal(
   normal.inputRules.voiceLibrary.connectionId,
@@ -182,7 +189,12 @@ const copy = {
     retry: "Retry",
     previousPage: "Previous page",
     nextPage: "Next page",
-    noPageMatches: "No matching voices on this page.",
+    search: "Search voices",
+    clearSearch: "Clear search",
+    noSearchMatches: "No voices match your search.",
+    searchingMore: "Searching more voices…",
+    previewSearchResult: "Preview 世界最狂青年音",
+    stopSearchPreview: "Stop previewing 世界最狂青年音",
     selectionMissing:
       "The selected voice is no longer in this library. Choose another voice before generating.",
   },
@@ -221,10 +233,197 @@ const copy = {
     retry: "重试",
     previousPage: "上一页",
     nextPage: "下一页",
-    noPageMatches: "本页没有符合条件的音色。",
+    search: "搜索音色",
+    clearSearch: "清除搜索",
+    noSearchMatches: "没有找到匹配的音色。",
+    searchingMore: "正在搜索更多音色…",
+    previewSearchResult: "试听 世界最狂青年音",
+    stopSearchPreview: "停止试听 世界最狂青年音",
     selectionMissing: "所选音色已不在此音色库中。生成前请选择其他音色。",
   },
 };
+async function verifyPaginatedSearch({ dialog, L, open, page, params, selectModel }) {
+  await selectModel(searchCloud);
+  await open();
+  const library = dialog();
+  const search = library.getByRole("searchbox", { name: L.search, exact: true });
+  const clear = library.getByRole("button", { name: L.clearSearch, exact: true });
+  const previous = library.getByRole("button", { name: L.previousPage, exact: true });
+  const next = library.getByRole("button", { name: L.nextPage, exact: true });
+  const voice = (name) => library.getByRole("button", { name, exact: true });
+  const tab = (name) => library.getByRole("tab", { name, exact: true });
+  const cards = library.locator(".cw-voice-name");
+  const noMatches = library.getByText(L.noSearchMatches, { exact: true });
+  const first = voice("Alto 001");
+  const fromNextProviderPage = voice("Alto 150");
+  const last = voice("Alto 151");
+  const lateChinese = voice("世界最狂青年音");
+
+  await first.waitFor();
+  assert.equal(await lateChinese.count(), 0);
+  assert.equal(await previous.isDisabled(), true);
+  await next.click();
+  await lateChinese.waitFor();
+  assert.equal(await first.count(), 0);
+
+  const searchPageRequest = (url) =>
+    url.pathname === "/api/voices" &&
+    url.searchParams.get("modelConfigId") === searchCloud.id &&
+    url.searchParams.get("pageSize") === "100";
+  const cursors = [];
+  let releasePage;
+  const heldPage = new Promise((resolve) => { releasePage = resolve; });
+  const pending = library.getByRole("status").filter({ hasText: L.searchingMore });
+  await page.route(searchPageRequest, async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("after");
+    cursors.push(cursor);
+    if (cursor && cursors.length === 1) {
+      await heldPage;
+      return route.fulfill({
+        status: 502,
+        json: { code: "voice_provider_error", detail: "Fixture later page unavailable" },
+      });
+    }
+    return route.continue();
+  });
+  try {
+    await search.fill("  aLtO  ");
+    await pending.waitFor();
+    await until(() => cursors.length > 0);
+    assert.equal(cursors.length, 1);
+    const deferredCursor = cursors[0];
+    assert.ok(deferredCursor, "Search must reuse the loaded first provider page");
+    await first.waitFor();
+    assert.equal(await cards.count(), 149);
+    assert.equal(await fromNextProviderPage.count(), 0);
+    assert.equal(await pending.isVisible(), true);
+
+    await search.fill("青年");
+    await first.waitFor({ state: "hidden" });
+    assert.equal(await pending.isVisible(), true);
+    assert.equal(await noMatches.count(), 0, "The later page may contain a match");
+    await search.fill("  aLtO  ");
+    await first.waitFor();
+    releasePage();
+
+    const alert = library.getByRole("alert");
+    await alert.waitFor();
+    assert.equal(await first.isVisible(), true, "The first page stays visible after a later error");
+    assert.equal(await noMatches.count(), 0);
+    await library.getByRole("button", { name: L.retry, exact: true }).click();
+    await fromNextProviderPage.waitFor();
+    await pending.waitFor({ state: "hidden" });
+    await alert.waitFor({ state: "hidden" });
+    assert.deepEqual(cursors, [deferredCursor, deferredCursor]);
+  } finally {
+    releasePage();
+    await page.unroute(searchPageRequest);
+  }
+  // One unmatching voice on provider page one makes Alto 150 appear on the
+  // first results page only when matching precedes pagination.
+  assert.equal(await cards.count(), 150);
+  assert.equal(await fromNextProviderPage.count(), 1);
+  assert.equal(await voice("Unrelated voice").count(), 0);
+  assert.equal(await previous.isDisabled(), true);
+  await next.click();
+  await last.waitFor();
+  assert.deepEqual(await cards.allTextContents(), ["Alto 151"]);
+  assert.equal(await next.isDisabled(), true);
+
+  await search.fill("alto 0");
+  await first.waitFor();
+  assert.equal(await cards.count(), 99);
+  assert.equal(await previous.count(), 0);
+  assert.equal(await next.count(), 0);
+  await search.fill("aLtO");
+  await next.click();
+  await last.waitFor();
+  const lastRow = library.locator(".cw-voice-entry").filter({
+    has: page.getByRole("button", { name: "Alto 151", exact: true }),
+  });
+  const favorite = lastRow.locator(".cw-voice-favorite");
+  assert.equal(await favorite.getAttribute("aria-pressed"), "false");
+  await lastRow.hover();
+  await favorite.click();
+  await tab(L.favorites).click();
+  assert.equal(await search.inputValue(), "aLtO");
+  assert.deepEqual(await cards.allTextContents(), ["Alto 151"]);
+  assert.equal(await previous.count(), 0);
+  await tab(L.all).click();
+  await clear.click();
+  assert.equal(await search.inputValue(), "");
+  // This voice is excluded by the query and only lives on the first provider
+  // page. Its return proves that browsing has moved back to page one.
+  await voice("Unrelated voice").waitFor();
+  assert.equal(await previous.isDisabled(), true);
+  assert.equal(await next.isEnabled(), true);
+  assert.equal(await last.count(), 0);
+
+  const expectFavoriteWithoutSearch = async () => {
+    await tab(L.favorites).click();
+    assert.equal(await search.inputValue(), "");
+    await last.waitFor();
+    assert.deepEqual(await cards.allTextContents(), ["Alto 151"]);
+    assert.equal(await favorite.getAttribute("aria-pressed"), "true");
+  };
+  const closeLibrary = async () => {
+    await page.keyboard.press("Escape");
+    await library.waitFor({ state: "hidden" });
+  };
+  await expectFavoriteWithoutSearch();
+  await closeLibrary();
+
+  let laterRequests = 0;
+  const countLaterRequests = (request) => {
+    const { pathname, searchParams } = new URL(request.url());
+    if (
+      pathname === "/api/voices" &&
+      searchParams.get("modelConfigId") === searchCloud.id &&
+      searchParams.has("after")
+    ) {
+      laterRequests += 1;
+    }
+  };
+  page.on("request", countLaterRequests);
+  try {
+    await open();
+    await expectFavoriteWithoutSearch();
+    assert.equal(laterRequests, 0, "The saved favorite needs no later provider page on reopen");
+    await closeLibrary();
+
+    const removedRecords = await page.evaluate(() => {
+      const recordKeys = Object.keys(localStorage).filter((key) =>
+        key.startsWith("opendirector.voiceFavoriteRecords.v1:") &&
+        localStorage.getItem(key)?.includes('"search-alto-151"'),
+      );
+      for (const key of recordKeys) localStorage.removeItem(key);
+      return recordKeys.length;
+    });
+    assert.equal(removedRecords, 1);
+    await open();
+    await expectFavoriteWithoutSearch();
+    assert.ok(laterRequests > 0, "A legacy favorite ID is resolved from its provider page");
+  } finally {
+    page.off("request", countLaterRequests);
+  }
+
+  await search.fill("青年");
+  await noMatches.waitFor();
+  await tab(L.all).click();
+  assert.equal(await search.inputValue(), "青年");
+  await lateChinese.waitFor();
+  assert.deepEqual(await cards.allTextContents(), ["青年", "世界最狂青年音"]);
+  await search.fill("search-younger");
+  await noMatches.waitFor();
+  await search.fill("青年");
+  await lateChinese.waitFor();
+  await library.getByRole("button", { name: L.previewSearchResult, exact: true }).click();
+  await library.getByRole("button", { name: L.stopSearchPreview, exact: true }).click();
+  await lateChinese.click();
+  assert.equal(await library.count(), 0);
+  await until(async () => (await params()).voiceSelection?.voiceId === "search-younger");
+}
+
 await mkdir(output, { recursive: true });
 const browser = await launchBrowser();
 const errors = [];
@@ -343,6 +542,19 @@ try {
         .waitFor();
       await assertSelectedVoice(null);
       assert.equal(await dialog().getByRole("tab").count(), 3);
+      const search = dialog().getByRole("searchbox", { name: L.search, exact: true });
+      const alice = dialog().getByRole("button", { name: "Alice", exact: true });
+      await search.fill("aLiCe");
+      await alice.waitFor();
+      assert.equal(await dialog().locator(".cw-voice-name").count(), 1);
+      await dialog().getByRole("tab", { name: L.mine, exact: true }).click();
+      await dialog().getByText(L.noSearchMatches, { exact: true }).waitFor();
+      assert.equal(await search.inputValue(), "aLiCe");
+      await dialog().getByRole("button", { name: L.clearSearch, exact: true }).click();
+      await dialog().getByRole("button", { name: "Sample voice", exact: true }).waitFor();
+      assert.equal(await alice.count(), 0);
+      await dialog().getByRole("tab", { name: L.all, exact: true }).click();
+      await alice.waitFor();
       assert.equal(
         await dialog()
           .locator(".cw-voice-grid")
@@ -788,15 +1000,13 @@ try {
       await dialog()
         .getByRole("tab", { name: L.favorites, exact: true })
         .click();
-      await previousPage.click();
-      await dialog().getByText(L.noPageMatches, { exact: true }).waitFor();
-      assert.equal(await uploaded.count(), 0);
+      await uploaded.waitFor();
+      assert.equal(await builtin.count(), 0);
+      await dialog().getByRole("tab", { name: L.all, exact: true }).click();
+      await builtin.waitFor();
+      assert.equal(await previousPage.isDisabled(), true);
       await nextPage.click();
       await uploaded.waitFor();
-      await dialog().getByRole("tab", { name: L.all, exact: true }).click();
-      await dialog()
-        .getByRole("button", { name: createdName, exact: true })
-        .waitFor();
       assert.equal(
         await dialog()
           .getByRole("button", { name: L.delete, exact: true })
@@ -935,6 +1145,7 @@ try {
         (await call("/api/creation-test-health")).calls.length,
         calls.length,
       );
+      await verifyPaginatedSearch({ dialog, L, open, page, params, selectModel });
 
       await page.getByRole("button", { name: L.settings, exact: true }).click();
       await page.getByRole("button", { name: L.models, exact: true }).click();

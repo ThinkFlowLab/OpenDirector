@@ -18,6 +18,9 @@ from opendirector.infrastructure.local_projects import LocalProjects, child
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.model_adapters import OpenAIImages, adapter_for, capabilities_of
 
+
+pytestmark = pytest.mark.cpu
+
 ZIMAGE = ('image', 'http://gpu:8210/v1', 'Tongyi-MAI/Z-Image-Turbo')
 H3 = ('video', 'http://gpu:8010/v1', 'MiniMaxAI/MiniMax-H3')
 TTS = ('audio', 'http://gpu:8220/v1', 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')

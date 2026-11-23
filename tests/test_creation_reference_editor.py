@@ -7,6 +7,9 @@ from opendirector.application.creation_canvas import resolved_inputs
 from opendirector.domain.creation.commands import parse_command
 
 
+pytestmark = pytest.mark.cpu
+
+
 def setup_reference(project):
     store, pid, session = project
     source, asset = text_material(project, title='Original')

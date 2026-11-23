@@ -220,7 +220,17 @@ class VoiceLibrary:
         while True:
             self._assert_current(config, capabilities)
             if capabilities['provider'] == 'moss':
-                records, cursor = self._moss_page(config, capabilities, limit, after)
+                try:
+                    records, cursor = self._moss_page(config, capabilities, limit, after)
+                except ProjectError as failure:
+                    if limit <= 50 or failure.status != 502 or failure.code != 'voice_provider_error':
+                        raise
+                    # Some account pages fail at a larger limit. Retry the same
+                    # cursor with less data and keep the smaller size thereafter.
+                    if monotonic() >= deadline:
+                        raise voice_error('voice_provider_timeout', 504) from None
+                    limit = 100 if limit > 100 else 50
+                    continue
             elif capabilities['provider'] == 'minimax':
                 records, cursor = self._minimax_page(config, capabilities)
             elif capabilities['provider'] == 'zhipu':

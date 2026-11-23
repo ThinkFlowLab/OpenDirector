@@ -1,3 +1,5 @@
+
+import pytest
 from types import SimpleNamespace
 
 from opendirector_api.localization import (
@@ -5,6 +7,9 @@ from opendirector_api.localization import (
     localized_error_for_language,
     wants_english,
 )
+
+
+pytestmark = pytest.mark.cpu
 
 
 def request(language: str):

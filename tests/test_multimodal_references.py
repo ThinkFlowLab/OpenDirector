@@ -27,6 +27,9 @@ from opendirector.integrations.reference_inputs import generation_references, re
 from opendirector.integrations.volcengine import VolcengineGeneration
 from opendirector_api.main import create_app
 
+
+pytestmark = pytest.mark.cpu
+
 BASE = 'https://ark.cn-beijing.volces.com/api/plan/v3'
 
 

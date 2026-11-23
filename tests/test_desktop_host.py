@@ -12,6 +12,9 @@ from opendirector_api.main import create_app
 from opendirector.infrastructure.local_projects import LocalProjects
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_desktop_auth_protects_api_and_static_without_changing_browser_mode(tmp_path):
     app = create_app(LocalProjects(tmp_path))
     app.add_middleware(DesktopAuthentication, token='a' * 64)

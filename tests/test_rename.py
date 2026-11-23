@@ -3,6 +3,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.rename import rename_path
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_native_rename_never_replaces_even_an_empty_destination(tmp_path):
     source, target = tmp_path / "source", tmp_path / "target"
     source.mkdir()

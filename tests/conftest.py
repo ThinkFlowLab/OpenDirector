@@ -7,7 +7,7 @@ explains why a case was skipped.
 import pytest
 import socket
 
-pytest_plugins = ['ci_profile']
+pytest_plugins = ['ci_hardware', 'ci_profile']
 
 from opendirector.wiring import configure_runtime
 

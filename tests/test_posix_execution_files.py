@@ -14,6 +14,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure import execution_files as files
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def posix_files(monkeypatch):
     actual = os

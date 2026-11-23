@@ -22,6 +22,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_cli_preserves_the_font_error_code_and_english_diagnostic(tmp_path, monkeypatch):
     api = TestClient(create_app(LocalProjects(tmp_path)))
     original_client = httpx.Client

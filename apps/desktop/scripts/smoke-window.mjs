@@ -14,6 +14,9 @@ export async function smokeWindow({ window, host, getLocale }) {
   })()`);
   if (result.health.status !== 'ok' || result.projects !== 200 || !result.isolated || !result.bridge) throw new Error('Desktop smoke failed');
   await waitFor(() => window.webContents.executeJavaScript('document.querySelectorAll("button").length > 2'), 'Workbench did not become interactive');
+  if (process.platform === 'win32' && await window.webContents.executeJavaScript('!localStorage.getItem("opendirector.modelSetup.v1")')) {
+    await checkWindowsWelcomeCaption(window);
+  }
   await window.webContents.executeJavaScript('document.querySelector(".cw-welcome-secondary")?.click()');
   await waitFor(() => window.webContents.executeJavaScript('!!document.querySelector(".react-flow") && !!document.querySelector(".cw-save-status i.saved")'), 'Canvas did not open');
   result.projectIds = await waitFor(() => window.webContents.executeJavaScript(`fetch('/api/creation/projects', {headers: {'X-OpenDirector-Request': '1'}})
@@ -318,6 +321,25 @@ async function droppedMediaState(window, projectId, fingerprints) {
     return { saved, nodes: canvasItems.map(item => item.kind), assets: assets.map(asset => asset.name),
       notice: document.querySelector('.cw-toast [role="status"]')?.textContent };
   })()`);
+}
+
+async function checkWindowsWelcomeCaption(window) {
+  const originalBounds = window.getBounds();
+  const [minWidth] = window.getMinimumSize();
+  try {
+    window.setSize(minWidth, originalBounds.height);
+    const bounds = await waitFor(() => window.webContents.executeJavaScript(`(() => {
+      const overlay = navigator.windowControlsOverlay;
+      const language = document.querySelector('dialog.cw-welcome[open] .cw-welcome-language');
+      if (innerWidth > ${minWidth} || !overlay?.visible || !language) return null;
+      return { captionBottom: overlay.getTitlebarAreaRect().bottom, languageTop: language.getBoundingClientRect().top };
+    })()`), 'Windows welcome or caption did not appear at minimum width');
+    if (bounds.languageTop < bounds.captionBottom) {
+      throw new Error(`Window controls overlap the welcome language selector: ${JSON.stringify(bounds)}`);
+    }
+  } finally {
+    window.setBounds(originalBounds);
+  }
 }
 
 async function checkWindowsCaption(window) {
