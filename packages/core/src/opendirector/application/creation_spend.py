@@ -3,7 +3,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from uuid import uuid4, uuid5
 
-from opendirector.domain.creation.spend import SpendCall, SpendPolicy, SpendRequest, call_totals, spend_decision, spend_summary
+from opendirector.domain.creation.index import object_index
+from opendirector.domain.creation.spend import SpendCall, SpendPolicy, SpendRequest, call_totals, cap_adjustment, spend_decision, spend_math, spend_summary
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.creation.spend import SpendObservation, observed_call
@@ -13,8 +14,9 @@ from opendirector.domain.projects import ProjectError
 def quote_view(snapshot, quote):
     summary = spend_summary(snapshot)
     total = quote.total(summary['policy'].currency)
-    return dict(quote=quote, fingerprint=quote.fingerprint(), amount=total, subtotals=quote.subtotals(),
-        projectAfter=None if total is None or summary['unknown'] else summary['settled'] + summary['held'] + total,
+    with spend_math():
+        after = None if total is None or summary['unknown'] else summary['settled'] + summary['held'] + total
+    return dict(quote=quote, fingerprint=quote.fingerprint(), amount=total, subtotals=quote.subtotals(), projectAfter=after,
         currency=summary['policy'].currency, reason=spend_decision(summary, quote))
 
 
@@ -54,14 +56,28 @@ def review_status(snapshot, agent_run_id=None):
     summary = spend_summary(snapshot)
     policy = summary['policy']
     pending = []
-    for request in snapshot.spendRequests:
-        if request.status != 'pending':
-            continue
+    requests = [request for request in snapshot.spendRequests if request.status == 'pending']
+    objects = object_index(snapshot) if any(request.versions for request in requests) else {}
+    for request in requests:
         total = request.quote.total(policy.currency)
         reason = spend_decision(summary, request.quote)
-        pending.append(dict(request=request, fingerprint=request.quote.fingerprint(), reason='stale' if request.currency and request.currency != policy.currency else reason, amount=total, subtotals=request.quote.subtotals(),
-            shortfall=total-summary['available'] if reason == 'over_cap' else None))
+        if request.currency and request.currency != policy.currency:
+            reason = 'stale'
+        elif any(getattr(objects.get((v.objectType, v.id)), 'revision', None) != v.revision for v in request.versions):
+            reason = 'stale_inputs'
+        shortfall, suggested = cap_adjustment(policy.cap, summary['available'], total) if reason == 'over_cap' else (None, None)
+        pending.append(dict(request=request, fingerprint=request.quote.fingerprint(), reason=reason, amount=total,
+            subtotals=request.quote.subtotals(), shortfall=shortfall,
+            suggestedCap=suggested))
     result = dict(**summary, projectRevision=snapshot.project.revision, pending=pending, workflows=workflow_status(snapshot, agent_run_id))
+    settled_owners = {c.ownerId for c in snapshot.spendCalls if c.state == 'completed' and c.line.price is not None
+                      and c.line.price.currency == policy.currency and (c.reported is not None or c.calculated is not None)}
+    settled_jobs = [job for job in snapshot.jobs if job.id in settled_owners]
+    if (settled_jobs and len(settled_jobs) == len(settled_owners)
+            and len({job.batchId or job.id for job in settled_jobs}) == 1
+            and len({job.execution.kind for job in settled_jobs}) == 1
+            and all(job.status == 'succeeded' for job in settled_jobs)):
+        result['settledBatch'] = dict(kind=settled_jobs[0].execution.kind, count=len(settled_jobs))
     if agent_run_id is not None:
         owners = {j.id for j in snapshot.jobs if j.agentRunId == agent_run_id}
         calls = [call for call in snapshot.spendCalls if call.ownerId in owners]

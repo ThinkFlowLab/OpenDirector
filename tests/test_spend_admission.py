@@ -53,6 +53,43 @@ async def test_threshold_equality_unknown_cancellation_and_price_changes(project
 
 
 @pytest.mark.anyio
+async def test_changed_review_inputs_require_a_new_quote_but_still_allow_cancellation(project):
+    store, pid, session = project
+    configs = ModelConfigs(store.local.repository)
+    model = configs.save('image', 'http://fixture.invalid/v1', 'fixture', '', connection_type='self_hosted', auth_mode='none')
+    configs.set_price(model['id'], dict(rate='0.40', unit='request', currency='USD'))
+    runner = CreationGeneration(store, configs)
+    try:
+        await runner.execute(policy(store, pid, cap='0'), session=session)
+        first, second = command(project, model), command(project, model)
+        for draft in (first, second):
+            assert (await runner.execute(draft, session=session)).status == 'awaiting_confirmation'
+        before = store.snapshot(pid)
+        item = next(i for i in before.canvasItems if i.id == first.payload.originItemId)
+        missing = before.model_copy(update={'canvasItems': tuple(i for i in before.canvasItems if i.id != item.id)})
+        assert [p['reason'] for p in review_status(missing)['pending']] == ['stale_inputs', 'over_cap']
+        edit = send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', item)],
+                    itemId=item.id, title='Revised shot')
+        assert edit.status == 'applied'
+        entries = review_status(store.snapshot(pid))['pending']
+        assert [p['reason'] for p in entries] == ['stale_inputs', 'over_cap']
+        assert entries[0]['suggestedCap'] is None and entries[1]['suggestedCap'] == Decimal('0.40')
+        await runner.execute(policy(store, pid, currency='CNY', cap='0'), session=session)
+        assert [p['reason'] for p in review_status(store.snapshot(pid))['pending']] == ['stale', 'stale']
+        await runner.execute(policy(store, pid, currency='USD', cap='0'), session=session)
+        request = entries[0]['request']
+        cancel = parse_command(dict(type='spend.review', commandId=uuid4(), projectId=pid,
+            expectedVersions=[ver('spend_request', request)],
+            payload=dict(requestId=request.id, fingerprint=entries[0]['fingerprint'], decision='cancel')))
+        assert (await runner.execute(cancel, session=session)).status == 'applied'
+        final = store.snapshot(pid)
+        assert [r.status for r in final.spendRequests] == ['cancelled', 'pending']
+        assert not final.jobs and not final.spendCalls
+    finally:
+        await runner.close()
+
+
+@pytest.mark.anyio
 async def test_atomic_batch_approval_race_replay_and_cap_raise(project, tmp_path):
     store, pid, session = project
     configs = ModelConfigs(store.local.repository)
@@ -87,10 +124,12 @@ async def test_atomic_batch_approval_race_replay_and_cap_raise(project, tmp_path
         status = review_status(store.snapshot(pid))
         assert status['held'] == Decimal('1.20') and status['available'] == Decimal('0.80')
         assert len(status['pending']) == 1 and status['pending'][0]['shortfall'] == Decimal('0.40')
+        assert status['pending'][0]['suggestedCap'] == Decimal('2.40')
+        assert 'settledBatch' not in status
         request = status['pending'][0]['request']
         too_low = await runner.execute(review(pid, request, project_record=store.snapshot(pid).project, newCap='2.1'), session=session)
         assert too_low.status == 'rejected' and store.snapshot(pid).project.spendPolicy.cap == 2
-        raised = review(pid, request, project_record=store.snapshot(pid).project, newCap='2.4')
+        raised = review(pid, request, project_record=store.snapshot(pid).project, newCap=status['pending'][0]['suggestedCap'])
         accepted = await runner.execute(raised, session=session)
         assert accepted.status == 'accepted' and len(accepted.jobIds) == 3
         assert (await runner.execute(raised, session=session)).jobIds == accepted.jobIds
@@ -102,6 +141,7 @@ async def test_atomic_batch_approval_race_replay_and_cap_raise(project, tmp_path
         assert reopened.project.spendPolicy.cap == Decimal('2.4')
         assert review_status(reopened)['held'] == 0
         assert review_status(reopened)['settled'] == Decimal('2.40')
+        assert 'settledBatch' not in review_status(reopened)
         item = reopened.canvasItems[0]
         changed = send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', item)],
                        itemId=item.id, title='Archive check')

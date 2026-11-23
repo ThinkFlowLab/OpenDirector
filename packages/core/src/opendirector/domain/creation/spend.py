@@ -1,6 +1,6 @@
 """Service prices are decimal amounts in their original currency."""
 from datetime import datetime
-from decimal import Decimal, ROUND_CEILING
+from decimal import Decimal, ROUND_CEILING, localcontext
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -10,8 +10,21 @@ from .base import Contract, Digest, ObjectVersion, ProjectEntity, digest
 
 Currency = Literal['USD', 'CNY']
 Amount = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
-Money = Annotated[Decimal, Field(ge=0, max_digits=24, decimal_places=12, allow_inf_nan=False)]
+MONEY_DIGITS = 24
+MONEY_PLACES = 12
+Money = Annotated[Decimal, Field(ge=0, max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES, allow_inf_nan=False)]
 Unit = Literal['request', 'input_character', 'input_second', 'requested_second', 'output_second']
+
+
+def spend_math():
+    # Rate × quantity needs up to 48 digits. Another 24 carry digits cover
+    # every call in a project, including an eight-candidate batch.
+    return localcontext(prec=3 * MONEY_DIGITS)
+
+
+def service_charge(rate, quantity):
+    with spend_math():
+        return rate * quantity
 
 
 class ConnectionPrice(Contract):
@@ -46,11 +59,13 @@ class SpendQuote(Contract):
     def total(self, currency):
         if any(line.amount is None or (line.amount and line.price.currency != currency) for line in self.lines):
             return None
-        return sum((line.amount for line in self.lines), Decimal(0)) * self.count
+        with spend_math():
+            return sum((line.amount for line in self.lines), Decimal(0)) * self.count
 
     def subtotals(self):
         currencies = {line.price.currency for line in self.lines if line.price is not None and line.amount is not None}
-        return {c: sum((line.amount for line in self.lines if line.price and line.price.currency == c and line.amount is not None), Decimal(0)) * self.count for c in sorted(currencies)}
+        with spend_math():
+            return {c: sum((line.amount for line in self.lines if line.price and line.price.currency == c and line.amount is not None), Decimal(0)) * self.count for c in sorted(currencies)}
 
     def fingerprint(self):
         return digest(self)
@@ -132,7 +147,7 @@ def observed_call(call, observation):
             changes['reported'] = observation.reported
         if observation.unit == price.unit and observation.usage is not None:
             if call.usageSource != 'provider' or observation.evidence == 'provider':
-                changes.update(usage=observation.usage, usageSource=observation.evidence, calculated=price.rate * observation.usage)
+                changes.update(usage=observation.usage, usageSource=observation.evidence, calculated=service_charge(price.rate, observation.usage))
         elif call.calculated is None and call.line.quantityBasis == 'fixed' and price.unit != 'output_second' and call.line.quantity is not None:
             changes.update(usage=call.line.quantity, usageSource='execution', calculated=call.line.amount)
     edited = call.model_copy(update=changes)
@@ -141,14 +156,15 @@ def observed_call(call, observation):
 
 def call_totals(calls, currency):
     settled, held, missing = Decimal(0), Decimal(0), 0
-    for call in calls:
-        amount = call.accounted()
-        if amount is None or (amount and call.line.price.currency != currency):
-            missing += 1
-        elif call.state == 'completed' and (call.calculated is not None or call.reported is not None):
-            settled += amount
-        else:
-            held += amount
+    with spend_math():
+        for call in calls:
+            amount = call.accounted()
+            if amount is None or (amount and call.line.price.currency != currency):
+                missing += 1
+            elif call.state == 'completed' and (call.calculated is not None or call.reported is not None):
+                settled += amount
+            else:
+                held += amount
     return dict(settled=settled, held=held, unknown=missing)
 
 
@@ -156,8 +172,9 @@ def spend_summary(snapshot):
     policy = snapshot.project.spendPolicy or SpendPolicy()
     totals = call_totals(snapshot.spendCalls, policy.currency)
     owners = {call.ownerId for call in snapshot.spendCalls}
-    return dict(policy=policy, **totals,
-        available=None if policy.cap is None or totals['unknown'] else policy.cap - totals['settled'] - totals['held'],
+    with spend_math():
+        available = None if policy.cap is None or totals['unknown'] else policy.cap - totals['settled'] - totals['held']
+    return dict(policy=policy, **totals, available=available,
         legacy=sum(j.execution.kind != 'text' and j.id not in owners for j in snapshot.jobs),
         since=min((c.createdAt for c in snapshot.spendCalls), default=None))
 
@@ -181,6 +198,19 @@ def spend_decision(summary, quote):
     if policy.threshold is not None and amount > policy.threshold:
         return 'confirmation'
     return 'ready'
+
+
+def cap_adjustment(current_cap, available, amount):
+    """Return the shortfall and the smallest policy cap that covers this batch."""
+    with spend_math():
+        missing = amount - available
+        required = current_cap + missing
+        upper_bound = Decimal(10) ** (MONEY_DIGITS - MONEY_PLACES)
+        if required >= upper_bound:
+            return missing, None
+        if required.as_tuple().exponent < -MONEY_PLACES:
+            required = required.quantize(Decimal(1).scaleb(-MONEY_PLACES), rounding=ROUND_CEILING)
+        return missing, required if required < upper_bound else None
 
 
 # These synchronous retail prices cover every supported output specification
@@ -222,7 +252,7 @@ def price_line(config, operation, quantities, *, bounded=()):
         source = 'unknown'
     quantity = None if price is None else {'request': 1, **quantities}.get(price.unit)
     units = Decimal(str(quantity)) if quantity is not None else None
-    amount = None if price is None or units is None else price.rate * units
+    amount = None if price is None or units is None else service_charge(price.rate, units)
     if price is not None and price.rate == 0:
         amount = Decimal(0)
     return PriceLine(operation=operation, modelConfigId=config['id'], modelId=config['modelId'], providerUrl=config.get('url'),
