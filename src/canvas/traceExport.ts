@@ -47,17 +47,38 @@ const inline = (value: string): string =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/\s+/g, " ").replace(/[\\`*_{}\[\]()#+.!|]/g, "\\$&");
 
+/** Reads at most MAX_LOG_CHARS characters (plus one chunk) and cancels the stream once the limit is exceeded. */
+async function readBoundedText(response: Response): Promise<{ text: string; clipped: boolean }> {
+  if (!response.body) {
+    const text = await response.text();
+    return { text: text.slice(0, MAX_LOG_CHARS), clipped: text.length > MAX_LOG_CHARS };
+  }
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (text.length <= MAX_LOG_CHARS) {
+      const { done, value } = await reader.read();
+      if (done) { text += decoder.decode(); break; }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  if (text.length <= MAX_LOG_CHARS) return { text, clipped: false };
+  // Drop the cut-off last line so a partial record is never normalized.
+  const head = text.slice(0, MAX_LOG_CHARS);
+  return { text: head.slice(0, head.lastIndexOf("\n") + 1), clipped: true };
+}
+
 async function sourceReport(fetcher: typeof fetch, base: string, turn: ConversationTurn, source: string): Promise<SourceReport> {
   try {
     const response = await fetcher(base + "/traces/" + encodeURIComponent(turn.id) + "/" + encodeURIComponent(source),
       { headers: { "X-OpenDirector-Request": "1" } });
     if (response.status === 404) return { name: source, state: "missing", events: [], truncated: false };
     if (!response.ok) return { name: source, state: "unavailable", events: [], truncated: false };
-    const body = await response.text();
-    const normalized = normalizeTrace(source, body.slice(0, MAX_LOG_CHARS));
-    const summary = traceEventSummary(normalized);
-    return { name: source, state: "available", events: summary.events,
-      truncated: summary.truncated || body.length > MAX_LOG_CHARS };
+    const { text, clipped } = await readBoundedText(response);
+    const summary = traceEventSummary(normalizeTrace(source, text));
+    return { name: source, state: "available", events: summary.events, truncated: summary.truncated || clipped };
   } catch {
     return { name: source, state: "unavailable", events: [], truncated: false };
   }
