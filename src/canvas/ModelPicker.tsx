@@ -1,5 +1,5 @@
 import { ModelLogo } from "./ModelLogo";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { useT } from "../i18n/I18nProvider.tsx";
 
@@ -40,6 +40,7 @@ export function ModelPicker({
   fetchLabel?: string;
 }) {
   const t = useT();
+  const manualFieldId = useId();
   const [query, setQuery] = useState("");
   const [onlySelected, setOnlySelected] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -114,12 +115,12 @@ export function ModelPicker({
       </div>
       {manualOpen && (
         <div className="cw-model-manual">
-          <label htmlFor="manual-model-id">
+          <label htmlFor={manualFieldId}>
             {t("generation.picker.modelId")}
           </label>
           <div>
             <input
-              id="manual-model-id"
+              id={manualFieldId}
               autoFocus
               value={manualId}
               maxLength={200}
@@ -269,14 +270,17 @@ export function ModelPicker({
                   type="button"
                   className="cw-settings-button cw-settings-button-quiet cw-model-row-test"
                   disabled={disabled || !canFetch}
+                  aria-busy={results[id]?.status === "running" || undefined}
                   aria-label={t("generation.picker.testAria", { id })}
                   onClick={() => onTest(id)}
                 >
-                  {results[id]?.status === "running"
-                    ? t("generation.picker.testing")
-                    : results[id]?.status === "passed"
-                      ? results[id].message
-                      : t("generation.picker.test")}
+                  <span key={results[id]?.status ?? "idle"} className="cw-model-row-result">
+                    {results[id]?.status === "running"
+                      ? t("generation.picker.testing")
+                      : results[id]?.status === "passed"
+                        ? results[id].message
+                        : t("generation.picker.test")}
+                  </span>
                 </button>
               )}
               {selected.includes(id) && renderDetails?.(id)}

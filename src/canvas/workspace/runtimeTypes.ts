@@ -52,6 +52,7 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   readJobs: (signal?: AbortSignal) => Promise<GenerationJob[]>;
   recoverServiceTask: (job: GenerationJob) => Promise<void>;
   command: (value: CanvasCommand) => void;
+  commitCanvasCommand: (value: CanvasCommand, failureMessage: string) => Promise<void>;
   change: (fn: (document: CanvasDocument) => CanvasDocument) => void;
   begin: () => void;
   end: () => void;

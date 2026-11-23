@@ -78,6 +78,19 @@ Reply in the same language as the user's latest request. Keep project content, q
 identifiers and code unchanged. If a tool error is shown in another language, explain it in the user's language.
 '''
 
+SUGGESTED_REPLIES = (
+    'When there are useful next steps, finish the reply with 3 to 5 distinct suggestions the user '
+    'could send verbatim. Use single-line plain-text phrases in the language of the user, '
+    'with at most 80 characters per suggestion. '
+    'For example, offer ways to use an image after describing it or ways to develop a storyboard '
+    'after comparing directions. Let the context determine the count. If fewer than three useful '
+    'suggestions fit or you are reporting a fatal error, omit the suggestions. '
+    'Put the suggestions in their own top-level Markdown bullet list, after a prose paragraph '
+    'and a blank line. Use no inline formatting, links, checkboxes or extra commentary in the list. '
+    'After the list, leave a blank line and put the marker shown below on the final line, then end the reply.\n\n'
+    '[opendirector-replies]: #\n\n'
+)
+
 
 def tool_schema(name: str, description: str, parameters: dict) -> dict:
     assert description.strip(), f'Missing tool metadata: {name}'

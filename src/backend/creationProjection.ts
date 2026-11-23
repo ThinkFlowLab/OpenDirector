@@ -74,6 +74,7 @@ const presentationFields = [
   "height",
   "zIndex",
   "locked",
+  "color",
   "parentId",
 ] as const;
 const extension: Record<string, string> = {
@@ -94,6 +95,7 @@ export class CreationProjection {
   private importHandles = new Map<string, string>();
   private timelineImportSources = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
+  private pendingSpecIds = new Map<string, string>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
     this.client = client;
@@ -602,6 +604,7 @@ export class CreationProjection {
           width: item.width,
           height: item.height,
           locked: item.locked,
+          ...(item.color ? { color: item.color } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -934,8 +937,11 @@ export class CreationProjection {
     node: CanvasNode,
     current?: GenerationSpec,
   ): GenerationSpecInput {
+    const id = current?.id ?? this.pendingSpecIds.get(node.id) ?? crypto.randomUUID();
+    // Preserve the batch payload when an unacknowledged draft save is retried.
+    if (!current) this.pendingSpecIds.set(node.id, id);
     const common = {
-      id: current?.id ?? crypto.randomUUID(),
+      id,
       projectId: this.client.id,
       revision: current?.revision ?? 1,
       purpose: current?.purpose ?? "draft",
@@ -1594,6 +1600,7 @@ export class CreationProjection {
               height: node.height,
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
+              ...(node.color ? { color: node.color } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,
@@ -1613,6 +1620,7 @@ export class CreationProjection {
           height: node.height,
           zIndex: node.zIndex ?? 0,
           locked: node.locked ?? false,
+          color: node.color ?? "",
           parentId: node.parentId ?? null,
         };
         const oldPresentation = {
@@ -1621,6 +1629,7 @@ export class CreationProjection {
           height: old?.height,
           zIndex: old?.zIndex ?? 0,
           locked: old?.locked ?? false,
+          color: old?.color ?? "",
           parentId: old?.parentId ?? null,
         };
         const changedFields = presentationFields.filter(
@@ -2104,6 +2113,7 @@ export class CreationProjection {
     // Business acknowledgement cannot be undone by a view preference failure.
     this.basis = this.client.snapshot;
     this.baseline = document;
+    this.pendingSpecIds.clear();
     if (options.saveView === false) return operations.length > 0;
     await this.saveView(document);
     return operations.length > 0;

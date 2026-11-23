@@ -710,7 +710,11 @@ def query(ctx: typer.Context, kind: str,
 
 
 def read_file(path):
-    value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
+    if str(path) == "-":
+        source = sys.stdin.buffer.read().decode("utf-8-sig")
+    else:
+        source = path.read_text(encoding="utf-8-sig")
+    value = json.loads(source)
     if not isinstance(value, dict):
         raise ValueError("Expected a JSON object.")
     return value

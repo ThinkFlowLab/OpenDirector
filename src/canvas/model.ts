@@ -254,6 +254,8 @@ export interface CanvasNode {
   width: number;
   height: number;
   locked?: boolean;
+  /** Group background color (#rrggbb); absent means the default group style. */
+  color?: string;
   zIndex?: number;
   /** Child positions are relative to their parent's top-left corner. */
   parentId?: string;

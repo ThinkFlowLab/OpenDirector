@@ -1009,6 +1009,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -2443,6 +2457,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -2820,6 +2848,20 @@
             "default": null,
             "description": "Whether edits to this object are blocked.",
             "title": "Locked"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format, or '' for the default.",
+            "title": "Color"
           },
           "parentId": {
             "anyOf": [
@@ -4410,6 +4452,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -4700,6 +4756,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -5198,6 +5268,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -5879,6 +5963,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -6122,6 +6220,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -8017,6 +8129,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -11818,6 +11944,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -12215,6 +12355,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -12481,6 +12635,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -12853,6 +13021,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -13937,6 +14119,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -14469,6 +14665,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -16805,6 +17015,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -18282,6 +18506,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -18674,6 +18912,20 @@
             "default": null,
             "description": "Whether edits to this object are blocked.",
             "title": "Locked"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format, or '' for the default.",
+            "title": "Color"
           },
           "parentId": {
             "anyOf": [
@@ -20294,6 +20546,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -20602,6 +20868,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -21120,6 +21400,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -21833,6 +22127,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -22091,6 +22399,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -24078,6 +24400,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -27983,6 +28319,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -28399,6 +28749,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -28686,6 +29050,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -29082,6 +29460,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -30204,6 +30596,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -30758,6 +31164,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,

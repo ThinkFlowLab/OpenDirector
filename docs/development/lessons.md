@@ -35,6 +35,8 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 
 - **Color profile follow-up:** [PR #287's P3 review](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5870014881) found that a correct full-size PNG did not prove correct thumbnails: the library JPEG and the asset/history WebP used separate encoders that both omitted ICC. Check every displayed rendition and the actual embedded profile, not only dimensions or successful decoding. Preserve RGB profiles through resizing, but do not attach a non-RGB source profile after converting its channels to RGB. / **颜色配置补充：** 同一素材的全尺寸 PNG 正确，并不能证明素材库 JPEG 和资产／版本历史 WebP 正确。逐条检查显示路径的实际 ICC；缩放保留 RGB 配置，转换通道后不能继续附带非 RGB 源配置。
 
+- **Windows CLI follow-up:** In PR #323 validation, the Agent saved Unicode successfully, but PowerShell 5.1 shell readback failed when Python used the Windows code page. A saved-object comparison bypasses CLI stdout. Test write and readback in the actual Agent shell with Python UTF-8 mode disabled in the parent environment, and cover BOM-prefixed JSON files produced by PowerShell 5.1. / **Windows CLI 补充：** PR #323 验收中，Agent 正确保存了 Unicode，但 Python 使用 Windows 代码页时，PowerShell 5.1 中的读回失败。应在父进程关闭 Python UTF-8 模式，用真实 Agent Shell 验证写入和读回，并覆盖 PowerShell 5.1 生成的带 BOM JSON 文件。
+
 ## Baseline failures still need tracking
 
 - **Trigger:** A relevant test fails and comparison shows that it also fails on the baseline.

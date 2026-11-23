@@ -554,6 +554,8 @@ class CreationCanvas:
         elif kind == 'canvas.update':
             item = self._editable(data, payload.itemId, unlocking=value.get('locked') is False)
             item.update({key: val for key, val in value.items() if key != 'itemId' and (val is not None or key == 'parentId')})
+            if item.get('color') == '':
+                item.pop('color')
         elif kind == 'canvas.hide':
             self._editable(data, payload.itemId)['visible'] = False
         elif kind == 'canvas.materialize':

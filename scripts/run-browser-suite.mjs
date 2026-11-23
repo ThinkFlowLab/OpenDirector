@@ -26,6 +26,10 @@ const workflows = [
     name: "generation reference",
     script: "tests/browser/canvas_generation_reference.mjs",
   },
+  {
+    name: "tts reading references",
+    script: "tests/browser/tts_reading_references.mjs",
+  },
   { name: "minimax h3", script: "tests/browser/minimax_h3.mjs" },
   { name: "provider settings", script: "tests/browser/provider_settings.mjs" },
   { name: "capability discovery", script: "tests/browser/capability_discovery.mjs" },
@@ -69,6 +73,7 @@ const workflows = [
     args: ["--full-creation"],
     env: { PYTHON: "python" },
   },
+  { name: "first-run setup", script: "tests/browser/first_run.mjs" },
 ];
 
 const failures = [];

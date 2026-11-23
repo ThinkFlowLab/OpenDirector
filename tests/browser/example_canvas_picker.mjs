@@ -69,9 +69,11 @@ const browser = await chromium.launch({
 });
 try {
   const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
-  await page.addInitScript(() =>
-    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
-  );
+  await page.addInitScript(() => {
+    if (!new URLSearchParams(location.search).has("setup")) {
+      localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+    }
+  });
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -124,6 +126,58 @@ try {
   await page.getByRole("button", { name: "体验图片示例" }).click();
   await page.getByText(/服务器返回的是网页/).waitFor();
   assert.equal(await page.locator(".react-flow__node").count(), 0);
+
+  // 4. A single click in setup starts the video example on step two.
+  const videoPattern = "**/api/example-canvases/video-canvas/download";
+  const cancelledDownload = Promise.withResolvers();
+  let attempts = 0;
+  await page.route(videoPattern, async (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      await cancelledDownload.promise;
+      await route.abort().catch(() => {});
+      return;
+    }
+    await route.fulfill(served(attempts === 2 ? "text/html" : "application/octet-stream"));
+  });
+  await page.evaluate(() => localStorage.removeItem("opendirector.modelSetup.v1"));
+  await page.route("**/assistant/runtimes/default/status", (route) => route.fulfill({ json: {
+    id: "default", label: "Default", group: "default", modelSource: "settings",
+    modelOverride: false, available: true, status: "ready",
+  } }));
+  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?setup=welcome&from=example`);
+  const welcome = page.locator("dialog.cw-welcome");
+  await welcome.getByRole("button", { name: "开始设置", exact: true }).click();
+  await welcome.getByRole("button", { name: "配置语言模型", exact: true }).click();
+  await welcome.getByRole("button", { name: /^fixture-agent/ }).click();
+  const openSample = welcome.getByRole("button", { name: "打开示例画布", exact: true });
+  const videoTask = welcome.getByRole("checkbox", { name: "做一段视频" });
+  await videoTask.check();
+  const download = page.waitForRequest((request) => request.url().endsWith("/video-canvas/download"));
+  await openSample.click();
+  await download;
+  await welcome.getByRole("progressbar", { name: "下载进度" }).waitFor();
+  assert.equal(await dialog.count(), 0);
+  assert.match(await welcome.locator("[aria-current=step]").innerText(), /2\s*选择任务/);
+  await welcome.getByRole("button", { name: "取消下载", exact: true }).click();
+  cancelledDownload.resolve();
+  await welcome.getByRole("progressbar", { name: "下载进度" }).waitFor({ state: "hidden" });
+  assert.ok(await videoTask.isChecked());
+  await openSample.click();
+  await welcome.getByRole("alert").filter({ hasText: /服务器返回的是网页/ }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("opendirector.modelSetup.v1")), null);
+  assert.ok(await videoTask.isChecked());
+  assert.equal(new URL(page.url()).searchParams.get("setup"), "welcome");
+  await welcome.getByRole("button", { name: "重试", exact: true }).click();
+  await welcome.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
+  assert.equal(attempts, 3);
+  assert.equal(await dialog.count(), 0);
+  assert.equal(await page.evaluate(() => localStorage.getItem("opendirector.modelSetup.v1")), "dismissed");
+  assert.equal(page.url(), `${base}/?from=example`);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
+  assert.equal(await welcome.isVisible(), false);
 
   assert.deepEqual(errors, []);
 } finally {

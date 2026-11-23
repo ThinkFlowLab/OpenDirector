@@ -1,6 +1,6 @@
 import { DraftAvailabilityCheck } from "./DraftAvailabilityCheck";
 import { ProviderPicker } from "./ProviderPicker";
-import { useId, useState, type FormEvent } from "react";
+import { useId, useLayoutEffect, useState, type FormEvent, type Ref } from "react";
 import { errorMessage } from "../backend/api.ts";
 import {
   MODEL_KINDS,
@@ -25,6 +25,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { ModelPicker, type ModelTestResult } from "./ModelPicker";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/types";
+import { firstRunModelKind, type FirstRunCapability } from "./firstRunModels";
 
 export type SettingsModelKind = Exclude<ModelKind, "vision">;
 const PROTOCOLS: Record<
@@ -58,15 +59,25 @@ export function ModelServiceForm({
   kind,
   existing,
   catalog,
+  capability,
   onClose,
+  onSaved,
+  cancelButtonRef,
+  onLockChange,
 }: {
   kind: SettingsModelKind;
   existing?: ModelConfig;
   catalog: BackendModels;
+  capability?: FirstRunCapability;
   onClose: () => void;
+  onSaved?: (models: ModelConfig[]) => void;
+  cancelButtonRef?: Ref<HTMLButtonElement>;
+  onLockChange?: (capability: FirstRunCapability, locked: boolean) => void;
 }) {
   const t = useT();
   const connectionFieldId = useId();
+  const audioPreset = capability === "lyrics_to_music" ? "vllm-omni-music" : "vllm-omni-speech";
+  const initialProtocol = capability === "lyrics_to_music" ? "vllm_omni_music" : PROTOCOLS[kind][0][0];
   const [connection, setConnection] = useState(existing);
   const [presetId, setPresetId] = useState(
     existing
@@ -76,7 +87,7 @@ export function ModelServiceForm({
         : kind === "image"
           ? "vllm-omni-image"
           : kind === "audio"
-            ? "vllm-omni-speech"
+            ? audioPreset
             : "custom",
   );
   const [modelOptions, setModelOptions] = useState<
@@ -93,7 +104,7 @@ export function ModelServiceForm({
     protocol:
       existing && isSegmentationModel(existing)
         ? "vllm_omni_segmentation"
-        : (existing?.protocol ?? PROTOCOLS[kind][0][0]),
+        : (existing?.protocol ?? initialProtocol),
     authMode: existing?.authMode ?? "none",
     proxyMode: existing ? (existing.proxyMode ?? "system") : "direct",
     videoAdapter: existing?.videoAdapter ?? "auto",
@@ -124,6 +135,13 @@ export function ModelServiceForm({
   const [showKey, setShowKey] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(!existing);
   const locked = busy || discovering || testing;
+  useLayoutEffect(() => {
+    if (!capability) return;
+    onLockChange?.(capability, locked);
+    return () => onLockChange?.(capability, false);
+  }, [capability, locked, onLockChange]);
+  const continuesSetup = capability === "text_response" && Boolean(onSaved);
+  const selectedTestFailed = continuesSetup && selectedModels.some((id) => results[id]?.status === "failed");
   const segmentation = value.protocol === "vllm_omni_segmentation";
   const depth = value.protocol === "vllm_omni_depth";
   const score = value.protocol === "vllm_omni_score";
@@ -136,6 +154,8 @@ export function ModelServiceForm({
     value.url.trim() &&
     (value.authMode === "none" || value.apiKey.trim() || hasSavedKey),
   );
+  const canSave = canFetch && selectedModels.length > 0 && selectedModels.length <= 200 &&
+    !selectedTestFailed && !selectedModels.some((id) => modelErrors[id]);
   const update = (patch: Partial<ModelConfigInput>) => {
     setValue((current) => ({
       ...current,
@@ -148,18 +168,22 @@ export function ModelServiceForm({
           } as const)
         : {}),
     }));
-    if (
+    const connectionChanged =
       patch.url !== undefined ||
       patch.apiKey !== undefined ||
       patch.protocol !== undefined ||
       patch.connectionType !== undefined ||
-      patch.authMode !== undefined
-    ) {
+      patch.authMode !== undefined;
+    if (connectionChanged) {
       setModelIds(selectedModels);
       setLoaded(false);
       setDiscoveryError("");
-      setResults({});
     }
+    if (
+      connectionChanged ||
+      patch.proxyMode !== undefined ||
+      patch.capabilityAutoCheck !== undefined
+    ) setResults({});
     if (patch.protocol !== undefined && patch.protocol !== value.protocol) {
       setModelOptions(
         Object.fromEntries(
@@ -223,18 +247,13 @@ export function ModelServiceForm({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (
-      !selectedModels.length ||
-      locked ||
-      selectedModels.some((id) => modelErrors[id])
-    )
-      return;
+    if (locked || !canSave) return;
     setBusy(true);
     setError("");
     try {
       const { inputModalities, videoAdapter, videoCapabilities, ...shared } =
         value;
-      await catalog.saveMany(
+      const saved = await catalog.saveMany(
         shared,
         selectedModels,
         connection?.id,
@@ -242,7 +261,8 @@ export function ModelServiceForm({
           selectedModels.map((id) => [id, optionsFor(id)]),
         ),
       );
-      onClose();
+      if (onSaved) onSaved(saved);
+      else onClose();
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {
@@ -354,6 +374,7 @@ export function ModelServiceForm({
       <div className="cw-model-editor-scroll">
         <ProviderPicker
           kind={kind}
+          allowProtocol={capability ? (protocol) => firstRunModelKind({ kind, protocol }, capability) : undefined}
           value={presetId}
           disabled={locked}
           onChange={chooseProvider}
@@ -449,7 +470,7 @@ export function ModelServiceForm({
           disabled={locked}
         >
           <div className="cw-model-key-heading">
-            <label htmlFor="service-api-key">API Key</label>
+            <label htmlFor={`${connectionFieldId}-key`}>API Key</label>
             <label className="cw-model-no-auth">
               <input
                 type="checkbox"
@@ -465,7 +486,7 @@ export function ModelServiceForm({
           </div>
           <div className="cw-model-key-input">
             <input
-              id="service-api-key"
+              id={`${connectionFieldId}-key`}
               type={showKey ? "text" : "password"}
               disabled={value.authMode === "none"}
               required={value.authMode === "bearer" && !hasSavedKey}
@@ -555,9 +576,10 @@ export function ModelServiceForm({
         )}
       </div>
       <footer className="cw-model-editor-footer">
-        <div className="cw-model-save-status" role={error ? "alert" : "status"}>
+        <div className="cw-model-save-status" role={error || selectedTestFailed ? "alert" : "status"}>
           {error ||
             selectedModels.map((id) => modelErrors[id]).find(Boolean) ||
+            (selectedTestFailed ? t("firstRun.modelTestFailed") : "") ||
             (selectedModels.length > 200
               ? t("models.service.tooManyModels")
               : selectedModels.length
@@ -567,6 +589,7 @@ export function ModelServiceForm({
                 : t("models.service.selectAtLeastOne"))}
         </div>
         <button
+          ref={cancelButtonRef}
           className="cw-settings-button"
           type="button"
           disabled={locked}
@@ -577,15 +600,9 @@ export function ModelServiceForm({
         <button
           className="cw-settings-button cw-settings-button-primary"
           type="submit"
-          disabled={
-            locked ||
-            !canFetch ||
-            !selectedModels.length ||
-            selectedModels.length > 200 ||
-            selectedModels.some((id) => modelErrors[id])
-          }
+          disabled={locked || !canSave}
         >
-          {busy ? t("models.service.saving") : t("models.service.save")}
+          {t(busy ? "models.service.saving" : continuesSetup ? "models.service.saveAndContinue" : "models.service.save")}
         </button>
       </footer>
     </form>

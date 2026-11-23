@@ -121,6 +121,17 @@ export const canvasWorkspace = {
   "canvas.workspace.selection.duplicate": "复制副本",
   "canvas.workspace.selection.deleteSelected": "删除所选",
 
+  "canvas.workspace.group.noRunnableNodes": "分组内没有可运行的生成节点：需要先选好模型并填写提示词。",
+  "canvas.workspace.group.workflowStarted": {
+    one: "开始运行工作流，共 {count} 个节点。",
+    other: "开始运行工作流，共 {count} 个节点。",
+  },
+  "canvas.workspace.group.workflowDone": {
+    one: "工作流已完成，{count} 个节点全部生成成功。",
+    other: "工作流已完成，{count} 个节点全部生成成功。",
+  },
+  "canvas.workspace.group.workflowIncomplete": "工作流已结束：成功 {succeeded} 个，失败 {failed} 个，因上游失败或循环引用跳过 {skipped} 个。",
+
   "canvas.workspace.menu.rename": "重命名",
   "canvas.workspace.menu.addDownstream": "添加下游节点",
   "canvas.workspace.menu.copy": "复制",
