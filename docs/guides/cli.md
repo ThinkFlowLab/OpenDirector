@@ -42,6 +42,46 @@ CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其�
 Agent 的 Shell 通过 PATH 使用同一个 `opendirector`。宿主提供受令牌保护的本轮连接、工程范围、编辑会话和执行目录，文件登记限制在本轮执行目录。每次调用产生业务活动及回执，供聊天与轨迹页展示。
 
 
+## H3 专业分镜提示词编排、连续性审计、多帧质检与单镜头局部修订
+
+`opendirector video` 支持首帧（`--first-frame`）、尾帧（`--last-frame`）、首尾帧插值（同时传 `--first-frame` 与 `--last-frame`）、多模态参考（`--reference-item`）与续写模式（`--continue-from`），并提供 H3 分镜计划校验、结构化提示词编译/标签校验、工程级跨镜头连续性审计（`storyboard.audit`）、视频多帧拼图预览与客观测量质检（`measuredFacts`），以及不破坏相邻轨道与字幕的时间线单镜头局部替换：
+
+```bash
+# 校验多镜头景别与运镜多样性（防止同质化）及 4—15 秒时长约束
+opendirector video lint-shot-plan --file ./shot-plan.json
+
+# 编译并校验符合 MiniMax-H3 规范的 T2VA / I2VA / FL2VA / L2VA / Ref2VA 英文提示词
+opendirector video compile-h3-prompt --file ./shot-01-spec.json
+
+# 创建首尾帧（FL2VA）或续写视频节点，并结合工程实际参考顺序校验 <Picture N>/<Video N>/<Audio N> 序号
+opendirector --project PROJECT_UUID video create \
+  --model MiniMax-H3 --prompt "..." --duration 6 --x 480 --y 0 \
+  --first-frame START_ITEM_UUID --last-frame END_ITEM_UUID --title "Shot 01"
+opendirector --project PROJECT_UUID video lint-h3-prompt --spec-id SPEC_UUID
+
+# 审计当前工程跨镜头角色锚点（Subject）、上游关键帧就绪度与试拍门控预算
+opendirector --project PROJECT_UUID video audit-storyboard --timeline-editor TIMELINE_EDITOR_UUID
+
+# 按工程视频 assetId 或执行目录文件做带时间戳十二宫格审看与客观静帧/黑场测量（不污染工程素材库）
+opendirector --project PROJECT_UUID video inspect-shot --asset VIDEO_ASSET_UUID --contact-sheet ./shot-01-qc.jpg
+opendirector video inspect-shot ./shot-01.mp4 --contact-sheet ./shot-01-qc.jpg
+
+# 时间线单镜头局部重拍替换：可显式指定片段与素材，也可直接按已关联的上游画布节点同步最新采纳结果
+opendirector --project PROJECT_UUID video revise-shot \
+  --timeline-editor TIMELINE_EDITOR_UUID --source-item SHOT_2_ITEM_UUID
+```
+
+### H3 shot orchestration, continuity audit, multi-frame QC, and single-shot timeline revision
+
+`opendirector video` supports first-frame (`--first-frame`), last-frame (`--last-frame`), first-and-last keyframe (`FL2VA` with both options), reference (`--reference-item`), and continuation (`--continue-from`) creation, paired with H3 shot-plan diversity checks, structured prompt compilation/linting, live project continuity auditing (`storyboard.audit`), multi-frame contact-sheet QC (`measuredFacts`), and surgical single-clip timeline replacement:
+
+- `video lint-shot-plan` checks 4–15s H3 bounds, canonical framing/camera vocabulary, and consecutive `(shotSize, cameraMotion)` repetition before creating nodes.
+- `video compile-h3-prompt` builds canonical `T2VA`, `I2VA`, `FL2VA`, `L2VA`, or 6-section `Ref2VA` prompts; `video lint-h3-prompt --spec-id` verifies alignment headers, `[Shot N] At MM:SS.mmm` cut timestamps, and `<Picture N>` / `<Video N>` / `<Audio N>` ordinals against the node's live active references (including embedded video audio offsets).
+- `video audit-storyboard` (`query storyboard.audit`) inspects the live `ProjectSnapshot` to detect unanchored `T2VA` shots alongside `Subject` anchors, unrendered upstream keyframes, excessive continuation chains, unlinked timeline clips, and pilot-gate pending video duration.
+- `video inspect-shot` (and `query asset.preview` with `videoScope="contact_sheet"`) renders a timestamped JPEG contact sheet for a registered project video `assetId` or local file and reports deterministic `measuredFacts` (`suspectedFrozen`, `blackFrameIndices`, `matchesH3Grid`, `hasAudio`) separately from creative judgment.
+- `video revise-shot` replaces only the target clip's `AssetRef` inside a `timeline` `EditorDocument` (by `--clip-id`/`--asset` or automatically following `--source-item` via `inputConnections`) using its exact `expectedVersions`, preserving neighbor clips, audio tracks, fonts, and timed text overlays.
+
+
 ## 检查已有生成结果
 
 `job show` / `job wait` 在任务成功后返回 `delivery`：已登记的 AssetRef、当前采用状态及展示该素材的画布项。生成成功不等于质量验收；Agent 应检查现有素材。复制到执行目录做媒体探测、抽帧和审看不需要重新发布，也不应为同一次交付新增画布项。编辑产生的新交付文件才需要登记；独立副本展示应有用户要求。

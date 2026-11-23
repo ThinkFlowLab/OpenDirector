@@ -57,6 +57,9 @@ export interface AssetMetadataUpdateInput extends ContractInput {
 export interface AssetPreviewQueryInput extends QueryBaseInput {
   readonly type: "asset.preview";
   readonly objectId: string;
+  readonly videoScope?: "first_frame" | "contact_sheet";
+  readonly columns?: number;
+  readonly rows?: number;
 }
 
 export interface AssetProvenanceInput extends ContractInput {
@@ -435,7 +438,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
   readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput | StoryboardAuditQueryInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -1286,6 +1289,13 @@ export interface StageTransformInput extends ContractInput {
   readonly scale: Vector3Input;
 }
 
+export interface StoryboardAuditQueryInput extends QueryBaseInput {
+  readonly type: "storyboard.audit";
+  readonly timelineEditorId?: string | null;
+  readonly groupId?: string | null;
+  readonly specIds?: ReadonlyArray<string> | null;
+}
+
 export interface SubjectCanvasItemInput extends EditorCanvasItemInput {
   readonly kind: "subject";
 }
@@ -1706,6 +1716,9 @@ export interface AssetMetadataUpdate extends Contract {
 export interface AssetPreviewQuery extends QueryBase {
   readonly type: "asset.preview";
   readonly objectId: string;
+  readonly videoScope: "first_frame" | "contact_sheet";
+  readonly columns: number;
+  readonly rows: number;
 }
 
 export interface AssetProvenance extends Contract {
@@ -2084,7 +2097,7 @@ export interface CreationContracts extends Contract {
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
   readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
+  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery | StoryboardAuditQuery;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2932,6 +2945,13 @@ export interface StageTransform extends Contract {
   readonly position: Vector3;
   readonly rotation: Vector3;
   readonly scale: Vector3;
+}
+
+export interface StoryboardAuditQuery extends QueryBase {
+  readonly type: "storyboard.audit";
+  readonly timelineEditorId: string | null;
+  readonly groupId: string | null;
+  readonly specIds: ReadonlyArray<string> | null;
 }
 
 export interface SubjectCanvasItem extends EditorCanvasItem {

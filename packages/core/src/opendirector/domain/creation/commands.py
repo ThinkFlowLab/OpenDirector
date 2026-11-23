@@ -499,10 +499,36 @@ class CanvasStatusQuery(QueryBase):
 class AssetPreviewQuery(QueryBase):
     type: Literal['asset.preview'] = Field(description='Preview an asset; does not establish model observation.')
     objectId: UUID = Field(description='Asset ID.')
+    videoScope: Literal['first_frame', 'contact_sheet'] = Field(
+        default='first_frame',
+        description='Video preview mode: single first frame or multi-frame timestamped contact sheet.',
+    )
+    columns: int = Field(default=4, strict=True, ge=1, le=8, description='Contact-sheet grid columns for videoScope="contact_sheet".')
+    rows: int = Field(default=3, strict=True, ge=1, le=8, description='Contact-sheet grid rows for videoScope="contact_sheet".')
+
+
+class StoryboardAuditQuery(QueryBase):
+    type: Literal['storyboard.audit'] = Field(
+        description='Audit multi-shot continuity, H3 prompt/ordinal alignment, diversity, and pilot-gate readiness.'
+    )
+    timelineEditorId: UUID | None = Field(default=None, description='Optional timeline editor document ID to order and scope shots.')
+    groupId: UUID | None = Field(default=None, description='Optional canvas group item ID to scope shots.')
+    specIds: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=200, description='Optional explicit ordered video GenerationSpec IDs to audit.'
+    )
+
+    @model_validator(mode='after')
+    def scope_and_unique_specs(self):
+        if self.specIds is not None:
+            unique(self.specIds, 'audited video configuration IDs')
+        scopes = sum(value is not None for value in (self.timelineEditorId, self.groupId, self.specIds))
+        if scopes > 1:
+            raise ValueError('Choose at most one storyboard audit scope: timelineEditorId, groupId, or specIds')
+        return self
 
 
 Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
-                  CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
+                  CanvasStatusQuery | AssetPreviewQuery | StoryboardAuditQuery, Field(discriminator='type')]
 
 
 class ChangedObject(Contract):

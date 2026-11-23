@@ -246,7 +246,16 @@ class CreationAssets:
             stream.close()
             raise
 
-    def preview(self, project_id: UUID, asset_id: UUID, target: Path) -> dict:
+    def preview(
+        self,
+        project_id: UUID,
+        asset_id: UUID,
+        target: Path,
+        *,
+        video_scope: str = 'first_frame',
+        columns: int = 4,
+        rows: int = 3,
+    ) -> dict:
         stream, asset = self.open_media(project_id, asset_id)
         with stream:
             target = gateway().directory(target)
@@ -259,6 +268,40 @@ class CreationAssets:
                 content, _ = self.thumbnail(project_id, asset_id)
                 output, mime = gateway().child(target, stem + '.webp'), 'image/webp'
                 output.write_bytes(content)
+            elif asset.kind == 'video' and video_scope == 'contact_sheet':
+                from opendirector.media.shot_inspection import inspect_video_shot
+
+                output = gateway().child(target, f'{stem}-sheet-{columns}x{rows}.jpg')
+                mime = 'image/jpeg'
+                try:
+                    with TemporaryDirectory(prefix='source-', dir=target) as temporary:
+                        source = Path(temporary) / 'media.mp4'
+                        with source.open('wb') as destination:
+                            shutil.copyfileobj(stream, destination, length=1024 * 1024)
+                        inspected = inspect_video_shot(
+                            source,
+                            contact_sheet_path=output,
+                            columns=columns,
+                            rows=rows,
+                            overwrite_cache=True,
+                        )
+                except (OSError, subprocess.SubprocessError, ProjectError) as error:
+                    raise ProjectError('无法生成素材预览。', 422) from error
+                sheet_info = inspected['contactSheet'] or {}
+                return {
+                    'assetId': str(asset.id),
+                    'kind': asset.kind,
+                    'metadata': asset.metadata.model_dump(mode='json'),
+                    'preview': {
+                        'path': str(output.resolve()),
+                        'mimeType': mime,
+                        'scope': 'contact_sheet',
+                        'columns': columns,
+                        'rows': rows,
+                        'timestamps': sheet_info.get('timestamps', []),
+                    },
+                    'measuredFacts': inspected['measuredFacts'],
+                }
             elif asset.kind in {'video', 'audio'}:
                 output = gateway().child(target, stem + ('.jpg' if asset.kind == 'video' else '.wav'))
                 command = ['ffmpeg', '-nostdin', '-v', 'error', '-y']
