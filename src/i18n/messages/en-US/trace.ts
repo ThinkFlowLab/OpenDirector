@@ -40,11 +40,12 @@ export const trace = {
   "trace.turns.empty": "This conversation has no executed turns.",
   "trace.turn.number": "Turn {number}",
   "trace.turn.status.streaming": "Running",
-  "trace.turn.status.complete": "Complete",
+  "trace.turn.status.complete": "Completed",
   "trace.turn.status.stopped": "Stopped",
   "trace.turn.status.interrupted": "Interrupted",
   "trace.loading": "Loading…",
   "trace.waiting": "Waiting for trace events…",
   "trace.notFound": "No trace of this type for this turn.",
-  "trace.loadFailed": "Could not load trace."
+  "trace.loadFailed": "Could not load trace.",
+  "trace.turn.duration.unavailable": "Unavailable"
 } as const;

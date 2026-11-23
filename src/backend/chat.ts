@@ -78,6 +78,9 @@ export interface ChatMessage {
   runtimeModel?: string | null;
   thinking?: Thinking;
   source?: "preview" | "model";
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
 }
 
 export type Thinking = "auto" | "low" | "medium" | "high";

@@ -10,6 +10,7 @@ import { activityProgress, replySections, toolLabel } from "./assistantActivity.
 import { assistantToolText } from "./assistantToolText.ts";
 import { assistantCitationFormatter } from "./assistantCitations.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { turnTimingLabel } from "./turnTiming.ts";
 import { hidePartialSuggestionMarker, parseSuggestedReplies } from "./suggestedReplies.ts";
 
 const STATUS: Record<ChatTool["status"], MessageKey> = {
@@ -131,6 +132,7 @@ export const AssistantReply = memo(function AssistantReply({
         {formatText(text)}
       </Streamdown>
     );
+  const timing = turnTimingLabel(message, t);
   const sections = useMemo(() => replySections(message), [message]);
   const lastPart = sections.reply.at(-1) ?? sections.activity.at(-1);
   const tail = lastPart?.type === "text" && lastPart.id === "tail" ? lastPart.text : "";
@@ -179,6 +181,7 @@ export const AssistantReply = memo(function AssistantReply({
           {activityProgress(message, thinking, t)}
         </div>
       )}
+      {timing && <small className="cw-assistant-message-status cw-assistant-turn-timing">{timing}</small>}
       {!message.text &&
         !message.tools?.length &&
         message.status !== "streaming" && (
