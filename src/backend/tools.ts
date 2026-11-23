@@ -7,6 +7,7 @@ import type {
   ToolField,
   ToolParameters,
 } from "../canvas/toolCatalog.ts";
+import { dataUrlToBlob } from "../canvas/downloadAssets.ts";
 import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
 import { ApiError, errorMessage, json, request } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
@@ -243,6 +244,9 @@ export async function uploadAsset(
             : blob.type.startsWith("audio/")
               ? "audio"
               : "image",
+          undefined,
+          undefined,
+          signal,
         )
       ).assetId
     );
@@ -296,7 +300,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
         : value.maskDataUrl
           ? await uploadAsset(
               projectId,
-              await (await fetch(value.maskDataUrl, { signal })).blob(),
+              dataUrlToBlob(value.maskDataUrl),
               tNow("errors.tools.selectionAsset"),
               signal,
             )
@@ -304,7 +308,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
     const annotationAssetId = value.annotatedDataUrl
       ? await uploadAsset(
           projectId,
-          await (await fetch(value.annotatedDataUrl, { signal })).blob(),
+          dataUrlToBlob(value.annotatedDataUrl),
           tNow("errors.tools.annotationAsset"),
           signal,
         )

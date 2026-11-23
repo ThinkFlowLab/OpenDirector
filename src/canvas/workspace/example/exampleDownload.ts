@@ -134,7 +134,7 @@ async function readLimited(
   maxBytes: number,
   onProgress?: (received: number, total: number | null) => void,
 ): Promise<Uint8Array> {
-  const declared = Number(response.headers.get("content-length") ?? "");
+  const declared = Number(response.headers.get("X-OpenDirector-Archive-Bytes") ?? response.headers.get("content-length") ?? "");
   const total = Number.isFinite(declared) && declared > 0 ? declared : null;
   if (!response.body) {
     const buffer = await response.arrayBuffer();
@@ -184,12 +184,11 @@ export async function fetchExampleBytes(
   try {
     let response: Response;
     try {
-      response = await fetchImpl(entry.url, {
+      response = await fetchImpl(`/api/example-canvases/${encodeURIComponent(entry.id)}/download`, {
         method: "GET",
         mode: "cors",
-        // Never send cookies to a third-party origin; the hosted copy is public.
-        credentials: "omit",
-        redirect: "follow",
+        redirect: "error",
+        headers: { "X-OpenDirector-Request": "1" },
         // The link resolves to a short-lived CDN path; a cached body would rot.
         cache: "no-store",
         signal: deadline.signal,
@@ -199,7 +198,7 @@ export async function fetchExampleBytes(
     }
     if (!response.ok)
       throw new ExampleError("http", `status ${response.status}`, response.status);
-    const declared = Number(response.headers.get("content-length") ?? "");
+    const declared = Number(response.headers.get("X-OpenDirector-Archive-Bytes") ?? response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > maxBytes)
       throw new ExampleError("tooLarge");
     let bytes: Uint8Array;

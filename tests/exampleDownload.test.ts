@@ -135,7 +135,11 @@ function respond(
 test("the shipped shape downloads end to end", async () => {
   const outer = await wrappedArchive();
   const result = await fetchExampleCanvas(entry(), {
-    fetchImpl: (async () => respond(outer)()) as typeof fetch,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, `/api/example-canvases/${entry().id}/download`);
+      assert.equal(new Headers(options?.headers).get("X-OpenDirector-Request"), "1");
+      return respond(outer)();
+    },
   });
   assert.equal(result.kind, "zip-wrapper");
   assert.equal(result.innerEntry, "图像创作示例画布.canvas");
@@ -240,7 +244,7 @@ test("progress reports received bytes against the declared total", async () => {
   const response = {
     ok: true,
     status: 200,
-    headers: new Headers({ "content-length": String(bytes.byteLength) }),
+    headers: new Headers({ "X-OpenDirector-Archive-Bytes": String(bytes.byteLength) }),
     body: new Blob([bytes]).stream(),
   } as unknown as Response;
   const events: [number, number | null][] = [];

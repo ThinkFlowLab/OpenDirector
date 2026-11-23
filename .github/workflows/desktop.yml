@@ -1,0 +1,21 @@
+name: Desktop checks
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/api/src/opendirector_api/desktop.py'
+      - 'tests/test_desktop_host.py'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts --prefix apps/desktop
+      - run: npm test --prefix apps/desktop

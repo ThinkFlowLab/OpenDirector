@@ -242,6 +242,28 @@ Start the isolated API with both `--http-generation-fixture --assistant-fixture`
 
 The image browser workflow covers pinned, followed and mixed references. With an exact two-image requirement, one and three images are rejected with no new jobs or generation requests; accepted pairs are checked against uploaded bytes, order and persisted asset IDs. Reopening retains the references, model, prompt and results. Frontend tests also check that a pin and a followed reference to the same asset are counted only once.
 
+## Agent 原生视觉读取 / Agent native visual inspection
+
+发布检查使用真实 Bundled、OpenCode、Codex、Claude Code、JiuwenSwarm 和 DeepSeek Harness CLI 以及本地模型夹具，检查原图和 FFmpeg 抽帧是否以正确顺序作为可解码图片到达模型。Bundled 还检查纯文本模型不会收到图片。CI 安装固定版本的外部 CLI，所需 CLI 缺失即失败。
+
+Release checks use the real Bundled, OpenCode, Codex, Claude Code, JiuwenSwarm and DeepSeek Harness CLIs with local model fixtures. They verify that decodable pixels from the still and FFmpeg frame reach the model in order. The Bundled check also verifies that a text-only model receives no pixels. CI installs pinned external CLI versions and fails if a required CLI is unavailable.
+
+```bash
+OPENDIRECTOR_HARNESS_CI=1 python -m pytest tests/test_agent_visual_gate.py::test_harness_native_visual_input
+```
+
+真实模型验收单独执行，使用隔离工程和合成素材。所选运行时的安装、认证或视觉能力不可用时，验收失败。
+
+Run the live model acceptance separately. It uses temporary projects and synthetic media and fails if a requested runtime's installation, authentication or visual input is unavailable.
+
+```bash
+OPENDIRECTOR_VISUAL_GATE=all python -m pytest tests/test_agent_visual_gate.py -k live_runtime_visual_input
+```
+
+可将 `all` 换成逗号分隔的运行时 ID。Bundled 从环境读取 `OPENDIRECTOR_VISUAL_GATE_URL`、`OPENDIRECTOR_VISUAL_GATE_MODEL` 和可选的 `OPENDIRECTOR_VISUAL_GATE_KEY`。其他运行时使用已配置的原生账户和模型，可用 `OPENDIRECTOR_VISUAL_GATE_<RUNTIME>_MODEL` 指定模型。JiuwenSwarm 的视觉模型可在原生 `model_client_config` 中声明 `supports_vision: true`。
+
+Replace `all` with comma-separated runtime IDs to select a subset. Bundled reads `OPENDIRECTOR_VISUAL_GATE_URL`, `OPENDIRECTOR_VISUAL_GATE_MODEL` and the optional `OPENDIRECTOR_VISUAL_GATE_KEY` from the environment. Other runtimes use their configured native accounts and models, with `OPENDIRECTOR_VISUAL_GATE_<RUNTIME>_MODEL` available as an override. JiuwenSwarm vision models can declare `supports_vision: true` in the native `model_client_config`.
+
 ## 按风险选择验证
 
 能力与提示修改还需检查实际页面和发送内容：共同失败原因只呈现一次，提示说明用户能够采取的操作，调研记录和测试配置不进入产品文案。分别查看中英文页面的正常、未知、过期、暂停和失败状态。按最终请求统计素材，确认超量输入零新增任务、零生成请求；默认参数与服务允许范围、工具来源与模型输入分别核对。
@@ -288,6 +310,10 @@ node tests/browser/context_menu_dismissal.mjs  # 右键菜单关闭
 node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件 AAC）
 node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选适配器的比例与尺寸
 ```
+
+历史版本预览回归（[#393](https://github.com/ThinkFlowLab/OpenDirector/issues/393)）沿用上述隔离服务：运行 `node tests/browser/node_versions.mjs`；设置 `HISTORY_PREVIEW_PROBE=delay` 会延迟目标缩略图一秒，完整旅程应通过。设置 `HISTORY_PREVIEW_PROBE=missing` 会注入缩略图 404，预期脚本失败并输出 `History preview unavailable`、目标资产 ID、HTTP 状态和媒体提示；它是故障诊断检查，不是成功旅程。清除变量后恢复正常运行。布局断言必须等待预期资产的图片加载成功，不能以提示词出现代替预览就绪。
+
+History preview regression ([#393](https://github.com/ThinkFlowLab/OpenDirector/issues/393)): run `node tests/browser/node_versions.mjs` against the isolated services above. `HISTORY_PREVIEW_PROBE=delay` delays the target thumbnail by one second; the complete journey must pass. `HISTORY_PREVIEW_PROBE=missing` injects a thumbnail 404; the script must fail with `History preview unavailable`, the target asset ID, HTTP status and media message. This is an expected-failure diagnostic probe. Unset the variable for the normal journey. Measure layout only after the expected asset's image has loaded successfully; prompt readiness does not establish media readiness.
 
 `mp4_export.mjs` 以 640x360 渲染：没有 GPU 的无头浏览器只在该尺寸暴露 H.264
 编码能力，1080p 导出仍需在桌面浏览器人工验收。

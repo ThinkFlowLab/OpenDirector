@@ -1,0 +1,212 @@
+name: Desktop release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example, v0.1.4)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+      - name: Check release version and architecture
+        run: |
+          version=$(node -p 'require("./apps/desktop/package.json").version')
+          if [[ "$GITHUB_REPOSITORY" == "ThinkFlowLab/OpenDirector" ]]; then
+            test "$RELEASE_TAG" = "v$version"
+          else
+            [[ "$RELEASE_TAG" = "v$version" || "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-desktop-test\.[0-9]+$ && "${RELEASE_TAG%-desktop-test.*}" = "v$version" ]]
+          fi
+          echo "DESKTOP_VERSION=$version" >> "$GITHUB_ENV"
+          test "$(uname -m)" = arm64
+      - name: Prepare build tools
+        run: |
+          brew install uv
+          media="$RUNNER_TEMP/desktop-media"
+          mkdir -p "$media"
+          for tool in ffmpeg ffprobe; do
+            curl --fail --silent --show-error --location --retry 3 \
+              "https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1/${tool}-darwin-arm64" \
+              --output "$media/$tool"
+            chmod +x "$media/$tool"
+            "$media/$tool" -version
+          done
+          echo "OPENDIRECTOR_FFMPEG_DIR=$media" >> "$GITHUB_ENV"
+      - name: Build desktop application
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm ci --prefix apps/desktop
+          npm run prepare:runtime --prefix apps/desktop
+          npm run pack --prefix apps/desktop
+          app="apps/desktop/build/mac-arm64/OpenDirector.app"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+      - name: Build and smoke-test DMG
+        run: |
+          staging="$RUNNER_TEMP/desktop-dmg"
+          mount="$RUNNER_TEMP/desktop-mount"
+          mkdir -p "$staging" "$mount" release-assets
+          ditto apps/desktop/build/mac-arm64/OpenDirector.app "$staging/OpenDirector.app"
+          ln -s /Applications "$staging/Applications"
+          dmg="OpenDirector-v${DESKTOP_VERSION}-mac-arm64-adhoc.dmg"
+          hdiutil create -volname OpenDirector -srcfolder "$staging" -format UDZO "release-assets/$dmg"
+          hdiutil attach "release-assets/$dmg" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          installed=$(mktemp -d "$RUNNER_TEMP/desktop-install.XXXXXX")/OpenDirector.app
+          ditto "$mount/OpenDirector.app" "$installed"
+          codesign --verify --deep --strict "$installed"
+          node apps/desktop/scripts/smoke.mjs "$installed/Contents/MacOS/OpenDirector"
+          codesign --verify --deep --strict "$installed"
+          cd release-assets
+          shasum -a 256 "$dmg" > "${dmg}.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-dmg
+          path: release-assets/
+          compression-level: 0
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+      - name: Check release version and architecture
+        run: |
+          $version = node -p 'require("./apps/desktop/package.json").version'
+          $tagPattern = '^v' + [regex]::Escape($version) + '$'
+          if ($env:GITHUB_REPOSITORY -ne 'ThinkFlowLab/OpenDirector') {
+            $tagPattern = '^v' + [regex]::Escape($version) + '(-desktop-test\.[0-9]+)?$'
+          }
+          if ($env:RELEASE_TAG -cnotmatch $tagPattern -or (node -p process.arch) -ne 'x64') {
+            throw 'Expected a matching release tag and Windows x64'
+          }
+          "DESKTOP_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Prepare build tools
+        run: |
+          choco install uv --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          $media = Join-Path $env:RUNNER_TEMP 'desktop-media'
+          New-Item -ItemType Directory -Path $media | Out-Null
+          foreach ($tool in 'ffmpeg', 'ffprobe') {
+            curl.exe --fail --silent --show-error --location --retry 3 `
+              "https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1/${tool}-win32-x64" `
+              --output (Join-Path $media "$tool.exe")
+            if ($LASTEXITCODE -ne 0) { throw "Failed to download $tool" }
+          }
+          "OPENDIRECTOR_FFMPEG_DIR=$media" >> $env:GITHUB_ENV
+      - name: Build Windows installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm ci --prefix apps/desktop
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop dependency installation failed' }
+          npm run prepare:runtime --prefix apps/desktop
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime preparation failed' }
+          npm run pack:windows --prefix apps/desktop
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+      - name: Smoke-test installed application
+        run: |
+          $name = "OpenDirector-v$env:DESKTOP_VERSION-win-x64-unsigned.exe"
+          $installer = Get-Item "apps/desktop/build/$name"
+          $install = Join-Path $env:RUNNER_TEMP 'OpenDirector'
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList "/S /D=$install" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          node apps/desktop/scripts/smoke.mjs (Join-Path $install 'OpenDirector.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application smoke test failed' }
+          $uninstaller = Get-Item (Join-Path $install 'Uninstall OpenDirector.exe')
+          $removal = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($removal.ExitCode -ne 0 -or (Test-Path (Join-Path $install 'OpenDirector.exe'))) {
+            throw 'Uninstall failed'
+          }
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          Copy-Item $installer.FullName release-assets
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path (Get-Location) "release-assets/$name.sha256"), "$hash  $name`n")
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-windows
+          path: release-assets/
+          compression-level: 0
+          if-no-files-found: error
+
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Find or create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          draft=$(gh api --paginate "repos/$GH_REPO/releases" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .draft")
+          case "$draft" in
+            true) ;;
+            '') gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes ;;
+            *) echo "::error::Release $RELEASE_TAG is already published"; exit 1 ;;
+          esac
+
+  release-macos:
+    needs: [prepare-release, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: desktop-dmg
+          path: release-assets
+      - name: Attach verified installer to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
+
+  release-windows:
+    needs: [prepare-release, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: desktop-windows
+          path: release-assets
+      - name: Attach verified installer to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber

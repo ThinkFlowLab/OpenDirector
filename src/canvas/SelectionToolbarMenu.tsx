@@ -80,7 +80,7 @@ export function SelectionToolbarMenu({
     place();
     const items = panel.querySelectorAll<HTMLElement>(
       role === "menu"
-        ? '[role="menuitem"]:not(:disabled)'
+        ? '[role="menuitem"]:not(:disabled),[role="menuitemradio"]:not(:disabled)'
         : 'input:not(:disabled),button:not(:disabled):not([tabindex="-1"])',
     );
     (items[initialFocus === "last" ? items.length - 1 : 0] ?? panel).focus({
@@ -146,7 +146,7 @@ export function SelectionToolbarMenu({
         event.preventDefault();
         const items = [
           ...(root.current?.querySelectorAll<HTMLButtonElement>(
-            '[role="menuitem"]:not(:disabled)',
+            '[role="menuitem"]:not(:disabled),[role="menuitemradio"]:not(:disabled)',
           ) ?? []),
         ];
         if (!items.length) return;

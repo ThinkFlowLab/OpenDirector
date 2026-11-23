@@ -11,12 +11,12 @@
 # measurement missing from a sample that otherwise parsed.
 # Matrix and policy are documented in docs/development/validation.md.
 #
-# Schedule: 0 18 * * * UTC = 02:00 Asia/Shanghai next day.
+# Schedule: 53 17 * * * UTC = 01:53 Asia/Shanghai next day. Avoid o'clocks due to high volume
 name: Nightly checks
 
 on:
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '53 17 * * *'
   workflow_dispatch:
 
 permissions:

@@ -14,6 +14,7 @@ from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
+    "desktop_auth_required": "The desktop connection has expired. Reopen the application.",
     'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
     'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
     'bigmodel_video_output': 'Choose a supported CogVideoX-3 pixel size and a 5- or 10-second duration. The size determines the aspect ratio.',

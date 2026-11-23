@@ -130,6 +130,7 @@ const icons: Record<string, ReactNode> = {
       <path d="M22 21H7M5 11l9 9" />
     </>
   ),
+  newProject: <><path d="M20 11a8 8 0 0 1-8 8H4v-8a8 8 0 1 1 16 0Z" /><path d="M12 7v8M8 11h8" /></>,
   close: <path d="m6 6 12 12M6 18 18 6" />,
   check: <path d="m5 12 4 4L19 6" />,
   pencil: (

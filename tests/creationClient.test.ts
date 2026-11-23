@@ -1492,3 +1492,64 @@ test("a no-op save skips command batches and unchanged view writes", async () =>
     globalThis.fetch = original;
   }
 });
+
+test("cancelling a staged Blob upload deletes the handle before registering an asset", async () => {
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const signal = new AbortController();
+  const handle = crypto.randomUUID();
+  const path = `/api/creation/projects/${snapshot.project.id}/uploads/${handle}`;
+  const calls: [string, string][] = [];
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const method = options?.method ?? "GET";
+    calls.push([String(url), method]);
+    if (method === "PUT") {
+      assert.equal(options?.signal, signal.signal);
+      signal.abort();
+    } else {
+      assert.equal(options?.signal?.aborted ?? false, false);
+    }
+    return Response.json({});
+  };
+  try {
+    await assert.rejects(
+      client.importBlob(new Blob(["image"]), "image.png", "image", handle, undefined, signal.signal),
+      { name: "AbortError" },
+    );
+    assert.deepEqual(calls, [[path, "PUT"], [path, "DELETE"]]);
+  } finally {
+    globalThis.fetch = fetch;
+  }
+});
+
+test("canvas video and audio import upload the original File and use Host media metadata", async () => {
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  const projection = new CreationProjection(client);
+  const signal = new AbortController().signal;
+  for (const [kind, name, mimeType] of [
+    ["video", "Windows on SteamDeck！上手测试.mp4", "video/mp4"],
+    ["audio", "voice.wav", "audio/wav"],
+  ] as const) {
+    const file = new File(["original bytes"], name, { type: mimeType });
+    const asset = {
+      id: crypto.randomUUID(), kind, name, revision: 1, fingerprint: "original",
+      metadata: { mimeType, size: file.size, durationSeconds: 2 },
+    } as Asset;
+    client.install({ ...snapshot, assets: [asset] });
+    client.importBlob = async (body, filename, mediaKind, _handle, _origin, uploadSignal) => {
+      assert.equal(body, file);
+      assert.equal(filename, name);
+      assert.equal(mediaKind, kind);
+      assert.equal(uploadSignal, signal);
+      return assetReference(asset);
+    };
+    client.mediaUrl = async () => "blob:registered-media";
+    const resource = await projection.importFile(file, signal);
+    assert.equal(resource.assetId, asset.id);
+    assert.equal(resource.durationSeconds, 2);
+    assert.equal(resource.src, "blob:registered-media");
+  }
+});

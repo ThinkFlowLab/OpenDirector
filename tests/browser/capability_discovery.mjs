@@ -514,7 +514,13 @@ try {
   // Error observations last two seconds. Hold browser time so both screenshots
   // inspect the same response, without issuing another check on a locale change.
   await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  async function pauseCapabilityClock() {
+    // pauseAt advances a running clock. Leave room for command transport, then
+    // align the paused wall clock with the HTTP fixture before its next reply.
+    await page.clock.pauseAt(new Date(Date.now() + 60_000));
+    await page.clock.setSystemTime(new Date());
+  }
+  await pauseCapabilityClock();
   for (const [state, expected] of [
     [
       "stale",
@@ -593,6 +599,9 @@ try {
   await page.clock.setSystemTime(new Date());
   delay = 400;
   mode = "paused";
+  // Freeze before the response: advancing to pauseAt after receiving it would
+  // expire the very observation whose two language presentations we inspect.
+  await pauseCapabilityClock();
   await draft.getByRole("button", { name: "Retry", exact: true }).click();
   assert.equal(
     await draft.getByText("Checking…", { exact: true }).count(),
@@ -607,7 +616,6 @@ try {
     1,
   );
   // Clock control lets each language capture the same unexpired observation.
-  await page.clock.pauseAt(new Date());
   await presentInBothLanguages("paused", {
     "en-US": "Service paused",
     "zh-CN": "服务已暂停",

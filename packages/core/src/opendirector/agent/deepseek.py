@@ -59,7 +59,7 @@ class Client:
 
     async def initialize(self, work, servers, session_id=None):
         result = await self.request('initialize', {'protocolVersion': 1,
-            'clientInfo': {'name': 'opendirector', 'version': '0.1.4'}, 'clientCapabilities': {}})
+            'clientInfo': {'name': 'opendirector', 'version': '0.1.5'}, 'clientCapabilities': {}})
         if result['protocolVersion'] != 1:
             raise ProjectError('DeepSeek Harness 不支持 ACP v1，请更新 CLI。', 503)
         params = {'cwd': str(work), 'mcpServers': servers}
@@ -94,8 +94,12 @@ def arguments(private, skill_root=None):
     rows = [row for row in desktop_rows if row.get('id', '').startswith('llm-')
         and row['id'] not in overridden and 'config' in row]
     default = next((row['config'] for row in desktop_rows if row.get('id') == 'agent-default-model'), None)
-    if default and 'acp' not in overridden:
-        rows.append({'id': 'acp', 'config': {key: default[key] for key in ('provider', 'model')}})
+    if 'acp' not in overridden:
+        # The native ACP profile can still default to the retired text-only ID.
+        route = {key: default[key] for key in ('provider', 'model')} if default else {
+            'provider': 'deepseek-official', 'model': 'deepseek-flash',
+        }
+        rows.append({'id': 'acp', 'config': route})
     rows.append({'id': 'skill-filesystem', 'config': {'includeDefaultRoots': False,
         'customSkillDirs': [str(skill_root)] if skill_root else [], 'watch': False}})
     patch = private / 'deepseek.patch.json'

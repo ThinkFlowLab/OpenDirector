@@ -122,6 +122,8 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       !finite(raw.height) ||
       raw.height <= 0 ||
       (raw.locked !== undefined && typeof raw.locked !== "boolean") ||
+      (raw.color !== undefined &&
+        (typeof raw.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(raw.color))) ||
       (raw.zIndex !== undefined && !Number.isSafeInteger(raw.zIndex)) ||
       (raw.parentId !== undefined && !nonempty(raw.parentId))
     )
@@ -151,6 +153,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       height: raw.height,
       data: parsedData.value,
       ...(typeof raw.locked === "boolean" ? { locked: raw.locked } : {}),
+      ...(typeof raw.color === "string" ? { color: raw.color } : {}),
       ...(typeof raw.zIndex === "number" ? { zIndex: raw.zIndex } : {}),
       ...(typeof raw.parentId === "string" ? { parentId: raw.parentId } : {}),
     });

@@ -1,4 +1,4 @@
-import { creationClient } from "./creationClient.ts";
+import { creationClient, currentAsset } from "./creationClient.ts";
 import type { Asset, ProjectSnapshot } from "../contracts/generated.ts";
 import type { GenerationJob } from "../canvas/generationHistory.ts";
 import {
@@ -38,6 +38,14 @@ export function creationJobs(
           item.binding.role === "material" &&
           item.binding.objectRef.assetId === asset.id,
       );
+    const origin = snapshot.canvasItems.find((item) => item.id === job.originItemId);
+    const delivered =
+      job.status === "succeeded" &&
+      asset &&
+      origin &&
+      currentAsset(snapshot, origin)?.id === asset.id
+        ? asset.id
+        : undefined;
     const phase = generationPhase(job);
     const failureMessage = job.errorDetails
       ? generationFailureMessage(job.errorDetails)
@@ -65,6 +73,7 @@ export function creationJobs(
           }
         : undefined,
       activityPhase: phase ?? undefined,
+      ...(delivered ? { deliveredAssetId: delivered } : {}),
       preview:
         preview ??
         (asset ? { assetId: asset.id, state: "pending" } : undefined),

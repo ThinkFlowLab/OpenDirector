@@ -62,6 +62,11 @@ export interface GenerationJob {
     settings: GenerationSettings;
   };
   outputs?: ServiceResult[];
+  /**
+   * A succeeded generation's result asset once the service has made it the
+   * origin node's current content; the canvas may still be loading it.
+   */
+  deliveredAssetId?: string;
   /** Rebuildable unified history preview; independent of execution status. */
   preview?: { assetId: string; state: "pending" | "ready" | "unavailable" };
   /** The AI tool request behind a tool task, so a reopened canvas can follow it. */

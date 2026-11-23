@@ -29,6 +29,7 @@ from opendirector_api.creation import creation_routes
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
 from opendirector_api.voices import voice_routes
+from opendirector_api.examples import router as example_routes
 from opendirector_api.localization import localized_error
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
@@ -57,6 +58,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects, availability=availability)
     catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions(), availability)
 
+    active_agents = {}
+
     @asynccontextmanager
     async def lifespan(app):
         await creation_generation.start()
@@ -64,17 +67,26 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             await creation_tools.start()
             yield
         finally:
+            agents = [entry.task for entry in list(active_agents.values()) if entry.task is not None]
+            for agent in agents:
+                agent.cancel()
+            await asyncio.gather(*agents, return_exceptions=True)
             try:
                 await creation_tools.close()
             finally:
                 await creation_generation.close()
                 availability.probe.close()
 
-    app = FastAPI(title="OpenDirector Local API", version="0.1.4", lifespan=lifespan)
+    app = FastAPI(title="OpenDirector Local API", version="0.1.5", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
-    app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider))
+    app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider, active=active_agents))
     app.include_router(library_routes(creation_projects))
     app.include_router(voice_routes(creation_generation.voices))
+    app.include_router(example_routes)
+    app.state.desktop_activity = lambda: dict(
+        agents=len(active_agents), generations=sum(not job.future.done() for job in creation_generation.jobs.values()),
+        tools=sum(not job.done() for job in creation_tools.jobs.values()))
+
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):

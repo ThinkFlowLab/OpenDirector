@@ -69,6 +69,9 @@ try {
   await page.locator(`.react-flow__edge[data-id="timeline-pending:${pendingId}"]`).waitFor();
   assert.equal(await panel.locator('progress').count(), 0);
   await page.waitForTimeout(400);
+  // The injected pending node keeps its measured size, so the reference edge survives
+  // later canvas renders instead of vanishing once its first frame is painted.
+  await page.locator(`.react-flow__edge[data-id="timeline-pending:${pendingId}"]`).waitFor({ state: "visible", timeout: 5000 });
   await page.screenshot({ path: "/tmp/opendirector-timeline-pending.png" });
   releaseFirst();
   await page.unrouteAll({ behavior: "wait" });

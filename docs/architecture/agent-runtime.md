@@ -99,3 +99,9 @@ Windows 上的 Codex 启动显式设置 `windows.sandbox="elevated"`，避免隔
 On Windows, Codex explicitly sets `windows.sandbox="elevated"` so ignoring user configuration does not downgrade `workspace-write` to read-only and block Shell execution. Sandbox restrictions remain enabled. Discover the CLI with `Get-Command opendirector` in PowerShell or `command -v opendirector` in POSIX shells.
 
 CLI 通过环境变量中的本轮本地 Socket 地址连接业务网关，不使用连接令牌或凭据文件。网关继续校验工程范围、轮次生命周期及业务输入。
+
+## 对话轨迹页 / Conversation trace page
+
+轨迹页 `/?traceProject=…&conversation=…&turn=…` 在一页内按顺序列出一个对话的全部已执行轮次，每轮可独立展开，展开时才读取该轮日志与关联 Job。轮次索引来自只读接口 `GET .../assistant/conversations/{conversation_id}/trace`，它解析当前对话、已归档对话和 `reusedCreateIds` 别名，只返回轮次元数据（序号、用户输入摘要、运行时、状态），不读取日志正文，不激活对话，不获取编辑租约。轮次由持久化的身份关系确定：用户消息与 id 为 `uuid5(用户消息 id, 'assistant')` 的助手消息成对才算已执行的一轮；没有该助手记录的用户消息（例如排队中、未执行）不出现。每轮使用自己记录的运行时选择日志源和解析器，仅 Default（opencode）显示模型原始请求。`GET .../traces/{turn_id}/conversation` 供旧的单轮链接查找所属对话；找不到时保持原单轮页面。
+
+English summary: the trace page lists every executed turn of a conversation, expanded one at a time, and reads a turn's logs and linked Jobs only when it is opened. The turn index comes from the read-only `GET .../assistant/conversations/{conversation_id}/trace`, which resolves current, archived and aliased (`reusedCreateIds`) conversation ids and returns metadata only (number, input summary, runtime, status). It never reads log bodies, activates a conversation or takes a lease. A turn is a user message paired with the assistant message whose id is `uuid5(user id, 'assistant')`, so queued or never executed user messages are not listed. Each turn uses its own recorded runtime for the log source and parser, and raw model requests are offered for the Default (opencode) runtime only. `GET .../traces/{turn_id}/conversation` lets old single-turn links find their conversation; when none is found the single-turn page remains.

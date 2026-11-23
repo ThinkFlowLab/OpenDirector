@@ -152,7 +152,7 @@ class Conversations:
                 value['messages'].append(begin)
                 value['messages'].append({'id': str(uuid5(UUID(begin['id']), 'assistant')),
                     'role': 'assistant', 'text': '', 'status': 'streaming',
-                    **{key: begin[key] for key in ('model', 'runtime') if key in begin}})
+                    **{key: begin[key] for key in ('model', 'modelIsCliDefault', 'runtime') if key in begin}})
                 value.update(draft='', draftContent=None, assets=[], skills=[])
                 changed = True
             if finish is not None:
@@ -241,23 +241,6 @@ class Conversations:
             durable_json(file, value)
         return cancelled
 
-    def conversation_of(self, project_id: UUID, message_id: UUID) -> UUID | None:
-        """Find the conversation a message belongs to.
-
-        A viewer that lost the connection keeps the turn it saw last. Once the
-        chain has moved on, that turn is over, but the conversation it belongs to
-        is still the one being written into, and that is how the stream can be
-        found again.
-        """
-        directory = self.path(project_id)
-        file = child(child(directory, 'agent-runs'), 'conversation.json')
-        with self.projects.local.transaction():
-            current = read_json(file) if file.exists() else {'messages': []}
-        for item in [current, *(current.get('archivedConversations') or [])]:
-            if any(message.get('id') == str(message_id) for message in item.get('messages') or []):
-                return UUID(item['conversationId'])
-        return None
-
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
         file = child(child(directory, 'agent-runs'), 'conversation.json')
@@ -266,12 +249,66 @@ class Conversations:
             current['conversationId'] = current.get('conversationId') or str(uuid5(project_id, 'assistant'))
             return {'activeId': current['conversationId'], 'items': [
                 {'id': item['conversationId'],
-                 'title': next((message['text'].strip().split('\n')[0][:48] or '素材对话'
+                 'title': next((message['text'].strip().split('\n')[0][:48] or None
                                 for message in item['messages'] if message['role'] == 'user'),
-                               (item.get('draft') or '').strip().split('\n')[0][:48] or '新会话'),
+                               (item.get('draft') or '').strip().split('\n')[0][:48] or None),
                  'messageCount': len(item['messages']),
                  'hasDraft': bool((item.get('draft') or '').strip() or item.get('assets') or item.get('skills'))}
                 for item in [current, *current.get('archivedConversations', [])]]}
+
+    def trace(self, project_id: UUID, conversation_id: UUID, running: UUID | None = None) -> dict:
+        """Executed turns of one conversation, read-only: no lease, no activation, no log bodies.
+
+        A turn is a user message together with the assistant message whose id is derived from
+        it (``uuid5(user id, 'assistant')``), which is how a turn is persisted when it is accepted.
+        A user message without that assistant record was never executed and is not a turn.
+        """
+        directory = self.path(project_id)
+        file = child(child(directory, 'agent-runs'), 'conversation.json')
+        with self.projects.local.transaction():
+            current = read_json(file) if file.is_file() else {'messages': []}
+        current['conversationId'] = current.get('conversationId') or str(uuid5(project_id, 'assistant'))
+        requested = str(conversation_id)
+        found = next((item for item in [current, *current.get('archivedConversations', [])]
+                      if item.get('conversationId') == requested or requested in reused_ids(item)), None)
+        if found is None:
+            raise ProjectError('对话不存在。', 404)
+        replies = {message.get('id'): message for message in found.get('messages', [])
+                   if message.get('role') == 'assistant'}
+        turns = []
+        for message in found.get('messages', []):
+            if message.get('role') != 'user':
+                continue
+            try:
+                reply = replies.get(str(uuid5(UUID(message['id']), 'assistant')))
+            except (KeyError, ValueError, TypeError):
+                reply = None
+            if reply is None:
+                continue
+            status = reply.get('status') or 'complete'
+            if status == 'streaming' and (found is not current or running != UUID(message['id'])):
+                status = 'interrupted'
+            turns.append({'id': message['id'], 'number': len(turns) + 1,
+                          'text': (message.get('text') or '')[:200],
+                          'runtime': reply.get('runtime') or message.get('runtime') or 'default',
+                          'model': reply.get('model') or message.get('model'),
+                          'status': status})
+        return {'conversationId': found['conversationId'], 'active': found is current, 'turns': turns}
+
+    def conversation_of(self, project_id: UUID, turn_id: UUID) -> str:
+        """Id of the conversation that persisted this executed turn, current or archived."""
+        directory = self.path(project_id)
+        file = child(child(directory, 'agent-runs'), 'conversation.json')
+        with self.projects.local.transaction():
+            current = read_json(file) if file.is_file() else {}
+        current['conversationId'] = current.get('conversationId') or str(uuid5(project_id, 'assistant'))
+        reply = str(uuid5(turn_id, 'assistant'))
+        for item in [current, *current.get('archivedConversations', [])]:
+            messages = item.get('messages', [])
+            if (any(m.get('role') == 'user' and m.get('id') == str(turn_id) for m in messages)
+                    and any(m.get('role') == 'assistant' and m.get('id') == reply for m in messages)):
+                return item['conversationId']
+        raise ProjectError('该轮用户消息不存在。', 404)
 
     def activate(self, project_id: UUID, conversation_id: UUID, session: str, *, create=False) -> dict:
         with self.projects.local.transaction() as db:
@@ -374,10 +411,20 @@ class Chain:
     last: dict | None = None
 
 
-def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
+def agent_routes(projects, generation, configs, provider=None, *, active=None) -> APIRouter:
     router = APIRouter(prefix='/api/creation/projects/{project_id}/assistant')
     conversations = Conversations(projects)
     runtimes = AgentRuntimes(projects, generation, configs, provider)
+
+    @router.get('/conversations/{conversation_id}/trace')
+    def conversation_trace(project_id: UUID, conversation_id: UUID):
+        running = active.get(project_id)
+        live = running.turn if running is not None and running.task is not None and not running.task.done() else None
+        return conversations.trace(project_id, conversation_id, live)
+
+    @router.get('/traces/{turn_id}/conversation')
+    def trace_conversation(project_id: UUID, turn_id: UUID):
+        return {'conversationId': conversations.conversation_of(project_id, turn_id)}
 
     @router.get('/traces/{turn_id}/input')
     def trace_input(project_id: UUID, turn_id: UUID):
@@ -411,7 +458,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                      errorDetails=job.errorDetails, asset=job.asset, adopted=job.adopted)
                 for job in jobs]
 
-    active: dict[UUID, Chain] = {}
+    if active is None:
+        active = {}
     admission: dict[UUID, asyncio.Lock] = {}
 
     @router.get('')
@@ -524,12 +572,14 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         for asset_id in value.assets:
             if str(asset_id) not in assets:
                 raise ProjectError('引用素材不属于当前工程。', 409)
-        model = config['modelId'] if config else (value.runtimeModel or 'CLI 默认模型')
+        model = config['modelId'] if config else value.runtimeModel
+        model_is_cli_default = spec.modelSource == 'cli' and not model
         model_selections = dict(value.modelSelections)
         return {'session': session, 'directory': directory, 'config': config, 'prepared': prepared,
                 'config_id': str(value.modelId) if value.modelId else None,
                 'available': available,
-                'model': model, 'model_selections': model_selections,
+                'model': model, 'model_is_cli_default': model_is_cli_default,
+                'model_selections': model_selections,
                 'preferences': preferences_for(model_selections), 'thinking': value.thinking,
                 'accept_language': accept_language,
                 'message': {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
@@ -538,6 +588,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                         for asset in (assets[str(key)] for key in value.assets)],
                     'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
                     'modelSelections': dict(value.modelSelections), 'model': model,
+                    'modelIsCliDefault': model_is_cli_default,
                     'thinking': value.thinking, 'status': 'complete',
                     **({'modelConfigId': str(value.modelId)} if value.modelId else {})}}
 
@@ -560,7 +611,9 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
         model_selections = dict(message.get('modelSelections') or {})
         return {'session': session, 'directory': directory, 'config': config, 'available': available,
-                'model': message.get('model') or 'CLI 默认模型', 'model_selections': model_selections,
+                'model': message.get('model') or 'CLI 默认模型',
+                'model_is_cli_default': bool(message.get('modelIsCliDefault')),
+                'model_selections': model_selections,
                 'preferences': preferences_for(model_selections), 'accept_language': accept_language,
                 'thinking': message.get('thinking') or 'auto', 'message': message}
 
@@ -652,7 +705,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             try:
                 saved = await asyncio.to_thread(conversations.update, project_id, finish={
                     'id': str(uuid5(turn_id, 'assistant')), 'role': 'assistant', 'text': text, 'status': status,
-                    'model': plan['model'],
+                    'model': plan['model'], 'modelIsCliDefault': plan.get('model_is_cli_default', False),
                     'runtime': message['runtime'], 'thinking': plan['thinking'], 'tools': activities,
                     'sources': list(sources.values()),
                     **({'plan': steps} if steps is not None else {})}, conversation_id=chain.conversation_id)
@@ -750,8 +803,11 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         if chain is not None and turn_id not in (chain.turn, chain.id):
             # A viewer that lost the stream between two turns remembers the turn
             # it saw last, which is already over while its chain keeps running.
-            settled = await asyncio.to_thread(conversations.conversation_of, project_id, turn_id)
-            if settled is None or settled != chain.conversation_id:
+            try:
+                settled = await asyncio.to_thread(conversations.conversation_of, project_id, turn_id)
+            except ProjectError:
+                settled = None
+            if settled is None or settled != str(chain.conversation_id):
                 chain = None
         if chain is None:
             raise ProjectError('这轮回复已结束，请重新读取对话。', 404)

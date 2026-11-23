@@ -114,6 +114,7 @@ export const models = {
   "models.service.minimaxNote":
     "模型列表来自内置声明，载入不验证密钥，也不创建视频任务。",
   "models.service.save": "保存服务",
+  "models.service.saveAndContinue": "保存并继续",
   "models.service.testing": "测试中…",
   "models.service.testPassed": "通过 {seconds} s",
   "models.service.noOutputPreset":

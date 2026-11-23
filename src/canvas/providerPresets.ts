@@ -321,11 +321,13 @@ export function providerPresetFor(model: ModelConfig): string {
 
 export function providerOptions(
   kind: ModelKind,
+  allowProtocol?: (protocol: ModelConfig["protocol"]) => boolean,
 ): Pick<
   ProviderPreset,
   "id" | "name" | "logoOrganization" | "group" | "optionLabel"
 >[] {
-  return PROVIDER_PRESETS.filter((preset) => preset.kinds.includes(kind)).map(
+  return PROVIDER_PRESETS.filter((preset) => preset.kinds.includes(kind) &&
+    (!allowProtocol || allowProtocol(preset.protocol))).map(
     (preset) => ({
       ...preset,
       name: providerName(preset.name),
