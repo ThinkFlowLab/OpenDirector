@@ -13,11 +13,15 @@ from filelock import FileLock
 from opendirector.domain.projects import ProjectError, identifier
 
 def child(directory: Path, name: str) -> Path:
-    path = directory / name
+    # The name often comes from a request. Reduce it to a base name first, so a
+    # separator or `..` cannot reach a sibling project, then verify the joined
+    # path lexically stays inside the directory.
+    base = os.path.basename(name)
+    if base != name or base in ('', '.', '..'):
+        raise ProjectError("项目内部文件必须位于项目目录内。", 409)
+    path = directory / base
     if path.is_symlink():
         raise ProjectError("项目内部文件不能是符号链接。", 409)
-    # The name often comes from a request. Keep the joined path lexical and inside
-    # the directory so `..` cannot reach a sibling project.
     resolved, root = Path(os.path.abspath(path)), Path(os.path.abspath(directory))
     if root != resolved and root not in resolved.parents:
         raise ProjectError("项目内部文件必须位于项目目录内。", 409)
