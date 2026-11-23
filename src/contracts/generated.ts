@@ -69,7 +69,7 @@ export interface AssetProvenanceInput extends ContractInput {
   readonly sources?: ReadonlyArray<AssetRefInput>;
   readonly inputFingerprint?: string | null;
   readonly agentRunId?: string | null;
-  readonly agentRuntime?: "opencode" | "codex" | "claude" | "jiuwenswarm" | "deepseek" | null;
+  readonly agentRuntime?: "opencode" | "codex" | "claude" | "jiuwenswarm" | "deepseek" | "pi" | null;
   readonly modelSnapshot?: ModelSnapshotInput | null;
   readonly prompt?: string | null;
   readonly importedFrom?: "generated" | "edited" | null;
@@ -1738,7 +1738,7 @@ export interface AssetProvenance extends Contract {
   readonly sources: ReadonlyArray<AssetRef>;
   readonly inputFingerprint: string | null;
   readonly agentRunId: string | null;
-  readonly agentRuntime: "opencode" | "codex" | "claude" | "jiuwenswarm" | "deepseek" | null;
+  readonly agentRuntime: "opencode" | "codex" | "claude" | "jiuwenswarm" | "deepseek" | "pi" | null;
   readonly modelSnapshot: ModelSnapshot | null;
   readonly prompt: string | null;
   readonly importedFrom: "generated" | "edited" | null;

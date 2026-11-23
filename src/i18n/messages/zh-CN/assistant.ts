@@ -188,6 +188,8 @@ export const assistant = {
   "assistant.agent.configureHint": "在启动 OpenDirector 的机器上完成配置，再重新检查。",
   "assistant.agent.jiuwenswarmHint":
     "配置 JiuwenSwarm 的对话模型，然后重新检查模型目录。",
+  "assistant.agent.piHint":
+    "Pi 使用本机 pi 安装（~/.pi/agent）中的服务商、登录状态、扩展与 MCP 服务。执行 pi auth login 登录后重新检查。",
   "assistant.agent.configureModel": "配置对话模型",
   "assistant.agent.installGuide": "查看安装指南 ↗",
   "assistant.agent.terminal": "在终端执行：",

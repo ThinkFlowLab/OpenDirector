@@ -30,6 +30,8 @@ def common_candidates(name: str, home: Path, platform: str, env: Mapping[str, st
     bins = [home / '.local/bin', home / '.bun/bin', home / '.volta/bin']
     if name == 'opencode':
         bins.insert(0, home / '.opencode/bin')
+    elif name == 'pi':
+        bins.insert(0, home / '.pi/agent/bin')
     elif name == 'claude':
         bins.append(home / '.claude/local')
     for key in ('PIPX_BIN_DIR', 'UV_TOOL_BIN_DIR'):
@@ -73,7 +75,7 @@ def cli_executable(name: str) -> str | None:
     if path := shutil.which(name):
         return path
     # Names are internal command IDs, never shell input or user-provided paths.
-    if name not in {'codex', 'claude', 'opencode', 'dsh', 'jiuwenswarm-process'}:
+    if name not in {'codex', 'claude', 'opencode', 'dsh', 'jiuwenswarm-process', 'pi'}:
         return None
     candidates = (codex_candidates(Path.home(), sys.platform, os.environ) if name == 'codex'
         else common_candidates(name, Path.home(), sys.platform, os.environ))

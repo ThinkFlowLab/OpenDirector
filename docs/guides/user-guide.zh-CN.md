@@ -6,7 +6,7 @@
 
 首次打开时，在欢迎页选择「开始设置」。为内置助手配置一个语言模型，或选择已有的 Harness。接着勾选一项或多项任务。每个勾选项可以选用已有模型，缺模型时直接显示对应的配置表单。点击「开始创作」后，画布会为每项任务添加一个节点。点「导入素材」可直接选文件，点「打开示例画布」可直接进入可编辑的示例项目，下载进度在第二步显示。取消时会保留已勾选的任务。之后可随时在设置中添加其他模型。
 
-选择外部 Agent harness（Codex、OpenCode、Claude Code、DeepSeek Harness 和 JiuwenSwarm）时，OpenDirector 优先检查后端的 `PATH`，再查找常见 CLI 安装目录，包括用户命令目录、npm/nvm、Bun、Volta、Windows Scoop 与 Python Scripts，以及 macOS Homebrew 和用户 Python 命令目录。同时检查 Codex 桌面版、OpenCode 的 `.opencode/bin`、Claude 的 `.claude/local`，以及配置的 npm、pipx 和 uv 命令目录。检测仅访问已知目录，不扫描整个磁盘；找到 CLI 后仍需检查认证与配置是否就绪。其他安装位置可加入后端的 `PATH`，然后重启后端。Default Agent 仍使用应用内置的 OpenCode。
+选择外部 Agent harness（Codex、OpenCode、Claude Code、DeepSeek Harness、JiuwenSwarm 和 Pi）时，OpenDirector 优先检查后端的 `PATH`，再查找常见 CLI 安装目录，包括用户命令目录、npm/nvm、Bun、Volta、Windows Scoop 与 Python Scripts，以及 macOS Homebrew 和用户 Python 命令目录。同时检查 Codex 桌面版、OpenCode 的 `.opencode/bin`、Claude 的 `.claude/local`，Pi 的 `~/.pi/agent/bin`，以及配置的 npm、pipx 和 uv 命令目录。检测仅访问已知目录，不扫描整个磁盘；找到 CLI 后仍需检查认证与配置是否就绪。其他安装位置可加入后端的 `PATH`，然后重启后端。Default Agent 仍使用应用内置的 OpenCode。
 
 点击左下角齿轮进入“设置”，打开“模型接入”，按用途添加对话、图片、视频或音频模型。
 

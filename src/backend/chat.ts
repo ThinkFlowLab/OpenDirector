@@ -10,7 +10,8 @@ export type AgentRuntime =
   | "codex"
   | "claude"
   | "jiuwenswarm"
-  | "deepseek";
+  | "deepseek"
+  | "pi";
 export interface RuntimeInfo {
   id: AgentRuntime;
   label: string;

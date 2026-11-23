@@ -49,7 +49,7 @@ class Draft(BaseModel):
     assets: list[dict[str, JsonValue]] = Field(default_factory=list, max_length=MAX_REFERENCES)
     runtime: Runtime = 'default'
     runtimeModel: str | None = Field(default=None, max_length=200)
-    harnessModels: dict[Literal["opencode", "codex", "claude", "jiuwenswarm", "deepseek"], Annotated[str, Field(max_length=200)] | None] = Field(default_factory=dict)
+    harnessModels: dict[Literal["opencode", "codex", "claude", "jiuwenswarm", "deepseek", "pi"], Annotated[str, Field(max_length=200)] | None] = Field(default_factory=dict)
     thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
     builtinModelThinking: dict[str, Literal['auto', 'low', 'medium', 'high']] = Field(default_factory=dict)
     modelSelections: dict[str, str | None] = Field(default_factory=dict)
@@ -331,7 +331,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
 
     @router.get('/traces/{turn_id}/{source}')
     def trace(project_id: UUID, turn_id: UUID,
-              source: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek', 'model']):
+              source: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek', 'pi', 'model']):
         folder = child(conversations.path(project_id), 'agent-runs')
         file = child(folder, f'{turn_id}.{source}.jsonl')
         if not file.is_file():
@@ -401,7 +401,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         return {**item, 'status': await runtime_status(runtime)}
 
     @router.get('/runtimes/{runtime}/models')
-    async def runtime_models(project_id: UUID, runtime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek'], selected: str | None = None):
+    async def runtime_models(project_id: UUID, runtime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek', 'pi'], selected: str | None = None):
         await asyncio.to_thread(conversations.path, project_id)
         if runtime == 'deepseek':
             from opendirector.agent.deepseek import model_choices as deepseek_models

@@ -29,7 +29,7 @@ Labels are short, English and prefixed by dimension, so issues and PRs can be fi
 | --- | --- |
 | `area:canvas` | Canvas, nodes, direct manipulation |
 | `area:agent` | Agent runtime, assistant chat, tools |
-| `area:harness` | Harness and skill integration (Default, OpenCode, Codex, Claude Code, JiuwenSwarm, DSH) |
+| `area:harness` | Harness and skill integration (Default, OpenCode, Codex, Claude Code, JiuwenSwarm, DSH, Pi) |
 | `area:provider` | Model providers and generation protocols |
 | `area:assets` | Assets, library, reference inputs |
 | `area:timeline` | Timeline, subtitles, export |

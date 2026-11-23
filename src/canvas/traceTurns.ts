@@ -14,7 +14,7 @@ export type ConversationTurn = {
 
 const RUNTIME_NAMES: Record<string, string> = {
   default: "OpenCode", opencode: "OpenCode", codex: "Codex", claude: "Claude Code",
-  jiuwenswarm: "JiuwenSwarm", deepseek: "DeepSeek Harness",
+  jiuwenswarm: "JiuwenSwarm", deepseek: "DeepSeek Harness", pi: "Pi",
 };
 
 /** The Default runtime logs under the opencode source. */

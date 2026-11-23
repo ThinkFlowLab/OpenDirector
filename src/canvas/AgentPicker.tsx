@@ -57,7 +57,7 @@ export function AgentPicker({
     (item): item is RuntimeInfo & { id: Harness } =>
       item.group === "harness" && item.id !== "default",
   ).sort((a, b) => {
-    const order: Harness[] = ["opencode", "deepseek", "jiuwenswarm", "codex", "claude"];
+    const order: Harness[] = ["opencode", "deepseek", "jiuwenswarm", "codex", "claude", "pi"];
     const rank = (id: Harness) => {
       const index = order.indexOf(id);
       return index < 0 ? order.length : index;
@@ -108,7 +108,7 @@ export function AgentPicker({
           : item.status === "unsupported_version"
             ? t("assistant.agent.status.unsupportedVersion")
             : item.status === "unknown"
-              ? item.id === "jiuwenswarm"
+              ? item.id === "jiuwenswarm" || item.id === "pi"
                 ? t("assistant.agent.status.catalogUnreadable")
                 : t("assistant.agent.status.unknown")
               : t("assistant.agent.status.needsConfiguration");
@@ -127,6 +127,8 @@ export function AgentPicker({
         ? "codex login"
         : setup === "claude"
           ? "claude auth login"
+          : setup === "pi"
+            ? "pi auth login <provider>"
           : "opencode";
   const setupLink =
     setup === "deepseek"
@@ -137,6 +139,8 @@ export function AgentPicker({
         ? "https://developers.openai.com/codex/cli/"
         : setup === "claude"
           ? "https://code.claude.com/docs/en/setup"
+          : setup === "pi"
+            ? "https://github.com/earendil-works/pi"
           : "https://opencode.ai/docs/";
   const editingSpec = harnesses.find((item) => item.id === editing);
   const runtime = value.runtime ?? "default";
@@ -375,6 +379,9 @@ export function AgentPicker({
               <p>{t("assistant.agent.configureHint")}</p>
               {setupSpec.id === "jiuwenswarm" && (
                 <p>{t("assistant.agent.jiuwenswarmHint")}</p>
+              )}
+              {setupSpec.id === "pi" && (
+                <p>{t("assistant.agent.piHint")}</p>
               )}
               {setupSpec.modelSource === "settings" && setupSpec.available ? (
                 <button

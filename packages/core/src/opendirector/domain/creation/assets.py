@@ -63,7 +63,7 @@ class AssetProvenance(Contract):
     sources: tuple[AssetRef, ...] = Field(default=(), description='Ordered source asset versions.')
     inputFingerprint: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$', description='Fingerprint of the fixed execution input.')
     agentRunId: UUID | None = Field(default=None, description='Agent turn ID.')
-    agentRuntime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek'] | None = Field(default=None, description='Native Agent runtime that produced this asset.')
+    agentRuntime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek', 'pi'] | None = Field(default=None, description='Native Agent runtime that produced this asset.')
     modelSnapshot: ModelSnapshot | None = Field(default=None, description='Fixed model connection recorded for provenance.')
     prompt: str | None = Field(default=None, max_length=PROMPT_MAX_LENGTH, description='Generation prompt text.')
     importedFrom: Literal['generated', 'edited'] | None = Field(default=None, description='Original source recorded by a canvas archive this asset was imported from.')

@@ -633,7 +633,8 @@
                   "codex",
                   "claude",
                   "jiuwenswarm",
-                  "deepseek"
+                  "deepseek",
+                  "pi"
                 ],
                 "type": "string"
               },
@@ -16842,7 +16843,8 @@
                   "codex",
                   "claude",
                   "jiuwenswarm",
-                  "deepseek"
+                  "deepseek",
+                  "pi"
                 ],
                 "type": "string"
               },

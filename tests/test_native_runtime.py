@@ -788,14 +788,14 @@ def test_rejects_removed_runtime_and_invalid_selection_before_acceptance(tmp_pat
     config = ModelConfigs(tmp_path).save('agent','http://127.0.0.1:1/v1','test','',auth_mode='none')
     with TestClient(create_app(local), headers={'X-OpenDirector-Request':'1','X-OpenDirector-Session':str(uuid4())}) as client:
         path = project(client)
-        turn = {'id':str(uuid4()), 'modelId':config['id'], 'text':'hello', 'runtime':'pi'}
+        turn = {'id':str(uuid4()), 'modelId':config['id'], 'text':'hello', 'runtime':'cursor'}
         assert client.post(path + '/assistant/turns', json=turn).status_code == 422
         turn.update(runtime='default', skills=['missing'])
         assert client.post(path + '/assistant/turns', json=turn).status_code == 409
         turn.update(skills=[], assets=[str(uuid4())])
         assert client.post(path + '/assistant/turns', json=turn).status_code == 409
         assert client.get(path + '/assistant').json()['messages'] == []
-        assert 'pi' not in [item['id'] for item in client.get(path + '/assistant/runtimes').json()]
+        assert 'cursor' not in [item['id'] for item in client.get(path + '/assistant/runtimes').json()]
 
 
 def test_bundled_model_declares_configured_inputs_without_changing_cli_provider(tmp_path, monkeypatch):
