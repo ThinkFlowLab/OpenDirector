@@ -97,9 +97,9 @@ PR #469（issue #449）记录一个轮次的时间花在哪里。两项功能度
 | --- | --- | --- |
 | 目的 | 离线分析工具调用与启动开销占比 | Chat 与 Trace 中面向用户的轮次时长 |
 | 起点 | `produce()` 入口，早于轮次被接受 | 接受轮次时，位于 `Conversations.update` 的 `begin` 事务内 |
-| 终点 | `produce()` 的 `finally`，运行时流结束之后 | 进入 `finish` 更新时 |
+| 终点 | `produce()` 的 `finally` 开头，发出 finish 更新之前 | 进入 `finish` 更新时 |
 | 单位与命名 | 秒，`turnSeconds` | 整数毫秒，`durationMs` |
 | 存放位置 | `agent-runs/timing/<turn>.json`（不进入对话历史） | `agent-runs/conversation.json` 中的助手消息 |
 | 读取方 | `scripts/bench_turn_timing.py` | Trace API、Chat 与 Trace 界面 |
 
-两个窗口相差几毫秒到数秒（排队、begin 写入、停止处理），数值不要求一致，也不互相推导。各自保留单调时钟：#469 的时钟在 `produce()` 和工具事件账本中，本工作的时钟在 `Conversations.update`，那里是唯一同时看到接受与 finish 写入的位置。持久化不冲突：#469 写独立文件，本工作写消息。UI 不展示 `turnSeconds`，账本不读取 `durationMs`。
+两个窗口的终点几乎相同，起点相差 `produce()` 中接受前的工作（校验、模型可用性检查、`begin` 写入），通常为毫秒级，数值不要求完全一致，也不互相推导。各自保留单调时钟：#469 的时钟在 `produce()` 和工具事件账本中，本工作的时钟在 `Conversations.update`，那里是唯一同时看到接受与 finish 写入的位置。持久化不冲突：#469 写独立文件，本工作写消息。UI 不展示 `turnSeconds`，账本不读取 `durationMs`。
