@@ -25,6 +25,7 @@ Use it to explore visual ideas, refine assets, and make short films. Projects st
 
 [News](#news) · [Example film](#example-film-we-can-still-win) · [Quick start](#quick-start) · [Documentation](#documentation) · [Community](#community) · [Contributing](#contributing)
 
+Welcome to follow our official Bilibili account, which includes tutorials and shares splendid creations from our users!
 <p>
   <a href="https://space.bilibili.com/3747582748658251">
     <img src="https://img.shields.io/badge/Bilibili-OpenDirector-00A1D6?logo=bilibili&amp;logoColor=white" alt="OpenDirector official Bilibili account" />
