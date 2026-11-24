@@ -136,8 +136,9 @@ TIMED_STATUSES = {'complete', 'stopped', 'interrupted'}
 class Conversations:
     def __init__(self, projects):
         self.projects = projects
-        # Turn timing is recorded here, not in produce(). The window starts at the acceptance point
-        # inside the begin transaction (the begin write is excluded) and ends at entry of the finish
+        # Turn timing is recorded here, not in produce(). The window starts right after the begin write
+        # succeeded, inside the begin transaction (the begin write is excluded, so persistence latency
+        # never counts; `startedAt` is stamped earlier, when the placeholder is built) and ends at entry of the finish
         # update (the finish write is excluded). Job completion never extends it and browser time is
         # never used. The monotonic start lives in this process only: after a restart the duration is
         # unknown and stays absent rather than invented.
@@ -170,6 +171,7 @@ class Conversations:
             if (draft is not None or begin is not None or finish is not None) and str(supplied) != value['conversationId'] and (supplied is not None or value.get('archivedConversations')):
                 raise ProjectError('当前对话已切换，请重新加载后重试；原对话未覆盖。', 409)
             changed = False
+            started = None
             if draft is not None:
                 value.update(draft.model_dump(mode="json", exclude={"conversationId"}))
                 changed = True
@@ -180,8 +182,6 @@ class Conversations:
                     before_begin()
                 value['messages'].append(begin)
                 reply_id = str(uuid5(UUID(begin['id']), 'assistant'))
-                with self._started_lock:
-                    self._started[reply_id] = _monotonic()
                 value['messages'].append({'id': reply_id,
                     'role': 'assistant', 'text': '', 'status': 'streaming', 'startedAt': _utc_now(),
                     **{key: begin[key] for key in ('model', 'modelIsCliDefault', 'runtime') if key in begin}})
@@ -205,10 +205,16 @@ class Conversations:
                 try:
                     durable_json(file, value)
                 except BaseException:
-                    if begin is not None:
+                    if started is not None:
+                        # The finish write failed: the message is still streaming on disk, so keep its start.
                         with self._started_lock:
-                            self._started.pop(reply_id, None)
+                            self._started.setdefault(finish['id'], started)
                     raise
+                if begin is not None:
+                    # The turn counts as accepted only now. The clock starts after the begin write succeeded,
+                    # still inside the transaction, so no finish for this reply can run before it is set.
+                    with self._started_lock:
+                        self._started[reply_id] = _monotonic()
             result = public_conversation(value)
         return with_trace_sources(result, directory)
 

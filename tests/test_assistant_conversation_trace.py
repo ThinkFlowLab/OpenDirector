@@ -304,3 +304,173 @@ def test_failed_begin_write_drops_the_monotonic_entry(assistant, tmp_path, monke
     with pytest.raises(OSError):
         conversations.update(project, begin=begin_message(str(uuid4())))
     assert conversations._started == {}
+
+
+class ManualClock:
+    """Monotonic clock that only moves when a test says so, shared by the fake disk and the fake agent."""
+    def __init__(self):
+        self.now = 1000.0
+
+    def monotonic(self):
+        return self.now
+
+    def advance(self, milliseconds):
+        self.now += milliseconds / 1000
+
+
+@pytest.fixture
+def manual(monkeypatch):
+    fake = ManualClock()
+    monkeypatch.setattr(agent, '_monotonic', fake.monotonic)
+    return fake
+
+
+def slow_writes(monkeypatch, manual, delays):
+    """Make durable_json cost `delays[n]` ms of clock time on its n-th call (later calls cost 0)."""
+    real, calls = agent.durable_json, []
+    def write(file, value):
+        calls.append(file)
+        manual.advance(delays[len(calls) - 1] if len(calls) <= len(delays) else 0)
+        return real(file, value)
+    monkeypatch.setattr(agent, 'durable_json', write)
+    return calls
+
+
+def new_conversations(assistant, tmp_path):
+    _, path, _ = assistant
+    return UUID(path.split('/projects/')[1].split('/')[0]), agent.Conversations(CreationProjects(LocalProjects(tmp_path)))
+
+
+def run_turn(conversations, project, manual, run_ms=250, status='complete'):
+    turn = str(uuid4())
+    conversations.update(project, begin=begin_message(turn))
+    manual.advance(run_ms)
+    return conversations.update(project, finish={**finish_message(turn), 'status': status})['messages'][-1]
+
+
+@pytest.mark.parametrize('delay', [0, 200, 2000])
+def test_duration_excludes_the_initial_write_delay(assistant, manual, tmp_path, monkeypatch, delay):
+    project, conversations = new_conversations(assistant, tmp_path)
+    slow_writes(monkeypatch, manual, [delay])
+    assert run_turn(conversations, project, manual)['durationMs'] == 250
+
+
+def test_duration_is_identical_across_write_delays(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    seen = []
+    for delay in (0, 200, 2000):
+        slow_writes(monkeypatch, manual, [delay])
+        seen.append(run_turn(conversations, project, manual)['durationMs'])
+    assert seen == [250, 250, 250]
+
+
+def test_finish_write_delay_is_excluded_too(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    slow_writes(monkeypatch, manual, [2000, 3000])
+    assert run_turn(conversations, project, manual)['durationMs'] == 250
+
+
+@pytest.mark.parametrize('status', ['complete', 'stopped', 'interrupted'])
+def test_every_terminal_status_excludes_the_initial_write(assistant, manual, tmp_path, monkeypatch, status):
+    project, conversations = new_conversations(assistant, tmp_path)
+    slow_writes(monkeypatch, manual, [2000])
+    done = run_turn(conversations, project, manual, status=status)
+    assert done['status'] == status and done['durationMs'] == 250
+
+
+def test_startedat_is_acceptance_time_and_duration_uses_the_monotonic_clock(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    stamps = iter(['2026-01-01T00:00:00.000Z', '2030-05-05T00:00:00.000Z'])
+    monkeypatch.setattr(agent, '_utc_now', lambda: next(stamps))
+    slow_writes(monkeypatch, manual, [2000])
+    turn = str(uuid4())
+    conversations.update(project, begin=begin_message(turn))
+    manual.advance(250)
+    done = conversations.update(project, finish=finish_message(turn))['messages'][-1]
+    # Wall-clock fields are 4 years apart; only the monotonic clock decides durationMs.
+    assert done['startedAt'] == '2026-01-01T00:00:00.000Z' and done['finishedAt'] == '2030-05-05T00:00:00.000Z'
+    assert done['durationMs'] == 250
+
+
+def test_failed_begin_write_is_not_an_accepted_turn(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    real = agent.durable_json
+    def fail(*args, **kwargs):
+        manual.advance(2000)
+        raise OSError('disk full')
+    monkeypatch.setattr(agent, 'durable_json', fail)
+    turn = str(uuid4())
+    with pytest.raises(OSError):
+        conversations.update(project, begin=begin_message(turn))
+    assert conversations._started == {}
+    monkeypatch.setattr(agent, 'durable_json', real)
+    assert all(message['id'] != turn for message in conversations.update(project)['messages'])
+    # Finishing a never-accepted turn invents no duration, and a later retry of the same begin is accepted fresh.
+    done = conversations.update(project, finish=finish_message(turn))['messages']
+    assert all('durationMs' not in message for message in done)
+    conversations.update(project, begin=begin_message(turn))
+    manual.advance(250)
+    assert conversations.update(project, finish=finish_message(turn))['messages'][-1]['durationMs'] == 250
+
+
+def test_start_is_not_recorded_until_the_begin_write_returns(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    during = []
+    real = agent.durable_json
+    def spy(file, value):
+        during.append(dict(conversations._started))
+        return real(file, value)
+    monkeypatch.setattr(agent, 'durable_json', spy)
+    conversations.update(project, begin=begin_message(str(uuid4())))
+    assert during == [{}] and len(conversations._started) == 1
+
+
+def test_duplicate_begin_does_not_reset_the_running_start(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    slow_writes(monkeypatch, manual, [2000])
+    turn = str(uuid4())
+    conversations.update(project, begin=begin_message(turn))
+    manual.advance(100)
+    with pytest.raises(agent.ProjectError):
+        conversations.update(project, begin=begin_message(turn))
+    manual.advance(150)
+    assert conversations.update(project, finish=finish_message(turn))['messages'][-1]['durationMs'] == 250
+
+
+def test_failed_finish_write_keeps_the_start_for_a_retry(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    turn = str(uuid4())
+    conversations.update(project, begin=begin_message(turn))
+    real = agent.durable_json
+    monkeypatch.setattr(agent, 'durable_json', lambda *a, **k: (_ for _ in ()).throw(OSError('disk full')))
+    manual.advance(250)
+    with pytest.raises(OSError):
+        conversations.update(project, finish=finish_message(turn))
+    monkeypatch.setattr(agent, 'durable_json', real)
+    assert conversations.update(project, finish=finish_message(turn))['messages'][-1]['durationMs'] == 250
+
+
+def test_restart_after_slow_begin_invents_no_duration(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    slow_writes(monkeypatch, manual, [2000])
+    turn = str(uuid4())
+    conversations.update(project, begin=begin_message(turn))
+    manual.advance(250)
+    restarted = agent.Conversations(CreationProjects(LocalProjects(tmp_path)))
+    done = restarted.update(project, finish=finish_message(turn))['messages'][-1]
+    assert 'durationMs' not in done and restarted._started == {}
+
+
+def test_concurrent_turns_keep_independent_durations(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    slow_writes(monkeypatch, manual, [2000, 0, 0, 0])
+    first, second = str(uuid4()), str(uuid4())
+    conversations.update(project, begin=begin_message(first))
+    manual.advance(100)
+    conversations.update(project, begin=begin_message(second))
+    manual.advance(300)
+    done = {m['id']: m for m in conversations.update(project, finish=finish_message(first))['messages']}
+    assert done[str(uuid5(UUID(first), 'assistant'))]['durationMs'] == 400
+    manual.advance(50)
+    done = {m['id']: m for m in conversations.update(project, finish=finish_message(second))['messages']}
+    assert done[str(uuid5(UUID(second), 'assistant'))]['durationMs'] == 350

@@ -12,7 +12,7 @@ Each assistant message in `agent-runs/conversation.json` can carry:
 
 | Field | Meaning |
 | --- | --- |
-| `startedAt` | UTC ISO-8601 time with millisecond precision, written when the turn is accepted. |
+| `startedAt` | UTC ISO-8601 time with millisecond precision, stamped when the assistant placeholder is built and persisted by the first (begin) write. It is the acceptance time, not the start of the `durationMs` window: the monotonic start is taken after that write succeeds, so it is slightly later. |
 | `finishedAt` | UTC time written when the turn finishes as `complete`, `stopped` or `interrupted`. |
 | `durationMs` | Non-negative integer, measured with a monotonic clock. |
 
@@ -20,8 +20,8 @@ Each assistant message in `agent-runs/conversation.json` can carry:
 
 ### Measurement boundary
 
-- **Start:** inside the `begin` transaction of `Conversations.update`, at the moment the assistant placeholder is created. The `begin` write itself is excluded.
-- **End:** at entry of the `finish` update, before the finish write. The finish write is excluded.
+- **Start:** inside the `begin` transaction of `Conversations.update`, immediately after `durable_json` has persisted the begin write. The begin write is excluded, so initial persistence latency (a slow disk, lock wait, a 2 s write) never counts toward `durationMs`. The start is taken after the write because only a persisted turn is an accepted turn, and because it is the one point that does not depend on how long the write took. If the write raises, no start is recorded and the turn is not accepted. A duplicate begin is rejected with 409 before any clock is touched, so it cannot reset a running turn's start.
+- **End:** at entry of the `finish` update, before the finish write. The finish write is excluded. If the finish write fails, the start is kept so a retry can still record a duration.
 - Job completion never extends the window. A generation Job started by a turn can outlive it.
 - The browser clock is never authoritative. The UI only formats what the backend stored.
 - The monotonic start is kept in memory in the `Conversations` instance (`_started`). Timing is recorded in `Conversations.update` only, so `produce()` and `turn()` are untouched. Any change that accepts or finishes turns (for example the queue and steer work in #381 and #402) must keep going through `Conversations.update(begin/finish)`, or it will silently lose timing.
@@ -38,7 +38,7 @@ Each assistant message in `agent-runs/conversation.json` can carry:
 | Legacy turn from before this feature | absent | absent | No timing line | Status badge and "Unavailable" |
 | Unaccepted turn (rejected before `begin`) | no assistant message | none | Not applicable | Not listed |
 
-After a restart the in-memory start is gone, so a turn that was running keeps `startedAt` but never receives a duration. A `streaming` message that is not the live turn is reported as `interrupted` by `trace()`. This is a known limitation: a restart in the middle of a turn leaves the duration unknown, and it is not estimated.
+`durationMs` is `end - start` on the monotonic clock, never `finishedAt - startedAt`. After a restart the in-memory start is gone, so a turn that was running keeps `startedAt` but never receives a duration. A `streaming` message that is not the live turn is reported as `interrupted` by `trace()`. This is a known limitation: a restart in the middle of a turn leaves the duration unknown, and it is not estimated.
 
 ### Display
 

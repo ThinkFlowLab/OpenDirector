@@ -12,7 +12,7 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 
 | 字段 | 含义 |
 | --- | --- |
-| `startedAt` | UTC ISO-8601 时间，精度为毫秒，在轮次被接受时写入。 |
+| `startedAt` | UTC ISO-8601 时间，精度为毫秒，在构建 assistant 占位消息时生成，并由首次（begin）写入持久化。它表示接受时间，不是 `durationMs` 窗口的起点：单调时钟起点在该次写入成功之后才取得，因此略晚于它。 |
 | `finishedAt` | 轮次以 `complete`、`stopped` 或 `interrupted` 结束时写入的 UTC 时间。 |
 | `durationMs` | 非负整数，使用单调时钟测得。 |
 
@@ -20,8 +20,8 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 
 ### 测量边界
 
-- **起点：**在 `Conversations.update` 的 `begin` 事务内，创建 assistant 占位消息的时刻。不包含 `begin` 本身的写入。
-- **终点：**进入 `finish` 更新时，在 finish 写入之前。不包含 finish 写入。
+- **起点：**在 `Conversations.update` 的 `begin` 事务内，`durable_json` 成功持久化 begin 之后立即取得。不包含 begin 写入，因此首次持久化的延迟（磁盘慢、等锁、2 秒写入）不会计入 `durationMs`。只有已持久化的轮次才算被接受，且该时刻不依赖写入耗时。写入抛出异常时不记录起点，该轮次也不被接受。重复 begin 会在触碰任何时钟之前以 409 拒绝，因此不会重置运行中轮次的起点。
+- **终点：**进入 `finish` 更新时，在 finish 写入之前。不包含 finish 写入。finish 写入失败时保留起点，重试仍可记录时长。
 - Job 完成不会延长该窗口。轮次启动的生成 Job 可以比轮次存活更久。
 - 浏览器时钟从不作为依据，界面只格式化后端保存的值。
 - 单调起点保存在 `Conversations` 实例的内存中（`_started`）。计时只在 `Conversations.update` 中记录，`produce()` 和 `turn()` 不受影响。任何接受或结束轮次的改动（例如 #381、#402 的队列与 steer 工作）都必须继续经过 `Conversations.update(begin/finish)`，否则会无声地丢失计时。
@@ -38,7 +38,7 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 | 本功能之前的旧轮次 | 无 | 无 | 不显示计时行 | 状态徽标和“不可用” |
 | 未被接受的轮次（在 `begin` 之前被拒绝） | 无 assistant 消息 | 无 | 不适用 | 不列出 |
 
-重启后内存中的起点丢失，因此运行中的轮次保留 `startedAt`，但永远没有时长。不是当前实时轮次的 `streaming` 消息，`trace()` 会报告为 `interrupted`。已知限制：轮次进行中重启会使时长未知，系统不会估算。
+`durationMs` 是单调时钟上的 `终点 - 起点`，不是 `finishedAt - startedAt`。重启后内存中的起点丢失，因此运行中的轮次保留 `startedAt`，但永远没有时长。不是当前实时轮次的 `streaming` 消息，`trace()` 会报告为 `interrupted`。已知限制：轮次进行中重启会使时长未知，系统不会估算。
 
 ### 显示
 
