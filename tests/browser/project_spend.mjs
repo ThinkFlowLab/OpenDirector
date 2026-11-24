@@ -285,6 +285,7 @@ try {
     const groupNode = page.locator(`.react-flow__node[data-id="${groupId}"]`);
     await groupNode.click({position: {x: 12, y: 14}});
     await page.locator(".cw-group-estimate summary").filter({hasText: "0.80"}).click();
+    assert.match(await page.locator(".cw-group-estimate summary").innerText(), en ? /Project total.*0\.80/ : /工程预计合计.*0\.80/);
     assert.equal(await page.locator(".cw-group-estimate li").count(), 2);
     if (process.env.CREATION_SCREENSHOTS) await page.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-workflow-${locale}.png`});
     assert.equal((await call(groupPath)).jobs.length, 0);
@@ -333,9 +334,17 @@ try {
       const reviewPage = await browser.newPage({locale: "en-US"});
       await reviewPage.goto(web + reviewPath.pathname + reviewPath.search);
       const selector = `dialog.cw-spend-dialog[open] [data-spend-request="${waiting.spendRequestId}"]`;
-      const welcome = reviewPage.getByRole("button", {name: "Explore first", exact: true});
-      await welcome.or(reviewPage.locator(selector)).first().waitFor();
-      if (await welcome.isVisible()) await welcome.click();
+      const welcome = reviewPage.locator("dialog.cw-welcome[open]");
+      await welcome.waitFor();
+      assert.equal(await reviewPage.locator(selector).count(), 0, "Review waits until initial setup finishes");
+      await welcome.getByRole("button", {name: "Get started", exact: true}).click();
+      await welcome.getByRole("button", {name: "Set up a language model", exact: true}).click();
+      await welcome.getByRole("button", {name: "review-translation Use this saved language model", exact: true}).click();
+      await welcome.getByRole("checkbox", {name: "Generate an image", exact: true}).check();
+      const imagePicker = welcome.getByRole("combobox", {name: "Choose a text-to-image model", exact: true});
+      if (await imagePicker.count()) await imagePicker.selectOption(model.id);
+      await welcome.getByRole("button", {name: "Start creating", exact: true}).click();
+      await welcome.waitFor({state: "hidden"});
       await reviewPage.locator(selector).getByRole("button", {name: "Cancel generation"}).click();
       await until(() => call(groupPath), s => s.spendRequests.at(-1).status === "cancelled");
       await reviewPage.close();

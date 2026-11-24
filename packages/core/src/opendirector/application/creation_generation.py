@@ -539,19 +539,19 @@ class CreationGeneration(GenerationRuntime):
     async def execute(self, command, *, session=None, source='ui', agent_origin=None):
         if command.type == 'spend.policy':
             if source != 'ui':
-                raise ProjectError('Review spending in the project window.', 403)
+                raise ProjectError('请在工程窗口中确认费用。', 403, code='spend_human_review')
             return await asyncio.to_thread(self.projects.commit, command,
                 lambda before: creation_spend.save_policy(before, command.payload), session=session)
         original, review = command, None
         if command.type == 'spend.review':
             if source != 'ui':
-                raise ProjectError('Review spending in the project window.', 403)
+                raise ProjectError('请在工程窗口中确认费用。', 403, code='spend_human_review')
             replay = self.projects.replay(command)
             if replay:
                 return replay
             request = creation_spend.get_request(self.projects.snapshot(command.projectId), command.payload.requestId)
             if request.status != 'pending':
-                raise ProjectError('This request has already been reviewed.', 409)
+                raise ProjectError('该费用请求已经处理，请查看工程费用记录。', 409, code='spend_reviewed')
             if command.payload.decision == 'cancel':
                 def cancel_request(before):
                     current = creation_spend.get_request(before, request.id)
@@ -615,7 +615,10 @@ class CreationGeneration(GenerationRuntime):
                 creation_spend.observe(self.projects, project_id, calls[0].id, 'submitted')
             if task.get('phase') in {'download', 'save', 'adopt', 'complete'} and task.get('status') in {'running', 'succeeded'}:
                 creation_spend.observe(self.projects, project_id, calls[-1].id, 'completed')
-            if task.get('status') in {'cancelled', 'failed', 'interrupted'}:
+            # A queued task can still submit after restart or model configuration
+            # repair. Keep its accepted budget until execution or explicit cancellation.
+            recoverable_queue = task.get('phase') == 'queued' and task.get('status') != 'cancelled' and not job.cancelRequested
+            if task.get('status') in {'cancelled', 'failed', 'interrupted'} and not recoverable_queue:
                 for call in calls:
                     if call.state == 'reserved':
                         creation_spend.observe(self.projects, project_id, call.id, 'released')
@@ -838,7 +841,8 @@ class CreationGeneration(GenerationRuntime):
                     category='temporary', stage='cancel', message='供应商取消未确认。', suggestion='请在服务控制台核对原任务和费用。').model_dump(mode='json'))
             self.checkpoint(project_id, task, str(self.directory(project_id)))
             job = self.get_job(project_id, job_id)
-        if job and job.status in {'queued', 'running'} and job_id not in self.committing:
+        if job and job_id not in self.committing and (job.status in {'queued', 'running'} or
+                job.phase == 'queued' and job.status in {'interrupted', 'failed'}):
             task = self.task(job)
             task.update(status='cancelled', recovery=self.recovery(task, str(self.directory(project_id))), resumeAllowed=False)
             self.checkpoint(project_id, task, str(self.directory(project_id)))

@@ -1253,7 +1253,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       {!ready && <div className="cw-loading canvas-loading-message"><span className="canvas-loading-spinner" aria-hidden="true" />{t("canvas.workspace.loading.opening")}</div>}
 
       <div className="cw-bottom-left">
-        {ready && <ProjectSpend key={doc.id} projectId={doc.id} onNotify={notify} onSettings={() => { setSettingsCategory("models"); setSettingsOpen(true); }} />}
+        {ready && !welcomeOpen && <ProjectSpend key={doc.id} projectId={doc.id} onNotify={notify} onSettings={() => { setSettingsCategory("models"); setSettingsOpen(true); }} />}
         <div className="cw-settings-control">
           <IconButton
             name="settings"

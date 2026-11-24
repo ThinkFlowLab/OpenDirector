@@ -16,6 +16,18 @@ def request(language: str):
     return SimpleNamespace(headers={"accept-language": language})
 
 
+@pytest.mark.parametrize('code, chinese, english, status', [
+    ('spend_human_review', '请在工程窗口中确认费用。', 'Review spending in the project window.', 403),
+    ('spend_reviewed', '该费用请求已经处理，请查看工程费用记录。', 'This spending request has already been reviewed. Check project spending history.', 409),
+    ('spend_cancelled', '该费用请求已取消，请重新发起任务。', 'This spending request was cancelled. Start a new task.', 409),
+    ('selection_preview_started', '选区预览已经启动，请先查看工程费用记录再重试。', 'The selection preview has already started. Check project spending history before retrying.', 409),
+    ('spend_call_submitted', '该工具的模型调用已经提交，请查看工程费用记录。', 'This tool model call has already been submitted. Check project spending history.', 409),
+])
+def test_spend_errors_preserve_specific_recovery_guidance(code, chinese, english, status):
+    assert localized_error(request('zh-CN'), chinese=chinese, status=status, code=code) == chinese
+    assert localized_error(request('en-US'), chinese=chinese, status=status, code=code) == english
+
+
 def test_capability_messages_preserve_the_specific_input_failure():
     cases = [
         ('capability_unavailable', '该模型不支持文字回复。', 'This model does not support text replies.'),

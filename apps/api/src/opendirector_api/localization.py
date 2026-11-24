@@ -16,6 +16,11 @@ from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
+    'spend_human_review': 'Review spending in the project window.',
+    'spend_reviewed': 'This spending request has already been reviewed. Check project spending history.',
+    'spend_cancelled': 'This spending request was cancelled. Start a new task.',
+    'selection_preview_started': 'The selection preview has already started. Check project spending history before retrying.',
+    'spend_call_submitted': 'This tool model call has already been submitted. Check project spending history.',
     'spend_quote_changed': 'The request, price or balance changed. Review the current batch.',
     'spend_cap': 'This batch exceeds the available project budget.',
     'spend_unknown': 'Set a price in the project currency to determine the maximum cost.',

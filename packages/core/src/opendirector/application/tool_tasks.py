@@ -163,7 +163,7 @@ class ToolTasks(ToolTaskLifecycle):
                 if admission.status == 'pending':
                     return tool_spend.pending_receipt(task, admission), None
                 if admission.status == 'cancelled':
-                    raise ProjectError('This request has already been cancelled.', 409)
+                    raise ProjectError('该费用请求已取消，请重新发起任务。', 409, code='spend_cancelled')
                 folder = self.store.state_dir / 'selection-previews' / project_id
                 folder.mkdir(parents=True, exist_ok=True)
                 path = gateway().child(folder, task_id + '.json')
@@ -171,7 +171,7 @@ class ToolTasks(ToolTaskLifecycle):
                     saved = gateway().read_json(path)
                     if saved.get('status') == 'completed':
                         return self._cached_selection(path, saved), None
-                    raise ProjectError('The selection preview has already started. Check project spending before retrying.', 409)
+                    raise ProjectError('选区预览已经启动，请先查看工程费用记录再重试。', 409, code='selection_preview_started')
                 gateway().write_json(path, {'status': 'started', 'workerId': self.worker_id})
             return None, path
 
@@ -477,7 +477,7 @@ class ToolTasks(ToolTaskLifecycle):
         admission = tool_spend.admit(self.projects, value, task, records, session, review)
         if admission is not None:
             if admission.status == 'cancelled':
-                raise ProjectError('This request has already been cancelled.', 409)
+                raise ProjectError('该费用请求已取消，请重新发起任务。', 409, code='spend_cancelled')
             if admission.status == 'pending':
                 return tool_spend.pending_receipt(task, admission), directory, None
             task = dict(admission.toolTask)

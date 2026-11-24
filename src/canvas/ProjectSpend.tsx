@@ -117,9 +117,10 @@ export function GroupEstimate({ document, groupId, models }: {
     return () => { clearTimeout(timer); abort.abort(); };
   }, [document.id, members, key]);
   if (!result || result.key !== key) return null;
-  const { quote, currency, amount, subtotals } = result.value;
+  const { quote, currency, amount, subtotals, projectAfter } = result.value;
   return <details className="cw-spend-estimate cw-group-estimate">
     <summary>{t("spend.estimate", {action: t(`spend.action.${generationOutput(quote)}`, {count: quote.candidates ?? quote.count}), amount: amount == null ? t("spend.unknown") : money(amount, currency, locale)})}
+      {projectAfter != null && <> · {t("spend.after", {amount: money(projectAfter, currency, locale)})}</>}
       {!!quote.deferred?.length && <> · {t("spend.awaitingInputs", {count: quote.deferred.length})}</>}
       {!!quote.skipped?.length && <> · {t("spend.skippedSteps", {count: quote.skipped.length})}</>}
     </summary>{amount == null && <Subtotals values={subtotals} />}<QuoteLines quote={quote} />
@@ -152,8 +153,10 @@ export function ToolEstimate({ projectId, itemId, tool, priceRevision }: {
     return () => { clearTimeout(timer); abort.abort(); };
   }, [key]);
   if (saved?.key !== key || !saved.value.quote.lines.length) return null;
-  const { amount, currency, quote, subtotals } = saved.value;
-  return <details className="cw-spend-estimate"><summary>{t("spend.toolQuote", { amount: amount == null ? t("spend.unknown") : money(amount, currency, locale) })}</summary>
+  const { amount, currency, quote, subtotals, projectAfter } = saved.value;
+  return <details className="cw-spend-estimate"><summary>{t("spend.toolQuote", { amount: amount == null ? t("spend.unknown") : money(amount, currency, locale) })}
+    {projectAfter != null && <> · {t("spend.after", {amount: money(projectAfter, currency, locale)})}</>}
+    </summary>
     {amount == null && <Subtotals values={subtotals} />}<QuoteLines quote={quote} /></details>;
 }
 

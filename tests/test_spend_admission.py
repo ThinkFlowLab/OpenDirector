@@ -7,10 +7,11 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from generation_helpers import command, policy, review
+from generation_helpers import cancel, command, policy, review
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_spend import review_status
 from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
@@ -20,6 +21,67 @@ from test_creation_generation_service import anyio_backend
 from test_creation_parameters import done, png
 
 pytestmark = pytest.mark.cpu
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('cancel_queued', [False, True])
+async def test_restart_retains_queued_budget_until_execution_or_cancellation(project, cancel_queued):
+    store, pid, session = project
+    configs = ModelConfigs(store.local.repository)
+    model = configs.save('image', 'http://fixture.invalid/v1', 'fixture', '', connection_type='self_hosted', auth_mode='none')
+    configs.set_price(model['id'], dict(rate='0.40', unit='request', currency='USD'))
+    runner = CreationGeneration(store, configs)
+    entered, hold = asyncio.Event(), asyncio.Event()
+    calls = []
+    async def provider(request):
+        calls.append(request.url.path)
+        if len(calls) == 2:
+            entered.set()
+        await hold.wait()
+        return httpx.Response(200, json={'data': [dict(b64_json=base64.b64encode(png((1024,1024))).decode())]})
+    runner.provider = GenerationProviders(runner.store, transport=httpx.MockTransport(provider))
+    restarted = None
+    try:
+        await runner.execute(policy(store, pid, cap='1.20'), session=session)
+        draft = command(project, model, parameters=dict(size='1024x1024'))
+        batch = draft.model_copy(update={'payload': draft.payload.model_copy(update={'count': 3})})
+        receipt = await runner.execute(batch, session=session)
+        assert receipt.status == 'accepted'
+        async with asyncio.timeout(10):
+            await entered.wait()
+        queued = next(j for j in store.snapshot(pid).jobs if j.phase == 'queued')
+        await runner.close()
+        reopened = CreationProjects(LocalProjects(store.local.repository))
+        snapshot = reopened.snapshot(pid)
+        assert [c.state for c in snapshot.spendCalls].count('reserved') == 1
+        assert review_status(snapshot)['held'] == Decimal('1.20')
+        assert review_status(snapshot)['available'] == 0
+        restarted = CreationGeneration(reopened, configs)
+        restarted.provider = GenerationProviders(restarted.store, transport=httpx.MockTransport(provider))
+        if cancel_queued:
+            await cancel(restarted, pid, str(queued.id), session)
+            await restarted.recover(str(pid), str(queued.id), explicit=True)
+        hold.set()
+        await restarted.start()
+        await done(restarted)
+        final = reopened.snapshot(pid)
+        status = review_status(final)
+        assert len(calls) == (2 if cancel_queued else 3)
+        assert len(final.jobs) == len(final.spendCalls) == 3
+        assert status['held'] == Decimal('0.80')  # Submitted calls still require provider reconciliation.
+        assert status['settled'] == (0 if cancel_queued else Decimal('0.40'))
+        assert status['available'] == (Decimal('0.40') if cancel_queued else 0)
+        call = next(c for c in final.spendCalls if c.ownerId == queued.id)
+        assert call.state == ('released' if cancel_queued else 'completed')
+        if not cancel_queued:
+            extra = command((reopened, pid, session), model)
+            assert (await restarted.execute(extra, session=session)).status == 'awaiting_confirmation'
+            assert len(calls) == 3
+    finally:
+        hold.set()
+        await runner.close()
+        if restarted:
+            await restarted.close()
 
 
 @pytest.mark.anyio
@@ -39,6 +101,9 @@ async def test_threshold_equality_unknown_cancellation_and_price_changes(project
         request = store.snapshot(pid).spendRequests[-1]
         assert (await runner.execute(review(pid, request), session=session)).status == 'rejected'
         assert (await runner.execute(review(pid, request, decision='cancel'), session=session)).status == 'applied'
+        with pytest.raises(ProjectError) as repeated_review:
+            await runner.execute(review(pid, request), session=session)
+        assert repeated_review.value.code == 'spend_reviewed'
         assert not store.snapshot(pid).jobs and not store.snapshot(pid).spendCalls
         fresh = draft.model_copy(update={'commandId': uuid4()})
         await runner.execute(fresh, session=session)

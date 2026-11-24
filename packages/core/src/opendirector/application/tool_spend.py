@@ -116,10 +116,10 @@ def begin_call(projects, project_id, task_id, capability, ordinal, model=None):
             if receipt.status != 'rejected':
                 return call.id
     if ordinal >= len(calls):
-        raise ProjectError('The tool needs an additional model call outside its accepted estimate.', 409, code='spend_quote_changed')
+        raise ProjectError('工具需要执行超出已确认报价的模型调用，请重新核对费用。', 409, code='spend_quote_changed')
     call = calls[ordinal]
     if call.state != 'reserved':
-        raise ProjectError('This tool model call has already been submitted.', 409)
+        raise ProjectError('该工具的模型调用已经提交，请查看工程费用记录。', 409, code='spend_call_submitted')
     creation_spend.observe(projects, project_id, call.id, 'submitted')
     return call.id
 
