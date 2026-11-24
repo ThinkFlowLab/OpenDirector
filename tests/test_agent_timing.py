@@ -153,3 +153,38 @@ def test_a_clock_disagreement_is_dropped_instead_of_poisoning_the_turn(tmp_path)
     running, finished = asyncio.run(scenario())
     assert 'timing' not in running
     assert finished['timing'] == {'spawn': None, 'work': finished['timing']['work']}
+
+
+@requires_posix()
+def test_start_up_is_counted_once_per_process(tmp_path):
+    async def scenario():
+        queue = asyncio.Queue()
+        project = uuid4()
+        server, _ = await start_server(_Gateway(project), queue, str(tmp_path / 'cli.sock'), set())
+
+        async def send(first, identity):
+            reader, writer = await asyncio.open_unix_connection(str(tmp_path / 'cli.sock'))
+            writer.write((json.dumps({'id': identity, 'cliCommand': 'opendirector job wait',
+                                      'projectId': str(project), 'name': 'job.wait', 'arguments': {},
+                                      'timing': {'startedAt': time.monotonic() - 1.5,
+                                                 'firstCall': first}}) + '\n').encode())
+            await writer.drain()
+            await reader.readline()
+            writer.close()
+            await writer.wait_closed()
+            return [await asyncio.wait_for(queue.get(), 5) for _ in range(2)]
+
+        try:
+            # A wait that polls sends one request per window from one process:
+            # only the first one paid for the interpreter.
+            first = await send(True, '1')
+            second = await send(False, '2')
+            return first, second
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    first, second = asyncio.run(scenario())
+    assert 1.4 <= first[0]['timing']['spawn'] < 10
+    assert second[0]['timing']['spawn'] == 0.0
+    assert second[1]['timing']['spawn'] == 0.0

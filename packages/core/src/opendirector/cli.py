@@ -1,4 +1,14 @@
 """Command-line access to OpenDirector's shared project services."""
+import time
+
+# The agent measures how much of a tool call is interpreter start-up and import
+# time, so the clock has to be anchored before the imports below: anchoring it
+# after them would hide the very cost being measured. It stays anchored there
+# for the whole process, and each request says whether it is the process's
+# first, because a command that waits in a loop must not bill its earlier waits
+# as start-up.
+STARTED = time.monotonic()
+
 from contextlib import redirect_stdout
 from enum import Enum
 from hashlib import sha256
@@ -11,7 +21,6 @@ import socket
 import shlex
 import subprocess
 import sys
-import time
 from typing import Annotated, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4, uuid5
@@ -27,10 +36,9 @@ from opendirector.domain.creation.commands import COMMAND_MODELS, command_finger
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 
-# The agent measures how much of a tool call is interpreter start-up and import
-# time. Anchoring the clock at import lets it separate that from the command's
-# own work; the process cannot measure its own start any other way.
-STARTED = time.monotonic()
+# Set once this process has told the transport how it started, so later requests
+# from the same process are not charged that start-up again.
+_STARTUP_REPORTED = False
 
 app = typer.Typer(no_args_is_help=True, help="Start OpenDirector and create or edit projects.",
     epilog="Run opendirector COMMAND --help for subcommands and usage. "
@@ -210,6 +218,7 @@ class Client:
         return f"/api/creation/projects/{self.project}{suffix}"
 
     def call(self, name, arguments, *, identity=None):
+        global _STARTUP_REPORTED
         if not self.live:
             raise ProjectError("This operation requires an active agent execution context.")
         endpoint = self.gateway.get("OPENDIRECTOR_AGENT_HOST")
@@ -219,9 +228,11 @@ class Client:
             connection.settimeout(SOCKET_TIMEOUT)
             if not endpoint:
                 connection.connect(self.gateway["OPENDIRECTOR_AGENT_SOCKET"])
+            first = not _STARTUP_REPORTED
+            _STARTUP_REPORTED = True
             connection.sendall((json.dumps({
                 "id": str(identity or uuid4()), "cliCommand": self.command, "projectId": str(self.project) if self.project else None, "name": name, "arguments": arguments,
-                "timing": {"startedAt": STARTED, "sentAt": time.monotonic()},
+                "timing": {"startedAt": STARTED, "sentAt": time.monotonic(), "firstCall": first},
             }) + "\n").encode())
             with connection.makefile("rb") as reader:
                 response = json.loads(reader.readline(64 * 1024 * 1024))
@@ -766,7 +777,6 @@ def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Arg
                  help="Generation job IDs. Omit them with --all.")] = None,
              all_jobs: Annotated[bool, typer.Option("--all", help="Wait for every unfinished job in this project.")] = False,
              timeout: Annotated[float, typer.Option(min=0, help="Maximum wait in seconds.")] = 300):
-    import time
     ctx.obj.command = ctx.command_path
     if not job_ids and not all_jobs:
         raise typer.BadParameter("Pass job IDs or --all.")

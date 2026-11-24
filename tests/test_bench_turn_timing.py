@@ -72,3 +72,35 @@ def test_the_report_reads_what_a_turn_writes(tmp_path):
     assert numbers['decomposedCalls'] == 1
     assert numbers['spawnShareOfTurn'] == 0.22
     assert json.loads(json.dumps(numbers))['turns'] == 1
+
+
+def test_nested_calls_do_not_report_more_tool_time_than_the_turn():
+    numbers = bench.report([{'summary': {'turnSeconds': 10.0}, 'calls': [
+        {'id': 'bash:1', 'name': 'bash', 'startedAt': 0.0, 'endedAt': 8.0},
+        {'id': 'cli:1', 'name': 'opendirector job wait', 'startedAt': 1.0, 'endedAt': 7.0,
+         'spawn': 0.0, 'work': 6.0}]}])
+    assert numbers['callSeconds'] == 8.0
+    assert numbers['callSecondsSum'] == 14.0
+    assert numbers['overlapSeconds'] == 6.0
+    assert numbers['callShare'] == 0.8
+    assert numbers['unaccountedSeconds'] == 2.0
+
+
+def test_a_call_is_charged_the_start_up_it_paid_for():
+    numbers = bench.report([{'summary': {'turnSeconds': 10.0}, 'calls': [
+        {'id': 'cli:1', 'name': 'opendirector project show', 'startedAt': 5.0, 'endedAt': 5.1,
+         'spawn': 1.2, 'work': 0.1}]}])
+    assert numbers['callSeconds'] == 1.3
+    assert numbers['callShare'] == 0.13
+    assert numbers['spawnShareOfCalls'] == 0.923
+
+
+def test_calls_without_launch_timing_make_the_transport_decision_inconclusive():
+    numbers = bench.report([{'summary': {'turnSeconds': 100.0}, 'calls': [
+        {'id': f'cli:{index}', 'name': 'opendirector project show', 'startedAt': 0.0,
+         'endedAt': 1.3, 'spawn': 1.2, 'work': 0.1} for index in range(40)] + [
+        {'id': 'bash:help', 'name': 'bash', 'startedAt': 0.0, 'endedAt': 0.4}]}])
+    assert numbers['startupCoverage'] == round(40 / 41, 3)
+    decision = bench.verdict(numbers)
+    assert 'inconclusive' in decision
+    assert 'replace the CLI transport' not in decision

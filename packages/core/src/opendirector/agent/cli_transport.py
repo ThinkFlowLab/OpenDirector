@@ -28,15 +28,20 @@ def environment(work, socket, bridge_env=None):
 
 
 def _spawn(timing):
-    """How long the CLI spent starting up before it asked for the command.
+    """How long the CLI spent starting up before it asked for this command.
 
-    Only the CLI can see its own start, so this arrives in the request. An
-    impossible value means the two clocks disagree and is dropped rather than
-    poisoning the turn's totals.
+    Only the CLI can see its own start, so this arrives in the request. The
+    process reports that start once: a command that polls in a loop sends
+    several requests from one process, and the second one onward are already
+    warm, so counting the time since the process began again would bill every
+    earlier poll as start-up. An impossible value means the two clocks disagree
+    and is dropped rather than poisoning the turn's totals.
     """
     started = timing.get('startedAt') if isinstance(timing, dict) else None
     if not isinstance(started, (int, float)):
         return None
+    if not timing.get('firstCall', True):
+        return 0.0
     spawn = round(time.monotonic() - started, 3)
     return spawn if 0 <= spawn < 600 else None
 
