@@ -9,6 +9,7 @@ from uuid import uuid4
 from filelock import FileLock
 
 from opendirector.domain.projects import ProjectError, identifier
+from opendirector.domain.creation.spend import ConnectionPrice
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.capabilities import agent_input_modalities
 from opendirector.domain.model_connection import connection_fields, model_fields
@@ -48,10 +49,12 @@ class ModelConfigs:
                     item.update(services[item['providerId']])
             seen = set()
             for item in value["models"]:
-                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'proxyMode', 'videoAdapter', 'videoCapabilities', 'providerId', 'inputModalities', 'capabilityAutoCheck'}:
+                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'proxyMode', 'videoAdapter', 'videoCapabilities', 'providerId', 'inputModalities', 'capabilityAutoCheck', 'price'}:
                     raise ValueError()
                 if 'capabilityAutoCheck' in item and type(item['capabilityAutoCheck']) is not bool:
                     raise ValueError()
+                if 'price' in item:
+                    ConnectionPrice.model_validate(item['price'])
                 identifier(item["id"])
                 if item["id"] in seen or item["kind"] not in MODEL_KINDS:
                     raise ValueError()
@@ -73,7 +76,8 @@ class ModelConfigs:
 
     @staticmethod
     def _public(item: dict) -> dict:
-        return {**({'providerId': item['providerId']} if 'providerId' in item else {}),
+        return {**({'price': item['price']} if 'price' in item else {}),
+                **({'providerId': item['providerId']} if 'providerId' in item else {}),
                 **({'capabilityAutoCheck': item['capabilityAutoCheck']} if 'capabilityAutoCheck' in item else {}),
                 **{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode", "proxyMode", "videoAdapter", "videoCapabilities", "inputModalities")}, 'inputRules': input_rules(item)}
 
@@ -137,6 +141,7 @@ class ModelConfigs:
             profile = input_rules(item)['profile']
             if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:
                 check_video_config(kind, 'vllm_omni', 'fasth3' if profile == 'fasth3-omni' else 'minimax_h3', item['videoCapabilities'])
+            self._retain_price(item, existing)
             if existing:
                 models[models.index(existing)] = item
             else:
@@ -145,11 +150,31 @@ class ModelConfigs:
                 item['providerId'] = existing['providerId']
                 for peer in models:
                     if peer.get('providerId') == item['providerId']:
+                        if (peer['url'], peer['connectionType']) != (item['url'], item['connectionType']):
+                            peer.pop('price', None)
                         peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode', 'proxyMode')})
                         if auto_check is not None:
                             peer['capabilityAutoCheck'] = auto_check
             self._write(models)
             return self._public(item)
+
+    def set_price(self, config_id, price):
+        with self.lock:
+            models = self._read()
+            item = next((model for model in models if model['id'] == config_id), None)
+            if item is None:
+                raise ProjectError('Model connection no longer exists.', 404)
+            if price is None:
+                item.pop('price', None)
+            else:
+                item['price'] = ConnectionPrice.model_validate(price).model_dump(mode='json')
+            self._write(models)
+            return self._public(item)
+
+    @staticmethod
+    def _retain_price(item, old):
+        if old and 'price' in old and all(item[key] == old[key] for key in ('kind', 'url', 'modelId', 'protocol', 'connectionType')):
+            item['price'] = old['price']
 
     def delete(self, config_id: str) -> None:
         with self.lock:
@@ -224,6 +249,7 @@ class ModelConfigs:
                 profile = input_rules(item)['profile']
                 if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:
                     check_video_config(kind, 'vllm_omni', 'fasth3' if profile == 'fasth3-omni' else 'minimax_h3', item['videoCapabilities'])
+                self._retain_price(item, old)
                 saved.append(item)
             remaining = [item for item in models if item not in previous]
             for item in remaining:

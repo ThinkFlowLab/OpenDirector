@@ -1,3 +1,4 @@
+import { ModelPriceEditor } from "./ProjectSpend";
 import { ModelAvailabilityCard } from "./ModelAvailabilityCard";
 import { ModelSetup } from "./ModelSetup";
 import { ModelLogo } from "./ModelLogo";
@@ -188,6 +189,10 @@ export function ModelSettings({
                         value={member.availability} checking={catalog.checkingIds.has(member.id)}
                         error={member.availability?.reasonCode === "query_failed" ? catalog.availabilityError || undefined : undefined}
                         onRefresh={() => void catalog.refreshAvailability([member.id], true)} />)}
+                    </details>
+                    <details className="cw-model-availability-details">
+                      <summary>{t(model.kind === "agent" ? "spend.mediaToolPrice" : "spend.price")}</summary>
+                      {members.map(member => <ModelPriceEditor key={member.id} model={member} refresh={catalog.refresh} />)}
                     </details>
                     <div className="cw-model-service-bottom">
                       <span>

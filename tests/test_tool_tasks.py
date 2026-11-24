@@ -359,6 +359,7 @@ def video_server(log, *, hold=False):
         if request.method == 'POST':
             body = request.read()
             assert b'fl2va' in body and b'name="input_reference"' in body
+            assert b'name="num_frames"\r\n\r\n124\r\n' in body and b'name="fps"\r\n\r\n24\r\n' in body
             return httpx.Response(200, json={'id': 'video_1', 'status': 'queued'})
         if request.method == 'DELETE':
             return httpx.Response(200, json={'id': 'video_1', 'status': 'cancelled'})
@@ -371,12 +372,16 @@ def video_server(log, *, hold=False):
 def test_dynamic_poster_runs_first_frame_video_and_cancel_reaches_the_service(project):
     store, project_id, session = project
     configs = configure(store, H3)
+    configs.set_price(configs.list()[0]['id'], dict(unit='output_second', rate='.02', currency='USD'))
     source = upload(store, project_id, session, 'poster.png', png((64, 36)))
     log = []
     task = run(store, configs, httpx.MockTransport(video_server(log)), project_id, session,
                {'tool': 'dynamic-poster', 'sourceAssetIds': [source], 'parameters': {'prompt': '霓虹闪烁'}})
     assert task['status'] == 'succeeded', task['error']
     assert task['outputs'][0]['kind'] == 'video' and ('GET', '/v1/videos/video_1/content') in log
+    call = store.snapshot(project_id).spendCalls[0]
+    assert float(call.line.quantity) == pytest.approx(124 / 24) and call.line.quantityBasis == 'maximum'
+    assert call.usageSource == 'media' and float(call.usage) == 1 and float(call.calculated) == .02
 
     async def cancel():
         log.clear()

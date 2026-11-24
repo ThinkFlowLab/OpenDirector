@@ -24,7 +24,7 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
 from test_creation_canvas_service import project, media, send, ver
 from test_creation_generation_service import anyio_backend
-from generation_helpers import prepared
+from generation_helpers import policy, prepared, review
 
 
 pytestmark = pytest.mark.cpu
@@ -341,6 +341,16 @@ def recording(seconds=3):
     return subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',f'sine=frequency=330:sample_rate=48000','-t',str(seconds),'-ac','2','-threads','1','-f','mp3','pipe:1'],capture_output=True,check=True).stdout
 
 
+def pcm_recording(seconds):
+    # PCM gives ffprobe the same exact duration on every supported platform.
+    import wave
+    buffer = BytesIO()
+    with wave.open(buffer, 'wb') as audio:
+        audio.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+        audio.writeframes(bytes(seconds * 8000 * 2))
+    return buffer.getvalue()
+
+
 def follow_recording(project, target, spec_id, data, name='reference.mp3'):
     """Connect an imported recording to the music node, as a canvas edge does."""
     store, pid, session = project
@@ -367,7 +377,7 @@ def score_model(project, url='http://score.invalid/v1'):
 async def test_music_follows_a_reference_recording_through_its_transcribed_score(project,mode):
     store,pid,_=project
     calls=[]
-    reference=recording(20)
+    reference = pcm_recording(20)
     def handler(request):
         if request.url.path=='/v1/audio/transcriptions':
             assert request.url.host=='score.invalid'
@@ -382,8 +392,21 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
     runner,target,spec_id=setup(project,'audio',parameters,handler,protocol='vllm_omni_music',model='m-a-p/YuE2-3B')
     score=score_model(project)
     try:
-        target,asset=follow_recording(project,target,spec_id,reference)
-        _,receipt=await submit(project,runner,target,spec_id)
+        target,asset=follow_recording(project,target,spec_id,reference,'reference.wav')
+        runner.configs.set_price(score['id'], dict(currency='USD', rate='0.01', unit='input_second'))
+        music_id = next(s.modelConfigId for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+        runner.configs.set_price(str(music_id), dict(currency='USD', rate='0.02', unit='requested_second'))
+        before = store.snapshot(pid)
+        quote = runner.quote(pid, spec_id, origin=target.id)
+        assert [(line.operation, float(line.amount)) for line in quote.lines] == [
+            ('score', 0.20), ('music', 0.44 if mode == 'melody' else 1.20)]
+        assert float(quote.total('USD')) == (0.64 if mode == 'melody' else 1.40)
+        assert store.snapshot(pid) == before and calls == []
+        await runner.execute(policy(store, pid, threshold='0.50'), session=project[2])
+        _, waiting = await submit(project, runner, target, spec_id)
+        snapshot = store.snapshot(pid)
+        assert waiting.status == 'awaiting_confirmation' and not snapshot.jobs and not snapshot.spendCalls and calls == []
+        receipt = await runner.execute(review(pid, snapshot.spendRequests[-1]), session=project[2])
         assert receipt.status=='accepted',receipt
         await done(runner)
         job=store.snapshot(pid).jobs[-1]
@@ -402,6 +425,71 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
                                                       'url':'http://score.invalid/v1','protocol':'vllm_omni_score','connectionType':'self_hosted'}
         assert [ref.asset.assetId for ref in job.inputSnapshot.references]==[asset.id]
     finally: await runner.close()
+
+
+@pytest.mark.anyio
+async def test_music_quote_preserves_known_subtotals_and_omits_unused_score(project):
+    store, pid, session = project
+    runner, item, spec_id = setup(project, 'audio', dict(creationType='music', durationSeconds=60),
+        lambda request: pytest.fail('A price query contacted the provider'), protocol='vllm_omni_music', model='m-a-p/YuE2-3B')
+    score = score_model(project)
+    music = next(s.modelConfigId for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+    try:
+        runner.configs.set_price(str(music), dict(currency='USD', rate='.02', unit='requested_second'))
+        solo = runner.quote(pid, spec_id, origin=item.id)
+        assert [line.operation for line in solo.lines] == ['music'] and float(solo.total('USD')) == 1.20
+        item, _ = follow_recording(project, item, spec_id, pcm_recording(20), 'reference.wav')
+        free_score = runner.quote(pid, spec_id, origin=item.id)
+        assert free_score.lines[0].source == 'local' and free_score.lines[0].amount == 0 and float(free_score.total('USD')) == .44
+        runner.configs.set_price(score['id'], dict(currency='USD', rate='.01', unit='input_second'))
+        runner.configs.set_price(str(music), dict(currency='CNY', rate='.02', unit='requested_second'))
+        mixed = runner.quote(pid, spec_id, origin=item.id)
+        assert mixed.total('USD') is None and {c: float(v) for c, v in mixed.subtotals().items()} == {'USD': .2, 'CNY': .44}
+        runner.configs.set_price(str(music), dict(currency='USD', rate='.02', unit='input_character'))
+        partial = runner.quote(pid, spec_id, origin=item.id)
+        assert partial.lines[1].amount is None and float(partial.subtotals()['USD']) == .20 and partial.total('USD') is None
+        await runner.execute(policy(store, pid, cap='10'), session=session)
+        _, waiting = await submit(project, runner, item, spec_id)
+        assert waiting.status == 'awaiting_confirmation'
+        snapshot = store.snapshot(pid)
+        denied = await runner.execute(review(pid, snapshot.spendRequests[-1], acceptUnknown=True), session=session)
+        assert denied.status == 'rejected' and not store.snapshot(pid).jobs and not store.snapshot(pid).spendCalls
+    finally:
+        await runner.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('fail_at', ['score', 'music'])
+async def test_reference_music_keeps_separate_evidence_when_a_request_times_out(project, fail_at):
+    store, pid, session = project
+    requests = []
+    def provider(request):
+        step = 'score' if request.url.path.endswith('/transcriptions') else 'music'
+        requests.append(step)
+        if step == fail_at:
+            raise httpx.ReadTimeout('response lost', request=request)
+        return httpx.Response(200, json={'text': SCORE})
+    runner, item, spec_id = setup(project, 'audio', dict(creationType='music'), provider,
+        protocol='vllm_omni_music', model='m-a-p/YuE2-3B')
+    score = score_model(project)
+    try:
+        item, _ = follow_recording(project, item, spec_id, recording())
+        music = next(s.modelConfigId for s in store.snapshot(pid).generationSpecs if s.id == spec_id)
+        for config_id, rate in ((score['id'], '.20'), (music, '.44')):
+            runner.configs.set_price(str(config_id), dict(unit='request', rate=rate, currency='USD'))
+        await runner.execute(policy(store, pid, threshold='.50'), session=session)
+        await submit(project, runner, item, spec_id)
+        waiting = store.snapshot(pid).spendRequests[-1]
+        assert not requests
+        await runner.execute(review(pid, waiting), session=session)
+        await done(runner)
+        assert requests == (['score'] if fail_at == 'score' else ['score', 'music'])
+        calls = store.snapshot(pid).spendCalls
+        assert [c.state for c in calls] == (['submitted', 'released'] if fail_at == 'score' else ['completed', 'submitted'])
+        if fail_at == 'music':
+            assert str(calls[0].calculated) == '0.20' and calls[1].calculated is None
+    finally:
+        await runner.close()
 
 
 @pytest.mark.anyio

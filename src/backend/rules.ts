@@ -64,6 +64,7 @@ export interface InputRules {
 }
 
 export interface ModelConfig {
+  price?: import("../contracts/generated.ts").ConnectionPrice | null;
   capabilityAutoCheck?: boolean | null;
   availability?: ModelAvailability | null;
   providerId?: string | null;

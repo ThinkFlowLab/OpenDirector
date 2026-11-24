@@ -56,6 +56,7 @@ import {
 import { composerReferenceVisibility } from "./composerReferenceVisibility.ts";
 
 export interface NodeComposerProps {
+  projectId?: string;
   selectedNode: CanvasNode | null;
   incomingNodes: CanvasNode[];
   /** Pinned assets included in run-before reference checks, not frame-slot limits. */
@@ -86,7 +87,10 @@ function clockTime(seconds: number) {
 /** Built-in demo voice id; the visible label is localized separately. */
 const DEMO_VOICE = "动漫海绵";
 
+import { GenerationEstimate } from "./ProjectSpend";
+
 export function NodeComposer({
+  projectId,
   selectedNode,
   incomingNodes,
   pinnedPrecheck,
@@ -507,6 +511,19 @@ export function NodeComposer({
             {t("generation.bigmodel.watermarkWaiver")}
           </p>
         )}
+      {projectId && config && canRun && (
+        <div className="cw-composer-quote">
+          <GenerationEstimate
+            projectId={projectId}
+            itemId={selectedNode.id}
+            modelId={config.id}
+            draft={settings}
+            prompt={settings.prompt ?? ""}
+            count={mode === "audio" ? 1 : settings.count ?? 1}
+            priceRevision={JSON.stringify(backendModels.map(model => model.price))}
+          />
+        </div>
+      )}
       <div className="cw-composer-footer">
         <div className="cw-composer-options">
           {!serviceModels.length && onConfigureModel ? (

@@ -154,8 +154,10 @@ class GenerationProviders(VolcengineGeneration):
             return result.suffix, result.data
         if input_rules(config)['profile'] == 'minimax-speech':
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+            async def usage(characters):
+                await self._spend(0, 'completed', unit='input_character', usage=characters, evidence='provider')
             result = await self.minimax_speech.speech(config, SpeechRequest(prepared['prompt'], task['parameters'].get('voice')),
-                result_ready=result_ready)
+                result_ready=result_ready, usage_ready=usage)
             return result.suffix, result.data
         if input_rules(config)['profile'] == 'zhipu-speech':
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
@@ -224,6 +226,8 @@ class GenerationProviders(VolcengineGeneration):
                     score = ''
                     if params.get('score_model'):
                         score = await self._score(task, params)
+                        await self._spend(0, 'completed')
+                        await self._spend(1, 'submitted')
                     result = await VllmOmniMusic(self.transport).music(config, MusicRequest(
                         task['prompt'], params.get('lyrics', ''), params['duration'], score=score,
                         score_mode=params.get('score_mode', 'melody'), seed=params.get('seed')))
@@ -274,11 +278,17 @@ class GenerationProviders(VolcengineGeneration):
         except (ValueError, KeyError, TypeError, IndexError, AttributeError):
             raise protocol_failure(stage) from None
 
+    async def _spend(self, slot, state, **facts):
+        observer = getattr(self.store, 'observe_spend', None)
+        if observer is not None:
+            await asyncio.to_thread(observer, slot, state, **facts)
+
     async def _score(self, task, params):
         """Transcribe the job's one reference recording with the transcription model it froze."""
         config = await asyncio.to_thread(self.store.frozen_model, params['score_model'])
         loaded = await asyncio.to_thread(lambda: list(references(self.store, task['projectId'], task['referenceIds'])))
         data, meta = next((data, meta) for data, meta, source_kind in loaded if source_kind == 'audio')
+        await self._spend(0, 'submitted')
         return await VllmOmniScore(self.transport).score(config, ScoreRequest(
             data, meta['name'], melody_only=params['score_mode'] == 'melody'))
 

@@ -383,11 +383,12 @@ async def test_real_mp3_snapshot_adoption_replay_and_reopen(context, mp3, source
 async def test_failed_download_recovers_after_model_removal_without_resubmitting(context, mp3, monkeypatch, configuration_change):
     project, configs, saved = context
     store, pid, session = project
+    configs.set_price(saved['id'], dict(unit='input_character', rate='0.01', currency='USD'))
     calls, healthy = [], False
     def handle(request):
         calls.append(request)
         if request.url.path == '/v1/get_voice': return httpx.Response(200, json=VOICES)
-        if request.method == 'POST': return httpx.Response(200, json=SUCCESS)
+        if request.method == 'POST': return httpx.Response(200, json={**SUCCESS, 'extra_info': {'usage_characters': 7}})
         assert str(request.url) == RESULT and 'authorization' not in request.headers
         if not healthy: raise httpx.ReadTimeout('download outage', request=request)
         return httpx.Response(200, content=mp3)
@@ -395,6 +396,8 @@ async def test_failed_download_recovers_after_model_removal_without_resubmitting
     try:
         first._launch(*prepared(first, project, saved, prompt='Read this', parameters=selection(saved)))
         await settled(first)
+        [usage] = store.snapshot(pid).spendCalls
+        assert usage.usage == 7 and usage.usageSource == 'provider' and str(usage.calculated) == '0.07'
         [failed] = store.snapshot(pid).jobs
         assert failed.recovery == 'download' and failed.resumeAllowed
         assert not store.snapshot(pid).assets
@@ -415,6 +418,7 @@ async def test_failed_download_recovers_after_model_removal_without_resubmitting
         await settled(restarted)
         snapshot = reopened.snapshot(pid)
         assert snapshot.jobs[0].id == failed.id and snapshot.jobs[0].status == 'succeeded'
+        assert len(snapshot.spendCalls) == 1 and snapshot.spendCalls[0].calculated == usage.calculated
         assert len(snapshot.assets) == len(snapshot.results) == 1
         assert sum(call.url.path == '/v1/t2a_v2' for call in calls) == 1
     finally:

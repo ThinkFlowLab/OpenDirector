@@ -9,9 +9,10 @@ import asyncio
 import base64
 from dataclasses import replace
 from datetime import datetime, timezone
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 from PIL import Image
+from pydantic_core import to_jsonable_python
 
 from opendirector.application.tool_operations import TOOLS, Source, ToolContext, select_image_objects
 from opendirector.application.model_availability import ModelAvailability, tool_request
@@ -27,6 +28,7 @@ from opendirector.integrations.model_adapters import adapter_for, capabilities_o
 from opendirector.media import processing as media
 from opendirector.media.filenames import with_extension
 from opendirector.media.async_work import blocking
+from . import creation_spend, tool_spend
 from .tool_task_lifecycle import ToolTaskLifecycle
 from .tool_video_inputs import video_execution
 
@@ -119,39 +121,99 @@ class ToolTasks(ToolTaskLifecycle):
         config = self.configs.resolve(public['id'], public['kind'])
         return config, adapter_for(config, self.transport, self.poll_interval)
 
-    async def selection_preview(self, project_id, value, session):
+    def selection_result(self, project_id, task_id, session):
+        self._directory(project_id, session)
+        record = creation_spend.get_request(self.projects.snapshot(project_id), uuid5(UUID(task_id), 'tool-spend'))
+        if (record.toolTask or {}).get('tool') != 'selection-preview':
+            raise ProjectError('Selection preview not found.', 404)
+        path = self.store.state_dir / 'selection-previews' / project_id / (task_id + '.json')
+        cached = gateway().read_json(path) if path.is_file() else {'status': record.status}
+        return self._cached_selection(path, cached)
+
+    @staticmethod
+    def _cached_selection(path, cached):
+        if cached.get('status') == 'completed':
+            result = path.with_suffix('.mask.json')
+            return gateway().read_json(result) if result.is_file() else {'status': 'expired'}
+        return cached
+
+    async def selection_preview(self, project_id, value, session, review=None):
         """Transient masks for one owned source asset; never creates tasks or output assets."""
         source_id = identifier(str(value['sourceAssetId']))
 
-        def read():
+        value = {**value, 'id': str(value.get('id') or uuid4())}
+        task_id = identifier(value['id'])
+        self._ensure_owner()
+        config, adapter = self._model('image.segment', value.get('modelConfigId'))
+        models = {'image.segment': config}
+        if self.providers().get('text.chat'):
+            models['text.chat'] = self._model('text.chat', None)[0]
+
+        def prepare():
             directory = self._directory(project_id, session)
             records = self.assets._records(directory, project_id)
             if source_id not in records or records[source_id]['kind'] != 'image':
                 raise ProjectError('来源图片不存在，请重新上传。', 409)
-            return media.open_image(self.assets.read_bytes(project_id, source_id))
+            task = dict(id=task_id, projectId=project_id, tool='selection-preview', sourceAssetIds=[source_id],
+                boxes=value.get('boxes') or [], parameters={'prompt': value.get('prompt', '')},
+                modelSnapshots={key: {k: v for k, v in model.items() if k not in {'apiKey', 'capabilityAutoCheck', 'availability'}}
+                                for key, model in models.items()})
+            with self.store.transaction():
+                admission = tool_spend.admit(self.projects, value, task, records, session, review)
+                if admission.status == 'pending':
+                    return tool_spend.pending_receipt(task, admission), None
+                if admission.status == 'cancelled':
+                    raise ProjectError('该费用请求已取消，请重新发起任务。', 409, code='spend_cancelled')
+                folder = self.store.state_dir / 'selection-previews' / project_id
+                folder.mkdir(parents=True, exist_ok=True)
+                path = gateway().child(folder, task_id + '.json')
+                if path.exists():
+                    saved = gateway().read_json(path)
+                    if saved.get('status') == 'completed':
+                        return self._cached_selection(path, saved), None
+                    raise ProjectError('选区预览已经启动，请先查看工程费用记录再重试。', 409, code='selection_preview_started')
+                gateway().write_json(path, {'status': 'started', 'workerId': self.worker_id})
+            return None, path
 
-        image = await asyncio.to_thread(read)
-        config, adapter = self._model('image.segment', value.get('modelConfigId'))
+        result, path = await blocking(prepare)
+        if result is not None:
+            return result
+        ordinals = {}
+        async def invoke(capability, fn):
+            ordinal = ordinals.get(capability, 0)
+            call_id = await blocking(tool_spend.begin_call, self.projects, project_id, task_id, capability, ordinal)
+            ordinals[capability] = ordinal + 1
+            result = await fn()
+            await blocking(creation_spend.observe, self.projects, project_id, call_id, 'completed')
+            return result
 
         async def segment(request):
-            return await adapter.segment(config, request)
+            return await invoke('image.segment', lambda: adapter.segment(config, request))
 
         async def progress(_):
             pass
 
         chat = None
-        if self.providers().get('text.chat'):
+        if 'text.chat' in models:
             async def chat(request):
-                chat_config, chat_adapter = self._model('text.chat', None)
+                chat_config = models['text.chat']
+                chat_adapter = adapter_for(chat_config, self.transport, self.poll_interval)
                 prepared = await asyncio.to_thread(self.availability.prepare, chat_config)
                 current, _ = self._model('text.chat', chat_config['id'])
                 self.availability.require(current, tool_request(current, 'text.chat', actual=True), prepared)
-                return await chat_adapter.chat(chat_config, request)
+                return await invoke('text.chat', lambda: chat_adapter.chat(chat_config, request))
 
         context = ToolContext(sources=[], mask=None, boxes=[], parameters={}, image_model=None, video_model=None,
                               progress=progress, segment_model=segment, chat_model=chat)
-        async with self.limit:
-            instances = await select_image_objects(context, image, value.get('prompt', ''), value.get('boxes') or [])
+        try:
+            image = await blocking(lambda: media.open_image(self.assets.read_bytes(project_id, source_id)))
+            async with self.limit:
+                instances = await select_image_objects(context, image, value.get('prompt', ''), value.get('boxes') or [])
+        except (Exception, asyncio.CancelledError):
+            await blocking(gateway().write_json, path, {'status': 'interrupted'})
+            raise
+        finally:
+            await blocking(tool_spend.release_unused, self.projects, project_id, task_id)
 
         def encode():
             result = []
@@ -164,7 +226,17 @@ class ToolTasks(ToolTaskLifecycle):
                                'box': {'x': box[0], 'y': box[1], 'width': box[2] - box[0], 'height': box[3] - box[1]},
                                'maskDataUrl': 'data:image/png;base64,' + base64.b64encode(media.png(rgba)).decode()})
             return {'sourceAssetId': source_id, 'width': image.width, 'height': image.height, 'instances': result}
-        return await asyncio.to_thread(encode)
+        preview = await blocking(encode)
+        def store_preview():
+            with self.store.transaction():
+                gateway().write_json(path.with_suffix('.mask.json'), preview)
+                gateway().write_json(path, {'status': 'completed'})
+                cutoff = datetime.now(timezone.utc).timestamp() - 86400
+                for previous in path.parent.glob('*.mask.json'):
+                    if previous.stat().st_mtime < cutoff:
+                        gateway().child(path.parent, previous.name).unlink(missing_ok=True)
+        await blocking(store_preview)
+        return preview
 
     # Storage -------------------------------------------------------------------
 
@@ -187,6 +259,15 @@ class ToolTasks(ToolTaskLifecycle):
         folder = self._folder(self._directory(project_id), create=False)
         tasks = [self._read_task(project_id, gateway().child(folder, path.name)) for path in folder.glob('*.json')]
         return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
+
+    def untracked_calls(self, project_id, tracked_owners):
+        folder = self._folder(self._directory(project_id), create=False)
+        total = 0
+        for path in folder.glob('*.json'):
+            if path.stem not in tracked_owners:
+                task = gateway().read_json(gateway().child(folder, path.name))
+                total += len(task.get('modelCalls', ()))
+        return total
 
     def placement(self, project_id, task_id, state, session, *, policy="if_current"):
         # Serialize acknowledgement with task writes/project moves. This never
@@ -213,6 +294,8 @@ class ToolTasks(ToolTaskLifecycle):
         with self.store.transaction():
             directory = self._directory(project_id, session)
             task = gateway().read_json(gateway().child(self._folder(directory), task_id + '.json'))
+            if task['status'] in {'failed', 'cancelled', 'interrupted'}:
+                tool_spend.release_unused(self.projects, project_id, task_id)
             if task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
                 task = self._change(project_id, task_id, {'placement': 'unplaced'})
             return task
@@ -242,11 +325,11 @@ class ToolTasks(ToolTaskLifecycle):
 
     # Submission ----------------------------------------------------------------
 
-    def _prepare(self, project_id, value, session):
+    def _prepare(self, project_id, value, session, review=None, *, quote_only=False):
         # Snapshot validation and accepted ledger publication share the project
         # lock. A source cannot be replaced between checking and acceptance.
         with self.store.transaction():
-            initial = self._prepare_locked(project_id, value, session, inspect=True)
+            initial = self._prepare_locked(project_id, value, session, inspect=True, quote_only=quote_only)
         if isinstance(initial, tuple):
             return initial  # A replay does not query or reaccept its frozen job.
         uses_mask = (value.get('tool') == 'inpainting-remove' or
@@ -259,14 +342,15 @@ class ToolTasks(ToolTaskLifecycle):
                             (source.metadata.width, source.metadata.height))
         selected = {capability: config for capability, config in initial.items()
                     if tool_request(config, capability) is not None}
-        prepared = dict(zip(selected, self.availability.prepare_many(selected.values()), strict=True))
+        prepared = {} if quote_only else dict(zip(selected, self.availability.prepare_many(selected.values()), strict=True))
         with self.store.transaction():
-            return self._prepare_locked(project_id, value, session, prepared=prepared)
+            return self._prepare_locked(project_id, value, session, prepared=prepared, review=review, quote_only=quote_only)
 
-    def _prepare_locked(self, project_id, value, session, *, inspect=False, prepared=None):
+    def _prepare_locked(self, project_id, value, session, *, inspect=False, prepared=None, review=None, quote_only=False):
         if self.closing:
             raise ProjectError('工具服务正在关闭，请稍后查询原任务。', 503)
-        self._ensure_owner()
+        if not quote_only:
+            self._ensure_owner()
         identifier(project_id)
         task_id = identifier(str(value['id']))
         spec = TOOLS.get(value.get('tool'))
@@ -285,7 +369,7 @@ class ToolTasks(ToolTaskLifecycle):
         if not source_ids or len(source_ids) > MAX_SOURCES or len(set(source_ids)) != len(source_ids):
             raise ProjectError('请提供 1–20 个不重复的来源素材。', 422)
         directory = self._directory(project_id, session)
-        path = gateway().child(self._folder(directory), task_id + '.json')
+        path = gateway().child(self._folder(directory, create=False), task_id + '.json')
         if path.is_file():
             existing = gateway().read_json(path)
             if (existing['tool'] != spec.id or existing['sourceAssetIds'] != source_ids
@@ -335,15 +419,15 @@ class ToolTasks(ToolTaskLifecycle):
             if image_capability == 'image.generate':
                 image_plan['roles'] = []
         for capability, config in list(models.items()):
-            request = tool_request(config, capability, actual=True)
-            if request is None:
-                continue
             parameters_to_check = [{}]
             if capability in {'video.first_frame', 'video.edit'}:
                 video_plan = video_execution(spec.id, parameters, records[source_ids[0]],
                                              adapter=adapter_for(config), capability=capability)
                 if video_plan is not None:
                     parameters_to_check = video_plan['requests']
+            request = tool_request(config, capability, actual=True)
+            if request is None:
+                continue
             if capability == image_capability:
                 counts = {'text': 1, 'image': sum(role in {'image', 'annotation'} for role in image_plan['roles'])}
                 if image_plan['mode'] == 'native_mask':
@@ -357,6 +441,8 @@ class ToolTasks(ToolTaskLifecycle):
                 contract = self.availability.request_constraints(config, request)
                 if contract is not None:
                     image_policy['requestConstraints'] = contract.model_dump(mode='json', exclude_none=True)
+            if quote_only:
+                continue
             if capability not in (prepared or {}):
                 raise ProjectError('能力检查期间模型服务已变化，请重新提交。', 409, code='capability_connection_changed')
             self.availability.assert_identity(config, prepared[capability])
@@ -385,19 +471,47 @@ class ToolTasks(ToolTaskLifecycle):
             task.update(imageExecutionPolicy=image_policy, imageExecution=image_plan)
         if video_plan is not None:
             task['videoExecution'] = video_plan
+        task = to_jsonable_python(task)
+        if quote_only:
+            return task, directory, records
+        admission = tool_spend.admit(self.projects, value, task, records, session, review)
+        if admission is not None:
+            if admission.status == 'cancelled':
+                raise ProjectError('该费用请求已取消，请重新发起任务。', 409, code='spend_cancelled')
+            if admission.status == 'pending':
+                return tool_spend.pending_receipt(task, admission), directory, None
+            task = dict(admission.toolTask)
         self._write(directory, task)
         return task, directory, records
 
-    async def submit(self, project_id, value, session):
+    async def resume_spend(self, project_id, value, session, review):
+        if 'sourceAssetId' in value:
+            work = asyncio.create_task(self.selection_preview(project_id, value, session, review))
+            self.admissions.add(work)
+            work.add_done_callback(self.admissions.discard)
+            await asyncio.shield(work)
+        else:
+            await self.submit(project_id, value, session, review)
+
+    def quote(self, project_id, value, session):
+        task, directory, records = self._prepare(project_id, value, session, quote_only=True)
+        records = records if records is not None else self.assets._records(directory, project_id)
+        return creation_spend.quote_view(self.projects.snapshot(project_id), tool_spend.tool_quote(task, records))
+
+    def _schedule(self, task, directory, records):
+        key = (task['projectId'], task['id'])
+        job = asyncio.create_task(self._run(task, directory, records))
+        self.jobs[key] = job
+        job.add_done_callback(lambda done: self.jobs.pop(key, None) if self.jobs.get(key) is done else None)
+
+    async def submit(self, project_id, value, session, review=None):
         key = (project_id, identifier(str(value['id'])))
         self.accepting.add(key)
         async def accept():
             try:
-                task, directory, records = await blocking(self._prepare, project_id, value, session)
+                task, directory, records = await blocking(self._prepare, project_id, value, session, review)
                 if records is not None and key not in self.jobs:
-                    job = asyncio.create_task(self._run(task, directory, records))
-                    self.jobs[key] = job
-                    job.add_done_callback(lambda done: self.jobs.pop(key, None) if self.jobs.get(key) is done else None)
+                    self._schedule(task, directory, records)
                 return task
             finally:
                 self.accepting.discard(key)
@@ -418,6 +532,8 @@ class ToolTasks(ToolTaskLifecycle):
                     return current
                 if changes.get('status') == 'succeeded' and current.get('cancelRequested'):
                     return current
+                if changes.get('status') == 'succeeded':
+                    tool_spend.release_unused(self.projects, task['projectId'], task['id'])
                 return self._change(task['projectId'], task['id'], changes)
         current = await blocking(save)
         task.clear()

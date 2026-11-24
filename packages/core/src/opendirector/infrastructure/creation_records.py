@@ -45,7 +45,7 @@ class CommitRecord(Contract):
                 or self.receipt.inputFingerprint != command_fingerprint(self.command)
                 or self.receipt.eventCursor != self.snapshot.eventCursor):
             raise ValueError('Commit identity is inconsistent')
-        applied = self.receipt.status in {'applied', 'accepted'}
+        applied = self.receipt.status in {'applied', 'accepted', 'awaiting_confirmation'}
         if applied != (self.event is not None):
             raise ValueError('Only applied commits have outbox events')
         if self.event is not None:

@@ -38,6 +38,7 @@ export function TooltipButton({
   tooltipCompact = false,
   tooltipDelay = 200,
   showTooltip = true,
+  showOnClick = false,
   children,
   onPointerEnter,
   onPointerLeave,
@@ -55,6 +56,8 @@ export function TooltipButton({
   tooltipDelay?: number;
   /** Off when the button already shows its label as text. */
   showTooltip?: boolean;
+  /** An informational trigger can also reveal its description on touch. */
+  showOnClick?: boolean;
 }) {
   const id = useId();
   const context = useContext(TooltipContext);
@@ -162,19 +165,23 @@ export function TooltipButton({
       }
       dismiss();
     };
+    const press = (event: PointerEvent) => {
+      if (showOnClick && event.target instanceof Node && button.current?.contains(event.target)) return;
+      dismiss();
+    };
     window.addEventListener("keydown", escape, true);
-    window.addEventListener("pointerdown", dismiss, true);
+    window.addEventListener("pointerdown", press, true);
     window.addEventListener("blur", dismiss);
     window.addEventListener("resize", dismiss);
     window.addEventListener("scroll", dismiss, true);
     return () => {
       window.removeEventListener("keydown", escape, true);
-      window.removeEventListener("pointerdown", dismiss, true);
+      window.removeEventListener("pointerdown", press, true);
       window.removeEventListener("blur", dismiss);
       window.removeEventListener("resize", dismiss);
       window.removeEventListener("scroll", dismiss, true);
     };
-  }, [open, pending]);
+  }, [open, pending, showOnClick]);
 
   return (
     <>
@@ -205,9 +212,10 @@ export function TooltipButton({
           onBlur?.(event);
           close();
         }}
-        onPointerDownCapture={close}
+        onPointerDownCapture={showOnClick ? undefined : close}
         onClick={(event) => {
-          close();
+          if (showOnClick && !open) show(0);
+          else close();
           onClick?.(event);
         }}
       >
@@ -225,7 +233,7 @@ export function TooltipButton({
             <span>{label}</span>
             {shortcut && <kbd>{shortcut}</kbd>}
           </div>,
-          document.body,
+          button.current?.closest("dialog") ?? document.body,
         )}
     </>
   );

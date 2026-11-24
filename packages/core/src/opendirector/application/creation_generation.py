@@ -5,6 +5,7 @@ GenerationRuntime; every business write publishes a creation commit.
 """
 import asyncio
 from contextvars import ContextVar
+from decimal import Decimal
 from datetime import datetime, timezone
 import hashlib
 import re
@@ -13,11 +14,14 @@ from uuid import uuid4, uuid5
 
 from filelock import FileLock, Timeout
 
+from opendirector.application import creation_groups, creation_spend
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.voice_library import VoiceLibrary
 from opendirector.application.model_availability import ModelAvailability, generation_request
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
+from opendirector.domain.creation.spend import SpendQuote, price_line, video_units
+from opendirector.domain.references import project_content
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
@@ -26,7 +30,7 @@ from opendirector.domain.creation.generation import (DEFAULT_MUSIC_SECONDS, Inpu
                                                      reference_music_seconds, validate_generation)
 from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
-from opendirector.domain.creation.validation import ContractError
+from opendirector.domain.creation.validation import ContractError, validate_command
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
@@ -76,6 +80,11 @@ class ProviderMedia:
     def generation_task(self, project_id, job_id):
         return self.runtime.task(self.runtime.get_job(project_id, job_id))
 
+    def observe_spend(self, slot, state, **facts):
+        job = _INPUTS.get()
+        if job is not None:
+            creation_spend.observe(self.runtime.projects, job.projectId, uuid5(job.id, f'spend:{slot}'), state, **facts)
+
     def frozen_model(self, frozen):
         """Credentials for a helper model an accepted job froze, while its connection is unchanged."""
         config = self.runtime.configs.resolve(frozen['id'], frozen['kind'])
@@ -97,6 +106,8 @@ class CreationGeneration(GenerationRuntime):
     def __init__(self, projects, configs, provider=None, *, availability=None):
         super().__init__()
         self.projects, self.configs = projects, configs
+        self.group_workers = {}
+        self.tools = None
         self.assets = CreationAssets(projects)
         self.store = ProviderMedia(self)
         self.settings = gateway().settings(projects.local.repository)
@@ -331,14 +342,136 @@ class CreationGeneration(GenerationRuntime):
                 remote.release()
             claim.release()
 
-    def prepare(self, command, *, session=None, source='ui', agent_origin=None):
-        replay = self.projects.replay(command)
-        if replay is not None:
-            return replay
+
+    def _propose_job(self, before, command, *, agent_origin=None, checks=None):
+        """Prepare exact inputs on a private copy. Only admission publishes it."""
+        voice_spec, voice_config, voice_failure, capability_identity, capability_failure = checks or (None,) * 5
+        data = before.model_dump(mode='json')
+        spec_data = CreationCanvas._get(data, 'generation_spec', command.payload.specId)
+        if sum(j.inputSnapshot.spec.id == command.payload.specId and j.status in {'queued', 'running'} for j in before.jobs) + command.payload.count > 8:
+            raise ContractError('revision_conflict', '该配置的排队任务已达上限，请等待或取消原任务。', command.payload.specId)
+        if command.payload.previousJobId:
+            previous = next((j for j in before.jobs if j.id == command.payload.previousJobId), None)
+            if previous is None or previous.inputSnapshot.spec.id != command.payload.specId:
+                raise ContractError('invalid_input', '新尝试必须关联同一生成配置的原任务。', command.payload.previousJobId)
+        origin = command.payload.originItemId
+        material = None
+        if origin:
+            item = CreationCanvas._editable(data, origin)
+            material = item['binding'].get('materialOverride')
+            spec_data['purpose'] = 'generation'
+            item['binding'] = dict(role='generation', objectRef=dict(objectType='generation_spec', id=spec_data['id']), materialOverride=material)
+            if item != next(i.model_dump(mode='json') for i in before.canvasItems if i.id == origin):
+                item['revision'] += 1
+        elif spec_data['purpose'] == 'draft':
+            spec_data['purpose'] = 'generation'
+        # Promote every owner of this draft together, including hidden ones.
+        for item in data['canvasItems']:
+            # An empty binding serialises draftSpec as null, not absent.
+            if (item['binding'].get('draftSpec') or {}).get('id') == spec_data['id']:
+                item['binding'] = dict(role='generation', objectRef=dict(objectType='generation_spec', id=spec_data['id']))
+                item['revision'] += 1
+        old = next(s for s in before.generationSpecs if s.id == command.payload.specId)
+        if spec_data['purpose'] != old.purpose:
+            spec_data['revision'] += 1
+        intermediate = ProjectSnapshot.model_validate(data)
+        spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
+        config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
+        public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
+        spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
+        spec = execution_spec(spec, resolved, public.inputRules)
+        try:
+            validate_generation(spec, public, resolved, submitting=True)
+            if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
+                if checks and (old != voice_spec or config != voice_config):
+                    raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)
+                if voice_failure is not None:
+                    raise voice_failure
+            if capability_failure is not None:
+                raise capability_failure
+            if capability_identity is not None:
+                self.availability.require(config, generation_request(config, spec, resolved), capability_identity)
+        except (ValueError, ProjectError) as error:
+            raise ContractError.from_error(error, spec.id) from error
+        for reference in resolved:
+            if reference.transmission != 'context_only':
+                self.assets.reference_available(command.projectId, reference.asset.assetId)
+        self.provider.validate(spec.kind, config)
+        snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
+            model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
+                **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved)
+        # Use the same rendering, protocol validation and parameter resolver
+        # as the established adapters, with immutable media from the facade.
+        stub = Job(id=uuid5(command.commandId, 'job'), projectId=command.projectId, inputSnapshot=snapshot,
+            createdAt=datetime.now(timezone.utc),
+            inputFingerprint=snapshot.fingerprint(), execution={'kind': spec.kind, **({'size': '2K'} if spec.kind == 'image' else {'format': 'mp3', 'sampleRate': 24000} if spec.kind == 'audio' else {})},
+            originItemId=origin, previousJobId=command.payload.previousJobId,
+            **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
+            adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
+            batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
+        task = self.task(stub)
+        records = {str(a.id): media_record(a) for a in before.assets}
+        try:
+            if hasattr(self.provider, 'prepare_inputs'):
+                self.provider.prepare_inputs(str(command.projectId), task, config)
+            parameters = self._parameters(spec, config, task, records)
+            if capability_identity is not None:
+                self.availability.require(config, generation_request(config, spec, resolved, parameters=parameters), capability_identity)
+        except ProjectError as error:
+            raise ContractError.from_error(error, spec.id) from error
+        job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
+        return data, job, config, task, records
+
+    def _quote_job(self, job, config, task, records, count):
+        spec = job.inputSnapshot.spec
+        params = job.adapterParameters
+        lines = []
+        if spec.kind != 'text':
+            operation = spec.kind
+            quantities = {}
+            bounded = ()
+            if params.get('score_model'):
+                score = self.store.frozen_model(params['score_model'])
+                recording = next(records[key] for key in task['referenceIds'] if records[key]['kind'] == 'audio')
+                seconds = recording['durationMs']
+                lines.append(price_line(score, 'score', {'input_second': Decimal(seconds) / 1000 if seconds is not None else None}))
+            if spec.kind == 'audio':
+                operation = 'music' if params.get('creation_type') == 'music' else 'speech'
+                if operation == 'speech':
+                    text = project_content(task['promptContent'], speech=True)[0] if task['promptContent'] is not None else task['prompt']
+                    quantities['input_character'] = len(text)
+                    if is_minimax_speech(config) and not text.isascii():
+                        # MiniMax reports its billable character count in the response.
+                        quantities['input_character'] += sum(not char.isascii() for char in text)
+                        bounded = ('input_character',)
+            if spec.kind == 'video':
+                quantities.update(video_units(params))
+            elif params.get('duration') is not None:
+                quantities.update(requested_second=params['duration'], output_second=params['duration'])
+            lines.append(price_line(config, operation, quantities, bounded=bounded))
+        return SpendQuote(count=count, lines=lines, inputFingerprint=job.inputFingerprint)
+
+    def quote(self, project_id, spec_id, count=1, origin=None):
+        before = self.projects.snapshot(project_id)
+        spec = next((s for s in before.generationSpecs if s.id == spec_id), None)
+        if not spec:
+            raise ProjectError('Generation configuration not found.', 404)
+        versions = [version('generation_spec', spec)]
+        if origin is not None:
+            item = next((i for i in before.canvasItems if i.id == origin), None)
+            if not item:
+                raise ProjectError('Canvas item not found.', 404)
+            versions.append(version('canvas_item', item))
+        command = parse_command(dict(type='generation.submit', commandId=uuid4(), projectId=project_id, expectedVersions=versions,
+            payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=origin, count=count)))
+        validate_command(command, before)
+        _, job, config, task, records = self._propose_job(before, command)
+        return self._quote_job(job, config, task, records, count)
+
+    def _submission_checks(self, command, initial):
         # Voice registries are remote services. Probe outside the catalog/file
         # transaction, then compare the exact spec and private configuration
         # again under commit so a slow/offline provider cannot freeze editing.
-        initial = self.projects.snapshot(command.projectId)
         voice_spec = next((spec for spec in initial.generationSpecs if spec.id == command.payload.specId), None)
         capability_identity = None
         capability_failure = None
@@ -358,88 +491,85 @@ class CreationGeneration(GenerationRuntime):
                 self.voices.validate_selection(voice_config, prepared_spec.parameters.voice, prepared_spec.parameters.voiceSelection)
             except (ValueError, ProjectError) as error:
                 voice_failure = error
+        return voice_spec, voice_config, voice_failure, capability_identity, capability_failure
+
+    def _append_candidates(self, before, data, command, job, config, quote):
+        calls = list(before.spendCalls)
+        for index in range(command.payload.count):
+            candidate = job
+            if index:
+                params = dict(job.adapterParameters)
+                if 'seed' in params:
+                    params['seed'] = new_seed()
+                candidate = job.model_copy(update=dict(id=uuid5(command.commandId, f'job:{index}'),
+                    adoptionPolicy='candidate_only', showAdditionalResult=bool(job.originItemId), adapterParameters=params,
+                    execution=type(job.execution).model_validate(self._execution(job.execution.kind, params, config))))
+            if command.payload.count > 1:
+                candidate = candidate.model_copy(update=dict(batchId=job.batchId or command.commandId))
+            data['jobs'].append(candidate.model_dump(mode='json'))
+            calls.extend(creation_spend.reserve_calls(candidate.id, candidate.projectId, quote))
+        data['spendCalls'] = calls
+        return ProjectSnapshot.model_validate(data)
+
+    def prepare(self, command, *, session=None, source='ui', agent_origin=None, review=None):
+        replay = self.projects.replay(review or command)
+        if replay is not None:
+            return replay
+        checks = self._submission_checks(command, self.projects.snapshot(command.projectId))
         def accept(before):
-            data = before.model_dump(mode='json')
-            spec_data = CreationCanvas._get(data, 'generation_spec', command.payload.specId)
-            if sum(j.inputSnapshot.spec.id == command.payload.specId and j.status in {'queued', 'running'} for j in before.jobs) >= 8:
-                raise ContractError('revision_conflict', '该配置的排队任务已达上限，请等待或取消原任务。', command.payload.specId)
-            if command.payload.previousJobId:
-                previous = next((j for j in before.jobs if j.id == command.payload.previousJobId), None)
-                if previous is None or previous.inputSnapshot.spec.id != command.payload.specId:
-                    raise ContractError('invalid_input', '新尝试必须关联同一生成配置的原任务。', command.payload.previousJobId)
-            origin = command.payload.originItemId
-            material = None
-            if origin:
-                item = CreationCanvas._editable(data, origin)
-                material = item['binding'].get('materialOverride')
-                spec_data['purpose'] = 'generation'
-                item['binding'] = dict(role='generation', objectRef=dict(objectType='generation_spec', id=spec_data['id']), materialOverride=material)
-                if item != next(i.model_dump(mode='json') for i in before.canvasItems if i.id == origin):
-                    item['revision'] += 1
-            elif spec_data['purpose'] == 'draft':
-                spec_data['purpose'] = 'generation'
-            # Promote every owner of this draft together, including hidden ones.
-            for item in data['canvasItems']:
-                # An empty binding serialises draftSpec as null, not absent.
-                if (item['binding'].get('draftSpec') or {}).get('id') == spec_data['id']:
-                    item['binding'] = dict(role='generation', objectRef=dict(objectType='generation_spec', id=spec_data['id']))
-                    item['revision'] += 1
-            old = next(s for s in before.generationSpecs if s.id == command.payload.specId)
-            if spec_data['purpose'] != old.purpose:
-                spec_data['revision'] += 1
-            intermediate = ProjectSnapshot.model_validate(data)
-            spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
-            config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
-            public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
-            spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
-            spec = execution_spec(spec, resolved, public.inputRules)
-            try:
-                validate_generation(spec, public, resolved, submitting=True)
-                if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
-                    if old != voice_spec or config != voice_config:
-                        raise ContractError('revision_conflict', '音色验证期间生成配置或模型服务已变化，请重新提交。', spec.id)
-                    if voice_failure is not None:
-                        raise voice_failure
-                if capability_failure is not None:
-                    raise capability_failure
-                if capability_identity is not None:
-                    self.availability.require(config, generation_request(config, spec, resolved), capability_identity)
-            except (ValueError, ProjectError) as error:
-                raise ContractError.from_error(error, spec.id) from error
-            for reference in resolved:
-                if reference.transmission != 'context_only':
-                    self.assets.reference_available(command.projectId, reference.asset.assetId)
-            self.provider.validate(spec.kind, config)
-            snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
-                model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
-                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved)
-            # Use the same rendering, protocol validation and parameter resolver
-            # as the established adapters, with immutable media from the facade.
-            stub = Job(id=uuid5(command.commandId, 'job'), projectId=command.projectId, inputSnapshot=snapshot,
-                createdAt=datetime.now(timezone.utc),
-                inputFingerprint=snapshot.fingerprint(), execution={'kind': spec.kind, **({'size': '2K'} if spec.kind == 'image' else {'format': 'mp3', 'sampleRate': 24000} if spec.kind == 'audio' else {})},
-                originItemId=origin, previousJobId=command.payload.previousJobId,
-                **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
-                adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
-                batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
-            task = self.task(stub)
-            records = {str(a.id): media_record(a) for a in before.assets}
-            try:
-                if hasattr(self.provider, 'prepare_inputs'):
-                    self.provider.prepare_inputs(str(command.projectId), task, config)
-                parameters = self._parameters(spec, config, task, records)
-                if capability_identity is not None:
-                    self.availability.require(config, generation_request(config, spec, resolved, parameters=parameters), capability_identity)
-            except ProjectError as error:
-                raise ContractError.from_error(error, spec.id) from error
-            job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
-            data['jobs'].append(job.model_dump(mode='json'))
-            return ProjectSnapshot.model_validate(data)
-        return self.projects.commit(command, accept, session=session, source=source)
+            if review is not None:
+                validate_command(command, before)
+            elif command.payload.specId in creation_spend.pending_workflow_specs(before) or any(r.status == 'pending' and (
+                command.payload.batchId is not None and command.payload.batchId in (r.id, r.batchId, r.workflowId)
+                or r.specId == command.payload.specId and command.payload.count < r.quote.count
+            ) for r in before.spendRequests):
+                raise ContractError('spend_quote_changed', 'Review or cancel the pending batch before submitting one of its members.')
+            data, job, config, task, records = self._propose_job(before, command, agent_origin=agent_origin, checks=checks)
+            if command.payload.count > 1 and job.inputSnapshot.spec.kind not in {'image', 'video'}:
+                raise ContractError('invalid_input', 'Multiple candidates require an image or video model.')
+            quote = self._quote_job(job, config, task, records, command.payload.count)
+            decision = creation_spend.decide(before, command, quote, agent_origin, review)
+            if review is None and decision is not before:
+                return decision
+            data['project'] = decision.project.model_dump(mode='json')
+            data['spendRequests'] = decision.spendRequests
+            return self._append_candidates(before, data, command, job, config, quote)
+        return self.projects.commit(review or command, accept, session=session, source=source)
 
     async def execute(self, command, *, session=None, source='ui', agent_origin=None):
-        if command.type == 'generation.submit':
-            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source, agent_origin=agent_origin))
+        if command.type == 'spend.policy':
+            if source != 'ui':
+                raise ProjectError('请在工程窗口中确认费用。', 403, code='spend_human_review')
+            return await asyncio.to_thread(self.projects.commit, command,
+                lambda before: creation_spend.save_policy(before, command.payload), session=session)
+        original, review = command, None
+        if command.type == 'spend.review':
+            if source != 'ui':
+                raise ProjectError('请在工程窗口中确认费用。', 403, code='spend_human_review')
+            replay = self.projects.replay(command)
+            if replay:
+                return replay
+            request = creation_spend.get_request(self.projects.snapshot(command.projectId), command.payload.requestId)
+            if request.status != 'pending':
+                raise ProjectError('该费用请求已经处理，请查看工程费用记录。', 409, code='spend_reviewed')
+            if command.payload.decision == 'cancel':
+                def cancel_request(before):
+                    current = creation_spend.get_request(before, request.id)
+                    if current.status != 'pending' or current.quote.fingerprint() != command.payload.fingerprint:
+                        raise ContractError('spend_quote_changed', 'The request changed.')
+                    return creation_spend.resolve(before, current, command.commandId, 'cancelled')
+                return await asyncio.to_thread(self.projects.commit, command, cancel_request, session=session)
+            original = next(r.command for r in self.projects.records(command.projectId) if r.command.commandId == request.id)
+            agent_origin = (request.agentRunId, request.agentCallId) if request.agentRunId else None
+            review = command
+            if original.type == 'spend.tool' and self.tools is not None:
+                await self.tools.resume_spend(str(command.projectId), original.payload.request, session, review)
+                return self.projects.replay(review)
+        if original.type in {'generation.group', 'spend.advanceGroup'}:
+            return await creation_groups.execute(self, original, session=session, source=source, agent_origin=agent_origin, review=review)
+        if original.type == 'generation.submit':
+            pending = asyncio.create_task(asyncio.to_thread(self.prepare, original, session=session, source=source,
+                                                            agent_origin=agent_origin, review=review))
             async def finish():
                 try:
                     receipt = await pending
@@ -479,6 +609,19 @@ class CreationGeneration(GenerationRuntime):
     def checkpoint(self, project_id, task, pinned):
         before = self.projects.snapshot(project_id)
         job = next(j for j in before.jobs if str(j.id) == task['id'])
+        calls = [call for call in before.spendCalls if call.ownerId == job.id]
+        if calls:
+            if not job.adapterParameters.get('score_model') and task.get('status') == 'running' and task.get('phase') in {'submit', 'poll'}:
+                creation_spend.observe(self.projects, project_id, calls[0].id, 'submitted')
+            if task.get('phase') in {'download', 'save', 'adopt', 'complete'} and task.get('status') in {'running', 'succeeded'}:
+                creation_spend.observe(self.projects, project_id, calls[-1].id, 'completed')
+            # A queued task can still submit after restart or model configuration
+            # repair. Keep its accepted budget until execution or explicit cancellation.
+            recoverable_queue = task.get('phase') == 'queued' and task.get('status') != 'cancelled' and not job.cancelRequested
+            if task.get('status') in {'cancelled', 'failed', 'interrupted'} and not recoverable_queue:
+                for call in calls:
+                    if call.state == 'reserved':
+                        creation_spend.observe(self.projects, project_id, call.id, 'released')
         if job.status == 'succeeded':
             return
         changes = {key: task[key] for key in ('status', 'phase', 'recovery', 'resumeAllowed', 'externalTaskId', 'errorDetails', 'technicalCheck') if key in task}
@@ -599,6 +742,11 @@ class CreationGeneration(GenerationRuntime):
                 code='revision_conflict' if conflict else 'operation_rejected')
         result = self._result_asset(task, pinned)
         task['adopted'] = self.get_job(job.projectId, job.id).adopted
+        duration = result.get('durationMs') if result else None
+        if duration is not None:
+            slot = int(bool(job.adapterParameters.get('score_model')))
+            creation_spend.observe(self.projects, job.projectId, uuid5(job.id, f'spend:{slot}'), 'completed',
+                                   evidence='media', unit='output_second', usage=Decimal(duration) / 1000)
         return result
 
     @staticmethod
@@ -693,7 +841,8 @@ class CreationGeneration(GenerationRuntime):
                     category='temporary', stage='cancel', message='供应商取消未确认。', suggestion='请在服务控制台核对原任务和费用。').model_dump(mode='json'))
             self.checkpoint(project_id, task, str(self.directory(project_id)))
             job = self.get_job(project_id, job_id)
-        if job and job.status in {'queued', 'running'} and job_id not in self.committing:
+        if job and job_id not in self.committing and (job.status in {'queued', 'running'} or
+                job.phase == 'queued' and job.status in {'interrupted', 'failed'}):
             task = self.task(job)
             task.update(status='cancelled', recovery=self.recovery(task, str(self.directory(project_id))), resumeAllowed=False)
             self.checkpoint(project_id, task, str(self.directory(project_id)))
@@ -701,14 +850,21 @@ class CreationGeneration(GenerationRuntime):
 
     async def start(self):
         for project in self.projects.list_projects()['projects']:
-            for job in self.projects.snapshot(project['id']).jobs:
+            snapshot = self.projects.snapshot(project['id'])
+            for job in snapshot.jobs:
                 if job.status in {'queued', 'running', 'interrupted'} or job.status == 'failed' and job.resumeAllowed:
                     if job.cancelRequested:
                         await self.cancel(project['id'], str(job.id), None)
                     else:
                         await self.recover(project['id'], str(job.id))
 
+            for workflow in {r.workflowId for r in snapshot.spendRequests if r.workflowId}:
+                creation_groups.watch(self, snapshot.project.id, workflow)
+
     async def close(self):
+        for worker in list(self.group_workers.values()):
+            worker.cancel()
+        await asyncio.gather(*list(self.group_workers.values()), return_exceptions=True)
         await asyncio.gather(*list(self.accepting.values()), return_exceptions=True)
         workers = list(self.jobs.values())
         for worker in workers:

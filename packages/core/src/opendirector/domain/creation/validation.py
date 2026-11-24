@@ -33,7 +33,8 @@ def validate_command(command: Command, project: ProjectSnapshot):
     index = {('project', project.project.id): project.project}
     for kind, collection in [('asset', project.assets), ('generation_spec', project.generationSpecs),
         ('reference', project.references), ('canvas_item', project.canvasItems),
-        ('editor_document', project.editorDocuments), ('job', project.jobs), ('result', project.results)]:
+        ('editor_document', project.editorDocuments), ('job', project.jobs), ('result', project.results),
+        ('spend_request', project.spendRequests), ('spend_call', project.spendCalls)]:
         index.update({(kind, obj.id): obj for obj in collection})
     expected = {(version.objectType, version.id): version.revision for version in command.expectedVersions}
     for key, version in expected.items():

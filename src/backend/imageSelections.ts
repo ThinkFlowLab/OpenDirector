@@ -1,3 +1,5 @@
+import { readDelay } from "./resilientRead.ts";
+import { creationClient } from "./creationClient.ts";
 import { json, request } from "./api.ts";
 import type { BackendAsset } from "./generation.ts";
 import { requireActiveBackendProject } from "./projects.ts";
@@ -57,15 +59,27 @@ export async function previewImageSelection(
     );
   }
   signal.throwIfAborted();
-  return request<ImageSelectionPreview>(
-    `/creation/projects/${projectId}/image-selections`,
+  const id = crypto.randomUUID();
+  const path = `/creation/projects/${projectId}/image-selections`;
+  let result = await request<ImageSelectionPreview | { status: string }>(
+    path,
     {
       ...json("POST", {
-        sourceAssetId,
+        id, sourceAssetId,
         prompt: value.prompt ?? "",
         boxes: value.boxes ?? [],
       }),
       signal,
     },
   );
+  if ('status' in result) {
+    await creationClient(projectId).refresh();
+    window.dispatchEvent(new CustomEvent('opendirector:spend-review', { detail: projectId }));
+  }
+  while ('status' in result) {
+    if (['cancelled', 'interrupted', 'expired'].includes(result.status)) throw new Error(tNow('spend.previewStopped'));
+    await readDelay(750, signal);
+    result = await request<ImageSelectionPreview | { status: string }>(`${path}/${id}`, {signal});
+  }
+  return result;
 }

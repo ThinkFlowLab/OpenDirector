@@ -11,6 +11,7 @@ from opendirector.domain.video_capabilities import VideoAdapter, check_video_con
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import SERVICE_VOICE_PATTERN
 from .base import Contract
+from .spend import ConnectionPrice
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
 Protocol = Literal['openai', 'volcengine', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
@@ -212,6 +213,7 @@ class AvailabilityCatalog(Contract):
 
 
 class ModelConfigPublic(ModelConnection):
+    price: ConnectionPrice | None = Field(default=None, exclude_if=lambda value: value is None, description='User-specified price for this exact model connection.')
     """Application-level, never embedded in an editable project's credential data."""
     id: UUID = Field(description='Stable object ID.')
     providerId: UUID | None = Field(default=None, exclude=True, description='Shared provider connection ID.')

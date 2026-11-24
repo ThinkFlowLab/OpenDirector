@@ -7,16 +7,10 @@ export interface WorkflowOutcome {
   skipped: string[];
 }
 
-/**
- * Runs workflow steps in reference order. A step starts once every step it
- * references, directly or through non-step nodes, has succeeded; steps without pending references run
- * concurrently. A failure skips everything downstream of it.
- */
-export async function runWorkflowSteps(
+export function workflowDependencies(
   stepIds: readonly string[],
   edges: readonly Pick<CanvasEdge, "source" | "target" | "intent">[],
-  runStep: (id: string) => Promise<boolean>,
-): Promise<WorkflowOutcome> {
+) {
   const ids = new Set(stepIds);
   const sources = new Map<string, string[]>();
   for (const edge of edges)
@@ -24,7 +18,7 @@ export async function runWorkflowSteps(
       sources.set(edge.target, [...(sources.get(edge.target) ?? []), edge.source]);
   // A step depends on the nearest steps upstream of it, also through
   // non-step nodes such as a subject or stack that carries a result onward.
-  const upstream = new Map(
+  return new Map(
     stepIds.map((id) => {
       const found = new Set<string>();
       const seen = new Set([id]);
@@ -39,6 +33,19 @@ export async function runWorkflowSteps(
       return [id, found];
     }),
   );
+}
+
+/**
+ * Runs workflow steps in reference order. A step starts once every step it
+ * references, directly or through non-step nodes, has succeeded; steps without pending references run
+ * concurrently. A failure skips everything downstream of it.
+ */
+export async function runWorkflowSteps(
+  stepIds: readonly string[],
+  edges: readonly Pick<CanvasEdge, "source" | "target" | "intent">[],
+  runStep: (id: string) => Promise<boolean>,
+): Promise<WorkflowOutcome> {
+  const upstream = workflowDependencies(stepIds, edges);
   const outcome = new Map<string, "succeeded" | "failed" | "skipped">();
   const started = new Set<string>();
   let running = 0;

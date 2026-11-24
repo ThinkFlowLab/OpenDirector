@@ -40,6 +40,7 @@ Welcome to follow our official Bilibili account, which includes tutorials and sh
 
 - **Work with AI**: Describe what you want to create, reference canvas assets, and ask the assistant to save text or generate content with your configured models.
 - **Canvas and reference assets**: Upload files, connect nodes, or use `@` to add references. Organize assets in one place and review generation history.
+- **Project spend**. Preview service costs for a candidate batch, set a project cap, and review requests on the canvas or in chat. [Spending controls](docs/guides/user-guide.md#project-spending)
 - **Media editing**: Crop, adjust colors, and work with layers and clips. AI tools such as image extension, erasing, and background removal depend on the connected models' capabilities.
 - **Image presets**: Select an image, choose Character three-view, Character four-view, Face three-view, Product three-view, Storyboard, or Multi-camera from **Presets**, then click **Generate**. Character four-view adds a frontal close-up to the right of the full-body front, side, and rear views. Enable **Face emphasis** to ask the model to frame the front and side views from the chin down, keeping the full rear view and frontal close-up. The view presets each produce one reference sheet; Storyboard and Multi-camera each produce four separate images connected to the source.
 - **Timeline editing**: Arrange assets, adjust start and end points, speed, and volume, then preview and render an MP4. You can also export JSON, FCPXML, and asset bundles.

@@ -50,6 +50,7 @@ export interface NodeSelectionToolbarProps {
   /** Group actions: run the members' generation workflow, ungroup, arrange, recolor. */
   onRunWorkflow?: () => void;
   workflowRunning?: boolean;
+  workflowWaiting?: boolean;
   onUngroup?: () => void;
   onLayout?: (layout: GroupLayout) => void;
   onGroupColor?: (color: string) => void;
@@ -147,6 +148,7 @@ export function NodeSelectionToolbar({
   onDelete,
   onRunWorkflow,
   workflowRunning = false,
+  workflowWaiting = false,
   onUngroup,
   onLayout,
   onGroupColor,
@@ -222,10 +224,10 @@ export function NodeSelectionToolbar({
     if (onRunWorkflow)
       editing.push({
         id: "run-workflow",
-        label: workflowRunning ? t("canvas.selection.group.running") : t("canvas.selection.group.run"),
+        label: workflowWaiting ? t("spend.workflowState.waiting") : workflowRunning ? t("canvas.selection.group.running") : t("canvas.selection.group.run"),
         icon: "play",
         run: onRunWorkflow,
-        disabled: workflowRunning || locked,
+        disabled: workflowRunning || workflowWaiting || locked,
       });
     if (onUngroup)
       editing.push({ id: "ungroup", label: t("canvas.selection.group.ungroup"), icon: "group", run: onUngroup, disabled: locked });

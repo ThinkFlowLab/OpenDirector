@@ -610,10 +610,11 @@ export class CreationClient {
     policy: "if_current" | "candidate_only" = "if_current",
     batchId?: string,
     signal?: AbortSignal,
+    count = 1,
   ) {
     const run = () => {
       signal?.throwIfAborted();
-      return this.submitCurrent(itemId, policy, batchId, signal);
+      return this.submitCurrent(itemId, policy, batchId, signal, count);
     };
     const pending = this.submissions.then(run, run);
     this.submissions = pending;
@@ -624,6 +625,7 @@ export class CreationClient {
     policy: "if_current" | "candidate_only",
     batchId?: string,
     signal?: AbortSignal,
+    count = 1,
   ) {
     await this.refresh();
     signal?.throwIfAborted();
@@ -647,6 +649,7 @@ export class CreationClient {
         originItemId: item.id,
         adoptionPolicy: policy,
         batchId,
+        count,
         showAdditionalResult: policy === "candidate_only",
       },
       [

@@ -1,4 +1,6 @@
 import { projectDisplayName } from "../projectDisplayName";
+import type { ModelConfig } from "../../backend/rules.ts";
+import { GroupEstimate, ProjectSpend, ToolEstimate } from "../ProjectSpend";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
@@ -78,7 +80,7 @@ import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
 import { TextNodeWindow } from "../TextNodeWindow";
 import { SelectionBarAnchor } from "../SelectionBarAnchor";
 import { NodeTaskPanel } from "../NodeTaskPanel";
-import { layoutGroup, orderNodesForCanvas, unstackSelection, type GroupLayout } from "../operations";
+import { groupDescendants, layoutGroup, orderNodesForCanvas, unstackSelection, type GroupLayout } from "../operations";
 
 import { ProjectSelector } from "../ProjectSelector";
 import "../settings.css";
@@ -439,6 +441,12 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   }, [outputState?.output.id]);
 
   const [workflowGroups, setWorkflowGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const groupSnapshot = ready && single?.type === "group" ? creationClient(doc.id).snapshot : undefined;
+  const memberIds = new Set(groupSnapshot && single ? groupDescendants(doc.nodes, single.id).map(node => node.id) : []);
+  const workflowWaiting = groupSnapshot?.spendRequests?.some(request => request.status === "pending" && request.workflowId &&
+    [...(request.groupItems ?? []), ...(request.quote.deferred ?? [])].some(id => memberIds.has(id)));
+  const workflowActive = groupSnapshot?.jobs.some(job => job.batchId && job.originItemId && memberIds.has(job.originItemId) &&
+    (job.status === "running" || job.status === "queued"));
   const runWorkflow = (groupId: string) => {
     if (workflowGroups.has(groupId)) return;
     setWorkflowGroups((current) => new Set(current).add(groupId));
@@ -1245,6 +1253,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
       {!ready && <div className="cw-loading canvas-loading-message"><span className="canvas-loading-spinner" aria-hidden="true" />{t("canvas.workspace.loading.opening")}</div>}
 
       <div className="cw-bottom-left">
+        {ready && !welcomeOpen && <ProjectSpend key={doc.id} projectId={doc.id} onNotify={notify} onSettings={() => { setSettingsCategory("models"); setSettingsOpen(true); }} />}
         <div className="cw-settings-control">
           <IconButton
             name="settings"
@@ -1573,7 +1582,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               single.type === "group" ? void downloadGroup(single) : downloadNode(single)
             }
             onRunWorkflow={single.type === "group" ? () => runWorkflow(single.id) : undefined}
-            workflowRunning={workflowGroups.has(single.id)}
+            workflowRunning={workflowGroups.has(single.id) || workflowActive}
+            workflowWaiting={workflowWaiting}
             onUngroup={single.type === "group" ? ungroup : undefined}
             onLayout={
               single.type === "group"
@@ -1604,6 +1614,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             }
             onDuplicate={() => paste(true)}
           />
+          {single.type === "group" && <GroupEstimate document={doc} groupId={single.id} models={backendCatalog.models} />}
         </div>
       )}
       {activeAction && actionNode && (
@@ -1766,6 +1777,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 onGenerate={(task) => void runToolTask(activeAction, task)}
               />
             )}
+            <ToolEstimate projectId={doc.id} itemId={actionNode.id} tool={activeAction.tool} priceRevision={JSON.stringify(backendCatalog.models.map((m: ModelConfig) => m.price))} />
           </div>
         </>
       )}
@@ -1915,6 +1927,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               />
             ) : (
               <NodeComposer
+                projectId={doc.id}
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}

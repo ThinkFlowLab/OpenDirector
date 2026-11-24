@@ -101,8 +101,10 @@ class CommitPublication:
                         and next(job for job in snapshot.jobs if job.id == item['version'].id).status == 'queued')
         event = ProjectEvent(projectId=command.projectId, cursor=snapshot.eventCursor, commandId=command.commandId,
                              source=source, changed=changed, jobIds=job_ids) if changed else None
-        receipt = CommandReceipt(commandId=command.commandId, projectId=command.projectId,
-            inputFingerprint=command_fingerprint(command), status='rejected' if issue else 'accepted' if job_ids else 'applied' if changed else 'noop',
+        waiting = next((item['version'].id for item in changed if item['version'].objectType == 'spend_request'
+                        and item['change'] == 'created' and any(r.id == item['version'].id and r.status == 'pending' for r in snapshot.spendRequests)), None)
+        receipt = CommandReceipt(spendRequestId=waiting, commandId=command.commandId, projectId=command.projectId,
+            inputFingerprint=command_fingerprint(command), status='rejected' if issue else 'awaiting_confirmation' if waiting else 'accepted' if job_ids else 'applied' if changed else 'noop',
             changed=[item['version'] for item in changed], jobIds=job_ids, issues=[issue] if issue else [], eventCursor=snapshot.eventCursor)
         return CommitRecord(command=command, previousHead=head, snapshot=snapshot, receipt=receipt, event=event)
 

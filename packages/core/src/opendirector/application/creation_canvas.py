@@ -290,8 +290,9 @@ def bind_unique_timeline_sources(data, document, *, new_slot_ids):
 
 
 class CreationCanvas:
-    def __init__(self, projects):
+    def __init__(self, projects, generation=None):
         self.projects = projects
+        self.generation = generation
         from opendirector.application.creation_assets import CreationAssets
         self.assets = CreationAssets(projects)
 
@@ -842,6 +843,27 @@ class CreationCanvas:
                     hiddenItemIds=[i.id for i in snapshot.canvasItems if i.id not in visible], edges=edges, capabilities=capabilities)
 
     async def query(self, query: Query) -> JsonValue:
+        if query.type == 'spend.status':
+            from opendirector.application.creation_spend import review_status
+            def status():
+                snapshot = self.projects.snapshot(query.projectId)
+                result = review_status(snapshot, query.agentRunId)
+                if query.agentRunId is None and self.generation is not None and self.generation.tools is not None:
+                    owners = {str(call.ownerId) for call in snapshot.spendCalls}
+                    result['legacy'] += self.generation.tools.untracked_calls(str(query.projectId), owners)
+                return result
+            return to_jsonable_python(await asyncio.to_thread(status))
+        if query.type == 'generation.groupQuote':
+            if self.generation is None:
+                raise ProjectError('Generation service unavailable.', 503)
+            from opendirector.application.creation_groups import preview
+            return to_jsonable_python(await asyncio.to_thread(preview, self.generation, query))
+        if query.type == 'generation.quote':
+            if self.generation is None:
+                raise ProjectError('Generation service unavailable.', 503)
+            quote = await asyncio.to_thread(self.generation.quote, query.projectId, query.specId, query.count, query.originItemId)
+            from opendirector.application.creation_spend import quote_view
+            return to_jsonable_python(quote_view(await asyncio.to_thread(self.projects.snapshot, query.projectId), quote))
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
         if query.type == 'asset.preview':

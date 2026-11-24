@@ -287,7 +287,7 @@ class MinimaxSpeech(ModelAdapter):
     """MiniMax synchronous T2A v2, non-streaming, answering with a result URL."""
     capabilities = frozenset({'audio.speech'})
 
-    async def speech(self, config, request: SpeechRequest, *, result_ready=None) -> MediaResult:
+    async def speech(self, config, request: SpeechRequest, *, result_ready=None, usage_ready=None) -> MediaResult:
         validate_minimax_speech_input(request.text, request.voice)
         payload = {'model': config['modelId'], 'text': request.text, 'stream': False,
                    'voice_setting': {'voice_id': request.voice}, 'audio_setting': {'format': 'mp3'},
@@ -308,6 +308,9 @@ class MinimaxSpeech(ModelAdapter):
                                        http_status=200, secrets=secrets, provider='minimax')
             if type(value['data']['status']) is not int or value['data']['status'] != 2:
                 raise protocol_failure('submit')
+            usage = (value.get('extra_info') or {}).get('usage_characters') if isinstance(value.get('extra_info'), dict) else None
+            if usage_ready and type(usage) is int and 0 <= usage <= 10 ** 12:
+                await usage_ready(usage)
             return _result_url(value['data']['audio'], 'submit')
 
         url = await _call('submit', submit)

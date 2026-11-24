@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field, TypeAdapter, create_model, model_validat
 from .assets import AssetRef, MediaMetadata
 from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
 from .canvas import CanvasItem
+from .spend import SpendObservation, SpendPolicy, SpendReview, ToolSpendInput
 from .editors import EditorDocument
 from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
 from .generation import GenerationSpec, Job, PromptPart, Reference
@@ -210,6 +211,8 @@ class ReferenceRemove(Contract):
 
 
 class GenerationSubmit(Contract):
+    count: int = Field(default=1, strict=True, ge=1, le=8, exclude_if=lambda value: value == 1,
+                       description='Number of candidates admitted together at the whole-action price.')
     specId: UUID = Field(description='Include its current generation_spec revision in expectedVersions.',
         json_schema_extra={'x-version-object-type': 'generation_spec'})
     expectedSpecRevision: Revision = Field(description='Must match the specId revision in expectedVersions.')
@@ -226,6 +229,31 @@ class GenerationSubmit(Contract):
         if self.showAdditionalResult and (self.originItemId is None or self.adoptionPolicy != 'candidate_only'):
             raise ValueError('Additional result display requires an origin and candidate-only adoption')
         return self
+
+
+class GroupMember(Contract):
+    itemId: UUID = Field(description='Canvas item to run.')
+    specId: UUID = Field(description='Generation specification owned by the item.')
+    count: int = Field(default=1, strict=True, ge=1, le=8, description='Candidates requested for this item.')
+    after: tuple[UUID, ...] = Field(default=(), description='Upstream group items whose adopted results this input needs.')
+
+
+class GenerationGroup(Contract):
+    members: tuple[GroupMember, ...] = Field(min_length=1, max_length=500, description='Workflow members in canvas order.')
+
+    @model_validator(mode='after')
+    def members_match(self):
+        ids = {member.itemId for member in self.members}
+        unique([m.itemId for m in self.members], 'workflow items')
+        unique([m.specId for m in self.members], 'workflow specifications')
+        if any(member.itemId in member.after or not set(member.after) <= ids for member in self.members):
+            raise ValueError('Group dependencies must be other members of this action')
+        return self
+
+
+class GroupAdvance(Contract):
+    workflowId: UUID = Field(description='Original group instruction.')
+    items: tuple[UUID, ...] = Field(min_length=1, description='Newly runnable items.')
 
 
 class JobControl(Contract):
@@ -289,7 +317,7 @@ class CommandBase(Contract):
     def required_versions(self) -> list[tuple[str, UUID]]:
         payload = self.payload
         required = []
-        if self.type in {'project.rename', 'project.trash', 'project.restore'}:
+        if self.type in {'project.rename', 'project.trash', 'project.restore', 'spend.policy'}:
             required = [('project', self.projectId)]
         elif self.type == 'canvas.publishMedia':
             required = [('canvas_item', payload.itemId), *[('asset', o.asset.assetId) for o in payload.outputs]]
@@ -315,6 +343,8 @@ class CommandBase(Contract):
             required = [('reference', payload.referenceId if self.type == 'reference.remove' else payload.reference.id)]
         elif self.type == 'reference.add':
             required = [('generation_spec', payload.reference.targetSpecId)]
+        elif self.type == 'generation.group':
+            required = [('generation_spec', m.specId) for m in payload.members] + [('canvas_item', m.itemId) for m in payload.members]
         elif self.type == 'generation.submit':
             required = [('generation_spec', payload.specId)]
         elif self.type == 'result.select':
@@ -356,6 +386,12 @@ _COMMANDS = (
     ('ReferenceUpdateCommand', 'reference.update', ReferenceWrite, 'Update a generation reference.'),
     ('ReferenceRestoreCommand', 'reference.restore', ReferenceWrite, 'Restore a generation reference.'),
     ('ReferenceRemoveCommand', 'reference.remove', ReferenceRemove, 'Deactivate a generation reference.'),
+    ('ToolSpendCommand', 'spend.tool', ToolSpendInput, 'Admit a frozen media tool recipe with its service costs.'),
+    ('SpendObservationCommand', 'spend.observe', SpendObservation, 'Record evidence from a model operation.'),
+    ('SpendPolicyCommand', 'spend.policy', SpendPolicy, 'Set project service spending controls.'),
+    ('SpendReviewCommand', 'spend.review', SpendReview, 'Record a human decision on a fixed request.'),
+    ('GenerationGroupCommand', 'generation.group', GenerationGroup, 'Quote and run a complete canvas workflow.'),
+    ('AdvanceGroupCommand', 'spend.advanceGroup', GroupAdvance, 'Continue an accepted workflow with its completed results.'),
     ('GenerationSubmitCommand', 'generation.submit', GenerationSubmit, 'Submit a generation job with fixed inputs and an adoption policy.'),
     ('JobCancelCommand', 'job.cancel', JobControl, 'Request cancellation of an existing job.'),
     ('JobRecoverCommand', 'job.recover', JobControl, 'Recover an existing job without creating a new attempt.'),
@@ -407,7 +443,7 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+IssueCode = Literal[TimelineIssueCode, 'spend_quote_changed', 'spend_cap', 'spend_unknown', 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
@@ -438,7 +474,8 @@ class CommandReceipt(Contract):
     commandId: UUID = Field(description='Stable command ID for idempotent replay.')
     projectId: UUID = Field(description='Owning project ID.')
     inputFingerprint: Digest = Field(description='Fingerprint of the fixed execution input.')
-    status: Literal['applied', 'accepted', 'noop', 'rejected'] = Field(description='Current operation lifecycle state.')
+    status: Literal['applied', 'accepted', 'noop', 'rejected', 'awaiting_confirmation'] = Field(description='Current operation lifecycle state.')
+    spendRequestId: UUID | None = Field(default=None, exclude_if=lambda v: v is None, description='Batch awaiting a human spend decision.')
     changed: tuple[ObjectVersion, ...] = Field(default=(), description='Business objects changed by the operation.')
     jobIds: tuple[UUID, ...] = Field(default=(), description='Generation jobs associated with this operation.')
     issues: tuple[ContractIssue, ...] = Field(default=(), description='Validation or execution issues.')
@@ -459,6 +496,23 @@ class CommandReceipt(Contract):
 class QueryBase(Contract):
     queryId: UUID = Field(description='Caller-supplied query ID.')
     projectId: UUID = Field(description='Owning project ID.')
+
+
+class GroupQuoteQuery(QueryBase):
+    type: Literal['generation.groupQuote'] = Field(description='Estimate runnable workflow members and list the steps waiting for upstream results.')
+    workflow: GenerationGroup = Field(description='The same workflow members and dependencies used for submission.')
+
+
+class GenerationQuoteQuery(QueryBase):
+    type: Literal['generation.quote'] = Field(description='Estimate the entire action without creating jobs.')
+    specId: UUID = Field(description='Generation specification to price.')
+    originItemId: UUID | None = Field(default=None, description='Canvas item that owns the draft.')
+    count: int = Field(default=1, strict=True, ge=1, le=8, description='Requested candidates.')
+
+
+class SpendStatusQuery(QueryBase):
+    agentRunId: UUID | None = Field(default=None, description='Include the media service calls for this assistant turn.')
+    type: Literal['spend.status'] = Field(description='Read policy, totals, coverage and pending human decisions.')
 
 
 class ProjectQuery(QueryBase):
@@ -501,7 +555,7 @@ class AssetPreviewQuery(QueryBase):
     objectId: UUID = Field(description='Asset ID.')
 
 
-Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
+Query = Annotated[SpendStatusQuery | GenerationQuoteQuery | GroupQuoteQuery | ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
                   CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
 
 

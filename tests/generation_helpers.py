@@ -10,6 +10,17 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import media, send, ver
 
 
+def policy(store, pid, **values):
+    return parse_command(dict(type='spend.policy', commandId=uuid4(), projectId=pid,
+        expectedVersions=[ver('project', store.snapshot(pid).project)], payload=values))
+
+
+def review(pid, request, *, project_record=None, **values):
+    return parse_command(dict(type='spend.review', commandId=uuid4(), projectId=pid,
+        expectedVersions=[*request.versions, ver('spend_request', request), *([ver('project', project_record)] if project_record else [])],
+        payload=dict(requestId=request.id, fingerprint=request.quote.fingerprint(), decision='approve') | values))
+
+
 def new_project(path, name='Generation test'):
     projects = CreationProjects(LocalProjects(path))
     pid, session = uuid4(), str(uuid4())

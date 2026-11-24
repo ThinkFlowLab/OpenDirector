@@ -327,7 +327,11 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       boxes: value.boxes ?? [],
       parameters: value.parameters,
     };
-    const task = await deliverTool<ToolTask>(projectId, owner!.id, body);
+    const task = await deliverTool<ToolTask | { id: string; status: "awaiting_confirmation"; spendRequestId: string }>(projectId, owner!.id, body);
+    if (task.status === "awaiting_confirmation") {
+      await client.refresh();
+      return { projectId, taskId: task.id, spendRequestId: task.spendRequestId };
+    }
     if (signal.aborted) {
       // Acceptance may race a click on Cancel. Once the identity is known,
       // cancel the accepted task too; aborting a browser request is not enough.

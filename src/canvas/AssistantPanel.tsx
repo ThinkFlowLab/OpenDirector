@@ -8,6 +8,7 @@ import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
+import { TurnSpend } from "./ProjectSpend";
 import { AssistantReply } from "./AssistantReply";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
@@ -493,6 +494,7 @@ export function AssistantPanel({
                   : t("assistant.reply.empty"))
               )}
             </div>
+            {open && message.role === "assistant" && previous?.role === "user" && <TurnSpend projectId={documentId} turnId={previous.id} />}
             {trace && (
               <a className="cw-assistant-message-status cw-assistant-trace-link"
                 href={`/?${trace}`} target="_blank" rel="noopener noreferrer">
