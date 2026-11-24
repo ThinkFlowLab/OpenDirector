@@ -114,6 +114,7 @@ function HistoricalOptions({
         reference: t("canvasNodes.versionComposer.mode.reference"),
         first_frame: t("canvasNodes.versionComposer.mode.firstFrame"),
         continuation: t("canvasNodes.versionComposer.mode.continuation"),
+        control: t("canvasNodes.versionComposer.mode.control"),
       }[spec.parameters.videoMode];
       break;
     case "audio":

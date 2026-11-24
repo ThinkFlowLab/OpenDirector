@@ -34,6 +34,9 @@ from test_creation_generation_service import anyio_backend
 from test_moss import mp3
 from test_voice_library import Configs
 
+
+pytestmark = pytest.mark.cpu
+
 URL = 'https://api.minimax.cn/v1'
 RESULT = 'https://93.184.215.14/speech.mp3?signature=fixture-result-signature'
 SECRET = 'minimax-test-key'

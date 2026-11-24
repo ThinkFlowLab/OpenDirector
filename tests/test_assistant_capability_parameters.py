@@ -17,6 +17,9 @@ from opendirector_api.main import create_app
 from test_model_availability import document, NOW
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('locale', ['en-US', 'zh-CN'])
 @pytest.mark.parametrize('scenario', [
     'limited', 'boundary', 'above', 'expired', 'unknown', 'unknown_with_limit', 'missing', 'failed',

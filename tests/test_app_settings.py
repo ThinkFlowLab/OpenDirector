@@ -16,6 +16,9 @@ from opendirector.infrastructure.local_projects import LocalProjects, read_json
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_default_and_saved_settings_survive_application_restart(tmp_path):
     headers = {'X-OpenDirector-Request': '1'}
     store = LocalProjects(tmp_path)

@@ -43,6 +43,8 @@ export function initialVideoActionParameters(
       return { fps: 30 };
     case "video-matting":
       return { background: "black" };
+    case "video-mask-composite":
+      return { stretch: true };
     case "audio-separation":
       return { mode: "voice", description: "" };
     case "video-subtitle-erasure":
@@ -70,7 +72,7 @@ export function videoActionInputError(
     "video-frame-interpolation": { key: "fps", values: [30, 60] },
     "video-matting": {
       key: "background",
-      values: ["black", "green", "transparent"],
+      values: ["black", "green", "transparent", "mask"],
     },
     "audio-separation": {
       key: "mode",

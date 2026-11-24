@@ -1,5 +1,5 @@
 import { ModelLogo } from "./ModelLogo";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { useT } from "../i18n/I18nProvider.tsx";
 
@@ -14,6 +14,7 @@ export function ModelPicker({
   selected,
   loaded,
   loading,
+  loadsPreset,
   error,
   disabled,
   canFetch,
@@ -22,13 +23,13 @@ export function ModelPicker({
   onTest,
   results,
   renderDetails,
-  fetchLabel,
 }: {
   modelPlaceholder: string;
   available: string[];
   selected: string[];
   loaded: boolean;
   loading: boolean;
+  loadsPreset: boolean;
   error: string;
   disabled: boolean;
   canFetch: boolean;
@@ -37,9 +38,9 @@ export function ModelPicker({
   onTest?: (id: string) => void;
   results: Record<string, ModelTestResult>;
   renderDetails?: (id: string) => ReactNode;
-  fetchLabel?: string;
 }) {
   const t = useT();
+  const manualFieldId = useId();
   const [query, setQuery] = useState("");
   const [onlySelected, setOnlySelected] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -54,6 +55,17 @@ export function ModelPicker({
   );
   const allSelected =
     visible.length > 0 && visible.every((id) => selected.includes(id));
+  const fetchLabel = loadsPreset
+    ? "models.service.loadSupportedModels"
+    : loaded ? "generation.picker.refresh" : "generation.picker.fetch";
+  let status = "";
+  if (loading) {
+    status = t("generation.picker.fetching");
+  } else if (loaded && !error) {
+    status = available.length
+      ? t(loadsPreset ? "generation.picker.loadedPreset" : "generation.picker.fetched", { count: available.length })
+      : t("generation.picker.noReturned");
+  }
   const addManual = () => {
     const id = manualId.trim();
     if (!id || id.length > 200 || /[\x00-\x1f]/.test(id)) {
@@ -100,26 +112,29 @@ export function ModelPicker({
           <button
             type="button"
             className="cw-settings-button"
-            disabled={disabled || !canFetch}
+            disabled={disabled}
             onClick={onFetch}
           >
-            {loading
-              ? t("generation.picker.loading")
-              : (fetchLabel ??
-                (loaded
-                  ? t("generation.picker.refresh")
-                  : t("generation.picker.fetch")))}
+            {t(loading ? "generation.picker.loading" : fetchLabel)}
           </button>
         </div>
       </div>
+      <div role="status">
+        {status && <p className="cw-model-note">{status}</p>}
+      </div>
+      {error && (
+        <p className="cw-model-feedback" role="alert">
+          {error}
+        </p>
+      )}
       {manualOpen && (
         <div className="cw-model-manual">
-          <label htmlFor="manual-model-id">
+          <label htmlFor={manualFieldId}>
             {t("generation.picker.modelId")}
           </label>
           <div>
             <input
-              id="manual-model-id"
+              id={manualFieldId}
               autoFocus
               value={manualId}
               maxLength={200}
@@ -158,11 +173,6 @@ export function ModelPicker({
             </p>
           )}
         </div>
-      )}
-      {error && (
-        <p className="cw-model-feedback" role="alert">
-          {t("generation.picker.retry", { error })}
-        </p>
       )}
       {ids.length > 4 && (
         <>
@@ -208,15 +218,14 @@ export function ModelPicker({
       )}
       <div className="cw-model-options" aria-busy={loading}>
         {loading && !ids.length ? (
-          <div className="cw-model-empty-state" role="status">
+          <div className="cw-model-empty-state">
             <span className="cw-model-spinner" />
-            <strong>{t("generation.picker.fetching")}</strong>
             <p>{t("generation.picker.connecting")}</p>
           </div>
         ) : !ids.length ? (
           <div className="cw-model-empty-state">
             <CanvasIcon name="model" size={26} />
-            <strong>{loaded ? t("generation.picker.noReturned") : t("generation.picker.noneAdded")}</strong>
+            {!loaded && <strong>{t("generation.picker.noneAdded")}</strong>}
             <p>
               {loaded
                 ? t("generation.picker.manualHint")
@@ -269,14 +278,17 @@ export function ModelPicker({
                   type="button"
                   className="cw-settings-button cw-settings-button-quiet cw-model-row-test"
                   disabled={disabled || !canFetch}
+                  aria-busy={results[id]?.status === "running" || undefined}
                   aria-label={t("generation.picker.testAria", { id })}
                   onClick={() => onTest(id)}
                 >
-                  {results[id]?.status === "running"
-                    ? t("generation.picker.testing")
-                    : results[id]?.status === "passed"
-                      ? results[id].message
-                      : t("generation.picker.test")}
+                  <span key={results[id]?.status ?? "idle"} className="cw-model-row-result">
+                    {results[id]?.status === "running"
+                      ? t("generation.picker.testing")
+                      : results[id]?.status === "passed"
+                        ? results[id].message
+                        : t("generation.picker.test")}
+                  </span>
                 </button>
               )}
               {selected.includes(id) && renderDetails?.(id)}

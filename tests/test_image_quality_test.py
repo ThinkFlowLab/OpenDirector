@@ -28,6 +28,9 @@ from opendirector_api.localization import localized_error_for_language
 from test_creation_canvas_service import send, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png():
     stream = BytesIO()
     Image.new('RGB', (32, 24), 'green').save(stream, 'PNG')

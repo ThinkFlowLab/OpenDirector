@@ -1553,3 +1553,48 @@ test("canvas video and audio import upload the original File and use Host media 
     assert.equal(resource.src, "blob:registered-media");
   }
 });
+
+test("an upload rejected for a lapsed lease is renewed and resent with the same file", async () => {
+  const { setLeaseRecovery } = await import("../src/backend/api.ts");
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const signal = new AbortController();
+  const handle = crypto.randomUUID();
+  const path = `/api/creation/projects/${snapshot.project.id}/uploads/${handle}`;
+  const blob = new Blob(["rendered timeline"]);
+  const puts: { body: unknown; name: string | null; session: string | null }[] = [];
+  const renewed: string[] = [];
+  const fetch = globalThis.fetch;
+  setLeaseRecovery(async (projectId) => {
+    renewed.push(projectId);
+    return true;
+  });
+  globalThis.fetch = async (url, options) => {
+    if ((options?.method ?? "GET") !== "PUT") return Response.json({});
+    assert.equal(String(url), path);
+    const headers = new Headers(options?.headers);
+    puts.push({ body: options?.body, name: headers.get("X-Asset-Name"), session: headers.get("X-OpenDirector-Session") });
+    if (puts.length === 1)
+      return Response.json({ detail: "会话已过期", code: "session_expired" }, { status: 409 });
+    // Stop before registration; the resend itself is what is under test.
+    signal.abort();
+    return Response.json({ fingerprint: "sha256:x" });
+  };
+  try {
+    await assert.rejects(
+      client.importBlob(blob, "合回原声 2.mp4", "video", handle, "edited", signal.signal),
+      { name: "AbortError" },
+    );
+    assert.deepEqual(renewed, [snapshot.project.id]);
+    assert.equal(puts.length, 2);
+    for (const put of puts) {
+      assert.equal(put.body, blob);
+      assert.equal(put.name, encodeURIComponent("合回原声 2.mp4"));
+      assert.ok(put.session);
+    }
+  } finally {
+    globalThis.fetch = fetch;
+    setLeaseRecovery(undefined);
+  }
+});

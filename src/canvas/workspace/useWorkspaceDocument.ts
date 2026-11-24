@@ -237,6 +237,15 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       ),
     [],
   );
+  const commitCanvasCommand = async (value: CanvasCommand, failureMessage: string) => {
+    const current = historyRef.current;
+    if (switchPending.current) throw new Error(failureMessage);
+    const next = executeCommand(current, value, frameCapabilities.current).present;
+    invalidateScheduledAutosave();
+    if (!(await persist(next, false))) throw new Error(saveError.current || failureMessage);
+    if (historyRef.current.present.id !== next.id) throw new Error(failureMessage);
+    command(value);
+  };
 
   const replayHistory = (forward = false) => {
     if (historyReplayQueue.current) {
@@ -638,6 +647,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   }, [doc, persist, ready]);
   rt.generationReferenceControls = generationReferenceControls;
   rt.command = command;
+  rt.commitCanvasCommand = commitCanvasCommand;
   rt.change = change;
   rt.invalidateScheduledAutosave = invalidateScheduledAutosave;
   rt.begin = begin;

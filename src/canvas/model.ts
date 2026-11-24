@@ -60,7 +60,7 @@ export interface GenerationSettings {
   prompt: string;
   count?: number;
   audioEnabled?: boolean;
-  videoMode?: "reference" | "first-last" | "continuation";
+  videoMode?: "reference" | "first-last" | "continuation" | "control";
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
   frameSlotsInitialized?: boolean;

@@ -419,3 +419,48 @@ test("adapter-supplied field labels and options are translated for display", () 
     "分离方式",
   );
 });
+
+test("mask composite takes two video sources: the content, then its mask", () => {
+  const confirmed = { available: true, parametersConfirmed: true };
+  const clip = (nodeId: string): ToolSource => ({
+    nodeId,
+    kind: "video",
+    title: nodeId,
+    src: "data:video/mp4;base64,a",
+    mimeType: "video/mp4",
+    width: 64,
+    height: 36,
+    durationSeconds: 5,
+  });
+  const task = createCanvasToolTask("video-mask-composite", ["depth", "mask"], {
+    stretch: true,
+  });
+  assert.deepEqual(
+    validateToolTask(task, [clip("depth"), clip("mask")], confirmed),
+    [],
+  );
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-mask-composite", ["depth"], {
+        stretch: true,
+      }),
+      [clip("depth")],
+      confirmed,
+    ).length > 0,
+  );
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-mask-composite", ["depth", source.nodeId], {
+        stretch: true,
+      }),
+      [clip("depth"), source],
+      confirmed,
+    ).length > 0,
+  );
+  assert.deepEqual(
+    initialToolParameters(
+      CANVAS_TOOLS.find((tool) => tool.id === "video-matting")!,
+    ).background !== undefined,
+    true,
+  );
+});

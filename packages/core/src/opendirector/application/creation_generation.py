@@ -38,7 +38,7 @@ from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
-from opendirector.integrations.fasth3 import video_parameters
+from opendirector.integrations.fasth3 import control_parameters, video_parameters
 from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
 from opendirector.integrations.model_adapters import capabilities_of
 from opendirector.integrations.providers import GenerationProviders
@@ -211,14 +211,19 @@ class CreationGeneration(GenerationRuntime):
             else:
                 params.pop('generate_audio', None)
             seconds = intent.get('durationSeconds')
-            if rules['profile'] == 'fasth3-omni':
+            control = rules['profile'] == 'fasth3-omni' and node.get('videoMode') == 'control'
+            if control:
+                params = control_parameters(node, records, resolution=str(intent.get('resolution', 'auto')).upper())
+                params['seed'] = new_seed()
+                seconds = None  # The control video sets the length.
+            elif rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
                 if config.get('videoAdapter') == 'fasth3_dual' and node.get('videoMode') == 'first_frame':
                     params['num_inference_steps'] = 20
                 params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
-            if seconds is None and config.get('videoCapabilities'):
+            if seconds is None and config.get('videoCapabilities') and not control:
                 seconds = rules['videoCapabilities']['defaultDuration']
             if seconds is not None:
                 params['duration'] = seconds
@@ -234,7 +239,9 @@ class CreationGeneration(GenerationRuntime):
                     raise ProjectError('指定视频比例前，请在模型接入中配置输出规格。', 422)
                 preferred = next((item for item in choices if item['resolution'] == caps.get('defaultResolution')), choices[0])
                 output['resolution'] = preferred['resolution']
-            if config['protocol'] == 'minimax_video_v2':
+            if control:
+                pass  # Size and frames already follow the control video.
+            elif config['protocol'] == 'minimax_video_v2':
                 params['resolution'] = (intent.get('resolution') if intent.get('resolution') != 'auto' else None) or rules['videoCapabilities']['defaultResolution']
                 has_frames = node['videoMode'] == 'first_frame' and any(records[key]['kind'] == 'image' for key in node['referenceIds'])
                 if has_frames:

@@ -4,6 +4,8 @@ Domain code keeps its Chinese copy for CLI and Agent traces. The HTTP boundary
 chooses an English message from the stable error code when the caller asks for
 English, so a missing translation never leaks Chinese into an English UI.
 """
+import re
+
 from fastapi import Request
 
 
@@ -101,9 +103,11 @@ ENGLISH_BY_CODE = {
     "role_restricted": "This item does not allow that operation.",
     "storage_unavailable": "A stored file is missing or has changed. Restore the file and try again.",
     "capability_unsupported": "This capability is not supported yet.",
+    "model_list_http_error": "Could not load the model list from the service.",
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",
     "project_open_elsewhere": "This project is open in another window. Close it there and try again.",
+    "session_expired": "This project was closed or its session expired. Reopen it and save again.",
     "local_only": "Only this computer can access the project service.",
     "cross_origin": "File access from another site is not allowed.",
     "invalid_local_request": "This is not a valid local app request.",
@@ -154,6 +158,10 @@ def localized_error_for_language(
                 'spend_unknown': '请设置使用工程币种的单价，以确定本批费用上限。'}.get(code, chinese)
     if code == 'tool_model_missing':
         return missing_tool_model_message(required_capability, english=True)
+    if code == 'model_list_http_error':
+        upstream_status = re.search(r'HTTP ([0-9]{3})', chinese)
+        if upstream_status:
+            return f'Could not load the model list (HTTP {upstream_status[1]}).'
     if code.startswith(('capability_', 'image_input_', 'tool_source_')):
         translated = english_capability_message(chinese)
         if translated:

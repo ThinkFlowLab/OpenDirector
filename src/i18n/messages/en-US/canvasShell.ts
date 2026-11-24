@@ -135,6 +135,7 @@ export const canvasShell = {
     "Choose vocals, background sound or another audio type",
   "canvas.selection.frameInterpolation": "Frame interpolation",
   "canvas.selection.subtitleErase": "Erase subtitles",
+  "canvas.selection.maskComposite": "Mask composite",
   "canvas.selection.videoMatting": "Video matting",
   "canvas.selection.videoCrop": "Crop video frame",
   "canvas.selection.trimAudio": "Trim audio",

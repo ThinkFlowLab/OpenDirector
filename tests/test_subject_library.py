@@ -1,4 +1,6 @@
 """Subject library preparation, owned copies and atomic import validation."""
+
+import pytest
 from copy import deepcopy
 from uuid import uuid4
 
@@ -6,6 +8,9 @@ from test_library import app, client, store, png, upload
 from test_creation_canvas_service import project, send, ver
 from opendirector.application.creation_canvas import asset_ref
 from opendirector.infrastructure.creation_uploads import CreationUploads
+
+
+pytestmark = pytest.mark.cpu
 
 
 def test_subject_slot_validation_uses_actual_media_and_fifteen_second_limit(tmp_path):

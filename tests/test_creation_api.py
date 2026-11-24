@@ -11,6 +11,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def api(tmp_path):
     local = LocalProjects(tmp_path)

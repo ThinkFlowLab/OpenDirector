@@ -13,6 +13,8 @@
 
 # OpenDirector
 
+**[下载 OpenDirector](https://thinkflowlab.github.io/OpenDirector/zh-cn/#download)**，适用于搭载 Apple 芯片的 Mac 和 Windows x64 电脑。
+
 **从创作想法到可下载的短片：对话生成、画布管理、媒体编辑、时间线导出。**
 
 OpenDirector 是一个在本地运行、通过浏览器使用的 AI 视频创作工作台。你可以与助手讨论创意并生成素材，在画布上整理和迭代内容，用编辑工具调整图片、视频和音频，再通过时间线编排并导出 MP4。
@@ -22,6 +24,13 @@ OpenDirector 是一个在本地运行、通过浏览器使用的 AI 视频创作
 [官方网站](https://thinkflowlab.github.io/OpenDirector/zh-cn/) · [下载 macOS 或 Windows 版](https://thinkflowlab.github.io/OpenDirector/zh-cn/#download) · [观看短片示例](https://thinkflowlab.github.io/OpenDirector/zh-cn/#film) · [安装指南](docs/guides/installation.zh-CN.md)
 
 [最新动态](#最新动态) · [短片示例](#短片示例我们还能赢) · [快速开始](#快速开始) · [文档](#文档) · [社区交流](#社区交流) · [参与贡献](#参与贡献)
+
+欢迎关注我们的B站官方账号，里面有教学视频，以及定期分享用户创作的精彩内容！
+<p>
+  <a href="https://space.bilibili.com/3747582748658251">
+    <img src="https://img.shields.io/badge/Bilibili-OpenDirector-00A1D6?logo=bilibili&amp;logoColor=white" alt="OpenDirector 官方 B 站账号" />
+  </a>
+</p>
 
 ## 最新动态
 

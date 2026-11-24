@@ -6,7 +6,7 @@ import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal }
 
 import "@xyflow/react/dist/style.css";
 import { Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
-import { createNode } from "../model.ts";
+import { createNode, type CanvasNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
@@ -87,6 +87,8 @@ import "../settings.css";
 import { dismissModelSetup } from "../ModelSetup";
 
 import { WelcomeScreen } from "../WelcomeScreen";
+import { firstRunCapabilities } from "../firstRunModels";
+import { newNodeGenerationSettings } from "../modelResolution";
 import { SettingsDialog } from "../SettingsDialog";
 import { alignNodes, type Alignment } from "../snapping";
 import { StackEditor } from "../StackEditor";
@@ -107,7 +109,7 @@ import { captureVideoEndpoint, extractVideoAudio } from "../videoActionRuntime";
 import "../workspace.css";
 import "../desktop-chrome.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
-import { DirectorStage, IconButton, helpShortcuts, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
+import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
@@ -137,6 +139,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     closeAction,
     closeEditor,
     command,
+    commitCanvasCommand,
     commitEditorData,
     composerElement,
     composerExpanded,
@@ -281,6 +284,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setSelected,
     setSelectedEdges,
     setSettingsCategory,
+    setSettingsModelKind,
     setSettingsOpen,
     setShowEdges,
     setSubjectImport,
@@ -291,6 +295,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setZoom,
     setZoomMenu,
     settingsCategory,
+    settingsModelKind,
     settingsOpen,
     showAssistant,
     showEdges,
@@ -325,6 +330,20 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
    * the picker in the project menu.
    */
   const [exampleEntries, setExampleEntries] = useState<ExampleEntry[] | null>(null);
+  const [welcomeExampleId, setWelcomeExampleId] = useState<string | null>(null);
+  const [firstRunArriving, setFirstRunArriving] = useState(false);
+  const pendingFirstNodes = useRef<{ projectId: string; selection: string; nodes: CanvasNode[] } | null>(null);
+  const finishFirstRun = () => {
+    pendingFirstNodes.current = null;
+    dismissModelSetup();
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("setup") === "welcome") {
+      url.searchParams.delete("setup");
+      window.history.replaceState(window.history.state, "", url);
+    }
+    setFirstRunArriving(window.matchMedia("(prefers-reduced-motion: no-preference)").matches);
+    setWelcomeOpen(false);
+  };
   const [exampleLoading, setExampleLoading] = useState(false);
   const exampleCatalog = useRef<Promise<ExampleEntry[]> | null>(null);
   const loadExamples = () =>
@@ -339,6 +358,20 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     } finally {
       setExampleLoading(false);
     }
+  };
+  const welcomeExampleImport = useExampleImport({
+    importCanvas: async (archive) => {
+      const { switched } = await importCanvasArchive(archive);
+      if (!switched) throw new Error(t("canvas.workspace.error.importNotApplied"));
+      finishFirstRun();
+    },
+  });
+  const openWelcomeExample = async () => {
+    const entries = await loadExamples();
+    const entry = entries.find((item) => item.id === VIDEO_EXAMPLE_ID) ?? entries[0];
+    if (!entry) throw new Error(t("canvas.example.dialog.empty"));
+    setWelcomeExampleId(entry.id);
+    await welcomeExampleImport.start(entry);
   };
   const exampleImport = useExampleImport({ importCanvas: importCanvasArchive });
   const [exampleMissing, setExampleMissing] = useState(false);
@@ -368,13 +401,22 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   const outputState = timelineOutput.state;
   const outputSource = outputState ? doc.nodes.find((node) => node.id === outputState.itemId) : undefined;
   const existingOutput = outputState ? projected.nodes.find((node: { id: string }) => node.id === outputState.output.id) : undefined;
+  const outputSize = {
+    width: existingOutput?.width ?? 352,
+    height: existingOutput?.height ?? 198,
+  };
   const pendingOutput = outputSource && outputState && outputState.phase !== "done"
     ? {
         id: outputState.output.id,
         type: "video" as const,
         position: outputState.output.position,
-        width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198,
-        style: { width: existingOutput?.width ?? 352, height: existingOutput?.height ?? 198 },
+        width: outputSize.width, height: outputSize.height,
+        // The injection is rebuilt on every render, so React Flow compares a new
+        // node object each time and resets `handleBounds` whenever `measured` is
+        // absent. The pending reference edge then has no path and disappears until
+        // the node is measured again, which a settled canvas never triggers.
+        measured: outputSize,
+        style: { width: outputSize.width, height: outputSize.height },
         selectable: false, draggable: false, connectable: false, deletable: false, focusable: false,
         data: {
           kind: "video" as const, title: outputState.output.title,
@@ -1694,6 +1736,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={activeAction.token}
                 node={actionNode}
                 tool={activeAction.tool}
+                nodes={doc.nodes}
                 draft={actionNode.data.taskDraft}
                 mediaContainer={actionMedia}
                 onDraftChange={(task) => saveActionDraft(activeAction, task)}
@@ -1914,6 +1957,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 backendModels={backendCatalog.models}
                 onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}
+                onConfigureModel={(kind) => {
+                  setSettingsCategory("models");
+                  setSettingsModelKind(kind);
+                  setSettingsOpen(true);
+                }}
               />
             )}
           </div>
@@ -2444,7 +2492,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
         </aside>
       )}
 
-      {ready && (
+      {ready && !welcomeOpen && (
         <AssistantPanel
           key={doc.id}
           documentId={doc.id}
@@ -2881,16 +2929,63 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             onClose={closeEditor}
           />
         )}
+      {firstRunArriving && (
+        <div className="cw-first-run-arrival" aria-hidden="true" onAnimationEnd={() => setFirstRunArriving(false)} />
+      )}
       {welcomeOpen && <WelcomeScreen
         catalog={backendCatalog}
-        onSkip={() => { dismissModelSetup(); setWelcomeOpen(false); }}
+        projectId={doc.id}
+        exampleStatus={welcomeExampleId ? welcomeExampleImport.statuses[welcomeExampleId] : undefined}
+        onExamples={openWelcomeExample}
+        onCancelExample={() => {
+          if (welcomeExampleId) welcomeExampleImport.cancel(welcomeExampleId);
+        }}
+        onImport={async (files) => {
+          if (!(await importFiles(files, undefined, true))) {
+            throw new Error(t("canvas.workspace.error.importNotApplied"));
+          }
+          finishFirstRun();
+        }}
+        onCreate={async (selections) => {
+          const current = historyRef.current.present;
+          const selection = JSON.stringify(selections.map(({ capability, model }) => [capability, model.id]));
+          // Keep the same node identities when retrying an uncertain save.
+          if (pendingFirstNodes.current?.projectId !== current.id || pendingFirstNodes.current.selection !== selection) {
+            const origin = center();
+            const nodes = selections.map(({ capability, model }) => {
+              const kind = firstRunCapabilities[capability];
+              return createNode(kind, origin, { settings: newNodeGenerationSettings(kind, [model]) });
+            });
+            pendingFirstNodes.current = {
+              projectId: current.id,
+              selection,
+              nodes: arrangeNodes(nodes, nodes.map((node) => node.id)),
+            };
+          }
+          const { nodes } = pendingFirstNodes.current;
+          const missing = nodes.filter((node) => !current.nodes.some((item) => item.id === node.id));
+          if (missing.length) {
+            await commitCanvasCommand({
+              type: "batch",
+              commands: missing.map((node) => ({ type: "add-nodes", nodes: [node], titlePrefix: t(nodeKindKeys[node.type]) })),
+            }, t("firstRun.createFailed"));
+          }
+          finishFirstRun();
+          setSelected(nodes.map((node) => node.id));
+          if (nodes.length === 1) focusSelection(nodes[0].id);
+          else rt.revealCreatedNodes.current(nodes, [...current.nodes, ...missing]);
+        }}
       />}
       {settingsOpen && (
         <SettingsDialog
           catalog={backendCatalog}
           theme={theme}
           initialCategory={settingsCategory}
-          onClose={() => { dismissModelSetup(); setSettingsOpen(false); }}
+          initialModelKind={settingsModelKind}
+          onClose={() => {
+            setSettingsModelKind(null);
+            setSettingsOpen(false);
+          }}
         />
       )}
       {exampleEntries && (

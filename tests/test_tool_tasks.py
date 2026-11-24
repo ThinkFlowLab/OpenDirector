@@ -18,6 +18,9 @@ from opendirector.infrastructure.local_projects import LocalProjects, child
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.model_adapters import OpenAIImages, adapter_for, capabilities_of
 
+
+pytestmark = pytest.mark.cpu
+
 ZIMAGE = ('image', 'http://gpu:8210/v1', 'Tongyi-MAI/Z-Image-Turbo')
 H3 = ('video', 'http://gpu:8010/v1', 'MiniMaxAI/MiniMax-H3')
 TTS = ('audio', 'http://gpu:8220/v1', 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')
@@ -1024,3 +1027,70 @@ def test_video_edit_rejects_out_of_bounds_selection_before_acceptance(project, b
             sourceAssetIds=[source], parameters={'prompt': 'change'}, boxes=[box]), session))
     assert service.list(project_id) == [] and not service.jobs
     assert store.snapshot(project_id) == before
+
+
+def video_frame(store, project_id, task, tmp_path, seconds=0.5):
+    path = tmp_path / f"frame-{task['id']}.mp4"
+    path.write_bytes(CreationToolAssets(store).read_bytes(project_id, task['outputs'][0]['id']))
+    data = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(seconds), '-i', str(path), '-frames:v', '1', '-f', 'image2',
+                           '-c:v', 'png', 'pipe:1'], capture_output=True, check=True).stdout
+    return Image.open(io.BytesIO(data)).convert('RGB')
+
+
+def gray_mp4(seconds=1, size='64x36', color='0x808080'):
+    return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color=c={color}:size={size}:rate=24', '-t', str(seconds),
+                           '-pix_fmt', 'yuv420p', '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'],
+                          capture_output=True, check=True).stdout
+
+
+def test_video_matting_mask_is_white_on_black_for_later_steps(project, tmp_path):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'clip.mp4', sound_mp4(1))
+    task = run(store, configure(store, SAM3), httpx.MockTransport(tracking_server([])), project_id, session,
+               {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'mask'}})
+    assert task['status'] == 'succeeded', task['error']
+    assert task['outputs'][0]['title'] == '视频遮罩' and task['outputs'][0]['type'] == 'video/mp4'
+    frame = video_frame(store, project_id, task, tmp_path)
+    assert min(frame.getpixel((10, 18))) > 230 and max(frame.getpixel((54, 18))) < 25  # Tracked left half white.
+
+
+def test_mask_composite_keeps_content_inside_the_mask_and_stretches_it(project, tmp_path):
+    store, project_id, session = project
+    depth = upload(store, project_id, session, 'depth.mp4', gray_mp4(1))
+    # Mask: the left half white.
+    mask_video = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:size=64x36:rate=24', '-t', '1',
+                                 '-vf', 'drawbox=x=0:y=0:w=32:h=36:color=white:t=fill', '-pix_fmt', 'yuv420p', '-f', 'mp4',
+                                 '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'], capture_output=True, check=True).stdout
+    mask = upload(store, project_id, session, 'mask.mp4', mask_video)
+    configs = configure(store)
+    task = run(store, configs, None, project_id, session,
+               {'tool': 'video-mask-composite', 'sourceAssetIds': [depth, mask], 'parameters': {'stretch': False}})
+    assert task['status'] == 'succeeded', task['error']
+    assert task['modelConfigIds'] == {} and task['outputs'][0]['title'] == '遮罩合成'
+    frame = video_frame(store, project_id, task, tmp_path)
+    assert 110 < frame.getpixel((8, 18))[0] < 150 and max(frame.getpixel((56, 18))) < 20
+    task = run(store, configs, None, project_id, session,
+               {'tool': 'video-mask-composite', 'sourceAssetIds': [depth, mask], 'parameters': {'stretch': True}})
+    assert task['status'] == 'succeeded', task['error']
+    # A flat gray person is stretched to the bottom of the 50..255 control range, still distinct from black.
+    frame = video_frame(store, project_id, task, tmp_path)
+    assert 35 < frame.getpixel((8, 18))[0] < 70 and max(frame.getpixel((56, 18))) < 20
+    task = run(store, configs, None, project_id, session,
+               {'tool': 'video-mask-composite', 'sourceAssetIds': [depth], 'parameters': {}})
+    assert task['status'] == 'failed' and '两个视频' in task['error']
+
+
+def test_mask_composite_rejects_a_mask_on_another_timeline(project):
+    store, project_id, session = project
+    depth = upload(store, project_id, session, 'depth.mp4', gray_mp4(1))
+    configs = configure(store)
+    # Frames are paired by index: another frame rate or length would drift the mask off the person.
+    other_rate = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=white:size=64x36:rate=30', '-t', '1',
+                                 '-pix_fmt', 'yuv420p', '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'],
+                                capture_output=True, check=True).stdout
+    shorter = gray_mp4(0.5, color='white')
+    for name, video, reason in (('rate.mp4', other_rate, '帧率'), ('short.mp4', shorter, '帧数')):
+        mask = upload(store, project_id, session, name, video)
+        task = run(store, configs, None, project_id, session,
+                   {'tool': 'video-mask-composite', 'sourceAssetIds': [depth, mask], 'parameters': {}})
+        assert task['status'] == 'failed' and reason in task['error'], task['error']

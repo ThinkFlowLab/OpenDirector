@@ -20,6 +20,9 @@ from test_tool_tasks import png, upload
 from test_video_capability_acceptance import clip, video_service
 
 
+pytestmark = pytest.mark.cpu
+
+
 def frame_command(project, config, *, same_asset=False, mode='first_frame'):
     store, pid, session = project
     pictures = [png(color='red'), png(color='red' if same_asset else 'blue')]

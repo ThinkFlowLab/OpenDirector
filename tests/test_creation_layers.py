@@ -1,4 +1,6 @@
 """Attached layer persistence, protected writes and reversible associations."""
+
+import pytest
 from io import BytesIO
 from uuid import uuid4
 
@@ -10,6 +12,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, ver
 from opendirector.application.creation_canvas import asset_ref
+
+
+pytestmark = pytest.mark.cpu
 
 
 def layered_image(project):

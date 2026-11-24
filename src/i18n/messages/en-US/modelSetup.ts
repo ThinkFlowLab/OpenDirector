@@ -1,22 +1,4 @@
 export const modelSetup = {
-  "modelSetup.nextModel": "Next: configure {model}",
-  "modelSetup.finishedTitle": "Setup complete",
-  "modelSetup.finishedHint": "Your saved model configurations are kept. You can add other models anytime in Settings.",
-
-  "modelSetup.skipItem": "Skip this type",
-  "modelSetup.skipAll": "Skip all setup",
-  "modelSetup.deferred": "Set up later",
-
-  "modelSetup.guideSave": "Enter connection details, select models, then save the service to continue.",
-  "modelSetup.guideAdd": "Add a service to configure this model type.",
-  "modelSetup.guideNext": "This model type is configured. Continue with another type.",
-
-  "modelSetup.welcomeTitle": "Welcome to OpenDirector",
-  "modelSetup.welcomeDescription": "Start with an idea. Create your video together with AI.",
-  "modelSetup.welcomeConfigure": "Set up models for creation",
-  "modelSetup.welcomeSkip": "Explore first",
-  "modelSetup.welcomeNote": "Connect your own model services, or set them up later in Settings.",
-
   "modelSetup.done": "Done",
   "modelSetup.overview": "Overview",
   "modelSetup.title": "Set up models for creation",

@@ -185,6 +185,21 @@ export function withMediaSuffix(name: string, mimeType?: string): string {
   return suffix ? `${name}${suffix}` : name;
 }
 
+/**
+ * Library rows accumulate: picking a card adds it to the selection and only a
+ * second click on that same card removes it. Cross-canvas rows are keyed by
+ * their own node ids, so picks from different canvases must coexist here.
+ */
+export function toggleSelection(
+  current: Set<string>,
+  id: string,
+): Set<string> {
+  const next = new Set(current);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
 function query(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params))

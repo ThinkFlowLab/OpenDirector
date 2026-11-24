@@ -197,6 +197,7 @@ export const canvasNodes = {
   "canvasNodes.versionComposer.seconds": "{value} 秒",
   "canvasNodes.versionComposer.mode.reference": "参考生视频",
   "canvasNodes.versionComposer.mode.firstFrame": "首帧生视频",
+  "canvasNodes.versionComposer.mode.control": "结构控制",
   "canvasNodes.versionComposer.mode.continuation": "视频续写",
   "canvasNodes.versionComposer.mode.music": "音乐生成",
   "canvasNodes.versionComposer.mode.speech": "文本朗读",

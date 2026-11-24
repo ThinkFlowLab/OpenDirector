@@ -398,3 +398,43 @@ test("reading service keeps unsupported kinds distinct from unused allowed refer
   assert.doesNotMatch(backendReferenceIssue(video, settings, speechWithImage)!, /不使用该参考/);
   assert.deepEqual(backendReferences(settings, [image], speechWithImage), []);
 });
+
+test("structure control sends exactly one video as the control and keeps it out of video references", () => {
+  const fasth3 = config("video", {
+    profile: "fasth3-omni",
+    allowedKinds: ["text", "image", "video", "audio"],
+    maxImages: 9,
+    maxVideos: 3,
+    maxAudios: 3,
+    videoModes: ["reference", "control"],
+    outputResolutions: ["480P", "768P"],
+    videoCapabilities: {
+      outputs: [{ resolution: "480P", durations: [5] }],
+      defaultResolution: "480P",
+      defaultDuration: 5,
+      dimensionStep: 32,
+    },
+  });
+  const settings = { ...video({ videoMode: "control", resolution: "auto" }), modelConfigId: fasth3.id };
+  const depth = media("video");
+  const costume = media("image");
+  assert.match(backendBlocker(settings, [costume], [fasth3])!, /控制视频/);
+  assert.equal(backendBlocker(settings, [depth, costume], [fasth3]), null);
+  assert.equal(
+    backendBlocker({ ...settings, durationSeconds: 8 }, [depth, costume], [fasth3]),
+    null,
+  );
+  assert.deepEqual(
+    backendReferences(settings, [depth, costume], fasth3).map((item) => item.role),
+    ["control", "reference"],
+  );
+  assert.match(backendBlocker(settings, [depth, media("video")], [fasth3])!, /控制视频/);
+  assert.match(backendReferenceIssue(media("audio"), settings, fasth3)!, /音频/);
+  assert.equal(backendVideoMode(settings, backendReferences(settings, [depth], fasth3), fasth3), "control");
+  assert.equal(isGenerationSettings(settings), true);
+  // A model without the mode falls back to reference mode references.
+  assert.deepEqual(
+    backendReferences(video({ videoMode: "reference" }), [depth], fasth3).map((item) => item.role),
+    ["reference"],
+  );
+});

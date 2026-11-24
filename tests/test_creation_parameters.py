@@ -27,6 +27,9 @@ from test_creation_generation_service import anyio_backend
 from generation_helpers import policy, prepared, review
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png(size=(32, 24), color='blue'):
     out = BytesIO()
     Image.new('RGB', size, color).save(out, 'PNG')

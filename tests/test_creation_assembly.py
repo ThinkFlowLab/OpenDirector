@@ -15,6 +15,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 def upload_source(project, tmp_path, kind, seconds=1, color='blue'):
     store, pid, session = project
     if kind == 'image':

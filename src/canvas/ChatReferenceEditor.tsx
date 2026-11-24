@@ -51,6 +51,7 @@ import type { MessageKey } from "../i18n/types.ts";
 
 export interface ChatReferenceEditorHandle {
   focus: () => void;
+  replaceText: (text: string) => void;
   openPicker: () => void;
   setSkill: (name: string | null, fromSlash?: boolean) => void;
   caret: () => Caret;
@@ -583,6 +584,17 @@ export function ChatReferenceEditor({
   useImperativeHandle(ref, () => ({
     focus,
     caret,
+    replaceText: (text) => {
+      if (disabled || composing.current || choosing.current) return;
+      const tokens = current.current.filter(part => part.type !== "text");
+      const content: ReferenceContent = [...tokens, { type: "text", text: tokens.length ? "\n" + text : text }];
+      const end = editingText(content).length;
+      const at = { start: end, end };
+      if (!publish(content, at)) return;
+      close();
+      focus(at);
+      updateMention();
+    },
     setSkill: (name, fromSlash = false) => {
       if (disabled || !skillsEnabled) return;
       const range = fromSlash ? slash.current : caret();

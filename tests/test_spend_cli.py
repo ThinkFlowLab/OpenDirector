@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -11,6 +12,8 @@ from opendirector import cli
 from opendirector.application.creation_spend import save_policy
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
+
+pytestmark = pytest.mark.cpu
 
 
 def test_standalone_cli_quotes_submits_and_returns_the_local_review_link(tmp_path, monkeypatch):

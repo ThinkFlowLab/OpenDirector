@@ -109,6 +109,7 @@ export function useBackendModels() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const modelsRef = useRef<ModelConfig[]>([]);
   const epoch = useRef(0);
+  const latestRefresh = useRef(0);
   const querySequence = useRef(0);
   const latestQuery = useRef(new Map<string, number>());
   const alive = useRef(true);
@@ -136,6 +137,8 @@ export function useBackendModels() {
   }, []);
   const refresh = useCallback(async () => {
     const initialEpoch = ++epoch.current;
+    latestRefresh.current = initialEpoch;
+    setLoading(true);
     try {
       const [list, general] = await Promise.all([
         request<ModelConfig[]>("/model-configs").then((list) => {
@@ -156,7 +159,7 @@ export function useBackendModels() {
       setConnected(false);
       setError(errorMessage(failure));
     } finally {
-      if (alive.current) setLoading(false);
+      if (alive.current && initialEpoch === latestRefresh.current) setLoading(false);
     }
   }, [storeModels]);
   const refreshAvailability = useCallback(
@@ -302,6 +305,7 @@ export function useBackendModels() {
     );
     await refresh();
     void refreshAvailability(saved.map((model) => model.id));
+    return saved;
   };
   const removeService = async (id: string) => {
     epoch.current += 1;

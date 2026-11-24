@@ -8,6 +8,8 @@ from opendirector.application.creation_spend import quote_view, review_status
 from opendirector.domain.creation.project import Project, ProjectSnapshot
 from opendirector.domain.creation.spend import OFFICIAL_URL, SpendCall, SpendObservation, SpendPolicy, SpendQuote, cap_adjustment, observed_call, price_line, spend_decision
 
+pytestmark = pytest.mark.cpu
+
 
 def test_connection_price_takes_precedence_and_an_alias_is_unpriced():
     config = dict(id=uuid4(), connectionType='api', url=OFFICIAL_URL, protocol='openai', modelId='glm-image')

@@ -17,6 +17,9 @@ from opendirector.integrations.capability_probe import CapabilityProbe, identity
 from test_model_availability import document
 
 
+pytestmark = pytest.mark.cpu
+
+
 def saved_config(tmp_path):
     configs = ModelConfigs(tmp_path)
     saved = configs.save('agent', 'http://models.test/v1', 'demo', 'synthetic-key-one',

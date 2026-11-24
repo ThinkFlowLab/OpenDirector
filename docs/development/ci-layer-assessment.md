@@ -65,3 +65,96 @@ The audit rejects missing/duplicate IDs, conflicting marks, filtered inventories
 All live PR/main/nightly callers still select the full Python suite. These labels do not reduce the current release bar. Before switching PRs to ready, retain an independent full-collection audit and enable the complete merge-queue gate; measure the actual ready workflow before claiming end-to-end savings or tightening its timeout.
 
 现有 PR/main/nightly 仍调用全量 Python，分类不会提前缩小发布门槛。切换 ready 前必须保留完整收集核对并接通合并队列完整门禁；真正运行 ready 工作流后，才评估端到端耗时和是否收紧超时。
+
+## Second classification pass / 第二轮分类（2026-11-23）
+
+Baseline main: `6a41c5703d31ed56f138993a037266929002db72`. Two successful,
+unfiltered Linux Python profiles use Python 3.12.16 and pytest 9.1.1:
+[45100623255](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45100623255)
+and [45044280781](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45044280781)
+(the latter at `8c00a9e5564a73afc24964a9651a8857da28c4c2`). Download artifact
+`python-test-evidence-1` and use `python.json`; bundled OpenCode and harness
+visual profiles remain separate evidence, not duplicate main-suite passes.
+
+基线是上述 main；两次成功、无筛选的 Linux 样本均为 2,993 个用例，原始 ID
+集合完全相同，分类均为 ready 2,927、merge 56、nightly 10。最新样本为
+2,875 passed、118 skipped，profile 墙钟 364.61 秒（不含依赖安装）。
+新增测试不能直接沿用 11 月 12 日样本的耗时和分类结论。
+
+| Decision / 决策 | Scope and reason / 范围与原因 |
+| --- | --- |
+| merge | The two model variants of the standard 5-second/120-frame full HTTP generation round trip; rejection at 103 frames, acceptance at 104 and fractional 107/24-second conversion remain ready for both models. / 两个模型的标准 5 秒完整往返移入 merge；拒绝边界、接受边界和非整秒帧数换算仍留 ready。 |
+| merge | `test_storage_bench_emits_the_fields_the_suite_tracks`: runs real storage scenarios through subprocesses. Threshold/report logic stays ready. / 实际存储微基准子进程流程移入 merge；阈值与报告逻辑仍留 ready。 |
+| ready | Retain request/entry equivalence, FastH3 admission and recovery, MiniMax speech download security after model changes, and BigModel recovery without resubmission. / 保留入口一致性、FastH3 接受与恢复、模型变化后的下载安全和不重复提交。 |
+
+Only three cases move, totaling 2.60 phase seconds in the latest sample.
+This is a semantic split, not an end-to-end performance claim. No new nightly
+moves, assertion removal, parameter-ID edits or workflow filter changes.
+The ready floor grows from 15 capability groups/45 cases to 18 groups/152 cases;
+all 152 passed in each Linux baseline under `--require-executed`.
+
+仅移动三个用例，最新样本阶段耗时合计 2.60 秒，不宣称 CI 端到端提速。
+不新增 nightly 分类，不删除断言或修改参数 ID，不切换 CI 筛选。
+保护清单新增三项能力，覆盖 152 个展开用例，两份 Linux 基线均通过执行核对。
+
+Local Windows collection retains 2,993 cases: ready 2,924, merge 59, nightly 10.
+The common IDs have exactly the three declared layer changes. Three raw IDs
+still differ across platforms (interpreter paths / generated image bytes);
+no normalization is used to claim exact cross-platform conservation.
+Local collection is not execution evidence. The first hosted Linux full-suite
+profile for this change must confirm the same-platform ID set and the three
+layer changes before treating conservation on the changed revision as verified.
+
+本地 Windows 收集保持 2,993 个用例：ready 2,924、merge 59、nightly 10；
+共同 ID 只有上述三个分类变化。仍有三个跨平台原始 ID 差异，不通过归一化
+掩盖差异。收集不是执行证据；改动后首次 Linux 全量 CI 仍需确认同平台 ID
+守恒及三项分类变化，才能完成该版本的覆盖守恒验收。
+
+Reproduce / 复核命令（下载文件使用各自路径）：
+
+```sh
+python scripts/ci/check_test_layers.py --profile baseline/python.json --require-executed
+python -m pytest tests --collect-only -q --ci-profile=collection.json
+python scripts/ci/check_test_layers.py --profile collection.json
+```
+
+PR-5 prepares classification and coverage protection only. Hardware marks are
+separate work; PR-8 must still wait for hardware tagging and live merge-queue
+acceptance before reducing the active full-suite bar.
+
+PR-5 只准备分类和覆盖保护。机型标记独立开发；PR-8 仍须等待机型轴与真实
+合并队列验收，现有全量门槛保持不变。
+
+## CPU platform axis / CPU 机型轴（2026-11-23）
+
+This pass starts at main `273153908edd068cde6c339a5fc98ebcbf604af9`.
+The same Windows environment collected 2,994 cases before hardware tagging.
+After tagging and adding 11 hardware/audit regressions, full collection and
+CPU-only collection both contain 3,005 cases with zero deselections. Every old
+raw ID and effective CI layer is preserved; all current cases explicitly inherit
+CPU from their test module. No cross-platform ID normalization is involved.
+The final partition is ready 2,936, merge 59, nightly 10.
+
+本轮基于上述 main。同一 Windows 环境修改前收集 2,994 项，显式机型标记及
+11 项新增回归后，全量与 CPU 筛选均收集 3,005 项，零排除。原始 ID 和原有
+CI 层级全部保持，现有用例均从测试模块显式继承 CPU，不做跨平台 ID 归一化。
+最终分类为 ready 2,936、merge 59、nightly 10。
+
+Collection tests exercise migration defaults before `-m` deselection, inherited
+platform conflicts (including conflicts that CPU selection would otherwise hide),
+reserved accelerator isolation, and preservation of the orthogonal layer axis.
+The full layer audit accepts a CPU profile only when collection is complete,
+no case was deselected, and every retained case has CPU hardware evidence.
+
+回归通过真实 pytest 子进程检查默认值先于筛选、继承机型冲突、CPU 筛选可能
+掩盖的冲突、预留加速器隔离，以及与层级轴的正交性。完整核对仅接受完整收集、
+零排除、逐项 CPU 证据齐全的 CPU profile。
+
+PR-7 live queue enforcement and PR-8 layer cutover remain separate work.
+The CPU selection includes the existing full layer set, bundled native checks
+and the nightly watchlist. Accelerator names are reserved; no accelerator job,
+paid model call or migration of the static workflow implementation is introduced.
+
+PR-7 的真实队列强制验收和 PR-8 的层级切换仍独立推进。本轮 CPU 筛选保留
+所有原有层级、bundled 原生检查和 nightly watchlist；只预留加速器名称，
+不新增加速器车道、付费模型调用，也不搬迁静态工作流实现。

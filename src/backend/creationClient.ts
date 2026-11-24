@@ -469,17 +469,17 @@ export class CreationClient {
     signal?.throwIfAborted();
     const path = `${creationPath(this.id)}/uploads/${handle}`;
     try {
-      const response = await fetch(`/api${path}`, {
+      // Through request(): an upload after a long local render can meet a
+      // lease that lapsed while the page was busy; it is renewed and resent.
+      await request(path, {
         method: "PUT",
         headers: {
-          ...headers,
           "X-Asset-Name": encodeURIComponent(name),
           "X-Asset-Kind": kind,
         },
         body: blob,
         signal,
       });
-      if (!response.ok) throw await responseError(response);
       signal?.throwIfAborted();
     } catch (error) {
       if (signal?.aborted) {

@@ -142,8 +142,8 @@ def reference_policy(spec, values, rules=None, *, selected_frame=False):
                 raise ContractError('reference_invalid', '指定的首尾帧不能作为图片传入当前模型；请使用明确的图片素材引用，且不要填写主体槽位 subjectRole。', value.referenceId)
         if value.subjectRole is not None and rules is not None:
             ignored = ignored or kind not in rules.allowedKinds or (kind == 'image' and not rules.maxImages) or (kind == 'video' and not rules.maxVideos) or (kind == 'audio' and not rules.maxAudios)
-            if spec.kind == 'video' and spec.parameters.videoMode == 'continuation' and kind == 'video':
-                ignored = True  # Subject clips are not a remote continuation ID.
+            if spec.kind == 'video' and spec.parameters.videoMode in {'continuation', 'control'} and kind == 'video':
+                ignored = True  # Subject clips are neither a remote continuation ID nor a control video.
         transmission = 'context_only' if ignored else 'latent' if value.role == 'continuation' else 'metadata' if spec.kind == 'text' and kind in {'audio', 'video'} else 'content'
         output.append(value.model_copy(update={'transmission': transmission}))
     return tuple(output)

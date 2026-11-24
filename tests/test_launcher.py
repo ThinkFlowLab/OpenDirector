@@ -1,7 +1,12 @@
 """A bound port must name the real remedy instead of blaming dependencies."""
+
+import pytest
 import socket
 
 from opendirector import launcher as launcher_module
+
+
+pytestmark = pytest.mark.cpu
 
 
 def launcher():

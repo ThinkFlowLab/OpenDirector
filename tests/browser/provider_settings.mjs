@@ -89,10 +89,21 @@ try {
     assert.equal(await page.getByRole("checkbox", { name, exact: true }).isChecked(), true);
   }
   await page.getByLabel("API Key", { exact: true }).fill("fixture-only");
-  await page
-    .getByRole("button", { name: "Load supported models", exact: true })
-    .click();
-  await page.getByRole("checkbox", { name: "MiniMax-H3", exact: true }).check();
+  const discoveryPath = "/api/model-configs/discover";
+  const discoveryEndpoint = `**${discoveryPath}`;
+  await page.route(discoveryEndpoint, route => route.fulfill({
+    json: { models: ["fixture-text-only"] },
+  }));
+  const discoveryStart = calls.length;
+  try {
+    await page.getByRole("button", { name: "Load supported models", exact: true }).click();
+    await page.getByRole("status").getByText("4 preset models loaded", { exact: true }).waitFor();
+    assert.ok(!calls.slice(discoveryStart).some(url => url.endsWith(discoveryPath)), "Loading a native video preset must not discover remote models");
+    assert.equal(await page.locator(".cw-model-option").count(), 4);
+    assert.equal(await page.getByRole("checkbox", { name: "MiniMax-H3", exact: true }).isChecked(), true);
+  } finally {
+    await page.unroute(discoveryEndpoint);
+  }
   await page
     .getByText("Text-to-video / first-last frame / multimodal references", { exact: true }).first()
     .waitFor();
@@ -199,6 +210,7 @@ try {
       passed: true,
       checks: [
         "provider presets",
+        "native video preset load feedback without discovery",
         "official capability card",
         "independent model modalities",
         "save without inference",

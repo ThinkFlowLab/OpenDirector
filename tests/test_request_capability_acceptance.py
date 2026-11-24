@@ -25,6 +25,9 @@ from test_tool_tasks import png, upload
 from test_voice_library import wav
 
 
+pytestmark = pytest.mark.cpu
+
+
 def image_runtime(project, maximum, model='served-image-alias', *, declared_model=None, editing=True, sampling_maximum=None,
                   observation_age=0, pause_age=None, support='supported', minimum=None, quality_enum=None):
     store, _, _ = project

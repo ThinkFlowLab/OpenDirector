@@ -753,6 +753,14 @@
 .cw-duration-trigger[aria-expanded="true"] > svg {
   transform: rotate(180deg);
 }
+.cw-duration-popover .cw-duration-follow-control {
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+}
+.cw-duration-follow-control + .cw-duration-controls {
+  margin-top: 8px;
+}
 .cw-parameter-unknown,
 .cw-reference-role {
   display: block;

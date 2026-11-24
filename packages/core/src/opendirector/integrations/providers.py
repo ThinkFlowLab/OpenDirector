@@ -183,7 +183,10 @@ class GenerationProviders(VolcengineGeneration):
                                      for index, image in zip(frame_indices, prepared['images'], strict=True)]
                         else:
                             for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
-                                if source_kind in {'image', 'video', 'audio'}:
+                                if fast and str(meta['id']) == str(prepared.get('control')):
+                                    # FastH3 + ControlNet: the structure video conditions every frame, not as a reference clip.
+                                    files.append(('control_reference', (meta['name'], data, meta['type'])))
+                                elif source_kind in {'image', 'video', 'audio'}:
                                     files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
                         parameters = task['parameters']
                         form = {'model': config['modelId'], 'prompt': prepared['prompt']}

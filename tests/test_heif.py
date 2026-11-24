@@ -21,6 +21,9 @@ from opendirector_api.main import create_app
 from test_creation_assets import storage, import_asset
 from test_agent_artifacts import publication
 
+
+pytestmark = pytest.mark.cpu
+
 FIXTURES = Path(__file__).parent / 'fixtures' / 'heif'
 
 

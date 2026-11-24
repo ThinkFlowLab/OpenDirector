@@ -131,6 +131,7 @@ export const canvasShell = {
   "canvas.selection.separateTrackHint": "选择人声、背景声或其他声音类型",
   "canvas.selection.frameInterpolation": "补帧",
   "canvas.selection.subtitleErase": "字幕擦除",
+  "canvas.selection.maskComposite": "遮罩合成",
   "canvas.selection.videoMatting": "视频抠像",
   "canvas.selection.videoCrop": "视频画面裁剪",
   "canvas.selection.trimAudio": "音频裁剪",

@@ -208,6 +208,7 @@ export const canvasNodes = {
   "canvasNodes.versionComposer.seconds": "{value} seconds",
   "canvasNodes.versionComposer.mode.reference": "Reference-to-video",
   "canvasNodes.versionComposer.mode.firstFrame": "First-frame-to-video",
+  "canvasNodes.versionComposer.mode.control": "Structure control",
   "canvasNodes.versionComposer.mode.continuation": "Video continuation",
   "canvasNodes.versionComposer.mode.music": "Music generation",
   "canvasNodes.versionComposer.mode.speech": "Text to speech",

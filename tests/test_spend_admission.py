@@ -19,6 +19,8 @@ from test_creation_canvas_service import project, send, ver
 from test_creation_generation_service import anyio_backend
 from test_creation_parameters import done, png
 
+pytestmark = pytest.mark.cpu
+
 
 @pytest.mark.anyio
 async def test_threshold_equality_unknown_cancellation_and_price_changes(project):

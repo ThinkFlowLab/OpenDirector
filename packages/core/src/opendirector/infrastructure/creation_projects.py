@@ -87,7 +87,8 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
         lease = db.execute('SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?',
                            (session, str(project_id), time.time())).fetchone()
         if lease is None:
-            raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409)
+            # A stable code lets the page renew its lease and resend instead of failing every save.
+            raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409, code='session_expired')
         if lease['path'] != str(path):
             raise ProjectError('工程目录已在应用外改名或移动，请复制未保存内容并重新打开。', 409)
 

@@ -95,6 +95,7 @@ export class CreationProjection {
   private importHandles = new Map<string, string>();
   private timelineImportSources = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
+  private pendingSpecIds = new Map<string, string>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
     this.client = client;
@@ -918,6 +919,23 @@ export class CreationProjection {
           target: item.id,
           intent: "post_edit_result",
         });
+      const editor = asset?.provenance.editorDocumentId &&
+        snapshot.editorDocuments.find((doc) => doc.id === asset.provenance.editorDocumentId);
+      if (
+        asset && editor && editor.kind === "media_edit" &&
+        editor.data.tool === "video-mask-composite" &&
+        editor.revision === asset.provenance.editorRevision
+      ) {
+        const maskId = editor.data.sourceItems[1];
+        if (maskId && maskId !== sourceId && maskId !== item.id &&
+            snapshot.canvasItems.some((source) => source.id === maskId))
+          document.edges.push({
+            id: `publication:${item.id}:${asset.id}:${maskId}`,
+            source: maskId,
+            target: item.id,
+            intent: "post_edit_result",
+          });
+      }
     }
     document.hiddenNodes = document.nodes.filter(
       (node) => !visible.has(node.id),
@@ -936,8 +954,11 @@ export class CreationProjection {
     node: CanvasNode,
     current?: GenerationSpec,
   ): GenerationSpecInput {
+    const id = current?.id ?? this.pendingSpecIds.get(node.id) ?? crypto.randomUUID();
+    // Preserve the batch payload when an unacknowledged draft save is retried.
+    if (!current) this.pendingSpecIds.set(node.id, id);
     const common = {
-      id: current?.id ?? crypto.randomUUID(),
+      id,
       projectId: this.client.id,
       revision: current?.revision ?? 1,
       purpose: current?.purpose ?? "draft",
@@ -2109,6 +2130,7 @@ export class CreationProjection {
     // Business acknowledgement cannot be undone by a view preference failure.
     this.basis = this.client.snapshot;
     this.baseline = document;
+    this.pendingSpecIds.clear();
     if (options.saveView === false) return operations.length > 0;
     await this.saveView(document);
     return operations.length > 0;

@@ -22,6 +22,12 @@ with wave.open(stream, 'wb') as audio:
 sample = stream.getvalue()
 uploads = {}
 calls = []
+search_catalog = [
+    {'id': 'search-unrelated', 'name': 'Unrelated voice'},
+    *[{'id': f'search-alto-{n:03d}', 'name': f'Alto {n:03d}'} for n in range(1, 152)],
+    {'id': 'search-youth', 'name': '青年'},
+    {'id': 'search-younger', 'name': '世界最狂青年音', 'preview_url': '/preview.wav'},
+]
 
 
 def provider(request):
@@ -39,6 +45,15 @@ def provider(request):
     if request.url.path == '/preview.wav':
         return httpx.Response(200, content=sample, headers={'Content-Type': 'audio/wav'})
     if request.method == 'GET':
+        if cloud and request.headers.get('authorization') == 'Bearer voice-search-fixture':
+            offset = int(request.url.params.get('after', '0'))
+            limit = int(request.url.params['limit'])
+            end = min(offset + limit, len(search_catalog))
+            return httpx.Response(200, json={
+                'data': search_catalog[offset:end],
+                'has_more': end < len(search_catalog),
+                'next_cursor': str(end) if end < len(search_catalog) else None,
+            })
         if cloud:
             if request.url.params.get('after') or request.url.params.get('cursor'):
                 return httpx.Response(200, json={'data': list(records.values()), 'has_more': False})

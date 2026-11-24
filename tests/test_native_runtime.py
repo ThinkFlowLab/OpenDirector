@@ -30,11 +30,14 @@ from opendirector_api.main import create_app
 
 # Includes subprocess/gateway integration; retain the dedicated mocked-model
 # bundled CLI regression in Release checks independently of layer selection.
-pytestmark = pytest.mark.merge
+pytestmark = [pytest.mark.cpu, pytest.mark.merge]
 
 FAKE = '''import json, os, subprocess, sys
 from pathlib import Path
 prompt = sys.stdin.read()
+assert '3 to 5 distinct suggestions' in prompt, 'missing suggested reply count'
+assert 'at most 80 characters per suggestion' in prompt, 'missing suggested reply length limit'
+assert '[opendirector-replies]: #' in prompt.splitlines(), 'missing suggested reply marker'
 assert 'Segment plan' not in prompt
 if 'Continue plan' in prompt:
  assert ('Save a plan' in prompt) == (os.environ.get('TEST_MISSING_ROLLOUT') == '1')
@@ -75,9 +78,9 @@ else:
 
 @pytest.fixture(autouse=True)
 def example_skill(tmp_path):
-    directory = tmp_path / '.opendirector/skills/character-replacement'
+    directory = tmp_path / '.opendirector/skills/od-native-runtime-test-skill'
     directory.mkdir(parents=True)
-    (directory / 'SKILL.md').write_text('---\nname: character-replacement\ndescription: Test replacement planning\n---\nCreate a 24-FPS constant-frame-rate working copy')
+    (directory / 'SKILL.md').write_text('---\nname: od-native-runtime-test-skill\ndescription: Test replacement planning\n---\nCreate a 24-FPS constant-frame-rate working copy')
 
 
 def project(client):
@@ -135,12 +138,12 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime,
     monkeypatch.setattr(native, 'command', command)
     monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
     async def fixture_skills(*args):
-        entry = tmp_path / '.opendirector/skills/character-replacement/SKILL.md'
-        return [{'name': 'character-replacement', 'description': 'Test', 'filePath': str(entry)}]
+        entry = tmp_path / '.opendirector/skills/od-native-runtime-test-skill/SKILL.md'
+        return [{'name': 'od-native-runtime-test-skill', 'description': 'Test', 'filePath': str(entry)}]
     monkeypatch.setattr('opendirector_api.agent.skills', fixture_skills)
     with TestClient(create_app(local), headers={'X-OpenDirector-Request':'1','X-OpenDirector-Session':str(uuid4())}) as client:
         path = project(client)
-        turn = {'id':str(uuid4()),'runtime':runtime,'runtimeModel':'test-model','text':'Save a plan','skills':['character-replacement']}
+        turn = {'id':str(uuid4()),'runtime':runtime,'runtimeModel':'test-model','text':'Save a plan','skills':['od-native-runtime-test-skill']}
         if runtime == 'default':
             turn['modelId'] = config['id']
         response = client.post(path + '/assistant/turns', json=turn)
@@ -184,7 +187,7 @@ def test_claude_continuation_refreshes_skills_using_real_command(tmp_path, monke
 from pathlib import Path
 prompt = sys.stdin.read()
 marker = Path('first-turn.txt')
-skill = Path('plugin/skills/character-replacement/SKILL.md').read_text()
+skill = Path('plugin/skills/od-native-runtime-test-skill/SKILL.md').read_text()
 if marker.exists():
  assert sys.argv[sys.argv.index('--resume') + 1] == 'fixture-session'
  assert marker.read_text() == str(Path.cwd())
@@ -198,10 +201,10 @@ print(json.dumps({'type':'assistant','session_id':'fixture-session',
 ''')
     monkeypatch.setattr(native, 'executable', lambda _: str(script))
     directory = tmp_path / 'project'; directory.mkdir()
-    entry = tmp_path / '.opendirector/skills/character-replacement/SKILL.md'
+    entry = tmp_path / '.opendirector/skills/od-native-runtime-test-skill/SKILL.md'
     common = dict(runtime='claude', project_id=uuid4(), session=str(uuid4()),
         conversation_id=uuid4(), directory=directory, config=None, selected_skills=[],
-        skills=[{'name': 'character-replacement', 'filePath': str(entry)}])
+        skills=[{'name': 'od-native-runtime-test-skill', 'filePath': str(entry)}])
     async def closed(): pass
     async def exercise():
         records = []
@@ -219,7 +222,7 @@ print(json.dumps({'type':'assistant','session_id':'fixture-session',
         assert records[0]['directory'] == records[1]['directory']
         workspaces = list(directory.glob('agent-runs/*/work'))
         assert len(workspaces) == 1
-        assert (workspaces[0] / 'plugin/skills/character-replacement/SKILL.md').read_text() == 'second skill version'
+        assert (workspaces[0] / 'plugin/skills/od-native-runtime-test-skill/SKILL.md').read_text() == 'second skill version'
     asyncio.run(exercise())
 
 
@@ -254,6 +257,7 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
             config = json.loads(env['OPENCODE_CONFIG_CONTENT'])
             assert 'steps' not in config['agent']['opendirector']
             assert config['permission']['*'] == 'deny'
+            assert config['permission']['read'] == 'allow'
             assert config['skills']['paths'] == [str(work / '.agents/skills')]
             if runtime == 'default':
                 assert config['agent']['title'] == {'disable': True}
@@ -336,8 +340,7 @@ def real_opencode_worker(tmp_path, monkeypatch, request):
     """Bound real CLI cases in isolated workers and clean up owned processes."""
     if os.environ.get('OPENDIRECTOR_REAL_CLI') != '1':
         pytest.skip('Set OPENDIRECTOR_REAL_CLI=1 to run the bundled CLI integration')
-    if native.executable('default') is None:
-        pytest.skip('Bundled OpenCode is not installed')
+    assert native.executable('default') is not None, 'Bundled OpenCode is not installed'
     timeout = 105 if 'windows_unicode_pipeline' in request.node.name else 60
     if os.environ.get('OPENDIRECTOR_REAL_CLI_WORKER') != '1':
         result = subprocess.run([sys.executable, '-m', 'pytest', request.node.nodeid, '-s', '-q'],
@@ -474,7 +477,7 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
             call = None
         elif count == 1:
             assert any(tool['function']['name'] == 'skill' for tool in payload['tools'])
-            call = {'name':'skill','arguments':json.dumps({'name':'character-replacement'})}
+            call = {'name':'skill','arguments':json.dumps({'name':'od-native-runtime-test-skill'})}
         elif count == 2:
             assert 'Create a 24-FPS constant-frame-rate working copy' in json.dumps(payload['messages'])
             assert not any('opendirector_' in tool['function']['name'] for tool in payload['tools'])
@@ -503,12 +506,12 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
         path = project(client)
         print('stage: discover skills', flush=True)
         catalog = client.get(path + '/assistant/skills').json()
-        assert {item['name'] for item in catalog} == {'character-replacement'}
+        assert 'od-native-runtime-test-skill' in {item['name'] for item in catalog}
         assert all(set(item) == {'name', 'description', 'source'} for item in catalog)
-        assert client.put(path + '/assistant/draft', json={'draft': 'Save a plan', 'skills': ['character-replacement'],
+        assert client.put(path + '/assistant/draft', json={'draft': 'Save a plan', 'skills': ['od-native-runtime-test-skill'],
             'harnessModels': {'codex': 'test-model'}}).status_code == 200
         turn = {'id':str(uuid4()), 'modelId':config['id'], 'runtime':runtime,
-            'text':'Use the skill and save a plan.', 'skills':['character-replacement']}
+            'text':'Use the skill and save a plan.', 'skills':['od-native-runtime-test-skill']}
         print('stage: fresh turn', flush=True)
         response = client.post(path + '/assistant/turns', json=turn)
         events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]

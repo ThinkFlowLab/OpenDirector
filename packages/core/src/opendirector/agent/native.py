@@ -19,7 +19,7 @@ from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
-from opendirector.agent.tools import ROOT, SYSTEM
+from opendirector.agent.tools import ROOT, SUGGESTED_REPLIES, SYSTEM
 from opendirector.installation import BUNDLED
 from opendirector.agent.skill_snapshot import prepare_skills
 from opendirector.agent.directory_links import link_directory, unlink_directory
@@ -255,7 +255,8 @@ class NativeRuntime:
                     'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
-                    'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.')
+                    'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.\n'
+                    + SUGGESTED_REPLIES)
                 prompt = execution_context + '\n' + json.dumps(context[-1:] if session_id else context, ensure_ascii=False)
                 skill_instruction = ''
                 if selected:

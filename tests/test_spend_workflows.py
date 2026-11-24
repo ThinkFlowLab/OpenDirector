@@ -24,6 +24,8 @@ from test_creation_generation_service import anyio_backend
 from test_creation_parameters import done, png
 from test_tool_tasks import CHAT, SAM3, ZIMAGE, configure, images_server, segmentation_server, upload
 
+pytestmark = pytest.mark.cpu
+
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('dependent', [True, False])

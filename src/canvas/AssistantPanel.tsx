@@ -88,7 +88,7 @@ export function AssistantPanel({
 }) {
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
-  const { value, setValue } = chat;
+  const { value } = chat;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
@@ -127,8 +127,6 @@ export function AssistantPanel({
   const pending = pendingReferences.pending;
   const [checkingReferences, setCheckingReferences] = useState(false);
   const confirming = useRef<AbortController | null>(null);
-  const latest = useRef({ value, selectedNodes, open });
-  latest.current = { value, selectedNodes, open };
   // Keep the canvas defaulting new nodes to the model this dialog is using.
   const report = useRef(onModelSelections);
   report.current = onModelSelections;
@@ -140,6 +138,11 @@ export function AssistantPanel({
     chat.adding ||
     checkingReferences ||
     (chat.sending && !chat.started);
+  const latestReply = value.messages.at(-1);
+  const showSuggestions = open && !locked && !chat.changing && !chat.sending &&
+    chat.canSend && !pending && latestReply?.status === "complete";
+  const latest = useRef({ value, selectedNodes, open, showSuggestions });
+  latest.current = { value, selectedNodes, open, showSuggestions };
   const currentRuntime = chat.runtimes.find((item) => item.id === (value.runtime ?? "default"));
   const missingAgentModel = needsAgentModel(chat.loaded, currentRuntime, !!chat.agent);
   const referenceDisabled =
@@ -320,7 +323,6 @@ export function AssistantPanel({
   }
   const hoveredAsset = mediaPreview && displayedAssets.find(item => item.id === mediaPreview.assetId);
 
-  const latestReply = value.messages.at(-1);
   const latestUser = value.messages.at(-2);
   const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
     new URLSearchParams({
@@ -439,7 +441,15 @@ export function AssistantPanel({
             )}
             <div className="cw-assistant-message-text">
               {message.role === "assistant" ? (
-                <AssistantReply message={message} thinking={chat.thinkingNow} t={t} />
+                <AssistantReply
+                  message={message}
+                  thinking={chat.thinkingNow}
+                  t={t}
+                  onSuggestion={showSuggestions && message === latestReply ? (text) => {
+                    if (!latest.current.showSuggestions || latest.current.value !== value) return;
+                    editor.current?.replaceText(text);
+                  } : undefined}
+                />
               ) : message.role === "user" &&
                 (message.content || message.assets?.length) ? (
                 referenceContent(
@@ -726,12 +736,7 @@ export function AssistantPanel({
               models={catalog.models}
               selections={value.modelSelections}
               disabled={!chat.loaded || !catalog.connected || chat.sending}
-              onChange={(kind, id) =>
-                setValue((previous) => ({
-                  ...previous,
-                  modelSelections: { ...previous.modelSelections, [kind]: id },
-                }))
-              }
+              onChange={chat.selectMediaModel}
               onConfigure={onOpenSettings}
             />
             <div className="cw-assistant-toolbar-spacer" />

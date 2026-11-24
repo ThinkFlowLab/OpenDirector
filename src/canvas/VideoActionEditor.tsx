@@ -54,6 +54,8 @@ export interface VideoActionEditorProps {
   onGenerate?: (task: CanvasToolTask) => void;
   /** Why the connected services cannot run this tool, from the tool catalog. */
   unavailableReason?: string;
+  /** Canvas nodes offered as the second source of two-source tools. */
+  nodes?: readonly CanvasNode[];
 }
 
 const LOCAL = new Set<CanvasToolId>([
@@ -102,6 +104,7 @@ function VideoActionSession({
   onClose,
   onGenerate,
   unavailableReason,
+  nodes = [],
 }: VideoActionEditorProps) {
   const { t, locale } = useI18n();
   const definition = translateTool(
@@ -110,10 +113,22 @@ function VideoActionSession({
   );
   const saved =
     draft?.tool === tool &&
-    draft.sourceNodeIds.length === 1 &&
+    draft.sourceNodeIds.length <= definition.maxSources &&
     draft.sourceNodeIds[0] === node.id
       ? draft
       : undefined;
+  // Mask composite takes this video as content and a second video node as its mask.
+  const needsMask = tool === "video-mask-composite";
+  const maskCandidates = nodes.filter(
+    (item) => item.id !== node.id && item.type === "video" && item.data.src,
+  );
+  const [maskSource, setMaskSource] = useState(
+    needsMask &&
+      maskCandidates.some((item) => item.id === saved?.sourceNodeIds[1])
+      ? saved!.sourceNodeIds[1]!
+      : "",
+  );
+  const maskSourceRef = useRef(maskSource);
   const initialParameters = {
     ...initialToolParameters(definition),
     ...initialVideoActionParameters(tool),
@@ -285,7 +300,9 @@ function VideoActionSession({
     if (tool === "video-crop") values.aspectRatio = cropRatio;
     return createCanvasToolTask(
       tool,
-      [node.id],
+      needsMask && maskSourceRef.current
+        ? [node.id, maskSourceRef.current]
+        : [node.id],
       values,
       regionTool &&
         cropRef.current &&
@@ -714,7 +731,9 @@ function VideoActionSession({
     video.current?.pause();
     onClose();
   };
-  const inputError = videoActionInputError(tool, parameters, duration, range);
+  const inputError =
+    videoActionInputError(tool, parameters, duration, range) ??
+    (needsMask && !maskSource ? t("errors.videoAction.maskSource") : undefined);
   const choices = (
     label: string,
     field: string,
@@ -1226,7 +1245,40 @@ function VideoActionSession({
             ["black", t("tools.videoEditor.matting.black")],
             ["green", t("tools.videoEditor.matting.green")],
             ["transparent", t("tools.videoEditor.matting.transparent")],
+            ["mask", t("tools.videoEditor.matting.mask")],
           ])}
+        {needsMask && (
+          <label className="cw-va-setting">
+            <span>{t("tools.videoEditor.composite.mask")}</span>
+            <select
+              aria-label={t("tools.videoEditor.composite.mask")}
+              value={maskSource}
+              onChange={(event) => {
+                maskSourceRef.current = event.target.value;
+                setMaskSource(event.target.value);
+                setNotice("");
+                onDraftChange(task());
+              }}
+            >
+              <option value="">
+                {t("tools.videoEditor.composite.chooseMask")}
+              </option>
+              {maskCandidates.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.data.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {needsMask &&
+          choices(t("tools.videoEditor.composite.stretch"), "stretch", [
+            [true, t("tools.videoEditor.composite.stretchOn")],
+            [false, t("tools.videoEditor.composite.stretchOff")],
+          ])}
+        {needsMask && (
+          <p className="cw-va-hint">{t("tools.videoEditor.composite.hint")}</p>
+        )}
         {tool === "video-subtitle-erasure" && (
           <label className="cw-va-confirm">
             <input

@@ -1,6 +1,6 @@
 import { availabilityBlocker } from "../backend/availability.ts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { rememberAgentSelection, restoreAgentSelection, builtinThinking } from "./agentPreferences";
+import { builtinThinking, preferredMediaModel, rememberAgentSelection, rememberMediaSelection, restoreAgentSelection } from "./agentPreferences";
 import { errorMessage } from "../backend/api";
 import {
   attachChat,
@@ -18,6 +18,7 @@ import {
   stopChat,
   type ChatAsset,
   type Conversation,
+  type ModelSelections,
   conversationIsEmpty,
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
@@ -261,7 +262,7 @@ export function useAssistantChat(
   ]);
 
   useEffect(() => {
-    if (!loaded || !catalog.connected) return;
+    if (!loaded || !catalog.connected || sending) return;
     setValue((previous) => {
       const selections = { ...previous.modelSelections };
       let changed = false;
@@ -269,23 +270,26 @@ export function useAssistantChat(
         const options = catalog.models.filter(
           (model) => model.kind === kind && isGenerationModel(model),
         );
-        if (!options.some((model) => model.id === selections[kind])) {
+        const preferred = kind === "agent" ? undefined
+          : preferredMediaModel(projectId, previous.conversationId, kind, options);
+        let next = preferred ?? selections[kind];
+        if (!options.some((model) => model.id === next)) {
           // Canvas creation uses the same deterministic generation fallback
           // before the assistant conversation has loaded. Loading the picker
           // must not silently change that choice to the API's first row.
           const resolution = kind === "agent" ? null
             : resolveGenerationModel({}, kind, catalog.models);
-          const next = kind === "agent" ? options[0]?.id ?? null
+          next = kind === "agent" ? options[0]?.id ?? null
             : resolution?.status === "default" ? resolution.modelConfigId : null;
-          if (selections[kind] !== next) {
-            selections[kind] = next;
-            changed = true;
-          }
+        }
+        if (selections[kind] !== next) {
+          selections[kind] = next;
+          changed = true;
         }
       }
       return changed ? { ...previous, modelSelections: selections } : previous;
     });
-  }, [loaded, catalog.connected, catalog.models]);
+  }, [projectId, loaded, catalog.connected, catalog.models, sending]);
 
   const agent = catalog.models.find(
     (model) =>
@@ -653,19 +657,27 @@ export function useAssistantChat(
       }
     }
   };
+  const updateSelection = (next: Conversation) => {
+    current.current = next;
+    rememberChat(projectId, next);
+    setValue(next);
+    setError("");
+  };
   return {
     value,
     runtimes,
     runtimesLoading,
     refreshRuntimes,
-    setValue,
     selectAgent: (patch: Partial<Conversation>) => {
       const next = {...current.current, ...patch};
       rememberAgentSelection(projectId, next);
-      current.current = next;
-      rememberChat(projectId, next);
-      setValue(next);
-      setError("");
+      updateSelection(next);
+    },
+    selectMediaModel: (kind: keyof ModelSelections, id: string) => {
+      if (kind === "agent") return;
+      const previous = current.current;
+      rememberMediaSelection(projectId, previous.conversationId, kind, id);
+      updateSelection({ ...previous, modelSelections: { ...previous.modelSelections, [kind]: id } });
     },
     setContent,
     referenceAssets: [...knownAssets.current.values()],
