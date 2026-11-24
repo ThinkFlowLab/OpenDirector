@@ -192,7 +192,7 @@
       "lanes": [
         "extended"
       ],
-      "note": "Needs a fixture API without a video model; opens model settings from the empty selector and keeps the draft."
+      "note": "Filters video models from this page's fixture catalog and verifies the empty selector opens settings without losing the draft."
     },
     {
       "file": "composer_duration.mjs",

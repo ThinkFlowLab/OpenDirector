@@ -35,7 +35,10 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1050 } });
 // Skip the first-run model setup welcome; it covers the canvas.
-await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
+await page.addInitScript(() => {
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+  localStorage.setItem("opendirector.locale.v1", "zh-CN");
+});
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -427,7 +430,8 @@ try {
     const targetBefore = state.nodes.find((item) => item.id === fixture.blank);
     assert.equal(targetBefore.data.title, "Blank destination");
     assert.equal(targetBefore.data.subject.main.kind, "image");
-    // The global library always creates a node, even when a populated subject is selected.
+    // Each selected asset creates its own node, even with a populated subject selected.
+    const beforeAssetImport = new Set(state.nodes.map((item) => item.id));
     await openLibrary();
     assert.equal(
       await library
@@ -445,14 +449,25 @@ try {
     await check(library, pictureB.name).click();
     assert.equal(
       await check(library, pictureA.name).getAttribute("aria-checked"),
-      "false",
+      "true",
+    );
+    assert.equal(
+      await check(library, pictureB.name).getAttribute("aria-checked"),
+      "true",
     );
     await library
       .getByRole("button", { name: "导入画布", exact: true })
       .click();
     await library.waitFor({ state: "hidden" });
     state = await waitForSaved(
-      (state) => state.nodes.length === fixture.originalCount + 1,
+      (state) => state.nodes.length === fixture.originalCount + 2,
+    );
+    const importedAssets = state.nodes.filter(
+      (item) => !beforeAssetImport.has(item.id),
+    );
+    assert.deepEqual(
+      importedAssets.map((item) => item.data.title).sort(),
+      [pictureA.name, pictureB.name].sort(),
     );
     assert.deepEqual(
       state.nodes.find((item) => item.id === fixture.blank).data.subject,
@@ -463,14 +478,23 @@ try {
     await check(library, fixture.videoTitle).click();
     assert.equal(
       await check(library, fixture.title).getAttribute("aria-checked"),
+      "true",
+    );
+    await check(library, fixture.title).click();
+    assert.equal(
+      await check(library, fixture.title).getAttribute("aria-checked"),
       "false",
+    );
+    assert.equal(
+      await check(library, fixture.videoTitle).getAttribute("aria-checked"),
+      "true",
     );
     await library
       .getByRole("button", { name: "导入画布", exact: true })
       .click();
     await library.waitFor({ state: "hidden" });
     await waitForSaved(
-      (state) => state.nodes.length === fixture.originalCount + 2,
+      (state) => state.nodes.length === fixture.originalCount + 3,
     );
     // Whole-subject replacement clears old assembly and remains one undo step.
     await openSubject(fixture.images[1]);
@@ -528,7 +552,7 @@ try {
         state.nodes.find((item) => item.id === fixture.blank).data.subject
           .auxiliaries.length === 2,
     );
-    assert.equal(state.nodes.length, fixture.originalCount + 2);
+    assert.equal(state.nodes.length, fixture.originalCount + 3);
     // Voice slot allows 15s and blocks 16s; it keeps the image and auxiliary slots.
     await node(fixture.blank)
       .getByRole("button", { name: "添加主体声音", exact: true })
@@ -566,7 +590,7 @@ try {
       .click();
     await library.waitFor({ state: "hidden" });
     await waitForSaved(
-      (state) => state.nodes.length === fixture.originalCount + 3,
+      (state) => state.nodes.length === fixture.originalCount + 4,
     );
     // Library deletion does not break already imported owned media or provenance.
     const subjects = await (
@@ -584,7 +608,7 @@ try {
     await page.reload();
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     state = await waitForSaved(
-      (state) => state.nodes.length === fixture.originalCount + 3,
+      (state) => state.nodes.length === fixture.originalCount + 4,
     );
     assert.equal(
       state.nodes.find((item) => item.id === fixture.blank).data.subject.voice
@@ -603,6 +627,7 @@ try {
         independentSelector: true,
         entryTabs: true,
         singleSelection: true,
+        globalMultiSelection: true,
         globalCreateOnly: true,
         fullCanvasSubject: true,
         voice15Accepted16Rejected: true,
