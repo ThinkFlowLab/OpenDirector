@@ -138,3 +138,18 @@ def test_long_metadata_read_and_replace_use_the_same_checked_path(tmp_path):
     local.write_json(path, {'revision': 2})
     assert local.read_json(path) == {'revision': 2}
     assert list(type(directory)(local._json_path(directory)).glob('.opendirector-*.tmp')) == []
+
+
+def test_project_internal_child_names_cannot_leave_the_directory(tmp_path):
+    # File names arrive from requests: a separator, a parent reference or a link
+    # must not hand back anything that resolves to a sibling of the directory.
+    assert local.child(tmp_path, 'state.json') == tmp_path / 'state.json'
+    for name in ('../sibling.json', 'nested/state.json', '..', '.', ''):
+        with pytest.raises(ProjectError):
+            local.child(tmp_path, name)
+    try:
+        (tmp_path / 'link').symlink_to(tmp_path.parent / 'outside.json')
+    except OSError:
+        pytest.skip('the platform does not create symbolic links for this user')
+    with pytest.raises(ProjectError):
+        local.child(tmp_path, 'link')
