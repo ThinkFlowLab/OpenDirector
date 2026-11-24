@@ -8,7 +8,7 @@ import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
-import { ProjectSpend, TurnSpend } from "./ProjectSpend";
+import { TurnSpend } from "./ProjectSpend";
 import { AssistantReply } from "./AssistantReply";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
@@ -68,7 +68,6 @@ export function AssistantPanel({
   onTurnEnd,
   onModelSelections,
   onOpenSettings,
-  onNotify,
   onPrepareReferences,
 }: {
   documentId: string;
@@ -85,7 +84,6 @@ export function AssistantPanel({
   /** Lets the canvas default new nodes to the model this dialog is using. */
   onModelSelections?: (selections: ModelSelections) => void;
   onOpenSettings: () => void;
-  onNotify: (message: string) => void;
   onPrepareReferences: () => Promise<boolean>;
 }) {
   const t = useT();
@@ -415,7 +413,6 @@ export function AssistantPanel({
             </p>
           </div>
         )}
-        {open && <ProjectSpend projectId={documentId} placement="chat" onSettings={onOpenSettings} onNotify={onNotify} />}
         {value.messages.map((message, index) => {
           const previous = value.messages[index - 1];
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&
@@ -440,7 +437,6 @@ export function AssistantPanel({
                   : message.model}</small>}
               </div>
             )}
-            {open && message.role === "assistant" && previous?.role === "user" && <TurnSpend projectId={documentId} turnId={previous.id} />}
             <div className="cw-assistant-message-text">
               {message.role === "assistant" ? (
                 <AssistantReply message={message} thinking={chat.thinkingNow} t={t} />
@@ -488,6 +484,7 @@ export function AssistantPanel({
                   : t("assistant.reply.empty"))
               )}
             </div>
+            {open && message.role === "assistant" && previous?.role === "user" && <TurnSpend projectId={documentId} turnId={previous.id} />}
             {trace && (
               <a className="cw-assistant-message-status cw-assistant-trace-link"
                 href={`/?${trace}`} target="_blank" rel="noopener noreferrer">

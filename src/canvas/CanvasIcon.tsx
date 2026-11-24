@@ -7,6 +7,7 @@ export interface CanvasIconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
 
 /** One shape per content type, shared by creation tools, nodes and pickers. */
 const icons: Record<string, ReactNode> = {
+  wallet: <><path d="M20 8V5a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14v12H6a3 3 0 0 1-3-3V6" /><path d="M20 12h-5v5h5" /><path d="M17 14.5h.01" /></>,
   text: <path d="M5 5h14M12 5v14M8 19h8M5 5v3M19 5v3" />,
   image: (
     <>

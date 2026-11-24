@@ -79,12 +79,19 @@ try {
     }
     await page.getByRole("button", {name: en ? "Close settings" : "关闭设置", exact: true}).click();
     const toggle = page.locator(".cw-spend-toggle");
+    const dialog = page.locator("dialog.cw-spend-dialog[open]");
+    const closeDialog = () => dialog.locator(".cw-spend-close").click();
+    const collapsed = page.locator('.cw-spend-toggle[aria-expanded="false"]');
+    assert.equal(await toggle.innerText(), "");
+    const size = await toggle.boundingBox();
+    const settingsSize = await page.getByRole("button", {name: en ? "Settings" : "设置", exact: true}).boundingBox();
+    assert.deepEqual([size.width, size.height], [settingsSize.width, settingsSize.height]);
     await toggle.click();
     await page.getByText(en ? "Spending controls" : "费用设置", { exact: true }).click();
     await page.getByLabel(en ? "Confirm above" : "单批确认阈值").fill("1");
     await page.getByRole("button", { name: en ? "Save" : "保存", exact: true }).click();
     await until(() => call(path), s => Number(s.project.spendPolicy?.threshold) === 1);
-    await toggle.click();
+    await closeDialog();
     const itemId = await page.evaluate(async ({ pid, modelId }) => {
       const { creationClient } = await import("/src/backend/creationClient.ts");
       const specId = crypto.randomUUID(), itemId = crypto.randomUUID();
@@ -128,29 +135,52 @@ try {
     const movement = Math.hypot(quoted.x - initial.x, quoted.y - initial.y);
     assert.ok(movement <= 1, `Run moved by ${movement}px as the quote arrived`);
     await page.unroute(quotePath);
-    await toggle.filter({ hasText: "(1)" }).or(toggle.filter({ hasText: "（1）" })).waitFor();
+    await dialog.waitFor();
+    await toggle.locator(".cw-spend-dot").waitFor();
     if (process.env.CREATION_SCREENSHOTS && await composer.isVisible())
       await composer.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-composer-${locale}.png`});
     const pending = await call(path);
     assert.equal(pending.jobs.length, 0);
     assert.equal(pending.spendCalls?.length ?? 0, 0);
     assert.equal(posts.length, before);
-    const controls = page.locator(".cw-spend-canvas");
-    const canvasCard = controls.locator(".cw-spend-card");
-    const collapsed = controls.locator('.cw-spend-toggle[aria-expanded="false"]');
-    await toggle.click();
+    const controls = dialog;
+    const canvasCard = dialog.locator(".cw-spend-card");
     await canvasCard.waitFor();
+    assert.equal(await page.locator("dialog:modal").count(), 1);
+    assert.equal(await dialog.locator(".cw-spend-close").evaluate(el => el === document.activeElement), true);
+    await page.keyboard.press("Shift+Tab");
+    // Native dialogs may tab into browser chrome, but never into the inert canvas.
+    assert.equal(await dialog.evaluate(el => document.activeElement === document.body || el.contains(document.activeElement)), true);
+    await page.keyboard.press("Tab");
+    assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
     await page.keyboard.press("Escape");
     await collapsed.waitFor();
     await toggle.click();
-    await controls.locator(".cw-spend-close").click();
+    await closeDialog();
     await collapsed.waitFor();
-    await toggle.click();
-    await canvasCard.waitFor();
-    await page.locator(".react-flow__pane").click({position: {x: 80, y: 170}});
+    assert.equal(await toggle.evaluate(el => el === document.activeElement), true);
+    // Background project refreshes must not reopen a dismissed request or fill a new chat.
+    await page.evaluate(async pid => {
+      const { creationClient } = await import("/src/backend/creationClient.ts");
+      await creationClient(pid).refresh();
+    }, pid);
     await collapsed.waitFor();
+    const assistant = page.locator("#canvas-assistant");
+    if (!await assistant.isVisible()) await page.locator(".cw-chat-button").click();
+    await assistant.locator(".cw-assistant-welcome").waitFor();
+    assert.equal(await assistant.locator(".cw-spend-card, .cw-spend-panel").count(), 0);
+    if (process.env.CREATION_SCREENSHOTS) await page.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-chat-${locale}.png`});
     assert.equal((await call(path)).spendRequests.at(-1).status, "pending");
     assert.equal(posts.length, before);
+    // A review can arrive while a canvas popover owns a document-level Escape handler.
+    await composer.locator(".cw-parameter-trigger").click();
+    await page.locator(".cw-count-options").waitFor();
+    await page.evaluate(pid => window.dispatchEvent(new CustomEvent("opendirector:spend-review", {detail: pid})), pid);
+    await canvasCard.waitFor();
+    await page.keyboard.press("Escape");
+    await collapsed.waitFor();
+    await page.locator(".cw-count-options").waitFor();
+    await composer.locator(".cw-parameter-trigger").click();
     await toggle.click();
     await canvasCard.locator(".cw-spend-confirm").click();
     await collapsed.waitFor();
@@ -161,21 +191,25 @@ try {
     assert.equal(posts.length - before, 3);
     assert.ok(posts.slice(before).every(post => post.prompt === "Blue" && post.n === 1));
     assert.ok(completed.spendCalls.every(c => c.state === "completed" && Number(c.calculated) === 0.4));
-    // Put the second batch above the remaining cap, then review it from chat.
+    // Put the next batch above the remaining cap. A background request must wait
+    // for model settings to close before asking for approval.
     await toggle.click();
     const cap = controls.getByLabel(en ? "Project cap" : "工程上限", {exact: true});
     if (!await cap.isVisible()) await controls.getByText(en ? "Spending controls" : "费用设置", {exact:true}).click();
     await cap.fill("2");
     await controls.getByRole("button", {name: en ? "Save" : "保存", exact: true}).click();
     await until(() => call(path), s => Number(s.project.spendPolicy?.cap) === 2);
+    await closeDialog();
+    await page.getByRole("button", {name: en ? "Settings" : "设置", exact: true}).click();
     const second = () => page.evaluate(async ({pid, itemId}) => {
       const {creationClient} = await import("/src/backend/creationClient.ts");
       return creationClient(pid).submit(itemId, "if_current", undefined, undefined, 3);
     }, {pid, itemId});
     assert.equal((await second()).status, "awaiting_confirmation");
-    const assistant = page.locator("#canvas-assistant");
-    if (!await assistant.isVisible()) await page.locator(".cw-chat-button").click();
-    const card = assistant.locator(".cw-spend-card");
+    await page.locator("dialog.cw-spend-dialog:not([open])").waitFor({state: "attached"});
+    assert.equal(await page.locator("dialog:modal").count(), 1);
+    await page.getByRole("button", {name: en ? "Close settings" : "关闭设置", exact: true}).click();
+    const card = dialog.locator(".cw-spend-card");
     await card.getByText(en ? "Generate 3 images" : "生成 3 张图片", {exact: true}).waitFor();
     assert.match(await card.locator(".cw-spend-unit").innerText(), /0\.40.*review-image/);
     assert.match(await card.locator(".cw-spend-amount").innerText(), /1\.20/);
@@ -190,23 +224,45 @@ try {
     });
     assert.equal(sizes.title, sizes.amount);
     assert.deepEqual([sizes.unit, sizes.reason, sizes.balance], Array(3).fill(sizes.action));
-    await card.locator(".cw-spend-cancel").click();
-    await until(() => call(path), s => s.spendRequests.at(-1).status === "cancelled");
-    assert.equal(posts.length - before, 3);
+    await card.getByRole("button", {name: en ? /Spent so far/ : /已用金额/}).hover();
+    const tooltip = dialog.getByRole("tooltip");
+    await tooltip.waitFor();
+    assert.match(await tooltip.innerText(), /3.*1\.20/);
+    const tip = await tooltip.boundingBox();
+    assert.ok(tip.x >= 0 && tip.y >= 0 && tip.x + tip.width <= 1480 && tip.y + tip.height <= 940);
+    await card.locator(".cw-spend-title").hover();
+    await tooltip.waitFor({state: "hidden"});
+    // Queue another request while this one is open; there is still only one modal.
     const third = await second();
     assert.equal(third.status, "awaiting_confirmation");
-    const current = assistant.locator(`[data-spend-request="${third.spendRequestId}"]`);
+    assert.equal(await page.locator("dialog:modal").count(), 1);
+    await card.locator(".cw-spend-cancel").click();
+    await until(() => call(path), s => s.spendRequests.at(-2).status === "cancelled");
+    assert.equal(posts.length - before, 3);
+    const current = dialog.locator(`[data-spend-request="${third.spendRequestId}"]`);
     const raise = current.getByRole("button", {name: en ? /Raise.*2\.40.*generate/i : /将上限提高到.*2\.40.*并生成/});
     await raise.waitFor();
     assert.equal(await current.getByRole("spinbutton").count(), 0);
-    if (process.env.CREATION_SCREENSHOTS) await assistant.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-review-${locale}.png`});
+    if (process.env.CREATION_SCREENSHOTS) {
+      await page.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-review-${locale}.png`});
+      await dialog.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-card-${locale}.png`});
+    }
+    await page.setViewportSize({width: 360, height: 740});
+    const bounds = await dialog.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 360 && bounds.y >= 0 && bounds.y + bounds.height <= 740);
+    assert.equal(await dialog.evaluate(el => el.scrollWidth > el.clientWidth), false);
+    await raise.scrollIntoViewIfNeeded();
+    if (process.env.CREATION_SCREENSHOTS) await page.screenshot({path: `${process.env.CREATION_SCREENSHOTS}/spend-narrow-${locale}.png`});
+    await page.setViewportSize({width: 1480, height: 940});
     await raise.click();
+    await collapsed.waitFor();
+    assert.equal(await assistant.locator(".cw-spend-card, .cw-spend-panel").count(), 0);
     const raised = await until(() => call(path), s => s.jobs.length === 6 && s.jobs.every(j => j.status === "succeeded"));
     assert.equal(Number(raised.project.spendPolicy.cap), 2.4);
     assert.equal(raised.spendCalls.length, 6);
     assert.equal(posts.length - before, 6);
     assert.deepEqual(errors, []);
-    console.log(locale, `Run moved ${movement}px while quoting; USD 1.20 batch, zero calls pending, cancellation, USD 0.40 shortfall, chat approval, six settled calls`);
+    console.log(locale, `Run moved ${movement}px; icon matches toolbar, automatic modal, focus, dismiss/reopen, unchanged new chat, queued review, narrow layout, USD 2.40 cap and six settled calls`);
     const grouped = crypto.randomUUID(), groupPath = `/api/creation/projects/${grouped}`;
     await call(groupPath + "/commands", {type: "project.create", commandId: crypto.randomUUID(), projectId: grouped, payload: {name: "Workflow " + grouped.slice(0, 8)}});
     await page.goto(`${web}/ai-tool/ai-canvas/${grouped}`);
@@ -242,7 +298,7 @@ try {
     const groupPending = await until(() => call(groupPath), s => s.spendRequests?.some(r => r.status === "pending"));
     assert.equal(groupPending.spendRequests.at(-1).groupItems.length, 2);
     assert.equal(groupPending.jobs.length, 0);
-    await page.locator(".cw-spend-toggle").click();
+    await dialog.waitFor();
     await canvasCard.locator(".cw-spend-cancel").click();
     await collapsed.waitFor();
     await until(() => call(groupPath), s => s.spendRequests.at(-1).status === "cancelled");
@@ -276,7 +332,7 @@ try {
       const reviewPath = new URL(waiting.reviewUrl, web);
       const reviewPage = await browser.newPage({locale: "en-US"});
       await reviewPage.goto(web + reviewPath.pathname + reviewPath.search);
-      const selector = `.cw-spend-canvas [data-spend-request="${waiting.spendRequestId}"]`;
+      const selector = `dialog.cw-spend-dialog[open] [data-spend-request="${waiting.spendRequestId}"]`;
       const welcome = reviewPage.getByRole("button", {name: "Explore first", exact: true});
       await welcome.or(reviewPage.locator(selector)).first().waitFor();
       if (await welcome.isVisible()) await welcome.click();

@@ -233,7 +233,7 @@ export function TooltipButton({
             <span>{label}</span>
             {shortcut && <kbd>{shortcut}</kbd>}
           </div>,
-          document.body,
+          button.current?.closest("dialog") ?? document.body,
         )}
     </>
   );

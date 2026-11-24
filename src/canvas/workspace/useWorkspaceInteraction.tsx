@@ -767,6 +767,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     if (bypassSnapping.current) clearGuides();
     if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
     const el = event.target as HTMLElement;
+    // Portalled native dialogs still pass through this React capture handler.
+    if (el.closest("dialog")) return;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
     // Tool shortcuts also work when a canvas menu owns focus, while editors

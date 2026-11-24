@@ -1,6 +1,9 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
   "spend.title": "工程费用",
+  "spend.confirmTitle": "确认本次费用",
+  "spend.overview": "费用设置与记录",
+  "spend.pendingHint": "工程费用 · {count} 项待确认",
   "spend.estimate": "{action} · 预计 {amount}",
   "spend.action.image": "生成 {count} 张图片",
   "spend.action.video": "生成 {count} 段视频",

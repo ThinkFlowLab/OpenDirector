@@ -1,6 +1,9 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
   "spend.title": "Project spend",
+  "spend.confirmTitle": "Confirm this cost",
+  "spend.overview": "Spending controls and history",
+  "spend.pendingHint": "Project spend · {count} awaiting review",
   "spend.estimate": "{action} · {amount} estimated",
   "spend.action.image": { one: "Generate {count} image", other: "Generate {count} images" },
   "spend.action.video": { one: "Generate {count} video", other: "Generate {count} videos" },

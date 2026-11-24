@@ -12,6 +12,7 @@ import { spendQuery, type PendingSpend, type QuoteView, type SpendStatus } from 
 import type { ConnectionPrice, SpendPolicy, SpendQuote } from "../contracts/generated.ts";
 import { useI18n, useT } from "../i18n/I18nProvider";
 import { CanvasIcon } from "./CanvasIcon";
+import { SpendDialog } from "./SpendDialog";
 import "./project-spend.css";
 
 function useSnapshot(projectId: string) {
@@ -176,8 +177,9 @@ function SpendBalances({ status }: { status: SpendStatus }) {
   </div>;
 }
 
-function ReviewCard({ projectId, entry, status, onSettings, onChange }: {
+function ReviewCard({ projectId, entry, status, onSettings, onChange, onBusyChange }: {
   projectId: string; entry: PendingSpend; status: SpendStatus; onSettings?: () => void; onChange: (decision?: "approve" | "cancel") => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const { t, locale } = useI18n();
   const [busy, setBusy] = useState(false);
@@ -208,7 +210,9 @@ function ReviewCard({ projectId, entry, status, onSettings, onChange }: {
       approvalLabel = t(quote.deferred?.length ? "spend.runUpstream" : runsSteps ? "spend.approve" : "spend.generate");
   }
   const decide = async (decision: "approve" | "cancel") => {
+    if (busy) return;
     setBusy(true);
+    onBusyChange(true);
     setError("");
     try {
       const raising = decision === "approve" && reason === "over_cap";
@@ -221,7 +225,7 @@ function ReviewCard({ projectId, entry, status, onSettings, onChange }: {
       }, versions);
       onChange(decision);
     } catch (failure) { setError(errorMessage(failure)); onChange(); }
-    finally { setBusy(false); }
+    finally { setBusy(false); onBusyChange(false); }
   };
   return <article className="cw-spend-card" data-spend-request={batch.id}>
     <div className="cw-spend-offer">
@@ -275,57 +279,43 @@ function PolicyForm({ projectId, status }: { projectId: string; status: SpendSta
   </form>;
 }
 
-export function ProjectSpend({ projectId, placement, onSettings, onNotify }: {
-  projectId: string; placement: "canvas" | "chat"; onSettings?: () => void; onNotify: (message: string) => void;
+export function ProjectSpend({ projectId, onSettings, onNotify }: {
+  projectId: string; onSettings?: () => void; onNotify: (message: string) => void;
 }) {
   const { t, locale } = useI18n();
   const snapshot = useSnapshot(projectId);
   const pendingIds = new Set(snapshot?.spendRequests?.filter(r => r.status === "pending").map(r => r.id));
   const pendingCount = pendingIds.size;
-  const [view, setView] = useState<"review" | "overview" | null>(() => {
+  const pendingKey = [...pendingIds].join(",");
+  const [view, setView] = useState<string | null>(() => {
     const reviewId = new URLSearchParams(window.location.search).get("spendReview");
-    return placement === "canvas" && reviewId && pendingIds.has(reviewId) ? "review" : null;
+    return reviewId && pendingIds.has(reviewId) ? reviewId : null;
   });
-  const container = useRef<HTMLDivElement>(null);
-  const toggle = useRef<HTMLButtonElement>(null);
+  const seen = useRef(new Set<string>());
+  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<SpendStatus>();
   const [error, setError] = useState("");
   const [revision, reload] = useState(0);
+  const dismiss = () => {
+    pendingIds.forEach(id => seen.current.add(id));
+    setView(null);
+  };
   useEffect(() => {
-    if (placement !== "canvas") return;
-    const reveal = (event: Event) => { if ((event as CustomEvent).detail === projectId) setView("review"); };
+    const reveal = (event: Event) => {
+      if ((event as CustomEvent).detail === projectId && pendingCount) setView([...pendingIds][0]);
+    };
     window.addEventListener("opendirector:spend-review", reveal);
     return () => window.removeEventListener("opendirector:spend-review", reveal);
-  }, [placement, projectId]);
-  // The last request can also be resolved from chat or another client.
+  }, [projectId, pendingKey]);
+  // Both canvas and Agent requests arrive through the project snapshot. Show each
+  // new request once; closing the dialog keeps it pending without reopening it.
   useEffect(() => {
-    if (view === "review" && pendingCount === 0) setView(null);
-  }, [view, pendingCount]);
-  useEffect(() => {
-    if (!view) return;
-    const dismiss = (event: PointerEvent) => {
-      const target = event.target;
-      // A modal (such as initial setup) owns the gesture; the canvas beneath it is inert.
-      if (target instanceof Element && !target.closest("dialog:modal") && !container.current?.contains(target))
-        setView(null);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-      const focused = document.activeElement;
-      if (focused !== document.body && !container.current?.contains(focused)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setView(null);
-      toggle.current?.focus({preventScroll: true});
-    };
-    document.addEventListener("pointerdown", dismiss, true);
-    document.addEventListener("keydown", escape, true);
-    return () => {
-      document.removeEventListener("pointerdown", dismiss, true);
-      document.removeEventListener("keydown", escape, true);
-    };
-  }, [view]);
-  const shown = view === "overview" || ((view === "review" || placement === "chat") && pendingCount > 0);
+    if (view && pendingIds.has(view)) { seen.current.add(view); return; }
+    const next = [...pendingIds].find(id => !seen.current.has(id));
+    if (next) { seen.current.add(next); setView(next); }
+    else if (view !== "overview") setView(null);
+  }, [pendingKey, view]);
+  const shown = view != null;
   useEffect(() => {
     if (!shown || !snapshot) return;
     const abort = new AbortController();
@@ -338,36 +328,29 @@ export function ProjectSpend({ projectId, placement, onSettings, onNotify }: {
     reload(r => r + 1);
     if (!decision) return;
     onNotify(t(decision === "approve" ? "spend.reviewSubmitted" : "spend.reviewCancelled"));
-    if (placement === "canvas" && !creationClient(projectId).snapshot.spendRequests?.some(r => r.status === "pending")) {
-      setView(null);
-      if (document.activeElement === document.body || container.current?.contains(document.activeElement))
-        toggle.current?.focus({preventScroll: true});
-    }
   };
-  if (placement === "chat" && !pendingCount) return null;
-  const reviews = status?.pending.filter(entry => pendingIds.has(entry.request.id)) ?? [];
-  const panelId = `cw-spend-${projectId}-${placement}`;
-  return <div ref={container} className={`cw-spend cw-spend-${placement}`}>
-    {placement === "canvas" && <button ref={toggle} className="cw-spend-toggle" aria-expanded={shown} aria-controls={shown ? panelId : undefined}
-      onClick={() => setView(shown ? null : pendingCount ? "review" : "overview")}>
-      {pendingCount ? t("spend.pending", { count: pendingCount }) : t("spend.title")}
-    </button>}
-    {shown && <section id={panelId} aria-label={t("spend.title")} className="cw-spend-panel">
-      <div className="cw-spend-heading"><h3>{t("spend.title")}</h3>
-        {placement === "canvas" && <button type="button" className="cw-spend-close" aria-label={t("common.close")}
-          onClick={() => { setView(null); toggle.current?.focus({preventScroll: true}); }}>
-          <CanvasIcon name="close" size={16} />
-        </button>}
-      </div>
+  const review = status?.pending.find(entry => entry.request.id === view && pendingIds.has(view));
+  return <div className="cw-spend cw-settings-control">
+    <TooltipButton className="cw-icon-button cw-spend-toggle" aria-expanded={shown} aria-haspopup="dialog"
+      label={pendingCount ? t("spend.pendingHint", {count: pendingCount}) : t("spend.title")}
+      onClick={() => setView(pendingCount ? [...pendingIds][0] : "overview")}>
+      <CanvasIcon name="wallet" size={18} />
+      {pendingCount > 0 && <span className="cw-spend-dot" aria-hidden="true" />}
+    </TooltipButton>
+    {shown && <SpendDialog title={t(view === "overview" ? "spend.title" : "spend.confirmTitle")}
+      focusKey={view} busy={busy} onClose={dismiss}>
       {error && <p role="alert">{error}</p>}
+      {(!status || (view !== "overview" && !review)) && !error && <p role="status">{t("spend.estimating")}</p>}
       {status && <>
-        {!pendingCount && <SpendBalances status={status} />}
         {(status.legacy > 0 || status.unknown > 0) && <p>{t("spend.coverage", { count: status.legacy + status.unknown })}</p>}
-        {reviews.map(entry => <ReviewCard key={entry.request.id} projectId={projectId} status={status} entry={entry}
-          onSettings={onSettings} onChange={reviewed} />)}
-        {placement !== "chat" && <>
-          <details onToggle={e => { if (e.currentTarget.open) setView("overview"); }}><summary>{t("spend.controls")}</summary><PolicyForm key={JSON.stringify(status.policy)} projectId={projectId} status={status} /></details>
-          <details onToggle={e => { if (e.currentTarget.open) setView("overview"); }}><summary>{t("spend.log")}</summary>
+        {review && <ReviewCard key={review.request.id} projectId={projectId} status={status} entry={review}
+          onSettings={onSettings && (() => { dismiss(); onSettings(); })} onChange={reviewed} onBusyChange={setBusy} />}
+        {view === "overview" ? <>
+          <SpendBalances status={status} />
+          {pendingCount > 0 && <div className="cw-spend-actions"><button onClick={() => setView([...pendingIds][0])}>
+            {t("spend.pending", {count: pendingCount})}</button></div>}
+          <details><summary>{t("spend.controls")}</summary><PolicyForm key={JSON.stringify(status.policy)} projectId={projectId} status={status} /></details>
+          <details><summary>{t("spend.log")}</summary>
             {(status.workflows ?? []).map(run => <p key={run.id}>{t("spend.workflowProgress", {
               completed: run.completed, total: run.total, state: t(`spend.workflowState.${run.state}`),
             })}{run.skipped > 0 && <> · {t("spend.skippedSteps", {count: run.skipped})}</>}</p>)}
@@ -381,9 +364,11 @@ export function ProjectSpend({ projectId, placement, onSettings, onNotify }: {
               </small>
             </li>)}</ul>
           </details>
-        </>}
+        </> : <button type="button" className="cw-spend-overview" disabled={busy} onClick={() => {
+          pendingIds.forEach(id => seen.current.add(id)); setView("overview");
+        }}>{t("spend.overview")}</button>}
       </>}
-    </section>}
+    </SpendDialog>}
   </div>;
 }
 
