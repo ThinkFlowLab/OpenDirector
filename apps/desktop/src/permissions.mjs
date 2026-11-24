@@ -5,18 +5,18 @@ import { ownedURL } from './host.mjs';
  *
  * Electron grants renderer permissions by default, so denying by default means
  * the handler also has to grant the ones the shared UI actually uses. Each name
- * below was measured in the installed Electron build, because the same user
- * action can ask for different names depending on whether a click activated it.
- * Electron can pass an empty or opaque requesting URL, so an untrusted origin
- * is a denial rather than a thrown error.
+ * below belongs to a call the renderer makes; a permission without a caller is
+ * a capability, not a fix. Electron can pass an empty or opaque requesting URL,
+ * so an untrusted origin is a denial rather than a thrown error.
  */
 const granted = new Set([
-  // `navigator.clipboard.writeText`: Chromium asks for clipboard-read when the
-  // page writes without user activation and for clipboard-sanitized-write when
-  // a click is the activation. Granting only clipboard-read leaves the smoke
-  // write passing while every copy button a user presses fails with
-  // `NotAllowedError: Write permission denied`.
-  'clipboard-read',
+  // `navigator.clipboard.writeText` from a click: Chromium asks for
+  // clipboard-sanitized-write only when the write is sanitized and a click is
+  // the activation, and for the read/write pair otherwise. The renderer copies
+  // from click handlers only, so the read/write name stays denied: it also
+  // grants `navigator.clipboard.readText`, and this application never reads the
+  // system clipboard. Granting it would be a policy change for a future
+  // activation-free copy, not a repair for a broken copy button.
   'clipboard-sanitized-write',
   // `mediaElement.requestFullscreen`: the check handler answers
   // automatic-fullscreen and the request handler answers fullscreen. Denying

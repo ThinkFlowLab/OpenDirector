@@ -18,7 +18,7 @@ flowchart LR
 
 渲染进程通过 `opendirector://app` 请求应用页面、媒体和 API 资源。主进程转发请求时附带启动凭证，Host 验证凭证后处理请求。渲染进程关闭 Node 集成并开启上下文隔离。预加载脚本提供有限的桌面接口，包括登记编辑会话、同步语言和导出状态。
 
-渲染进程权限默认全部拒绝，只对 `opendirector://app` 开放一份显式清单（见 [`permissions.mjs`](../../apps/desktop/src/permissions.mjs)）：`navigator.clipboard.writeText` 可能申请的两种剪贴板权限，以及 `requestFullscreen` 使用的两种全屏权限。剪贴板申请的名称取决于是否有用户激活，因此两种都授予；全屏若不授予，申请 Promise 会一直挂起，播放器的全屏按钮会静默失效。已安装包的冒烟检查会分别用脚本调用和点击激活的渲染进程写入，并在主进程核对系统剪贴板内容。新增任何渲染进程权限都属于策略变更，不是界面细节。
+渲染进程权限默认全部拒绝，只对 `opendirector://app` 开放一份显式清单（见 [`permissions.mjs`](../../apps/desktop/src/permissions.mjs)）：点击激活的 `navigator.clipboard.writeText` 申请的 `clipboard-sanitized-write`，以及 `requestFullscreen` 使用的两种全屏权限。读写剪贴板名称不授予：界面里的复制都由点击发起，渲染进程也从不读取系统剪贴板，授予它等于给页面一项没有调用方的能力。全屏若不授予，申请 Promise 会一直挂起，播放器的全屏按钮会静默失效。已安装包的冒烟检查会断言点击激活的复制确实写入系统剪贴板、无用户激活的写入被拒绝且不改变剪贴板内容，并断言全屏能够进入也能够退出。新增任何渲染进程权限都属于策略变更，不是界面细节。
 
 ## Host 管理工程状态
 
