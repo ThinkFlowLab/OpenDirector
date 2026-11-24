@@ -2,6 +2,7 @@ import type { CanvasNode } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { assetDisplayName } from "./assetNames";
 import { useT } from "../i18n/I18nProvider.tsx";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 /** Inserting a mention and removing its relation are separate sibling buttons. */
 export function ReferenceThumbnail({
@@ -35,7 +36,7 @@ export function ReferenceThumbnail({
         {node.type === "image" &&
         node.data.src &&
         node.data.assetState !== "missing" ? (
-          <img src={node.data.src} alt="" draggable={false} />
+          <AssetMedia as="img" src={node.data.src} alt="" draggable={false} />
         ) : (
           <CanvasIcon name={node.type} size={22} />
         )}

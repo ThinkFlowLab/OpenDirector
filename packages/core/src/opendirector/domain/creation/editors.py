@@ -488,7 +488,7 @@ ToolId = Literal['layers', 'crop', 'smart-edit', 'outpaint', 'cutout', 'inpainti
     'dynamic-poster', 'ecommerce-main', 'image-presets', 'grid-split', 'composition', 'annotation',
     'video-edit', 'video-extend', 'video-partial-reshoot', 'video-upscale', 'video-frame-interpolation',
     'video-depth-capture', 'video-subtitle-erasure', 'video-matting', 'video-crop', 'video-translation',
-    'extract-audio', 'audio-separation', 'video-trim', 'audio-trim', 'video-frame-capture', 'director-stage']
+    'video-mask-composite', 'extract-audio', 'audio-separation', 'video-trim', 'audio-trim', 'video-frame-capture', 'director-stage']
 
 
 class ToolDraftBinding(Contract):

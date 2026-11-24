@@ -104,6 +104,7 @@ ENGLISH_BY_CODE = {
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",
     "project_open_elsewhere": "This project is open in another window. Close it there and try again.",
+    "session_expired": "This project was closed or its session expired. Reopen it and save again.",
     "local_only": "Only this computer can access the project service.",
     "cross_origin": "File access from another site is not allowed.",
     "invalid_local_request": "This is not a valid local app request.",

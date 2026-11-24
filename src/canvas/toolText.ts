@@ -149,8 +149,13 @@ const EN: Record<string, string> = {
   "擦除视频中的字幕，需要连接视频处理服务。":
     "Remove subtitles from video using a video processing service.",
   "视频抠像": "Video Matting",
-  "选择黑色、绿色或透明背景；输出格式由服务提供。":
-    "Choose a black, green, or transparent background; output formats depend on the service.",
+  "选择黑色、绿色或透明背景，或输出黑底白色的对象遮罩；输出格式由服务提供。":
+    "Choose a black, green, or transparent background, or output a white-on-black object mask; output formats depend on the service.",
+  "遮罩": "Mask",
+  "遮罩合成": "Mask Composite",
+  "保留内容视频在遮罩视频白色区域内的画面，其余变黑；可拉伸遮罩内的明暗范围。本地处理，不调用模型。":
+    "Keeps the content video inside the white area of the mask video and blacks out the rest; can stretch brightness inside the mask. Local processing, no model.",
+  "拉伸明暗范围": "Stretch brightness range",
   "输出背景": "Output background",
   "黑色": "Black",
   "绿色": "Green",

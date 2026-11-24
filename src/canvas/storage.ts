@@ -14,6 +14,7 @@ import type {
 } from "./model.ts";
 import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
 import { tNow } from "../i18n/messages.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
 
 export interface CanvasStorageError {
   code:
@@ -299,6 +300,9 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
   };
 }
 
+const transientMedia = (src: string | undefined) =>
+  Boolean(src?.startsWith("blob:") || parseAssetSource(src));
+
 function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
   const parsed = parseDocument(document);
   if (!parsed.ok) return parsed;
@@ -307,15 +311,14 @@ function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
     ...(parsed.value.hiddenNodes ?? []),
   ].find(
     (node) =>
-      node.data.src?.startsWith("blob:") ||
-      node.data.imageCrop?.src.startsWith("blob:") ||
+      transientMedia(node.data.src) ||
+      transientMedia(node.data.imageCrop?.src) ||
       nodeResources(node.data).some((resource) =>
-        resource.src?.startsWith("blob:"),
+        transientMedia(resource.src),
       ) ||
       node.data.layers?.layers.some(
         (layer) =>
-          layer.content.kind === "image" &&
-          layer.content.src.startsWith("blob:"),
+          layer.content.kind === "image" && transientMedia(layer.content.src),
       ),
   );
   return transient

@@ -20,6 +20,8 @@ export const generation = {
 
   "generation.mode.reference": "Universal reference",
   "generation.mode.firstLast": "First and last frames",
+  "generation.mode.control": "Structure control",
+  "generation.duration.followsControl": "Follows control video",
   "generation.mode.continuation": "Continue",
   "generation.imagePreset": "Image presets",
   "generation.videoMode": "Video mode",

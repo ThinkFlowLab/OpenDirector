@@ -20,6 +20,8 @@ export const generation = {
 
   "generation.mode.reference": "全能参考",
   "generation.mode.firstLast": "首尾帧",
+  "generation.mode.control": "结构控制",
+  "generation.duration.followsControl": "跟随控制视频",
   "generation.mode.continuation": "接续",
   "generation.imagePreset": "图片创作预设",
   "generation.videoMode": "视频创作模式",

@@ -2,6 +2,26 @@
 
 [English](installation.md) · [简体中文](installation.zh-CN.md) · [Back to README](../../README.md)
 
+<a name="macos-first-launch"></a>
+
+## First launch on macOS
+
+The desktop DMG is for Apple silicon Macs. Download it from [OpenDirector's official GitHub Releases](https://github.com/ThinkFlowLab/OpenDirector/releases).
+
+1. Open the DMG in Finder. Drag **OpenDirector** into **Applications**.
+2. In Finder, open **Applications** and double-click **OpenDirector**.
+3. This build is not notarized by Apple. If macOS says it can't verify OpenDirector or its developer, confirm that the DMG came from the official release. Dismiss the alert, then go to **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** for OpenDirector. Follow the confirmation prompt. [Apple's first-launch instructions](https://support.apple.com/en-us/102445)
+
+If **Open Anyway** is missing, try opening OpenDirector from **Applications** once and return to **Privacy & Security**. If your organization manages the Mac, contact your administrator.
+
+If Finder can't open the DMG, download it again and compare its SHA-256 with the `.sha256` file next to that exact installer on GitHub Releases. Run `shasum -a 256` followed by the path to the downloaded DMG to print its checksum. If the DMG still won't open, report the exact message and the macOS version.
+
+If macOS says the **app** is damaged, reports malware, or says the app will damage your computer, stop and report the alert.
+
+<a name="source-installation"></a>
+
+## Install from source or a wheel
+
 ### 1. Prepare your environment
 
 | Dependency | Requirement |

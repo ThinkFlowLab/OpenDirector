@@ -14,7 +14,7 @@ from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
 Protocol = Literal['openai', 'volcengine', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
-VideoMode = Literal['first_frame', 'reference', 'continuation']
+VideoMode = Literal['first_frame', 'reference', 'continuation', 'control']
 ImageQuality = Literal['auto', 'low', 'medium', 'high']
 Count = Annotated[int, Field(strict=True, ge=0)]
 

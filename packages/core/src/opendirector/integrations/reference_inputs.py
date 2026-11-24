@@ -5,7 +5,7 @@ import json
 
 from opendirector.domain.input_rules import MAX_REFERENCES, input_rules
 from opendirector.domain.rule_facts import (
-    FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES,
+    CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES,
 )
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_image import validate_minimax_image_reference
@@ -102,7 +102,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     rules = input_rules({**config, 'kind': 'agent' if kind == 'text' else kind})
     mode = task.get('videoMode', 'first_frame')
     prompt = project_content(task['promptContent'], speech=kind == 'audio')[0] if task.get('promptContent') is not None else task['prompt']
-    result = {'prompt': prompt, 'images': [], 'imageRoles': [], 'audios': [], 'videos': [], 'manifest': [], 'rules': rules, 'continueFrom': None, 'continueSize': None}
+    result = {'prompt': prompt, 'images': [], 'imageRoles': [], 'audios': [], 'videos': [], 'manifest': [], 'rules': rules, 'continueFrom': None, 'continueSize': None, 'control': None}
     if kind == 'text':
         result['content'] = reference_content(store, task['projectId'], {'text': task['prompt'], 'content': task.get('promptContent'), 'assets': [{'id': asset_id} for asset_id in task['referenceIds']]}, manifest=result['manifest'], overrides=overrides)
         request_size(result['content'], rules['requestBytes'])
@@ -141,6 +141,20 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             result['manifest'].append(entry)
             continue
         media_bytes += len(data)
+        if source_kind == 'video' and kind == 'video' and mode == 'control':
+            # The structure video travels as control_reference: no <Video N> tag, and its length is the output's.
+            if result['control']:
+                raise ProjectError('结构控制只能连接一个控制视频。')
+            duration = meta.get('durationMs')
+            low, high = CONTROL_VIDEO_SECONDS
+            if meta['type'] not in {'video/mp4', 'video/quicktime'} or len(data) > rules['videoBytes']:
+                raise ProjectError(f'控制视频需为不超过 {rules["videoBytes"] // (1024 * 1024)} MB 的 MP4 或 MOV。')
+            if duration is None or not low * 1000 <= duration <= high * 1000 + 50:
+                raise ProjectError(f'控制视频需为 {low}–{high} 秒的有效视频。')
+            result['control'] = meta['id']
+            entry['role'] = 'control_video'
+            result['manifest'].append(entry)
+            continue
         source_metadata.append((meta, source_kind))
         if source_kind == 'video' and not (kind == 'video' and mode == 'reference' and rules.get('maxVideos')):
             raise ProjectError(f'“{meta["name"]}”：当前模型不支持视频参考，请尝试使用其他模型的素材参考模式。')
@@ -242,6 +256,8 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         raise ProjectError(f'当前生成模式最多使用 {maximum} 张参考图片；多图视频请使用素材参考模式。')
     if len(result['audios']) > rules['maxAudios'] or total_audio_ms > REFERENCE_MEDIA_SECONDS * 1000:
         raise ProjectError(f'参考音频最多 3 段，总时长不超过 {REFERENCE_MEDIA_SECONDS} 秒。')
+    if complete and kind == 'video' and mode == 'control' and not result['control']:
+        raise ProjectError('结构控制需要连接一个控制视频（例如人物深度视频）。')
     if complete and mode == 'continuation' and not result['continueFrom']:
         raise ProjectError('接续生成需要引用上一段由 vLLM-Omni H3 生成的视频。')
     if len(result['videos']) > rules.get('maxVideos', 0) or total_video_ms > REFERENCE_MEDIA_SECONDS * 1000:

@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatAsset } from "../backend/chat";
-import { creationClient } from "../backend/creationClient";
+import { assetSource } from "../backend/assetSource.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { CanvasIcon } from "./CanvasIcon";
 import { useCanvasPlayback } from "./CanvasMediaPreview";
 import { formatMediaTime } from "./mediaPlayback";
 import { assetDisplayName } from "./assetNames";
+import { useAssetMedia } from "./useAssetMedia.tsx";
 
 function mediaKind(asset: ChatAsset) {
   if (asset.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|avif)$/i.test(asset.name)) return "image";
@@ -14,16 +15,9 @@ function mediaKind(asset: ChatAsset) {
   return "text";
 }
 function useMediaSource(projectId: string, asset: ChatAsset, active: boolean) {
-  const [src, setSrc] = useState("");
+  const media = useAssetMedia(mediaKind(asset) === "text" ? undefined : assetSource(projectId, asset.id), active);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (!active || mediaKind(asset) === "text") return;
-    let current = true;
-    creationClient(projectId).mediaUrl(asset.id).then(value => {if (current) setSrc(value);})
-      .catch(() => {if (current) setFailed(true);});
-    return () => {current = false;};
-  }, [projectId, asset.id, asset.fingerprint, active]);
-  return {src, failed, setFailed};
+  return {src: media.src ?? "", failed: failed || media.state === "failed", setFailed};
 }
 
 function AttachmentCard({ projectId, asset }: {projectId: string; asset: ChatAsset}) {

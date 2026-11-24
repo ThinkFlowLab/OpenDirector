@@ -107,9 +107,25 @@ export async function responseError(response: Response) {
   );
 }
 
+type LeaseRecovery = (projectId: string) => Promise<boolean>;
+let leaseRecovery: LeaseRecovery | undefined;
+
+/** Installed by the project session owner: renew this page's lease on `projectId`.
+ *
+ * A lease lapses when renewals stop for a minute (a suspended page, a renewal
+ * stuck on a dropped connection). The server rejects the write with
+ * `session_expired` before applying anything, so one renewal and one resend of
+ * the same request is safe; commands are also deduplicated by commandId. */
+export function setLeaseRecovery(recover: LeaseRecovery | undefined) {
+  leaseRecovery = recover;
+}
+
+const PROJECT_PATH = /^\/creation\/projects\/([^/?]+)\//;
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  leaseRenewed = false,
 ): Promise<T> {
   await sessionReady;
   let response: Response;
@@ -122,7 +138,21 @@ export async function request<T>(
     if (options.signal?.aborted) throw failure;
     throw new ApiError(tNow("api.networkError"), null, "network_error");
   }
-  if (!response.ok) throw await responseError(response);
+  if (!response.ok) {
+    const error = await responseError(response);
+    const projectId = PROJECT_PATH.exec(path)?.[1];
+    if (
+      error.status === 409 &&
+      error.code === "session_expired" &&
+      !leaseRenewed &&
+      projectId &&
+      leaseRecovery &&
+      !options.signal?.aborted &&
+      (await leaseRecovery(projectId).catch(() => false))
+    )
+      return request<T>(path, options, true);
+    throw error;
+  }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

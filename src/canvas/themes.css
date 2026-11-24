@@ -143,7 +143,7 @@
 }
 :root[data-theme="light"]
   :is(
-    .cw-project-option:hover,
+    .cw-project-row:hover .cw-project-option,
     .cw-project-option[aria-checked="true"],
     .cw-rail-button:hover,
     .cw-icon-button:hover,
@@ -169,10 +169,10 @@
 :root[data-theme="light"] .cw-project-actions button.cw-danger:hover {
   background: #fbeceb;
 }
-:root[data-theme="light"] .cw-project-more {
+:root[data-theme="light"] :is(.cw-project-more, .cw-project-open-tab) {
   color: #5b636e;
 }
-:root[data-theme="light"] .cw-project-more:hover,
+:root[data-theme="light"] :is(.cw-project-more, .cw-project-open-tab):hover,
 :root[data-theme="light"] .cw-project-more[aria-expanded="true"] {
   background: #e4e7ed;
   color: #14171d;

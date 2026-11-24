@@ -18,7 +18,7 @@ export const library = {
   "library.processing": "正在处理…",
   "library.loading": "正在读取素材。",
   "library.reading": "正在读取素材…",
-  "library.issue.selectNode": "请选择一个节点。",
+  "library.issue.selectNode": "请选择至少一个节点。",
   "library.issue.selectItem": "请选择一项素材。",
   "library.issue.selectSource": "请先选择一个来源。",
   "library.issue.subjectUnavailable": "所选主体不可用。",

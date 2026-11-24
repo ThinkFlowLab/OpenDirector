@@ -16,6 +16,9 @@ import {
   fitVideoCrop,
   type VideoCrop,
 } from "./videoCrop.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
+import { fetchMediaSource } from "../backend/creationClient.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
 
 export interface LocalMediaOutput {
   src: string;
@@ -25,6 +28,7 @@ export interface LocalMediaOutput {
   media?: CanvasNodeData["media"];
 }
 const localSource = (src: string) => {
+  if (parseAssetSource(src)) return true;
   if (/^data:(audio|video|image)\//.test(src)) return true;
   try {
     const url = new URL(src, location.href);
@@ -344,7 +348,7 @@ export function LocalMediaEditor({
         return;
       }
       if (isAudio) {
-        const response = await fetch(node.data.src, {
+        const response = await fetchMediaSource(node.data.src, {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error(t("tools.localMedia.error.audioRead"));
@@ -472,8 +476,9 @@ export function LocalMediaEditor({
     >
       <div className="cw-local-video-preview">
         {node.type === "audio" ? (
-          <audio
-            ref={(element) => {
+          <AssetMedia
+            as="audio"
+            ref={(element: HTMLAudioElement | null) => {
               media.current = element;
             }}
             src={node.data.src}
@@ -507,8 +512,9 @@ export function LocalMediaEditor({
                 : undefined
             }
           >
-            <video
-              ref={(element) => {
+            <AssetMedia
+              as="video"
+              ref={(element: HTMLVideoElement | null) => {
                 media.current = element;
               }}
               src={node.data.src}

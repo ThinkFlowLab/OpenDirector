@@ -41,6 +41,7 @@ import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 function kindOf(asset: ChatAsset) {
   return asset.type.startsWith("image/")
@@ -578,7 +579,7 @@ export function AssistantPanel({
                     title={item.error ?? item.title}
                   >
                     {item.thumbnail && !item.error ? (
-                      <img src={item.thumbnail} alt="" />
+                      <AssetMedia as="img" src={item.thumbnail} alt="" />
                     ) : (
                       <CanvasIcon name={item.kind} size={20} />
                     )}

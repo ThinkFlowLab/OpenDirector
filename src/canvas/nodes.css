@@ -273,6 +273,11 @@
   border-radius: 999px;
 }
 
+.cw-node-viewport-probe {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .cw-node-placeholder {
   width: 100%;
   height: 100%;
@@ -316,6 +321,7 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
+.cw-node-media-status .cw-placeholder-label,
 .cw-node-placeholder:hover .cw-placeholder-label,
 .cw-node-selected .cw-placeholder-label {
   opacity: 1;
@@ -752,6 +758,14 @@
 }
 .cw-duration-trigger[aria-expanded="true"] > svg {
   transform: rotate(180deg);
+}
+.cw-duration-popover .cw-duration-follow-control {
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+}
+.cw-duration-follow-control + .cw-duration-controls {
+  margin-top: 8px;
 }
 .cw-parameter-unknown,
 .cw-reference-role {

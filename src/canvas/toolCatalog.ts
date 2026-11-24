@@ -34,6 +34,7 @@ export type CanvasToolId =
   | "video-matting"
   | "video-crop"
   | "video-translation"
+  | "video-mask-composite"
   | "extract-audio"
   | "audio-separation"
   | "video-trim"
@@ -438,6 +439,26 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
+    "video-mask-composite",
+    "遮罩合成",
+    "保留内容视频在遮罩视频白色区域内的画面，其余变黑；可拉伸遮罩内的明暗范围。本地处理，不调用模型。",
+    [
+      {
+        key: "stretch",
+        label: "拉伸明暗范围",
+        type: "boolean",
+        default: true,
+      },
+    ],
+    {
+      category: "video",
+      sources: ["video"],
+      minSources: 2,
+      maxSources: 2,
+      parameterCoverage: "entry-only",
+    },
+  ),
+  tool(
     "video-subtitle-erasure",
     "字幕擦除",
     "擦除视频中的字幕，需要连接视频处理服务。",
@@ -447,7 +468,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "video-matting",
     "视频抠像",
-    "选择黑色、绿色或透明背景；输出格式由服务提供。",
+    "选择黑色、绿色或透明背景，或输出黑底白色的对象遮罩；输出格式由服务提供。",
     [
       {
         key: "background",
@@ -458,6 +479,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
           { value: "black", label: "黑色" },
           { value: "green", label: "绿色" },
           { value: "transparent", label: "透明" },
+          { value: "mask", label: "遮罩" },
         ],
       },
     ],

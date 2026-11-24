@@ -181,6 +181,11 @@
       ]
     },
     {
+      "file": "canvas_progressive_load.mjs",
+      "lanes": ["gate"],
+      "note": "Bilingual structure-first opening with one held and one failed media read, retained asset bindings, retry and late reads across a project switch. Seeds projects through /src on Vite."
+    },
+    {
       "file": "canvas_wheel.mjs",
       "previewSafe": true,
       "lanes": [
