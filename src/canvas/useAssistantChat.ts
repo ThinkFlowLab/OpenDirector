@@ -18,6 +18,7 @@ import {
   stopChat,
   type ChatAsset,
   type Conversation,
+  type ChatMessage,
   type ModelSelections,
   conversationIsEmpty,
 } from "../backend/chat";
@@ -39,6 +40,7 @@ import {
 import type { CanvasNode } from "./model";
 import { pendingCanvasReferences } from "./pendingCanvasReferences.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
+import { turnRequest, type ChatEditing } from "./chatTurnRequest.ts";
 
 export interface ProjectChatAsset extends ReferenceAsset {
   kind: string;
@@ -50,6 +52,32 @@ export const attachment = ({
   size,
   fingerprint,
 }: ChatAsset): ChatAsset => ({ id, name, type, size, fingerprint });
+/**
+ * The id an uncertain submission keeps, so retrying an edit resends the same
+ * operation instead of creating a second attempt.
+ */
+const pendingKey = (conversationId: string) =>
+  `opendirector.chat.revision.${conversationId}`;
+const pendingTurnId = (conversationId: string) => {
+  try {
+    const store = globalThis.sessionStorage;
+    if (!store) return undefined;
+    return store.getItem(pendingKey(conversationId)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+const rememberPendingTurnId = (conversationId: string, id?: string) => {
+  try {
+    const store = globalThis.sessionStorage;
+    if (!store) return;
+    if (id) store.setItem(pendingKey(conversationId), id);
+    else store.removeItem(pendingKey(conversationId));
+  } catch {
+    // Storage can be unavailable; the retry then creates a fresh turn.
+  }
+};
+
 const empty = (): Conversation => ({
   messages: [],
   draft: "",
@@ -92,6 +120,9 @@ export function useAssistantChat(
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [threadsError, setThreadsError] = useState("");
   const [changing, setChanging] = useState(false);
+  // The stopped attempt being revised: its user message id plus the draft the
+  // edit replaced, so cancelling restores exactly what the user had typed.
+  const [editing, setEditing] = useState<ChatEditing | null>(null);
   const switching = useRef(false);
   const [error, setError] = useState("");
   const displayError = (text: string) =>
@@ -463,28 +494,87 @@ export function useAssistantChat(
     )
       return;
     const input = current.current;
-    await follow(crypto.randomUUID(), async (id, signal, onEvent) => {
+    const revising = editing;
+    // A retry of the same edit keeps its id, so an uncertain submission cannot
+    // become a second attempt. An ordinary turn always gets a fresh one.
+    const id =
+      (revising &&
+        input.conversationId &&
+        pendingTurnId(input.conversationId)) ||
+      crypto.randomUUID();
+    if (revising && input.conversationId)
+      rememberPendingTurnId(input.conversationId, id);
+    await follow(id, async (turn, signal, onEvent) => {
       await flushChatDraft(projectId);
       await streamChat(
         projectId,
-        {
-          id,
-          conversationId: input.conversationId,
+        turnRequest(input, {
+          id: turn,
           modelId: agent?.id,
-          runtime: input.runtime ?? "default",
-          runtimeModel: input.runtimeModel,
-          text: input.draft,
-          content: input.draftContent,
-          assets: input.assets.map((asset) => asset.id),
-          thinking: builtinThinking(input, agent?.id),
-          modelSelections: input.modelSelections,
-          skills: input.skills ?? [],
-        },
+          editing: revising,
+          revision: input.revision,
+        }),
         signal,
         onEvent,
         t,
       );
     });
+    // The server accepted the attempt; the id must not be reused afterwards.
+    if (revising && input.conversationId)
+      rememberPendingTurnId(input.conversationId);
+    if (revising) setEditing(null);
+  };
+  /**
+   * Open a stopped attempt for editing. The conversation itself is untouched:
+   * the active path only changes once the server accepts the revised turn.
+   */
+  const beginEdit = (turn: ChatMessage) => {
+    if (submitting.current || !loaded) return;
+    const input = current.current;
+    setEditing({
+      turnId: turn.id,
+      conversationId: input.conversationId ?? "",
+      saved: {
+        draft: input.draft,
+        draftContent: input.draftContent,
+        assets: input.assets,
+        skills: input.skills,
+      },
+    });
+    const assets = (turn.assets ?? []).flatMap((asset) => {
+      const known = knownAssets.current.get(asset.id);
+      return known ? [attachment(known)] : [attachment(asset)];
+    });
+    assets.forEach((asset) => knownAssets.current.set(asset.id, asset));
+    const next: Conversation = {
+      ...input,
+      draft: turn.text,
+      // Reuse the stored content so references and skills survive the edit.
+      draftContent: referenceContent(
+        turn.text,
+        (turn.assets ?? []).map((asset) => asset.id),
+        turn.assets ?? [],
+        turn.content,
+        t,
+      ),
+      assets,
+      skills: turn.skills ?? input.skills,
+    };
+    current.current = next;
+    rememberChat(projectId, next);
+    setValue(next);
+    setError("");
+  };
+  /** Leave editing without sending; the original message stays untouched. */
+  const cancelEdit = () => {
+    if (!editing) return;
+    const next: Conversation = { ...current.current, ...editing.saved };
+    current.current = next;
+    rememberChat(projectId, next);
+    setValue(next);
+    if (next.conversationId) rememberPendingTurnId(next.conversationId);
+    setEditing(null);
+    setError("");
   };
   /** Re-attach to a turn that kept running while this project was not shown. */
   resume.current = async (id: string) => {
@@ -702,6 +792,9 @@ export function useAssistantChat(
     addNodes,
     addAssets,
     send,
+    editing,
+    beginEdit,
+    cancelEdit,
     stop,
     reload: () => setLoadAttempt((n) => n + 1),
   };

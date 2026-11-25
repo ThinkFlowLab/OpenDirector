@@ -84,3 +84,10 @@ def test_historical_sources_reuse_prior_turn_evidence_but_do_not_follow_trace_li
     (folder / f'{turn}.codex.jsonl').symlink_to(external)
     conversation['messages'][-1]['text'] = 'Other\ue200cite\ue202turn2view0\ue201'
     assert with_trace_sources(conversation, tmp_path)['messages'][-1]['sources'] == []
+
+
+def test_plain_stdout_outside_the_event_protocol_is_ignored():
+    # A harness may print a warning on stdout, for example about an unrecognized
+    # model. It must not fail the turn, and it carries no events.
+    assert text_events('claude', {'text': '[claude-code:unrecognized_model]\n'}) == []
+    assert text_events('codex', {'text': 'warning\n'}) == []
