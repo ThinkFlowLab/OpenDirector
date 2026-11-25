@@ -30,6 +30,27 @@ def test_capability_messages_preserve_the_specific_input_failure():
         assert localized_error(request('zh-CN'), chinese=chinese, status=422, code=code) == chinese
 
 
+def test_model_list_failure_keeps_status_url_and_cause() -> None:
+    chinese = '读取模型列表失败（HTTP 401，GET https://api.minimax.cn/v1/models）：密钥无效、已过期或无权访问该地址；未修改配置。'
+    english = localized_error_for_language(
+        'en-US', chinese=chinese, status=400, code='model_list_http_error'
+    )
+    assert english == (
+        'Could not load the model list (HTTP 401, GET https://api.minimax.cn/v1/models): '
+        'the key is invalid, expired, or not allowed for this address. Nothing was changed.'
+    )
+    assert localized_error_for_language(
+        'zh-CN', chinese=chinese, status=400, code='model_list_http_error'
+    ) == chinese
+    missing_endpoint = localized_error_for_language(
+        'en-US',
+        chinese='读取模型列表失败（HTTP 404，GET https://api.example/v1/models）：该地址没有 /models 接口；未修改配置。',
+        status=400,
+        code='model_list_http_error',
+    )
+    assert 'no /models endpoint' in missing_endpoint
+
+
 def test_accept_language_uses_the_primary_language() -> None:
     assert wants_english(request("zh-CN,zh;q=0.9")) is False
     assert wants_english(request("zh-Hant")) is False
