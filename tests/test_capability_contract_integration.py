@@ -10,6 +10,9 @@ from opendirector.integrations.model_adapters import capabilities_of
 from test_model_availability import document, service
 
 
+pytestmark = pytest.mark.cpu
+
+
 def config(kind, protocol='openai'):
     return {'kind': kind, 'protocol': protocol, 'url': 'http://models.test/proxy/v1',
             'modelId': 'demo'}

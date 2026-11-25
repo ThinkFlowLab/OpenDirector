@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 import json
 import logging
 from pathlib import Path
+import time
 from typing import Annotated, Literal
 from uuid import UUID, uuid4, uuid5
 
@@ -18,6 +19,7 @@ from opendirector.agent.context import RunContext, RuntimeId
 from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
+from opendirector.agent import timing as agent_timing
 from opendirector.application.model_availability import requests_for
 from opendirector.domain.creation.base import agent_command_id
 from opendirector.domain.projects import ProjectError
@@ -121,17 +123,17 @@ class Conversations:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
             if session:
-                self.projects._lease(db, project_id, directory, session)
+                self.projects._lease(db, project_id, directory, session, browser_only=True)
             return directory
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
-               before_begin=None) -> dict:
+               before_begin=None, agent_session: str | None = None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
             if session:
-                self.projects._lease(db, project_id, directory, session)
+                self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -149,6 +151,8 @@ class Conversations:
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
                 if before_begin is not None:
                     before_begin()
+                if agent_session is not None:
+                    self.projects.local.start_agent_session(db, project_id, directory, agent_session)
                 value['messages'].append(begin)
                 value['messages'].append({'id': str(uuid5(UUID(begin['id']), 'assistant')),
                     'role': 'assistant', 'text': '', 'status': 'streaming',
@@ -191,7 +195,8 @@ class Conversations:
             durable_json(file, value)
         return queued
 
-    def dispatch(self, project_id: UUID, session: str | None = None) -> dict | None:
+    def dispatch(self, project_id: UUID, session: str | None = None,
+                 agent_session: str | None = None) -> dict | None:
         """Start the oldest queued message as this turn's user message.
 
         Dispatching takes the same lock as starting a run, so the project slot
@@ -203,6 +208,8 @@ class Conversations:
             directory, _, _ = self.projects._load(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session)
+            if agent_session is not None:
+                self.projects.local.start_agent_session(db, project_id, directory, agent_session)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -314,7 +321,7 @@ class Conversations:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
-            self.projects._lease(db, project_id, directory, session)
+            self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -627,10 +634,26 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         sources: dict = {}
         previous_sources: dict = {}
         steps = None
+        run_session = plan.get('run_session') or chain.session
+        timing: dict = {}
+        turn_started = time.monotonic()
+        renewal: asyncio.Task | None = None
+
+        async def renew_session() -> None:
+            """Keep the project writable while a turn outlives the lease it started under."""
+            while True:
+                await asyncio.sleep(projects.local.LEASE_SECONDS / 3)
+                try:
+                    if not await asyncio.to_thread(projects.local.renew_agent_session, run_session):
+                        return
+                except Exception:
+                    logger.exception(f'agent.session.renew.failed project_id={project_id}')
+
         try:
             saved = plan['start']
             chain.conversation_id = UUID(saved['conversationId'])
             chain.events.put({'type': 'start', 'conversation': saved})
+            renewal = asyncio.create_task(renew_session())
             previous_sources = {source['id']: source for reply in saved['messages'][:-2]
                                 for source in reply.get('sources', [])}
             snapshot = await asyncio.to_thread(projects.snapshot, project_id)
@@ -653,7 +676,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 context[-1]['content'] += '\nUser model preferences for this turn: ' + json.dumps(plan['preferences'], ensure_ascii=False)
                 context[-1]['content'] += '\nUse these models for new generation unless the user explicitly requests another. If unavailable or unsuitable, explain and ask before substituting. Keep existing nodes on their configured models unless the user requests a change.'
             run = RunContext(runtime=message['runtime'], project_id=project_id, turn_id=turn_id,
-                session=chain.session, directory=plan['directory'], config=plan['config'], messages=context,
+                session=run_session, directory=plan['directory'], config=plan['config'], messages=context,
                 selected_skills=message.get('skills') or [], thinking=plan['thinking'],
                 model_selections=plan['model_selections'], runtime_model=message.get('runtimeModel'),
                 skills=plan['available'], conversation_id=chain.conversation_id)
@@ -673,8 +696,12 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                     if event['type'] == 'plan':
                         steps = event['entries']
                     if event['type'] == 'tool':
+                        # Measurement is a side ledger: the per-call numbers must
+                        # not become part of the tool call the turn persists.
+                        agent_timing.note(timing, event)
                         previous = next((item for item in activities if item['id'] == event['id']), None)
-                        activity = {**{key: item for key, item in event.items() if key != 'type'},
+                        activity = {**{key: item for key, item in event.items()
+                                       if key not in {'type', 'timing'}},
                                     'textOffset': previous['textOffset'] if previous else len(text)}
                         if previous is None:
                             activities.append(activity)
@@ -712,6 +739,20 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             except Exception:
                 logger.exception(f'agent.turn.unfinished project_id={project_id} turn_id={turn_id}')
                 saved = None
+            finally:
+                if renewal is not None:
+                    renewal.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await renewal
+                try:
+                    # Measurement and the lease are both best effort: losing
+                    # either may cost a file or a lock, never the turn's reply.
+                    await asyncio.to_thread(agent_timing.write, plan['directory'], turn_id, timing,
+                                            round(time.monotonic() - turn_started, 3))
+                    if plan.get('run_session'):
+                        await asyncio.to_thread(projects.local.release_agent_session, plan['run_session'])
+                except Exception:
+                    logger.exception(f'agent.turn.timing.failed project_id={project_id} turn_id={turn_id}')
             chain.last = saved
         return saved, error, status
 
@@ -731,9 +772,10 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 turn_id = UUID(plan['message']['id'])
                 if status != 'complete' or chain.stopped:
                     break
+                run_session = str(uuid4())
                 async with admission.setdefault(project_id, asyncio.Lock()):
                     dispatched = None if chain.stopped else await asyncio.to_thread(
-                        conversations.dispatch, project_id, chain.session)
+                        conversations.dispatch, project_id, chain.session, run_session)
                 if dispatched is None:
                     break
                 chain.turn = UUID(dispatched['message']['id'])
@@ -741,6 +783,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                                   'conversation': dispatched['conversation'], 'error': None})
                 plan = await plan_for(project_id, dispatched['message'], chain.session, None)
                 plan['start'] = dispatched['conversation']
+                plan['run_session'] = run_session
                 saved = None
         except asyncio.CancelledError:
             status, error = 'stopped', None
@@ -821,15 +864,17 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             if project_id in active:
                 raise ProjectError('当前工程已有回复正在执行。', 409)
             plan = await prepare(project_id, value, session, accept_language)
+            run_session = str(uuid4())
             try:
                 plan['start'] = await asyncio.to_thread(conversations.update, project_id, session,
                     begin=plan['message'], conversation_id=value.conversationId,
-                    before_begin=revalidate(plan))
+                    before_begin=revalidate(plan), agent_session=run_session)
             except ProjectError as failure:
                 # The message points at a thread that is no longer the active one.
                 # Clients of this endpoint read that from the stream, so report it
                 # where they already look instead of as a bare status code.
                 return rejected(UUID(plan['message']['id']), failure, accept_language)
+            plan['run_session'] = run_session
             return launch(project_id, plan, UUID(plan['start']['conversationId']))
 
     @router.post('/messages')
@@ -858,11 +903,13 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             if check is not None:
                 await asyncio.to_thread(check)
             await asyncio.to_thread(conversations.queue, project_id, session, plan['message'], value.conversationId)
-            dispatched = await asyncio.to_thread(conversations.dispatch, project_id, session)
+            start_session = str(uuid4())
+            dispatched = await asyncio.to_thread(conversations.dispatch, project_id, session, start_session)
             if dispatched is None:
                 raise ProjectError('这条消息未能开始执行，请重新发送。', 409)
             started = await plan_for(project_id, dispatched['message'], session, accept_language)
             started['start'] = dispatched['conversation']
+            started['run_session'] = start_session
             return launch(project_id, started, UUID(dispatched['conversation']['conversationId']))
 
     return router

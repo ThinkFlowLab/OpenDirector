@@ -46,6 +46,7 @@ import {
   visibleItems,
   type CreationOperation,
 } from "./creationClient.ts";
+import { assetSource } from "./assetSource.ts";
 import { sameJsonValue } from "./sameJsonValue.ts";
 import { classifyImportFile, readEditorResource } from "../canvas/editorMedia.ts";
 
@@ -125,7 +126,7 @@ export class CreationProjection {
       byteSize: asset.metadata.size,
       kind: asset.kind as CanvasResource["kind"],
       title: title ?? asset.name,
-      src: await this.client.mediaUrl(asset.id).catch(() => undefined),
+      src: assetSource(this.client.id, asset.id),
       mimeType: asset.metadata.mimeType,
       width: asset.metadata.width ?? undefined,
       height: asset.metadata.height ?? undefined,
@@ -244,9 +245,7 @@ export class CreationProjection {
       title: title ?? asset?.name ?? ref.assetId,
       asset: { ...ref },
       mimeType: asset?.metadata.mimeType ?? "application/octet-stream",
-      src: asset
-        ? await this.client.mediaUrl(asset.id).catch(() => undefined)
-        : undefined,
+      src: asset ? assetSource(this.client.id, asset.id) : undefined,
     };
   }
 
@@ -395,7 +394,8 @@ export class CreationProjection {
               ? {
                   name: doc.data.palette.name ?? undefined,
                   sourceImageUri: doc.data.palette.sourceImage
-                    ? await this.client.mediaUrl(
+                    ? assetSource(
+                        this.client.id,
                         doc.data.palette.sourceImage.assetId,
                       )
                     : undefined,
@@ -431,7 +431,8 @@ export class CreationProjection {
                         kind: "image" as const,
                         width: layer.content.width,
                         height: layer.content.height,
-                        src: await this.client.mediaUrl(
+                        src: assetSource(
+                          this.client.id,
                           layer.content.asset.assetId,
                         ),
                       }
@@ -443,7 +444,7 @@ export class CreationProjection {
       case "image_crop":
         return {
           imageCrop: {
-            src: await this.client.mediaUrl(doc.data.source.assetId),
+            src: assetSource(this.client.id, doc.data.source.assetId),
             options: doc.data.options,
             width: doc.data.width,
             height: doc.data.height,
@@ -565,6 +566,32 @@ export class CreationProjection {
     };
   }
 
+  /** Media availability is a read result, so it updates a view without an edit. */
+  withMediaAvailability(document: CanvasDocument): CanvasDocument {
+    const update = (nodes: CanvasNode[]) => {
+      let changed = false;
+      const next = nodes.map((node) => {
+        if (
+          !node.data.backendAssetId ||
+          !["image", "video", "audio"].includes(node.type)
+        )
+          return node;
+        const assetState = this.client.mediaUnavailable(node.data.backendAssetId)
+          ? ("missing" as const)
+          : ("ready" as const);
+        if (node.data.assetState === assetState) return node;
+        changed = true;
+        return { ...node, data: { ...node.data, assetState } };
+      });
+      return changed ? next : nodes;
+    };
+    const nodes = update(document.nodes);
+    const hiddenNodes = document.hiddenNodes && update(document.hiddenNodes);
+    return nodes === document.nodes && hiddenNodes === document.hiddenNodes
+      ? document
+      : { ...document, nodes, ...(hiddenNodes ? { hiddenNodes } : {}) };
+  }
+
   private rememberProjection(
     snapshot: ProjectSnapshot,
     document: CanvasDocument,
@@ -605,6 +632,7 @@ export class CreationProjection {
           height: item.height,
           locked: item.locked,
           ...(item.color ? { color: item.color } : {}),
+          ...(item.kind === "group" && item.autoLayout ? { autoLayout: item.autoLayout } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -617,8 +645,10 @@ export class CreationProjection {
           try {
             if (asset.kind === "text")
               node.data.text = await this.client.textContent(asset.id);
-            else node.data.src = await this.client.mediaUrl(asset.id);
-            node.data.assetState = "ready";
+            else node.data.src = assetSource(snapshot.project.id, asset.id);
+            node.data.assetState = this.client.mediaUnavailable(asset.id)
+              ? "missing"
+              : "ready";
           } catch {
             node.data.assetState = "missing";
           }
@@ -919,6 +949,23 @@ export class CreationProjection {
           target: item.id,
           intent: "post_edit_result",
         });
+      const editor = asset?.provenance.editorDocumentId &&
+        snapshot.editorDocuments.find((doc) => doc.id === asset.provenance.editorDocumentId);
+      if (
+        asset && editor && editor.kind === "media_edit" &&
+        editor.data.tool === "video-mask-composite" &&
+        editor.revision === asset.provenance.editorRevision
+      ) {
+        const maskId = editor.data.sourceItems[1];
+        if (maskId && maskId !== sourceId && maskId !== item.id &&
+            snapshot.canvasItems.some((source) => source.id === maskId))
+          document.edges.push({
+            id: `publication:${item.id}:${asset.id}:${maskId}`,
+            source: maskId,
+            target: item.id,
+            intent: "post_edit_result",
+          });
+      }
     }
     document.hiddenNodes = document.nodes.filter(
       (node) => !visible.has(node.id),
@@ -1388,7 +1435,14 @@ export class CreationProjection {
             ? node.data.text !== undefined &&
               node.data.text !== old?.data.text &&
               (!!node.data.text || !!old?.data.text)
-            : !!node.data.src && node.data.src !== old?.data.src;
+            : !!node.data.src &&
+              node.data.src !== old?.data.src &&
+              // The same saved asset can arrive through another of its URLs.
+              !(
+                item &&
+                this.client.assetForSource(node.data.src)?.id ===
+                  currentAsset(basis, item)?.id
+              );
         if (materialChanged) {
           const previous =
             item && node.type === "text"
@@ -1601,6 +1655,7 @@ export class CreationProjection {
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
               ...(node.color ? { color: node.color } : {}),
+              ...(node.type === "group" && node.autoLayout ? { autoLayout: node.autoLayout } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,

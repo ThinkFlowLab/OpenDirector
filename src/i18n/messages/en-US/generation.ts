@@ -20,6 +20,8 @@ export const generation = {
 
   "generation.mode.reference": "Universal reference",
   "generation.mode.firstLast": "First and last frames",
+  "generation.mode.control": "Structure control",
+  "generation.duration.followsControl": "Follows control video",
   "generation.mode.continuation": "Continue",
   "generation.imagePreset": "Image presets",
   "generation.videoMode": "Video mode",
@@ -96,6 +98,20 @@ export const generation = {
   "generation.options.close": "Close options",
   "generation.voice.close": "Close voice library",
   "generation.voice.demo": "Anime Sponge",
+
+  "generation.optimize.action": "Optimize prompt",
+  "generation.optimize.agentLoading": "The Agent model selection is loading. Try again shortly.",
+  "generation.optimize.alreadyDone": "This prompt is already optimized",
+  "generation.optimize.running": "Optimizing prompt...",
+  "generation.optimize.toast": "Prompt optimized. Press {shortcut} to undo.",
+  "generation.optimize.doneAudioOmitted": "Some audio was omitted.",
+  "generation.optimize.changed":
+    "The prompt or node changed. Your latest input was kept.",
+  "generation.optimize.failed":
+    "Optimization failed. Your original prompt was kept.",
+  "generation.optimize.saveFailed":
+    "Save the canvas before optimizing with the latest references.",
+
 
   "generation.prompt.image": "Prompt",
   "generation.prompt.textLabel": "Text prompt",
@@ -216,6 +232,8 @@ export const generation = {
   "generation.picker.modelId": "Model ID (the service's served-model-name)",
   "generation.picker.add": "Add",
   "generation.picker.cancel": "Cancel",
+  "generation.picker.addressRequired": "Enter the service address first.",
+  "generation.picker.keyRequired": "Enter an API Key first.",
   "generation.picker.retry": "{error} You can retry or add a model manually.",
   "generation.picker.search": "Search models",
   "generation.picker.searchPlaceholder": "Search model names…",
@@ -227,6 +245,14 @@ export const generation = {
   "generation.picker.selectAll": "Select all current results",
   "generation.picker.deselectAll": "Deselect all",
   "generation.picker.fetching": "Fetching the model list",
+  "generation.picker.fetched": {
+    one: "{count} model fetched",
+    other: "{count} models fetched",
+  },
+  "generation.picker.loadedPreset": {
+    one: "{count} preset model loaded",
+    other: "{count} preset models loaded",
+  },
   "generation.picker.connecting": "Connecting to the service…",
   "generation.picker.noReturned": "The service returned no models",
   "generation.picker.noneAdded": "No models added yet",

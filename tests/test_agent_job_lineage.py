@@ -25,6 +25,9 @@ from opendirector_api.main import create_app
 from test_creation_canvas_service import media, project, send, ver  # noqa: F401  (project is a fixture)
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'

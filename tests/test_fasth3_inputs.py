@@ -13,6 +13,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.integrations.fasth3 import native_prompt, video_parameters
 
 
+pytestmark = pytest.mark.cpu
+
+
 def source(kind, name, **extra):
     return {'id': str(uuid4()), 'name': name, 'kind': kind, 'type': kind + '/mp4', **extra}
 
@@ -258,3 +261,84 @@ def test_dual_h3_rejects_auxiliary_media_at_submission():
     validate_generation(dual_spec(model, 'reference'), model,
                         (frame_reference('reference'), frame_reference('reference', kind='audio', duration=3)),
                         submitting=True)
+
+
+def test_structure_control_follows_the_control_video():
+    from opendirector.integrations.fasth3 import control_parameters
+    control = source('video', '人物深度.mp4', durationMs=25541, width=1080, height=1920)
+    node = {'referenceIds': [control['id']], 'videoMode': 'control'}
+    params = control_parameters(node, {control['id']: control})
+    # The hand-tuned Dunhuang request: 600 frames on the portrait 768P bucket, depth control.
+    assert (params['num_frames'], params['size'], params['control_type']) == (600, '768x1344', 'depth')
+    assert params['duration'] == 25.0 and params['num_inference_steps'] == 8
+    assert control_parameters(node, {control['id']: control}, resolution='480P')['size'] == '480x832'
+    wide = source('video', 'wide.mp4', durationMs=10000, width=1920, height=1080)
+    params = control_parameters({'referenceIds': [wide['id']]}, {wide['id']: wide})
+    assert (params['num_frames'], params['size']) == (226, '1344x768')
+
+
+def test_structure_control_reaches_the_multipart_as_control_reference():
+    import asyncio
+    from email.parser import BytesParser
+    from email.policy import default
+    import httpx
+    from opendirector.integrations.fasth3 import control_parameters
+    from opendirector.integrations.providers import GenerationProviders
+    control = source('video', 'depth.mp4', fingerprint='fixture', durationMs=25000, width=1080, height=1920)
+    picture = source('image', 'costume.png', fingerprint='fixture')
+    picture['type'] = 'image/png'
+    assets = {control['id']: (b'control-bytes', control), picture['id']: (b'\x89PNG\r\n\x1a\nfixture', picture)}
+    store = SimpleNamespace(asset=lambda owner, key: assets[key])
+    content = [{'type': 'text', 'text': 'A dancer wearing '}, {'type': 'reference', 'assetId': picture['id'], 'name': picture['name']}]
+    task = {'kind': 'video', 'projectId': 'owner', 'prompt': 'A dancer', 'promptContent': content,
+            'referenceIds': list(assets), 'videoMode': 'control'}
+    task['parameters'] = control_parameters(task, {key: pair[1] for key, pair in assets.items()})
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1',
+              'modelId': 'FastH3-Omni', 'apiKey': '', 'authMode': 'none'}
+    seen = {}
+    def handle(request):
+        if request.method == 'POST':
+            message = BytesParser(policy=default).parsebytes(('Content-Type: ' + request.headers['content-type'] + '\r\n\r\n').encode() + request.content)
+            for part in message.iter_parts():
+                name = part.get_param('name', header='content-disposition')
+                seen.setdefault(name, []).append(part.get_payload(decode=True))
+            return httpx.Response(200, json={'id': 'control-wire'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=b'generated')
+        return httpx.Response(200, json={'status': 'completed'})
+    async def submitted(value):
+        assert value == 'control-wire'
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+    assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')
+    assert seen['control_reference'] == [b'control-bytes'] and len(seen['input_references']) == 1
+    assert seen['control_type'] == [b'depth'] and seen['num_frames'] == [b'600'] and seen['size'] == [b'768x1344']
+    extra = json.loads(seen['extra_params'][0])
+    assert extra['task'] == 'ref2va' and extra['depth'] == {'control_context_scale': 1.0}
+    assert extra['long_video'] is True and extra['long_video_mode'] == 'full'
+    # The control clip is not a <Video N> reference; the picture keeps its ordinal.
+    assert seen['prompt'][0].decode() == 'A dancer wearing <Picture 1>'
+
+
+def control_model():
+    config = {'kind': 'video', 'url': 'http://model.test/v1', 'modelId': 'FastH3-Omni',
+              'connectionType': 'self_hosted', 'protocol': 'vllm_omni', 'authMode': 'none', 'videoAdapter': 'fasth3'}
+    return ModelConfigPublic(id=uuid4(), inputRules=input_rules(config), **config)
+
+
+def test_structure_control_needs_one_control_video_of_4_to_30_seconds():
+    model = control_model()
+    spec = dual_spec(model, 'control')
+    def video(role, seconds):
+        return ResolvedReference(referenceId=uuid4(), role=role,
+            asset=AssetRef(assetId=uuid4(), revision=1, fingerprint='sha256:' + '0' * 64, kind='video'),
+            metadata=MediaMetadata(mimeType='video/mp4', size=10, width=32, height=24, durationSeconds=seconds))
+    image = frame_reference('reference')
+    # 25 s exceeds the 15 s reference-clip budget, but a control video is the output's own timeline.
+    validate_generation(spec, model, (video('control', 25), image), submitting=True)
+    for references, message in [((image,), '控制视频'), ((video('control', 31), image), '4–30'),
+                                ((video('control', 10), video('control', 10)), '控制视频'),
+                                ((video('control', 10), frame_reference('reference', kind='audio', duration=3)), '音频')]:
+        with pytest.raises(ValueError, match=message):
+            validate_generation(spec, model, references, submitting=True)
+    with pytest.raises(ValueError, match='结构控制模式'):
+        validate_generation(dual_spec(model, 'reference'), model, (video('control', 10),), submitting=True)

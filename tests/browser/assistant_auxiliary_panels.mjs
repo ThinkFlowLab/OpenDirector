@@ -319,8 +319,11 @@ try {
   await api("/creation-test-gate", { open: true });
   const complete = await until(
     conversation,
-    (value) => value.messages.at(-1)?.status === "complete",
-    "same reply must complete",
+    // The reply is saved before the Agent releases its project write lease.
+    (value) =>
+      value.messages.at(-1)?.status === "complete" &&
+      value.activeTurnId === undefined,
+    "same reply must complete and its turn must finish",
   );
   assert.equal(complete.messages.length, turn.messages.length);
   assert.equal(complete.activeTurnId, undefined);

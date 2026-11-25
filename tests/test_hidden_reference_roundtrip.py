@@ -13,6 +13,9 @@ from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('binding', ['follow_current', 'pinned'])
 @pytest.mark.parametrize('hide_group', [False, True])
 def test_hidden_reference_survives_frontend_edit_save_and_reopen(project, tmp_path, binding, hide_group):

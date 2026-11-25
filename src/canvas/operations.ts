@@ -51,6 +51,7 @@ export function groupSelection(
       selected.has(node.id) &&
       !isNodeLocked(node, byId) &&
       node.type !== "stack" &&
+      !node.autoLayout &&
       !stackedIds.has(node.id),
   );
   const eligibleIds = new Set(eligible.map((node) => node.id));

@@ -14,6 +14,9 @@ from opendirector.domain.rule_facts import (
 )
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_timeline_contract_limits_are_published_as_shared_facts():
     from opendirector.domain.creation.editors import TimelineData, TimelineTextOverlay
     facts = facts_payload()
@@ -78,6 +81,7 @@ def test_menu_derivations_follow_published_rules_then_the_catalog():
         'missing-capabilities-keep-labels': ['auto', '720P'],
         'empty-capabilities-drop-labels': ['auto'],
         'continuation-mode': 'continuation',
+        'control-mode': 'control',
         'first-last-mode': 'first_frame',
         'stored-first-frame-mode': 'first_frame',
         'reference-without-first-frame-support': 'reference',

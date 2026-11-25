@@ -17,6 +17,9 @@ from test_creation_image_edits import generated, png
 from test_creation_node_versions import versions
 
 
+pytestmark = pytest.mark.cpu
+
+
 def crop_command(project, item_id, *, brightness=125):
     store, pid, session = project
     assets = CreationAssets(store)

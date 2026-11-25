@@ -10,9 +10,9 @@ from .project import ProjectSnapshot
 
 
 class ContractError(ValueError):
-    def __init__(self, code, message, object_id=None):
+    def __init__(self, code, message, object_id=None, *, related_object_id=None):
         super().__init__(message)
-        self.issue = ContractIssue(code=code, message=message, objectId=object_id)
+        self.issue = ContractIssue(code=code, message=message, objectId=object_id, relatedObjectId=related_object_id)
 
     @classmethod
     def from_error(cls, error: ValueError | ProjectError, object_id: UUID | None = None) -> 'ContractError':

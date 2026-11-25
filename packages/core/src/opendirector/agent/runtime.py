@@ -119,21 +119,25 @@ async def configured_runtimes() -> list[dict]:
     return [{**item, 'status': states[item['engine']]} for item in runtime_catalog()]
 
 
+async def resolve_runtime_model(runtime: str, model: str | None) -> str | None:
+    if runtime != 'codex' or model:
+        return model
+    # Codex launch isolates user config; carry only the resolved default model.
+    from opendirector.agent.catalog import model_choices
+    choices = await model_choices('codex')
+    return next((item['id'] for item in choices if item.get('isDefault')), None)
+
+
 class AgentRuntimes:
     def __init__(self, projects, generation, configs, provider=None):
-        self.business = AgentTools(projects, generation, configs)
+        self.business = AgentTools(projects, generation, configs, provider)
         self.adapter = native.NativeRuntime(provider)
         self.jiuwenswarm = jiuwenswarm.JiuwenSwarmRuntime()
 
     async def stream(self, run: RunContext) -> AsyncIterator[AgentEvent]:
         runtime_spec(run.runtime)
         if run.runtime == 'codex' and not run.runtime_model:
-            # Codex launch isolates user config; carry only its resolved model into this turn.
-            from opendirector.agent.catalog import model_choices
-            choices = await model_choices('codex')
-            default = next((item['id'] for item in choices if item.get('isDefault')), None)
-            if default:
-                run = replace(run, runtime_model=default)
+            run = replace(run, runtime_model=await resolve_runtime_model(run.runtime, run.runtime_model))
         gateway = ToolGateway(self.business, run)
         try:
             adapter = self.jiuwenswarm if run.runtime == 'jiuwenswarm' else self.adapter

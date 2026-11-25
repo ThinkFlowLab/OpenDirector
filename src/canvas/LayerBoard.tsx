@@ -38,6 +38,7 @@ import {
   renderLayers,
 } from "./layerRenderer";
 import "./layer-board.css";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 export interface LayerBoardProps {
   src?: string;
@@ -1088,7 +1089,8 @@ export function LayerBoard({
                       >
                         <span className="lb-layer-thumb">
                           {layer.content.kind === "image" ? (
-                            <img
+                            <AssetMedia
+                              as="img"
                               src={layer.content.src}
                               alt=""
                               draggable={false}

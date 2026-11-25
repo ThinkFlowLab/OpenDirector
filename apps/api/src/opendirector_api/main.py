@@ -19,13 +19,14 @@ from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.model_catalog import ModelCatalog
 from opendirector.application.model_availability import ModelAvailability
 from opendirector.application.preferences import Preferences
+from opendirector.application.prompt_optimization import PromptOptimization
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
-from opendirector_api.creation import creation_routes
+from opendirector_api.creation import creation_routes, preview_until_disconnect
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
 from opendirector_api.voices import voice_routes
@@ -35,6 +36,11 @@ from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentM
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
     ToolTaskCreate, ToolPlacement, ImageSelectionCreate, AvailabilityRefresh, AvailabilityCatalog,
     ModelAvailability as ModelAvailabilityResponse)
+
+
+async def _cli_prompt_rewrite(runtime, model, thinking, messages):
+    from opendirector.agent import prompt_rewrite
+    return await prompt_rewrite.rewrite(runtime, model, thinking, messages)
 
 
 def video_capabilities(value):
@@ -78,7 +84,9 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                 availability.probe.close()
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.5", lifespan=lifespan)
-    app.include_router(creation_routes(creation_projects, creation_generation))
+    app.include_router(creation_routes(creation_projects, creation_generation,
+        PromptOptimization(creation_projects, model_configs, chat_provider or ChatCompletions(),
+            cli_rewrite=_cli_prompt_rewrite)))
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider, active=active_agents))
     app.include_router(library_routes(creation_projects))
     app.include_router(voice_routes(creation_generation.voices))
@@ -299,25 +307,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                                   x_opendirector_session: str = Header()):
             # Preview work has no durable task; disconnecting cancels the local
             # upstream request without disturbing accepted tool executions.
-            work = asyncio.create_task(service.selection_preview(str(project_id), value.model_dump(mode='json'),
-                                                               identifier(x_opendirector_session)))
-
-            async def disconnected():
-                # The body has been decoded by FastAPI. Wait on the remaining
-                # ASGI events: is_disconnected() uses a cancelled scope that can
-                # miss disconnects through BaseHTTPMiddleware's receive stream.
-                while (await request.receive())['type'] != 'http.disconnect':
-                    pass
-
-            disconnect = asyncio.create_task(disconnected())
-            try:
-                done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
-                return await work if work in done else Response(status_code=499)
-            finally:
-                for task in (work, disconnect):
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(work, disconnect, return_exceptions=True)
+            return await preview_until_disconnect(request, service.selection_preview(
+                str(project_id), value.model_dump(mode='json'), identifier(x_opendirector_session)))
 
     register_selection_route(creation_tools, '/api/creation/projects/{project_id}/image-selections')
 

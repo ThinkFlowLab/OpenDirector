@@ -11,6 +11,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { useCanvasPlayback } from "./CanvasMediaPreview";
 import { subjectDescriptionLayout } from "./subjectLayout.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 /** Subject media is retained content, while the description is a user annotation. */
 export function SubjectNodeCard({
@@ -77,7 +78,7 @@ export function SubjectNodeCard({
       ) : (
         <div className="cw-subject-media cw-subject-images">
           <div className="cw-subject-main cw-domain-card-preview">
-            <img src={main.src} alt={main.title} draggable={false} />
+            <AssetMedia as="img" src={main.src} alt={main.title} draggable={false} />
             <SubjectImportButton
               locked={locked}
               onClick={() => actions?.pickSubject?.(id, "import")}
@@ -89,7 +90,7 @@ export function SubjectNodeCard({
           >
             {auxiliaries.map((item) => (
               <div className="cw-subject-auxiliary" key={item.id}>
-                <img src={item.src} alt={item.title} draggable={false} />
+                <AssetMedia as="img" src={item.src} alt={item.title} draggable={false} />
               </div>
             ))}
             {auxiliaries.length < 3 && (
@@ -162,7 +163,8 @@ function SubjectVideo({
   const player = useSubjectPlayer<HTMLVideoElement>(resource.src);
   return (
     <div className="cw-subject-media cw-subject-video cw-domain-card-preview">
-      <video
+      <AssetMedia
+        as="video"
         ref={player.media}
         src={resource.src}
         playsInline
@@ -241,7 +243,8 @@ function SubjectVoice({
         <CanvasIcon name={player.playing ? "pause" : "audio"} size={15} />
       </button>
       {resource?.src && (
-        <audio
+        <AssetMedia
+          as="audio"
           ref={player.media}
           src={resource.src}
           hidden

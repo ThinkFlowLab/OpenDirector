@@ -1,4 +1,5 @@
 /** Local, editable pixel layers. This document is independent of AI task results. */
+import { parseAssetSource } from "../backend/assetSource.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { defaultTranslate } from "./assistantTranslate.ts";
 
@@ -290,7 +291,8 @@ export function parseLayerDocumentValue(
       if (
         !/^data:image\/[a-z\d.+-]+[;,]/i.test(src) &&
         !/^\/(?!\/)/.test(src) &&
-        !localBlob
+        !localBlob &&
+        !parseAssetSource(src)
       )
         throw new Error(t("editors.layerDocument.error.remoteImage"));
       content = {

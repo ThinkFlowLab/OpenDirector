@@ -20,6 +20,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects, read_json
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def unrecycled(monkeypatch):
     """Delete through the filesystem so tests never touch the machine recycle bin."""
@@ -1174,3 +1177,19 @@ def test_concurrent_cold_record_parses_keep_cache_byte_accounting(projects, monk
     assert len(cold._records_cache) == 1
     assert cold._records_cache_bytes == sum(
         entry[0][2] for entry in cold._records_cache.values())
+
+
+def test_a_lapsed_lease_has_a_stable_code_and_a_heartbeat_restores_it(projects):
+    created = create(projects)
+    session = str(uuid4())
+    projects.open(created.projectId, session)
+    client = uuid4()
+    view = {'projectId': str(created.projectId), 'clientId': str(client)}
+    with projects.local.transaction() as db:
+        db.execute('UPDATE sessions SET expires=0')
+    with pytest.raises(ProjectError) as lapsed:
+        projects.view(created.projectId, client, view, session=session)
+    # The page renews and resends on this code instead of failing every save.
+    assert lapsed.value.status == 409 and lapsed.value.code == 'session_expired'
+    projects.heartbeat(session, created.projectId)
+    projects.view(created.projectId, client, view, session=session)

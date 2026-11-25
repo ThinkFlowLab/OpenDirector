@@ -18,6 +18,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector_api.main import create_app
 from opendirector.infrastructure.local_projects import LocalProjects
 
+
+pytestmark = pytest.mark.cpu
+
 FAKE = r'''
 import json, os, shutil, subprocess, sys
 from pathlib import Path

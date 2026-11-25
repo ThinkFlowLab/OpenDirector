@@ -45,7 +45,7 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   t: Translate;
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  notify: (message: string) => void;
+  notify: (message: string, options?: { error?: boolean }) => void;
   flow: ReactFlowInstance<WorkspaceFlowNode, Edge>;
   jobs: GenerationJob[];
   setJobs: Dispatch<SetStateAction<GenerationJob[]>>;

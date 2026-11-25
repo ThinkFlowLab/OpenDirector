@@ -4,6 +4,7 @@ import {
   json,
   request,
   sessionId,
+  setLeaseRecovery,
   storageRequest,
 } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
@@ -23,18 +24,50 @@ let active: string | null = null;
 let opening: Promise<unknown> | null = null;
 let heartbeat: number | undefined;
 
+/** A renewal that has not answered by then is abandoned. Renewals run one at a
+ * time in the session-change queue, so a request stuck on a dropped connection
+ * would otherwise hold back every later renewal until the 60 s lease lapsed. */
+export const RENEWAL_TIMEOUT_MS = 10_000;
+
+function renewLease(projectId: string) {
+  return storageRequest(`/creation/sessions/${sessionId}`, {
+    ...json("PUT", { projectId }),
+    signal: AbortSignal.timeout(RENEWAL_TIMEOUT_MS),
+  });
+}
+
+// A write rejected for a lapsed lease renews the visible project's lease and is
+// resent once. Only the active project is renewed: a stale editor must never
+// move the lease back to a project this page has left. The renewal runs in the
+// session-change queue, like the heartbeat, so it cannot land after a queued
+// close or switch has released the project. Writes rejected together share one
+// renewal. No queued operation issues a lease-checked write, so this cannot
+// wait on itself.
+let recovering: { projectId: string; renewed: Promise<boolean> } | null = null;
+setLeaseRecovery((projectId) => {
+  if (recovering?.projectId === projectId) return recovering.renewed;
+  const renewed = serializeSessionChange(async () => {
+    if (active !== projectId) return false;
+    await renewLease(projectId);
+    return active === projectId;
+  });
+  const current = { projectId, renewed };
+  recovering = current;
+  void renewed
+    .finally(() => {
+      if (recovering === current) recovering = null;
+    })
+    .catch(() => {});
+  return renewed;
+});
+
 function keepAlive() {
   if (heartbeat !== undefined) return;
   heartbeat = window.setInterval(() => {
     if (active && !opening) {
       const projectId = active;
       // A pending renewal must finish before an explicit close or project switch.
-      void serializeSessionChange(() =>
-        storageRequest(
-          `/creation/sessions/${sessionId}`,
-          json("PUT", { projectId }),
-        ),
-      ).catch(() => {});
+      void serializeSessionChange(() => renewLease(projectId)).catch(() => {});
     }
   }, 15000);
   window.addEventListener("pagehide", () => {

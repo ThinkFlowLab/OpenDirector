@@ -8,6 +8,9 @@ from opendirector.agent.citations import search_sources, with_trace_sources
 from opendirector.agent.native import text_events
 
 
+pytestmark = pytest.mark.cpu
+
+
 def search_result(ref='turn1search0', url='https://example.test/a', title='Source A'):
     return {'type': 'item.completed', 'item': {'type': 'mcp_tool_call',
         'tool': 'search_service.web_run', 'status': 'completed',

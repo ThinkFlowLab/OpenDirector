@@ -26,6 +26,7 @@ from opendirector.domain.creation.base import MediaKind
 from opendirector.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
 from opendirector.domain.creation.project import ProjectSnapshot, ViewState
 from opendirector.domain.projects import ProjectError
+from opendirector.application.prompt_optimization import PromptOptimizationInput
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.media.fonts import MAX_FONT_BYTES, inspect_font
@@ -59,7 +60,26 @@ class TemporaryPackageResponse(FileResponse):
             Path(self.path).unlink(missing_ok=True)
 
 
-def creation_routes(projects: CreationProjects, generation=None):
+async def preview_until_disconnect(request: Request, operation):
+    async def disconnected():
+        # FastAPI has consumed the body. Read ASGI events directly so this
+        # also works through BaseHTTPMiddleware's receive stream.
+        while (await request.receive())['type'] != 'http.disconnect':
+            pass
+
+    work = asyncio.create_task(operation)
+    disconnect = asyncio.create_task(disconnected())
+    try:
+        done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
+        return await work if work in done else Response(status_code=499)
+    finally:
+        for task in (work, disconnect):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(work, disconnect, return_exceptions=True)
+
+
+def creation_routes(projects: CreationProjects, generation=None, prompt_optimization=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
     canvas = CreationCanvas(projects)
@@ -80,6 +100,13 @@ def creation_routes(projects: CreationProjects, generation=None):
             value.extend(chunk)
         response.headers['Cache-Control'] = 'no-store'
         return await run_in_threadpool(preview_font_coverage, bytes(value))
+
+    if prompt_optimization is not None:
+        @router.post('/projects/{project_id}/items/{item_id}/optimize-prompt')
+        async def optimize_prompt(project_id: UUID, item_id: UUID, value: PromptOptimizationInput, request: Request):
+            return await preview_until_disconnect(request, prompt_optimization.rewrite(
+                project_id, item_id, value.prompt, value.inlineReferences,
+                value.preferredModelId, value.assistantModel))
 
     @router.get('/projects')
     def list_projects():
@@ -105,12 +132,13 @@ def creation_routes(projects: CreationProjects, generation=None):
 
     @router.post('/projects/{project_id}/open-canvas')
     def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header()):
-        # The canvas needs its reference edges on first render too. Reuse the
+        # The canvas needs its reference edges and text on first render too. Reuse the
         # single snapshot this open read already published instead of making the
         # page read the same project again through GET /canvas. The no-flag
         # route above still returns a bare ProjectSnapshot.
         snapshot = projects.open(project_id, str(x_opendirector_session))
-        return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot)}
+        return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot),
+                'texts': canvas.text_contents(snapshot)}
 
     @router.put('/sessions/{session_id}')
     def heartbeat(session_id: UUID, value: Session):

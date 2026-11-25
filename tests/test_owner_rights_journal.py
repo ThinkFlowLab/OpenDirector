@@ -9,6 +9,9 @@ import pytest
 from opendirector.agent import owner_rights as rights
 
 
+pytestmark = pytest.mark.cpu
+
+
 def failure(code):
     error = OSError('controlled native failure')
     error.winerror = code

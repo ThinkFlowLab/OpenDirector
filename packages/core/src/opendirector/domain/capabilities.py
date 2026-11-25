@@ -185,7 +185,8 @@ class MediaResult:
     suffix: str
 
 
-AgentInputModality = Literal['text', 'image']
+AgentInputModality = Literal['text', 'image', 'video', 'audio']
+AGENT_INPUT_MODALITIES = ('text', 'image', 'video', 'audio')
 
 
 def agent_input_modalities(kind, value):
@@ -193,6 +194,6 @@ def agent_input_modalities(kind, value):
     if value is None:
         return ['text'] if kind == 'agent' else None
     if (kind != 'agent' or not isinstance(value, (list, tuple)) or 'text' not in value
-            or len(value) != len(set(value)) or any(item not in {'text', 'image'} for item in value)):
-        raise ProjectError('对话模型输入模态必须包含文本，可选图片，且不能重复。')
-    return ['text', *(['image'] if 'image' in value else [])]
+            or any(item not in AGENT_INPUT_MODALITIES for item in value) or len(value) != len(set(value))):
+        raise ProjectError('对话模型输入类型必须包含文本，可选图片、视频和音频，且不能重复。')
+    return [kind for kind in AGENT_INPUT_MODALITIES if kind in value]

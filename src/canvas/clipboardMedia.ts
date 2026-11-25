@@ -1,3 +1,5 @@
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 import { MEDIA_FIELDS } from "./canvasArchive.ts";
 import type { CanvasResource } from "./model.ts";
 import type { CanvasFragment } from "./operations.ts";
@@ -42,7 +44,8 @@ export type RegisterMedia = (
 ) => Promise<RegisteredMedia>;
 
 const isTemporary = (value: unknown): value is string =>
-  typeof value === "string" && /^(blob|data):/i.test(value);
+  typeof value === "string" &&
+  (/^(blob|data):/i.test(value) || Boolean(parseAssetSource(value)));
 
 /** The saved asset a media field shows: a node's own source or a nested resource's. */
 function savedAssetId(
@@ -75,7 +78,7 @@ function visitMedia(
 }
 
 async function readBlob(src: string): Promise<Blob> {
-  const response = await fetch(src);
+  const response = await fetchMediaSource(src);
   if (!response.ok) throw new Error(tNow("errors.files.clipboardRead"));
   return response.blob();
 }

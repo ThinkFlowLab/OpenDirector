@@ -1,9 +1,40 @@
-import type { Conversation } from "../backend/chat.ts";
+import type { AssistantModelSelection, Conversation } from "../backend/chat.ts";
+import type { GenerationKind } from "./modelResolution.ts";
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 type Selection = Pick<Conversation, "runtime" | "runtimeModel" | "harnessModels" | "builtinModelThinking"> & { agent: string | null };
 const prefix = "opendirector.agent-selection";
 const scope = (projectId: string, conversationId?: string) => `${prefix}:${projectId}:${conversationId ?? "default"}`;
+const mediaPrefix = "opendirector.media-selection";
+const mediaScope = (projectId: string, conversationId: string, kind: GenerationKind) =>
+  `${mediaPrefix}:${projectId}:${conversationId}:${kind}`;
+
+/** Only an explicit picker action can change the defaults for other projects. */
+export function rememberMediaSelection(
+  projectId: string, conversationId: string | undefined, kind: GenerationKind, id: string, storage?: Storage,
+) {
+  try {
+    const target = storage ?? window.localStorage;
+    if (conversationId) target.setItem(mediaScope(projectId, conversationId, kind), id);
+    target.setItem(`${mediaPrefix}:${kind}`, id);
+  } catch {
+    // The server still saves the effective selection with the draft.
+  }
+}
+
+export function preferredMediaModel(
+  projectId: string, conversationId: string | undefined, kind: GenerationKind,
+  options: readonly { id: string }[], storage?: Storage,
+) {
+  try {
+    const target = storage ?? window.localStorage;
+    const scoped = conversationId ? target.getItem(mediaScope(projectId, conversationId, kind)) : null;
+    const last = target.getItem(`${mediaPrefix}:${kind}`);
+    return [scoped, last].find((id): id is string => id !== null && options.some((option) => option.id === id));
+  } catch {
+    return undefined;
+  }
+}
 
 function parse(value: string | null): Selection | null {
   if (!value) return null;
@@ -63,4 +94,14 @@ export function builtinThinking(value: Conversation, modelId?: string) {
   return (value.runtime ?? "default") === "default"
     ? value.builtinModelThinking?.[modelId ?? ""] ?? "auto"
     : value.thinking;
+}
+
+export function assistantModelSelection(value: Conversation, modelId?: string): AssistantModelSelection {
+  const runtime = value.runtime ?? "default";
+  return {
+    runtime,
+    modelId: runtime === "default" ? modelId : undefined,
+    runtimeModel: runtime === "default" ? undefined : value.runtimeModel,
+    thinking: builtinThinking(value, modelId),
+  };
 }

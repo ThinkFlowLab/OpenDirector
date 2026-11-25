@@ -4,6 +4,8 @@ Domain code keeps its Chinese copy for CLI and Agent traces. The HTTP boundary
 chooses an English message from the stable error code when the caller asks for
 English, so a missing translation never leaks Chinese into an English UI.
 """
+import re
+
 from fastapi import Request
 
 
@@ -15,6 +17,17 @@ from opendirector.domain.capability_messages import english_capability_message, 
 
 ENGLISH_BY_CODE = {
     "desktop_auth_required": "The desktop connection has expired. Reopen the application.",
+    'prompt_optimization_empty': 'Enter a prompt to optimize.',
+    'prompt_optimization_refs': 'Prompt references changed. Try again.',
+    'prompt_optimization_node': 'Select an image or video node.',
+    'prompt_optimization_model': 'Choose an available chat model in the Agent panel.',
+    'prompt_optimization_vision': 'The selected chat model cannot use these visual references. Choose an Agent model with image or video input.',
+    'prompt_optimization_cli': 'The selected Agent CLI could not optimize the prompt. Check its installation, login, and model.',
+    'prompt_optimization_cli_unsupported': 'The selected Agent CLI does not support standalone prompt optimization. Switch the Agent or model in the Agent panel.',
+    'prompt_optimization_media': 'The video reference duration is invalid.',
+    'prompt_optimization_too_large': 'The references are too large for prompt optimization. Reduce their size or number and try again.',
+    'prompt_optimization_result': 'The model did not return a usable prompt. Your original text was kept.',
+    'prompt_optimization_provider': 'The text model could not optimize the prompt. Check its settings and try again. Your original text was kept.',
     'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
     'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
     'bigmodel_video_output': 'Choose a supported CogVideoX-3 pixel size and a 5- or 10-second duration. The size determines the aspect ratio.',
@@ -96,11 +109,17 @@ ENGLISH_BY_CODE = {
     "preview_expired": "The preview expired. Generate it again.",
     "reference_invalid": "A reference is no longer valid. Select it again and retry.",
     "role_restricted": "This item does not allow that operation.",
+    "canvas_run_layout_extent": "Canvas positions or dimensions are too large to arrange. Resize the affected items.",
+    "canvas_run_layout_group": "Run layout is only available for top-level groups.",
+    "canvas_run_layout_conflict": "Locked Run areas overlap. Unlock one of the groups and try again.",
+    "canvas_run_layout_shared_object": "Two Runs use the same editable object. Copy the configuration or editor document and try again.",
     "storage_unavailable": "A stored file is missing or has changed. Restore the file and try again.",
     "capability_unsupported": "This capability is not supported yet.",
+    "model_list_http_error": "Could not load the model list from the service.",
     "operation_rejected": "The operation was rejected. Reload the item and try again.",
     "storage_busy": "Project storage is busy. Try again shortly.",
     "project_open_elsewhere": "This project is open in another window. Close it there and try again.",
+    "session_expired": "This project was closed or its session expired. Reopen it and save again.",
     "local_only": "Only this computer can access the project service.",
     "cross_origin": "File access from another site is not allowed.",
     "invalid_local_request": "This is not a valid local app request.",
@@ -150,6 +169,10 @@ def localized_error_for_language(
         return chinese
     if code == 'tool_model_missing':
         return missing_tool_model_message(required_capability, english=True)
+    if code == 'model_list_http_error':
+        upstream_status = re.search(r'HTTP ([0-9]{3})', chinese)
+        if upstream_status:
+            return f'Could not load the model list (HTTP {upstream_status[1]}).'
     if code.startswith(('capability_', 'image_input_', 'tool_source_')):
         translated = english_capability_message(chinese)
         if translated:

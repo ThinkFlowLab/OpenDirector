@@ -15,6 +15,9 @@ from test_model_availability import document
 from test_tool_tasks import project, configure, upload, png, SAM3, segmentation_server, output_rgba
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('state', ['paused', 'unsupported', 'added', 'changed', 'legacy'])
 def test_layer_background_completion_never_selects_a_later_model_for_new_work(project, state):
     store, pid, session = project

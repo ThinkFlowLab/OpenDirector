@@ -145,15 +145,19 @@ export function ModelServiceForm({
   const segmentation = value.protocol === "vllm_omni_segmentation";
   const depth = value.protocol === "vllm_omni_depth";
   const score = value.protocol === "vllm_omni_score";
+  const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
+  const mediaPresetModels = kind === "agent" ? undefined : preset?.modelsByKind?.[kind];
   const hasSavedKey = Boolean(
     connection &&
     connection.authMode === "bearer" &&
     connection.url === value.url.trim(),
   );
-  const canFetch = Boolean(
-    value.url.trim() &&
-    (value.authMode === "none" || value.apiKey.trim() || hasSavedKey),
-  );
+  const fetchPrerequisite = !value.url.trim()
+    ? "generation.picker.addressRequired"
+    : value.authMode === "bearer" && !value.apiKey.trim() && !hasSavedKey
+      ? "generation.picker.keyRequired"
+      : null;
+  const canFetch = fetchPrerequisite === null;
   const canSave = canFetch && selectedModels.length > 0 && selectedModels.length <= 200 &&
     !selectedTestFailed && !selectedModels.some((id) => modelErrors[id]);
   const update = (patch: Partial<ModelConfigInput>) => {
@@ -174,7 +178,7 @@ export function ModelServiceForm({
       patch.protocol !== undefined ||
       patch.connectionType !== undefined ||
       patch.authMode !== undefined;
-    if (connectionChanged) {
+    if (connectionChanged || patch.proxyMode !== undefined) {
       setModelIds(selectedModels);
       setLoaded(false);
       setDiscoveryError("");
@@ -198,20 +202,23 @@ export function ModelServiceForm({
     setError("");
   };
   const loadModels = async () => {
+    if (fetchPrerequisite) {
+      setDiscoveryError(t(fetchPrerequisite));
+      if (fetchPrerequisite === "generation.picker.addressRequired") setConnectionOpen(true);
+      return;
+    }
     setDiscovering(true);
     setDiscoveryError("");
     try {
-      const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
-      const presetModels = preset?.modelsByKind?.[kind];
-      const models = presetModels
-        ? [...presetModels]
+      const models = mediaPresetModels
+        ? [...mediaPresetModels]
         : (await discoverModels(value, connection?.id)).models;
       setModelIds(models);
-      if (presetModels && !connection) setSelectedModels(models);
+      if (mediaPresetModels && !connection) setSelectedModels(models);
       setLoaded(true);
       setConnectionOpen(false);
     } catch (failure) {
-      setDiscoveryError(errorMessage(failure));
+      setDiscoveryError(t("generation.picker.retry", { error: errorMessage(failure) }));
     } finally {
       setDiscovering(false);
     }
@@ -320,6 +327,8 @@ export function ModelServiceForm({
     );
     setSelectedModels(peers.map((item) => item.modelId));
     setModelIds(peers.map((item) => item.modelId));
+    setLoaded(false);
+    setDiscoveryError("");
     setModelOptions({});
     setModelErrors({});
     setResults({});
@@ -524,6 +533,7 @@ export function ModelServiceForm({
           selected={selectedModels}
           loaded={loaded}
           loading={discovering}
+          loadsPreset={Boolean(mediaPresetModels)}
           error={discoveryError}
           disabled={locked}
           canFetch={canFetch}
@@ -534,11 +544,6 @@ export function ModelServiceForm({
           }}
           onTest={kind === "agent" ? (id) => void test(id) : undefined}
           results={results}
-          fetchLabel={
-            PROVIDER_PRESETS.find((item) => item.id === presetId)?.modelsByKind?.[kind]
-              ? t("models.service.loadSupportedModels")
-              : undefined
-          }
           renderDetails={(id) => (
             <>
             <DraftAvailabilityCheck connection={{ ...value, ...optionsFor(id) }} configId={connection?.id} modelId={id} />

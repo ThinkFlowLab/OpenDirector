@@ -107,7 +107,7 @@ jobs:
         timeout-minutes: 5
         env:
           OPENDIRECTOR_REAL_CLI: '1'
-        run: python -m pytest tests/test_native_runtime.py tests/test_agent_visual_gate.py -k real_opencode -q -ra --durations=50 --junitxml=test-results/bundled-opencode.xml --ci-profile=test-results/bundled-opencode.json
+        run: python -m pytest tests/test_native_runtime.py tests/test_agent_visual_gate.py -k real_opencode -m cpu -q -ra --durations=50 --junitxml=test-results/bundled-opencode.xml --ci-profile=test-results/bundled-opencode.json
       - id: harness-install
         name: Install native Harness test tools
         if: always() && steps.install.outcome == 'success'
@@ -126,14 +126,14 @@ jobs:
         env:
           OPENDIRECTOR_HARNESS_CI: '1'
         run: >-
-          python -m pytest tests/test_agent_visual_gate.py::test_harness_native_visual_input -q -ra
+          python -m pytest tests/test_agent_visual_gate.py::test_harness_native_visual_input -m cpu -q -ra
           --basetemp "$RUNNER_TEMP/harness-visual-pytest"
           --junitxml=test-results/harness-visual.xml --ci-profile=test-results/harness-visual.json
       - name: Python tests
         if: always() && steps.install.outcome == 'success'
         env:
           PYTEST_MARK_EXPRESSION: ${{ inputs.python-mark-expression }}
-        run: python -m pytest tests -q -ra -m "$PYTEST_MARK_EXPRESSION" --durations=50 --junitxml=test-results/python.xml --ci-profile=test-results/python.json
+        run: python -m pytest tests -q -ra -m "cpu${PYTEST_MARK_EXPRESSION:+ and ($PYTEST_MARK_EXPRESSION)}" --durations=50 --junitxml=test-results/python.xml --ci-profile=test-results/python.json
       - name: Check full layer inventory / 核对完整分层清单
         if: always() && steps.install.outcome == 'success' && inputs.python-mark-expression == ''
         run: python scripts/ci/check_test_layers.py --profile test-results/python.json --require-executed
@@ -311,6 +311,7 @@ jobs:
           curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
           node tests/browser/bilingual_defaults.mjs
           node tests/browser/assistant_auxiliary_panels.mjs
+          node tests/browser/trace_original_export.mjs
       - name: Print isolated service logs on failure
         if: failure()
         run: |

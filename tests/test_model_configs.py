@@ -11,6 +11,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def api(tmp_path):
     store = LocalProjects(tmp_path)
@@ -317,17 +320,36 @@ def test_read_service_models_protocol():
     import httpx
     from opendirector.integrations.model_capabilities import read_service_models
 
-    config = payload(authMode='bearer')
+    config = payload(protocol='openai', authMode='bearer')
 
     def respond(request):
+        assert request.method == 'GET'
         assert request.url.path == '/v1/models'
         assert request.headers['Authorization'] == 'Bearer test-secret'
         return httpx.Response(200, json={'data': [{'id': 'model-a'}]})
 
     assert asyncio.run(read_service_models(config, httpx.MockTransport(respond))) == [{'id': 'model-a'}]
+    with pytest.raises(ProjectError, match='HTTP 503') as failure:
+        asyncio.run(read_service_models(config, httpx.MockTransport(
+            lambda request: httpx.Response(503))))
+    assert failure.value.code == 'model_list_http_error'
     with pytest.raises(ProjectError):
         asyncio.run(read_service_models(config, httpx.MockTransport(
             lambda request: httpx.Response(200, json={'data': [{'id': 123}]}))))
+    with pytest.raises(ProjectError):
+        asyncio.run(read_service_models(config, httpx.MockTransport(
+            lambda request: httpx.Response(200, json={'error': {'message': 'Upstream rejected the request'}}))))
+
+
+def test_minimax_video_model_list_does_not_contact_provider():
+    import asyncio
+    import httpx
+    from opendirector.integrations.model_capabilities import read_service_models
+
+    config = payload('video', protocol='minimax_video_v2', authMode='bearer')
+    transport = httpx.MockTransport(lambda _: pytest.fail('No catalog request expected'))
+    models = asyncio.run(read_service_models(config, transport))
+    assert [item['id'] for item in models] == ['MiniMax-H3', 'MiniMax-H3-Highspeed', 'MiniMax-H3-Lite', 'MiniMax-H3-Max']
 
 
 def test_shared_service_batch_persists_one_credential_and_stable_models(api):
@@ -400,23 +422,24 @@ def test_batch_edit_legacy_segmentation_preserves_identity(api):
     assert len(client.get('/api/model-configs').json()) == 2
 
 
-def test_agent_image_input_persists_through_batch_edits_and_restart(api):
+def test_agent_media_inputs_persist_through_batch_edits_and_restart(api):
     client, store = api
+    modalities = ['text', 'image', 'video', 'audio']
     saved = client.post('/api/model-configs/batch', json=payload(modelIds=['vision-agent'],
-        inputModalities=['text', 'image'])).json()[0]
-    assert saved['inputModalities'] == ['text', 'image']
+        inputModalities=list(reversed(modalities)))).json()[0]
+    assert saved['inputModalities'] == modalities
     resolved = ModelConfigs(store.repository).resolve(saved['id'], 'agent')
-    assert resolved['inputModalities'] == ['text', 'image']
+    assert resolved['inputModalities'] == modalities
     unchanged = client.patch('/api/model-configs/' + saved['id'], json=payload(modelId='vision-agent', apiKey=''))
     assert unchanged.status_code == 200
-    assert unchanged.json()['inputModalities'] == ['text', 'image']
+    assert unchanged.json()['inputModalities'] == modalities
     disabled = client.post('/api/model-configs/batch', json=payload(configId=saved['id'],
         modelIds=['vision-agent'], apiKey='', inputModalities=['text']))
     assert disabled.status_code == 200
     assert disabled.json()[0]['inputModalities'] == ['text']
 
 
-@pytest.mark.parametrize('modalities', [[], ['image'], ['text', 'text'], ['text', 'video']])
+@pytest.mark.parametrize('modalities', [[], ['image'], ['text', 'text'], ['text', 'file']])
 def test_invalid_agent_input_modalities_do_not_write(api, modalities):
     client, store = api
     response = client.post('/api/model-configs', json=payload(inputModalities=modalities))

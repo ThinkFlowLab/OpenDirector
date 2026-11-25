@@ -25,6 +25,13 @@ OpenDirector 是一个在本地运行、通过浏览器使用的 AI 视频创作
 
 [最新动态](#最新动态) · [短片示例](#短片示例我们还能赢) · [快速开始](#快速开始) · [文档](#文档) · [社区交流](#社区交流) · [参与贡献](#参与贡献)
 
+欢迎关注我们的B站官方账号，里面有教学视频，以及定期分享用户创作的精彩内容！
+<p>
+  <a href="https://space.bilibili.com/3747582748658251">
+    <img src="https://img.shields.io/badge/Bilibili-OpenDirector-00A1D6?logo=bilibili&amp;logoColor=white" alt="OpenDirector 官方 B 站账号" />
+  </a>
+</p> 
+
 ## 最新动态
 
 - [2026/11/06] OpenDirector 首个版本 [v0.1.0](https://github.com/ThinkFlowLab/OpenDirector/releases/tag/v0.1.0) 发布，将 AI 辅助生成、画布素材管理、媒体编辑与时间线导出整合在一个本地工作台中。版本亮点与安装说明见发布说明。

@@ -6,6 +6,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.cpu
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'scripts/nightly/benchmark.json'
 SCRIPT = ROOT / 'scripts/nightly/daily_benchmark.py'
@@ -194,6 +199,7 @@ def test_zero_reference_regresses_only_past_the_absolute_floor():
     assert over['notify'] is True
 
 
+@pytest.mark.merge
 def test_storage_bench_emits_the_fields_the_suite_tracks():
     loaded = config()
     tiny = {

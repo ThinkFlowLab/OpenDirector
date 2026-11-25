@@ -14,6 +14,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+
+pytestmark = pytest.mark.cpu
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / '.github/workflows/nightly.yml'
 WORKSPACE = '/home/runner/work/OpenDirector/OpenDirector'

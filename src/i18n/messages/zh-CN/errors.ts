@@ -108,6 +108,9 @@ export const errors = {
   "errors.rules.lastFrame": "当前服务只支持首帧，请移除尾帧。",
   "errors.rules.lastFrameMissing": "尾帧素材未连接或已丢失，请重新选择。",
   "errors.rules.firstFrameMissing": "首帧素材未连接或已丢失，请重新选择。",
+  "errors.rules.controlSource": "结构控制需要且只能连接一个控制视频（例如人物深度视频）",
+  "errors.rules.controlAudio": "结构控制模式不接受音频参考",
+  "errors.rules.controlDuration": "控制视频需要 {low}–{high} 秒",
   "errors.rules.continuationSource":
     "接续需要连接一段由当前 H3 服务生成的视频作为上一段。",
   "errors.rules.referenceLimit": "参考{kind}超过当前模型上限（{limit} 个）。",
@@ -342,6 +345,7 @@ export const errors = {
   "errors.videoAction.duration": "请等待视频时长读取完成，并选择有效范围。",
   "errors.videoAction.prompt": "请填写希望修改的内容。",
   "errors.videoAction.minDuration": "视频编辑需要 4–30 秒的素材。",
+  "errors.videoAction.maskSource": "请选择画布上的遮罩视频。",
   "errors.videoAction.depthDuration": "深度动作捕捉需要不超过 30 秒的素材。",
   "errors.videoAction.audioDescription": "请描述要分离的声音。",
   "errors.videoAction.confirmSubtitles": "请确认擦除字幕。",

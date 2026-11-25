@@ -9,6 +9,9 @@ from opendirector.agent import owner_rights as rights
 from process_helpers import directory_link
 
 
+pytestmark = pytest.mark.cpu
+
+
 USER = bytes.fromhex('010100000000000515000000')
 WORLD = bytes.fromhex('010100000000000100000000')
 
