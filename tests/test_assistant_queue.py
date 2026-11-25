@@ -294,3 +294,126 @@ def test_a_viewer_that_lost_the_stream_resumes_through_the_turn_it_remembers(gat
 
     assert resumed == whole
     assert [context for context in contexts] == ['先做这个', '再补一句']
+
+
+class ManualClock:
+    """Monotonic clock that only moves when a test says so."""
+    def __init__(self):
+        self.now = 1000.0
+
+    def monotonic(self):
+        return self.now
+
+    def advance(self, milliseconds):
+        self.now += milliseconds / 1000
+
+
+@pytest.fixture
+def manual(monkeypatch):
+    fake = ManualClock()
+    monkeypatch.setattr(agent, '_monotonic', fake.monotonic)
+    return fake
+
+
+def replies(client, path):
+    return [item for item in client.get(path).json()['messages'] if item['role'] == 'assistant']
+
+
+def trace_of(client, path):
+    cid = client.get(path).json()['conversationId']
+    return {turn['id']: turn for turn in client.get(f'{path}/conversations/{cid}/trace').json()['turns']}
+
+
+def start_chain(pool, client, path, cid, first, second, gates, contexts, endpoint='/messages'):
+    """Run `first` (through `endpoint`) and queue `second` behind it; return the first request's future."""
+    running = pool.submit(client.post, path + endpoint, json={
+        'id': first, 'runtime': 'default', 'conversationId': cid, 'text': 'a'})
+    assert wait_until(lambda: 'a' in contexts)
+    queued = client.post(path + '/messages', json={
+        'id': second, 'runtime': 'default', 'conversationId': cid, 'text': 'b'})
+    assert queued.status_code == 202, queued.text
+    return running
+
+
+def test_idle_message_and_dispatched_queued_turn_each_get_their_own_timing(gated, manual):
+    client, path, contexts, gates = gated
+    cid = client.get(path).json()['conversationId']
+    first, second = str(uuid4()), str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        running = start_chain(pool, client, path, cid, first, second, gates, contexts)
+        # The queued message waits one second; its own run later takes 250 ms.
+        manual.advance(1000)
+        gates['a'].set()
+        assert wait_until(lambda: 'b' in contexts)
+        manual.advance(250)
+        gates['b'].set()
+        events = frames(running.result(timeout=10))
+    assert [event['turnId'] for event in events if event['type'] == 'end'] == [first, second]
+    one, two = replies(client, path)
+    assert (one['status'], two['status']) == ('complete', 'complete')
+    assert one['durationMs'] == 1000
+    assert two['durationMs'] == 250
+    for reply in (one, two):
+        assert reply['startedAt'] and reply['finishedAt']
+    # The chat view and the trace endpoint report the same persisted values.
+    turns = trace_of(client, path)
+    for message, reply in ((first, one), (second, two)):
+        turn = turns[message]
+        assert (turn['startedAt'], turn['finishedAt'], turn['durationMs']) == (
+            reply['startedAt'], reply['finishedAt'], reply['durationMs'])
+
+
+def test_dispatched_turn_started_by_the_idle_message_endpoint_is_timed(gated, manual):
+    client, path, contexts, gates = gated
+    cid = client.get(path).json()['conversationId']
+    turn = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        running = pool.submit(client.post, path + '/messages', json={
+            'id': turn, 'runtime': 'default', 'conversationId': cid, 'text': 'a'})
+        assert wait_until(lambda: 'a' in contexts)
+        manual.advance(250)
+        gates['a'].set()
+        assert running.result(timeout=10).status_code == 200
+    reply = replies(client, path)[0]
+    assert reply['durationMs'] == 250 and reply['startedAt'] and reply['finishedAt']
+    assert trace_of(client, path)[turn]['durationMs'] == 250
+
+
+def test_stop_and_interruption_of_a_dispatched_turn_keep_its_duration(gated, manual, monkeypatch):
+    client, path, contexts, gates = gated
+    cid = client.get(path).json()['conversationId']
+    stopped, failed, plain = str(uuid4()), str(uuid4()), str(uuid4())
+    real = agent.AgentRuntimes.stream
+
+    async def stream(self, run):
+        text = run.messages[-1]['content']
+        if text == 'boom':
+            contexts.append(text)
+            await asyncio.to_thread(gates.setdefault('boom', threading.Event()).wait, 10)
+            raise RuntimeError('原始错误')
+        async for event in real(self, run):
+            yield event
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    with ThreadPoolExecutor() as pool:
+        running = start_chain(pool, client, path, cid, plain, stopped, gates, contexts)
+        gates['a'].set()
+        assert wait_until(lambda: 'b' in contexts)
+        manual.advance(250)
+        assert client.post(path + f'/turns/{stopped}/stop').status_code == 200
+        frames(running.result(timeout=10))
+    done = replies(client, path)
+    assert [item['status'] for item in done] == ['complete', 'stopped']
+    assert done[1]['durationMs'] == 250 and done[1]['startedAt'] and done[1]['finishedAt']
+    assert trace_of(client, path)[stopped]['durationMs'] == 250
+
+    with ThreadPoolExecutor() as pool:
+        running = pool.submit(client.post, path + '/messages', json={
+            'id': failed, 'runtime': 'default', 'conversationId': cid, 'text': 'boom'})
+        assert wait_until(lambda: contexts.count('boom') == 1)
+        manual.advance(250)
+        gates['boom'].set()
+        running.result(timeout=10)
+    last = replies(client, path)[-1]
+    assert last['status'] == 'interrupted' and last['durationMs'] == 250
+    assert trace_of(client, path)[failed]['durationMs'] == 250

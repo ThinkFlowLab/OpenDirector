@@ -509,3 +509,30 @@ def test_tool_ledger_and_turn_duration_are_independent(assistant, clock, monkeyp
     ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{turn}.json')).read_text(encoding='utf-8'))
     assert ledger['summary']['calls'] == 1 and ledger['calls'][0]['work'] == 0.2
     assert 'durationMs' not in json.dumps(ledger)
+
+
+def test_dispatch_starts_the_clock_after_its_write_and_a_failed_write_leaves_no_entry(assistant, manual, tmp_path, monkeypatch):
+    project, conversations = new_conversations(assistant, tmp_path)
+    turn = str(uuid4())
+    queued = conversations.queue(project, assistant[0].headers['X-OpenDirector-Session'], begin_message(turn))
+    assert queued['status'] == 'queued'
+    real = agent.durable_json
+    def fail(*args, **kwargs):
+        manual.advance(2000)
+        raise OSError('disk full')
+    monkeypatch.setattr(agent, 'durable_json', fail)
+    with pytest.raises(OSError):
+        conversations.dispatch(project)
+    assert conversations._started == {}
+    monkeypatch.setattr(agent, 'durable_json', real)
+    # The message is still queued, so a retry dispatches it; the write itself costs 400 ms and is not counted.
+    slow_writes(monkeypatch, manual, [400])
+    dispatched = conversations.dispatch(project)
+    reply_id = str(uuid5(UUID(turn), 'assistant'))
+    assert list(conversations._started) == [reply_id]
+    reply = dispatched['conversation']['messages'][-1]
+    assert reply['id'] == reply_id and reply['startedAt']
+    manual.advance(250)
+    done = conversations.update(project, finish=finish_message(turn))['messages'][-1]
+    assert done['startedAt'] == reply['startedAt'] and done['durationMs'] == 250
+    assert conversations._started == {}

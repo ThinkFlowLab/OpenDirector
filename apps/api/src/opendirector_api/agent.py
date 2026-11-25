@@ -276,12 +276,16 @@ class Conversations:
                 return None
             index = value['messages'].index(pending)
             pending['status'] = 'complete'
+            reply_id = str(uuid5(UUID(pending['id']), 'assistant'))
             value['messages'].insert(index + 1, {
-                'id': str(uuid5(UUID(pending['id']), 'assistant')),
-                'role': 'assistant', 'text': '', 'status': 'streaming',
+                'id': reply_id,
+                'role': 'assistant', 'text': '', 'status': 'streaming', 'startedAt': _utc_now(),
                 **{key: pending[key] for key in ('model', 'runtime') if key in pending}})
             value.update(draft='', draftContent=None, assets=[], skills=[])
             durable_json(file, value)
+            # Same boundary as update(begin): the clock starts once the write succeeded, inside the transaction.
+            with self._started_lock:
+                self._started[reply_id] = _monotonic()
             result = public_conversation(value)
         return {'message': pending, 'conversation': with_trace_sources(result, directory)}
 
