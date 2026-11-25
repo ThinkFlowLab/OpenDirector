@@ -260,6 +260,15 @@ try {
     .locator(".cw-model-manual")
     .getByRole("button", { name: "Add", exact: true })
     .click();
+  // Per-model details are collapsed so rows stay one line; open the row that
+  // owns this draft check before inspecting or screenshotting it.
+  const draftRow = page
+    .locator(".cw-model-option")
+    .filter({ has: page.getByRole("checkbox", { name: served, exact: true }) });
+  const draftToggle = draftRow.locator(".cw-model-row-toggle");
+  if ((await draftToggle.getAttribute("aria-expanded")) !== "true")
+    await draftToggle.click();
+  await draftRow.locator(".cw-model-option-details").waitFor();
   const draft = page.locator(".cw-model-editor .cw-model-availability");
   async function presentInBothLanguages(state, expected) {
     for (const locale of ["en-US", "zh-CN"]) {
@@ -313,6 +322,7 @@ try {
             .querySelector(".cw-model-availability")
             .getBoundingClientRect();
           const label = element.querySelector("label").getBoundingClientRect();
+          const row = element.getBoundingClientRect();
           const scroller = element
             .closest(".cw-model-editor-scroll")
             .getBoundingClientRect();
@@ -326,17 +336,22 @@ try {
             labelBottom: label.bottom,
             labelWidth: label.width,
             cardWidth: card.width,
+            rowWidth: row.width,
             visibleTop: scroller.top,
             visibleBottom: Math.min(scroller.bottom, footer.top),
           };
         });
         assert.ok(
           bounds.cardTop >= bounds.labelBottom,
-          `${state}: capability card occupies the row below the model`,
+          `${state}: details occupy the row below the model line`,
         );
         assert.ok(
-          bounds.labelWidth >= bounds.cardWidth * 0.9,
-          `${state}: model identity retains the available width`,
+          bounds.cardWidth <= bounds.rowWidth,
+          `${state}: details stay inside the model row`,
+        );
+        assert.ok(
+          Math.round(bounds.labelWidth) >= Math.round(bounds.rowWidth) - 200,
+          `${state}: model identity keeps the row width: ${JSON.stringify(bounds)}`,
         );
         assert.ok(
           bounds.cardTop >= bounds.visibleTop - 1 &&
@@ -362,13 +377,16 @@ try {
   }
   assert.equal(
     await draft.getByText("Not checked", { exact: true }).count(),
-    1,
+    0,
+    "a compact row does not spend a line on the unchecked placeholder",
   );
   const previousQueries = queries;
-  await presentInBothLanguages("unchecked", {
-    "en-US": "Not checked",
-    "zh-CN": "尚未检查",
-  });
+  await presentInBothLanguages("unchecked", null);
+  assert.equal(
+    await draft.getByRole("button", { name: /^(检查|Check)$/ }).count(),
+    1,
+    "the compact row keeps the check action without a placeholder line",
+  );
   await page
     .getByLabel("Service URL (Base URL)", { exact: true })
     .fill(serviceUrl + "/");

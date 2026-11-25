@@ -41,20 +41,15 @@ export function ModelPicker({
 }) {
   const t = useT();
   const manualFieldId = useId();
-  const [query, setQuery] = useState("");
-  const [onlySelected, setOnlySelected] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string[]>([]);
   const [manualId, setManualId] = useState("");
   const [manualModels, setManualModels] = useState<string[]>([]);
   const [manualError, setManualError] = useState("");
+  // Fetching already selects every model a new service returns, so the list
+  // needs no search box and no bulk selection row: the checkboxes are the
+  // selection, and a saved service keeps the subset the user chose.
   const ids = [...new Set([...available, ...manualModels, ...selected])];
-  const visible = ids.filter(
-    (id) =>
-      (!onlySelected || selected.includes(id)) &&
-      id.toLowerCase().includes(query.toLowerCase().trim()),
-  );
-  const allSelected =
-    visible.length > 0 && visible.every((id) => selected.includes(id));
   const fetchLabel = loadsPreset
     ? "models.service.loadSupportedModels"
     : loaded ? "generation.picker.refresh" : "generation.picker.fetch";
@@ -63,7 +58,12 @@ export function ModelPicker({
     status = t("generation.picker.fetching");
   } else if (loaded && !error) {
     status = available.length
-      ? t(loadsPreset ? "generation.picker.loadedPreset" : "generation.picker.fetched", { count: available.length })
+      ? t(
+          loadsPreset
+            ? "generation.picker.loadedPreset"
+            : "generation.picker.fetched",
+          { count: available.length },
+        )
       : t("generation.picker.noReturned");
   }
   const addManual = () => {
@@ -81,7 +81,6 @@ export function ModelPicker({
     setManualId("");
     setManualError("");
     setManualOpen(false);
-    setQuery("");
   };
   return (
     <section
@@ -89,11 +88,11 @@ export function ModelPicker({
       aria-label={t("generation.picker.label")}
     >
       <div className="cw-model-picker-heading">
-        <div>
+        <div className="cw-model-picker-title">
           <h4>{t("generation.picker.heading")}</h4>
-          <span>
-            {t("generation.picker.selectedCount", { count: selected.length })}
-          </span>
+          <div className="cw-model-picker-status" role="status">
+            {status && <span>{status}</span>}
+          </div>
         </div>
         <div className="cw-model-picker-actions">
           <button
@@ -118,9 +117,6 @@ export function ModelPicker({
             {t(loading ? "generation.picker.loading" : fetchLabel)}
           </button>
         </div>
-      </div>
-      <div role="status">
-        {status && <p className="cw-model-note">{status}</p>}
       </div>
       {error && (
         <p className="cw-model-feedback" role="alert">
@@ -174,48 +170,6 @@ export function ModelPicker({
           )}
         </div>
       )}
-      {ids.length > 4 && (
-        <>
-          <div className="cw-model-filterbar">
-            <label className="cw-model-search">
-              <CanvasIcon name="search" size={15} />
-              <input
-                aria-label={t("generation.picker.search")}
-                placeholder={t("generation.picker.searchPlaceholder")}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              className="cw-settings-button cw-model-filter"
-              aria-pressed={onlySelected}
-              onClick={() => setOnlySelected(!onlySelected)}
-            >
-              {t("generation.picker.onlySelected")}
-            </button>
-          </div>
-          <div className="cw-model-bulk">
-            <span>
-              {t("generation.picker.count", { count: visible.length })}
-            </span>
-            <button
-              type="button"
-              className="cw-settings-button cw-settings-button-quiet"
-              disabled={disabled || !visible.length}
-              onClick={() =>
-                onChange(
-                  allSelected
-                    ? selected.filter((id) => !visible.includes(id))
-                    : [...new Set([...selected, ...visible])],
-                )
-              }
-            >
-              {allSelected ? t("generation.picker.deselectAll") : t("generation.picker.selectAll")}
-            </button>
-          </div>
-        </>
-      )}
       <div className="cw-model-options" aria-busy={loading}>
         {loading && !ids.length ? (
           <div className="cw-model-empty-state">
@@ -232,35 +186,24 @@ export function ModelPicker({
                 : t("generation.picker.fetchHint")}
             </p>
           </div>
-        ) : !visible.length ? (
-          <div className="cw-model-empty-state">
-            <strong>
-              {onlySelected && !selected.length
-                ? t("generation.picker.noSelection")
-                : t("generation.picker.noMatch")}
-            </strong>
-            <button
-              className="cw-settings-button cw-settings-button-quiet"
-              type="button"
-              onClick={() => {
-                setQuery("");
-                setOnlySelected(false);
-              }}
-            >
-              {t("generation.picker.showAll")}
-            </button>
-          </div>
         ) : (
-          visible.map((id) => (
+          ids.map((id) => {
+            const isSelected = selected.includes(id);
+            // Per-model details stay collapsed so every row keeps one line and
+            // the list shows as many models as possible. A saved row keeps its
+            // own open state while the user edits its capabilities.
+            const details = isSelected && renderDetails ? renderDetails : null;
+            const open = expanded.includes(id);
+            return (
             <div
               key={id}
               className="cw-model-option"
-              data-selected={selected.includes(id)}
+              data-selected={isSelected}
             >
               <label>
                 <input
                   type="checkbox"
-                  checked={selected.includes(id)}
+                  checked={isSelected}
                   disabled={disabled}
                   onChange={(event) =>
                     onChange(
@@ -291,14 +234,40 @@ export function ModelPicker({
                   </span>
                 </button>
               )}
-              {selected.includes(id) && renderDetails?.(id)}
+              {details && (
+                <button
+                  type="button"
+                  className="cw-settings-button cw-settings-button-quiet cw-model-row-toggle"
+                  aria-expanded={open}
+                  aria-label={t(
+                    open
+                      ? "generation.picker.hideDetails"
+                      : "generation.picker.showDetails",
+                    { id },
+                  )}
+                  disabled={disabled}
+                  onClick={() =>
+                    setExpanded((current) =>
+                      current.includes(id)
+                        ? current.filter((item) => item !== id)
+                        : [...current, id],
+                    )
+                  }
+                >
+                  <CanvasIcon name={open ? "chevronDown" : "chevronRight"} size={14} />
+                </button>
+              )}
+              {details && open && (
+                <div className="cw-model-option-details">{details(id)}</div>
+              )}
               {results[id]?.status === "failed" && (
                 <p className="cw-model-feedback" role="alert">
                   {results[id].message}
                 </p>
               )}
             </div>
-          ))
+            );
+          })
         )}
       </div>
       {onTest && ids.length > 0 && (

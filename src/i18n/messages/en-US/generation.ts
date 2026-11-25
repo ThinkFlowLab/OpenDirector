@@ -207,10 +207,6 @@ export const generation = {
 
   "generation.picker.label": "Choose enabled models",
   "generation.picker.heading": "Models",
-  "generation.picker.selectedCount": {
-    one: "{count} selected",
-    other: "{count} selected",
-  },
   "generation.picker.manual": "Add manually",
   "generation.picker.loading": "Fetching…",
   "generation.picker.refresh": "Refresh list",
@@ -221,15 +217,8 @@ export const generation = {
   "generation.picker.addressRequired": "Enter the service address first.",
   "generation.picker.keyRequired": "Enter an API Key first.",
   "generation.picker.retry": "{error} You can retry or add a model manually.",
-  "generation.picker.search": "Search models",
-  "generation.picker.searchPlaceholder": "Search model names…",
-  "generation.picker.onlySelected": "Selected only",
-  "generation.picker.count": {
-    one: "{count} model",
-    other: "{count} models",
-  },
-  "generation.picker.selectAll": "Select all current results",
-  "generation.picker.deselectAll": "Deselect all",
+  "generation.picker.showDetails": "Show service capabilities for {id}",
+  "generation.picker.hideDetails": "Hide service capabilities for {id}",
   "generation.picker.fetching": "Fetching the model list",
   "generation.picker.fetched": {
     one: "{count} model fetched",
@@ -245,9 +234,6 @@ export const generation = {
   "generation.picker.manualHint": "You can add a model ID supported by the service.",
   "generation.picker.fetchHint":
     "Enter the service address, choose Fetch models, then select the models to enable.",
-  "generation.picker.noSelection": "No model selected yet",
-  "generation.picker.noMatch": "No matching models",
-  "generation.picker.showAll": "Show all models",
   "generation.picker.test": "Test",
   "generation.picker.testing": "Testing…",
   "generation.picker.testAria": "Test {id}",

@@ -23,6 +23,7 @@ export function ModelCapabilityCard({
   disabled,
   onChange,
   onValidity,
+  compact = false,
 }: {
   modelId: string;
   connection: ModelConfigInput;
@@ -30,6 +31,7 @@ export function ModelCapabilityCard({
   saved?: ModelConfig;
   options: ModelOptions;
   disabled: boolean;
+  compact?: boolean;
   onChange: (patch: ModelOptions) => void;
   onValidity: (error: string) => void;
 }) {
@@ -122,6 +124,92 @@ export function ModelCapabilityCard({
     }
   };
   if (connection.kind !== "agent" && !video) return null;
+  const agentInputs = connection.kind === "agent" && (
+    <>
+      <div className="cw-model-modalities">
+        <span className="cw-model-modality-label">
+          {t("models.service.capabilities")}
+        </span>
+        <label>
+          <input type="checkbox" checked disabled />
+          {t("models.service.textInput")}
+        </label>
+        <label title={t("models.service.imageInputNote")}>
+          <input
+            type="checkbox"
+            checked={(
+              options.inputModalities ?? saved?.inputModalities
+            )?.includes("image") ?? false}
+            onChange={(event) =>
+              onChange({
+                inputModalities: event.target.checked
+                  ? ["text", "image"]
+                  : ["text"],
+              })
+            }
+          />
+          {t("models.service.imageInput")}
+        </label>
+      </div>
+    </>
+  );
+  const officialFacts = official && (
+    <div className="cw-model-capability-facts">
+      <span>
+        {t(
+          connection.protocol === "bigmodel_video"
+            ? "models.service.bigmodelVideoSummary"
+            : connection.protocol === "kling_video"
+            ? modelId === "kling-4.0-flash"
+              ? "models.service.klingFlashSummary"
+              : "models.service.klingSummary"
+            : "models.service.officialSummary",
+        )}
+      </span>
+      {nativeCapabilities ? (
+        <>
+          <span>
+            {nativeCapabilities.outputs
+              .map((output) => output.resolution)
+              .join(" / ")}
+          </span>
+          <span>
+            {t("models.service.secondsRange", {
+              min: Math.min(...nativeDurations),
+              max: Math.max(...nativeDurations),
+            })}
+          </span>
+        </>
+      ) : (
+        !error && <span>{t("models.service.loadingNative")}</span>
+      )}
+      <small>
+        {t(
+          connection.protocol === "bigmodel_video"
+            ? "models.service.bigmodelVideoReferences"
+            : connection.protocol === "kling_video"
+            ? "models.service.klingReferences"
+            : "models.service.officialReferences",
+        )}
+      </small>
+    </div>
+  );
+  // Inside a model row the details stay on one line: the declared facts and
+  // the switches, without the card padding that used to open an empty block.
+  if (compact && (connection.kind === "agent" || official)) {
+    return (
+      <div className="cw-model-capability-card is-compact">
+        <fieldset disabled={disabled || loading}>
+          {agentInputs || officialFacts}
+          {error && (
+            <p role="alert" className="cw-model-feedback">
+              {error}
+            </p>
+          )}
+        </fieldset>
+      </div>
+    );
+  }
   return (
     <details
       className="cw-model-capability-card"
@@ -129,80 +217,14 @@ export function ModelCapabilityCard({
     >
       <summary>
         {connection.kind === "agent"
-          ? t("models.service.inputCapabilities")
+          ? t("models.service.capabilities")
           : t("models.service.referenceOutput")}
       </summary>
       <fieldset disabled={disabled || loading}>
         {connection.kind === "agent" ? (
-          <>
-            <div className="cw-model-modalities">
-              <label>
-                <input type="checkbox" checked disabled />
-                {t("models.service.textInput")}
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={
-                    (
-                      options.inputModalities ?? saved?.inputModalities
-                    )?.includes("image") ?? false
-                  }
-                  onChange={(event) =>
-                    onChange({
-                      inputModalities: event.target.checked
-                        ? ["text", "image"]
-                        : ["text"],
-                    })
-                  }
-                />
-                {t("models.service.imageInput")}
-              </label>
-            </div>
-            <p className="cw-model-note">
-              {t("models.service.imageInputNote")}
-            </p>
-          </>
+          agentInputs
         ) : official ? (
-          <div className="cw-model-capability-facts">
-            <span>
-              {t(
-                connection.protocol === "bigmodel_video"
-                  ? "models.service.bigmodelVideoSummary"
-                  : connection.protocol === "kling_video"
-                  ? modelId === "kling-4.0-flash"
-                    ? "models.service.klingFlashSummary"
-                    : "models.service.klingSummary"
-                  : "models.service.officialSummary",
-              )}
-            </span>
-            {nativeCapabilities ? (
-              <>
-                <span>
-                  {nativeCapabilities.outputs
-                    .map((output) => output.resolution)
-                    .join(" / ")}
-                </span>
-                <span>
-                  {t("models.service.secondsRange", {
-                    min: Math.min(...nativeDurations),
-                    max: Math.max(...nativeDurations),
-                  })}
-                </span>
-              </>
-            ) : (
-              !error && <span>{t("models.service.loadingNative")}</span>
-            )}
-            <small>
-              {t(
-                connection.protocol === "bigmodel_video"
-                  ? "models.service.bigmodelVideoReferences"
-                  : connection.protocol === "kling_video"
-                  ? "models.service.klingReferences"
-                  : "models.service.officialReferences",
-              )}
-            </small>
-          </div>
+          officialFacts
         ) : (
           <>
             {connection.protocol === "vllm_omni" && (

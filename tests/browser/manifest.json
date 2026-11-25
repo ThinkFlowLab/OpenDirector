@@ -574,6 +574,14 @@
       "note": "Discovers a new text model from a loopback GET /models service, saves it, and selects it in the assistant."
     },
     {
+      "file": "model_select_all.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Discovers a loopback GET /models catalog, keeps one checkbox per model with per-row capability details, keeps an edited selection across refresh, and saves one service with every model enabled."
+    },
+    {
       "file": "zhipu_catalog_fixture.mjs",
       "helper": true,
       "note": "Shared loopback catalog fixture for the new-model and Zhipu feedback tests."
