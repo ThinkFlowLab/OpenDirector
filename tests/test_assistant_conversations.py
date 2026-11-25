@@ -475,11 +475,11 @@ def test_sse_disconnect_keeps_the_run_and_a_new_stream_resumes_it(assistant, mon
         yield {'type': 'delta', 'text': '，返回后完成'}
     monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
     follow, calls = agent.RunEvents.follow, []
-    async def counted(self):
+    async def counted(self, after=0):
         calls.append(self)
         if len(calls) > 1:
             attached.set()
-        async for item in follow(self):
+        async for item in follow(self, after):
             yield item
     monkeypatch.setattr(agent.RunEvents, 'follow', counted)
     turn_id = str(uuid4())

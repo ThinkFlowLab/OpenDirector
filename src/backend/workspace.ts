@@ -1,3 +1,4 @@
+import { getEditingState } from "./editSession.ts";
 import { type CanvasDocument } from "../canvas/model.ts";
 import type {
   CommandReceipt,
@@ -280,7 +281,7 @@ export function initializeWorkspace() {
     const document = await openWorkspaceProject(
       projects.find((project) => project.id === selected) ?? projects[0]!,
     );
-    await saveWorkspaceDocument(document);
+    if (getEditingState(document.id)?.mode !== "preview") await saveWorkspaceDocument(document);
     return document;
   })().finally(() => {
     initialization = undefined;

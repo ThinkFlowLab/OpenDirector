@@ -57,6 +57,7 @@ function kindOf(asset: ChatAsset) {
 /** OpenDirector conversation tools in an OpenDirector floating canvas window. */
 export function AssistantPanel({
   documentId,
+  readOnly = false,
   documentTitle,
   catalog,
   nodes,
@@ -73,6 +74,7 @@ export function AssistantPanel({
   onPrepareReferences,
 }: {
   documentId: string;
+  readOnly?: boolean;
   documentTitle: string;
   catalog: BackendModels;
   nodes: CanvasNode[];
@@ -90,7 +92,7 @@ export function AssistantPanel({
   onPrepareReferences: () => Promise<boolean>;
 }) {
   const t = useT();
-  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
+  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open, readOnly);
   const { value } = chat;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
@@ -141,6 +143,7 @@ export function AssistantPanel({
   }, [documentId, chat.loaded, chat.changing, chat.agent?.id, value.runtime, value.runtimeModel,
     value.thinking, value.builtinModelThinking, onAgentModel]);
   const locked =
+    readOnly ||
     !chat.loaded ||
     chat.adding ||
     checkingReferences ||
@@ -154,7 +157,7 @@ export function AssistantPanel({
   const missingAgentModel = needsAgentModel(chat.loaded, currentRuntime, !!chat.agent);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
-  const sessionDisabledReason = chat.changing
+  const sessionDisabledReason = readOnly ? t("canvas.workspace.preview.mode") : chat.changing
     ? t("assistant.sessions.disabled.switching")
     : !chat.loaded
       ? t("assistant.sessions.disabled.loading")
@@ -549,6 +552,7 @@ export function AssistantPanel({
         <form
           className="cw-assistant-composer"
           aria-label={t("assistant.panel.composer")}
+          inert={readOnly}
           onSubmit={(event) => {
             event.preventDefault();
             pendingReferences.cancel();

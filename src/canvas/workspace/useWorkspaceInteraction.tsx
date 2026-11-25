@@ -30,7 +30,7 @@ import { nodeKindKeys } from "./workspaceChrome.tsx";
 import type { FlowNode } from "./workspaceChrome.tsx";
 
 
-export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
+export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean) {
   const {
     actionNode,
     activeAction,
@@ -643,13 +643,13 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
         measured: measurements[n.id],
         selected: selected.includes(n.id),
         draggable:
-          !lockedIds.has(n.id) &&
+          !readOnly && !lockedIds.has(n.id) &&
           !n.autoLayout &&
           !(n.parentId && managedRunIds.has(n.parentId)) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
         connectable:
-          !lockedIds.has(n.id) &&
+          !readOnly && !lockedIds.has(n.id) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
         style: {
@@ -671,6 +671,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       })),
     [
       doc.nodes,
+      readOnly,
       selected,
       spacePressed,
       measurements,
@@ -957,7 +958,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   );
 
   const actions = {
-    resizeSubjectDescription,
+    readOnly,
+    resizeSubjectDescription: readOnly ? undefined : resizeSubjectDescription,
     removeReference: (id: string) => {
       if (id.startsWith("tool-")) return;
       root.current?.focus({ preventScroll: true });
@@ -980,7 +982,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       source: "file" | "canvas" | "assets" | "import",
       slot?: SubjectMediaSlot,
     ) => {
-      if (lockedIds.has(id)) return;
+      if (readOnly || lockedIds.has(id)) return;
       if (source === "file") {
         openFilePicker(id, slot ?? "main");
         return;
@@ -1066,6 +1068,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       setRename(null);
     },
     rename: (id: string) => {
+      if (readOnly) return;
       const n = doc.nodes.find((n) => n.id === id);
       if (lockedIds.has(id)) notify(t("canvas.workspace.toast.unlockFirst"));
       else if (n) setRename({ id, value: n.data.title });
@@ -1074,6 +1077,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     versionsOpen: (id: string) => versionHistory?.itemId === id,
     showVersions: (id: string, anchor: DOMRect) => {
       const preparation = (async () => {
+        if (readOnly) return;
         // Let focused text fields commit their blur before flushing the canvas.
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
@@ -1094,12 +1098,13 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       void preparation.catch(() => {});
       setVersionHistory({ projectId: doc.id, itemId: id, anchor, preparation });
     },
-    upload: (id: string) => openFilePicker(id),
+    upload: (id: string) => { if (!readOnly) openFilePicker(id); },
     preview: (id: string) => {
       const node = doc.nodes.find((node) => node.id === id);
       if (node) setPreview(node);
     },
     newConnected: (id: string, direction: "source" | "target") => {
+      if (readOnly) return;
       const n = doc.nodes.find((n) => n.id === id);
       if (
         !n ||
@@ -1121,6 +1126,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       });
     },
     contextMenu: (id: string, event: React.MouseEvent) => {
+      if (readOnly) return;
       event.preventDefault();
       event.stopPropagation();
       if (
@@ -1222,7 +1228,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       end();
     },
     textSelections: textSelections.current,
-    isTextEditing: (id: string) => textEditingId === id && !rt.textWindowId,
+    isTextEditing: (id: string) => !readOnly && textEditingId === id && !rt.textWindowId,
     finishTextEdit: () => {
       // Autosave is suspended while the transaction is open, so the finished
       // edit is written here instead of on a timer.

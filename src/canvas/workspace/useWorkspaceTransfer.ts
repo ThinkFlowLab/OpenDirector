@@ -55,7 +55,7 @@ import { prefetchLibrary } from "../library/libraryPrefetch";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { parseAssetSource } from "../../backend/assetSource.ts";
 
-export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
+export function useWorkspaceTransfer(rt: WorkspaceRuntime, readOnly: boolean) {
   const {
     center,
     change,
@@ -910,7 +910,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   };
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (event.defaultPrevented || !ready || switchPending.current) return;
+      if (readOnly || event.defaultPrevented || !ready || switchPending.current) return;
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (

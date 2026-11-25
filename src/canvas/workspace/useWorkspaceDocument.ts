@@ -6,6 +6,7 @@ import { errorMessage } from "../../backend/api.ts";
 import { creationClient, CreationCommandError, itemSpec } from "../../backend/creationClient.ts";
 import { fingerprint } from "../../backend/generation.ts";
 
+import { getEditingState } from "../../backend/editSession.ts";
 import { openBackendProject } from "../../backend/projects.ts";
 import { createWorkspaceProject, initializeWorkspace, listWorkspaceProjects, openWorkspaceProject, renameWorkspaceProject, saveWorkspaceDocument, trashWorkspaceProject, workspaceProjection, type WorkspaceProject } from "../../backend/workspace";
 
@@ -21,7 +22,7 @@ import { type CanvasCommand, type CanvasDocument, type CanvasNode } from "../mod
 import { deleteOpenProject, persistCurrentDocument } from "../projectManagement";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 
-export function useWorkspaceDocument(rt: WorkspaceRuntime) {
+export function useWorkspaceDocument(rt: WorkspaceRuntime, readOnly: boolean) {
   const {
     doc,
     editorOrigin,
@@ -174,16 +175,21 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     },
   });
   const command = useCallback(
-    (value: CanvasCommand) =>
-      setHistory((h) => executeCommand(h, value, frameCapabilities.current)),
+    (value: CanvasCommand) => {
+      if (value.type !== "viewport" && getEditingState(historyRef.current.present.id)?.mode === "preview") return;
+      setHistory((h) => executeCommand(h, value, frameCapabilities.current));
+    },
     [],
   );
   const change = useCallback(
-    (fn: (document: CanvasDocument) => CanvasDocument) =>
-      setHistory((h) => recordChange(h, fn(h.present))),
+    (fn: (document: CanvasDocument) => CanvasDocument) => {
+      if (getEditingState(historyRef.current.present.id)?.mode === "preview") return;
+      setHistory((h) => recordChange(h, fn(h.present)));
+    },
     [],
   );
   const begin = useCallback(() => {
+    if (getEditingState(historyRef.current.present.id)?.mode === "preview") return;
     invalidateScheduledAutosave();
     setHistory(beginTransaction);
   }, [invalidateScheduledAutosave]);
@@ -192,6 +198,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   if (!saveQueue.current) {
     saveQueue.current = new SaveQueue(async ({ snapshot, saveView }) => {
       try {
+        if (getEditingState(snapshot.id)?.mode === "preview") return false;
         const projection = workspaceProjection(snapshot.id);
         // A preceding write can change the baseline while this save waits.
         if (
@@ -248,6 +255,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   };
 
   const replayHistory = (forward = false) => {
+    if (getEditingState(historyRef.current.present.id)?.mode === "preview") return;
     if (historyReplayQueue.current) {
       historyReplayQueue.current.push(forward);
       return;
@@ -334,6 +342,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       importAbort.current?.abort();
       try {
         if (
+          getEditingState(historyRef.current.present.id)?.mode !== "preview" &&
           !(await persistCurrentDocument(
             () => historyRef.current.present,
             persist,
@@ -348,7 +357,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       } catch (error) {
         try {
           const current = historyRef.current.present;
-          await openBackendProject(current.id, current.title);
+          if (getEditingState(current.id)?.mode !== "preview") await openBackendProject(current.id, current.title);
         } catch (reopenError) {
           const message = t("canvas.workspace.error.switchReopenFailed", {
             error: errorMessage(reopenError),
@@ -499,7 +508,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     };
   }, [installDocument, notify]);
   useEffect(() => {
-    if (!ready || switching || projectRenaming || historyReplaying || editorSaving.current) return;
+    if (readOnly || !ready || switching || projectRenaming || historyReplaying || editorSaving.current) return;
     // An open editing transaction (inline text, layer and other drag edits) must
     // not be flushed mid-gesture. Saving each keystroke rewrote the text asset,
     // moved the item's binding and re-rendered the field, which dropped the
@@ -516,7 +525,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
         void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
-  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId, rt.history.transaction]);
+  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId, rt.history.transaction, readOnly]);
   useEffect(() => {
     if (!ready) return;
     const client = creationClient(doc.id),
@@ -597,7 +606,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
           if (created.length) requestAnimationFrame(() => {
             // Installing the refresh restarts this listener. Its viewport work
             // still belongs to the mounted project, not the old subscription.
-            if (mounted.current && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
+            if (!readOnly && mounted.current && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
           });
         })
         .catch((error) => active && notify(errorMessage(error)));
@@ -608,7 +617,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       active = false;
       unsubscribe();
     };
-  }, [doc.id, ready, notify, historyRenderVersion]);
+  }, [doc.id, ready, notify, historyRenderVersion, readOnly]);
   useEffect(() => {
     if (!ready) return;
     const projection = workspaceProjection(doc.id);
@@ -655,13 +664,13 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
     const canPersist = !editorSaving.current;
     const flush = () => {
       setPageVisible(!document.hidden);
-      if (document.visibilityState === "hidden" && ready && canPersist &&
+      if (document.visibilityState === "hidden" && !readOnly && ready && canPersist &&
         epoch === autosaveEpoch.current && !editorSaving.current)
         void persist(historyRef.current.present);
     };
     document.addEventListener("visibilitychange", flush);
     return () => document.removeEventListener("visibilitychange", flush);
-  }, [doc, persist, ready]);
+  }, [doc, persist, ready, readOnly]);
   rt.generationReferenceControls = generationReferenceControls;
   rt.command = command;
   rt.commitCanvasCommand = commitCanvasCommand;

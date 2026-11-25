@@ -1,3 +1,4 @@
+import { getEditingState, installEditingState } from "./editSession.ts";
 import {
   ApiError,
   errorMessage,
@@ -47,7 +48,7 @@ let recovering: { projectId: string; renewed: Promise<boolean> } | null = null;
 setLeaseRecovery((projectId) => {
   if (recovering?.projectId === projectId) return recovering.renewed;
   const renewed = serializeSessionChange(async () => {
-    if (active !== projectId) return false;
+    if (active !== projectId || getEditingState(projectId)?.mode === "preview") return false;
     await renewLease(projectId);
     return active === projectId;
   });
@@ -64,10 +65,13 @@ setLeaseRecovery((projectId) => {
 function keepAlive() {
   if (heartbeat !== undefined) return;
   heartbeat = window.setInterval(() => {
-    if (active && !opening) {
+    if (active && !opening && getEditingState(active)?.mode !== "preview") {
       const projectId = active;
       // A pending renewal must finish before an explicit close or project switch.
-      void serializeSessionChange(() => renewLease(projectId)).catch(() => {});
+      void serializeSessionChange(async () => {
+        if (active !== projectId || getEditingState(projectId)?.mode === "preview") return;
+        await renewLease(projectId);
+      }).catch(() => {});
     }
   }, 15000);
   window.addEventListener("pagehide", () => {
@@ -83,7 +87,7 @@ function closeProjectSession(keepalive = false) {
   });
 }
 
-function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
+export function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
   const task = (opening ?? Promise.resolve()).catch(() => {}).then(operation);
   opening = task;
   return task.finally(() => {
@@ -100,7 +104,7 @@ export function requireActiveBackendProject(
   const id = backendProjectId(documentId);
   return serializeSessionChange(async () => {
     signal.throwIfAborted();
-    if (active !== id)
+    if (active !== id || getEditingState(id)?.mode === "preview")
       throw new DOMException(tNow("errors.backend.selectionAborted"), "AbortError");
     return id;
   });
@@ -114,6 +118,7 @@ function activateBackendProject<T>(
   const id = backendProjectId(documentId);
   return serializeSessionChange(async () => {
     const previous = active;
+    const previousMode = previous ? getEditingState(previous) : undefined;
     const switching = previous && previous !== id;
     if (switching) {
       await closeProjectSession();
@@ -123,7 +128,8 @@ function activateBackendProject<T>(
     try {
       value = await activate();
     } catch (failure) {
-      if (switching) {
+      if (switching && previousMode?.mode === "preview") active = previous;
+      if (switching && previousMode?.mode !== "preview") {
         try {
           await request(`/creation/projects/${previous}/open`, {
             method: "POST",
@@ -152,6 +158,7 @@ export function openBackendProject(documentId: string, _title: string) {
   const id = backendProjectId(documentId);
   return activateBackendProject(id, async () => {
     await request(`/creation/projects/${id}/open`, { method: "POST" });
+    installEditingState(id, { mode: "edit", requester: null });
     return id;
   });
 }
@@ -180,11 +187,12 @@ export function openBackendProjectCanvas<T>(
   const id = backendProjectId(documentId);
   return serializeSessionChange(async () => {
     const previous = active;
+    const previousMode = previous ? getEditingState(previous) : undefined;
     const startedAt = Date.now();
     let value: T;
     try {
       value = await read();
-      if (Date.now() - startedAt >= LEASE_RECONFIRM_MS)
+      if (Date.now() - startedAt >= LEASE_RECONFIRM_MS && getEditingState(id)?.mode !== "preview")
         // Hydration kept the normal heartbeat from running. Renewing here keeps
         // the lease alive when it outlived the 60 s grant; if another window has
         // taken over the expired lease the server rejects this renewal and the
@@ -197,7 +205,10 @@ export function openBackendProjectCanvas<T>(
       // rejected until a heartbeat. Move the session back, as a failed switch
       // does. A renewal rejected because another window took `id` restores
       // `previous` without taking `id` back.
-      if (previous && previous !== id) {
+      if (previous && previous !== id && previousMode?.mode === "preview") {
+        await closeProjectSession();
+        installEditingState(previous, previousMode);
+      } else if (previous && previous !== id) {
         try {
           await request(`/creation/projects/${previous}/open`, {
             method: "POST",

@@ -2,6 +2,12 @@
 
 [English](user-guide.md) · [简体中文](user-guide.zh-CN.md) · [Back to README](../../README.md)
 
+## Preview the same project in another browser window
+
+Open the project menu and select **Open in new tab** next to the project. The preview uses the same workspace and disables editing controls. You can pan the canvas, inspect media, and play a saved timeline while the editing window stays open. Saved changes appear automatically.
+
+Select **Edit in this window** to request edit access. In the editing window, select **Save and hand off** to switch roles or **Keep editing here** to decline. If the editing window is already closed, edit access is granted as soon as its lease is released.
+
 ## Connect models
 
 On the welcome screen, select **Get started**. Set up a language model for the built-in assistant or choose an existing harness. Then check one or more tasks. Each checked task shows its saved models or opens its setup form if you have none. **Start creating** places a node for each checked task on the same canvas. **Import media** opens the file picker. **Open an example canvas** opens an editable example project directly, with download progress in step two. Cancelling keeps your task selections. You can add more models in Settings anytime.

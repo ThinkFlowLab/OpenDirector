@@ -144,7 +144,7 @@ def test_acp_shared_write_and_native_trace(cli, tmp_path, monkeypatch, mode):
         assert (events[-1]['error'] is None) == (mode != 'incomplete'), events
         message = events[-1]['conversation']['messages'][-1]
         assert message['text'] == 'Saved.'
-        assert {'type': 'thinking'} in events
+        assert any(event['type'] == 'thinking' for event in events)
         assert 'Test native thought' not in response.text
         assert message['plan'] == [{'content': 'Save the plan', 'status': 'completed'}]
         assert client.get(path + '/assistant').json()['messages'][-1]['plan'] == message['plan']

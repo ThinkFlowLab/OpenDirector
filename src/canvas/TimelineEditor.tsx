@@ -66,6 +66,7 @@ import { fetchMediaSource } from "../backend/creationClient.ts";
 
 export interface TimelineEditorProps {
   node: CanvasNode;
+  readOnly?: boolean;
   resources?: CanvasResource[];
   /** Returns false when the canvas rejected the edit, so the session stays open. */
   onApply: (data: TimelineData) => boolean | void | Promise<boolean | void>;
@@ -106,6 +107,7 @@ interface ClipDrag {
 
 export function TimelineEditor({
   node,
+  readOnly = false,
   resources = [],
   onApply,
   onRender,
@@ -470,6 +472,7 @@ export function TimelineEditor({
     operation: (current: TimelineData) => TimelineData,
     gesture?: string,
   ) => {
+    if (readOnly) return;
     try {
       const next = operation(timelineRef.current);
       const invalid = timelineError(next);
@@ -1171,6 +1174,151 @@ export function TimelineEditor({
     track.title ||
     t(track.kind === "audio" ? "timeline.track.audio" : "timeline.track.video");
 
+  const monitor = (
+    <div className="cw-timeline-monitor">
+      <div className="cw-timeline-picture-area">
+        <div
+          className={`cw-timeline-screen${duration ? "" : " is-empty"}`}
+          style={{
+            aspectRatio: `${timeline.width}/${timeline.height}`,
+            width: `min(100cqw, calc(100cqh * ${timeline.width / timeline.height}))`,
+          }}
+        >
+          {currentVisual?.clip.resource.src ? (
+            currentVisual.clip.resource.kind === "image" ? (
+              <AssetMedia
+                as="img"
+                src={currentVisual.clip.resource.src}
+                alt={currentVisual.clip.resource.title}
+              />
+            ) : (
+              <AssetMedia
+                as="video"
+                key={currentVisual.clip.id}
+                ref={bindMedia(currentVisual.clip)}
+                src={currentVisual.clip.resource.src}
+                playsInline
+                preload="auto"
+                onLoadedMetadata={(event) =>
+                  mediaReady(
+                    event.currentTarget,
+                    currentVisual.clip,
+                    currentVisual.start,
+                  )
+                }
+                onError={() => {
+                  setPlaying(false);
+                  setError(t("timeline.player.videoError"));
+                }}
+              />
+            )
+          ) : !duration ? (
+            <div className="cw-timeline-monitor-empty">
+              <CanvasIcon name="video" size={38} />
+              <span>
+                {duration
+                  ? t("timeline.player.noVideo")
+                  : t("timeline.player.empty")}
+              </span>
+            </div>
+          ) : null}
+          <TimelineTextPreview
+            timeline={dragPreview ?? timeline}
+            position={position}
+            className="cw-timeline-text-preview"
+            onError={(reason) => setError(reason.message)}
+          />
+          {!readOnly && <TimelineTextPosition
+            {...textCallbacks}
+            timeline={dragPreview ?? timeline}
+            position={position}
+          />}
+          {currentAudio.map((segment) => (
+            <AssetMedia
+              as="audio"
+              key={segment.clip.id}
+              ref={bindMedia(segment.clip)}
+              src={segment.clip.resource.src}
+              preload="auto"
+              onLoadedMetadata={(event) =>
+                mediaReady(
+                  event.currentTarget,
+                  segment.clip,
+                  segment.start,
+                )
+              }
+              onError={() => {
+                setPlaying(false);
+                setError(t("timeline.player.audioError"));
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      {currentVisual && !currentVisual.clip.resource.src && (
+        <p role="alert" className="cw-domain-note">
+          {t("timeline.player.sourceUnavailable")}
+        </p>
+      )}
+      <div className="cw-timeline-transport">
+        <button
+          aria-label={t("timeline.player.start")}
+          onClick={() => seek(0)}
+          disabled={!duration}
+        >
+          ↤
+        </button>
+        <button
+          className="cw-timeline-play"
+          aria-label={
+            playing
+              ? t("timeline.player.pause")
+              : t("timeline.player.play")
+          }
+          disabled={!duration || busy}
+          onClick={() => {
+            if (position >= duration) setPosition(0);
+            setPlaying((current) => !current);
+          }}
+        >
+          <CanvasIcon name={playing ? "stop" : "play"} size={18} />
+        </button>
+        <output>
+          {timeLabel(position)} <span>/ {timeLabel(duration)}</span>
+        </output>
+        <label>
+          {t("timeline.player.fps")}
+          <select
+            disabled={readOnly}
+            value={timeline.fps}
+            onChange={(event) =>
+              change((current) => ({
+                ...current,
+                fps: Number(event.target.value),
+              }))
+            }
+          >
+            {[24, 25, 30, 50, 60].map((fps) => (
+              <option key={fps} value={fps}>
+                {fps} fps
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <ControlSlider
+        className="cw-timeline-seek"
+        aria-label={t("timeline.player.seek")}
+        min={0}
+        max={Math.max(0.01, duration)}
+        step={1 / timeline.fps}
+        value={position}
+        onChange={(event) => seek(Number(event.target.value))}
+        disabled={!duration}
+      />
+    </div>
+  );
+
   return (
     <EditorModal
       title={t("timeline.header.title", { title: node.data.title })}
@@ -1178,10 +1326,10 @@ export function TimelineEditor({
       className="cw-timeline-dialog"
       onClose={onClose}
       onApply={() => void applyTimeline()}
-      disabled={busy || node.locked || !textInputValid || gesturePending}
+      disabled={readOnly || busy || node.locked || !textInputValid || gesturePending}
       error={error}
       actions={
-        <>
+        <div inert={readOnly} className="cw-preview-selection-controls">
           {onPreparePackageImport && (
             <>
               <button
@@ -1242,7 +1390,7 @@ export function TimelineEditor({
           >
             {t("timeline.action.renderMp4")}
           </button>
-        </>
+        </div>
       }
     >
       {hasTextResources && (
@@ -1361,7 +1509,7 @@ export function TimelineEditor({
           }
         >
           {libraryShown && (
-            <aside className="cw-timeline-library">
+            <aside className="cw-timeline-library" inert={readOnly}>
               <div className="cw-timeline-text-actions">
                 <button onClick={() => void createText()}>
                   {t("timeline.text.add")}
@@ -1545,148 +1693,8 @@ export function TimelineEditor({
               }}
             />
           )}
-          <div className="cw-timeline-monitor">
-            <div className="cw-timeline-picture-area">
-              <div
-                className={`cw-timeline-screen${duration ? "" : " is-empty"}`}
-                style={{
-                  aspectRatio: `${timeline.width}/${timeline.height}`,
-                  width: `min(100cqw, calc(100cqh * ${timeline.width / timeline.height}))`,
-                }}
-              >
-                {currentVisual?.clip.resource.src ? (
-                  currentVisual.clip.resource.kind === "image" ? (
-                    <AssetMedia
-                      as="img"
-                      src={currentVisual.clip.resource.src}
-                      alt={currentVisual.clip.resource.title}
-                    />
-                  ) : (
-                    <AssetMedia
-                      as="video"
-                      key={currentVisual.clip.id}
-                      ref={bindMedia(currentVisual.clip)}
-                      src={currentVisual.clip.resource.src}
-                      playsInline
-                      preload="auto"
-                      onLoadedMetadata={(event) =>
-                        mediaReady(
-                          event.currentTarget,
-                          currentVisual.clip,
-                          currentVisual.start,
-                        )
-                      }
-                      onError={() => {
-                        setPlaying(false);
-                        setError(t("timeline.player.videoError"));
-                      }}
-                    />
-                  )
-                ) : !duration ? (
-                  <div className="cw-timeline-monitor-empty">
-                    <CanvasIcon name="video" size={38} />
-                    <span>
-                      {duration
-                        ? t("timeline.player.noVideo")
-                        : t("timeline.player.empty")}
-                    </span>
-                  </div>
-                ) : null}
-                <TimelineTextPreview
-                  timeline={dragPreview ?? timeline}
-                  position={position}
-                  className="cw-timeline-text-preview"
-                  onError={(reason) => setError(reason.message)}
-                />
-                <TimelineTextPosition
-                  {...textCallbacks}
-                  timeline={dragPreview ?? timeline}
-                  position={position}
-                />
-                {currentAudio.map((segment) => (
-                  <AssetMedia
-                    as="audio"
-                    key={segment.clip.id}
-                    ref={bindMedia(segment.clip)}
-                    src={segment.clip.resource.src}
-                    preload="auto"
-                    onLoadedMetadata={(event) =>
-                      mediaReady(
-                        event.currentTarget,
-                        segment.clip,
-                        segment.start,
-                      )
-                    }
-                    onError={() => {
-                      setPlaying(false);
-                      setError(t("timeline.player.audioError"));
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-            {currentVisual && !currentVisual.clip.resource.src && (
-              <p role="alert" className="cw-domain-note">
-                {t("timeline.player.sourceUnavailable")}
-              </p>
-            )}
-            <div className="cw-timeline-transport">
-              <button
-                aria-label={t("timeline.player.start")}
-                onClick={() => seek(0)}
-                disabled={!duration}
-              >
-                ↤
-              </button>
-              <button
-                className="cw-timeline-play"
-                aria-label={
-                  playing
-                    ? t("timeline.player.pause")
-                    : t("timeline.player.play")
-                }
-                disabled={!duration || busy}
-                onClick={() => {
-                  if (position >= duration) setPosition(0);
-                  setPlaying((current) => !current);
-                }}
-              >
-                <CanvasIcon name={playing ? "stop" : "play"} size={18} />
-              </button>
-              <output>
-                {timeLabel(position)} <span>/ {timeLabel(duration)}</span>
-              </output>
-              <label>
-                {t("timeline.player.fps")}
-                <select
-                  value={timeline.fps}
-                  onChange={(event) =>
-                    change((current) => ({
-                      ...current,
-                      fps: Number(event.target.value),
-                    }))
-                  }
-                >
-                  {[24, 25, 30, 50, 60].map((fps) => (
-                    <option key={fps} value={fps}>
-                      {fps} fps
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <ControlSlider
-              className="cw-timeline-seek"
-              aria-label={t("timeline.player.seek")}
-              min={0}
-              max={Math.max(0.01, duration)}
-              step={1 / timeline.fps}
-              value={position}
-              onChange={(event) => seek(Number(event.target.value))}
-              disabled={!duration}
-            />
-          </div>
-          <aside className="cw-timeline-inspector">
+          {monitor}
+          <aside className="cw-timeline-inspector" inert={readOnly}>
             <div className="cw-domain-section-heading">
               <h3>
                 {selected
@@ -2059,6 +2067,7 @@ export function TimelineEditor({
         >
           <div
             className="cw-timeline-tracks"
+            inert={readOnly}
             style={
               {
                 width: trackWidth,
