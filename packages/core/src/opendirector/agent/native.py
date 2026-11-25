@@ -13,13 +13,13 @@ from urllib.request import getproxies
 from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
-from opendirector.agent import cli_transport, deepseek
+from opendirector.agent import cli_transport, deepseek, windows_powershell
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
-from opendirector.agent.tools import ROOT, SYSTEM
+from opendirector.agent.tools import ROOT, SUGGESTED_REPLIES, SYSTEM
 from opendirector.installation import BUNDLED
 from opendirector.agent.skill_snapshot import prepare_skills
 from opendirector.agent.directory_links import link_directory, unlink_directory
@@ -239,6 +239,8 @@ class NativeRuntime:
                         config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
                         **({'native_directory': native_work} if runtime == 'opencode' else {}),
                         **({'input_modalities': config.get('inputModalities', ['text'])} if run.runtime == 'default' else {}))
+                if runtime == 'opencode':
+                    await windows_powershell.configure_opencode(args[0], native_work, env, Path(temporary))
                 if thinking != 'auto' and runtime == 'codex':
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':
@@ -253,7 +255,8 @@ class NativeRuntime:
                     'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
-                    'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.')
+                    'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.\n'
+                    + SUGGESTED_REPLIES)
                 prompt = execution_context + '\n' + json.dumps(context[-1:] if session_id else context, ensure_ascii=False)
                 skill_instruction = ''
                 if selected:

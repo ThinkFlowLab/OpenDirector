@@ -14,6 +14,7 @@ dependencies = [
   "pydantic>=2.12,<3", "typer>=0.27.3,<0.28", "Pillow>=12,<14", "pillow-heif>=1.8.1,<2",
   "fonttools==4.68.0", "fastapi>=0.115,<1", "uvicorn>=0.30,<1",
   "starlette>=1.8,<2", "python-multipart>=0.0.33,<1",
+  "distlib>=0.4,<1; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,12 @@ opendirector = "opendirector.cli:main"
 
 [tool.pytest.ini_options]
 markers = [
+  "cpu: CPU-only tests; default during hardware migration",
+  "gpu: reserved generic GPU platform",
+  "cuda: reserved CUDA platform",
+  "rocm: reserved ROCm platform",
+  "xpu: reserved XPU platform",
+  "npu: reserved NPU platform",
   "ready: fast deterministic checks for PR feedback",
   "merge: broader stubbed integration checks for the pre-merge gate",
   "nightly: timing-sensitive or opt-in external-service checks",

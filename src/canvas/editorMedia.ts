@@ -1,6 +1,8 @@
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { defaultTranslate } from "./assistantTranslate.ts";
 import type { CanvasResource } from "./model";
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { resolveMediaSource } from "../backend/creationClient.ts";
 
 const aborted = (t: Translate) =>
   new DOMException(t("editors.media.error.aborted"), "AbortError");
@@ -153,6 +155,16 @@ export async function withMediaDuration(
     return resource;
   if (!resource.src)
     throw new Error(t("editors.media.error.missingSource"));
+  if (parseAssetSource(resource.src)) {
+    // Probe the bytes behind a saved asset; the result keeps its stable source.
+    const src = await resolveMediaSource(resource.src, signal).catch(
+      (error) => {
+        throw signal?.aborted ? aborted(t) : error;
+      },
+    );
+    const probed = await withMediaDuration({ ...resource, src }, signal, t);
+    return { ...probed, src: resource.src };
+  }
   return new Promise<CanvasResource>((resolve, reject) => {
     const element =
       resource.kind === "image"

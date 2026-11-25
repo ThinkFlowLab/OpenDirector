@@ -19,6 +19,9 @@ from test_creation_canvas_service import project, send, ver
 from test_multimodal_references import media, task
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'

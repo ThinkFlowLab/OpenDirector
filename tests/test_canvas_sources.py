@@ -21,6 +21,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from test_subject_library import register_image
 
 
+pytestmark = pytest.mark.cpu
+
+
 def canvas_source(store, kind='image', payload=None):
     projects, owner, session = new_project(store.repository, 'Canvas source')
     assets = CreationToolAssets(projects)

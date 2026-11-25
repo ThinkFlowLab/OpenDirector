@@ -26,6 +26,10 @@ export const RULE_FACTS = {
   "musicSecondsInitial": 30,
   "referenceMediaSeconds": 15,
   "fasth3MediaReferenceLimit": 12,
+  "controlVideoSeconds": [
+    4,
+    30
+  ],
   "serviceVoicePattern": "^[A-Za-z0-9_.-]{1,64}$",
   "storedVoicePattern": "^[\\w.-]{1,64}$",
   "videoAspectRatios": [
@@ -62,13 +66,14 @@ export function aspectRatioChoices(input: {
     ];
   }
   if (input.kind === "video" && input.publishedRatios != null) {
-    if (input.videoMode === "first-last") return ["auto"];
+    if (input.videoMode === "first-last" || input.videoMode === "control") return ["auto"];
     return ["auto", ...input.publishedRatios];
   }
   const framed = input.protocol === "volcengine" || input.dimensioned;
   if (
     input.kind === "video" &&
     input.videoMode !== "continuation" &&
+    input.videoMode !== "control" &&
     framed
   ) {
     return ["auto", ...RULE_FACTS.videoAspectRatios];
@@ -139,8 +144,8 @@ export function effectiveVideoMode(input: {
   readonly allowedModes: readonly string[];
   readonly hasNonTextMedia: boolean;
   readonly configured: boolean;
-}): "continuation" | "first_frame" | "reference" {
-  if (input.mode === "continuation") return "continuation";
+}): "continuation" | "control" | "first_frame" | "reference" {
+  if (input.mode === "continuation" || input.mode === "control") return input.mode;
   if (input.mode === "first-last" || input.mode === "first_frame") {
     return "first_frame";
   }
@@ -644,6 +649,20 @@ export const RULE_DERIVATION_VECTORS = [
       "configured": true
     },
     "expected": "continuation"
+  },
+  {
+    "name": "control-mode",
+    "fn": "effectiveVideoMode",
+    "input": {
+      "mode": "control",
+      "allowedModes": [
+        "reference",
+        "control"
+      ],
+      "hasNonTextMedia": true,
+      "configured": true
+    },
+    "expected": "control"
   },
   {
     "name": "first-last-mode",

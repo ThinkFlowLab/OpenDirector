@@ -1,7 +1,12 @@
+
+import pytest
 import json
 from uuid import uuid4
 
 from test_assistant_conversations import assistant, send  # noqa: F401
+
+
+pytestmark = pytest.mark.cpu
 
 
 def conversation_file(tmp_path):

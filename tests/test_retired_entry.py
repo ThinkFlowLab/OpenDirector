@@ -1,4 +1,6 @@
 """Retired endpoints and startup cannot read, execute or repair historical data."""
+
+import pytest
 import json
 from uuid import uuid4
 
@@ -8,6 +10,9 @@ from legacy_fixtures import legacy_project
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
+
+
+pytestmark = pytest.mark.cpu
 
 
 def files(root):

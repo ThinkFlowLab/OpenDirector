@@ -237,6 +237,15 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
       ),
     [],
   );
+  const commitCanvasCommand = async (value: CanvasCommand, failureMessage: string) => {
+    const current = historyRef.current;
+    if (switchPending.current) throw new Error(failureMessage);
+    const next = executeCommand(current, value, frameCapabilities.current).present;
+    invalidateScheduledAutosave();
+    if (!(await persist(next, false))) throw new Error(saveError.current || failureMessage);
+    if (historyRef.current.present.id !== next.id) throw new Error(failureMessage);
+    command(value);
+  };
 
   const replayHistory = (forward = false) => {
     if (historyReplayQueue.current) {
@@ -602,6 +611,23 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   }, [doc.id, ready, notify, historyRenderVersion]);
   useEffect(() => {
     if (!ready) return;
+    const projection = workspaceProjection(doc.id);
+    return creationClient(doc.id).listenMedia(() => {
+      if (projection.baseline)
+        projection.baseline = projection.withMediaAvailability(projection.baseline);
+      const apply = (document: CanvasDocument) =>
+        document.id === doc.id ? projection.withMediaAvailability(document) : document;
+      setHistory((history) => ({
+        ...history,
+        present: apply(history.present),
+        past: history.past.map(apply),
+        future: history.future.map(apply),
+        transaction: history.transaction ? apply(history.transaction) : null,
+      }));
+    });
+  }, [doc.id, ready]);
+  useEffect(() => {
+    if (!ready) return;
     let active = true,
       sequence = 0;
     const refresh = () => {
@@ -638,6 +664,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   }, [doc, persist, ready]);
   rt.generationReferenceControls = generationReferenceControls;
   rt.command = command;
+  rt.commitCanvasCommand = commitCanvasCommand;
   rt.change = change;
   rt.invalidateScheduledAutosave = invalidateScheduledAutosave;
   rt.begin = begin;

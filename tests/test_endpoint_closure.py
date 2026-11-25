@@ -18,6 +18,9 @@ from test_model_availability import document, private, service
 from generation_helpers import settled
 
 
+pytestmark = pytest.mark.cpu
+
+
 def missing_declaration(missing, **kwargs):
     value = document(**kwargs)
     if missing == 'model':

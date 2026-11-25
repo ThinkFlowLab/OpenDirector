@@ -20,6 +20,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture(params=['http', 'live'], ids=['http-testclient', 'live-bridge-only'])
 def canvas_cli(request, tmp_path, monkeypatch):
     local = LocalProjects(tmp_path)

@@ -53,9 +53,9 @@ Budgets measure stage wall time, not the sum of parallel job limits, and never j
 
 ### 过渡与必需检查 / Transition and required checks
 
-当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR、`merge_group: checks_requested` 和 main push 开启静态门禁；纯文档 PR / 合并组合按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，安全扫描见下方独立工作流；机型轴、合并队列强制配置与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR、`merge_group: checks_requested` 和 main push 开启静态门禁；纯文档 PR / 合并组合按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，安全扫描见下方独立工作流；机型轴已注册并选择 CPU，合并队列强制配置与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
 
-Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs, `merge_group: checks_requested` and main pushes. Documentation-only PRs and merge groups use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered. Security scanning uses the independent workflow below; hardware tagging, merge-queue enforcement and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs, `merge_group: checks_requested` and main pushes. Documentation-only PRs and merge groups use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered. Security scanning uses the independent workflow below; CPU hardware tagging and selection are active; merge-queue enforcement and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
 
 - 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
 - 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
@@ -242,6 +242,28 @@ Start the isolated API with both `--http-generation-fixture --assistant-fixture`
 
 The image browser workflow covers pinned, followed and mixed references. With an exact two-image requirement, one and three images are rejected with no new jobs or generation requests; accepted pairs are checked against uploaded bytes, order and persisted asset IDs. Reopening retains the references, model, prompt and results. Frontend tests also check that a pin and a followed reference to the same asset are counted only once.
 
+## Agent 原生视觉读取 / Agent native visual inspection
+
+发布检查使用真实 Bundled、OpenCode、Codex、Claude Code、JiuwenSwarm 和 DeepSeek Harness CLI 以及本地模型夹具，检查原图和 FFmpeg 抽帧是否以正确顺序作为可解码图片到达模型。Bundled 还检查纯文本模型不会收到图片。CI 安装固定版本的外部 CLI，所需 CLI 缺失即失败。
+
+Release checks use the real Bundled, OpenCode, Codex, Claude Code, JiuwenSwarm and DeepSeek Harness CLIs with local model fixtures. They verify that decodable pixels from the still and FFmpeg frame reach the model in order. The Bundled check also verifies that a text-only model receives no pixels. CI installs pinned external CLI versions and fails if a required CLI is unavailable.
+
+```bash
+OPENDIRECTOR_HARNESS_CI=1 python -m pytest tests/test_agent_visual_gate.py::test_harness_native_visual_input
+```
+
+真实模型验收单独执行，使用隔离工程和合成素材。所选运行时的安装、认证或视觉能力不可用时，验收失败。
+
+Run the live model acceptance separately. It uses temporary projects and synthetic media and fails if a requested runtime's installation, authentication or visual input is unavailable.
+
+```bash
+OPENDIRECTOR_VISUAL_GATE=all python -m pytest tests/test_agent_visual_gate.py -k live_runtime_visual_input
+```
+
+可将 `all` 换成逗号分隔的运行时 ID。Bundled 从环境读取 `OPENDIRECTOR_VISUAL_GATE_URL`、`OPENDIRECTOR_VISUAL_GATE_MODEL` 和可选的 `OPENDIRECTOR_VISUAL_GATE_KEY`。其他运行时使用已配置的原生账户和模型，可用 `OPENDIRECTOR_VISUAL_GATE_<RUNTIME>_MODEL` 指定模型。JiuwenSwarm 的视觉模型可在原生 `model_client_config` 中声明 `supports_vision: true`。
+
+Replace `all` with comma-separated runtime IDs to select a subset. Bundled reads `OPENDIRECTOR_VISUAL_GATE_URL`, `OPENDIRECTOR_VISUAL_GATE_MODEL` and the optional `OPENDIRECTOR_VISUAL_GATE_KEY` from the environment. Other runtimes use their configured native accounts and models, with `OPENDIRECTOR_VISUAL_GATE_<RUNTIME>_MODEL` available as an override. JiuwenSwarm vision models can declare `supports_vision: true` in the native `model_client_config`.
+
 ## 按风险选择验证
 
 能力与提示修改还需检查实际页面和发送内容：共同失败原因只呈现一次，提示说明用户能够采取的操作，调研记录和测试配置不进入产品文案。分别查看中英文页面的正常、未知、过期、暂停和失败状态。按最终请求统计素材，确认超量输入零新增任务、零生成请求；默认参数与服务允许范围、工具来源与模型输入分别核对。
@@ -287,6 +309,7 @@ node tests/browser/reference_reconnect.mjs     # 参考连线删除后重连
 node tests/browser/context_menu_dismissal.mjs  # 右键菜单关闭
 node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件 AAC）
 node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选适配器的比例与尺寸
+node tests/browser/canvas_progressive_load.mjs # 画布结构先可用，节点媒体独立加载、失败重试且不改写内容
 ```
 
 历史版本预览回归（[#393](https://github.com/ThinkFlowLab/OpenDirector/issues/393)）沿用上述隔离服务：运行 `node tests/browser/node_versions.mjs`；设置 `HISTORY_PREVIEW_PROBE=delay` 会延迟目标缩略图一秒，完整旅程应通过。设置 `HISTORY_PREVIEW_PROBE=missing` 会注入缩略图 404，预期脚本失败并输出 `History preview unavailable`、目标资产 ID、HTTP 状态和媒体提示；它是故障诊断检查，不是成功旅程。清除变量后恢复正常运行。布局断言必须等待预期资产的图片加载成功，不能以提示词出现代替预览就绪。
@@ -585,12 +608,13 @@ Zhipu BigModel chat access uses the following checks. Browser commands connect t
 ```sh
 .venv/bin/python -m pytest tests/test_zhipu.py tests/test_model_configs.py -q
 node --test tests/providerPresets.test.ts
+CREATION_API_URL=http://127.0.0.1:8019 CREATION_WEB_URL=http://127.0.0.1:5179 node tests/browser/new_model_discovery.mjs
 CREATION_API_URL=http://127.0.0.1:8019 CREATION_WEB_URL=http://127.0.0.1:5179 node tests/browser/zhipu_provider.mjs
 ```
 
 The Python cases check how the shared thinking levels map to GLM reasoning_effort. GLM accepts only low, high and max for reasoning_effort. The auto level omits the parameter so the provider default applies, and an unknown level falls back to high as in the DeepSeek branch. Other hosts and the DeepSeek behavior stay unchanged.
 
-The browser case checks both display languages for the provider list and names, canonical URL prefill, GLM model preselection without remote discovery, manual addition of other model IDs, the saved connection reuse hint, save and reopen, key privacy in public model responses, and the assistant agent picker listing and keeping the selected Zhipu model. The browser never contacts open.bigmodel.cn and the API key is always a fixture value. Real streaming conversations, tool call execution and thinking level effects additionally require valid Zhipu credentials. Keep the conversation transcript, tool receipts and screenshots as evidence.
+The **New model discovery** case runs on its own with the isolated API and Vite. It verifies that a model absent from the preset appears after an authenticated `GET /models`, can be selected and saved, and remains selectable in the assistant. The **Zhipu model settings feedback** case checks both display languages for missing credentials, request progress, upstream failure, retry, empty responses, manual entry, and audio preset isolation. Both cases use local HTTP fixtures and synthetic keys. Real streaming conversations, tool calls, and thinking levels require a separate run with valid Zhipu credentials.
 
 智谱 BigModel GLM-TTS 接入使用以下检查：
 
@@ -656,3 +680,42 @@ PYTHONPATH=packages/core/src:apps/api/src python tests/browser/creation_server.p
 # In another terminal, with CREATION_WEB_URL / CREATION_API_URL set:
 node tests/browser/video_review_regressions.mjs
 ```
+
+
+### Hardware selection / 机型选择
+
+Current Python test modules explicitly declare `pytest.mark.cpu`, independently
+of ready/merge/nightly. The `ci_hardware` collection hook assigns CPU to unmarked
+migration cases **before** mark deselection. Multiple distinct platform marks,
+including inherited module/class/function marks, fail collection. Repeated CPU
+marks are harmless. Reserved accelerator marks are never relabeled CPU; this
+change adds no accelerator tests, jobs, credentials, or real-provider calls.
+
+当前 Python 模块显式标记 `cpu`，与 CI 层级正交。收集插件在 `-m` 筛选前为
+迁移期间未标记的用例补 CPU；模块、类、函数的机型标记合并后若有多个不同值，
+收集失败。重复 CPU 标记允许，预留加速器用例不会被改标 CPU。本改动不新增
+加速器测试、车道、凭证或真实模型调用。
+
+Release checks and nightly Python phases select `cpu`, including watchlist and
+bundled CLI phases. Existing layer expressions are intersected with CPU; the
+ready/merge/nightly cutover still waits for PR-7/PR-8. A CPU-only profile is
+accepted by the full layer audit only with zero deselections; introducing real
+non-CPU cases requires an independent full inventory and their explicit lanes.
+
+Release checks 与 nightly 的 Python 阶段（含 watchlist 和 bundled CLI）选择
+CPU，现有层级表达式与 CPU 取交集，尚不切换 ready/merge/nightly。完整层级核对
+仅在零排除时接受 CPU profile；未来加入非 CPU 用例时，必须配套独立完整清单
+及相应车道，不能用 CPU 子集冒充全量覆盖。
+
+```sh
+python -m pytest tests --collect-only -q --ci-profile=all.json
+python -m pytest tests --collect-only -q -m cpu --ci-profile=cpu.json
+python scripts/ci/check_test_layers.py --profile cpu.json
+```
+
+Compare raw test ID sets and layer assignments from both profiles. They must
+match for today's all-CPU suite; neither collection proves test execution.
+Timing JSON includes per-case hardware and aggregate hardware counts.
+
+比较两份 profile 的原始 ID 和层级；当前全 CPU 套件应完全一致，收集结果
+不代表测试执行通过。耗时 JSON 同时记录逐用例机型和机型汇总数量。

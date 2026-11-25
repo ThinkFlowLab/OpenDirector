@@ -13,13 +13,24 @@
 
 # OpenDirector
 
+**[Download OpenDirector](https://thinkflowlab.github.io/OpenDirector/#download)** for Apple Silicon Macs and Windows x64 PCs.
+
 **From an idea to a downloadable short film: generate through chat, organize on a canvas, edit media, and export from a timeline.**
 
 OpenDirector is an AI video creation workspace that runs locally and is accessed through your browser. Discuss ideas with the assistant and generate assets, organize and iterate on them on the canvas, edit images, video, and audio, then arrange your material on a timeline and export an MP4.
 
 Use it to explore visual ideas, refine assets, and make short films. Projects stay on your machine; generation uses the provider APIs or self-hosted model services you choose.
 
+[Official website](https://thinkflowlab.github.io/OpenDirector/en/) · [Download for macOS or Windows](https://thinkflowlab.github.io/OpenDirector/en/#download) · [Watch the example film](https://thinkflowlab.github.io/OpenDirector/en/#film) · [Installation guide](docs/guides/installation.md)
+
 [News](#news) · [Example film](#example-film-we-can-still-win) · [Quick start](#quick-start) · [Documentation](#documentation) · [Community](#community) · [Contributing](#contributing)
+
+Welcome to follow our official Bilibili account, which includes tutorials and shares splendid creations from our users!
+<p>
+  <a href="https://space.bilibili.com/3747582748658251">
+    <img src="https://img.shields.io/badge/Bilibili-OpenDirector-00A1D6?logo=bilibili&amp;logoColor=white" alt="OpenDirector official Bilibili account" />
+  </a>
+</p>
 
 ## News
 
@@ -53,6 +64,10 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 [Download the original film (MP4, 15.7 MiB)](docs/guides/assets/dota2-short-film.mp4?raw=true) · 60 seconds · 1280 × 720 · 24 fps · Music: 《岁月神偷》.
 
 ## Quick start
+
+### Install the desktop app
+
+[Download the installer](https://thinkflowlab.github.io/OpenDirector/en/#download) for macOS (Apple Silicon) or Windows (x64). Install and open OpenDirector.
 
 ### Install with AI
 

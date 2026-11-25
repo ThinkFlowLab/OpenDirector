@@ -15,6 +15,7 @@ import type {
   MessageParams,
 } from "../../i18n/types";
 import type { CanvasResource } from "../model";
+import { fetchMediaSource } from "../../backend/creationClient.ts";
 
 export type LibraryKind = "asset" | "subject";
 export type LibraryState = "active" | "trashed";
@@ -185,6 +186,21 @@ export function withMediaSuffix(name: string, mimeType?: string): string {
   return suffix ? `${name}${suffix}` : name;
 }
 
+/**
+ * Library rows accumulate: picking a card adds it to the selection and only a
+ * second click on that same card removes it. Cross-canvas rows are keyed by
+ * their own node ids, so picks from different canvases must coexist here.
+ */
+export function toggleSelection(
+  current: Set<string>,
+  id: string,
+): Set<string> {
+  const next = new Set(current);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
 function query(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params))
@@ -294,7 +310,7 @@ export async function addInlineFromCanvas(
   options: { projectId?: string; assetId?: string; mimeType?: string } = {},
   t: Translate = nowTranslate,
 ): Promise<LibraryItem> {
-  const response = await fetch(src);
+  const response = await fetchMediaSource(src);
   if (!response.ok) throw new Error(t("library.media.inlineReadFailed"));
   const blob = await response.blob();
   const mime =

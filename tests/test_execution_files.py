@@ -8,6 +8,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.execution_files import execution_file
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_execution_file_rejects_a_hardlink_to_an_outside_file(tmp_path):
     work = tmp_path / 'work'
     work.mkdir()

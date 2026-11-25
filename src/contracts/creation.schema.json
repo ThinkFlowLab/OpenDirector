@@ -1540,6 +1540,7 @@
                   "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
                   "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommandOperation",
                   "canvas.hide": "#/$defs/CanvasHideCommandOperation",
+                  "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommandOperation",
                   "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
                   "canvas.move": "#/$defs/CanvasMoveCommandOperation",
                   "canvas.show": "#/$defs/CanvasShowCommandOperation",
@@ -1566,6 +1567,9 @@
                 },
                 {
                   "$ref": "#/$defs/CanvasUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasLayoutRunsCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/CanvasHideCommandOperation"
@@ -2542,6 +2546,87 @@
         "title": "CanvasItemVersion",
         "type": "object"
       },
+      "CanvasLayoutRunsCommand": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommand",
+        "type": "object"
+      },
+      "CanvasLayoutRunsCommandOperation": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Operation discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommandOperation",
+        "type": "object"
+      },
       "CanvasMaterialize": {
         "additionalProperties": false,
         "properties": {
@@ -2876,6 +2961,23 @@
             "default": null,
             "description": "Parent canvas group ID, or null for the root.",
             "title": "Parentid"
+          },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "run",
+                  "free"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Enable Run layout for a top-level group, or use free to return it to manual layout.",
+            "title": "Autolayout"
           }
         },
         "required": [
@@ -3786,6 +3888,10 @@
               "invalid_input",
               "revision_conflict",
               "role_restricted",
+              "canvas_run_layout_group",
+              "canvas_run_layout_conflict",
+              "canvas_run_layout_extent",
+              "canvas_run_layout_shared_object",
               "missing_object",
               "reference_invalid",
               "image_quality_unsupported",
@@ -3889,6 +3995,20 @@
             "default": null,
             "description": "Path of the field responsible for this issue.",
             "title": "Field"
+          },
+          "relatedObjectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Other business object involved in the issue.",
+            "title": "Relatedobjectid"
           }
         },
         "required": [
@@ -4065,6 +4185,7 @@
                 "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
                 "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
+                "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
                 "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -4135,6 +4256,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasLayoutRunsCommand"
               },
               {
                 "$ref": "#/$defs/CanvasHideCommand"
@@ -4235,6 +4359,7 @@
                 "canvas.versions": "#/$defs/VersionsQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
+                "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
                 "project.get": "#/$defs/ProjectQuery"
               },
@@ -4258,6 +4383,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasStatusQuery"
+              },
+              {
+                "$ref": "#/$defs/JobStatusQuery"
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
@@ -5392,7 +5520,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -6008,6 +6137,20 @@
             },
             "title": "Tags",
             "type": "array"
+          },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "const": "run",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.",
+            "title": "Autolayout"
           },
           "binding": {
             "$ref": "#/$defs/ContainerBinding",
@@ -7112,7 +7255,8 @@
               "enum": [
                 "first_frame",
                 "reference",
-                "continuation"
+                "continuation",
+                "control"
               ],
               "type": "string"
             },
@@ -7867,6 +8011,65 @@
         "title": "JobRecoverCommand",
         "type": "object"
       },
+      "JobStatusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.status",
+            "description": "Read several generation jobs, optionally waiting for terminal states.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectIds": {
+            "default": [],
+            "description": "Generation job IDs; every unfinished project job when empty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Objectids",
+            "type": "array"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait for terminal states; zero returns immediately.",
+            "maximum": 300,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          },
+          "until": {
+            "default": "all",
+            "description": "Return after every selected job or any job reaches a terminal state.",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type"
+        ],
+        "title": "JobStatusQuery",
+        "type": "object"
+      },
       "JsonValue": {},
       "LayerContentBase": {
         "additionalProperties": false,
@@ -8253,6 +8456,7 @@
               "video-matting",
               "video-crop",
               "video-translation",
+              "video-mask-composite",
               "extract-audio",
               "audio-separation",
               "video-trim",
@@ -9743,7 +9947,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -10801,7 +11006,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -11131,7 +11337,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -15146,7 +15353,8 @@
             "enum": [
               "first_frame",
               "reference",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Videomode",
             "type": "string"
@@ -15653,6 +15861,7 @@
             "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
             "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
+            "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
             "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -15723,6 +15932,9 @@
           },
           {
             "$ref": "#/$defs/CanvasUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasLayoutRunsCommand"
           },
           {
             "$ref": "#/$defs/CanvasHideCommand"
@@ -15823,6 +16035,7 @@
             "canvas.versions": "#/$defs/VersionsQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
+            "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
             "project.get": "#/$defs/ProjectQuery"
           },
@@ -15846,6 +16059,9 @@
           },
           {
             "$ref": "#/$defs/CanvasStatusQuery"
+          },
+          {
+            "$ref": "#/$defs/JobStatusQuery"
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
@@ -17574,6 +17790,7 @@
                   "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
                   "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommandOperation",
                   "canvas.hide": "#/$defs/CanvasHideCommandOperation",
+                  "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommandOperation",
                   "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
                   "canvas.move": "#/$defs/CanvasMoveCommandOperation",
                   "canvas.show": "#/$defs/CanvasShowCommandOperation",
@@ -17600,6 +17817,9 @@
                 },
                 {
                   "$ref": "#/$defs/CanvasUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasLayoutRunsCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/CanvasHideCommandOperation"
@@ -18601,6 +18821,89 @@
         "title": "CanvasItemVersion",
         "type": "object"
       },
+      "CanvasLayoutRunsCommand": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommand",
+        "type": "object"
+      },
+      "CanvasLayoutRunsCommandOperation": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Operation discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommandOperation",
+        "type": "object"
+      },
       "CanvasMaterialize": {
         "additionalProperties": false,
         "properties": {
@@ -18940,6 +19243,23 @@
             "default": null,
             "description": "Parent canvas group ID, or null for the root.",
             "title": "Parentid"
+          },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "run",
+                  "free"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Enable Run layout for a top-level group, or use free to return it to manual layout.",
+            "title": "Autolayout"
           }
         },
         "required": [
@@ -19878,6 +20198,10 @@
               "invalid_input",
               "revision_conflict",
               "role_restricted",
+              "canvas_run_layout_group",
+              "canvas_run_layout_conflict",
+              "canvas_run_layout_extent",
+              "canvas_run_layout_shared_object",
               "missing_object",
               "reference_invalid",
               "image_quality_unsupported",
@@ -19981,6 +20305,20 @@
             "default": null,
             "description": "Path of the field responsible for this issue.",
             "title": "Field"
+          },
+          "relatedObjectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Other business object involved in the issue.",
+            "title": "Relatedobjectid"
           }
         },
         "required": [
@@ -20159,6 +20497,7 @@
                 "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
                 "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
+                "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
                 "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -20229,6 +20568,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasLayoutRunsCommand"
               },
               {
                 "$ref": "#/$defs/CanvasHideCommand"
@@ -20329,6 +20671,7 @@
                 "canvas.versions": "#/$defs/VersionsQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
+                "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
                 "project.get": "#/$defs/ProjectQuery"
               },
@@ -20352,6 +20695,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasStatusQuery"
+              },
+              {
+                "$ref": "#/$defs/JobStatusQuery"
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
@@ -21535,7 +21881,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -22172,6 +22519,20 @@
             },
             "title": "Tags",
             "type": "array"
+          },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "const": "run",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.",
+            "title": "Autolayout"
           },
           "binding": {
             "$ref": "#/$defs/ContainerBinding",
@@ -23345,7 +23706,8 @@
               "enum": [
                 "first_frame",
                 "reference",
-                "continuation"
+                "continuation",
+                "control"
               ],
               "type": "string"
             },
@@ -24133,6 +24495,68 @@
         "title": "JobRecoverCommand",
         "type": "object"
       },
+      "JobStatusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.status",
+            "description": "Read several generation jobs, optionally waiting for terminal states.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectIds": {
+            "default": [],
+            "description": "Generation job IDs; every unfinished project job when empty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Objectids",
+            "type": "array"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait for terminal states; zero returns immediately.",
+            "maximum": 300,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          },
+          "until": {
+            "default": "all",
+            "description": "Return after every selected job or any job reaches a terminal state.",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectIds",
+          "waitSeconds",
+          "until"
+        ],
+        "title": "JobStatusQuery",
+        "type": "object"
+      },
       "JsonValue": {},
       "LayerContentBase": {
         "additionalProperties": false,
@@ -24535,6 +24959,7 @@
               "video-matting",
               "video-crop",
               "video-translation",
+              "video-mask-composite",
               "extract-audio",
               "audio-separation",
               "video-trim",
@@ -26052,7 +26477,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -27147,7 +27573,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -27487,7 +27914,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -31676,7 +32104,8 @@
             "enum": [
               "first_frame",
               "reference",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Videomode",
             "type": "string"
@@ -32205,6 +32634,7 @@
             "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
             "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
+            "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
             "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -32275,6 +32705,9 @@
           },
           {
             "$ref": "#/$defs/CanvasUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasLayoutRunsCommand"
           },
           {
             "$ref": "#/$defs/CanvasHideCommand"
@@ -32375,6 +32808,7 @@
             "canvas.versions": "#/$defs/VersionsQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
+            "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
             "project.get": "#/$defs/ProjectQuery"
           },
@@ -32398,6 +32832,9 @@
           },
           {
             "$ref": "#/$defs/CanvasStatusQuery"
+          },
+          {
+            "$ref": "#/$defs/JobStatusQuery"
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"

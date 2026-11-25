@@ -24,6 +24,9 @@ from opendirector_api.localization import localized_error_for_language
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.merge
 @pytest.mark.parametrize('listening', [True, False], ids=['listening-api', 'closed-api'])
 def test_live_cli_complete_source_uses_http_listener(tmp_path, monkeypatch, listening):

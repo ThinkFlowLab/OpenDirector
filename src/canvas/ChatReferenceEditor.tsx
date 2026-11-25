@@ -48,9 +48,13 @@ import "./reference-mentions.css";
 import { assetDisplayName } from "./assetNames.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { resolveMediaSource } from "../backend/creationClient.ts";
 
 export interface ChatReferenceEditorHandle {
   focus: () => void;
+  replaceText: (text: string) => void;
   openPicker: () => void;
   setSkill: (name: string | null, fromSlash?: boolean) => void;
   caret: () => Caret;
@@ -246,10 +250,20 @@ export function ChatReferenceEditor({
         chip.querySelector("img")?.remove();
         if (src) {
           const img = document.createElement("img");
-          img.src = src;
           img.alt = "";
           img.draggable = false;
-          chip.prepend(img);
+          const place = (url: string) => {
+            if (latest.current.previews[part.assetId] !== src) return;
+            img.src = url;
+            chip.querySelector("img")?.remove();
+            chip.prepend(img);
+          };
+          if (parseAssetSource(src))
+            void resolveMediaSource(src).then(place, () => {
+              chip.querySelector<HTMLElement>("[data-reference-icon]")!.hidden =
+                false;
+            });
+          else place(src);
         }
         const icon = chip.querySelector<HTMLElement>("[data-reference-icon]")!;
         icon.hidden = !!src;
@@ -583,6 +597,17 @@ export function ChatReferenceEditor({
   useImperativeHandle(ref, () => ({
     focus,
     caret,
+    replaceText: (text) => {
+      if (disabled || composing.current || choosing.current) return;
+      const tokens = current.current.filter(part => part.type !== "text");
+      const content: ReferenceContent = [...tokens, { type: "text", text: tokens.length ? "\n" + text : text }];
+      const end = editingText(content).length;
+      const at = { start: end, end };
+      if (!publish(content, at)) return;
+      close();
+      focus(at);
+      updateMention();
+    },
     setSkill: (name, fromSlash = false) => {
       if (disabled || !skillsEnabled) return;
       const range = fromSlash ? slash.current : caret();
@@ -1168,7 +1193,7 @@ export function ChatReferenceEditor({
                   >
                     <span className="cw-reference-mention-thumbnail">
                       {option.thumbnail ? (
-                        <img src={option.thumbnail} alt="" draggable={false} />
+                        <AssetMedia as="img" src={option.thumbnail} alt="" draggable={false} />
                       ) : (
                         <CanvasIcon name={option.kind} size={22} />
                       )}

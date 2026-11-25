@@ -1,5 +1,10 @@
 """Atlas Cloud chat requests send reasoning_effort only at the level every model family accepts."""
+
+import pytest
 from opendirector.integrations.chat_completions import chat_payload
+
+
+pytestmark = pytest.mark.cpu
 
 
 ATLAS = {"modelId": "deepseek-ai/deepseek-v4-flash", "url": "https://api.atlascloud.ai/v1"}

@@ -77,7 +77,7 @@
       "lanes": [
         "gate"
       ],
-      "note": "Conversation Trace report download in both locales on the assistant fixture services. Linked Jobs are answered by page.route; every other request reaches the real API."
+      "note": "Bilingual original Trace ZIP archive download on assistant fixture services; only linked Jobs are stubbed."
     },
     {
       "file": "assistant_run_navigation.mjs",
@@ -105,6 +105,12 @@
       "previewSafe": true,
       "lanes": ["gate"],
       "note": "Requires a fresh isolated assistant fixture workspace."
+    },
+    {
+      "file": "first_run.mjs",
+      "previewSafe": true,
+      "lanes": ["gate"],
+      "note": "First launch: assistant prerequisite, task-specific model setup and direct access to examples."
     },
     {
       "file": "canvas_crop.mjs",
@@ -174,6 +180,11 @@
       ]
     },
     {
+      "file": "canvas_progressive_load.mjs",
+      "lanes": ["gate"],
+      "note": "Bilingual structure-first opening with one held and one failed media read, retained asset bindings, retry and late reads across a project switch. Seeds projects through /src on Vite."
+    },
+    {
       "file": "canvas_wheel.mjs",
       "previewSafe": true,
       "lanes": [
@@ -188,6 +199,14 @@
         "production"
       ],
       "note": "Real application with controllable local capability HTTP service; no model inference."
+    },
+    {
+      "file": "composer_configure_model.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "extended"
+      ],
+      "note": "Needs a fixture API without a video model; opens model settings from the empty selector and keeps the draft."
     },
     {
       "file": "composer_duration.mjs",
@@ -556,11 +575,25 @@
       "note": "Runs with voice_library_server.py in the Release checks voice library phase."
     },
     {
+      "file": "new_model_discovery.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Discovers a new text model from a loopback GET /models service, saves it, and selects it in the assistant."
+    },
+    {
+      "file": "zhipu_catalog_fixture.mjs",
+      "helper": true,
+      "note": "Shared loopback catalog fixture for the new-model and Zhipu feedback tests."
+    },
+    {
       "file": "zhipu_provider.mjs",
       "previewSafe": true,
       "lanes": [
-        "extended"
-      ]
+        "gate"
+      ],
+      "note": "Bilingual catalog feedback, retry and empty responses, and Zhipu audio preset isolation."
     },
     {
       "file": "kimi_real.mjs",

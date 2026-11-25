@@ -13,7 +13,7 @@ from opendirector.agent.context import RunContext
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.skill_snapshot import prepare_skills, copy_skill_tree
 from opendirector.agent.directory_links import link_directory, unlink_directory
-from opendirector.agent.tools import SYSTEM
+from opendirector.agent.tools import SUGGESTED_REPLIES, SYSTEM
 from opendirector.agent import cli_transport
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.process import terminate
@@ -194,6 +194,7 @@ class JiuwenSwarmRuntime:
                         'Read source assets at their supplied absolute paths; do not move or modify them. '
                         'Write intermediate files and outputs into the execution directory. '
                         'Use opendirector --help to discover project commands and use opendirector for project changes.\n'
+                        + SUGGESTED_REPLIES + '\n'
                         + json.dumps(run.messages[-1:] if session_id else run.messages, ensure_ascii=False)),
                     'agent': {'name': 'opendirector', 'instructions': SYSTEM,
                         'tools': ['skill_tool', 'list_skill', 'read_file', 'bash']},

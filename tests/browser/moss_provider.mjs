@@ -15,6 +15,7 @@ const speechModelIds = ["moss-tts-1.5-flash", "moss-tts-1.0-pro",
   "moss-tts-1.5-flash-2026-06-26", "moss-tts-1.0-pro-2026-02-07"];
 const canonicalURL = "https://api.mosi.cn/v1";
 const fixtureKey = "moss-browser-fixture-only-no-real-service";
+const discoveryPath = "/api/model-configs/discover";
 const headers = { "X-OpenDirector-Request": "1", "Content-Type": "application/json" };
 async function call(path, { method = "GET", body } = {}) {
   const response = await fetch(api + path, {
@@ -50,14 +51,16 @@ const copy = {
   "zh-CN": {
     settings: "设置", models: "模型接入", imageOverview: "图片模型", image: "图片", audio: "音频",
     add: "添加服务", provider: "提供商", moss: "MOSS 开放平台", url: "服务地址（Base URL）",
-    reload: "载入支持的模型", save: "保存服务", cancel: "取消", manage: "管理", close: "关闭设置",
+    reload: "载入支持的模型", presetLoaded: count => `已载入 ${count} 个预设模型`,
+    save: "保存服务", cancel: "取消", manage: "管理", close: "关闭设置",
     general: "通用", language: "语言", defaultImage: "vLLM-Omni 图片接口", defaultAudio: "vLLM-Omni 语音合成接口",
     custom: "OpenAI 兼容", fetch: "获取模型", discoveryError: "服务返回 HTTP 401，请检查 API Key。",
   },
   "en-US": {
     settings: "Settings", models: "Model connections", imageOverview: "Image model", image: "Image", audio: "Audio",
     add: "Add service", provider: "Provider", moss: "MOSS Open Platform", url: "Service URL (Base URL)",
-    reload: "Load supported models", save: "Save service", cancel: "Cancel", manage: "Manage", close: "Close settings",
+    reload: "Load supported models", presetLoaded: count => `${count} preset models loaded`,
+    save: "Save service", cancel: "Cancel", manage: "Manage", close: "Close settings",
     general: "General", language: "Language", defaultImage: "vLLM-Omni image API", defaultAudio: "vLLM-Omni speech synthesis API",
     custom: "OpenAI compatible", fetch: "Fetch models", discoveryError: "Service returned HTTP 401. Check the API Key.",
   },
@@ -108,10 +111,18 @@ async function provePreset(labels, locale, kind = "image") {
     await officialLogo(page.locator(".cw-model-option").filter({ has: page.getByRole("checkbox", { name: modelId, exact: true }) }).locator("img.cw-model-logo"));
   }
   await page.getByLabel("API Key", { exact: true }).fill(fixtureKey);
-  await page.getByRole("button", { name: labels.reload, exact: true }).click();
+  const endpoint = `**${discoveryPath}`;
+  await page.route(endpoint, route => route.fulfill({ json: { models: ["fixture-text-only"] } }));
+  try {
+    await page.getByRole("button", { name: labels.reload, exact: true }).click();
+    await page.getByRole("status").getByText(labels.presetLoaded(expectedModels.length), { exact: true }).waitFor();
+    assert.ok(!requests.slice(start).some(url => url.endsWith(discoveryPath)), "Selecting or loading a media preset must not discover remote models");
+    assert.equal(await page.locator(".cw-model-option").count(), expectedModels.length);
+  } finally {
+    await page.unroute(endpoint);
+  }
   for (const modelId of expectedModels)
     assert.equal(await page.getByRole("checkbox", { name: modelId, exact: true }).isChecked(), true);
-  assert.ok(!requests.slice(start).some(url => url.includes("/model-configs/discover")), "Preset selection/reload must not discover remote models");
   await shot(`${locale}-mock-moss-${kind}-provider.png`);
 }
 async function proveReopen(labels, locale, kind = "image") {
@@ -152,7 +163,7 @@ async function proveDiscoveryError(labels) {
   await page.getByRole("option", { name: labels.custom, exact: true }).click();
   await page.getByLabel(labels.url, { exact: true }).fill("http://127.0.0.1:12345/v1");
   await page.getByLabel("API Key", { exact: true }).fill(fixtureKey);
-  const endpoint = "**/api/model-configs/discover";
+  const endpoint = `**${discoveryPath}`;
   await page.route(endpoint, route => route.fulfill({
     status: 401, contentType: "application/json",
     body: JSON.stringify({ detail: labels.discoveryError }),
@@ -208,7 +219,7 @@ try {
   console.log(JSON.stringify({ passed: true, fixture: true, generation: "not submitted", base, api,
     projectURL: `${base}/ai-tool/ai-canvas/${projectId}?creation=unified`, screenshotDirectory: output,
     modelConfigIds: saved.map(config => config.id), checks: ["Chinese and English", "official local SVG with original colors",
-      "canonical URL", "SFT and Base preselected without discovery", "speech model only in audio", "save and reopen image and audio", "public models have no key", "discovery failure cause in both languages"] }));
+      "canonical URL", "image and audio presets load only their own models without discovery", "preset load feedback in both languages", "save and reopen image and audio", "public models have no key", "custom discovery failure cause in both languages"] }));
 } catch (error) {
   await shot("mock-moss-provider-failure.png").catch(() => {});
   throw error;

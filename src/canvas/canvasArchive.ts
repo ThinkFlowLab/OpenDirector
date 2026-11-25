@@ -7,6 +7,7 @@ import {
 import { parseDocument } from "./storage.ts";
 import { createZip, readZip, type ZipEntry } from "./zipArchive.ts";
 import { tNow } from "../i18n/messages.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
 
 /** A `.canvas` file is a ZIP archive: `manifest.json` describes the export,
  * `canvas.json` is the document and `assets/` holds the media bytes. Keeps the
@@ -224,7 +225,7 @@ export async function buildCanvasArchive(
       if (
         MEDIA_FIELDS.has(key) &&
         typeof entry === "string" &&
-        /^(data|blob):/i.test(entry)
+        (/^(data|blob):/i.test(entry) || parseAssetSource(entry))
       )
         record[key] = await register(entry, ownTitle, ownType, ownProvenance);
       else if (typeof entry === "object")

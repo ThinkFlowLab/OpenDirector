@@ -401,6 +401,11 @@ export function NodeSelectionToolbar({
         t("canvas.selection.videoMatting"),
         "subject",
       ),
+      toolOption(
+        "video-mask-composite",
+        t("canvas.selection.maskComposite"),
+        "stack",
+      ),
       toolOption("video-crop", t("canvas.selection.videoCrop"), "crop"),
     ]);
   } else if (node.type === "audio") {

@@ -105,12 +105,13 @@ def creation_routes(projects: CreationProjects, generation=None):
 
     @router.post('/projects/{project_id}/open-canvas')
     def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header()):
-        # The canvas needs its reference edges on first render too. Reuse the
+        # The canvas needs its reference edges and text on first render too. Reuse the
         # single snapshot this open read already published instead of making the
         # page read the same project again through GET /canvas. The no-flag
         # route above still returns a bare ProjectSnapshot.
         snapshot = projects.open(project_id, str(x_opendirector_session))
-        return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot)}
+        return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot),
+                'texts': canvas.text_contents(snapshot)}
 
     @router.put('/sessions/{session_id}')
     def heartbeat(session_id: UUID, value: Session):

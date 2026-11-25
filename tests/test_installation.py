@@ -1,5 +1,10 @@
 """Installed resources and writable project storage have distinct roots."""
+
+import pytest
 from opendirector import installation
+
+
+pytestmark = pytest.mark.cpu
 
 
 def test_wheel_defaults_to_user_workspace_not_package(monkeypatch, tmp_path):

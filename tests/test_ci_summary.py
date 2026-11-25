@@ -8,7 +8,7 @@ import sys
 import pytest
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.cpu, pytest.mark.ready]
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/ci/summarize_checks.py'
 
 

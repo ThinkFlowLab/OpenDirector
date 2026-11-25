@@ -38,6 +38,9 @@ from test_generation_recovery import video
 from generation_helpers import command as generation_command, settled
 
 
+pytestmark = pytest.mark.cpu
+
+
 def command_for(project, config):
     _, project_id, _ = project
     target, spec = configure(project, config)

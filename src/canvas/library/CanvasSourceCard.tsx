@@ -6,6 +6,7 @@ import {
 } from "../../backend/canvasSources";
 import { CanvasIcon } from "../CanvasIcon";
 import { MediaCard } from "./MediaCard";
+import { useAssetMedia } from "../useAssetMedia.tsx";
 
 export function CanvasSourceCard({
   item,
@@ -23,9 +24,11 @@ export function CanvasSourceCard({
   /** Off for the open canvas: its media is already on screen. */
   preview?: boolean;
 }) {
-  const [src, setSrc] = useState<string | undefined>(() =>
+  const inline = useAssetMedia(
     item.main.kind === "image" ? item.main.src : undefined,
   );
+  const [thumbnail, setThumbnail] = useState<string>();
+  const src = thumbnail ?? inline.src;
   useEffect(() => {
     if (!preview) return;
     // Videos get a rendered first frame too: the original can be tens of MB.
@@ -37,7 +40,7 @@ export function CanvasSourceCard({
         if (!response.ok) throw await responseError(response);
         const blob = await response.blob();
         url = URL.createObjectURL(blob);
-        if (active) setSrc(url);
+        if (active) setThumbnail(url);
         else URL.revokeObjectURL(url);
       })
       .catch(() => {});

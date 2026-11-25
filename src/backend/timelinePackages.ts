@@ -6,6 +6,7 @@ import {
   ApiError,
   headers,
   json,
+  request as apiRequest,
   responseError,
   storageRequest,
 } from "./api.ts";
@@ -83,20 +84,18 @@ export class TimelinePackageImport {
         return this.finish(recovered);
     }
     if (!this.request) {
-      const response = await fetch(
-        `/api${creationPath(this.client.id)}/uploads/${this.uploadHandle}`,
+      // Through request() so a lapsed lease is renewed and the upload resent.
+      const uploaded = await apiRequest<{ fingerprint: string }>(
+        `${creationPath(this.client.id)}/uploads/${this.uploadHandle}`,
         {
           method: "PUT",
           headers: {
-            ...headers,
             "X-Asset-Name": encodeURIComponent(this.file.name),
             "X-Asset-Kind": "file",
           },
           body: this.file,
         },
       );
-      if (!response.ok) throw await responseError(response);
-      const uploaded = (await response.json()) as { fingerprint: string };
       this.request = {
         operationId: this.operationId,
         uploadHandle: this.uploadHandle,

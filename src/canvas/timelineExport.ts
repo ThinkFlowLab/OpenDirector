@@ -6,6 +6,8 @@ import {
   timelineHasTextResources,
 } from "./timeline.ts";
 import { tNow } from "../i18n/messages.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 
 export interface TimelineExportAsset {
   resource: CanvasResource;
@@ -306,8 +308,10 @@ export async function readLocalResource(
     );
   const base =
     typeof location === "undefined" ? "http://localhost/" : location.href;
-  const url = new URL(resource.src, base);
+  const saved = parseAssetSource(resource.src);
+  const url = new URL(saved ? base : resource.src, base);
   if (
+    !saved &&
     !(
       url.protocol === "data:" ||
       (typeof location !== "undefined" &&
@@ -316,7 +320,9 @@ export async function readLocalResource(
     )
   )
     throw new Error(tNow("errors.export.notLocal", { title: resource.title }));
-  const response = await fetch(url, { signal });
+  const response = await (saved
+    ? fetchMediaSource(resource.src, { signal })
+    : fetch(url, { signal }));
   if (!response.ok)
     throw new Error(
       tNow("errors.export.readFailed", {

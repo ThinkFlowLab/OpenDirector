@@ -10,6 +10,9 @@ from opendirector.agent.model_gateway import ModelGateway
 from opendirector.domain.projects import ProjectError
 
 
+pytestmark = pytest.mark.cpu
+
+
 class Stream(httpx.AsyncByteStream):
     def __init__(self, chunks, failure=None, gate=None):
         self.chunks, self.failure, self.gate = chunks, failure, gate

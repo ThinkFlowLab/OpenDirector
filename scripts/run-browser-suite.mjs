@@ -32,6 +32,8 @@ const workflows = [
   },
   { name: "minimax h3", script: "tests/browser/minimax_h3.mjs" },
   { name: "provider settings", script: "tests/browser/provider_settings.mjs" },
+  { name: "new model discovery", script: "tests/browser/new_model_discovery.mjs" },
+  { name: "Zhipu model settings feedback", script: "tests/browser/zhipu_provider.mjs" },
   { name: "capability discovery", script: "tests/browser/capability_discovery.mjs" },
   { name: "created node focus", script: "tests/browser/created_node_focus.mjs" },
   { name: "cross canvas paste", script: "tests/browser/cross_canvas_paste.mjs" },
@@ -59,6 +61,10 @@ const workflows = [
     script: "tests/browser/canvas_switch.mjs",
   },
   {
+    name: "canvas progressive load",
+    script: "tests/browser/canvas_progressive_load.mjs",
+  },
+  {
     name: "structured editors",
     script: "tests/browser/structured_editors.mjs",
     args: ["--publish"],
@@ -73,6 +79,7 @@ const workflows = [
     args: ["--full-creation"],
     env: { PYTHON: "python" },
   },
+  { name: "first-run setup", script: "tests/browser/first_run.mjs" },
 ];
 
 const failures = [];

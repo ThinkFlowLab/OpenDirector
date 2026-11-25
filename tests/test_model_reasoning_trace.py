@@ -1,10 +1,15 @@
 """Record streamed reasoning while preserving upstream bytes."""
+
+import pytest
 import asyncio
 import json
 
 import httpx
 
 from opendirector.agent.model_gateway import ModelGateway
+
+
+pytestmark = pytest.mark.cpu
 
 
 def test_reasoning_trace_handles_fragmented_sse_without_changing_response(tmp_path):

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.cpu, pytest.mark.ready]
 spec = importlib.util.spec_from_file_location('layer_audit',
     Path(__file__).resolve().parents[1] / 'scripts/ci/check_test_layers.py')
 audit_module = importlib.util.module_from_spec(spec)
@@ -105,3 +105,21 @@ def test_skipped_representative_is_not_execution_evidence(evidence):
     assert audit_module.audit(*evidence)['representative_outcomes'] == {'skipped': 1}
     with pytest.raises(ValueError, match='execution'):
         audit_module.audit(*evidence, require_executed=True)
+
+
+def test_cpu_inventory_requires_matching_hardware_evidence(evidence):
+    profile = evidence[0]
+    profile['metadata']['selection'] = 'cpu'
+    for case in profile['tests']:
+        case['hardware'] = ['cpu']
+    assert audit_module.audit(*evidence)['tests'] == 2
+    profile['tests'][1]['hardware'] = ['cuda']
+    with pytest.raises(ValueError, match='non-CPU hardware'):
+        audit_module.audit(*evidence)
+
+
+def test_cpu_filter_cannot_hide_accelerator_cases_from_full_audit(evidence):
+    evidence[0]['metadata']['selection'] = 'cpu'
+    evidence[0]['deselected_count'] = 1
+    with pytest.raises(ValueError, match='unfiltered'):
+        audit_module.audit(*evidence)

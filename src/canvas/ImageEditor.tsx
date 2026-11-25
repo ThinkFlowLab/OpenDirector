@@ -15,6 +15,8 @@ import "./image-editor.css";
 import { INITIAL_CROP_OPTIONS, type ImageCropState } from "./imageCrop.ts";
 import type { ImageCropOptions as EditOptions } from "../contracts/generated.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { resolveMediaSource } from "../backend/creationClient.ts";
 
 export interface ImageEditorProps {
   node: CanvasNode;
@@ -108,7 +110,7 @@ function renderImage(
 }
 
 function localImageSource(src: string): boolean {
-  if (/^data:image\//i.test(src)) return true;
+  if (/^data:image\//i.test(src) || parseAssetSource(src)) return true;
   try {
     const url = new URL(src, window.location.href);
     return (
@@ -276,7 +278,17 @@ function CropEditor({
         setLoading(false);
       }
     };
-    source.src = src;
+    void resolveMediaSource(src).then(
+      (url) => {
+        if (!cancelled) source.src = url;
+      },
+      () => {
+        if (!cancelled) {
+          setLoadError(t("editors.image.error.readFailed"));
+          setLoading(false);
+        }
+      },
+    );
     return () => {
       cancelled = true;
       source.onload = null;

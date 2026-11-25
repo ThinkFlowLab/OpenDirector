@@ -11,10 +11,10 @@ export function mountReply(element: HTMLElement) {
   setActiveLocale("en-US");
   const root = createRoot(element);
   return {
-    render(message: ChatMessage, thinking = false, locale: Locale = "en-US") {
+    render(message: ChatMessage, thinking = false, locale: Locale = "en-US", interactive = false) {
       setActiveLocale(locale);
       const t = ((key, params) => translate(locale, key, params)) as Translate;
-      root.render(createElement(AssistantReply, { message, thinking, t }));
+      root.render(createElement(AssistantReply, { message, thinking, t, onSuggestion: interactive ? () => {} : undefined }));
     },
     unmount() { root.unmount(); },
   };

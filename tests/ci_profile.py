@@ -10,6 +10,8 @@ import time
 
 import pytest
 
+from ci_hardware import PLATFORMS
+
 
 LAYERS = {'ready', 'merge', 'nightly'}
 
@@ -55,7 +57,10 @@ class Profile:
         self.collected_count = len(session.items)
         for item in session.items:
             layers = sorted({mark.name for mark in item.iter_markers() if mark.name in LAYERS})
+            hardware = sorted({mark.name for mark in item.iter_markers() if mark.name in PLATFORMS})
             self.cases[item.nodeid] = {
+                'hardware': hardware or ['cpu'],
+                'hardware_migration_default': getattr(item, '_ci_hardware_default', not hardware),
                 'nodeid': item.nodeid, 'module': item.nodeid.split('::', 1)[0],
                 'explicit_layers': layers, 'effective_layer': layers[0] if len(layers) == 1 else 'ready' if not layers else 'conflict',
                 'migration_default': not layers, 'durations': {}, 'outcomes': {},
@@ -99,6 +104,7 @@ class Profile:
             'counts': dict(Counter(case['outcome'] for case in cases)),
             'layers': dict(Counter(case['effective_layer'] for case in cases)),
             'unmarked': sum(case['migration_default'] for case in cases),
+            'hardware': dict(Counter(platform for case in cases for platform in case['hardware'])),
             'modules': dict(sorted(modules.items(), key=lambda pair: pair[1], reverse=True)),
             'tests': cases,
         }

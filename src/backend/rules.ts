@@ -22,7 +22,7 @@ import type { ModelAvailability } from "../contracts/generated.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
-export type BackendVideoMode = "first_frame" | "reference" | "continuation";
+export type BackendVideoMode = "first_frame" | "reference" | "continuation" | "control";
 export type VideoAdapter = "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
 export interface VideoCapabilities {
   outputs: {
@@ -94,7 +94,7 @@ export interface ModelConfig {
 
 export interface BackendReference {
   node: CanvasNode;
-  role: "reference" | "firstFrame" | "lastFrame" | "continuation";
+  role: "reference" | "firstFrame" | "lastFrame" | "continuation" | "control";
 }
 
 /** SAM configurations serve editing tools, including legacy vision entries. */
@@ -254,6 +254,8 @@ export function backendReferenceIssue(
       : tNow("errors.rules.textReference");
   const continuation =
     settings.mode === "video" && settings.videoMode === "continuation";
+  if (kind === "audio" && settings.mode === "video" && settings.videoMode === "control")
+    return tNow("errors.rules.controlAudio");
   if (kind === "video" && !continuation && !rules.maxVideos)
     return rules.videoModes.includes("continuation")
       ? tNow("errors.rules.videoContinuation")
@@ -282,7 +284,7 @@ export function backendReferences(
             (resource) =>
               !(
                 resource.type === "video" &&
-                settings.videoMode === "continuation"
+                (settings.videoMode === "continuation" || settings.videoMode === "control")
               ) && !backendReferenceIssue(resource, settings, config),
           )
         : [node],
@@ -313,7 +315,9 @@ export function backendReferences(
     role:
       settings.videoMode === "continuation" && node.data.kind === "video"
         ? "continuation"
-        : "reference",
+        : settings.videoMode === "control" && node.data.kind === "video"
+          ? "control"
+          : "reference",
   }));
 }
 
@@ -331,10 +335,13 @@ export function canvasReferenceRole(
     role?: string | null;
     source: { id?: string } | { assetId: string };
   },
-): "reference" | "first_frame" | "last_frame" | "continuation" {
+): "reference" | "first_frame" | "last_frame" | "continuation" | "control" {
   const sourceId = "id" in ref.source ? ref.source.id : undefined;
   if (settings?.videoMode === "continuation" && sourceKind === "video") {
     return "continuation";
+  }
+  if (settings?.videoMode === "control" && sourceKind === "video") {
+    return "control";
   }
   if (
     settings?.videoMode === "first-last" &&
@@ -514,8 +521,8 @@ export function serviceVideoSettings(
   if (durations.length && !durationMatches(next.durationSeconds, durations, config.inputRules.fractionalDuration))
     next.durationSeconds = caps!.defaultDuration;
   if (
-    next.videoMode === "continuation" &&
-    !config.inputRules.videoModes.includes("continuation")
+    (next.videoMode === "continuation" || next.videoMode === "control") &&
+    !config.inputRules.videoModes.includes(next.videoMode)
   )
     next.videoMode = "reference";
   const resolutions = backendResolutions(next, config, incoming);
@@ -673,7 +680,11 @@ export function backendBlocker(
     return tNow("errors.rules.audioDisable");
   if (settings.mode === "video") {
     const durations = backendDurations(config);
-    if (durations.length && !durationMatches(settings.durationSeconds, durations, rules.fractionalDuration))
+    if (
+      settings.videoMode !== "control" &&
+      durations.length &&
+      !durationMatches(settings.durationSeconds, durations, rules.fractionalDuration)
+    )
       return tNow("errors.rules.duration");
     if (
       rules.outputResolutions &&
@@ -705,10 +716,18 @@ export function backendBlocker(
       references.filter((item) => item.role === "continuation").length !== 1
     )
       return tNow("errors.rules.continuationSource");
+    if (settings.videoMode === "control") {
+      const control = references.filter((item) => item.role === "control");
+      if (control.length !== 1) return tNow("errors.rules.controlSource");
+      const seconds = control[0]!.node.data.media?.durationSeconds;
+      const [low, high] = RULE_FACTS.controlVideoSeconds;
+      if (seconds !== undefined && (seconds < low || seconds > high + 0.05))
+        return tNow("errors.rules.controlDuration", { low, high });
+    }
   }
   const count = (kind: string) =>
     references.filter(
-      (item) => item.role !== "continuation" && item.node.data.kind === kind,
+      (item) => item.role !== "continuation" && item.role !== "control" && item.node.data.kind === kind,
     ).length;
   for (const kind of ["image", "video", "audio"] as const) {
     const limit = availabilityInputLimit(config, profile, kind);

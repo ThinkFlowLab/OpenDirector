@@ -73,6 +73,26 @@ try {
   await render(message([]), true);
   await page.getByText("Thinking…", { exact: true }).waitFor();
 
+  const suggestionList = "\n\n- Expand the opening\n- Change the ending\n- Save the storyboard\n\n";
+  const replyText = prefix + "Done." + suggestionList;
+  const suggestionCalls = [{ ...tools(1)[0], status: "complete" }];
+  await render(message(suggestionCalls, replyText + "[opendirector-rep"));
+  const execution = page.locator(".cw-chat-execution-history");
+  await execution.locator(":scope > summary").click();
+  await execution.getByText("Expand the opening", { exact: true }).waitFor();
+  assert.ok(!(await execution.innerText()).includes("opendirector-rep"));
+  const suggestedMessage = {
+    ...message(suggestionCalls, replyText + "[opendirector-replies]: #"),
+    status: "complete",
+  };
+  await page.evaluate((value) => window.replyFixture.render(value, false, "en-US", true), suggestedMessage);
+  const suggestions = page.getByRole("group", { name: "Suggested replies", exact: true });
+  await suggestions.getByRole("button", { name: "Save the storyboard" }).waitFor();
+  assert.equal(await suggestions.getByRole("button").count(), 3);
+  await render(suggestedMessage);
+  await suggestions.waitFor({ state: "detached" });
+  assert.equal(await page.getByText("Save the storyboard", { exact: true }).count(), 0);
+
   // Real reply component, shared formatter and clipboard; no model calls.
   await page.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
@@ -106,6 +126,75 @@ try {
   const copied = await page.evaluate(() => window.copiedReply);
   assert.doesNotMatch(copied, /[\uE200-\uE202]|turn\d/);
   assert.ok(copied.includes(sourceA.url) && copied.includes(sourceB.url));
+
+  const listOnly = suggestionList.trim();
+  const marker = "\n\n[opendirector-replies]: #";
+  const copyReply = page.locator(".cw-chat-message-actions button");
+  // A list-only reply stays readable and copyable when its buttons are hidden.
+  const listOnlyReply = { ...suggestedMessage, text: listOnly + marker, tools: [] };
+  await page.evaluate((value) => window.replyFixture.render(value, false, "en-US", true), listOnlyReply);
+  await suggestions.getByRole("button", { name: "Save the storyboard", exact: true }).waitFor();
+  await copyReply.click();
+  await page.waitForFunction((text) => window.copiedReply === text, listOnly);
+  await render(listOnlyReply);
+  await suggestions.waitFor({ state: "detached" });
+  const listItems = markdown.getByRole("listitem");
+  await listItems.nth(2).waitFor();
+  assert.deepEqual(await listItems.allTextContents(), ["Expand the opening", "Change the ending", "Save the storyboard"]);
+  await page.evaluate(() => { window.copiedReply = undefined; });
+  await copyReply.click();
+  await page.waitForFunction((text) => window.copiedReply === text, listOnly);
+
+  // Fewer than three eligible options leaves the entire original list as text.
+  const overlong = "A".repeat(81);
+  const fallback = "Choose a direction.\n\n- Expand the opening\n- " + overlong + "\n- Save the storyboard";
+  await page.evaluate((value) => window.replyFixture.render(value, false, "en-US", true),
+    { ...listOnlyReply, text: fallback + marker });
+  await listItems.getByText(overlong, { exact: true }).waitFor();
+  assert.equal(await suggestions.count(), 0);
+  assert.deepEqual(await listItems.allTextContents(), ["Expand the opening", overlong, "Save the storyboard"]);
+  await copyReply.click();
+  await page.waitForFunction((text) => window.copiedReply === text, fallback);
+
+  const malformedLists = [
+    { body: "Compare the edits.", list: "- Widen the shot\n- Hold the cut", item: "Hold the cut" },
+    {
+      body: "Choose a treatment.",
+      list: "- **Try a warmer grade**\n- Keep the contrast\n- Soften the highlights",
+      item: "Try a warmer grade",
+    },
+  ];
+  const copiedLists = [];
+  const expectedLists = [];
+  for (const { body, list, item } of malformedLists) {
+    const text = body + "\n\n" + list;
+    await page.evaluate((value) => window.replyFixture.render(value, false, "en-US", true),
+      { ...listOnlyReply, text: text + marker });
+    await listItems.getByText(item, { exact: true }).waitFor();
+    assert.equal(await suggestions.count(), 0);
+    await page.evaluate(() => { window.copiedReply = undefined; });
+    await copyReply.click();
+    await page.waitForFunction(() => typeof window.copiedReply === "string");
+    copiedLists.push(await page.evaluate(() => window.copiedReply));
+    expectedLists.push(text);
+  }
+  assert.deepEqual(copiedLists, expectedLists);
+
+  await page.evaluate((value) => window.replyFixture.render(value, false, "en-US", true), suggestedMessage);
+  await suggestions.getByRole("button", { name: "Save the storyboard", exact: true }).waitFor();
+  await page.evaluate(() => { window.copiedReply = undefined; });
+  await copyReply.click();
+  await page.waitForFunction(() => typeof window.copiedReply === "string");
+  assert.equal(await page.evaluate(() => window.copiedReply), prefix + "Done.");
+
+  const codeExample = "Markdown example:\n\n```md" + suggestionList + "[opendirector-replies]: #\n```";
+  await render({ ...listOnlyReply, text: codeExample });
+  await markdown.getByText("Markdown example:", { exact: true }).waitFor();
+  assert.equal(await suggestions.count(), 0);
+  await page.evaluate(() => { window.copiedReply = undefined; });
+  await copyReply.click();
+  await page.waitForFunction(() => typeof window.copiedReply === "string");
+  assert.equal(await page.evaluate(() => window.copiedReply), codeExample);
 
   // A fresh mount represents history reopened from the server's saved message.
   await page.evaluate(async (value) => {

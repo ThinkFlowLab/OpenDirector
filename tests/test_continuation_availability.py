@@ -5,6 +5,9 @@ from test_video_request_projection import reference, spec, video_config
 import pytest
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('state,expected,reason', [
     ('open', 'unknown', 'profile_not_declared'),
     ('closed', 'unavailable', 'route_disabled'),

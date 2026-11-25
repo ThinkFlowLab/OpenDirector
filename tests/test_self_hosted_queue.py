@@ -16,6 +16,9 @@ from opendirector.integrations.providers import GenerationProviders
 import httpx
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def context(tmp_path):
     store, pid, session = new_project(tmp_path, '自部署排队')
