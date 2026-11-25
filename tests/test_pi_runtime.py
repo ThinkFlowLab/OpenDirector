@@ -214,3 +214,23 @@ def test_only_a_settled_error_fails_the_turn(cli, tmp_path, monkeypatch, mode, t
         assert body == text and body.count('Hello. More') == 1
     trace = next(tmp_path.rglob('*.pi.jsonl')).read_text()
     assert 'auto_retry_start' in trace if mode == 'retry' else 'quota exceeded' in trace
+
+
+def test_runtime_ids_and_api_models_admit_every_runtime():
+    """A new runtime must reach the request models, not only the local registry.
+
+    `RuntimeId` moved out of `agent/context.py` into `domain/agent_runtime.py`, so
+    adding a harness name in the old place compiles and passes every local test
+    while the API rejects the turn.
+    """
+    from typing import get_args
+
+    from opendirector.agent.context import RuntimeId
+    from opendirector.agent.runtime import RUNTIMES
+    from opendirector_api.agent import Draft, Turn
+
+    declared = set(get_args(RuntimeId))
+    assert set(RUNTIMES) <= declared, set(RUNTIMES) - declared
+    for name in RUNTIMES:
+        assert Turn(id=uuid4(), text='hi', runtime=name).runtime == name
+        assert Draft(runtime=name).runtime == name
