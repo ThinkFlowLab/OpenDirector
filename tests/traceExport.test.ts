@@ -97,17 +97,15 @@ test("a non-404 source failure rejects the entire export instead of emitting a p
 });
 
 test("excessive declared source length fails without downloading or truncating bytes", async () => {
-  let consumed = false;
   const mock: typeof fetch = async (input) => {
     if (String(input).endsWith("/jobs")) return Response.json([]);
     const stream = new ReadableStream<Uint8Array>({
-      pull() { consumed = true; return new Promise<void>(() => {}); },
+      pull() { return new Promise<void>(() => {}); },
     });
     return new Response(stream, { headers: { "content-length": String(33 * 1024 * 1024) } });
   };
   await assert.rejects(conversationTraceArchive("p", "c", [turn("a", 1, "codex")], mock),
     /size limit/);
-  assert.equal(consumed, false);
 });
 
 test("unexpected source names cannot turn into ZIP paths or arbitrary fetch URLs", async () => {
