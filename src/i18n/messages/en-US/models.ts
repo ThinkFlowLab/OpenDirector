@@ -84,8 +84,10 @@ export const models = {
   "models.service.referenceOutput": "References and output",
   "models.service.textInput": "Text",
   "models.service.imageInput": "Image understanding",
-  "models.service.imageInputNote":
-    "Enable only when the model natively accepts image input.",
+  "models.service.videoInput": "Video understanding",
+  "models.service.audioInput": "Audio understanding",
+  "models.service.mediaInputNote":
+    "Enable the input types supported by this model and its API.",
   "models.service.officialSummary":
     "Text-to-video / first-last frame / multimodal references",
   "models.service.klingSummary": "Text-to-video / first-last frame / image references",

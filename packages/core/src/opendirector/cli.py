@@ -535,6 +535,20 @@ def asset_import(ctx: typer.Context,
     emit(client.execute("asset.import", payload, identity=operation))
 
 
+@group("canvas").command("optimize-prompt", help="Rewrite an image or video prompt with the node's references and a configured text model; does not edit the canvas.")
+def optimize_prompt(ctx: typer.Context,
+                    item: Annotated[UUID, typer.Option(help="Image or video canvas item ID.")],
+                    prompt: Annotated[str, typer.Option(help="Draft to refine; use [[OD_REF_n]] for inline reference tokens.")],
+                    inline_reference: Annotated[list[UUID] | None, typer.Option(help="Reference IDs in inline marker order.")] = None):
+    client = ctx.obj
+    client.command = ctx.command_path
+    data = {"prompt": prompt, "inlineReferences": [str(value) for value in inline_reference or []]}
+    if client.live:
+        emit(client.call("prompt_optimize", {"itemId": str(item), **data}))
+    else:
+        emit(client.request("POST", client.path(f"/items/{item}/optimize-prompt"), json=data))
+
+
 @group("canvas").command("add-material", help="Display a registered asset as a new canvas item.")
 def add_material(ctx: typer.Context, asset: Annotated[UUID, typer.Option(help="Registered project asset ID.")],
                  x: Annotated[float, typer.Option(help="Canvas X coordinate. Choose using the current item positions and sizes.")],

@@ -55,6 +55,8 @@ import { resolveMediaSource } from "../backend/creationClient.ts";
 export interface ChatReferenceEditorHandle {
   focus: () => void;
   replaceText: (text: string) => void;
+  /** One undoable replacement, also used while the editor is read-only. */
+  replace: (content: ReferenceContent) => boolean;
   openPicker: () => void;
   setSkill: (name: string | null, fromSlash?: boolean) => void;
   caret: () => Caret;
@@ -607,6 +609,12 @@ export function ChatReferenceEditor({
       close();
       focus(at);
       updateMention();
+    },
+    replace: (content) => {
+      if (composing.current || choosing.current) return false;
+      const end = editingText(content).length;
+      close();
+      return publish(content, { start: end, end });
     },
     setSkill: (name, fromSlash = false) => {
       if (disabled || !skillsEnabled) return;

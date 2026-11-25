@@ -86,6 +86,11 @@
   border-color: #dfe2e7;
   box-shadow: 0 4px 20px #30374414;
 }
+:root[data-theme="light"] .cw-toast.is-error {
+  background: #fdeff0;
+  color: #a3232f;
+  border-color: #e8b4b8;
+}
 :root[data-theme="light"]
   :is(.cw-export-button, .cw-import-button):hover {
   background: #eef0f4;

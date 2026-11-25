@@ -8940,7 +8940,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -9123,7 +9125,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -9283,7 +9287,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -9411,7 +9417,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -25460,7 +25468,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -25633,7 +25643,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -25798,7 +25810,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -25930,7 +25944,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },

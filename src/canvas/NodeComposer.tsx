@@ -3,7 +3,13 @@ import { VoiceLibrary } from "./VoiceLibrary";
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
 import { providerLabel } from "./providerPresets";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  normalizeContent,
+  type ReferenceContent,
+} from "./chatReferenceContent.ts";
+import { generationContent } from "./generationReferenceContent.ts";
+
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { LOCAL_DEMO_MODEL } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
@@ -41,7 +47,10 @@ import {
 import { resolveGenerationModel } from "./modelResolution.ts";
 import { GenerationComposerShell } from "./GenerationComposerShell";
 import { useI18n } from "../i18n/I18nProvider";
-import { getNodeGenerationSettings } from "./generationSettings.ts";
+import {
+  generationEditIdentity,
+  getNodeGenerationSettings,
+} from "./generationSettings.ts";
 import { AssetMedia } from "./useAssetMedia.tsx";
 export { getNodeGenerationSettings };
 import {
@@ -63,9 +72,18 @@ export interface NodeComposerProps {
   pinnedPrecheck?: CanvasNode[];
   onUpdate: (data: Partial<CanvasNodeData>) => void;
   onRun: () => void;
+  lastOptimizedText?: string;
+  onPromptOptimized?: (text: string) => void;
+  onOptimizePrompt?: (
+    data: { prompt: string; inlineReferences: string[] },
+    signal: AbortSignal,
+  ) => Promise<{ prompt: string; audioOmitted: boolean }>;
   onCancel: () => void;
   onPickReference: () => void;
+  /** Failures and warnings worth a canvas toast instead of an inline note. */
+  onOptimizationNotice?: (message: string, error: boolean) => void;
   running?: boolean;
+
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
   onCheckModels?: (ids: readonly string[]) => Promise<void>;
@@ -93,8 +111,12 @@ export function NodeComposer({
   pinnedPrecheck,
   onUpdate,
   onRun,
+  lastOptimizedText,
+  onPromptOptimized,
+  onOptimizePrompt,
   onCancel,
   onPickReference,
+  onOptimizationNotice,
   running = false,
   backendModels = [],
   onCheckModels,
@@ -102,16 +124,39 @@ export function NodeComposer({
   referenceControls,
   onConfigureModel,
 }: NodeComposerProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [openPanel, setPanel] = useState<Panel>(null);
-  const panel = running ? null : openPanel;
-  const visibleModelIds = backendModels.filter((item) => item.kind === selectedNode?.data.kind).map((item) => item.id).join(",");
+  const visibleModelIds = backendModels
+    .filter((item) => item.kind === selectedNode?.data.kind)
+    .map((item) => item.id)
+    .join(",");
   useEffect(() => {
-    if (selectedNode && visibleModelIds) void onCheckModels?.(visibleModelIds.split(","));
+    if (selectedNode && visibleModelIds)
+      void onCheckModels?.(visibleModelIds.split(","));
   }, [selectedNode?.id, visibleModelIds, onCheckModels]);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelAnchor = useRef<HTMLElement | null>(null);
   const mentions = useRef<GenerationReferenceHandle>(null);
+  const pendingOptimization = useRef<AbortController | null>(null);
+  const restoreFocus = useRef(false);
+  const [optimizing, setOptimizing] = useState(false);
+  const panel = running || optimizing ? null : openPanel;
+  const [optimizedText, setOptimizedText] = useState(lastOptimizedText);
+  const latestRunning = useRef(running);
+  latestRunning.current = running;
+  const optimizationDraft = useRef("");
+  useEffect(
+    () => () => {
+      pendingOptimization.current?.abort();
+      pendingOptimization.current = null;
+    },
+    [],
+  );
+  useLayoutEffect(() => {
+    if (optimizing || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    mentions.current?.focusPrompt();
+  }, [optimizing]);
   useEffect(() => {
     setPanel(null);
   }, [selectedNode?.id, running]);
@@ -123,6 +168,111 @@ export function NodeComposer({
     return null;
   const settings = getNodeGenerationSettings(selectedNode, backendModels);
   const mode = settings.mode;
+  const canOptimizeKind = mode === "image" || mode === "video";
+  const draft = canOptimizeKind
+    ? generationContent(selectedNode, incomingNodes)
+    : [];
+  const promptText = (content: ReferenceContent) =>
+    content
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("");
+  const inputText = promptText(draft);
+  optimizationDraft.current = canOptimizeKind
+    ? generationEditIdentity(selectedNode, draft)
+    : "";
+  const canOptimize = Boolean(
+    onOptimizePrompt &&
+    inputText.trim() &&
+    inputText !== optimizedText &&
+    !running &&
+    !optimizing,
+  );
+  /** The text still is exactly what the last optimization produced. */
+  const alreadyOptimized = Boolean(
+    optimizedText && inputText.trim() && inputText === optimizedText,
+  );
+  const optimize = async () => {
+    const before = mentions.current?.promptContent();
+    if (
+      !onOptimizePrompt ||
+      !canOptimize ||
+      pendingOptimization.current ||
+      !before
+    )
+      return;
+    const identity = optimizationDraft.current;
+    const references: Extract<
+      ReferenceContent[number],
+      { type: "reference" }
+    >[] = [];
+    const prompt = before
+      .map((part) => {
+        if (part.type === "text") return part.text;
+        if (part.type !== "reference") return "";
+        references.push(part);
+        return `[[OD_REF_${references.length}]]`;
+      })
+      .join("");
+    const inlineReferences = references.map(
+      (part) =>
+        part.referenceId ??
+        (part.nodeId ? referenceControls?.referenceId(part.nodeId) : undefined),
+    );
+    if (inlineReferences.some((id) => !id)) {
+      onOptimizationNotice?.(t("generation.optimize.changed"), true);
+      return;
+    }
+    const controller = new AbortController();
+    pendingOptimization.current = controller;
+    setPanel(null);
+    setOptimizing(true);
+    try {
+      const result = await onOptimizePrompt(
+        {
+          prompt,
+          inlineReferences: inlineReferences.filter((id): id is string =>
+            Boolean(id),
+          ),
+        },
+        controller.signal,
+      );
+      controller.signal.throwIfAborted();
+      if (latestRunning.current || optimizationDraft.current !== identity)
+        throw new Error(t("generation.optimize.changed"));
+      const output: ReferenceContent = result.prompt
+        .split(/(\[\[OD_REF_[1-9][0-9]*\]\])/)
+        .flatMap<ReferenceContent[number]>((text) => {
+          const index = /^\[\[OD_REF_(\d+)\]\]$/.exec(text)?.[1];
+          if (!index) return text ? [{ type: "text" as const, text }] : [];
+          const reference = references[Number(index) - 1];
+          return reference ? [reference] : [];
+        });
+      const rewritten = normalizeContent(output);
+      if (!mentions.current?.replacePrompt(rewritten))
+        throw new Error(t("generation.optimize.changed"));
+      const text = promptText(rewritten);
+      setOptimizedText(text);
+      onPromptOptimized?.(text);
+      // The completion notice is the toast; only an omitted audio caveat is
+      // extra, and it is a warning rather than a failure.
+      if (result.audioOmitted)
+        onOptimizationNotice?.(t("generation.optimize.doneAudioOmitted"), false);
+    } catch (error) {
+      if (!controller.signal.aborted)
+        onOptimizationNotice?.(
+          error instanceof Error
+            ? error.message
+            : t("generation.optimize.failed"),
+          true,
+        );
+    } finally {
+      if (pendingOptimization.current === controller) {
+        pendingOptimization.current = null;
+        restoreFocus.current = true;
+        setOptimizing(false);
+      }
+    }
+  };
   const backend = Boolean(settings.modelConfigId);
   const config = backendModel(settings, backendModels);
   const voiceRequired = Boolean(config?.inputRules.voiceRequired);
@@ -149,11 +299,11 @@ export function NodeComposer({
   // A blank prompt falls back to connected text references.
   const implicitTextPrompt = Boolean(
     config &&
-      hasImplicitTextPrompt(
-        settings,
-        [...incomingNodes, ...(pinnedPrecheck ?? [])],
-        config,
-      ),
+    hasImplicitTextPrompt(
+      settings,
+      [...incomingNodes, ...(pinnedPrecheck ?? [])],
+      config,
+    ),
   );
   const model = backend ? undefined : generationModel(settings);
   const resolutions = backend
@@ -266,6 +416,7 @@ export function NodeComposer({
     updateSettings(selected);
   };
   const updateSettings = (patch: Partial<ComposerSettings>) => {
+    if (pendingOptimization.current) return;
     const next = changeGenerationSettings(settings, patch);
     const target = backendModel(next, backendModels);
     onUpdate({
@@ -291,12 +442,19 @@ export function NodeComposer({
       label={t("generation.composer.title", {
         title: selectedNode.data.title,
       })}
-      running={running}
-      onEscape={() => setPanel(null)}
+      running={running || optimizing}
+      optimizing={optimizing}
+      onEscape={() => {
+        setPanel(null);
+        pendingOptimization.current?.abort();
+      }}
     >
       <div className="cw-composer-body">
         {firstLast && (
-          <div className="cw-frame-slots" aria-label={t("generation.frame.title")}>
+          <div
+            className="cw-frame-slots"
+            aria-label={t("generation.frame.title")}
+          >
             {(
               [
                 ["firstFrameNodeId", t("generation.frame.first")],
@@ -322,7 +480,9 @@ export function NodeComposer({
                 <div
                   key={field}
                   className={`cw-frame-slot${index === 1 ? " cw-frame-last" : ""}${unavailable ? " cw-frame-unavailable" : ""}${blocked && !id ? " cw-frame-disabled" : ""}${offCanvas ? " is-off-canvas" : ""}`}
-                  title={offCanvas ? t("generation.frame.offCanvas") : undefined}
+                  title={
+                    offCanvas ? t("generation.frame.offCanvas") : undefined
+                  }
                 >
                   <span className="cw-frame-thumbnail">
                     {node?.data.src && node.data.assetState !== "missing" ? (
@@ -362,7 +522,9 @@ export function NodeComposer({
                   >
                     <option value="">{t("generation.frame.noUse")}</option>
                     {id && !node && (
-                      <option value={id}>{t("generation.frame.missingOriginal")}</option>
+                      <option value={id}>
+                        {t("generation.frame.missingOriginal")}
+                      </option>
                     )}
                     {frameCandidates.map((item) => (
                       <option
@@ -422,7 +584,7 @@ export function NodeComposer({
             <TooltipButton
               type="button"
               className="cw-add-reference"
-              disabled={running}
+              disabled={running || optimizing}
               onClick={() => mentions.current?.openUpload()}
               aria-label={t("generation.reference.add")}
               label={t("generation.reference.add")}
@@ -435,8 +597,8 @@ export function NodeComposer({
                 node={node}
                 onInsert={() => insertReference(node)}
                 onRemove={() => mentions.current?.remove(node)}
-                disabled={running || Boolean(referenceIssue(node))}
-                removalDisabled={running}
+                disabled={running || optimizing || Boolean(referenceIssue(node))}
+                removalDisabled={running || optimizing}
                 title={`${t("generation.reference.title", {
                   role: generationReferenceRole(node, t),
                   title: node.data.title,
@@ -464,34 +626,47 @@ export function NodeComposer({
             return referenceBudgetIssue(sources, config, settings);
           }}
           onUpdate={onUpdate}
-          running={running}
+          running={running || optimizing}
           onRun={() => {
-            if (canRun && !running) onRun();
+            if (canRun && !running && !pendingOptimization.current) onRun();
           }}
-          label={reading ? t("generation.prompt.reading") : music ? t("generation.prompt.music") : t("generation.prompt.image")}
+          label={
+            reading
+              ? t("generation.prompt.reading")
+              : music
+                ? t("generation.prompt.music")
+                : t("generation.prompt.image")
+          }
           placeholder={
             implicitTextPrompt
               ? t("generation.prompt.implicitTextPlaceholder")
               : mode === "image"
-              ? t("generation.prompt.imagePlaceholder")
-              : mode === "video"
-                ? firstLast
-                  ? t("generation.prompt.videoPlaceholder")
-                  : t("generation.prompt.videoReferencePlaceholder")
-                : reading
-                  ? t("generation.prompt.readingPlaceholder")
-                  : music
-                    ? t("generation.prompt.musicPlaceholder")
-                    : t("generation.prompt.audioPlaceholder")
+                ? t("generation.prompt.imagePlaceholder")
+                : mode === "video"
+                  ? firstLast
+                    ? t("generation.prompt.videoPlaceholder")
+                    : t("generation.prompt.videoReferencePlaceholder")
+                  : reading
+                    ? t("generation.prompt.readingPlaceholder")
+                    : music
+                      ? t("generation.prompt.musicPlaceholder")
+                      : t("generation.prompt.audioPlaceholder")
           }
         />
+        {optimizing && (
+          <p className="cw-composer-provider-note" role="status">
+            <span className="cw-optimizing-blink">
+              {t("generation.optimize.running")}
+            </span>
+          </p>
+        )}
         {backend && music && (
           <textarea
             className="cw-prompt-input cw-lyrics-input"
             aria-label={t("generation.lyrics")}
             value={settings.lyrics ?? ""}
             maxLength={5000}
-            disabled={running}
+            disabled={running || optimizing}
             spellCheck={false}
             placeholder={
               followsReference
@@ -504,7 +679,9 @@ export function NodeComposer({
       </div>
 
       {removeWatermark &&
-        ["bigmodel-glm-image", "bigmodel-cogvideox-3"].includes(config?.inputRules.profile ?? "") && (
+        ["bigmodel-glm-image", "bigmodel-cogvideox-3"].includes(
+          config?.inputRules.profile ?? "",
+        ) && (
           <p className="cw-composer-provider-note" role="note">
             {t("generation.bigmodel.watermarkWaiver")}
           </p>
@@ -515,7 +692,7 @@ export function NodeComposer({
             <button
               type="button"
               className="cw-parameter-trigger cw-model-setup-trigger"
-              disabled={running}
+              disabled={running || optimizing}
               onClick={() => onConfigureModel(mode)}
             >
               <CanvasIcon name="model" size={15} />
@@ -536,7 +713,7 @@ export function NodeComposer({
               value={
                 backend ? `config:${settings.modelConfigId}` : "unconfigured"
               }
-              disabled={running || serviceModels.length === 0}
+              disabled={running || optimizing || serviceModels.length === 0}
               onChange={chooseModel}
               options={[
                 ...(!serviceModels.length
@@ -573,7 +750,7 @@ export function NodeComposer({
             type="button"
             className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}
             aria-label={t("generation.field.signature")}
-            disabled={running}
+            disabled={running || optimizing}
             aria-expanded={panel === "parameters"}
             onClick={(event) => togglePanel("parameters", event.currentTarget)}
           >
@@ -624,7 +801,7 @@ export function NodeComposer({
               <select
                 aria-label={t("generation.videoMode")}
                 value={settings.videoMode ?? "reference"}
-                disabled={running}
+                disabled={running || optimizing}
                 onChange={(event) =>
                   updateSettings({
                     videoMode: event.target
@@ -662,7 +839,7 @@ export function NodeComposer({
               <select
                 aria-label={t("generation.referenceMode")}
                 value={settings.scoreMode ?? "melody"}
-                disabled={running}
+                disabled={running || optimizing}
                 onChange={(event) =>
                   updateSettings({
                     scoreMode: event.target
@@ -670,8 +847,12 @@ export function NodeComposer({
                   })
                 }
               >
-                <option value="melody">{t("generation.referenceMode.melody")}</option>
-                <option value="full">{t("generation.referenceMode.full")}</option>
+                <option value="melody">
+                  {t("generation.referenceMode.melody")}
+                </option>
+                <option value="full">
+                  {t("generation.referenceMode.full")}
+                </option>
               </select>
             )}
             {mode === "audio" && !backend && (
@@ -679,7 +860,7 @@ export function NodeComposer({
                 <select
                   aria-label={t("generation.audioType")}
                   value={settings.audioCreationType ?? "audio"}
-                  disabled={running}
+                  disabled={running || optimizing}
                   onChange={(event) =>
                     updateSettings({
                       audioCreationType: event.target
@@ -687,14 +868,18 @@ export function NodeComposer({
                     })
                   }
                 >
-                  <option value="audio">{t("generation.audioType.audio")}</option>
-                  <option value="music">{t("generation.audioType.music")}</option>
+                  <option value="audio">
+                    {t("generation.audioType.audio")}
+                  </option>
+                  <option value="music">
+                    {t("generation.audioType.music")}
+                  </option>
                 </select>
                 {!music && (
                   <select
                     aria-label={t("generation.audioMode")}
                     value={settings.audioMode ?? "unified"}
-                    disabled={running}
+                    disabled={running || optimizing}
                     onChange={(event) =>
                       updateSettings({
                         audioMode: event.target
@@ -702,7 +887,9 @@ export function NodeComposer({
                       })
                     }
                   >
-                    <option value="unified">{t("generation.audioMode.unified")}</option>
+                    <option value="unified">
+                      {t("generation.audioMode.unified")}
+                    </option>
                     <option value="tts">{t("generation.audioMode.tts")}</option>
                   </select>
                 )}
@@ -723,7 +910,7 @@ export function NodeComposer({
                     ? "generation.field.voiceIdPlaceholder"
                     : "generation.field.defaultVoice",
                 )}
-                disabled={running}
+                disabled={running || optimizing}
                 spellCheck={false}
                 onChange={(event) =>
                   updateSettings({
@@ -737,7 +924,7 @@ export function NodeComposer({
                 type="button"
                 className="cw-voice-trigger"
                 aria-label={t("generation.field.voiceLibrary")}
-                disabled={running}
+                disabled={running || optimizing}
                 aria-expanded={panel === "voices"}
                 onClick={(event) => togglePanel("voices", event.currentTarget)}
               >
@@ -757,7 +944,7 @@ export function NodeComposer({
               className="cw-reference-trigger"
               aria-label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
               label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
-              disabled={running}
+              disabled={running || optimizing}
               onClick={() => mentions.current?.openUpload()}
             >
               <CanvasIcon name="plus" size={16} />
@@ -770,7 +957,7 @@ export function NodeComposer({
               aria-label={t("generation.duration")}
               aria-haspopup="dialog"
               aria-expanded={panel === "duration"}
-              disabled={running || !hasDurationPicker}
+              disabled={running || optimizing || !hasDurationPicker}
               title={
                 followsControl
                   ? t("generation.duration.followsControl")
@@ -798,21 +985,46 @@ export function NodeComposer({
               className="cw-reference-trigger"
               aria-label={t("generation.reference.connected")}
               label={t("generation.reference.connected")}
-              disabled={running}
+              disabled={running || optimizing}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 setPanel(null);
                 mentions.current?.openPicker();
               }}
             >
-              @
+              <span className="cw-reference-trigger-at">@</span>
+            </TooltipButton>
+          )}
+          {canOptimizeKind && (
+            <TooltipButton
+              type="button"
+              className="cw-reference-trigger cw-prompt-optimization"
+              aria-label={t(
+                alreadyOptimized
+                  ? "generation.optimize.alreadyDone"
+                  : "generation.optimize.action",
+              )}
+              label={t(
+                alreadyOptimized
+                  ? "generation.optimize.alreadyDone"
+                  : "generation.optimize.action",
+              )}
+              aria-disabled={!canOptimize}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void optimize()}
+            >
+              <CanvasIcon name="promptWand" size={17} />
             </TooltipButton>
           )}
         </div>
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
-          aria-label={running ? t("generation.action.cancel") : t("generation.action.submit")}
+          aria-label={
+            running
+              ? t("generation.action.cancel")
+              : t("generation.action.submit")
+          }
           label={
             running
               ? t("generation.action.cancel")
@@ -829,8 +1041,14 @@ export function NodeComposer({
                 : "Ctrl Enter"
               : undefined
           }
-          disabled={!running && !canRun}
-          onClick={running ? onCancel : onRun}
+          disabled={optimizing || (!running && !canRun)}
+          onClick={
+            running
+              ? onCancel
+              : () => {
+                  if (!pendingOptimization.current) onRun();
+                }
+          }
         >
           <CanvasIcon name={running ? "stop" : "arrowUp"} size={20} />
         </TooltipButton>
@@ -848,7 +1066,7 @@ export function NodeComposer({
               <input
                 type="checkbox"
                 checked={followsControl}
-                disabled={running}
+                disabled={running || optimizing}
                 onChange={(event) =>
                   updateSettings({
                     videoMode: event.target.checked ? "control" : "reference",
@@ -863,7 +1081,7 @@ export function NodeComposer({
               outputFrames={config?.inputRules.profile === "vllm-omni-h3" ? h3FrameCount(settings.durationSeconds) : undefined}
               values={durationValues}
               value={settings.durationSeconds}
-              disabled={running}
+              disabled={running || optimizing}
               scale={{ min: 0, max: 30, step: 5 }}
               onChange={(durationSeconds) => updateSettings({ durationSeconds })}
             />
@@ -889,7 +1107,9 @@ export function NodeComposer({
           </div>
           {mode !== "audio" && (
             <div className="cw-parameter-section">
-              <span className="cw-field-label">{t("generation.field.ratio")}</span>
+              <span className="cw-field-label">
+                {t("generation.field.ratio")}
+              </span>
               <div className="cw-ratio-options">
                 {(backend ? ["auto", ...ratios] : ratios).map((ratio) => {
                   const [w, h] = ratio.split(":").map(Number);
@@ -918,9 +1138,7 @@ export function NodeComposer({
                           height: `${ratio === "auto" ? 21 : Math.min(23, (21 * h!) / w!)}px`,
                         }}
                       />
-                      <span>
-                        {ratio === "auto" ? t("common.auto") : ratio}
-                      </span>
+                      <span>{ratio === "auto" ? t("common.auto") : ratio}</span>
                     </button>
                   );
                 })}
@@ -929,7 +1147,9 @@ export function NodeComposer({
           )}
           {mode !== "audio" && (
             <div className="cw-parameter-section">
-              <span className="cw-field-label">{t("generation.field.resolution")}</span>
+              <span className="cw-field-label">
+                {t("generation.field.resolution")}
+              </span>
               <div className="cw-segment-options">
                 {resolutions.map((resolution) => (
                   <button
@@ -962,7 +1182,9 @@ export function NodeComposer({
           )}
           {Boolean(imageQualities?.length) && (
             <div className="cw-parameter-section">
-              <span className="cw-field-label">{t("generation.field.quality")}</span>
+              <span className="cw-field-label">
+                {t("generation.field.quality")}
+              </span>
               <div className="cw-segment-options">
                 {imageQualities?.map((quality) => (
                   <button
@@ -999,7 +1221,7 @@ export function NodeComposer({
                   <input
                     type="checkbox"
                     checked={lengthFromReference}
-                    disabled={running}
+                    disabled={running || optimizing}
                     onChange={(event) =>
                       updateSettings({
                         durationFromReference: event.target.checked,
@@ -1009,7 +1231,9 @@ export function NodeComposer({
                 </label>
               )}
               <span className="cw-field-label">
-                {backend ? t("generation.field.maxDuration") : t("generation.field.duration")}
+                {backend
+                  ? t("generation.field.maxDuration")
+                  : t("generation.field.duration")}
               </span>
               {duration ? (
                 <DurationControl
@@ -1033,7 +1257,9 @@ export function NodeComposer({
             </div>
           )}
           <div className="cw-parameter-section">
-            <span className="cw-field-label">{t("generation.field.count")}</span>
+            <span className="cw-field-label">
+              {t("generation.field.count")}
+            </span>
             <div className="cw-count-options">
               {Array.from({ length: 8 }, (_, index) => index + 1).map(
                 (count) => (
@@ -1058,7 +1284,9 @@ export function NodeComposer({
               <label className="cw-audio-toggle">
                 <span>
                   <CanvasIcon name="volume" size={16} />
-                  {backend ? t("generation.field.audio") : t("generation.field.audioPending")}
+                  {backend
+                    ? t("generation.field.audio")
+                    : t("generation.field.audioPending")}
                 </span>
                 <input
                   type="checkbox"

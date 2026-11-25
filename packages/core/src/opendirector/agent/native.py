@@ -42,7 +42,7 @@ def executable(runtime: str) -> str | None:
     return cli_executable('dsh' if runtime == 'deepseek' else runtime)
 
 
-_CODEX_ISOLATION: dict[str, tuple[str, ...]] = {}
+_CODEX_ISOLATION: dict[tuple[str, ...], tuple[str, ...]] = {}
 
 
 def codex_environment() -> dict[str, str]:
@@ -54,25 +54,26 @@ def codex_environment() -> dict[str, str]:
     return env
 
 
-def codex_isolation_flags(binary: str) -> tuple[str, ...]:
+def codex_isolation_flags(binary: str | tuple[str, ...]) -> tuple[str, ...]:
     """Optional codex flags this CLI accepts.
 
     Isolation flags vary across releases, and an unsupported flag prevents the
     CLI from starting. Keep rollouts on disk so later turns can resume them.
     """
-    cached = _CODEX_ISOLATION.get(binary)
+    launcher = (binary,) if isinstance(binary, str) else binary
+    cached = _CODEX_ISOLATION.get(launcher)
     if cached is not None:
         return cached
     wanted = ('--ignore-user-config', '--ignore-rules')
     try:
-        probe = subprocess.run([binary, 'exec', '--help'], capture_output=True,
+        probe = subprocess.run([*launcher, 'exec', '--help'], capture_output=True,
                                timeout=20, stdin=subprocess.DEVNULL)
         # Help text can contain bytes outside the console code page.
         help_text = (probe.stdout + probe.stderr).decode('utf-8', 'replace')
     except (OSError, subprocess.SubprocessError):
         help_text = ''
     flags = tuple(flag for flag in wanted if flag in help_text)
-    _CODEX_ISOLATION[binary] = flags
+    _CODEX_ISOLATION[launcher] = flags
     return flags
 
 

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import openDirectorLogo from "../assets/open_director_logo.png";
-import { runtimeModels, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { runtimeModels, type AssistantModelSelection, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { assistantModelSelection } from "./agentPreferences";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
@@ -67,6 +68,7 @@ export function AssistantPanel({
   onClose,
   onTurnEnd,
   onModelSelections,
+  onAgentModel,
   onOpenSettings,
   onPrepareReferences,
 }: {
@@ -83,6 +85,7 @@ export function AssistantPanel({
   onTurnEnd: () => void;
   /** Lets the canvas default new nodes to the model this dialog is using. */
   onModelSelections?: (selections: ModelSelections) => void;
+  onAgentModel?: (projectId: string, selection: AssistantModelSelection | null) => void;
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
 }) {
@@ -133,6 +136,10 @@ export function AssistantPanel({
   useEffect(() => {
     report.current?.(value.modelSelections);
   }, [value.modelSelections]);
+  useLayoutEffect(() => {
+    onAgentModel?.(documentId, chat.loaded && !chat.changing ? assistantModelSelection(value, chat.agent?.id) : null);
+  }, [documentId, chat.loaded, chat.changing, chat.agent?.id, value.runtime, value.runtimeModel,
+    value.thinking, value.builtinModelThinking, onAgentModel]);
   const locked =
     !chat.loaded ||
     chat.adding ||

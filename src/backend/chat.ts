@@ -81,6 +81,12 @@ export interface ChatMessage {
 }
 
 export type Thinking = "auto" | "low" | "medium" | "high";
+export interface AssistantModelSelection {
+  runtime: AgentRuntime;
+  modelId?: string;
+  runtimeModel?: string | null;
+  thinking: Thinking;
+}
 export type ModelSelections = Partial<
   Record<"agent" | "image" | "video" | "audio", string | null>
 >;

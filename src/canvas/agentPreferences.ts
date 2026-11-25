@@ -1,4 +1,4 @@
-import type { Conversation } from "../backend/chat.ts";
+import type { AssistantModelSelection, Conversation } from "../backend/chat.ts";
 import type { GenerationKind } from "./modelResolution.ts";
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
@@ -94,4 +94,14 @@ export function builtinThinking(value: Conversation, modelId?: string) {
   return (value.runtime ?? "default") === "default"
     ? value.builtinModelThinking?.[modelId ?? ""] ?? "auto"
     : value.thinking;
+}
+
+export function assistantModelSelection(value: Conversation, modelId?: string): AssistantModelSelection {
+  const runtime = value.runtime ?? "default";
+  return {
+    runtime,
+    modelId: runtime === "default" ? modelId : undefined,
+    runtimeModel: runtime === "default" ? undefined : value.runtimeModel,
+    thinking: builtinThinking(value, modelId),
+  };
 }

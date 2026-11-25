@@ -4,12 +4,13 @@ import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import type { AssistantModelSelection } from "../../backend/chat.ts";
 import { createNode, type CanvasNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
-import { request as apiRequest, errorMessage } from "../../backend/api.ts";
+import { request as apiRequest, errorMessage, json as apiJson } from "../../backend/api.ts";
 import { creationClient, objectVersion, visibleItems } from "../../backend/creationClient.ts";
 
 import { previewImageSelection } from "../../backend/imageSelections";
@@ -113,6 +114,10 @@ import { AssetMedia } from "../useAssetMedia.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
+  const assistantModel = useRef<{ projectId: string; selection: AssistantModelSelection | null }>(null);
+  const onAgentModel = useCallback((projectId: string, selection: AssistantModelSelection | null) => {
+    assistantModel.current = { projectId, selection };
+  }, []);
   const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
   const runLayoutPending = useRef(false);
   const {
@@ -348,6 +353,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   };
   const [exampleLoading, setExampleLoading] = useState(false);
   const exampleCatalog = useRef<Promise<ExampleEntry[]> | null>(null);
+  const optimizedPrompts = useRef(new Map<string, string>());
   const loadExamples = () =>
     (exampleCatalog.current ??= loadExampleCatalog().then((result) =>
       availableExamples(result.catalog),
@@ -2000,6 +2006,45 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                   setLibraryOpen(true);
                 }}
                 running={composerRunning}
+                lastOptimizedText={optimizedPrompts.current.get(
+                  `${doc.id}:${composerNode.id}`,
+                )}
+                onPromptOptimized={(text) => {
+                  optimizedPrompts.current.set(
+                    `${doc.id}:${composerNode.id}`,
+                    text,
+                  );
+                  notify(
+                    t("generation.optimize.toast", {
+                      shortcut: navigator.platform.includes("Mac")
+                        ? "⌘ + Z"
+                        : "Ctrl+Z",
+                    }),
+                  );
+                }}
+                onOptimizationNotice={(message, error) =>
+                  notify(message, { error })
+                }
+                onOptimizePrompt={async (data, signal) => {
+                  const current = historyRef.current.present;
+                  const active = assistantModel.current;
+                  if (active?.projectId !== current.id || !active.selection)
+                    throw new Error(t("generation.optimize.agentLoading"));
+                  if (!(await persist(current, false)))
+                    throw new Error(t("generation.optimize.saveFailed"));
+                  signal.throwIfAborted();
+                  return apiRequest<{ prompt: string; audioOmitted: boolean }>(
+                    `/creation/projects/${current.id}/items/${composerNode.id}/optimize-prompt`,
+                    {
+                      ...apiJson("POST", {
+                        ...data,
+                        preferredModelId: rt.assistantModels.agent ?? null,
+                        assistantModel: active.selection,
+                      }),
+                      signal,
+                    },
+                  );
+                }}
                 backendModels={backendCatalog.models}
                 onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}
@@ -2572,6 +2617,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           }}
           onTurnEnd={() => void syncServiceResults()}
           onModelSelections={setAssistantModels}
+          onAgentModel={onAgentModel}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
             setSettingsCategory("models");
