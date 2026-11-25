@@ -636,6 +636,17 @@
 .cw-project-cleanup:hover {
   color: #fff;
 }
+/* The new-project row carries its shortcut so the key is discoverable here. */
+.cw-project-create kbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid #ffffff1f;
+  border-radius: 4px;
+  color: #9a9a9e;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+}
 .cw-project-cleanup {
   color: #f0a3a3;
 }

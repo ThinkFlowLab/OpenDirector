@@ -30,4 +30,10 @@ Closing the main window hides it so work in progress can continue. Quitting the 
 
 A provider can continue running a submitted job and charge for it after the local application quits. Browser export requires the renderer process.
 
+## Keyboard shortcuts belong to the page
+
+Shortcut handling, hints, and the help dialog read one registry in the renderer, and the packaged application adds no accelerators of its own. Chromium inside the desktop shell has no browser-level shortcut table, so `Ctrl+N`, `Ctrl+K` and `Ctrl+J` reach the page and run the registered action. In a normal browser those combinations belong to the browser (new window, address-bar search, downloads), which runs its own action instead and never delivers the key.
+
+A menu accelerator would therefore duplicate work rather than enable it: the menu action and the page handler both run for one keypress. The shell keeps only window-level menus (fullscreen, developer tools, quit) and leaves every application shortcut to the renderer.
+
 See [Desktop application development](../development/desktop.md) for build commands, CLI registration, and release checks.

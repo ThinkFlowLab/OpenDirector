@@ -583,6 +583,14 @@
       "note": "Discovers a new text model from a loopback GET /models service, saves it, and selects it in the assistant."
     },
     {
+      "file": "shortcuts.mjs",
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Checks one shortcut registry feeds tooltips, the help dialog and the app-wide keys, and that open dialogs and text fields keep their keys."
+    },
+    {
       "file": "zhipu_catalog_fixture.mjs",
       "helper": true,
       "note": "Shared loopback catalog fixture for the new-model and Zhipu feedback tests."

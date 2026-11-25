@@ -11,6 +11,7 @@ import { CanvasContextMenu } from "./CanvasContextMenu";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { CANVAS_CREATION_TOOLS } from "./creationTools";
+import { shortcutKeys, type ShortcutId } from "./shortcuts";
 import type { CanvasNodeKind } from "./model";
 import { useT } from "../i18n/I18nProvider";
 import "./canvas-creation-menu.css";
@@ -217,9 +218,9 @@ export function CanvasCreationMenu({
     onAssets: () => run(actions.onAssets),
     onUpload: () => run(actions.onUpload),
   };
-  const shortcuts = navigator.platform.includes("Mac")
-    ? ["⌘V", "⌘⇧Z", "⌘Z"]
-    : ["Ctrl+V", "Ctrl+Shift+Z", "Ctrl+Z"];
+  const shortcuts = ["paste", "redo", "undo"].map((id) =>
+    shortcutKeys(id as ShortcutId),
+  );
   const shell = (content: ReactNode) => (
     <div ref={root} onPointerLeave={scheduleClose} onPointerEnter={cancelClose}>
       <CanvasContextMenu
