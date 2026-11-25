@@ -7,7 +7,7 @@ import { traceCategory, isThinkingTokenEstimate, readableTraceValue } from "./tr
 import { initialTurn, normalizeTrace, runtimeName, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
 
 import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
-import { conversationTraceReport } from "./traceExport.ts";
+import { conversationTraceArchive } from "./traceExport.ts";
 
 import "./assistant-trace.css";
 
@@ -308,16 +308,16 @@ function ConversationTrace({ project, conversationId, target, turns }: {
   const initial = initialTurn(turns, target);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
-  async function exportReport() {
-    if (exporting) return;
+  async function exportArchive() {
+    if (exporting || !window.confirm(t("trace.export.warning"))) return;
     setExporting(true);
     setExportError(false);
     try {
-      const markdown = await conversationTraceReport(project, conversationId, turns);
-      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+      const archive = await conversationTraceArchive(project, conversationId, turns);
+      const url = URL.createObjectURL(new Blob([archive.buffer as ArrayBuffer], { type: "application/zip" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = "opendirector-trace-" + conversationId + ".md";
+      link.download = "opendirector-trace-" + conversationId + ".zip";
       document.body.append(link);
       link.click();
       link.remove();
@@ -351,7 +351,7 @@ function ConversationTrace({ project, conversationId, target, turns }: {
   return (
     <>
       <div className="cw-trace-export">
-        <button type="button" disabled={exporting || turns.length === 0} onClick={() => void exportReport()}>
+        <button type="button" disabled={exporting || turns.length === 0} onClick={() => void exportArchive()}>
           {t(exporting ? "trace.export.working" : "trace.export.button")}
         </button>
         {exportError && <span role="alert">{t("trace.export.failed")}</span>}
