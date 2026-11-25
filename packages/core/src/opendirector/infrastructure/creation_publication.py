@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from opendirector.domain.creation.base import digest
 from opendirector.domain.creation.commands import Command, CommandReceipt, ProjectEvent, command_fingerprint
 from opendirector.domain.creation.project import ProjectSnapshot
+from opendirector.domain.creation.run_layout import reflow_runs
 from opendirector.domain.creation.validation import ContractError, validate_command
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.infrastructure.creation_files import cleanup_staging, delete_files, install_files
@@ -73,6 +74,14 @@ class CommitPublication:
                 if snapshot.project.name != before.project.name and command.type != 'project.rename':
                     raise ContractError('invalid_input', 'Only the rename command can rename a project')
                 changed = object_changes(before, snapshot, command)
+                operations = command.payload.operations if command.type == 'creation.batch' else (command,)
+                organize_runs = any(operation.type == 'canvas.layoutRuns' for operation in operations)
+                if organize_runs or any(item['version'].objectType == 'canvas_item' for item in changed):
+                    # All service writes passed their original CAS above. Only the
+                    # geometry derived from the locked current snapshot is exempt.
+                    snapshot, derived = reflow_runs(before, snapshot, force=organize_runs)
+                    if derived:
+                        changed = object_changes(before, snapshot, command, derived_canvas=derived)
                 if command.type == 'project.rename':
                     self.local._conflict(self.root, snapshot.project.name, path)
             except ContractError as error:

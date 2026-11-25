@@ -20,6 +20,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations import vllm_omni_image
 from opendirector.integrations.providers import GenerationProviders
 
+
+pytestmark = pytest.mark.cpu
+
 ZIMAGE = {'kind': 'image', 'url': 'http://gpu-box:8200/v1', 'modelId': 'Tongyi-MAI/Z-Image-Turbo', 'apiKey': 'token'}
 
 

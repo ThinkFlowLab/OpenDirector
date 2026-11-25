@@ -9,6 +9,9 @@ from opendirector_api.main import create_app
 from test_tool_tasks import project, png, upload
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('language', ['zh-CN', 'en-US'])
 @pytest.mark.parametrize('operation,capability,chinese,english', [
     ('resize', 'image.edit', '图生图/图片编辑', 'image editing'),

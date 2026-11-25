@@ -1,0 +1,12 @@
+[submodule "ecc"]
+	path = .agents/upstream/ecc
+	url = https://github.com/affaan-m/ECC.git
+	shallow = true
+[submodule "langchain-skills"]
+	path = .agents/upstream/langchain-skills
+	url = https://github.com/langchain-ai/langchain-skills.git
+	shallow = true
+[submodule "agents-best-practices"]
+	path = .agents/upstream/agents-best-practices
+	url = https://github.com/DenisSergeevitch/agents-best-practices.git
+	shallow = true

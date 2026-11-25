@@ -25,6 +25,13 @@ Use it to explore visual ideas, refine assets, and make short films. Projects st
 
 [News](#news) · [Example film](#example-film-we-can-still-win) · [Quick start](#quick-start) · [Documentation](#documentation) · [Community](#community) · [Contributing](#contributing)
 
+Welcome to follow our official Bilibili account, which includes tutorials and shares splendid creations from our users!
+<p>
+  <a href="https://space.bilibili.com/3747582748658251">
+    <img src="https://img.shields.io/badge/Bilibili-OpenDirector-00A1D6?logo=bilibili&amp;logoColor=white" alt="OpenDirector official Bilibili account" />
+  </a>
+</p>
+
 ## News
 
 - [2026/11/06] We released [v0.1.0](https://github.com/ThinkFlowLab/OpenDirector/releases/tag/v0.1.0), the first OpenDirector release, bringing AI-assisted generation, canvas asset management, media editing, and timeline export into one local workspace. See the release notes for highlights and installation instructions.

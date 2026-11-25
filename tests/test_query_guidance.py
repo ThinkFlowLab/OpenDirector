@@ -8,6 +8,9 @@ from opendirector.agent.tools import QUERY_TYPES, query_guidance, tools
 from opendirector.domain.creation.commands import Query
 
 
+pytestmark = pytest.mark.cpu
+
+
 def guidance(arguments):
     try:
         TypeAdapter(Query).validate_python({'projectId': uuid4(), 'queryId': uuid4(), **arguments})

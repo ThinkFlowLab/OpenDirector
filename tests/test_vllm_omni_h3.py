@@ -28,6 +28,9 @@ from opendirector.integrations.volcengine import VolcengineGeneration
 from test_model_availability import document
 from opendirector_api.main import create_app
 
+
+pytestmark = pytest.mark.cpu
+
 H3 = {'protocol': 'vllm_omni', 'kind': 'video', 'url': 'http://gpu-box:8000/v1', 'modelId': 'MiniMaxAI/MiniMax-H3', 'apiKey': 'token'}
 
 

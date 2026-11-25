@@ -12,7 +12,7 @@ from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationFailure, ResultCheck
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import (
-    FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
+    CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
     MUSIC_SECONDS_INITIAL, MUSIC_SECONDS_MAX, MUSIC_SECONDS_MIN, PROMPT_MAX_LENGTH,
     REFERENCE_MEDIA_SECONDS, STORED_VOICE_PATTERN, TEXT_DEFAULT_MAX_TOKENS, TEXT_MAX_TOKENS,
     duration_matches, effective_video_mode, generate_audio_options,
@@ -154,7 +154,7 @@ class FollowingSource(Contract):
 
 class ReferenceBase(ProjectEntity):
     targetSpecId: UUID = Field(description='Target generation configuration ID.')
-    role: Literal['reference', 'first_frame', 'last_frame', 'continuation'] = Field(default='reference', description='Business role of this binding or reference.')
+    role: Literal['reference', 'first_frame', 'last_frame', 'continuation', 'control'] = Field(default='reference', description='Business role of this binding or reference.')
     order: int = Field(default=0, ge=0, strict=True, description='Reference ordering within the target configuration.')
     active: bool = Field(default=True, description='Whether this reference participates in generation.')  # Retained tombstone prevents revision ABA on undo.
 
@@ -182,7 +182,7 @@ Reference = Annotated[PinnedReference | FollowingReference, Field(discriminator=
 
 class ResolvedReference(Contract):
     referenceId: UUID = Field(description='Generation reference ID.')
-    role: Literal['reference', 'first_frame', 'last_frame', 'continuation'] = Field(description='Business role of this binding or reference.')
+    role: Literal['reference', 'first_frame', 'last_frame', 'continuation', 'control'] = Field(description='Business role of this binding or reference.')
     asset: AssetRef = Field(description='Immutable asset version.')
     metadata: MediaMetadata = Field(description='Verified media properties.')
     sourceVersion: ObjectVersion | None = Field(default=None, description='Captured source object version.')
@@ -487,6 +487,19 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             raise ValueError('视频续写会沿用原视频尺寸，不能修改分辨率。')
     elif any(ref.role == 'continuation' for ref in references):
         raise ValueError('续写参考必须使用续写模式。')
+    if params.videoMode == 'control':
+        # FastH3 + ControlNet: one structure (depth) video fixes motion and layout; images give the look.
+        control = [ref for ref in transmitted if ref.role == 'control']
+        if len(control) != 1 or control[0].asset.kind != 'video' or kinds.count('video') != 1:
+            raise ValueError('结构控制需要且只能连接一个控制视频（例如人物深度视频）。')
+        if kinds.count('audio'):
+            raise ValueError('结构控制模式不接受音频参考。')
+        seconds = control[0].metadata.durationSeconds
+        if seconds is None or not CONTROL_VIDEO_SECONDS[0] <= seconds <= CONTROL_VIDEO_SECONDS[1] + 0.05:
+            low, high = CONTROL_VIDEO_SECONDS
+            raise ValueError(f'控制视频需要 {low:g}–{high:g} 秒，生成时长与它一致。')
+    elif any(ref.role == 'control' for ref in references):
+        raise ValueError('控制视频必须使用结构控制模式。')
     if params.videoMode == 'first_frame' and (kinds.count('image') > (FRAME_IMAGE_LIMIT if rules.frameRoles and 'last_frame' in rules.frameRoles else 1) or any(kind in {'audio', 'video'} for kind in kinds)):
         raise ValueError('首帧模式最多只能连接一个图片参考和文本。')
     for role in ('first_frame', 'last_frame'):
@@ -500,7 +513,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if kinds.count('audio') and not rules.audioReferenceStandalone and not (kinds.count('image') or kinds.count('video')):
         raise ValueError('音频参考必须同时连接图片或视频参考。')
     for kind in ('audio', 'video'):
-        seconds = [ref.metadata.durationSeconds for ref in transmitted if ref.asset.kind == kind]
+        # The control video is the output's timeline, not a reference clip; its own limit applies above.
+        seconds = [ref.metadata.durationSeconds for ref in transmitted if ref.asset.kind == kind and ref.role != 'control']
         minimum = 2 if kind == 'audio' or rules.profile == 'minimax-h3-official' else 0
         if any(value is None or value < minimum or value <= 0 for value in seconds) or sum(seconds) > REFERENCE_MEDIA_SECONDS:
             label = '视频' if kind == 'video' else '音频'
@@ -512,7 +526,7 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         if params.resolution not in choices:
             raise ValueError('当前参考模式不支持该输出分辨率。')
     caps = rules.videoCapabilities
-    if caps and params.durationSeconds is not None:
+    if caps and params.durationSeconds is not None and params.videoMode != 'control':
         choices = [output for output in caps.outputs if params.resolution == 'auto' or output.resolution == params.resolution]
         if not any(duration_matches(params.durationSeconds, output.durations, rules.fractionalDuration) for output in choices):
             raise ValueError('当前时长与分辨率组合不受支持。')

@@ -4,6 +4,9 @@ import pytest
 from opendirector.agent.directory_links import link_directory, unlink_directory
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_directory_alias_roundtrip_and_dangling_cleanup(tmp_path):
     target = tmp_path / 'private skills'
     target.mkdir()

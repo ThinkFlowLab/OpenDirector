@@ -37,7 +37,7 @@ def publish_media(service, data, payload):
             expected, allowed = 'video', {'audio'}
             if not actual.metadata.hasAudio:
                 raise ContractError('invalid_input', '来源视频没有可提取的音轨。', actual.id)
-        elif tool in {'video-depth-capture', 'video-extend', 'video-partial-reshoot', 'video-trim', 'video-crop', 'video-edit', 'video-upscale', 'video-frame-interpolation', 'video-subtitle-erasure', 'video-matting', 'video-translation'}:
+        elif tool in {'video-depth-capture', 'video-extend', 'video-partial-reshoot', 'video-trim', 'video-crop', 'video-edit', 'video-upscale', 'video-frame-interpolation', 'video-subtitle-erasure', 'video-matting', 'video-translation', 'video-mask-composite'}:
             expected, allowed = 'video', {'video'}
         elif tool in {'audio-trim', 'audio-separation'}:
             expected, allowed = ('video' if tool == 'audio-separation' and actual.kind == 'video' else 'audio'), {'audio'}

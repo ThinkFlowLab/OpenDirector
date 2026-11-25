@@ -21,6 +21,7 @@ import {
   drawTimelineText,
   type TimelineFontSession,
 } from "./timelineTextRenderer.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 
 /** Source trims, speed, offset, mute and volume share the editor's timeline semantics. */
 export async function renderTimelineMp4(
@@ -63,7 +64,7 @@ export async function renderTimelineMp4(
         );
       if (resource.kind === "image") {
         if (!images.has(resource.src)) {
-          const response = await fetch(resource.src, { signal });
+          const response = await fetchMediaSource(resource.src, { signal });
           if (!response.ok)
             throw new Error(
               tNow("errors.render.readFailed", {
@@ -110,7 +111,7 @@ export async function renderTimelineMp4(
       }
       let input = inputs.get(resource.src);
       if (!input) {
-        const response = await fetch(resource.src, { signal });
+        const response = await fetchMediaSource(resource.src, { signal });
         if (!response.ok)
           throw new Error(
             tNow("errors.render.readFailed", {

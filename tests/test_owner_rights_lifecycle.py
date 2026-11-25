@@ -17,7 +17,7 @@ import pytest
 
 from opendirector.agent import owner_rights as rights
 
-pytestmark = pytest.mark.skipif(os.name != 'nt', reason='requires native Windows ACL and oplock APIs')
+pytestmark = [pytest.mark.cpu, pytest.mark.skipif(os.name != 'nt', reason='requires native Windows ACL and oplock APIs')]
 WORLD = bytes.fromhex('010100000000000100000000')
 
 

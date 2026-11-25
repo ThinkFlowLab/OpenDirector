@@ -105,6 +105,44 @@
       "id": "shared-rule-contracts",
       "labels": {"zh-CN": "共享规则契约", "en-US": "Shared rule contracts"},
       "tests": ["tests/test_rule_facts.py"]
+    },
+    {
+      "id": "video-frame-admission-boundaries",
+      "labels": {
+        "zh-CN": "视频帧数接受边界",
+        "en-US": "Video frame admission boundaries"
+      },
+      "tests": [
+        "tests/test_video_capability_acceptance.py::test_generation_frame_limit_matches_http_and_saved_execution[4.33-104-103-MiniMaxAI/MiniMax-H3]",
+        "tests/test_video_capability_acceptance.py::test_generation_frame_limit_matches_http_and_saved_execution[4.33-104-103-FastH3-Omni]",
+        "tests/test_video_capability_acceptance.py::test_generation_frame_limit_matches_http_and_saved_execution[4.33-104-104-MiniMaxAI/MiniMax-H3]",
+        "tests/test_video_capability_acceptance.py::test_generation_frame_limit_matches_http_and_saved_execution[4.33-104-104-FastH3-Omni]",
+        "tests/test_video_capability_acceptance.py::test_generation_frame_limit_matches_http_and_saved_execution[4.458333333333333-107-107-MiniMaxAI/MiniMax-H3]",
+        "tests/test_video_capability_acceptance.py::test_generation_frame_limit_matches_http_and_saved_execution[4.458333333333333-107-107-FastH3-Omni]"
+      ]
+    },
+    {
+      "id": "provider-download-recovery-security",
+      "labels": {
+        "zh-CN": "提供商下载恢复与安全",
+        "en-US": "Provider download recovery and security"
+      },
+      "tests": [
+        "tests/test_minimax_speech.py::test_failed_download_recovers_after_model_removal_without_resubmitting",
+        "tests/test_minimax_speech.py::test_recovery_keeps_public_download_checks",
+        "tests/test_bigmodel_image.py::test_download_recovery_after_restart_and_model_removal_does_not_regenerate"
+      ]
+    },
+    {
+      "id": "capability-entry-equivalence",
+      "labels": {
+        "zh-CN": "能力接受入口一致性",
+        "en-US": "Capability admission entry equivalence"
+      },
+      "tests": [
+        "tests/test_request_capability_acceptance.py",
+        "tests/test_fasth3_capability_acceptance.py"
+      ]
     }
   ],
   "browser_gate": ["mp4_export.mjs"]

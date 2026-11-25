@@ -20,6 +20,9 @@ from opendirector.domain.creation.models import ModelConfigPublic, ModelConfigWr
 from opendirector.domain.creation.project import ViewState
 from opendirector.domain.input_rules import input_rules
 
+
+pytestmark = pytest.mark.cpu
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = UUID(int=1)
 

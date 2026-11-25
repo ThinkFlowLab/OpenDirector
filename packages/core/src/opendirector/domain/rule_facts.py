@@ -42,6 +42,8 @@ MUSIC_SECONDS_MAX = 360
 MUSIC_SECONDS_INITIAL = 30
 REFERENCE_MEDIA_SECONDS = 15
 FASTH3_MEDIA_REFERENCE_LIMIT = 12
+# FastH3 structure control: the control video sets the output length (long_video_mode=full up to 30 s).
+CONTROL_VIDEO_SECONDS = (4, 30)
 # Identifiers sent to a speech adapter. Stored specs may also keep a Unicode
 # display name; that contract pattern is STORED_VOICE_PATTERN and is not a
 # JavaScript \\w check.
@@ -75,6 +77,7 @@ def facts_payload():
         'musicSecondsInitial': MUSIC_SECONDS_INITIAL,
         'referenceMediaSeconds': REFERENCE_MEDIA_SECONDS,
         'fasth3MediaReferenceLimit': FASTH3_MEDIA_REFERENCE_LIMIT,
+        'controlVideoSeconds': list(CONTROL_VIDEO_SECONDS),
         'serviceVoicePattern': SERVICE_VOICE_PATTERN,
         'storedVoicePattern': STORED_VOICE_PATTERN,
         'videoAspectRatios': list(VIDEO_ASPECT_RATIOS),
@@ -93,11 +96,11 @@ def aspect_ratio_choices(spec):
     if kind == 'image':
         return ['auto', *_unique(ratio for ratio in spec.get('imageOutputRatios') or [] if ratio != 'auto')]
     if kind == 'video' and published is not None:
-        if video_mode == 'first-last':
+        if video_mode in {'first-last', 'control'}:
             return ['auto']
         return ['auto', *list(published)]
     framed = spec.get('protocol') == 'volcengine' or bool(spec.get('dimensioned'))
-    if kind == 'video' and video_mode != 'continuation' and framed:
+    if kind == 'video' and video_mode not in {'continuation', 'control'} and framed:
         return ['auto', *VIDEO_ASPECT_RATIOS]
     return ['auto']
 
@@ -139,8 +142,8 @@ def effective_video_mode(spec):
     the model allows it. The same function freezes a job and fills the menu.
     """
     mode = spec.get('mode')
-    if mode == 'continuation':
-        return 'continuation'
+    if mode in {'continuation', 'control'}:
+        return mode
     if mode in {'first-last', 'first_frame'}:
         return 'first_frame'
     if spec.get('configured') and 'first_frame' not in (spec.get('allowedModes') or []):
@@ -261,6 +264,8 @@ _CASES = (
         'durationSeconds': 5, 'capabilityOutputs': []}),
     ('continuation-mode', 'effectiveVideoMode', {
         'mode': 'continuation', 'allowedModes': ['first_frame'], 'hasNonTextMedia': False, 'configured': True}),
+    ('control-mode', 'effectiveVideoMode', {
+        'mode': 'control', 'allowedModes': ['reference', 'control'], 'hasNonTextMedia': True, 'configured': True}),
     ('first-last-mode', 'effectiveVideoMode', {
         'mode': 'first-last', 'allowedModes': ['reference'], 'hasNonTextMedia': True, 'configured': True}),
     ('stored-first-frame-mode', 'effectiveVideoMode', {
@@ -328,13 +333,14 @@ export function aspectRatioChoices(input: {
     ];
   }
   if (input.kind === "video" && input.publishedRatios != null) {
-    if (input.videoMode === "first-last") return ["auto"];
+    if (input.videoMode === "first-last" || input.videoMode === "control") return ["auto"];
     return ["auto", ...input.publishedRatios];
   }
   const framed = input.protocol === "volcengine" || input.dimensioned;
   if (
     input.kind === "video" &&
     input.videoMode !== "continuation" &&
+    input.videoMode !== "control" &&
     framed
   ) {
     return ["auto", ...RULE_FACTS.videoAspectRatios];
@@ -405,8 +411,8 @@ export function effectiveVideoMode(input: {
   readonly allowedModes: readonly string[];
   readonly hasNonTextMedia: boolean;
   readonly configured: boolean;
-}): "continuation" | "first_frame" | "reference" {
-  if (input.mode === "continuation") return "continuation";
+}): "continuation" | "control" | "first_frame" | "reference" {
+  if (input.mode === "continuation" || input.mode === "control") return input.mode;
   if (input.mode === "first-last" || input.mode === "first_frame") {
     return "first_frame";
   }

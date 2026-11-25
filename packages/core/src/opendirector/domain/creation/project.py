@@ -87,6 +87,8 @@ class ProjectSnapshot(Contract):
         parents = {}
         for item in self.canvasItems:
             if item.parentId:
+                if item.kind == 'group' and item.autoLayout == 'run':
+                    raise ValueError('Run layout requires a top-level group')
                 if item.parentId not in items or items[item.parentId].kind != 'group':
                     raise ValueError('Parent must be a group in the same project')
                 parents[item.id] = [item.parentId]
@@ -137,10 +139,10 @@ class ProjectSnapshot(Contract):
                 source = items.get(reference.source.id)
                 if source is None or source.kind not in {'text', 'image', 'video', 'audio', 'subject'}:
                     raise ValueError('Following reference needs a stable logical media source')
-                if reference.role == 'first_frame' and source.kind != 'image' or reference.role == 'continuation' and source.kind != 'video':
+                if reference.role == 'first_frame' and source.kind != 'image' or reference.role in {'continuation', 'control'} and source.kind != 'video':
                     raise ValueError('Reference source kind does not match its role')
             elif ((reference.role == 'first_frame' and reference.source.kind != 'image')
-                  or (reference.role == 'continuation' and reference.source.kind != 'video')):
+                  or (reference.role in {'continuation', 'control'} and reference.source.kind != 'video')):
                 raise ValueError('Reference source kind does not match its role')
         for spec in self.generationSpecs:
             if spec.promptContent:

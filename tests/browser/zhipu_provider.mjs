@@ -1,4 +1,4 @@
-/** Isolated Zhipu BigModel provider UI proof. Saves a fixture key and never calls a model service.
+/** Isolated Zhipu BigModel provider UI proof. Discovers models through a loopback service.
  * Start creation_server.py on 8029 and Vite on 5189 with its API proxy on 8029.
  * CREATION_WEB_URL, CREATION_API_URL and ZHIPU_SCREENSHOT_DIR override defaults.
  */
@@ -6,13 +6,17 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { launchBrowser } from "./engine.mjs";
+import {
+  startZhipuCatalog,
+  zhipuBaseURL as canonicalURL,
+  zhipuFixtureKey as fixtureKey,
+  zhipuModelsPath,
+} from "./zhipu_catalog_fixture.mjs";
 
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5189";
 const api = process.env.CREATION_API_URL ?? "http://127.0.0.1:8029";
 const output = process.env.ZHIPU_SCREENSHOT_DIR ?? "/tmp/opendirector-zhipu-evidence";
 const modelIds = ["glm-5.3", "glm-5.3-flash", "glm-5.2"];
-const canonicalURL = "https://open.bigmodel.cn/api/paas/v4";
-const fixtureKey = "zhipu-browser-fixture-only-no-real-service";
 const headers = { "X-OpenDirector-Request": "1", "Content-Type": "application/json" };
 async function call(path, { method = "GET", body } = {}) {
   const response = await fetch(api + path, {
@@ -55,15 +59,23 @@ await call(`/api/creation/projects/${projectId}/commands`, {
 
 const copy = {
   "zh-CN": {
-    settings: "设置", models: "模型接入", agentOverview: "文本模型", chat: "对话",
+    settings: "设置", models: "模型接入", agentOverview: "文本模型", chat: "对话", audio: "音频",
     add: "添加服务", provider: "提供商", zhipu: "智谱 BigModel", url: "服务地址（Base URL）",
-    reload: "载入支持的模型", save: "保存服务", cancel: "取消", manage: "管理", close: "关闭设置",
+    fetch: "获取模型", refresh: "刷新列表", retry: "可重试或手动添加模型。",
+    missingKey: "请先填写 API Key。", pending: "正在获取模型列表", fetched: "已获取 3 个模型", empty: "服务未返回模型",
+    loadAudioPreset: "载入支持的模型", audioPresetLoaded: "已载入 1 个预设模型",
+    providerError: "读取模型声明失败（HTTP 503）",
+    save: "保存服务", cancel: "取消", manage: "管理", close: "关闭设置",
     chatEntry: "与 AI 对话", manual: "手动添加", manualAdd: "添加", manualId: "Model ID（服务的 served-model-name）",
   },
   "en-US": {
-    settings: "Settings", models: "Model connections", agentOverview: "Text model", chat: "Chat",
+    settings: "Settings", models: "Model connections", agentOverview: "Text model", chat: "Chat", audio: "Audio",
     add: "Add service", provider: "Provider", zhipu: "Zhipu BigModel", url: "Service URL (Base URL)",
-    reload: "Load supported models", save: "Save service", cancel: "Cancel", manage: "Manage", close: "Close settings",
+    fetch: "Fetch models", refresh: "Refresh list", retry: "You can retry or add a model manually.",
+    missingKey: "Enter an API Key first.", pending: "Fetching the model list", fetched: "3 models fetched", empty: "The service returned no models",
+    loadAudioPreset: "Load supported models", audioPresetLoaded: "1 preset model loaded",
+    providerError: "Could not load the model list (HTTP 503).",
+    save: "Save service", cancel: "Cancel", manage: "Manage", close: "Close settings",
     chatEntry: "Chat with AI", manual: "Add manually", manualAdd: "Add", manualId: "Model ID (the service's served-model-name)",
   },
 };
@@ -77,6 +89,10 @@ await page.addInitScript(() => {
 });
 const requests = [];
 const errors = [];
+let catalog;
+let catalogStatus = 200;
+let catalogModelIds = modelIds;
+let catalogResponseReady = Promise.resolve();
 page.on("request", request => requests.push(request.url()));
 page.on("pageerror", error => errors.push(error.message));
 const shot = name => page.screenshot({ path: join(output, name), fullPage: true });
@@ -96,9 +112,25 @@ async function openAgentCategory(labels) {
     .filter({ has: page.locator("strong", { hasText: new RegExp(`^${labels.agentOverview}$`) }) })
     .getByRole("button").click();
 }
+async function discoverWithFeedback(button, labels, resultText = labels.fetched) {
+  const picker = page.locator(".cw-model-picker");
+  const pending = picker.getByText(labels.pending, { exact: true });
+  const fetched = picker.getByText(labels.fetched, { exact: true });
+  const { promise, resolve } = Promise.withResolvers();
+  catalogResponseReady = promise;
+  try {
+    await button.click();
+    await pending.waitFor({ timeout: 5000 });
+    await fetched.waitFor({ state: "hidden", timeout: 5000 });
+  } finally {
+    resolve();
+  }
+  await picker.getByText(resultText, { exact: true }).waitFor();
+  await pending.waitFor({ state: "hidden" });
+}
 async function provePreset(labels, locale) {
   await page.getByRole("button", { name: labels.add, exact: true }).click();
-  const start = requests.length;
+  const start = catalog.requests.length;
   await provider(labels).click();
   const option = page.getByRole("option", { name: labels.zhipu, exact: true });
   await brandLogo(option.locator("img.cw-model-logo"));
@@ -111,11 +143,43 @@ async function provePreset(labels, locale) {
     assert.equal(await page.getByRole("checkbox", { name: modelId, exact: true }).isChecked(), true);
     await brandLogo(optionRow(modelId).locator("img.cw-model-logo"));
   }
+  assert.equal(catalog.requests.length, start, "Selecting a preset must not query the provider");
+  const fetchModels = page.getByRole("button", { name: labels.fetch, exact: true });
+  const refresh = page.getByRole("button", { name: labels.refresh, exact: true });
+  const startBrowserRequests = requests.length;
+  assert.equal(await fetchModels.isEnabled(), true, "Users must be able to ask why discovery cannot start");
+  await fetchModels.click();
+  const missingKey = page.getByRole("alert").filter({ hasText: labels.missingKey });
+  await missingKey.waitFor();
+  assert.equal(catalog.requests.length, start, "Missing credentials must not reach the provider");
+  assert.ok(!requests.slice(startBrowserRequests).some(url => url.includes("/model-configs/discover")),
+    "Missing credentials must not start discovery");
+
   await page.getByLabel("API Key", { exact: true }).fill(fixtureKey);
-  await page.getByRole("button", { name: labels.reload, exact: true }).click();
+  catalogStatus = 503;
+  await fetchModels.click();
+  const failure = page.getByRole("alert").filter({ hasText: labels.retry });
+  await failure.waitFor();
+  assert.ok((await failure.innerText()).includes(labels.providerError));
+  assert.equal(await fetchModels.isEnabled(), true, "A failed query remains available for retry");
+  assert.equal(await refresh.count(), 0, "An error must not mark model discovery successful");
+  assert.equal(await page.locator(".cw-model-option").count(), modelIds.length, "An error must keep the preset list");
+  assert.equal(await page.getByRole("button", { name: labels.manual, exact: true }).isEnabled(), true);
+  catalogStatus = 200;
+  await discoverWithFeedback(fetchModels, labels);
+  await refresh.waitFor();
+  await failure.waitFor({ state: "hidden" });
+  await discoverWithFeedback(refresh, labels);
+  for (const modelId of modelIds)
+    assert.equal(await page.getByRole("checkbox", { name: modelId, exact: true }).isChecked(), true, "Refreshing must preserve the selected models");
+  catalogModelIds = [];
+  await discoverWithFeedback(refresh, labels, labels.empty);
+  catalogModelIds = modelIds;
   for (const modelId of modelIds)
     assert.equal(await page.getByRole("checkbox", { name: modelId, exact: true }).isChecked(), true);
-  assert.ok(!requests.slice(start).some(url => url.includes("/model-configs/discover")), "Preset selection or reload must not discover remote models");
+  assert.deepEqual(catalog.requests.slice(start), Array.from({ length: 4 }, () => ({
+    method: "GET", path: zhipuModelsPath, authorized: true,
+  })), "Initial load, retry and refresh must query the service catalog with authentication");
   await shot(`${locale}-mock-zhipu-provider.png`);
 }
 async function proveReopen(labels, locale) {
@@ -149,6 +213,23 @@ async function proveManualAdd(labels, locale) {
   await page.getByRole("button", { name: labels.cancel, exact: true }).click();
   await page.getByRole("button", { name: labels.add, exact: true }).waitFor();
 }
+async function proveAudioPreset(labels) {
+  const startBrowserRequests = requests.length;
+  const startModelRequests = catalog.requests.length;
+  await page.getByRole("button", { name: labels.audio, exact: true }).click();
+  await page.getByRole("button", { name: labels.add, exact: true }).click();
+  await provider(labels).click();
+  await page.getByRole("option", { name: labels.zhipu, exact: true }).click();
+  await page.getByLabel("API Key", { exact: true }).fill(fixtureKey);
+  await page.getByRole("button", { name: labels.loadAudioPreset, exact: true }).click();
+  await page.getByText(labels.audioPresetLoaded, { exact: true }).waitFor();
+  assert.equal(await page.locator(".cw-model-option").count(), 1);
+  assert.equal(await page.getByRole("checkbox", { name: "glm-tts", exact: true }).isChecked(), true);
+  assert.ok(!requests.slice(startBrowserRequests).some(url => url.endsWith("/api/model-configs/discover")),
+    "The audio preset must not use the text model catalog");
+  assert.equal(catalog.requests.length, startModelRequests);
+  await page.getByRole("button", { name: labels.cancel, exact: true }).click();
+}
 async function proveAgentPicker(labels, locale) {
   // Each locale gets a fresh page. The browser context still shares the saved
   // model configuration. A separate project avoids competing for the current
@@ -174,7 +255,7 @@ async function proveAgentPicker(labels, locale) {
     }));
     await pickerPage.goto(base + "/ai-tool/ai-canvas/" + pickerProjectId + "?creation=unified");
     await pickerPage.locator('.cw-workspace[aria-busy="false"]').waitFor();
-    const pickerRow = pickerPage.getByRole("menuitemradio", { name: "glm-5.3", exact: true });
+    const pickerRow = pickerPage.getByRole("menuitemradio", { name: modelIds[0], exact: true });
     const chatButton = pickerPage.getByRole("button", { name: labels.chatEntry, exact: true });
     if (await chatButton.getAttribute("aria-expanded") !== "true")
       await chatButton.click();
@@ -200,6 +281,9 @@ async function proveAgentPicker(labels, locale) {
 }
 
 try {
+  catalog = await startZhipuCatalog(page, () => ({
+    status: catalogStatus, ids: catalogModelIds, ready: catalogResponseReady,
+  }));
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
   const zh = copy["zh-CN"];
   await page.getByRole("button", { name: zh.settings, exact: true }).click();
@@ -218,6 +302,7 @@ try {
   }
   await proveReopen(zh, "zh-CN");
   await proveManualAdd(zh, "zh-CN");
+  await proveAudioPreset(zh);
   await page.getByRole("button", { name: zh.close, exact: true }).click();
   await proveAgentPicker(zh, "zh-CN");
 
@@ -232,6 +317,7 @@ try {
   await page.getByRole("button", { name: en.cancel, exact: true }).click();
   await proveReopen(en, "en-US");
   await proveManualAdd(en, "en-US");
+  await proveAudioPreset(en);
   await page.getByRole("button", { name: en.close, exact: true }).click();
   await proveAgentPicker(en, "en-US");
   assert.ok(!requests.some(url => new URL(url).hostname === "open.bigmodel.cn"), "Browser must not contact the model provider");
@@ -239,11 +325,13 @@ try {
   console.log(JSON.stringify({ passed: true, fixture: true, generation: "not submitted", base, api,
     projectURL: `${base}/ai-tool/ai-canvas/${projectId}?creation=unified`, screenshotDirectory: output,
     modelConfigIds: saved.map(config => config.id), checks: ["Chinese and English", "Z.ai brand logo",
-      "canonical URL", "GLM models preselected without discovery", "save and reopen", "public models have no key",
+      "canonical URL", "authenticated GET /models with upstream retry", "missing key warning, load and refresh progress, and empty results",
+      "save preset models and reopen", "audio preset excludes text model catalog", "public models have no key",
       "manual model IDs stay available", "assistant picker lists and keeps the Zhipu model", "no provider request from the browser"] }));
 } catch (error) {
   await shot("mock-zhipu-provider-failure.png").catch(() => {});
   throw error;
 } finally {
   await browser.close();
+  catalog?.close();
 }

@@ -41,6 +41,7 @@ import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 function kindOf(asset: ChatAsset) {
   return asset.type.startsWith("image/")
@@ -87,7 +88,7 @@ export function AssistantPanel({
 }) {
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
-  const { value, setValue } = chat;
+  const { value } = chat;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
@@ -578,7 +579,7 @@ export function AssistantPanel({
                     title={item.error ?? item.title}
                   >
                     {item.thumbnail && !item.error ? (
-                      <img src={item.thumbnail} alt="" />
+                      <AssetMedia as="img" src={item.thumbnail} alt="" />
                     ) : (
                       <CanvasIcon name={item.kind} size={20} />
                     )}
@@ -734,12 +735,7 @@ export function AssistantPanel({
               models={catalog.models}
               selections={value.modelSelections}
               disabled={!chat.loaded || !catalog.connected || chat.sending}
-              onChange={(kind, id) =>
-                setValue((previous) => ({
-                  ...previous,
-                  modelSelections: { ...previous.modelSelections, [kind]: id },
-                }))
-              }
+              onChange={chat.selectMediaModel}
               onConfigure={onOpenSettings}
             />
             <div className="cw-assistant-toolbar-spacer" />

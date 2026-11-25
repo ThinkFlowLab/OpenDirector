@@ -11,6 +11,9 @@ from opendirector.domain.request_constraints import constraint_failure, input_de
 from test_model_availability import document, private, service
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('rule,options,value', [
     ('title', ['English'], 'english'), ('title', ['english'], 'ENGLISH'),
     ('lower', ['af_heart'], 'AF_HEART'), ('lower', ['default'], 'DEFAULT'),

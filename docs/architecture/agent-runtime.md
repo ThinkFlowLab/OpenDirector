@@ -39,6 +39,10 @@ Default 与 OpenCode CLI 分别配置。外部 CLI 不读取 OpenDirector 保存
 
 业务入口使用 Typer CLI，通过 `opendirector --help` 和子命令的 `--help` 渐进发现操作。查询、编辑及生成命令调用共用业务服务。Agent 通过受令牌保护的本轮连接继承工程范围、编辑会话、执行目录和操作回执；CLI 子进程退出不终止已接受的后台任务。普通终端通过现有 HTTP API 连接服务，写入申请独立编辑会话并遵守工程锁，查询不申请租约。`--session` 可使用已有授权会话。`--operation-id` 提供稳定修改身份，同身份相同输入重放返回原回执，不同输入拒绝。
 
+接受轮次时，服务端校验画布的工程会话，并为本轮签发独立的工程写入租约。运行期间服务端负责续租，画布关闭或断线后仍可执行本轮已授权的写入。运行结束或停止后释放租约。工程路径、对象锁和预期版本仍由共享业务服务校验，重新打开画布后用户可以继续编辑。
+
+The server validates the canvas session when it accepts a turn and grants the turn its own project write lease. The server renews that lease while the turn runs, including after the canvas closes or disconnects, and releases it when the turn completes or stops. The shared services still check the project path, object locks and expected revisions. A reopened canvas can edit concurrently.
+
 新文件通过 `opendirector asset import` 登记，再根据需要调用 `opendirector canvas add-material` 展示。发布回执、素材登记和画布展示分别表达，不以创建节点代替文件交付。
 
 ## Skill 加载与媒体输入

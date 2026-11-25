@@ -101,9 +101,9 @@ def _adapter_rules(config):
     if kind == 'video' and config.get('protocol') == 'vllm_omni' and adapter in {'fasth3', 'fasth3_dual'}:
         rules.update(profile='fasth3-omni', allowedKinds=['text', 'image', 'video', 'audio'],
                      maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
-                     requestBytes=160 * 1024 * 1024, videoModes=['reference'], outputResolutions=['480P', '768P'])
+                     requestBytes=160 * 1024 * 1024, videoModes=['reference', 'control'], outputResolutions=['480P', '768P'])
         if adapter == 'fasth3_dual':
-            rules.update(videoModes=['reference', 'first_frame'], frameRoles=['first_frame', 'last_frame'])
+            rules.update(videoModes=['reference', 'first_frame', 'control'], frameRoles=['first_frame', 'last_frame'])
         return rules
     if kind == 'video' and config.get('protocol') == 'vllm_omni':
         rules.update(profile='standard-video', maxImages=1, videoModes=['first_frame'])

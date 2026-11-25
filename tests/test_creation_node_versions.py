@@ -13,6 +13,9 @@ from test_creation_canvas_service import project, media, send, text_material, ve
 from test_creation_generation_service import Provider, runtime, configure, anyio_backend
 
 
+pytestmark = pytest.mark.cpu
+
+
 def versions(snapshot):
     return [ver(kind, obj) for (kind, _), obj in object_index(snapshot).items()]
 

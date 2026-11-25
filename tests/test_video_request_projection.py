@@ -9,6 +9,9 @@ from opendirector.application.model_availability import generation_request, tool
 from test_model_availability import private, service
 
 
+pytestmark = pytest.mark.cpu
+
+
 def reference(kind, role='reference', transmission='content'):
     return SimpleNamespace(asset=SimpleNamespace(kind=kind), role=role, transmission=transmission,
                            metadata=SimpleNamespace(width=1344, height=768))

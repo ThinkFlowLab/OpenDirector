@@ -11,9 +11,17 @@ import { ModelServiceForm, type SettingsModelKind } from "./ModelServiceForm";
 import { CanvasIcon } from "./CanvasIcon";
 import "./model-settings.css";
 
-export function ModelSettings({ catalog, onClose }: { catalog: BackendModels; onClose: () => void }) {
+export function ModelSettings({
+  catalog,
+  onClose,
+  initialKind = null,
+}: {
+  catalog: BackendModels;
+  onClose: () => void;
+  initialKind?: SettingsModelKind | null;
+}) {
   const t = useT();
-  const [category, setCategory] = useState<SettingsModelKind | null>(null);
+  const [category, setCategory] = useState<SettingsModelKind | null>(initialKind);
   const [editing, setEditing] = useState<{
     kind: SettingsModelKind;
     model?: ModelConfig;

@@ -5,6 +5,7 @@ import {
   CreationClient,
   type CreationOperation,
 } from "../src/backend/creationClient.ts";
+import { assetSource } from "../src/backend/assetSource.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
 import type {
   EditorDocument,
@@ -38,7 +39,10 @@ function fixture(generated = false) {
   client.install(snapshot);
   client.mediaUrl = async (id) => `blob:${id}`;
   client.assetForSource = (src) =>
-    source.assets.find((asset) => src === `blob:${asset.id}`);
+    source.assets.find(
+      (asset) =>
+        src === `blob:${asset.id}` || src === assetSource(client.id, asset.id),
+    );
   client.view = async () => ({
     projectId: client.id,
     clientId: crypto.randomUUID(),
@@ -238,7 +242,7 @@ for (const generated of [false, true]) {
     const node = edited.nodes[0]!;
     const source = node.data.src;
     const output = snapshot.assets.find(
-      (a) => a.kind === "image" && `blob:${a.id}` !== source,
+      (a) => a.kind === "image" && assetSource(client.id, a.id) !== source,
     )!;
     node.data.src = `blob:${output.id}`;
     node.data.layers = {
@@ -255,7 +259,7 @@ for (const generated of [false, true]) {
     const applied = operations.find((op) => op.type === "canvas.applyEdit");
     assert.ok(applied && applied.type === "canvas.applyEdit");
     assert.equal(applied.payload.asset.assetId, output.id);
-    assert.equal(`blob:${applied.payload.source.assetId}`, source);
+    assert.equal(assetSource(client.id, applied.payload.source.assetId), source);
     assert.ok(
       operations.findIndex((op) => op.type === "canvas.attachEditor") <
         operations.indexOf(applied),
@@ -305,7 +309,7 @@ test("crop projection reopens original inputs and copies independent documents a
   projection.basis = attached;
   assert.equal(
     document.nodes[0]!.data.imageCrop!.src,
-    `blob:${source.assetId}`,
+    assetSource(client.id, source.assetId),
   );
   assert.equal(document.nodes[0]!.data.imageCrop!.options.rotation, 90);
   const copied = pasteFragment(document, copySelection(document, [item.id]));

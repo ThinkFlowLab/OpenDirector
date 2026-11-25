@@ -25,17 +25,30 @@ opendirector --project PROJECT_UUID video create   --model MODEL_CONFIG_UUID   -
 
 `canvas add-material` 和 `video create` 通过必填的 `--x`、`--y` 明确创建位置。Agent 先读取画布对象的位置、尺寸及分组，再安排新元素布局。`video create` 创建可编辑的生成节点与参考关系，返回 `specId` 和 `itemId`。所有画布修改命令以及批量事务通过共用返回层提供 `canvasItems`，包含元素身份、版本、位置、尺寸、父级、坐标系及可见性。位置未变化的操作也返回目标元素的几何信息，供后续布局判断。几何信息读取失败时，回执保留已提交状态并返回 `geometryReadError`。模型可通过配置 UUID 或唯一匹配的完整模型名指定。重名配置返回候选 UUID 和端点，由调用者明确选择。模型的输入模式必须支持所选参数。`--reference-item` 支持重复指定参考节点。提交生成时使用创建回执中的对象版本，后台任务由服务端继续执行。
 
+### Run 自动布局 / Run auto-layout
+
+在画布中右键顶层分组，选择「加入 Run 自动布局」。通过 CLI 或 Agent 新建 Run 时，在 `canvas.show` 的 group 对象设置 `autoLayout: "run"`，并将本轮的计划、片段和时间线节点的 `parentId` 设为该分组 ID。同批新增或改变尺寸的节点会在保存时统一排布。各轮以稳定顺序换行，锁定的 Run 和普通顶层节点作为固定占位。不同 Run 可复用已登记素材，各自保存生成配置和编辑文档。要重新整理，右键画布空白处选择「整理 Run」，或运行 `opendirector canvas layout-runs`。通过 `canvas update --item-id ID --auto-layout free --expected-version canvas_item:ID:REV` 恢复手动布局。
+
+On the canvas, right-click a top-level group and select **Include in Run layout**. From the CLI or Agent, set `autoLayout: "run"` on the group in `canvas.show`, then set `parentId` on its plan, clip, and timeline nodes to that group ID. New and resized nodes are arranged in the same save. Runs wrap in a stable order around locked Runs and ordinary top-level nodes. Runs can reuse registered assets, and each Run owns its own generation configurations and editor documents. To arrange Runs explicitly, right-click the canvas background or run `opendirector canvas layout-runs`. Use `canvas update --item-id ID --auto-layout free --expected-version canvas_item:ID:REV` to return a group to manual layout.
+
 ```bash
 opendirector --project PROJECT_UUID generation submit   --spec-id SPEC_UUID   --expected-spec-revision 1   --origin-item-id ITEM_UUID   --expected-version generation_spec:SPEC_UUID:1   --expected-version canvas_item:ITEM_UUID:1
 opendirector --project PROJECT_UUID job show JOB_UUID
-opendirector --project PROJECT_UUID job wait JOB_UUID --timeout 300
+opendirector --project PROJECT_UUID job wait JOB_UUID... --timeout 300
+opendirector --project PROJECT_UUID job wait --all --timeout 300
 ```
+
+`job wait` 接受多个任务身份，`--all` 等待当前工程全部未结束任务，并在一次等待窗口内用一次服务端查询回答整组任务；返回每个任务的 `status`、`phase` 和成功后已登记的 `delivery`。需要减少等待调用次数时优先用 `--all`，不要为每个任务分别启动一次等待。等待组在第一次回答时确定并保持不变，因此等待期间结束的任务仍会被报告：失败任务计入 `failed`、携带 `errorDetails` 与 `recovery`，并以退出码 1 结束；整组结束时报错信息不会被静默省略。工程内没有未结束任务时返回 `jobs: []` 并在 `note` 中明确说明，不再让空结果看起来像全部成功；此时可用 `project show --summary` 查看每个任务最终状态。
+
+`opendirector capabilities` 一次输出全部业务命令、摘要与必填字段（含未由命令契约生成、但已注册的 `job wait`、`query`、`model`、`asset import`、`timeline`、`voice` 等命令），`--compact` 省略非必填字段名与非必填选项。Agent 用它替代逐条执行 `--help` 的发现过程；仅在单个字段结构不清楚时用 `--help-field` 展开。`opendirector project show --summary` 输出对象身份、版本与状态而不含完整记录，工程较大时可避免结果被截断以及重复读取。
 
 业务命令按对象分组，参数名使用短横线。复杂参数可使用 JSON 参数，或通过 `--file command.json` 读取含 `payload`、`expectedVersions` 和可选 `expectedPreview` 的对象。`--file -` 从标准输入读取。命令帮助包含从 Pydantic 业务契约派生的参数说明与示例。`--help-field PATH` 展开帮助中返回的结构化字段路径，例如 `opendirector canvas show --help-field payload.item@image.binding`。
 
-CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其列表，视频节点创建回执同时返回包含当前版本的下一步提交命令。参数解析错误直接显示该子命令的完整用法。成功退出码为 0，拒绝或执行失败为 1，参数解析错误及等待任务超时为 2。生成接受回执会在 `next.commands` 返回对应的 `job wait` 命令，带入服务地址、工程和任务身份。建议按回执等待；60 秒窗口超时后可以再次执行同一等待命令。`job wait` 超时结束等待，任务继续由后台执行。
+CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其列表，视频节点创建回执同时返回包含当前版本的下一步提交命令。参数解析错误直接显示该子命令的完整用法。成功退出码为 0，拒绝或执行失败为 1，参数解析错误及等待任务超时为 2。生成接受回执会在 `next.commands` 返回一条覆盖本次全部任务的 `job wait` 命令，带入服务地址、工程和任务身份。建议按回执等待；等待窗口超时后可以再次执行同一命令。`job wait` 超时结束等待，任务继续由后台执行。
 
 修改命令可在子命令前传 `--operation-id UUID`。相同身份及输入重试复用原回执，输入不同则拒绝。文件导入重放也核对登记文件的内容指纹。需要跨进程恢复暂存上传时，预先通过 `--session UUID` 保持相同会话身份。结果未知时先查询回执，再决定后续操作。
+
+读取类查询 `job.get`、`object.get`、`canvas.status` 与 `job.status` 不占用本轮执行锁，因此等待任务不会阻塞同轮其他工具调用。`job.status` 是 `job wait` 使用的批量查询：一次快照读取回答整组任务，并按需等待终态。
 
 普通终端写入申请独立编辑租约，完成后释放。工程已在其他窗口编辑时会返回占用错误。使用 `--session UUID` 表示沿用已有授权会话，CLI 完成后保留该会话。
 

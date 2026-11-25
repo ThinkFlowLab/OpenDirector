@@ -242,6 +242,21 @@ def picture(source: Path, out: Path, *, width: int, height: int) -> Path:
     return out
 
 
+def frames_of(source: Path, folder: Path, *, gray=False) -> list[Path]:
+    """Every decoded frame of source as a PNG, in order (grayscale when gray)."""
+    folder.mkdir()
+    _run(['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-vf', 'format=gray' if gray else 'format=rgb24',
+          _frame_sync_option(), 'passthrough', '-compression_level', '1', str(folder / '%05d.png')])
+    return sorted(folder.glob('*.png'))
+
+
+def encode_frames(pattern: str, fps: float, out: Path) -> bytes:
+    """A silent H.264 clip from an image-sequence pattern."""
+    _run(['ffmpeg', '-v', 'error', '-y', '-framerate', f'{fps:.6f}', '-i', pattern, '-vf', 'format=yuv420p',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-movflags', '+faststart', str(out)])
+    return out.read_bytes()
+
+
 def disparity(source: Path, out: Path, *, near: float, far: float) -> bytes:
     """A depth video whose gray maps linearly from near (black) to far (white), re-mapped to inverse depth:
     near is white and far black, with detail spread over near objects. Sound is dropped."""

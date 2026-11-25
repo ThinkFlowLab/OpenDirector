@@ -1,4 +1,5 @@
 import { projectDisplayName } from "../projectDisplayName";
+import { persistCurrentDocument } from "../projectManagement";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
@@ -108,10 +109,12 @@ import "../workspace.css";
 import "../desktop-chrome.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
+import { AssetMedia } from "../useAssetMedia.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
+  const runLayoutPending = useRef(false);
   const {
     actionMedia,
     actionNode,
@@ -282,6 +285,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setSelected,
     setSelectedEdges,
     setSettingsCategory,
+    setSettingsModelKind,
     setSettingsOpen,
     setShowEdges,
     setSubjectImport,
@@ -292,6 +296,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setZoom,
     setZoomMenu,
     settingsCategory,
+    settingsModelKind,
     settingsOpen,
     showAssistant,
     showEdges,
@@ -303,6 +308,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     subjectLibraryBusy,
     switchDocument,
     switching,
+    switchPending,
     syncServiceResults,
     t,
     textWindowNode,
@@ -452,7 +458,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   // Canvas locking is no longer offered. Locks saved while it was available are
   // released the first time this browser opens the project, parents first (a
   // locked group blocks its children). Later locks from the Agent or the API
-  // are kept and can be released from the context menu.
+  // are kept and can be released from the context menu. Run locks participate
+  // in persisted layout and are kept from the first open.
   const unlockedOnOpen = useRef<string | null>(null);
   useEffect(() => {
     // The startup placeholder and empty projects have nothing to release.
@@ -465,7 +472,14 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     } catch {
       return; // Without storage the open-time release could repeat; keep locks.
     }
-    const locked = orderNodesForCanvas(doc.nodes).filter((node) => node.locked);
+    const managedIds = new Set<string>();
+    const locked = orderNodesForCanvas(doc.nodes).filter((node) => {
+      if (node.autoLayout || (node.parentId && managedIds.has(node.parentId))) {
+        managedIds.add(node.id);
+        return false;
+      }
+      return node.locked;
+    });
     if (!locked.length) return;
     command({
       type: "batch",
@@ -502,6 +516,53 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     }).then(success => { if (success) setEditProjectNameId(id); });
   };
 
+  const runLayoutGroup = doc.nodes.find(
+    (node) => node.id === menu?.nodeId && node.type === "group" && !node.parentId,
+  );
+  const hasManagedRuns = doc.nodes.some((node) => node.autoLayout === "run");
+  const applyRunLayout = async (action:
+    | { kind: "organize" }
+    | { kind: "toggle" | "lock"; group: CanvasNode },
+  ) => {
+    if (runLayoutPending.current || switchPending.current) return;
+    const projectId = doc.id;
+    const stillOpen = () =>
+      !switchPending.current && historyRef.current.present.id === projectId;
+    runLayoutPending.current = true;
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (!stillOpen()) return;
+      invalidateScheduledAutosave();
+      if (!(await persistCurrentDocument(
+        () => historyRef.current.present,
+        (document) => stillOpen() ? persist(document, false) : Promise.resolve(false),
+      )) || !stillOpen()) return;
+      const client = creationClient(projectId);
+      if (action.kind === "organize") {
+        await client.command("canvas.layoutRuns", {});
+        return;
+      }
+      const { group } = action;
+      const item = client.snapshot.canvasItems.find((item) => item.id === group.id);
+      if (
+        item?.kind !== "group" || item.parentId || item.locked || !item.visible ||
+        (item.autoLayout === "run") !== (group.autoLayout === "run")
+      ) {
+        notify(t("canvas.workspace.menu.runGroupChanged"));
+        return;
+      }
+      await client.command("canvas.update", {
+        itemId: item.id,
+        ...(action.kind === "lock" ? { locked: true } : {
+          autoLayout: group.autoLayout === "run" ? "free" : "run",
+        }),
+      }, [objectVersion("canvas_item", item)]);
+    } catch (error) {
+      if (stillOpen()) notify(errorMessage(error));
+    } finally {
+      runLayoutPending.current = false;
+    }
+  };
   const [showSwitching, setShowSwitching] = useState(false);
   useEffect(() => {
     if (!switching) {
@@ -1574,7 +1635,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             workflowRunning={workflowGroups.has(single.id)}
             onUngroup={single.type === "group" ? ungroup : undefined}
             onLayout={
-              single.type === "group"
+              single.type === "group" && !single.autoLayout
                 ? (layout: GroupLayout) => {
                     if (doc.nodes.some((node) => node.parentId === single.id && lockedIds.has(node.id))) {
                       notify(t("canvas.workspace.toast.unlockFirst"));
@@ -1723,6 +1784,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={activeAction.token}
                 node={actionNode}
                 tool={activeAction.tool}
+                nodes={doc.nodes}
                 draft={actionNode.data.taskDraft}
                 mediaContainer={actionMedia}
                 onDraftChange={(task) => saveActionDraft(activeAction, task)}
@@ -1941,6 +2003,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 backendModels={backendCatalog.models}
                 onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}
+                onConfigureModel={(kind) => {
+                  setSettingsCategory("models");
+                  setSettingsModelKind(kind);
+                  setSettingsOpen(true);
+                }}
               />
             )}
           </div>
@@ -1966,6 +2033,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           onPaste={() => paste()}
           onUndo={() => replayHistory()}
           onRedo={() => replayHistory(true)}
+          onOrganizeRuns={hasManagedRuns ? () => void applyRunLayout({ kind: "organize" }) : undefined}
           onClose={() => setMenu(null)}
         />
       )}
@@ -1998,6 +2066,17 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               {menuButton(t("canvas.workspace.selection.group"), "group", group, "⌘ G")}
               {selected.length > 1 && menuButton(t("canvas.workspace.kind.stack"), "stack", stack)}
               {menuButton(t("canvas.workspace.menu.ungroup"), "group", ungroup, "⌘ ⇧ G")}
+              {runLayoutGroup && !lockedIds.has(runLayoutGroup.id) &&
+                menuButton(
+                  t(runLayoutGroup.autoLayout === "run"
+                    ? "canvas.workspace.menu.disableRunLayout"
+                    : "canvas.workspace.menu.enableRunLayout"),
+                  "map",
+                  () => void applyRunLayout({ kind: "toggle", group: runLayoutGroup }),
+                )}
+              {runLayoutGroup?.autoLayout === "run" && !lockedIds.has(runLayoutGroup.id) &&
+                menuButton(t("canvas.workspace.menu.lockRun"), "lock", () =>
+                  void applyRunLayout({ kind: "lock", group: runLayoutGroup }))}
               {menuButton(t("canvas.workspace.selection.autoArrange"), "map", () =>
                 change((d) => ({
                   ...d,
@@ -2193,7 +2272,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                       }}
                     >
                       {n.type === "image" ? (
-                        <img src={n.data.src} alt={n.data.title} />
+                        <AssetMedia as="img" src={n.data.src} alt={n.data.title} />
                       ) : (
                         <CanvasIcon name={n.type} size={34} />
                       )}
@@ -2570,11 +2649,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           </header>
           <div onClick={(e) => e.stopPropagation()}>
             {preview.type === "image" && preview.data.src ? (
-              <img src={preview.data.src} alt={preview.data.title} />
+              <AssetMedia as="img" src={preview.data.src} alt={preview.data.title} />
             ) : preview.type === "video" && preview.data.src ? (
-              <video src={preview.data.src} controls />
+              <AssetMedia as="video" src={preview.data.src} controls />
             ) : preview.type === "audio" && preview.data.src ? (
-              <audio src={preview.data.src} controls />
+              <AssetMedia as="audio" src={preview.data.src} controls />
             ) : (
               <p>
                 {preview.data.text ||
@@ -2960,7 +3039,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           catalog={backendCatalog}
           theme={theme}
           initialCategory={settingsCategory}
-          onClose={() => setSettingsOpen(false)}
+          initialModelKind={settingsModelKind}
+          onClose={() => {
+            setSettingsModelKind(null);
+            setSettingsOpen(false);
+          }}
         />
       )}
       {exampleEntries && (

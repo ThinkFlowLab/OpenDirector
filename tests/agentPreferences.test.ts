@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {rememberAgentSelection, restoreAgentSelection, builtinThinking} from "../src/canvas/agentPreferences.ts";
+import {rememberAgentSelection, restoreAgentSelection, builtinThinking, preferredMediaModel, rememberMediaSelection} from "../src/canvas/agentPreferences.ts";
 import type {Conversation} from "../src/backend/chat.ts";
 
 function storage() {
@@ -51,6 +51,30 @@ test("invalid or unavailable preference storage leaves the server conversation i
   const blocked = {getItem(): string | null {throw new Error("blocked");}, setItem() {throw new Error("blocked");}};
   assert.equal(restoreAgentSelection("project", saved, blocked), saved);
   assert.doesNotThrow(() => rememberAgentSelection("project", saved, blocked));
+});
+
+test("the last explicit media defaults travel by kind while a conversation keeps its own choice", () => {
+  const local = storage();
+  const videos = [{ id: "video-a" }, { id: "video-b" }];
+  rememberMediaSelection("first", "thread-a", "video", "video-a", local);
+  rememberMediaSelection("first", "thread-a", "image", "picture-a", local);
+  rememberMediaSelection("second", "thread-b", "video", "video-b", local);
+  rememberAgentSelection("second", draft(), local);
+
+  assert.equal(preferredMediaModel("first", "thread-a", "video", videos, local), "video-a");
+  assert.equal(preferredMediaModel("first", "thread-c", "video", videos, local), "video-b");
+  assert.equal(preferredMediaModel("new", undefined, "video", videos, local), "video-b");
+  assert.equal(preferredMediaModel("new", undefined, "image", [{ id: "picture-a" }], local), "picture-a");
+  assert.equal(preferredMediaModel("new", undefined, "audio", [{ id: "sound-a" }], local), undefined);
+});
+
+test("missing media configurations reveal the next valid preference without forgetting a choice", () => {
+  const local = storage();
+  rememberMediaSelection("project", "thread", "video", "original", local);
+  rememberMediaSelection("other", "other-thread", "video", "replacement", local);
+  assert.equal(preferredMediaModel("project", "thread", "video", [{ id: "replacement" }], local), "replacement");
+  assert.equal(preferredMediaModel("project", "thread", "video", [{ id: "fallback" }], local), undefined);
+  assert.equal(preferredMediaModel("project", "thread", "video", [{ id: "original" }], local), "original");
 });
 
 test("JiuwenSwarm model selection survives refresh without changing other harness choices", () => {

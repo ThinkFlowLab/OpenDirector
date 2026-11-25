@@ -22,10 +22,10 @@ from opendirector_api.main import create_app
 from opendirector.infrastructure.local_projects import LocalProjects
 
 
-pytestmark = [
+pytestmark = [pytest.mark.cpu, *[
     pytest.mark.nightly,
     pytest.mark.skipif(os.getenv('JIUWENSWARM_ENGINE_TEST') != '1', reason='requires installed JiuwenSwarm and FFmpeg'),
-]
+]]
 
 def native_shell_command(args):
     return subprocess.list2cmdline(args) if os.name == 'nt' else shlex.join(args)

@@ -8,6 +8,7 @@ import { TrashPanel } from "./TrashPanel";
 import { errorMessage } from "../../backend/api";
 import { useT } from "../../i18n/I18nProvider";
 import type { MessageKey } from "../../i18n/messages";
+import { toggleSelection } from "./libraryClient";
 import type { LibraryItem } from "./libraryClient";
 import type { SubjectLibraryItem } from "../../backend/subjectLibrary";
 import type { CanvasSource } from "../../backend/canvasSources";
@@ -64,9 +65,7 @@ export function AssetLibraryDialog({
   }, [tab, query, reset]);
   const toggle = useCallback(
     (entry: { id: string }) =>
-      setSelected((current) =>
-        current.has(entry.id) ? new Set() : new Set([entry.id]),
-      ),
+      setSelected((current) => toggleSelection(current, entry.id)),
     [],
   );
   const report = useCallback((rows: LibraryItem[], pending: boolean) => {
@@ -86,20 +85,23 @@ export function AssetLibraryDialog({
     setReload((value) => value + 1);
   }, [reset]);
   const notify = useCallback((message: string) => setNotice(message), []);
-  const chosen = items.find((item) => selected.has(item.id));
-  const canvasChoice = canvasItems.find((item) => selected.has(item.nodeId));
+  const chosenItems = items.filter((item) => selected.has(item.id));
+  const canvasChoices = canvasItems.filter((item) => selected.has(item.nodeId));
+  const unavailableSubject = chosenItems.find(
+    (item) => !(item as SubjectLibraryItem).available,
+  );
   const issue = busy
     ? t("library.busy")
     : loading
       ? t("library.loading")
       : tab === "canvases"
-        ? !canvasChoice
+        ? !canvasChoices.length
           ? t("library.issue.selectNode")
           : null
-        : !chosen
+        : !chosenItems.length
           ? t("library.issue.selectItem")
-          : tab === "subjects" && !(chosen as SubjectLibraryItem).available
-            ? (chosen as SubjectLibraryItem).issue ||
+          : tab === "subjects" && unavailableSubject
+            ? (unavailableSubject as SubjectLibraryItem).issue ||
               t("library.issue.subjectUnavailable")
             : null;
   const run = async (action: () => Promise<void>, close = true) => {
@@ -119,11 +121,12 @@ export function AssetLibraryDialog({
   const insert = () => {
     if (issue) return;
     void run(async () => {
-      if (tab === "subjects" && chosen && onImportSubjects)
-        await onImportSubjects([chosen]);
-      else if (tab === "canvases" && canvasChoice && onImportCanvas)
-        await onImportCanvas(canvasId, canvasChoice);
-      else if (chosen && onInsert) await onInsert([chosen]);
+      if (tab === "subjects" && chosenItems.length && onImportSubjects)
+        await onImportSubjects(chosenItems);
+      else if (tab === "canvases" && canvasChoices.length && onImportCanvas) {
+        // Every selected row becomes its own node, so import them one by one.
+        for (const item of canvasChoices) await onImportCanvas(canvasId, item);
+      } else if (chosenItems.length && onInsert) await onInsert(chosenItems);
       else throw new Error(t("library.importUnavailable"));
     });
   };

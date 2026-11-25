@@ -11,6 +11,9 @@ from opendirector.domain.omni_capabilities import timestamp
 from opendirector.integrations.capability_probe import CapabilityProbe
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('name,capability,status,reason', [
     ('wan-i2v', 'video.first_frame', 'available', 'supported'),
     ('wan-vace', 'video.first_frame', 'unavailable', 'input_unsupported'),

@@ -11,6 +11,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def api(tmp_path):
     store = LocalProjects(tmp_path)
@@ -317,17 +320,36 @@ def test_read_service_models_protocol():
     import httpx
     from opendirector.integrations.model_capabilities import read_service_models
 
-    config = payload(authMode='bearer')
+    config = payload(protocol='openai', authMode='bearer')
 
     def respond(request):
+        assert request.method == 'GET'
         assert request.url.path == '/v1/models'
         assert request.headers['Authorization'] == 'Bearer test-secret'
         return httpx.Response(200, json={'data': [{'id': 'model-a'}]})
 
     assert asyncio.run(read_service_models(config, httpx.MockTransport(respond))) == [{'id': 'model-a'}]
+    with pytest.raises(ProjectError, match='HTTP 503') as failure:
+        asyncio.run(read_service_models(config, httpx.MockTransport(
+            lambda request: httpx.Response(503))))
+    assert failure.value.code == 'model_list_http_error'
     with pytest.raises(ProjectError):
         asyncio.run(read_service_models(config, httpx.MockTransport(
             lambda request: httpx.Response(200, json={'data': [{'id': 123}]}))))
+    with pytest.raises(ProjectError):
+        asyncio.run(read_service_models(config, httpx.MockTransport(
+            lambda request: httpx.Response(200, json={'error': {'message': 'Upstream rejected the request'}}))))
+
+
+def test_minimax_video_model_list_does_not_contact_provider():
+    import asyncio
+    import httpx
+    from opendirector.integrations.model_capabilities import read_service_models
+
+    config = payload('video', protocol='minimax_video_v2', authMode='bearer')
+    transport = httpx.MockTransport(lambda _: pytest.fail('No catalog request expected'))
+    models = asyncio.run(read_service_models(config, transport))
+    assert [item['id'] for item in models] == ['MiniMax-H3', 'MiniMax-H3-Highspeed', 'MiniMax-H3-Lite', 'MiniMax-H3-Max']
 
 
 def test_shared_service_batch_persists_one_credential_and_stable_models(api):
