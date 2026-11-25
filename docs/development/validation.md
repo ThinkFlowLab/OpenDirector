@@ -309,6 +309,7 @@ node tests/browser/reference_reconnect.mjs     # 参考连线删除后重连
 node tests/browser/context_menu_dismissal.mjs  # 右键菜单关闭
 node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件 AAC）
 node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选适配器的比例与尺寸
+node tests/browser/canvas_progressive_load.mjs # 画布结构先可用，节点媒体独立加载、失败重试且不改写内容
 ```
 
 历史版本预览回归（[#393](https://github.com/ThinkFlowLab/OpenDirector/issues/393)）沿用上述隔离服务：运行 `node tests/browser/node_versions.mjs`；设置 `HISTORY_PREVIEW_PROBE=delay` 会延迟目标缩略图一秒，完整旅程应通过。设置 `HISTORY_PREVIEW_PROBE=missing` 会注入缩略图 404，预期脚本失败并输出 `History preview unavailable`、目标资产 ID、HTTP 状态和媒体提示；它是故障诊断检查，不是成功旅程。清除变量后恢复正常运行。布局断言必须等待预期资产的图片加载成功，不能以提示词出现代替预览就绪。

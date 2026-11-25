@@ -1,4 +1,4 @@
-import type { ProjectSnapshot } from "../contracts/generated.ts";
+import type { CanvasItem, ProjectSnapshot } from "../contracts/generated.ts";
 import type { CanvasDocument, CanvasNodeData } from "../canvas/model.ts";
 import { applyCommand } from "../canvas/model.ts";
 import { updateStack } from "../canvas/operations.ts";
@@ -7,6 +7,7 @@ import {
   CreationCommandError,
   objectVersion,
 } from "./creationClient.ts";
+import { rememberPendingPlacement } from "./pendingMediaPlacement.ts";
 import { CreationProjection } from "./creationProjection.ts";
 import { tNow } from "../i18n/messages.ts";
 
@@ -25,15 +26,24 @@ export class CreationEditorSession {
   };
   private active = false;
   readonly itemId: string;
+  private unplaced?: CanvasItem;
   constructor(
     client: CreationClient,
     document: CanvasDocument,
     itemId: string,
     basis: ProjectSnapshot = client.snapshot,
+    unplaced?: CanvasItem,
   ) {
     this.itemId = itemId;
+    this.unplaced = unplaced;
     this.projection = new CreationProjection(client);
-    this.projection.baseline = document;
+    // Update the target through the same editor diff as a visible node. Moving
+    // it into BOTH private drafts leaves canvas visibility out of the diff.
+    const hidden = document.hiddenNodes?.find(node => node.id === itemId);
+    this.projection.baseline = hidden ? {
+      ...document, nodes: [...document.nodes, hidden],
+      hiddenNodes: document.hiddenNodes!.filter(node => node.id !== itemId),
+    } : document;
     this.projection.basis = basis;
     try {
       const saved = JSON.parse(
@@ -66,6 +76,7 @@ export class CreationEditorSession {
         const { document: _, ...delivery } = this.pending;
         sessionStorage.setItem(this.storageKey(), JSON.stringify(delivery));
       } else sessionStorage.removeItem(this.storageKey());
+      rememberPendingPlacement(this.unplaced, this.storageKey(), !!this.pending);
     } catch {
       /* Do not invalidate a business operation on preference failure. */
     }
@@ -117,6 +128,13 @@ export class CreationEditorSession {
               payload: { document: timeline },
             });
         }
+        if (this.unplaced?.binding.role === "material") {
+          const source = this.unplaced.binding.objectRef;
+          plan.operations.unshift({ type: "canvas.show", payload: { item: this.unplaced } });
+          plan.versions = plan.versions.filter(v => v.objectType !== "canvas_item" || v.id !== this.itemId);
+          if (!plan.versions.some(v => v.objectType === "asset" && v.id === source.assetId))
+            plan.versions.push(objectVersion("asset", { id: source.assetId, revision: source.revision }));
+        }
         this.pending = { key, data, document, plan, id: crypto.randomUUID() };
         this.storePending();
       }
@@ -153,6 +171,7 @@ export class CreationEditorSession {
       this.projection.basis = this.projection.client.snapshot;
       this.pending = undefined;
       this.storePending();
+      this.unplaced = undefined;
       if (resolvingPrevious)
         throw new Error(
           tNow("errors.backend.priorEditSaved"),

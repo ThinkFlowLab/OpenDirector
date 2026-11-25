@@ -95,7 +95,7 @@ async def test_model_schema_exposes_supported_video_inputs_without_changing_cont
     spec = await parameters(path='payload.spec', modelConfigId=config['id'])
     assert 'parameters' in spec['required']
     compact = await parameters(path='payload.spec.parameters', modelConfigId=config['id'])
-    assert compact['fields']['videoMode']['enum'] == ['reference']
+    assert compact['fields']['videoMode']['enum'] == ['reference', 'control']
     assert 'default' not in compact['fields']['videoMode']
     assert 'videoMode' in compact['required']
     assert compact['fields']['generateAudio']['enum'] == [True]

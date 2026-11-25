@@ -14,7 +14,7 @@ from opendirector.ports.gateway import gateway
 
 EDITABLE = {'canvasItems', 'generationSpecs', 'references', 'editorDocuments'}
 ABSENT = object()
-UNDOABLE = {'canvas.createGeneration', 'creation.batch', 'canvas.show', 'canvas.hide', 'canvas.move', 'canvas.update', 'canvas.configure',
+UNDOABLE = {'canvas.createGeneration', 'creation.batch', 'canvas.show', 'canvas.hide', 'canvas.move', 'canvas.update', 'canvas.layoutRuns', 'canvas.configure',
     'canvas.materialize', 'canvas.applyEdit', 'timeline.publishRender', 'canvas.publishMedia', 'canvas.applyVersion', 'canvas.attachEditor', 'canvas.detachEditor', 'generationSpec.update', 'generationSpec.restore',
     'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'result.select', 'editor.save', 'generationSpec.setPrompt'}
 
@@ -70,9 +70,7 @@ class CreationHistory:
     @staticmethod
     def _states(records):
         return CreationHistory._entry_states(records[0].snapshot.undoClearedThrough,
-            [dict(commandId=r.command.commandId, type=r.command.type, cursor=r.event.cursor,
-                  source=r.event.source, targetCommandId=getattr(r.command.payload, 'targetCommandId', None))
-             for r in records if r.event is not None])
+            [entry for record in records if (entry := record.history_entry())])
 
     @staticmethod
     def _entry_states(cleared, entries):
@@ -125,7 +123,7 @@ class CreationHistory:
         for asset in snapshot.assets:
             file_available = True
             try:
-                service.reference_available(project_id, asset.id)
+                service.reference_available(project_id, asset.id, snapshot=snapshot)
             except (ContractError, ProjectError, OSError, ValueError):
                 file_available = False
             available = file_available and (asset.id in listed or asset.id in owners)

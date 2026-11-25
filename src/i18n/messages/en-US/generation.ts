@@ -20,6 +20,8 @@ export const generation = {
 
   "generation.mode.reference": "Universal reference",
   "generation.mode.firstLast": "First and last frames",
+  "generation.mode.control": "Structure control",
+  "generation.duration.followsControl": "Follows control video",
   "generation.mode.continuation": "Continue",
   "generation.imagePreset": "Image presets",
   "generation.videoMode": "Video mode",
@@ -96,6 +98,20 @@ export const generation = {
   "generation.options.close": "Close options",
   "generation.voice.close": "Close voice library",
   "generation.voice.demo": "Anime Sponge",
+
+  "generation.optimize.action": "Optimize prompt",
+  "generation.optimize.agentLoading": "The Agent model selection is loading. Try again shortly.",
+  "generation.optimize.alreadyDone": "This prompt is already optimized",
+  "generation.optimize.running": "Optimizing prompt...",
+  "generation.optimize.toast": "Prompt optimized. Press {shortcut} to undo.",
+  "generation.optimize.doneAudioOmitted": "Some audio was omitted.",
+  "generation.optimize.changed":
+    "The prompt or node changed. Your latest input was kept.",
+  "generation.optimize.failed":
+    "Optimization failed. Your original prompt was kept.",
+  "generation.optimize.saveFailed":
+    "Save the canvas before optimizing with the latest references.",
+
 
   "generation.prompt.image": "Prompt",
   "generation.prompt.textLabel": "Text prompt",

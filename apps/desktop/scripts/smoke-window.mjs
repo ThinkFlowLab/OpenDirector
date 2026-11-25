@@ -14,16 +14,13 @@ export async function smokeWindow({ window, host, getLocale }) {
   })()`);
   if (result.health.status !== 'ok' || result.projects !== 200 || !result.isolated || !result.bridge) throw new Error('Desktop smoke failed');
   await waitFor(() => window.webContents.executeJavaScript('document.querySelectorAll("button").length > 2'), 'Workbench did not become interactive');
-  if (process.platform === 'win32' && await window.webContents.executeJavaScript('!localStorage.getItem("opendirector.modelSetup.v1")')) {
-    await checkWindowsWelcomeCaption(window);
+  if (process.env.OPENDIRECTOR_DESKTOP_DATA && !process.env.OPENDIRECTOR_DESKTOP_SMOKE_MEDIA_PROJECT) {
+    if (process.platform === 'win32') await checkWindowsWelcomeCaption(window);
+    await completeWelcome(window);
   }
-  await window.webContents.executeJavaScript('document.querySelector(".cw-welcome-secondary")?.click()');
   await waitFor(() => window.webContents.executeJavaScript('!!document.querySelector(".react-flow") && !!document.querySelector(".cw-save-status i.saved")'), 'Canvas did not open');
   result.projectIds = await waitFor(() => window.webContents.executeJavaScript(`fetch('/api/creation/projects', {headers: {'X-OpenDirector-Request': '1'}})
     .then(r => r.json()).then(value => value.projects.length ? value.projects.map(project => project.id).sort() : null)`), 'Canvas project was not persisted');
-  await delay(500);
-  await window.webContents.executeJavaScript('document.querySelector(".cw-welcome-secondary")?.click()');
-  await delay(300);
   if (await window.webContents.executeJavaScript('!!document.querySelector("dialog[open]")')) throw new Error('A dialog obscures the canvas');
   if (process.platform === 'win32') await checkWindowsCaption(window);
   if (process.env.OPENDIRECTOR_DESKTOP_DATA) {
@@ -31,18 +28,21 @@ export async function smokeWindow({ window, host, getLocale }) {
       ? result.projectIds[0]
       : process.env.OPENDIRECTOR_DESKTOP_SMOKE_MEDIA_PROJECT;
     if (result.projectIds.length === 1) await dropMedia(window);
-    const fingerprints = Object.fromEntries(
-      Object.entries({ image: 'png', video: 'mp4', audio: 'wav' }).map(([kind, extension]) => {
-        const bytes = readFileSync(join(process.env.OPENDIRECTOR_DESKTOP_DATA, `desktop-drop.${extension}`));
-        return [kind, 'sha256:' + createHash('sha256').update(bytes).digest('hex')];
-      }),
-    );
+    const fingerprints = [
+      ['image', 'desktop-drop.png'],
+      ['video', 'desktop-drop.mp4'],
+      ['audio', 'desktop-drop.wav'],
+      ['audio', 'desktop-welcome.wav'],
+    ].map(([kind, name]) => {
+      const bytes = readFileSync(join(process.env.OPENDIRECTOR_DESKTOP_DATA, name));
+      return [kind, 'sha256:' + createHash('sha256').update(bytes).digest('hex')];
+    });
     let state;
     try {
       await waitFor(async () => {
         state = await droppedMediaState(window, projectId, fingerprints);
         return state.saved;
-      }, 'Dropped video, image and audio were not saved');
+      }, 'Welcome import and dropped media were not saved');
     } catch (error) {
       throw new Error(`${error.message}: ${JSON.stringify(state)}`, { cause: error });
     }
@@ -287,6 +287,38 @@ async function smokeLargeVideo(window, host, projectId, fixture, firstLaunch) {
   return binding;
 }
 
+async function completeWelcome(window) {
+  const { webContents } = window;
+  for (const [selector, label, error] of [
+    ['.cw-welcome-intro .cw-welcome-primary', null, 'Welcome did not offer Get started'],
+    ['.cw-welcome-connection-options > button:last-child', null, 'Welcome did not offer an existing harness'],
+    ['.cw-welcome-options > button', 'OpenCode', 'Bundled OpenCode was not available in Welcome'],
+  ]) {
+    await waitFor(() => webContents.executeJavaScript(`(() => {
+      const label = ${JSON.stringify(label)};
+      const buttons = document.querySelectorAll(${JSON.stringify(`dialog.cw-welcome[open] ${selector}`)});
+      const button = [...buttons].find(item => !item.disabled && (!label || item.querySelector('strong')?.textContent === label));
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`), error);
+  }
+  const input = 'dialog.cw-welcome[open] input[type="file"]';
+  await waitFor(() => webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(input)})`), 'Welcome did not reach the task chooser');
+  const debuggerSession = webContents.debugger;
+  debuggerSession.attach();
+  try {
+    const { root } = await debuggerSession.sendCommand('DOM.getDocument');
+    const { nodeId } = await debuggerSession.sendCommand('DOM.querySelector', { nodeId: root.nodeId, selector: input });
+    await debuggerSession.sendCommand('DOM.setFileInputFiles', {
+      nodeId, files: [join(process.env.OPENDIRECTOR_DESKTOP_DATA, 'desktop-welcome.wav')],
+    });
+  } finally {
+    debuggerSession.detach();
+  }
+  await waitFor(() => webContents.executeJavaScript('!document.querySelector("dialog.cw-welcome[open]")'), 'Welcome did not complete after importing media');
+}
+
 async function dropMedia(window) {
   const { webContents } = window;
   const { x, y } = await webContents.executeJavaScript(`(() => {
@@ -314,7 +346,7 @@ async function droppedMediaState(window, projectId, fingerprints) {
     });
     if (!response.ok) return { status: response.status };
     const { canvasItems, assets } = await response.json();
-    const saved = Object.entries(${JSON.stringify(fingerprints)}).every(([kind, fingerprint]) =>
+    const saved = ${JSON.stringify(fingerprints)}.every(([kind, fingerprint]) =>
       canvasItems.some(item => item.kind === kind && item.binding.role === 'material' &&
         assets.some(asset => asset.id === item.binding.objectRef.assetId && asset.kind === kind &&
           asset.provenance.source === 'upload' && asset.fingerprint === fingerprint)));

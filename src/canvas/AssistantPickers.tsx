@@ -51,7 +51,7 @@ export function ModelPicker({
   models: ModelConfig[];
   selections: ModelSelections;
   onChange: (kind: AssistantKind, id: string) => void;
-  onConfigure: () => void;
+  onConfigure: (kind: AssistantKind) => void;
   disabled: boolean;
   includeAgent?: boolean;
 }) {
@@ -97,7 +97,7 @@ export function ModelPicker({
   }
   function configure() {
     setOpen(false);
-    onConfigure();
+    onConfigure(kind);
   }
   function tabKeys(event: KeyboardEvent<HTMLDivElement>) {
     const buttons = [

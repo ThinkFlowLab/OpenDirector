@@ -551,3 +551,16 @@ def test_asset_used_only_by_an_active_pinned_reference_stays_listed_after_becomi
     assert not catalog()['available']
     # Delete protection is unchanged: the derived version and history still depend on it.
     assert service.usage(store.snapshot(pid), source.id)['used']
+
+
+def test_reference_catalog_checks_files_against_its_one_snapshot(project, monkeypatch):
+    store, pid, _ = project
+    text_material(project, title='First')
+    text_material(project, title='Second')
+    loads = []
+    original = store._load
+    monkeypatch.setattr(store, '_load', lambda *args: (loads.append(args), original(*args))[1])
+    rows = CreationHistory(store).reference_catalog(pid)
+    assert len(rows) == 2 and all(row['fileAvailable'] for row in rows)
+    # Replaying the commit chain per asset held the catalog lock across a whole switch.
+    assert loads == []

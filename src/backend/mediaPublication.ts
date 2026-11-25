@@ -1,4 +1,5 @@
 import type {
+  CanvasItem,
   CanvasPublishMediaInput,
   EditorDocument,
   ProjectSnapshot,
@@ -16,7 +17,9 @@ import {
   CreationCommandError,
   currentAsset,
   objectVersion,
+  visibleItems,
 } from "./creationClient.ts";
+import { rememberPendingPlacement } from "./pendingMediaPlacement.ts";
 import { CreationProjection } from "./creationProjection.ts";
 
 import { createDocument, createNode } from "../canvas/model.ts";
@@ -27,6 +30,7 @@ type Delivery = {
   key: string;
   payload: CanvasPublishMediaInput;
   versions: ReturnType<typeof objectVersion>[];
+  anchor?: { item: CanvasItem; commandId: string };
 };
 
 /** Only command delivery is retained locally; output bytes are owned project assets. */
@@ -40,16 +44,19 @@ export class MediaPublication {
   private client: CreationClient;
   private basis: ProjectSnapshot;
   private itemId: string;
+  private unplaced?: CanvasItem;
   private executionIds = new Map<string, string>();
-  constructor(client: CreationClient, basis: ProjectSnapshot, itemId: string) {
+  constructor(client: CreationClient, basis: ProjectSnapshot, itemId: string, unplaced?: CanvasItem) {
     this.client = client;
     this.basis = basis;
     this.itemId = itemId;
+    this.unplaced = unplaced;
     this.projection = new CreationProjection(client);
     try {
       const saved = JSON.parse(
         sessionStorage.getItem(this.storageKey()) ?? "null",
       );
+      this.unplaced ??= saved?.anchor?.item;
       if (saved?.rejected) {
         const { rejected: _rejected, ...delivery } = saved;
         this.rejected = delivery;
@@ -71,6 +78,7 @@ export class MediaPublication {
           JSON.stringify({ ...this.rejected, rejected: true }),
         );
       else sessionStorage.removeItem(this.storageKey());
+      rememberPendingPlacement(this.unplaced, this.storageKey(), !!(this.pending ?? this.rejected)?.anchor);
     } catch {
       /* The open session still owns its original delivery. */
     }
@@ -166,22 +174,14 @@ export class MediaPublication {
             },
           };
         }
-        const layout = {
-          ...createDocument(),
-          nodes: this.client.snapshot.canvasItems
-            .filter((i) => i.visible)
-            .map((i) => ({
-              ...createNode(i.kind, i.position),
-              id: i.id,
-              width: i.width,
-              height: i.height,
-              parentId: i.parentId ?? undefined,
-            })),
-        };
-        const origin = layout.nodes.find((n) => n.id === item.id);
-        const start = origin
-          ? absolutePosition(origin, layout.nodes)
-          : item.position;
+        const allNodes = this.client.snapshot.canvasItems.map(i => ({
+          ...createNode(i.kind, i.position), id: i.id, width: i.width, height: i.height,
+          parentId: i.parentId ?? undefined,
+        }));
+        const visible = visibleItems(this.client.snapshot);
+        const layout = { ...createDocument(), nodes: allNodes.filter(node => visible.has(node.id)) };
+        const origin = allNodes.find(n => n.id === item.id);
+        const start = origin ? absolutePosition(origin, allNodes) : item.position;
         const placed = placeResults(layout, outputs, {
           x: start.x + item.width + 100,
           y: start.y,
@@ -212,6 +212,7 @@ export class MediaPublication {
           id: crypto.randomUUID(),
           key,
           versions,
+          ...(this.unplaced && { anchor: { item: this.unplaced, commandId: crypto.randomUUID() } }),
           payload: {
             itemId: item.id,
             source: source ? assetReference(source) : null,
@@ -223,6 +224,26 @@ export class MediaPublication {
         this.remember();
       }
       const delivery = this.pending;
+      if (delivery.anchor) {
+        // A/V publication records a durable source item. Create it only once the
+        // user has produced outputs, and atomically keep it off the canvas.
+        const { item, commandId } = delivery.anchor;
+        const source = delivery.payload.source!;
+        try {
+          await this.client.command("creation.batch", { operations: [
+            { type: "canvas.show", payload: { item } },
+            { type: "canvas.hide", payload: { itemId: item.id } },
+          ] }, [objectVersion("asset", { id: source.assetId, revision: source.revision })], undefined, commandId);
+        } catch (error) {
+          if (error instanceof CreationCommandError) delivery.anchor.commandId = crypto.randomUUID();
+          throw error;
+        }
+        // New objects start at revision 1, even across multiple operations in
+        // the same batch. Publication still uses that basis on every retry.
+        delete delivery.anchor;
+        this.remember();
+        this.unplaced = undefined;
+      }
       await this.client.command(
         "canvas.publishMedia",
         delivery.payload,

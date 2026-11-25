@@ -7,6 +7,8 @@ import { traceCategory, isThinkingTokenEstimate, readableTraceValue } from "./tr
 import { initialTurn, normalizeTrace, runtimeName, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
 
 import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
+import { downloadFile } from "./assets.ts";
+import { conversationTraceArchive, TraceExportError } from "./traceExport.ts";
 
 import "./assistant-trace.css";
 
@@ -297,14 +299,51 @@ const STATUS_KEYS: Record<ConversationTurn["status"], MessageKey> = {
   stopped: "trace.turn.status.stopped", interrupted: "trace.turn.status.interrupted",
 };
 
-function ConversationTrace({ project, target, turns }: {
-  project: string; target: string; turns: ConversationTurn[];
+function ConversationTrace({ project, conversationId, target, turns }: {
+  project: string; conversationId: string; target: string; turns: ConversationTurn[];
 }) {
   const t = useT();
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [loaded, setLoaded] = useState<Set<string>>(() => new Set());
   const placed = useRef(false);
   const initial = initialTurn(turns, target);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportAbort = useRef<AbortController | null>(null);
+  const running = turns.some((item) => item.status === "streaming");
+  useEffect(() => () => exportAbort.current?.abort(), []);
+  function exportMessage(error: unknown): string | null {
+    if (!(error instanceof TraceExportError)) return t("trace.export.failed");
+    const { turn, source, status, limit } = error.detail;
+    const params = { turn: turn ?? "-", source: source ?? "-", status: status ?? "-",
+      limit: limit ? Math.round(limit / 1048576) : 0 };
+    switch (error.code) {
+      case "aborted": return null;
+      case "running": return t("trace.export.error.running", params);
+      case "tooLarge": return t("trace.export.error.tooLarge", params);
+      case "tooManyFiles": return t("trace.export.error.tooManyFiles", params);
+      case "timeout": return t("trace.export.error.timeout", params);
+      case "changed": return t("trace.export.error.changed", params);
+      case "incomplete": return t("trace.export.error.incomplete", params);
+      default: return t("trace.export.error.read", params);
+    }
+  }
+  async function exportArchive() {
+    if (exporting || running || !window.confirm(t("trace.export.warning"))) return;
+    const controller = new AbortController();
+    exportAbort.current = controller;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const archive = await conversationTraceArchive(project, conversationId, { signal: controller.signal });
+      downloadFile(archive, "opendirector-trace-" + conversationId + ".zip");
+    } catch (error) {
+      setExportError(exportMessage(error));
+    } finally {
+      exportAbort.current = null;
+      setExporting(false);
+    }
+  }
 
   function toggle(id: string, value: boolean) {
     setOpen((previous) => {
@@ -327,6 +366,14 @@ function ConversationTrace({ project, target, turns }: {
 
   return (
     <>
+      <div className="cw-trace-export">
+        <button type="button" disabled={exporting || running || turns.length === 0} onClick={() => void exportArchive()}>
+          {t(exporting ? "trace.export.working" : "trace.export.button")}
+        </button>
+        {exporting && <button type="button" onClick={() => exportAbort.current?.abort()}>{t("trace.export.cancel")}</button>}
+        {running && !exporting && <span role="status">{t("trace.export.blockedRunning")}</span>}
+        {exportError && <span role="alert">{exportError}</span>}
+      </div>
       <nav className="cw-trace-turnnav" aria-label={t("trace.turns.nav")}>
         {turns.map((item) => (
           <button key={item.id} type="button" aria-pressed={open.has(item.id)}
@@ -405,7 +452,7 @@ export default function AssistantTracePage({ params }: { params: URLSearchParams
         {!wide && <p><code>{turn}</code></p>}
       </header>
       {conversation === undefined ? <p role="status">{t("trace.loading")}</p> : wide ? (
-        <ConversationTrace project={project} target={turn} turns={conversation.turns} />
+        <ConversationTrace project={project} conversationId={conversation.id} target={turn} turns={conversation.turns} />
       ) : (
         <TurnTrace project={project} turn={turn} runtime={runtime} live={live} />
       )}

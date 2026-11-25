@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import openDirectorLogo from "../assets/open_director_logo.png";
-import { runtimeModels, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { runtimeModels, type AssistantModelSelection, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { assistantModelSelection } from "./agentPreferences";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
@@ -48,6 +49,7 @@ import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 function kindOf(asset: ChatAsset) {
   return asset.type.startsWith("image/")
@@ -74,6 +76,7 @@ export function AssistantPanel({
   onClose,
   onTurnEnd,
   onModelSelections,
+  onAgentModel,
   onOpenSettings,
   onPrepareReferences,
   onCreateProjectTimeline,
@@ -96,7 +99,8 @@ export function AssistantPanel({
   onTurnEnd: () => void;
   /** Lets the canvas default new nodes to the model this dialog is using. */
   onModelSelections?: (selections: ModelSelections) => void;
-  onOpenSettings: () => void;
+  onAgentModel?: (projectId: string, selection: AssistantModelSelection | null) => void;
+  onOpenSettings: (kind: keyof ModelSelections) => void;
   onPrepareReferences: () => Promise<boolean>;
   onCreateProjectTimeline: () => Promise<string>;
   onOpenProjectTimeline: (itemId: string) => Promise<void>;
@@ -154,6 +158,10 @@ export function AssistantPanel({
   useEffect(() => {
     report.current?.(value.modelSelections);
   }, [value.modelSelections]);
+  useLayoutEffect(() => {
+    onAgentModel?.(documentId, chat.loaded && !chat.changing ? assistantModelSelection(value, chat.agent?.id) : null);
+  }, [documentId, chat.loaded, chat.changing, chat.agent?.id, value.runtime, value.runtimeModel,
+    value.thinking, value.builtinModelThinking, onAgentModel]);
   const locked =
     !chat.loaded ||
     chat.adding ||
@@ -659,7 +667,7 @@ export function AssistantPanel({
                     title={item.error ?? item.title}
                   >
                     {item.thumbnail && !item.error ? (
-                      <img src={item.thumbnail} alt="" />
+                      <AssetMedia as="img" src={item.thumbnail} alt="" />
                     ) : (
                       <CanvasIcon name={item.kind} size={20} />
                     )}
@@ -818,7 +826,7 @@ export function AssistantPanel({
               disabled={!chat.loaded || chat.sending}
               initializing={!chat.loaded || !chat.runtimes.length}
               onChange={chat.selectAgent}
-              onConfigure={onOpenSettings}
+              onConfigure={() => onOpenSettings("agent")}
             />
             <SkillPicker
               projectId={documentId}
@@ -874,7 +882,7 @@ export function AssistantPanel({
           ) : missingAgentModel ? (
             <>
               {t("assistant.agent.noAgentModels")}{" · "}
-              <button type="button" onClick={onOpenSettings}>
+              <button type="button" onClick={() => onOpenSettings("agent")}>
                 {t("assistant.agent.configureModel")}
               </button>
             </>

@@ -20,6 +20,8 @@ export const generation = {
 
   "generation.mode.reference": "全能参考",
   "generation.mode.firstLast": "首尾帧",
+  "generation.mode.control": "结构控制",
+  "generation.duration.followsControl": "跟随控制视频",
   "generation.mode.continuation": "接续",
   "generation.imagePreset": "图片创作预设",
   "generation.videoMode": "视频创作模式",
@@ -92,6 +94,17 @@ export const generation = {
   "generation.options.close": "关闭选项",
   "generation.voice.close": "关闭语音库",
   "generation.voice.demo": "动漫海绵",
+
+  "generation.optimize.action": "提示词优化",
+  "generation.optimize.agentLoading": "Agent 模型选择尚未就绪，请稍后再试。",
+  "generation.optimize.alreadyDone": "当前提示词已优化",
+  "generation.optimize.running": "正在优化提示词...",
+  "generation.optimize.toast": "提示词已优化，按 {shortcut} 可撤销优化",
+  "generation.optimize.doneAudioOmitted": "部分音频未发送给模型。",
+  "generation.optimize.changed": "提示词或节点已变化，未覆盖当前输入。",
+  "generation.optimize.failed": "优化失败，原提示词已保留。",
+  "generation.optimize.saveFailed": "画布尚未保存，无法读取最新参考素材。",
+
 
   "generation.prompt.image": "生成提示词",
   "generation.prompt.textLabel": "文本生成提示词",

@@ -1,4 +1,5 @@
 /** Retained crop state uses a browser source only in the UI projection. */
+import { parseAssetSource } from "../backend/assetSource.ts";
 import type { ImageCropOptions } from "../contracts/generated.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { defaultTranslate } from "./assistantTranslate.ts";
@@ -37,6 +38,7 @@ export function parseImageCrop(
     typeof data.src === "string" &&
     (/^data:image\//i.test(data.src) ||
       /^\/(?!\/)/.test(data.src) ||
+      Boolean(parseAssetSource(data.src)) ||
       (data.src.startsWith("blob:") &&
         typeof location !== "undefined" &&
         location.origin !== "null" &&

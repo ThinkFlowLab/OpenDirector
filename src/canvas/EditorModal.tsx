@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../i18n/I18nProvider.tsx";
+import { AssetMedia } from "./useAssetMedia.tsx";
 import type { CanvasResource } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import "./node-editors.css";
@@ -155,10 +156,11 @@ export function ResourcePreview({
       </div>
     );
   if (resource.kind === "image")
-    return <img src={resource.src} alt={resource.title} draggable={false} />;
+    return <AssetMedia as="img" src={resource.src} alt={resource.title} draggable={false} />;
   if (resource.kind === "video")
     return (
-      <video
+      <AssetMedia
+        as="video"
         src={resource.src}
         controls={controls}
         preload="metadata"
@@ -170,7 +172,8 @@ export function ResourcePreview({
     return (
       <div className="cw-resource-audio">
         <CanvasIcon name="audio" size={30} />
-        <audio
+        <AssetMedia
+          as="audio"
           src={resource.src}
           controls={controls}
           preload="metadata"

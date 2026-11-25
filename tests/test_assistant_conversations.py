@@ -2,17 +2,20 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
+import time
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
 
+from opendirector.agent.native import NativeRuntime
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 from opendirector_api import agent
 
 
 pytestmark = pytest.mark.cpu
+runtime_stream = agent.AgentRuntimes.stream
 
 
 def frames(response):
@@ -57,6 +60,83 @@ def send(client, path, conversation_id, text):
     assert response.status_code == 200, response.text
     return response
 
+
+
+def test_timeline_edit_finishes_in_its_original_conversation_after_switching_projects(assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    project = path.removesuffix('/assistant')
+    pid = project.rsplit('/', 1)[1]
+    origin = client.get(path).json()['conversationId']
+    other_id, editor_id, turn = (str(uuid4()) for _ in range(3))
+    other = f'/api/creation/projects/{other_id}'
+    created = client.post(other + '/commands', json={'type': 'project.create', 'projectId': other_id,
+        'commandId': str(uuid4()), 'payload': {'name': 'Other project'}}).json()
+    assert created['status'] == 'applied', created
+    assert client.post(project + '/open').status_code == 200
+    document = {'id': editor_id, 'projectId': pid, 'kind': 'timeline', 'data': {
+        'fps': 24, 'width': 128, 'height': 96, 'tracks': [{'id': 'v', 'kind': 'visual', 'title': 'Visual'}]}}
+    created = client.post(project + '/commands', json={'type': 'editor.create', 'projectId': pid,
+        'commandId': str(uuid4()), 'payload': {'document': document}}).json()
+    assert created['status'] == 'applied', created
+
+    resume = threading.Event()
+    sessions = []
+    async def edit(self, run, gateway):
+        sessions.append(run.session)
+        yield {'type': 'delta', 'text': 'Editing'}
+        assert await asyncio.to_thread(resume.wait, 10)
+        yield {'type': 'tool', 'id': 'cut', 'name': 'execute_command', 'status': 'running'}
+        result = await gateway.call('cut', 'execute_command', {'type': 'editor.save',
+            'expectedVersions': [{'objectType': 'editor_document', 'id': editor_id, 'revision': 1}],
+            'payload': {'document': {**document, 'revision': 1, 'data': {**document['data'], 'fps': 30}}}})
+        assert result.value.get('status') == 'applied', result
+        yield {'type': 'tool', 'id': 'cut', 'name': 'execute_command', 'status': 'complete'}
+        yield {'type': 'delta', 'text': ' complete'}
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', runtime_stream)
+    monkeypatch.setattr(NativeRuntime, 'stream', edit)
+    monkeypatch.setattr(LocalProjects, 'LEASE_SECONDS', 1.5)
+    store = LocalProjects(tmp_path)
+    def agent_lease():
+        with store.transaction() as db:
+            return db.execute('SELECT project_id, expires FROM sessions WHERE id=?',
+                              (store.agent_session_key(sessions[0]),)).fetchone()
+
+    disconnect_turn(client, path, turn, conversation_id=origin)
+    try:
+        initial = agent_lease()
+        assert initial[0] == pid
+        assert client.post(other + '/open').status_code == 200
+        other_chat = client.get(other + '/assistant').json()
+        assert other_chat['conversationId'] != origin
+        assert not other_chat['messages']
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and agent_lease()[1] == initial[1]:
+            time.sleep(0.02)
+        assert agent_lease()[1] > initial[1], 'the source project lease must renew while the browser is away'
+    finally:
+        resume.set()
+    settled = client.get(path + f'/turns/{turn}/events')
+    assert settled.status_code in (200, 404), settled.text
+    if settled.status_code == 200:
+        assert frames(settled)[-1]['error'] is None
+    assert agent_lease() is None
+    assert client.get(other + '/assistant').json() == other_chat
+    snapshot = client.get(project).json()
+    edited, = snapshot['editorDocuments']
+    assert (edited['id'], edited['revision'], edited['data']['fps']) == (editor_id, 2, 30)
+    user, reply = client.get(path).json()['messages']
+    assert user['id'] == turn
+    assert reply['status'] == 'complete' and reply['text'] == 'Editing complete'
+    assert reply['publishedTimelines'] == {'projectId': pid, 'eventCursor': snapshot['eventCursor'],
+        'timelines': [{'editorId': editor_id, 'revision': 2, 'itemId': None, 'title': ''}]}
+    ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{turn}.json')).read_text(encoding='utf-8'))
+    assert ledger['summary']['calls'] == ledger['summary']['measured'] == 1
+    assert ledger['calls'][0]['id'] == 'cut' and ledger['calls'][0]['status'] == 'complete'
+    assert client.post(project + '/open').status_code == 200
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).json()['messages'] == []
+    assert client.get(path + f'/traces/{turn}/conversation').json() == {'conversationId': origin}
+    assert client.post(path + f'/conversations/{origin}/activate').json()['messages'] == [user, reply]
 
 
 def test_timeline_reply_uses_committed_tool_versions_and_survives_reopening(assistant, monkeypatch):
@@ -544,10 +624,12 @@ def test_image_reference_reaches_runtime_with_media_metadata(assistant):
     assert contexts[-1][0]['content'].split('\nReferenced project assets: ', 1)[1].split('\n', 1)[0] == json.dumps(references, ensure_ascii=False)
 
 
-def test_stop_releases_project_after_saving_partial_reply(assistant, monkeypatch):
+def test_stop_releases_project_after_saving_partial_reply(assistant, monkeypatch, tmp_path):
     client, path, _ = assistant
     started = threading.Event()
+    sessions = []
     async def stream(self, run):
+        sessions.append(run.session)
         yield {'type': 'delta', 'text': '保留部分回复'}
         started.set()
         await asyncio.Event().wait()
@@ -562,6 +644,10 @@ def test_stop_releases_project_after_saving_partial_reply(assistant, monkeypatch
     saved = client.get(path).json()['messages'][-1]
     assert saved['status'] == 'stopped'
     assert saved['text'] == '保留部分回复'
+    store = LocalProjects(tmp_path)
+    with store.transaction() as db:
+        assert db.execute('SELECT 1 FROM sessions WHERE id=?',
+                          (store.agent_session_key(sessions[0]),)).fetchone() is None
     assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
     async def finished(self, run):
         yield {'type': 'delta', 'text': '新回复'}
@@ -632,11 +718,12 @@ def test_explicit_stop_after_disconnect_still_stops_the_run(assistant, monkeypat
     assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
 
 
-def disconnect_turn(client, path, turn_id):
+def disconnect_turn(client, path, turn_id, *, conversation_id=None):
     """Start a turn over raw ASGI and close the stream after its first delta."""
     async def disconnect():
         disconnected = asyncio.Event()
-        body = json.dumps({'id': turn_id, 'runtime': 'default', 'text': '断线测试'}).encode()
+        body = json.dumps({'id': turn_id, 'runtime': 'default', 'text': '断线测试',
+                           'conversationId': conversation_id}).encode()
         requested = False
         async def receive():
             nonlocal requested
@@ -675,3 +762,116 @@ def test_plain_request_reaches_each_runtime_without_delivery_instructions(assist
     saved = client.get(path).json()['messages']
     assert saved[0]['text'] == text
     assert saved[-1]['status'] == 'complete'
+
+
+def test_a_turn_writes_its_timing_beside_its_runtime_state(assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    async def stream(self, run):
+        yield {'type': 'tool', 'id': 'cli:1', 'name': 'opendirector', 'status': 'running',
+               'timing': {'spawn': 1.1}}
+        yield {'type': 'tool', 'id': 'cli:1', 'name': 'opendirector', 'status': 'complete',
+               'timing': {'spawn': 1.1, 'work': 0.2}}
+        yield {'type': 'delta', 'text': '已导出。'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    conversation = client.get(path).json()['conversationId']
+    turn = str(uuid4())
+    response = client.post(path + '/turns', json={'id': turn, 'runtime': 'default',
+        'conversationId': conversation, 'text': '导出视频'})
+    assert response.status_code == 200, response.text
+    assert frames(response)[-1]['error'] is None
+
+    ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{turn}.json')).read_text(encoding='utf-8'))
+    assert ledger['summary']['calls'] == 1
+    assert ledger['summary']['decomposed'] == 1
+    assert ledger['summary']['spawnSeconds'] == 1.1
+    assert ledger['calls'][0]['work'] == 0.2
+
+    # Measurement stays out of the turn the user and the next run read back.
+    saved = client.get(path).json()['messages'][-1]
+    assert 'timing' not in json.dumps(saved['tools'])
+    assert json.loads(next(tmp_path.glob('**/agent-runs/conversation.json')).read_text(encoding='utf-8'))['messages'][-1] == saved
+
+
+@pytest.mark.parametrize('browser_state', ['closed', 'expired', 'edited'])
+def test_background_turn_keeps_write_session_and_checks_revisions(assistant, monkeypatch, browser_state):
+    client, path, _ = assistant
+    root = path.removesuffix('/assistant')
+    project_id = root.rsplit('/', 1)[1]
+    browser_session = client.headers['X-OpenDirector-Session']
+    spec_id = str(uuid4())
+    created = client.post(root + '/commands', json={
+        'type': 'generationSpec.create', 'projectId': project_id, 'commandId': str(uuid4()),
+        'payload': {'spec': {'id': spec_id, 'projectId': project_id, 'kind': 'text', 'purpose': 'draft'}},
+    }).json()
+    assert created['status'] == 'applied', created
+    monkeypatch.setattr(LocalProjects, 'LEASE_SECONDS', 1.5)
+    assert client.post(root + '/open').status_code == 200
+    release = threading.Event()
+    results = {}
+
+    def update_prompt(prompt):
+        return {'type': 'generationSpec.setPrompt', 'payload': {'specId': spec_id, 'prompt': prompt},
+                'expectedVersions': [{'objectType': 'generation_spec', 'id': spec_id, 'revision': 1}]}
+
+    async def stream(self, run, gateway):
+        results['session'] = run.session
+        results['store'] = gateway.business.projects.local
+        yield {'type': 'delta', 'text': 'Waiting for generation'}
+        assert await asyncio.to_thread(release.wait, 10)
+        results['prompt'] = (await gateway.call('save', 'execute_command', update_prompt('Agent draft'))).value
+        results['asset'] = (await gateway.call('publish', 'execute_command', {
+            'type': 'asset.writeText', 'payload': {'name': 'Result.md', 'text': 'Agent result'},
+        })).value
+        yield {'type': 'delta', 'text': 'Finished'}
+
+    # The fixture normally doubles AgentRuntimes.stream. Restore the shared
+    # gateway and double only the adapter's model output for this regression.
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', runtime_stream)
+    monkeypatch.setattr(NativeRuntime, 'stream', stream)
+    turn_id = str(uuid4())
+    disconnect_turn(client, path, turn_id)
+    try:
+        store = results['store']
+        run_session = results['session']
+        session_path = '/api/creation/sessions/'
+        if browser_state != 'expired':
+            assert client.delete(session_path + browser_session).status_code == 200
+        # Wait past the original lease, so the test needs server renewal.
+        time.sleep(store.LEASE_SECONDS + 0.05)
+        assert client.post(path + f'/turns/{turn_id}/stop').status_code == 409
+        if browser_state == 'closed':
+            rename = {'type': 'project.rename', 'projectId': project_id, 'commandId': str(uuid4()),
+                      'payload': {'name': 'Moved project'},
+                      'expectedVersions': [{'objectType': 'project', 'id': project_id, 'revision': 1}]}
+            assert client.post(root + '/commands', json=rename).status_code == 409
+        if browser_state == 'edited':
+            other_window = {'X-OpenDirector-Session': str(uuid4())}
+            assert client.post(root + '/open', headers=other_window).status_code == 200
+            receipt = client.post(root + '/commands', headers=other_window, json={
+                **update_prompt('User draft'), 'projectId': project_id, 'commandId': str(uuid4()),
+            }).json()
+            assert receipt['status'] == 'applied', receipt
+    finally:
+        release.set()
+
+    response = client.get(path + f'/turns/{turn_id}/events')
+    if response.status_code == 200:
+        assert frames(response)[-1]['error'] is None
+    else:
+        assert response.status_code == 404, response.text
+    assert client.get(path).json()['messages'][-1]['status'] == 'complete'
+    snapshot = client.get(root).json()
+    spec = next(spec for spec in snapshot['generationSpecs'] if spec['id'] == spec_id)
+    assert results['asset'].get('status') == 'applied', results['asset']
+    assert any(asset['name'] == 'Result.md' for asset in snapshot['assets'])
+    assert run_session != browser_session
+    if browser_state == 'edited':
+        assert results['prompt']['status'] == 'rejected'
+        assert results['prompt']['issues'][0]['code'] == 'revision_conflict'
+        assert spec['prompt'] == 'User draft'
+    else:
+        assert results['prompt']['status'] == 'applied'
+        assert spec['prompt'] == 'Agent draft'
+    with store.transaction() as db:
+        assert db.execute('SELECT 1 FROM sessions WHERE id=?',
+                          (store.agent_session_key(run_session),)).fetchone() is None

@@ -41,13 +41,13 @@ class ModelConfigInput(ModelConnection):
     url: str = Field(max_length=2048)
     modelId: str = Field(max_length=200)
     apiKey: SecretStr = SecretStr("")
-    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=2)
+    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=4)
     videoAdapter: VideoAdapter | None = None
     videoCapabilities: VideoCapabilities | None = None
 
 
 class ModelOptions(Model):
-    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=2)
+    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=4)
     videoAdapter: VideoAdapter | None = None
     videoCapabilities: VideoCapabilities | None = None
 

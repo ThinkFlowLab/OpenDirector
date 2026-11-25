@@ -39,20 +39,24 @@ export async function showTimelineEditorItem(client: CreationClient, editorId: s
   return node.id;
 }
 
-export async function showNewAssetItem(
-  client: CreationClient, asset: Asset, position: Point, specId?: string | null,
-) {
+export function newAssetItem(asset: Asset, position: Point, specId?: string | null): CanvasItem {
   const node = createNode(asset.kind, { x: position.x - 150, y: position.y - 150 }, {
     media: { width: asset.metadata.width ?? undefined, height: asset.metadata.height ?? undefined },
   });
-  const item = {
-    id: node.id, projectId: client.id, revision: 1, kind: asset.kind, title: asset.name,
+  return {
+    id: node.id, projectId: asset.projectId, revision: 1, kind: asset.kind, title: asset.name,
     position: node.position, width: node.width, height: node.height,
     zIndex: 0, locked: false, visible: true, parentId: null, tags: [], editors: [],
     binding: specId
       ? { role: "generation", objectRef: { objectType: "generation_spec", id: specId }, materialOverride: null }
       : { role: "material", objectRef: assetReference(asset) },
   } as CanvasItem;
+}
+
+export async function showNewAssetItem(
+  client: CreationClient, asset: Asset, position: Point, specId?: string | null,
+) {
+  const item = newAssetItem(asset, position, specId);
   await client.command("canvas.show", { item }, [objectVersion("asset", asset)]);
   return item.id;
 }

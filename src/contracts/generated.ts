@@ -152,7 +152,7 @@ export interface BatchCommandInput extends CommandBaseInput {
 }
 
 export interface BatchPayloadInput extends ContractInput {
-  readonly operations: ReadonlyArray<CanvasShowCommandOperationInput | CanvasMoveCommandOperationInput | CanvasUpdateCommandOperationInput | CanvasHideCommandOperationInput | CanvasMaterializeCommandOperationInput | CanvasApplyEditCommandOperationInput | CanvasConfigureCommandOperationInput | CanvasEditorAttachCommandOperationInput | CanvasEditorDetachCommandOperationInput | SpecCreateCommandOperationInput | SpecUpdateCommandOperationInput | SpecPromptCommandOperationInput | ReferenceAddCommandOperationInput | ReferenceUpdateCommandOperationInput | ReferenceRestoreCommandOperationInput | ReferenceRemoveCommandOperationInput | ResultSelectCommandOperationInput | EditorCreateCommandOperationInput | EditorSaveCommandOperationInput>;
+  readonly operations: ReadonlyArray<CanvasShowCommandOperationInput | CanvasMoveCommandOperationInput | CanvasUpdateCommandOperationInput | CanvasLayoutRunsCommandOperationInput | CanvasHideCommandOperationInput | CanvasMaterializeCommandOperationInput | CanvasApplyEditCommandOperationInput | CanvasConfigureCommandOperationInput | CanvasEditorAttachCommandOperationInput | CanvasEditorDetachCommandOperationInput | SpecCreateCommandOperationInput | SpecUpdateCommandOperationInput | SpecPromptCommandOperationInput | ReferenceAddCommandOperationInput | ReferenceUpdateCommandOperationInput | ReferenceRestoreCommandOperationInput | ReferenceRemoveCommandOperationInput | ResultSelectCommandOperationInput | EditorCreateCommandOperationInput | EditorSaveCommandOperationInput>;
 }
 
 export interface CameraFrameInput extends ContractInput {
@@ -269,6 +269,16 @@ export interface CanvasItemVersionInput extends ObjectVersionInput {
   readonly objectType: "canvas_item";
 }
 
+export interface CanvasLayoutRunsCommandInput extends CommandBaseInput {
+  readonly type: "canvas.layoutRuns";
+  readonly payload: EmptyPayloadInput;
+}
+
+export interface CanvasLayoutRunsCommandOperationInput {
+  readonly type: "canvas.layoutRuns";
+  readonly payload: EmptyPayloadInput;
+}
+
 export interface CanvasMaterializeInput extends ContractInput {
   readonly itemId: string;
   readonly asset: AssetRefInput;
@@ -313,6 +323,7 @@ export interface CanvasPresentationUpdateInput extends ContractInput {
   readonly locked?: boolean | null;
   readonly color?: string | null;
   readonly parentId?: string | null;
+  readonly autoLayout?: "run" | "free" | null;
 }
 
 export interface CanvasPublishMediaInput extends ContractInput {
@@ -421,10 +432,11 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
+  readonly relatedObjectId?: string | null;
 }
 
 export interface CreationContractsInput extends ContractInput {
@@ -433,9 +445,9 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | JobStatusQueryInput | AssetPreviewQueryInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -599,6 +611,7 @@ export interface GenerationSubmitCommandInput extends CommandBaseInput {
 
 export interface GroupCanvasItemInput extends CanvasItemBaseInput {
   readonly kind: "group";
+  readonly autoLayout?: "run" | null;
   readonly binding?: ContainerBindingInput;
 }
 
@@ -714,7 +727,7 @@ export interface InputRulesInput extends ContractInput {
   readonly imageBytes: number;
   readonly videoBytes: number;
   readonly requestBytes: number;
-  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
+  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation" | "control">;
   readonly imageOutputs?: ReadonlyArray<ImageOutputInput>;
   readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions?: ReadonlyArray<string>;
@@ -784,6 +797,13 @@ export interface JobRecoverCommandInput extends CommandBaseInput {
   readonly payload: JobControlInput;
 }
 
+export interface JobStatusQueryInput extends QueryBaseInput {
+  readonly type: "job.status";
+  readonly objectIds?: ReadonlyArray<string>;
+  readonly waitSeconds?: number;
+  readonly until?: "all" | "any";
+}
+
 export type JsonValueInput = unknown;
 
 export interface LayerContentBaseInput extends ContractInput {
@@ -818,7 +838,7 @@ export interface MediaCanvasItemInput extends CanvasItemBaseInput {
 }
 
 export interface MediaEditDataInput extends ContractInput {
-  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
+  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "video-mask-composite" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
   readonly sources?: ReadonlyArray<AssetRefInput>;
   readonly sourceItems?: ReadonlyArray<string>;
   readonly parameters?: Readonly<Record<string, string | boolean | number>>;
@@ -885,7 +905,7 @@ export interface ModelConnectionInput extends ContractInput {
   readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode?: "system" | "direct";
-  readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
+  readonly inputModalities?: ReadonlyArray<"text" | "image" | "video" | "audio"> | null;
   readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
 }
@@ -898,7 +918,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
-  readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
+  readonly inputModalities?: ReadonlyArray<"text" | "image" | "video" | "audio"> | null;
   readonly videoAdapter?: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules?: InputRulesInput | null;
 }
@@ -1095,7 +1115,7 @@ export interface ReferenceAddCommandOperationInput {
 
 export interface ReferenceBaseInput extends ProjectEntityInput {
   readonly targetSpecId: string;
-  readonly role?: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role?: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly order?: number;
   readonly active?: boolean;
 }
@@ -1140,7 +1160,7 @@ export interface ReferenceWriteInput extends ContractInput {
 
 export interface ResolvedReferenceInput extends ContractInput {
   readonly referenceId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly asset: AssetRefInput;
   readonly metadata: MediaMetadataInput;
   readonly sourceVersion?: ObjectVersionInput | null;
@@ -1584,7 +1604,7 @@ export interface VideoOutputInput {
 
 export interface VideoParametersInput extends ContractInput {
   readonly generateAudio?: boolean;
-  readonly videoMode?: "first_frame" | "reference" | "continuation";
+  readonly videoMode?: "first_frame" | "reference" | "continuation" | "control";
   readonly durationSeconds?: number | null;
   readonly aspectRatio?: string | null;
   readonly resolution?: string;
@@ -1637,7 +1657,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -1649,7 +1669,7 @@ export type RoleActionInput = "configure_generation" | "save_manual_text" | "upl
 
 export type ModelKindInput = "agent" | "image" | "video" | "audio" | "vision";
 
-export type VideoModeInput = "first_frame" | "reference" | "continuation";
+export type VideoModeInput = "first_frame" | "reference" | "continuation" | "control";
 
 export interface ArtifactPublish extends Contract {
   readonly path: string;
@@ -1801,7 +1821,7 @@ export interface BatchCommand extends CommandBase {
 }
 
 export interface BatchPayload extends Contract {
-  readonly operations: ReadonlyArray<CanvasShowCommandOperation | CanvasMoveCommandOperation | CanvasUpdateCommandOperation | CanvasHideCommandOperation | CanvasMaterializeCommandOperation | CanvasApplyEditCommandOperation | CanvasConfigureCommandOperation | CanvasEditorAttachCommandOperation | CanvasEditorDetachCommandOperation | SpecCreateCommandOperation | SpecUpdateCommandOperation | SpecPromptCommandOperation | ReferenceAddCommandOperation | ReferenceUpdateCommandOperation | ReferenceRestoreCommandOperation | ReferenceRemoveCommandOperation | ResultSelectCommandOperation | EditorCreateCommandOperation | EditorSaveCommandOperation>;
+  readonly operations: ReadonlyArray<CanvasShowCommandOperation | CanvasMoveCommandOperation | CanvasUpdateCommandOperation | CanvasLayoutRunsCommandOperation | CanvasHideCommandOperation | CanvasMaterializeCommandOperation | CanvasApplyEditCommandOperation | CanvasConfigureCommandOperation | CanvasEditorAttachCommandOperation | CanvasEditorDetachCommandOperation | SpecCreateCommandOperation | SpecUpdateCommandOperation | SpecPromptCommandOperation | ReferenceAddCommandOperation | ReferenceUpdateCommandOperation | ReferenceRestoreCommandOperation | ReferenceRemoveCommandOperation | ResultSelectCommandOperation | EditorCreateCommandOperation | EditorSaveCommandOperation>;
 }
 
 export interface CameraFrame extends Contract {
@@ -1918,6 +1938,16 @@ export interface CanvasItemVersion extends ObjectVersion {
   readonly objectType: "canvas_item";
 }
 
+export interface CanvasLayoutRunsCommand extends CommandBase {
+  readonly type: "canvas.layoutRuns";
+  readonly payload: EmptyPayload;
+}
+
+export interface CanvasLayoutRunsCommandOperation {
+  readonly type: "canvas.layoutRuns";
+  readonly payload: EmptyPayload;
+}
+
 export interface CanvasMaterialize extends Contract {
   readonly itemId: string;
   readonly asset: AssetRef;
@@ -1962,6 +1992,7 @@ export interface CanvasPresentationUpdate extends Contract {
   readonly locked: boolean | null;
   readonly color?: string | null;
   readonly parentId: string | null;
+  readonly autoLayout?: "run" | "free" | null;
 }
 
 export interface CanvasPublishMedia extends Contract {
@@ -2070,10 +2101,11 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
+  readonly relatedObjectId?: string | null;
 }
 
 export interface CreationContracts extends Contract {
@@ -2082,9 +2114,9 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
+  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2248,6 +2280,7 @@ export interface GenerationSubmitCommand extends CommandBase {
 
 export interface GroupCanvasItem extends CanvasItemBase {
   readonly kind: "group";
+  readonly autoLayout?: "run" | null;
   readonly binding: ContainerBinding;
 }
 
@@ -2363,7 +2396,7 @@ export interface InputRules extends Contract {
   readonly imageBytes: number;
   readonly videoBytes: number;
   readonly requestBytes: number;
-  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
+  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation" | "control">;
   readonly imageOutputs: ReadonlyArray<ImageOutput>;
   readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions: ReadonlyArray<string>;
@@ -2433,6 +2466,13 @@ export interface JobRecoverCommand extends CommandBase {
   readonly payload: JobControl;
 }
 
+export interface JobStatusQuery extends QueryBase {
+  readonly type: "job.status";
+  readonly objectIds: ReadonlyArray<string>;
+  readonly waitSeconds: number;
+  readonly until: "all" | "any";
+}
+
 export type JsonValue = unknown;
 
 export interface LayerContentBase extends Contract {
@@ -2467,7 +2507,7 @@ export interface MediaCanvasItem extends CanvasItemBase {
 }
 
 export interface MediaEditData extends Contract {
-  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
+  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "video-mask-composite" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
   readonly sources: ReadonlyArray<AssetRef>;
   readonly sourceItems: ReadonlyArray<string>;
   readonly parameters: Readonly<Record<string, string | boolean | number>>;
@@ -2533,7 +2573,7 @@ export interface ModelConnection extends Contract {
   readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
   readonly proxyMode: "system" | "direct";
-  readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
+  readonly inputModalities: ReadonlyArray<"text" | "image" | "video" | "audio"> | null;
   readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly videoCapabilities: VideoCapabilities | null;
 }
@@ -2546,7 +2586,7 @@ export interface ModelSnapshot extends Contract {
   readonly protocol: "openai" | "volcengine" | "bigmodel_video" | "kling_video" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
   readonly proxyMode?: "system" | "direct";
-  readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
+  readonly inputModalities?: ReadonlyArray<"text" | "image" | "video" | "audio"> | null;
   readonly videoAdapter: "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
   readonly inputRules: InputRules | null;
 }
@@ -2743,7 +2783,7 @@ export interface ReferenceAddCommandOperation {
 
 export interface ReferenceBase extends ProjectEntity {
   readonly targetSpecId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly order: number;
   readonly active: boolean;
 }
@@ -2788,7 +2828,7 @@ export interface ReferenceWrite extends Contract {
 
 export interface ResolvedReference extends Contract {
   readonly referenceId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly asset: AssetRef;
   readonly metadata: MediaMetadata;
   readonly sourceVersion: ObjectVersion | null;
@@ -3232,7 +3272,7 @@ export interface VideoOutput {
 
 export interface VideoParameters extends Contract {
   readonly generateAudio: boolean;
-  readonly videoMode: "first_frame" | "reference" | "continuation";
+  readonly videoMode: "first_frame" | "reference" | "continuation" | "control";
   readonly durationSeconds: number | null;
   readonly aspectRatio: string | null;
   readonly resolution: string;
@@ -3285,7 +3325,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 
@@ -3297,4 +3337,4 @@ export type RoleAction = "configure_generation" | "save_manual_text" | "upload_m
 
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
 
-export type VideoMode = "first_frame" | "reference" | "continuation";
+export type VideoMode = "first_frame" | "reference" | "continuation" | "control";

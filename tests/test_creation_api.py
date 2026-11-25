@@ -1,3 +1,4 @@
+from itertools import combinations
 from legacy_fixtures import legacy_project
 from uuid import uuid4
 import shutil
@@ -299,9 +300,242 @@ def test_open_canvas_returns_one_snapshot_with_authoritative_reference_edges(api
     assert body['edges'] == projection['edges']
     assert body['edges'] == [dict(referenceId=reference['id'], sourceItemId=source_item,
                                   targetSpecId=target_spec, state='pending')]
+    assert body['texts'] == {asset['id']: 'v1'}
     # The no-flag open keeps its established bare snapshot response.
     plain = client.post(path + '/open').json()
     assert plain == body['snapshot']
     assert 'edges' not in plain
     assert client.post(path + '/open-canvas',
                        headers={'x-opendirector-session': ''}).status_code == 422
+
+
+def _show_layout_item(project_id, kind, **item):
+    if kind in {'text', 'video'}:
+        item.setdefault('binding', dict(role='empty'))
+    defaults = dict(id=str(uuid4()), projectId=project_id, kind=kind,
+                    position=dict(x=0, y=0), width=900, height=160)
+    return dict(type='canvas.show', payload=dict(item=defaults | item))
+
+
+def _layout_item_id(operation):
+    return operation['payload']['item']['id']
+
+
+def _layout_command(client, path, project_id, kind, payload, *, expected_versions=(), status='applied'):
+    response = client.post(path + '/commands', json=dict(
+        type=kind, commandId=str(uuid4()), projectId=project_id, payload=payload,
+        expectedVersions=expected_versions,
+    ))
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert receipt['status'] == status, response.text
+    return receipt
+
+
+def _canvas_items(snapshot):
+    return {item['id']: item for item in snapshot['canvasItems']}
+
+
+def _bounds(item):
+    x, y = item['position']['x'], item['position']['y']
+    return x, y, x + item['width'], y + item['height']
+
+
+def _assert_disjoint(items):
+    for first, second in combinations(items, 2):
+        x1, y1, right1, bottom1 = _bounds(first)
+        x2, y2, right2, bottom2 = _bounds(second)
+        assert right1 <= x2 or right2 <= x1 or bottom1 <= y2 or bottom2 <= y1, (first, second)
+
+
+def test_run_layout_reflows_subsequent_rows_after_children_grow(api):
+    client, _ = api
+    path, command, _ = create(client)
+    project_id = command['projectId']
+    assert client.post(path + '/open').status_code == 200
+
+    operations = []
+    group_ids, child_ids, timeline_ids = [], [], []
+    for name in ('A', 'B', 'C'):
+        group = _show_layout_item(project_id, 'group', title=f'Run {name}',
+                                  width=1200, height=300, autoLayout='run')
+        group_id = _layout_item_id(group)
+        plan = _show_layout_item(project_id, 'text', title=f'Plan {name}', parentId=group_id)
+        timeline_id = str(uuid4())
+        document = dict(type='editor.create', payload=dict(document=dict(
+            id=timeline_id, projectId=project_id, kind='timeline',
+            data=dict(fps=24, width=1920, height=1080,
+                      tracks=[dict(id='visual', kind='visual', title='Visual')]),
+        )))
+        timeline = _show_layout_item(project_id, 'timeline', title=f'Timeline {name}', parentId=group_id,
+                                     binding=dict(role='editor', objectRef=dict(id=timeline_id, kind='timeline')))
+        operations.extend((group, plan, document, timeline))
+        group_ids.append(group_id)
+        child_ids.append((_layout_item_id(plan), _layout_item_id(timeline)))
+        timeline_ids.append(timeline_id)
+
+    _layout_command(client, path, project_id, 'creation.batch', dict(operations=operations))
+    initial = client.get(path).json()
+    before = _canvas_items(initial)
+    a, b, c = group_ids
+    assert before[a]['position']['y'] == before[b]['position']['y'] < before[c]['position']['y']
+    _assert_disjoint([before[key] for key in group_ids])
+
+    clips = [_show_layout_item(project_id, 'video', title=name, parentId=a) for name in ('Q2', 'W4')]
+    _layout_command(client, path, project_id, 'creation.batch', dict(operations=clips))
+    reopened = client.post(path + '/open-canvas')
+    assert reopened.status_code == 200, reopened.text
+    canvas = reopened.json()
+    after = _canvas_items(canvas['snapshot'])
+    assert after[a]['height'] > before[a]['height']
+    assert after[b] == before[b]
+    assert after[c]['position']['y'] > before[c]['position']['y']
+    _assert_disjoint([after[key] for key in group_ids])
+
+    for (plan_id, timeline_node_id), group_id, timeline_id in zip(child_ids, group_ids, timeline_ids):
+        assert after[plan_id]['parentId'] == after[timeline_node_id]['parentId'] == group_id
+        assert after[timeline_node_id]['binding']['objectRef']['id'] == timeline_id
+        assert after[plan_id]['position'] == before[plan_id]['position']
+        assert after[timeline_node_id]['position'] == before[timeline_node_id]['position']
+    assert canvas['snapshot']['editorDocuments'] == initial['editorDocuments']
+    clip_ids = [_layout_item_id(clip) for clip in clips]
+    assert set(clip_ids) <= set(client.get(path + '/canvas').json()['visibleItemIds'])
+    children = [after[key] for key in (*child_ids[0], *clip_ids)]
+    _assert_disjoint(children)
+    for child in children:
+        assert child['parentId'] == a
+        left, top, right, bottom = _bounds(child)
+        assert 0 <= left < right <= after[a]['width']
+        assert 0 <= top < bottom <= after[a]['height']
+
+    _layout_command(client, path, project_id, 'canvas.layoutRuns', {}, status='noop')
+    assert _canvas_items(client.get(path).json()) == after
+
+
+def test_run_layout_respects_locked_runs_and_ordinary_root_items(api):
+    client, _ = api
+    path, command, _ = create(client)
+    project_id = command['projectId']
+    assert client.post(path + '/open').status_code == 200
+
+    fixed = _show_layout_item(project_id, 'group', title='Locked Run', width=650,
+                              height=480, position=dict(x=1100, y=0), autoLayout='run', locked=True)
+    ordinary = _show_layout_item(project_id, 'text', title='Source', width=1000, height=480)
+    managed = _show_layout_item(project_id, 'group', title='Run to arrange', width=1200, height=300)
+    fixed_id, ordinary_id, managed_id = map(_layout_item_id, (fixed, ordinary, managed))
+    _layout_command(client, path, project_id, 'creation.batch',
+                    dict(operations=[fixed, ordinary, managed]))
+
+    before = _canvas_items(client.get(path).json())
+    assert before[managed_id]['position'] == before[ordinary_id]['position']
+    _layout_command(client, path, project_id, 'canvas.update',
+                    dict(itemId=managed_id, autoLayout='run'),
+                    expected_versions=[dict(objectType='canvas_item', id=managed_id,
+                                            revision=before[managed_id]['revision'])])
+    after = _canvas_items(client.get(path).json())
+    assert after[fixed_id] == before[fixed_id]
+    assert after[ordinary_id] == before[ordinary_id]
+    assert after[managed_id]['autoLayout'] == 'run'
+    _assert_disjoint([after[key] for key in (fixed_id, ordinary_id, managed_id)])
+
+    child = _show_layout_item(project_id, 'text', parentId=fixed_id)
+    added = client.post(path + '/commands', json={
+        **child, 'commandId': str(uuid4()), 'projectId': project_id,
+    }).json()
+    assert added['status'] == 'rejected', added
+    assert added['issues'][0]['code'] == 'role_restricted'
+
+    stale = client.post(path + '/commands', json=dict(
+        type='canvas.update', commandId=str(uuid4()), projectId=project_id,
+        expectedVersions=[dict(objectType='canvas_item', id=managed_id, revision=before[managed_id]['revision'])],
+        payload=dict(itemId=managed_id, autoLayout='free'),
+    ))
+    assert stale.status_code == 200, stale.text
+    assert stale.json()['status'] == 'rejected', stale.text
+    assert stale.json()['issues'][0]['code'] == 'revision_conflict'
+    assert _canvas_items(client.get(path).json()) == after
+
+
+def test_run_layout_rejects_intersecting_locked_runs_atomically(api):
+    client, _ = api
+    path, command, _ = create(client)
+    project_id = command['projectId']
+    assert client.post(path + '/open').status_code == 200
+
+    operations = [_show_layout_item(project_id, 'group', title=title, autoLayout='run', locked=True)
+                  for title in ('First', 'Second')]
+    response = client.post(path + '/commands', json=dict(
+        type='creation.batch', commandId=str(uuid4()), projectId=project_id,
+        payload=dict(operations=operations),
+    ))
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert receipt['status'] == 'rejected', response.text
+    issue, = receipt['issues']
+    assert issue['code'] == 'canvas_run_layout_conflict'
+    assert {issue['objectId'], issue['relatedObjectId']} == {_layout_item_id(item) for item in operations}
+    assert _canvas_items(client.get(path).json()) == {}
+
+
+def test_run_layout_shares_material_but_rejects_shared_editable_objects(api):
+    client, _ = api
+    path, command, _ = create(client)
+    project_id = command['projectId']
+    assert client.post(path + '/open').status_code == 200
+    _layout_command(client, path, project_id, 'asset.writeText', dict(name='Source.md', text='Shared source'))
+    asset, = client.get(path).json()['assets']
+    material = dict(role='material', objectRef=dict(
+        assetId=asset['id'], revision=asset['revision'], fingerprint=asset['fingerprint'], kind='text',
+    ))
+    runs = [_show_layout_item(project_id, 'group', autoLayout='run') for _ in range(2)]
+    run_ids = [_layout_item_id(run) for run in runs]
+    sources = [_show_layout_item(project_id, 'text', parentId=run_id, binding=material) for run_id in run_ids]
+    _layout_command(client, path, project_id, 'creation.batch', dict(operations=[*runs, *sources]))
+    before = client.get(path).json()
+    before_items = _canvas_items(before)
+    assert {before_items[_layout_item_id(source)]['parentId'] for source in sources} == set(run_ids)
+    assert all(before_items[_layout_item_id(source)]['binding']['objectRef']['assetId'] == asset['id']
+               for source in sources)
+
+    timeline_id, spec_id = str(uuid4()), str(uuid4())
+    document = dict(type='editor.create', payload=dict(document=dict(
+        id=timeline_id, projectId=project_id, kind='timeline',
+        data=dict(fps=24, width=1920, height=1080,
+                  tracks=[dict(id='visual', kind='visual', title='Visual')]),
+    )))
+    spec = dict(type='generationSpec.create', payload=dict(spec=dict(
+        id=spec_id, projectId=project_id, kind='text', purpose='draft',
+    )))
+    for create_object, kind, binding in (
+        (document, 'timeline', dict(role='editor', objectRef=dict(id=timeline_id, kind='timeline'))),
+        (spec, 'text', dict(role='empty', draftSpec=dict(id=spec_id))),
+    ):
+        shared = [_show_layout_item(project_id, kind, parentId=run_id, binding=binding) for run_id in run_ids]
+        response = client.post(path + '/commands', json=dict(
+            type='creation.batch', commandId=str(uuid4()), projectId=project_id,
+            payload=dict(operations=[create_object, *shared]),
+        ))
+        assert response.status_code == 200, response.text
+        receipt = response.json()
+        assert receipt['status'] == 'rejected', response.text
+        issue, = receipt['issues']
+        assert issue['code'] == 'canvas_run_layout_shared_object'
+        assert {issue['objectId'], issue['relatedObjectId']} == set(run_ids)
+        assert client.get(path).json() == before
+
+
+def test_run_layout_rejects_unrepresentable_placement(api):
+    client, _ = api
+    path, command, _ = create(client)
+    project_id = command['projectId']
+    assert client.post(path + '/open').status_code == 200
+    before = client.get(path).json()
+    obstacle = _show_layout_item(project_id, 'group', width=3000, height=1e20)
+    run = _show_layout_item(project_id, 'group', width=2000, autoLayout='run')
+    receipt = client.post(path + '/commands', json=dict(
+        type='creation.batch', projectId=project_id, commandId=str(uuid4()),
+        payload=dict(operations=[obstacle, run]),
+    )).json()
+    assert receipt['status'] == 'rejected', receipt
+    assert receipt['issues'][0]['code'] == 'canvas_run_layout_extent'
+    assert client.get(path).json() == before

@@ -36,7 +36,8 @@ try {
   await page.keyboard.insertText("Keep this draft");
   await tap();
   await page.waitForFunction(() => document.querySelector("#canvas-assistant").hidden);
-  assert.equal(await trigger.evaluate(element => document.activeElement === element), true);
+  // Focus returns in the effect after the panel hides.
+  await page.waitForFunction(() => document.activeElement?.classList.contains("cw-project-chevron"));
   await tap();
   await editor.waitFor();
   assert.ok((await editor.textContent()).includes("Keep this draft"));

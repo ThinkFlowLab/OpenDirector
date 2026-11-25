@@ -1,7 +1,8 @@
 import type { ChatMessage } from "../backend/chat.ts";
-import type { Asset, AssetRef, ProjectSnapshot } from "../contracts/generated.ts";
+import type { Asset, AssetRef, CanvasItem, ProjectSnapshot } from "../contracts/generated.ts";
+import { pendingPlacement } from "../backend/pendingMediaPlacement.ts";
 import { currentAsset, type CreationClient } from "../backend/creationClient.ts";
-import { findAssetItem, showExistingItem, showNewAssetItem, showTimelineEditorItem } from "./canvasAssetPlacement.ts";
+import { findAssetItem, newAssetItem, showExistingItem, showTimelineEditorItem } from "./canvasAssetPlacement.ts";
 import { indexNodes, isNodeLocked } from "./hierarchy.ts";
 import type { Point } from "./model.ts";
 import { tNow } from "../i18n/messages.ts";
@@ -100,16 +101,28 @@ function boundProjectEditorItem(snapshot: ProjectSnapshot, target: ProjectEditor
 }
 
 /** Hidden ancestors participate in the same lock checks as visible parents. */
-export function resolveProjectEditorItem(snapshot: ProjectSnapshot, target: ProjectEditorTarget) {
-  const item = boundProjectEditorItem(snapshot, target);
+export function resolveProjectEditorItem(snapshot: ProjectSnapshot, target: ProjectEditorTarget, provisionalId?: string) {
+  const bound = boundProjectEditorItem(snapshot, target);
+  if (provisionalId && bound) throw new Error(tNow("assistant.result.editorChanged"));
+  // A lost reply can leave the already-edited output at the provisional ID.
+  // It still participates in lock and revision checks while the fixed command is resolved.
+  const item = provisionalId ? snapshot.canvasItems.find(candidate => candidate.id === provisionalId) : bound;
   if (item && isNodeLocked(item, indexNodes(snapshot.canvasItems)))
     throw new Error(tNow("canvas.workspace.toast.unlockFirst"));
   return item;
 }
 
-export async function prepareProjectEditorItem(client: CreationClient, target: ProjectEditorTarget, center: () => Point) {
+export async function prepareProjectEditorItem(
+  client: CreationClient, target: ProjectEditorTarget, center: () => Point,
+): Promise<{ itemId: string; unplaced?: CanvasItem }> {
   const item = resolveProjectEditorItem(client.snapshot, target);
-  if (item) return showExistingItem(client, item);
-  if (target.kind === "media") return showNewAssetItem(client, target.asset, center());
-  return showTimelineEditorItem(client, target.editorId, target.revision, center());
+  if (target.kind === "media") {
+    if (item) return { itemId: item.id };
+    // No project object is needed to inspect or cancel an unplaced candidate.
+    const unplaced = pendingPlacement(target.asset) ?? newAssetItem(target.asset, center());
+    return { itemId: unplaced.id, unplaced };
+  }
+  const itemId = item ? await showExistingItem(client, item)
+    : await showTimelineEditorItem(client, target.editorId, target.revision, center());
+  return { itemId };
 }

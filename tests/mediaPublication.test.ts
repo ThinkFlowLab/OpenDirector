@@ -7,6 +7,7 @@ import {
   assetReference,
 } from "../src/backend/creationClient.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
+import { prepareProjectEditorItem } from "../src/canvas/assistantResultEditors.ts";
 import { MediaPublication } from "../src/backend/mediaPublication.ts";
 import type {
   CommandReceipt,
@@ -46,6 +47,26 @@ function setup(t: TestContext) {
   });
   return { client, snapshot, item, imports: () => imports };
 }
+function sessionStore(t: TestContext) {
+  const original = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "sessionStorage",
+  );
+  const saved = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string) => saved.get(k) ?? null,
+      setItem: (k: string, v: string) => saved.set(k, v),
+      removeItem: (k: string) => saved.delete(k),
+    },
+  });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, "sessionStorage", original);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  });
+  return saved;
+}
 test("unknown publication repeats exact fixed input and identities, acknowledged output does not submit twice", async (t) => {
   const { client, snapshot, item, imports } = setup(t);
   const calls: unknown[] = [];
@@ -81,23 +102,7 @@ test("confirmed rejection retries the same imported outputs, keeps the original 
   assert.notEqual(calls[0][4], calls[1][4]);
 });
 test("a new editor session resolves a lost publication before sending changed output", async (t) => {
-  const original = Object.getOwnPropertyDescriptor(
-    globalThis,
-    "sessionStorage",
-  );
-  const saved = new Map<string, string>();
-  Object.defineProperty(globalThis, "sessionStorage", {
-    configurable: true,
-    value: {
-      getItem: (k: string) => saved.get(k) ?? null,
-      setItem: (k: string, v: string) => saved.set(k, v),
-      removeItem: (k: string) => saved.delete(k),
-    },
-  });
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, "sessionStorage", original);
-    else Reflect.deleteProperty(globalThis, "sessionStorage");
-  });
+  const saved = sessionStore(t);
   const { client, snapshot, item, imports } = setup(t);
   const calls: unknown[] = [];
   client.command = async (...args) => {
@@ -169,23 +174,7 @@ test("new local results retain normal node dimensions and avoid earlier publishe
 });
 
 test("reopening a refused publication reuses prepared assets instead of importing duplicate files", async (t) => {
-  const original = Object.getOwnPropertyDescriptor(
-    globalThis,
-    "sessionStorage",
-  );
-  const saved = new Map<string, string>();
-  Object.defineProperty(globalThis, "sessionStorage", {
-    configurable: true,
-    value: {
-      getItem: (k: string) => saved.get(k) ?? null,
-      setItem: (k: string, v: string) => saved.set(k, v),
-      removeItem: (k: string) => saved.delete(k),
-    },
-  });
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, "sessionStorage", original);
-    else Reflect.deleteProperty(globalThis, "sessionStorage");
-  });
+  const saved = sessionStore(t);
   const { client, snapshot, item, imports } = setup(t);
   const calls: unknown[][] = [];
   client.command = async (...args) => {
@@ -205,4 +194,45 @@ test("reopening a refused publication reuses prepared assets instead of importin
   assert.deepEqual(calls[0]!.slice(0, 4), calls[1]!.slice(0, 4));
   assert.notEqual(calls[0]![4], calls[1]![4]);
   assert.equal(saved.size, 0);
+});
+
+test("unplaced media keeps one hidden source across lost placement and publication replies", async (t) => {
+  const saved = sessionStore(t);
+  const { client, snapshot, imports } = setup(t);
+  const audio = snapshot.assets.find(asset => asset.kind === "audio")!;
+  const target = { kind: "media" as const, asset: audio, itemId: null };
+  client.install({ ...snapshot, canvasItems: [] });
+  const open = async () => {
+    const targetItem = await prepareProjectEditorItem(client, target, () => ({ x: 200, y: 200 }));
+    const item = targetItem.unplaced!;
+    const basis = { ...client.snapshot, canvasItems: [item] };
+    return { item, publication: new MediaPublication(client, basis, item.id, item) };
+  };
+  const { item, publication } = await open();
+  const trimmed = [{ ...output[0], kind: "audio" as const, mimeType: "audio/wav", title: "Trim" }];
+  const calls: Parameters<CreationClient["command"]>[] = [];
+  client.command = async (...args) => {
+    calls.push(structuredClone(args));
+    if (calls.length === 1 || calls.length === 3) throw Error("lost reply");
+    return { status: "applied" } as CommandReceipt;
+  };
+  assert.equal(calls.length, 0);
+  await assert.rejects(publication.publish(trimmed), /lost reply/);
+  const reopened = await open();
+  assert.deepEqual(reopened.item, item);
+  await assert.rejects(reopened.publication.publish(trimmed), /lost reply/);
+  const ids = await reopened.publication.publish(trimmed);
+  assert.deepEqual(calls[0], calls[1], "retry the same atomic show/hide command");
+  assert.equal(calls[0][0], "creation.batch");
+  assert.deepEqual(calls[0][1], { operations: [
+    { type: "canvas.show", payload: { item } },
+    { type: "canvas.hide", payload: { itemId: item.id } },
+  ] });
+  assert.deepEqual(calls[2], calls[3], "retry publication without creating the source again");
+  assert.equal(calls[2][0], "canvas.publishMedia");
+  assert.equal(calls[2][2]?.find(version => version.objectType === "canvas_item")?.id, item.id);
+  assert.deepEqual(await reopened.publication.publish(trimmed), ids);
+  assert.equal(saved.size, 0);
+  assert.equal(imports(), 1);
+  assert.equal(calls.length, 4);
 });

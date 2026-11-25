@@ -181,3 +181,17 @@ test("opening a result inside a hidden locked group rejects before changing visi
   await assert.rejects(prepareProjectEditorItem(client, { kind: "media", asset: output, itemId: owner.id }, center));
   assert.equal(writes, 0);
 });
+
+test("opening existing hidden media or an unplaced candidate prepares an editor without project commands", async () => {
+  const hidden = { ...owner, visible: false };
+  const snapshot = { ...project, canvasItems: [hidden] };
+  const client = { snapshot, command: () => assert.fail("read-only editor open") } as unknown as CreationClient;
+  const center = () => ({ x: 250, y: 400 });
+  const target = { kind: "media" as const, asset: output, itemId: hidden.id };
+  assert.deepEqual(await prepareProjectEditorItem(client, target, center), { itemId: hidden.id });
+  client.snapshot = { ...snapshot, canvasItems: [] };
+  const candidate = await prepareProjectEditorItem(client, { ...target, itemId: null }, center);
+  assert.equal(candidate.unplaced?.id, candidate.itemId);
+  assert.deepEqual(candidate.unplaced?.binding, { role: "material", objectRef: result.asset });
+  assert.deepEqual(client.snapshot.canvasItems, []);
+});

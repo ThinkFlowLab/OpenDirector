@@ -1,4 +1,4 @@
-import type { AssetRef, TimelineTextOverlay } from "../contracts/generated.ts";
+import type { AssetRef, GroupCanvasItem, TimelineTextOverlay } from "../contracts/generated.ts";
 
 import type { VoiceSelection } from "../backend/voices.ts";
 import type { ImageParameters } from "../contracts/generated.ts";
@@ -60,7 +60,7 @@ export interface GenerationSettings {
   prompt: string;
   count?: number;
   audioEnabled?: boolean;
-  videoMode?: "reference" | "first-last" | "continuation";
+  videoMode?: "reference" | "first-last" | "continuation" | "control";
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
   frameSlotsInitialized?: boolean;
@@ -256,6 +256,7 @@ export interface CanvasNode {
   locked?: boolean;
   /** Group background color (#rrggbb); absent means the default group style. */
   color?: string;
+  autoLayout?: NonNullable<GroupCanvasItem["autoLayout"]>;
   zIndex?: number;
   /** Child positions are relative to their parent's top-left corner. */
   parentId?: string;

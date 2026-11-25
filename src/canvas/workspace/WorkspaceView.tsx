@@ -2,16 +2,18 @@ import { WorkspaceModeSwitch, focusAfterModeChange, preserveModeInput } from "./
 import { WorkspacePreview } from "./WorkspacePreview";
 import { useChatResultLocation } from "./useChatResultLocation";
 import { projectDisplayName } from "../projectDisplayName";
+import { persistCurrentDocument } from "../projectManagement";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import type { AssistantModelSelection } from "../../backend/chat.ts";
 import { createNode, type CanvasNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
-import { request as apiRequest, errorMessage } from "../../backend/api.ts";
+import { request as apiRequest, errorMessage, json as apiJson } from "../../backend/api.ts";
 import { projectAssetMetadata } from "../../backend/creationProjection.ts";
 import { creationClient, objectVersion } from "../../backend/creationClient.ts";
 import { showExistingItem } from "../canvasAssetPlacement.ts";
@@ -113,10 +115,16 @@ import "../workspace-modes.css";
 import "../desktop-chrome.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
+import { AssetMedia } from "../useAssetMedia.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
+  const assistantModel = useRef<{ projectId: string; selection: AssistantModelSelection | null }>(null);
+  const onAgentModel = useCallback((projectId: string, selection: AssistantModelSelection | null) => {
+    assistantModel.current = { projectId, selection };
+  }, []);
   const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
+  const runLayoutPending = useRef(false);
   const {
     actionMedia,
     actionNode,
@@ -315,6 +323,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     subjectLibraryBusy,
     switchDocument,
     switching,
+    switchPending,
     syncServiceResults,
     t,
     textWindowNode,
@@ -369,6 +378,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   };
   const [exampleLoading, setExampleLoading] = useState(false);
   const exampleCatalog = useRef<Promise<ExampleEntry[]> | null>(null);
+  const optimizedPrompts = useRef(new Map<string, string>());
   const loadExamples = () =>
     (exampleCatalog.current ??= loadExampleCatalog().then((result) =>
       availableExamples(result.catalog),
@@ -455,7 +465,8 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   // Canvas locking is no longer offered. Locks saved while it was available are
   // released the first time this browser opens the project, parents first (a
   // locked group blocks its children). Later locks from the Agent or the API
-  // are kept and can be released from the context menu.
+  // are kept and can be released from the context menu. Run locks participate
+  // in persisted layout and are kept from the first open.
   const unlockedOnOpen = useRef<string | null>(null);
   useEffect(() => {
     // The startup placeholder and empty projects have nothing to release.
@@ -468,7 +479,14 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     } catch {
       return; // Without storage the open-time release could repeat; keep locks.
     }
-    const locked = orderNodesForCanvas(doc.nodes).filter((node) => node.locked);
+    const managedIds = new Set<string>();
+    const locked = orderNodesForCanvas(doc.nodes).filter((node) => {
+      if (node.autoLayout || (node.parentId && managedIds.has(node.parentId))) {
+        managedIds.add(node.id);
+        return false;
+      }
+      return node.locked;
+    });
     if (!locked.length) return;
     command({
       type: "batch",
@@ -506,6 +524,53 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     }).then(success => { if (success) setEditProjectNameId(id); });
   };
 
+  const runLayoutGroup = doc.nodes.find(
+    (node) => node.id === menu?.nodeId && node.type === "group" && !node.parentId,
+  );
+  const hasManagedRuns = doc.nodes.some((node) => node.autoLayout === "run");
+  const applyRunLayout = async (action:
+    | { kind: "organize" }
+    | { kind: "toggle" | "lock"; group: CanvasNode },
+  ) => {
+    if (runLayoutPending.current || switchPending.current) return;
+    const projectId = doc.id;
+    const stillOpen = () =>
+      !switchPending.current && historyRef.current.present.id === projectId;
+    runLayoutPending.current = true;
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (!stillOpen()) return;
+      invalidateScheduledAutosave();
+      if (!(await persistCurrentDocument(
+        () => historyRef.current.present,
+        (document) => stillOpen() ? persist(document, false) : Promise.resolve(false),
+      )) || !stillOpen()) return;
+      const client = creationClient(projectId);
+      if (action.kind === "organize") {
+        await client.command("canvas.layoutRuns", {});
+        return;
+      }
+      const { group } = action;
+      const item = client.snapshot.canvasItems.find((item) => item.id === group.id);
+      if (
+        item?.kind !== "group" || item.parentId || item.locked || !item.visible ||
+        (item.autoLayout === "run") !== (group.autoLayout === "run")
+      ) {
+        notify(t("canvas.workspace.menu.runGroupChanged"));
+        return;
+      }
+      await client.command("canvas.update", {
+        itemId: item.id,
+        ...(action.kind === "lock" ? { locked: true } : {
+          autoLayout: group.autoLayout === "run" ? "free" : "run",
+        }),
+      }, [objectVersion("canvas_item", item)]);
+    } catch (error) {
+      if (stillOpen()) notify(errorMessage(error));
+    } finally {
+      runLayoutPending.current = false;
+    }
+  };
   const [showSwitching, setShowSwitching] = useState(false);
   useEffect(() => {
     if (!switching) {
@@ -1539,7 +1604,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
             workflowRunning={workflowGroups.has(single.id)}
             onUngroup={single.type === "group" ? ungroup : undefined}
             onLayout={
-              single.type === "group"
+              single.type === "group" && !single.autoLayout
                 ? (layout: GroupLayout) => {
                     if (doc.nodes.some((node) => node.parentId === single.id && lockedIds.has(node.id))) {
                       notify(t("canvas.workspace.toast.unlockFirst"));
@@ -1688,6 +1753,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={activeAction.token}
                 node={actionNode}
                 tool={activeAction.tool}
+                nodes={doc.nodes}
                 draft={actionNode.data.taskDraft}
                 mediaContainer={actionMedia}
                 onDraftChange={(task) => saveActionDraft(activeAction, task)}
@@ -1903,6 +1969,45 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                   setLibraryOpen(true);
                 }}
                 running={composerRunning}
+                lastOptimizedText={optimizedPrompts.current.get(
+                  `${doc.id}:${composerNode.id}`,
+                )}
+                onPromptOptimized={(text) => {
+                  optimizedPrompts.current.set(
+                    `${doc.id}:${composerNode.id}`,
+                    text,
+                  );
+                  notify(
+                    t("generation.optimize.toast", {
+                      shortcut: navigator.platform.includes("Mac")
+                        ? "⌘ + Z"
+                        : "Ctrl+Z",
+                    }),
+                  );
+                }}
+                onOptimizationNotice={(message, error) =>
+                  notify(message, { error })
+                }
+                onOptimizePrompt={async (data, signal) => {
+                  const current = historyRef.current.present;
+                  const active = assistantModel.current;
+                  if (active?.projectId !== current.id || !active.selection)
+                    throw new Error(t("generation.optimize.agentLoading"));
+                  if (!(await persist(current, false)))
+                    throw new Error(t("generation.optimize.saveFailed"));
+                  signal.throwIfAborted();
+                  return apiRequest<{ prompt: string; audioOmitted: boolean }>(
+                    `/creation/projects/${current.id}/items/${composerNode.id}/optimize-prompt`,
+                    {
+                      ...apiJson("POST", {
+                        ...data,
+                        preferredModelId: rt.assistantModels.agent ?? null,
+                        assistantModel: active.selection,
+                      }),
+                      signal,
+                    },
+                  );
+                }}
                 backendModels={backendCatalog.models}
                 onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}
@@ -1937,6 +2042,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           onPaste={() => paste()}
           onUndo={() => replayHistory()}
           onRedo={() => replayHistory(true)}
+          onOrganizeRuns={hasManagedRuns ? () => void applyRunLayout({ kind: "organize" }) : undefined}
           onClose={() => setMenu(null)}
         />
       )}
@@ -1969,6 +2075,17 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               {menuButton(t("canvas.workspace.selection.group"), "group", group, "⌘ G")}
               {selected.length > 1 && menuButton(t("canvas.workspace.kind.stack"), "stack", stack)}
               {menuButton(t("canvas.workspace.menu.ungroup"), "group", ungroup, "⌘ ⇧ G")}
+              {runLayoutGroup && !lockedIds.has(runLayoutGroup.id) &&
+                menuButton(
+                  t(runLayoutGroup.autoLayout === "run"
+                    ? "canvas.workspace.menu.disableRunLayout"
+                    : "canvas.workspace.menu.enableRunLayout"),
+                  "map",
+                  () => void applyRunLayout({ kind: "toggle", group: runLayoutGroup }),
+                )}
+              {runLayoutGroup?.autoLayout === "run" && !lockedIds.has(runLayoutGroup.id) &&
+                menuButton(t("canvas.workspace.menu.lockRun"), "lock", () =>
+                  void applyRunLayout({ kind: "lock", group: runLayoutGroup }))}
               {menuButton(t("canvas.workspace.selection.autoArrange"), "map", () =>
                 change((d) => ({
                   ...d,
@@ -2163,7 +2280,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                       }}
                     >
                       {n.type === "image" ? (
-                        <img src={n.data.src} alt={n.data.title} />
+                        <AssetMedia as="img" src={n.data.src} alt={n.data.title} />
                       ) : (
                         <CanvasIcon name={n.type} size={34} />
                       )}
@@ -2484,9 +2601,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           onViewResultOnCanvas={viewChatResult}
           onEditResult={rt.openProjectEditor}
           onModelSelections={setAssistantModels}
+          onAgentModel={onAgentModel}
           onPrepareReferences={() => persist(historyRef.current.present)}
-          onOpenSettings={() => {
+          onOpenSettings={(kind) => {
             setSettingsCategory("models");
+            setSettingsModelKind(kind ?? null);
             setSettingsOpen(true);
           }}
         />

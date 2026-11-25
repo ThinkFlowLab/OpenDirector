@@ -6,21 +6,23 @@ export function GenerationComposerShell({
   composerRef,
   label,
   running,
+  optimizing = false,
   onEscape,
   children,
 }: {
   composerRef: RefObject<HTMLDivElement | null>;
   label: string;
   running: boolean;
+  optimizing?: boolean;
   onEscape: () => void;
   children: ReactNode;
 }) {
   return (
     <div
       ref={composerRef}
-      className={`cw-composer cw-generation-composer nodrag nopan nowheel${running ? " cw-composer-running" : ""}`}
+      className={`cw-composer cw-generation-composer nodrag nopan nowheel${running ? " cw-composer-running" : ""}${optimizing ? " cw-composer-optimizing" : ""}`}
       aria-label={label}
-      aria-busy={running}
+      aria-busy={running || optimizing}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         event.stopPropagation();

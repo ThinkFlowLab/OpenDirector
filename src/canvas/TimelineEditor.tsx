@@ -62,6 +62,8 @@ import { downloadFile, downloadFilename } from "./assets";
 import { mediaBlobDataUrl } from "./localMediaRuntime";
 import { exportTimelineFcpxml, exportTimelinePackage } from "./timelineExport";
 import type { LinkedMediaResult } from "./linkedResults";
+import { AssetMedia } from "./useAssetMedia.tsx";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 
 export interface TimelineEditorProps {
   node: CanvasNode;
@@ -713,7 +715,7 @@ export function TimelineEditor({
             };
         if (resource.text !== undefined) text = resource.text;
         else {
-          const response = await fetch(source.src!, {
+          const response = await fetchMediaSource(source.src!, {
             signal: controller.signal,
           });
           if (!response.ok) throw new Error(t("timeline.text.sourceError"));
@@ -1581,12 +1583,14 @@ export function TimelineEditor({
               >
                 {currentVisual?.clip.resource.src ? (
                   currentVisual.clip.resource.kind === "image" ? (
-                    <img
+                    <AssetMedia
+                      as="img"
                       src={currentVisual.clip.resource.src}
                       alt={currentVisual.clip.resource.title}
                     />
                   ) : (
-                    <video
+                    <AssetMedia
+                      as="video"
                       key={currentVisual.clip.id}
                       ref={bindMedia(currentVisual.clip)}
                       src={currentVisual.clip.resource.src}
@@ -1627,7 +1631,8 @@ export function TimelineEditor({
                   position={position}
                 />
                 {currentAudio.map((segment) => (
-                  <audio
+                  <AssetMedia
+                    as="audio"
                     key={segment.clip.id}
                     ref={bindMedia(segment.clip)}
                     src={segment.clip.resource.src}

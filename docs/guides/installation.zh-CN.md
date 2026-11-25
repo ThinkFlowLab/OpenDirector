@@ -2,6 +2,26 @@
 
 [English](installation.md) · [简体中文](installation.zh-CN.md) · [返回首页](../../README.zh-CN.md)
 
+<a name="macos-first-launch"></a>
+
+## macOS 首次打开
+
+桌面版 DMG 适用于搭载 Apple 芯片的 Mac。请从 [OpenDirector 官方 GitHub Releases](https://github.com/ThinkFlowLab/OpenDirector/releases) 下载安装包。
+
+1. 在访达中打开 DMG，把 **OpenDirector** 拖入「应用程序」。
+2. 在访达的「应用程序」中双击 **OpenDirector**。
+3. 此版本未经 Apple 公证。若 macOS 提示无法验证 OpenDirector 或其开发者，先确认 DMG 来自官方 Release。关闭提示后，打开「系统设置 → 隐私与安全性」（部分版本称「隐私与安全」），向下滚动到「安全性」，找到 OpenDirector，点按「仍要打开」并按提示确认。[Apple 的首次打开说明](https://support.apple.com/zh-cn/102445)
+
+如果看不到「仍要打开」，请先从「应用程序」尝试打开 OpenDirector 一次，再回到「隐私与安全性」。如果 Mac 由单位管理，请联系管理员。
+
+如果访达无法打开 DMG，请重新下载，并用 GitHub Releases 上对应安装包旁的 `.sha256` 文件核对校验值。在终端输入 `shasum -a 256` 和下载的 DMG 路径，即可查看校验值。如果 DMG 仍打不开，请反馈原始提示和 macOS 版本。
+
+如果 macOS 提示 **App** 已损坏、识别到恶意软件，或提示 App 会损坏电脑，请停止并反馈原始提示。
+
+<a name="source-installation"></a>
+
+## 通过源码或 wheel 安装
+
 ### 1. 准备环境
 
 | 依赖 | 要求 |

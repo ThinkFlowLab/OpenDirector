@@ -20,7 +20,11 @@ assert.ok(create.ok, await create.text());
 const browser = await launchBrowser();
 const configuredIds = [];
 try {
-  const page = await browser.newPage({ locale: "en-US", viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => {
+    if (localStorage.getItem("opendirector.locale.v1") === null)
+      localStorage.setItem("opendirector.locale.v1", "en-US");
+  });
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -373,11 +377,41 @@ try {
   await page.reload();
   await page.locator('.cw-workspace[aria-busy="false"][data-workspace-mode="agent"]').waitFor();
   assert.equal(await welcome.isVisible(), false);
-  await page.getByTestId("workspace-mode-canvas").click();
   const settings = page.locator("#settings-dialog");
-  await settings.getByText("Set up an image or video generation model before entering the canvas for the first time.").waitFor();
-  assert.ok(await settings.getByRole("button", { name: "Enter canvas" }).isDisabled());
-  await page.keyboard.press("Escape");
+  for (const locale of ["en-US", "zh-CN"]) {
+    const zh = locale === "zh-CN";
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await page.getByTestId("workspace-mode-canvas").click();
+      const notice = settings.locator(".cw-settings-notice");
+      await notice.getByText(zh ? "首次进入画布前，请先配置一个图片或视频生成模型。" :
+        "Set up an image or video generation model before entering the canvas for the first time.").waitFor();
+      assert.ok(await notice.getByRole("button", { name: zh ? "进入画布" : "Enter canvas" }).isDisabled());
+      const categories = settings.locator(".cw-model-categories");
+      const bounds = await settings.locator(".cw-settings-body").boundingBox();
+      const message = await notice.boundingBox();
+      for (const button of await categories.getByRole("button").all()) {
+        const rect = await button.boundingBox();
+        assert.ok(rect && rect.y >= message.y + message.height &&
+          rect.x >= bounds.x && rect.x + rect.width <= bounds.x + bounds.width &&
+          rect.y + rect.height <= bounds.y + bounds.height,
+          `${locale} ${width}px: ${await button.innerText()} must be fully inside settings and below the notice`);
+        assert.ok(await button.evaluate(el => {
+          const { x, y, width, height } = el.getBoundingClientRect();
+          return el.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+        }), "The visible category must receive the pointer");
+      }
+      const audio = categories.getByRole("button", { name: zh ? "音频" : "Audio", exact: true });
+      await audio.click();
+      assert.equal(await audio.getAttribute("aria-pressed"), "true");
+      await categories.getByRole("button", { name: zh ? "概览" : "Overview", exact: true }).click();
+      const language = settings.locator("#model-setup-language");
+      assert.equal(await language.inputValue(), locale);
+      if (width === 1440) await language.selectOption(zh ? "en-US" : "zh-CN");
+      await page.keyboard.press("Escape");
+      await settings.waitFor({ state: "hidden" });
+    }
+  }
   assert.equal(await savedMode(), "agent");
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("workspace-float-chat").click();

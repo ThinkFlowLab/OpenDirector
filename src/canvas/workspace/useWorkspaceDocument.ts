@@ -612,6 +612,23 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime) {
   }, [doc.id, ready, notify, historyRenderVersion]);
   useEffect(() => {
     if (!ready) return;
+    const projection = workspaceProjection(doc.id);
+    return creationClient(doc.id).listenMedia(() => {
+      if (projection.baseline)
+        projection.baseline = projection.withMediaAvailability(projection.baseline);
+      const apply = (document: CanvasDocument) =>
+        document.id === doc.id ? projection.withMediaAvailability(document) : document;
+      setHistory((history) => ({
+        ...history,
+        present: apply(history.present),
+        past: history.past.map(apply),
+        future: history.future.map(apply),
+        transaction: history.transaction ? apply(history.transaction) : null,
+      }));
+    });
+  }, [doc.id, ready]);
+  useEffect(() => {
+    if (!ready) return;
     let active = true,
       sequence = 0;
     const refresh = () => {

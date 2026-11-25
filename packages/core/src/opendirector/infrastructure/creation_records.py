@@ -37,6 +37,22 @@ class CommitRecord(Contract):
     receipt: CommandReceipt = Field(description='Immutable command execution receipt.')
     event: ProjectEvent | None = Field(description='Project change event, if emitted.')
 
+    def history_entry(self):
+        """Detached user-history metadata. A source created off-canvas has no display edit to undo."""
+        if self.event is None:
+            return None
+        if self.command.type == 'creation.batch' and len(self.command.payload.operations) == 2:
+            show, hide = self.command.payload.operations
+            if show.type == 'canvas.show' and hide.type == 'canvas.hide':
+                item = show.payload.item
+                changed = self.event.changed
+                if (item.kind in {'audio', 'video'} and item.binding.role == 'material' and item.id == hide.payload.itemId
+                        and len(changed) == 1 and changed[0].change == 'created'
+                        and changed[0].version.objectType == 'canvas_item' and changed[0].version.id == item.id):
+                    return None
+        return dict(commandId=self.command.commandId, type=self.command.type, cursor=self.event.cursor,
+                    source=self.event.source, targetCommandId=getattr(self.command.payload, 'targetCommandId', None))
+
     @model_validator(mode='after')
     def consistent(self):
         if (self.command.projectId != self.snapshot.project.id
@@ -96,7 +112,7 @@ def durable_json(path: Path, value):
     sync_directory(path.parent)
 
 
-def object_changes(before, after, command):
+def object_changes(before, after, command, *, derived_canvas=frozenset()):
     """The storage boundary also checks revisions on trusted service writes."""
     old = object_index(before) if before else {}
     new = object_index(after)
@@ -107,7 +123,8 @@ def object_changes(before, after, command):
         if previous == current:
             continue
         kind, object_id = key
-        if previous is not None and expected.get(key) != previous.revision:
+        derived = kind == 'canvas_item' and object_id in derived_canvas
+        if previous is not None and not derived and expected.get(key) != previous.revision:
             raise ContractError('revision_conflict', 'Every changed object requires its current version', object_id)
         if current is not None and current.revision != (previous.revision + 1 if previous else 1):
             raise ContractError('revision_conflict', 'Object revisions must advance exactly once', object_id)

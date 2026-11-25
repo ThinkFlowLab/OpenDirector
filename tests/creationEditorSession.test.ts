@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { prepareProjectEditorItem } from "../src/canvas/assistantResultEditors.ts";
 import {
   CreationClient,
   CreationCommandError,
 } from "../src/backend/creationClient.ts";
+import { assetSource } from "../src/backend/assetSource.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
 import { CreationEditorSession } from "../src/backend/creationEditorSession.ts";
 import type {
@@ -25,7 +27,9 @@ async function fixture() {
   client.mediaUrl = async (id) => `blob:${id}`;
   client.textContent = async () => "fixture text";
   client.assetForSource = (src) =>
-    snapshot.assets.find((a) => `blob:${a.id}` === src);
+    snapshot.assets.find(
+      (a) => `blob:${a.id}` === src || assetSource(client.id, a.id) === src,
+    );
   client.view = async () => ({
     projectId: client.id,
     clientId: "fixture",
@@ -140,7 +144,7 @@ test("unchanged editor inputs still validate their original versions before rend
   );
 });
 
-test("a lost delivery survives a new editor session and resolves before a changed draft can be submitted", async (t) => {
+function sessionStore(t: TestContext) {
   const original = Object.getOwnPropertyDescriptor(
     globalThis,
     "sessionStorage",
@@ -158,6 +162,11 @@ test("a lost delivery survives a new editor session and resolves before a change
     if (original) Object.defineProperty(globalThis, "sessionStorage", original);
     else Reflect.deleteProperty(globalThis, "sessionStorage");
   });
+  return saved;
+}
+
+test("a lost delivery survives a new editor session and resolves before a changed draft can be submitted", async (t) => {
+  const saved = sessionStore(t);
   const { client, document, item } = await fixture();
   const timeline = structuredClone(
     document.nodes.find((n) => n.id === item.id)!.data.timeline!,
@@ -261,7 +270,7 @@ test("timeline text fonts and immutable sources project both ways through the sh
     },
   };
   const view = await projection.editorData(enriched as never);
-  assert.equal(view.timeline!.fonts![0]!.src, `blob:${font.id}`);
+  assert.equal(view.timeline!.fonts![0]!.src, assetSource(client.id, font.id));
   assert.deepEqual(view.timeline!.overlays![0]!.source!.asset, ref(source));
   const node = document.nodes.find((n) => n.id === item.id)!;
   Object.assign(node.data, view);
@@ -359,4 +368,32 @@ test("unavailable text source keeps its immutable identity and fails saving rath
   const item = doc.nodes.find((n) => n.type === "timeline")!;
   const session = new CreationEditorSession(client, doc, item.id);
   await assert.rejects(session.apply({ timeline: view.timeline! }));
+});
+
+test("reopening an unplaced image resumes its prepared edit; a later independent edit uses a fresh item", async (t) => {
+  const saved = sessionStore(t);
+  const { client, snapshot } = await fixture();
+  const asset = snapshot.assets.find(candidate => candidate.kind === "image")!;
+  client.install({ ...snapshot, canvasItems: [] });
+  const open = async () => {
+    const target = { kind: "media" as const, asset, itemId: null };
+    const { itemId, unplaced } = await prepareProjectEditorItem(client, target, () => ({ x: 0, y: 0 }));
+    const basis = { ...client.snapshot, canvasItems: [unplaced!] };
+    const document = await new CreationProjection(client).read(basis);
+    return new CreationEditorSession(client, document, itemId, basis, unplaced);
+  };
+  const calls: Parameters<CreationClient["command"]>[] = [];
+  client.command = async (...args) => {
+    calls.push(structuredClone(args));
+    if (calls.length === 1) throw Error("lost before submit");
+    return { status: "applied" } as CommandReceipt;
+  };
+  const original = await open();
+  await assert.rejects(original.apply({ title: "Edited" }), /lost before submit/);
+  const resumed = await open();
+  assert.equal(resumed.itemId, original.itemId);
+  await resumed.apply({ title: "Edited" });
+  assert.deepEqual(calls[0], calls[1]);
+  assert.equal(saved.size, 0);
+  assert.notEqual((await open()).itemId, original.itemId);
 });

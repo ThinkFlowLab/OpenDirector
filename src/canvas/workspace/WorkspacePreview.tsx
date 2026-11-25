@@ -5,6 +5,7 @@ import type { Asset } from "../../contracts/generated.ts";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { downloadFile, downloadFilename } from "../assets.ts";
 import type { CanvasNode } from "../model.ts";
+import { AssetMedia } from "../useAssetMedia.tsx";
 import { IconButton } from "./workspaceChrome.tsx";
 
 export function WorkspacePreview({ preview, onClose, onDownloadNode }: {
@@ -52,9 +53,9 @@ export function WorkspacePreview({ preview, onClose, onDownloadNode }: {
   if (error) body = <p role="alert">{error}</p>;
   else if (asset && kind !== "file" && content === undefined)
     body = <p role="status">{t("errors.preview.loading")}</p>;
-  else if (kind === "image" && src) body = <img src={src} alt={title} onError={unavailable} />;
-  else if (kind === "video" && src) body = <video src={src} controls onError={unavailable} />;
-  else if (kind === "audio" && src) body = <audio src={src} controls onError={unavailable} />;
+  else if (kind === "image" && src) body = <AssetMedia as="img" src={src} alt={title} onError={unavailable} />;
+  else if (kind === "video" && src) body = <AssetMedia as="video" src={src} controls onError={unavailable} />;
+  else if (kind === "audio" && src) body = <AssetMedia as="audio" src={src} controls onError={unavailable} />;
   else if (text) body = <pre>{text}</pre>;
   else body = <p>{src || kind === "file" ? t("canvas.workspace.preview.fileHint") : t("canvas.workspace.preview.emptyHint")}</p>;
   return (

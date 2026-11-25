@@ -2,14 +2,13 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 from pydantic import JsonValue
 
+from opendirector.domain.agent_runtime import RuntimeId
 from opendirector.infrastructure.local_projects import write_json
 
-RuntimeId = Literal['default', 'opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek']
 AgentEvent = dict[str, JsonValue]
 
 

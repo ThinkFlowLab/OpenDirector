@@ -30,12 +30,8 @@ async function until(read, matches, label) {
   }
 }
 
-async function verifyResultEditors({ page, card, result, projectId, command, state, conversation, locale }) {
-  const zh = locale === "zh-CN";
-  const button = (container, name) => container.getByRole("button", { name, exact: true });
-  const original = await conversation();
-  const chatMode = page.getByTestId("workspace-mode-agent");
-  await button(card, zh ? "编辑媒体" : "Edit media").click();
+async function openResultImage(page, card, locale) {
+  await card.getByRole("button", { name: locale === "zh-CN" ? "编辑媒体" : "Edit media", exact: true }).click();
   const media = page.locator(".cw-image-editor");
   try {
     await media.waitFor();
@@ -52,6 +48,107 @@ async function verifyResultEditors({ page, card, result, projectId, command, sta
     const pixel = canvas.getContext("2d").getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data;
     return pixel[0] > 64 && pixel[1] < 32 && pixel[2] > 64;
   }), Boolean, "the existing image editor must decode the pinned purple result");
+  return media;
+}
+
+async function verifyReadOnlyImage({ page, card, locale, root, conversation }) {
+  const original = await conversation();
+  const before = await api(root);
+  const history = await api(root + "/history");
+  const assertReadOnly = async () => {
+    const snapshot = await api(root);
+    assert.deepEqual(snapshot.canvasItems, before.canvasItems,
+      "opening or canceling Edit media must preserve every item, including visibility and revision");
+    assert.deepEqual(await api(root + "/history"), history, "opening or canceling must preserve undo history");
+    assert.equal(snapshot.project.revision, before.project.revision, "opening or canceling must preserve the project revision");
+    assert.equal(snapshot.eventCursor, before.eventCursor, "the editor must open without committing a command");
+  };
+  const media = await openResultImage(page, card, locale);
+  await assertReadOnly();
+  await media.locator(".cw-editor-close").click();
+  await media.waitFor({ state: "hidden" });
+  await assertReadOnly();
+  assert.equal(await page.getByTestId("workspace-mode-agent").getAttribute("aria-pressed"), "true");
+  const returned = await conversation();
+  assert.equal(returned.conversationId, original.conversationId);
+  assert.deepEqual(returned.draftContent, original.draftContent);
+  assert.deepEqual(returned.messages, original.messages);
+}
+
+async function verifyImageSaveAndUndo({ page, card, locale, root, result, itemId, adopted }) {
+  const zh = locale === "zh-CN";
+  const before = await api(root);
+  const history = await api(root + "/history");
+  const media = await openResultImage(page, card, locale);
+  await media.getByRole("button", { name: zh ? "旋转 90°" : "Rotate 90°", exact: true }).click();
+  await media.locator(".cw-editor-apply").click();
+  await until(async () => {
+    if (!(await media.isVisible())) return true;
+    const error = media.getByRole("alert");
+    if (await error.isVisible()) assert.fail(await error.innerText());
+    return false;
+  }, Boolean, "the rotated image must be saved and the modal closed");
+  assert.equal(await page.getByTestId("workspace-mode-agent").getAttribute("aria-pressed"), "true");
+
+  const saved = await api(root);
+  const crop = saved.editorDocuments.find(doc => doc.kind === "image_crop");
+  assert.ok(crop);
+  assert.equal(crop.data.options.rotation, 90);
+  assert.deepEqual(crop.data.source, result.asset);
+  const output = saved.assets.find(asset => asset.provenance.editorDocumentId === crop.id);
+  assert.ok(output);
+  assert.deepEqual([output.metadata.width, output.metadata.height], [240, 320]);
+  assert.equal(output.provenance.source, "edited");
+  assert.ok(output.provenance.sources.some(ref => ref.assetId === result.asset.assetId && ref.fingerprint === result.asset.fingerprint));
+  assert.equal(output.provenance.editorRevision, crop.revision);
+  assert.notEqual(output.fingerprint, result.asset.fingerprint);
+  assert.deepEqual(saved.assets.find(asset => asset.id === result.asset.assetId), before.assets.find(asset => asset.id === result.asset.assetId));
+  assert.deepEqual(saved.results, before.results);
+  assert.deepEqual(saved.generationSpecs, before.generationSpecs);
+  const editedItem = saved.canvasItems.find(item => item.editors?.some(editor => editor.id === crop.id));
+  assert.ok(editedItem);
+  if (adopted) {
+    assert.equal(editedItem.id, itemId);
+    assert.equal(editedItem.visible, false);
+    assert.equal(editedItem.binding.materialOverride.assetId, output.id);
+    assert.equal(editedItem.revision, before.canvasItems.find(item => item.id === itemId).revision + 1);
+    assert.equal(saved.canvasItems.length, before.canvasItems.length);
+  } else {
+    assert.equal(editedItem.binding.objectRef.assetId, output.id);
+    assert.equal(editedItem.visible, true);
+    assert.deepEqual(saved.canvasItems.filter(item => item.id !== editedItem.id), before.canvasItems);
+  }
+  const afterSave = await api(root + "/history");
+  assert.equal(afterSave.length, history.length + 1, "the explicit save must be one reversible edit");
+  const [edit] = afterSave;
+  assert.equal(edit.state, "applied");
+  await page.getByTestId("workspace-mode-canvas").click();
+  const showCanvas = page.getByRole("button", { name: zh ? "查看画布" : "Show canvas", exact: true });
+  if (await showCanvas.isVisible()) await showCanvas.click();
+  await page.getByRole("button", { name: zh ? "撤销" : "Undo", exact: true }).click();
+  await until(() => api(root + "/history"), entries => entries.some(entry =>
+    entry.commandId === edit.commandId && entry.state === "undone"), "the single save must be undoable");
+  const undone = await api(root);
+  if (adopted) {
+    const original = before.canvasItems.find(item => item.id === itemId);
+    const restored = undone.canvasItems.find(item => item.id === itemId);
+    assert.equal(restored.revision, editedItem.revision + 1);
+    assert.deepEqual({ ...restored, revision: original.revision }, original);
+    console.log("Hidden result item revisions", { afterCancel: original.revision, saved: editedItem.revision, undone: restored.revision });
+  } else {
+    assert.equal(undone.canvasItems.find(item => item.id === editedItem.id).visible, false);
+    assert.deepEqual(undone.canvasItems.filter(item => item.id !== editedItem.id), before.canvasItems);
+  }
+  await page.getByTestId("workspace-mode-agent").click();
+  return undone;
+}
+
+async function verifyResultEditors({ page, card, result, projectId, command, state, conversation, locale }) {
+  const zh = locale === "zh-CN";
+  const button = (container, name) => container.getByRole("button", { name, exact: true });
+  const original = await conversation();
+  const chatMode = page.getByTestId("workspace-mode-agent");
+  const media = await openResultImage(page, card, locale);
   await media.locator(".cw-editor-close").click();
   await media.waitFor({ state: "hidden" });
   assert.equal(await chatMode.getAttribute("aria-pressed"), "true");
@@ -244,6 +341,7 @@ try {
       await card.waitFor();
       await page.setViewportSize({ width: 600, height: 850 });
     }
+    await verifyReadOnlyImage({ page, card, locale, root, conversation });
     if (!adopted) {
       const configs = "**/api/model-configs";
       await page.route(configs, async route => {
@@ -264,6 +362,7 @@ try {
       await page.unroute(configs);
       await page.reload();
     }
+    const afterUndo = await verifyImageSaveAndUndo({ page, card, locale, root, result, itemId, adopted });
     await action(labels.locate).click();
     const selected = page.locator(".react-flow__node.selected");
     await selected.waitFor();
@@ -275,13 +374,16 @@ try {
     assert.ok(item?.visible);
     if (adopted) {
       assert.equal(selectedId, itemId);
+      const undoneRevision = afterUndo.canvasItems.find(source => source.id === itemId).revision;
+      assert.equal(item.revision, undoneRevision + 1);
       assert.equal(located.canvasItems.length, 1);
+      console.log("Located result item revision", item.revision);
     } else {
       assert.equal(item.binding.role, "material");
       assert.deepEqual(item.binding.objectRef, result.asset);
-      assert.equal(located.canvasItems.length, 2);
+      assert.equal(located.canvasItems.length, afterUndo.canvasItems.length + 1);
     }
-    assert.deepEqual(located.assets, generated.assets);
+    assert.deepEqual(located.assets, afterUndo.assets);
     assert.deepEqual(located.generationSpecs, generated.generationSpecs);
     assert.deepEqual(located.results, generated.results);
     // Move the existing item outside the actual viewport before locating it again.
@@ -353,7 +455,7 @@ try {
     assert.deepEqual(returned.messages, delivered.messages);
     assert.deepEqual(errors, []);
     await page.close();
-    console.log(`PASS ${locale}: persisted result, media editing, canvas identity, chosen timeline, playable MP4, publication retry, and timeline-only reply (${labels.policy})`);
+    console.log(`PASS ${locale}: read-only open and cancel, rotated image save and undo, canvas identity, chosen timeline, playable MP4, publication retry, and timeline-only reply (${labels.policy})`);
   }
 } finally {
   await api("/creation-test-gate", { body: { open: true } });

@@ -128,6 +128,7 @@ export function CanvasCreationMenu({
   onPaste,
   onUndo,
   onRedo,
+  onOrganizeRuns,
   onClose,
   ...actions
 }: CreationActions & {
@@ -141,6 +142,7 @@ export function CanvasCreationMenu({
   onPaste: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onOrganizeRuns?: () => void;
   onClose: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -310,6 +312,15 @@ export function CanvasCreationMenu({
                 <CanvasIcon name="chevronRight" size={18} />
               </button>
               <hr />
+              {onOrganizeRuns && (
+                <button
+                  role="menuitem"
+                  onPointerEnter={closeSubmenu}
+                  onClick={() => run(onOrganizeRuns)}
+                >
+                  <span>{t("canvas.workspace.menu.organizeRuns")}</span>
+                </button>
+              )}
               <button
                 role="menuitem"
                 disabled={!canPaste}

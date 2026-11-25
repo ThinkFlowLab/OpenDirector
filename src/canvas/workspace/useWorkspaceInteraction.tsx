@@ -637,6 +637,10 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     if (bounds) selectionPresentation.reveal(bounds);
   };
   useCanvasWheelBoundary(canvasRegion, selectionPresentation.userNavigation, canvasVisible);
+  const managedRunIds = useMemo(
+    () => new Set(doc.nodes.filter((node) => node.autoLayout === "run").map((node) => node.id)),
+    [doc.nodes],
+  );
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -645,6 +649,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
         selected: selected.includes(n.id),
         draggable:
           !lockedIds.has(n.id) &&
+          !n.autoLayout &&
+          !(n.parentId && managedRunIds.has(n.parentId)) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
         connectable:
@@ -674,12 +680,24 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       spacePressed,
       measurements,
       lockedIds,
+      managedRunIds,
       activeAction?.nodeId,
     ],
   );
-  const flowEdges: Edge[] = useMemo(
-    () =>
-      [...doc.edges, ...toolProvenanceEdges(jobs, doc)]
+  const flowEdges: Edge[] = useMemo(() => {
+    const draft = actionNode?.data.taskDraft;
+    const maskId = activeAction?.tool === "video-mask-composite" &&
+      draft?.tool === "video-mask-composite" ? draft.sourceNodeIds[1] : undefined;
+    const maskDraftEdge = maskId && actionNode &&
+      !doc.edges.some((edge) => edge.source === maskId && edge.target === actionNode.id)
+      ? {
+          id: `tool-mask-draft:${actionNode.id}`,
+          source: maskId,
+          target: actionNode.id,
+          intent: "post_edit_result" as const,
+        }
+      : undefined;
+    return [...doc.edges, ...toolProvenanceEdges(jobs, doc), ...(maskDraftEdge ? [maskDraftEdge] : [])]
         .filter(
           (edge) =>
             doc.nodes.some((node) => node.id === edge.source) &&
@@ -693,7 +711,9 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
           selectable: !e.id.startsWith("tool-"),
           deletable: e.intent !== "post_edit_result",
           data: {
-            ...referencePresentation(doc, e),
+            ...(e === maskDraftEdge
+              ? { state: "pending", description: t("tools.videoEditor.composite.mask") }
+              : referencePresentation(doc, e)),
             sourceBounds: (() => {
               const n = doc.nodes.find((n) => n.id === e.source)!;
               return {
@@ -718,9 +738,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
               ),
           },
           ariaLabel: t("canvas.workspace.aria.referenceEdge"),
-        })),
-    [doc.edges, doc.nodes, jobs, selectedEdges, showEdges],
-  );
+        }));
+  }, [activeAction?.tool, actionNode, doc.edges, doc.nodes, jobs, selectedEdges, showEdges, t]);
 
   const projected = useMemo(() => {
     const projection = projectCanvasStacks(flowNodes, flowEdges);
