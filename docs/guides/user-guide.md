@@ -154,6 +154,14 @@ Use **New conversation** at the top of the panel to start a separate chat. **Con
 
 Asset generation may continue after the reply ends. Check its progress in **Generation history**.
 
+### Download the original trace
+
+Open the conversation trace page and choose **Download original trace (.zip)** to save the raw per-turn log files for local debugging. The ZIP holds one `manifest.json` and, under `turn-NNNN/`, the unmodified `.jsonl` log of each source (the Default runtime also includes `model.jsonl`, the model requests). Nothing is redacted, so the files can contain credentials, prompts, tool inputs and outputs and private paths. A confirmation appears first; review the files before sharing them.
+
+- The archive is read source by source and is not an atomic snapshot across files. It is only built when no turn is running, and turn status is checked again at click time and after reading. While a turn is running the button is disabled; wait for it to finish.
+- A source file that does not exist is listed as `missing` in `manifest.json`. A failed Jobs lookup is recorded as `jobsStatus: "unavailable"`, which differs from a turn that has no linked Jobs (`jobs: []`).
+- The total is capped at 64 MiB including ZIP overhead. If a read fails, times out, ends early, or goes over the cap, the page names the turn and source and no ZIP is saved. You can cancel while it is preparing.
+
 ## Edit images, video, and audio
 
 Select a node, then choose an action from its toolbar.

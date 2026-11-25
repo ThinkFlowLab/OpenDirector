@@ -10,6 +10,8 @@
 import assert from "node:assert/strict";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { launchBrowser } from "./engine.mjs";
 
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
@@ -114,6 +116,14 @@ const logs = {
 await mkdir(join(directory, "agent-runs"), { recursive: true });
 for (const [name, content] of Object.entries(logs))
   await writeFile(join(directory, "agent-runs", name), content);
+if (evidence) {
+  // Source copies (as written on disk) so standard tools can compare hashes with the archive.
+  await mkdir(join(evidence, "sources"), { recursive: true });
+  for (const [name, content] of Object.entries(logs)) {
+    const index = turns.findIndex((turn) => name.startsWith(turn.id + "."));
+    await writeFile(join(evidence, "sources", "turn-" + String(index + 1).padStart(4, "0") + "-" + name.slice(turns[index].id.length + 1)), content);
+  }
+}
 
 const jobIds = {
   succeeded: `job-succeeded-${unique}`,
@@ -129,30 +139,58 @@ const failingJobs = turns[3].id;
 
 const tracePage = (query) =>
   `${base}/?traceProject=${projectId}&${query}`;
+/** Read the archive the way unzip does: EOCD, then the central directory, never by scanning local headers. */
 function unpack(zip) {
   const files = new Map();
   const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-  let offset = 0;
-  while (offset + 4 < zip.length && view.getUint32(offset, true) === 0x04034b50) {
-    assert.equal(view.getUint16(offset + 8, true), 0, "ZIP file uses STORE");
-    const length = view.getUint32(offset + 18, true);
-    const nameLength = view.getUint16(offset + 26, true);
-    const extraLength = view.getUint16(offset + 28, true);
-    const name = zip.subarray(offset + 30, offset + 30 + nameLength).toString("utf8");
-    const start = offset + 30 + nameLength + extraLength;
+  const eocd = zip.length - 22;
+  assert.equal(view.getUint32(eocd, true), 0x06054b50, "ZIP end record exists");
+  const count = view.getUint16(eocd + 10, true);
+  const size = view.getUint32(eocd + 12, true);
+  const offset = view.getUint32(eocd + 16, true);
+  assert.equal(offset + size, eocd, "central directory ends at the end record");
+  let at = offset;
+  for (let index = 0; index < count; index++) {
+    assert.equal(view.getUint32(at, true), 0x02014b50, "central header");
+    assert.equal(view.getUint16(at + 10, true), 0, "ZIP file uses STORE");
+    const length = view.getUint32(at + 20, true);
+    const nameLength = view.getUint16(at + 28, true);
+    const local = view.getUint32(at + 42, true);
+    assert.equal(view.getUint32(local, true), 0x04034b50, "local header at central offset");
+    const name = zip.subarray(at + 46, at + 46 + nameLength).toString("utf8");
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
     files.set(name, zip.subarray(start, start + length));
-    offset = start + length;
+    at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
   }
-  assert.equal(view.getUint32(offset, true), 0x02014b50, "central directory exists");
-  assert.equal(view.getUint32(zip.length - 22, true), 0x06054b50, "ZIP end record exists");
+  assert.equal(at, eocd, "central directory size matches its entries");
   return files;
 }
+/** Standard tools, when installed, must also accept the downloaded file. */
+function standardTools(path) {
+  const tools = [
+    ["python3", ["-c", "import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None", path]],
+    ["unzip", ["-tq", path]],
+  ];
+  const ran = [];
+  for (const [command, args] of tools) {
+    const result = spawnSync(command, args, { encoding: "utf8" });
+    if (result.error?.code === "ENOENT") continue;
+    assert.equal(result.status, 0, command + ": " + result.stdout + result.stderr);
+    ran.push(command);
+  }
+  return ran;
+}
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const labels = {
-  "zh-CN": { exportButton: "下载原始轨迹（.zip）", failed: "原始轨迹下载失败（可能是来源不可用或超过容量上限），未保存不完整压缩包。",
+  "zh-CN": { exportButton: "下载原始轨迹（.zip）", failed: "原始轨迹下载失败，未保存不完整压缩包。",
+    running: "有轮次仍在执行。请等待执行结束后再下载原始轨迹。",
+    runningError: /第 2 轮仍在执行/, tooLarge: /64 MiB.*第 1 轮、来源 model/, read403: /第 2 轮、来源 codex（HTTP 403）/,
     empty: "该对话还没有已执行的轮次。", title: "对话轨迹" },
   "en-US": { exportButton: "Download original trace (.zip)",
-    failed: "Could not download original traces (an unavailable source or size limit may be the cause). No partial archive was saved.",
+    failed: "Could not download original traces. No partial archive was saved.",
+    running: "A turn is still running. Wait for it to finish before downloading original traces.",
+    runningError: /Turn 2 is still running/, tooLarge: /64 MiB archive limit.*turn 1, source model/, read403: /turn 2, source codex \(HTTP 403\)/,
     empty: "This conversation has no executed turns.", title: "Conversation trace" },
 };
 
@@ -193,6 +231,12 @@ try {
     assert.equal(download.suggestedFilename(), "opendirector-trace-" + conversationId + ".zip");
     const path = await download.path();
     assert.ok(path);
+    const tools = standardTools(path);
+    if (evidence) {
+      await mkdir(evidence, { recursive: true });
+      await writeFile(join(evidence, "download-" + Date.now() + ".zip"), await readFile(path));
+      await writeFile(join(evidence, "standard-tools.txt"), "ran: " + tools.join(", ") + "\n", { flag: "a" });
+    }
     return unpack(await readFile(path));
   }
   function assertArchive(files) {
@@ -210,6 +254,9 @@ try {
     assert.equal(manifest.turns[2].jobs[0].status, "running");
     assert.equal(manifest.turns[2].sources[0].status, "missing");
     assert.equal(manifest.turns[3].jobs, null);
+    assert.equal(manifest.turns[3].jobsStatus, "unavailable", "failed Jobs lookup is not an empty list");
+    assert.equal(manifest.turns[0].jobsStatus, "ok");
+    assert.match(manifest.snapshot, /not an atomic snapshot/);
     assert.equal(manifest.turns[0].sources[0].source, "model");
     for (const [file, content] of Object.entries(logs)) {
       const index = turns.findIndex((turn) => file.startsWith(turn.id + "."));
@@ -235,7 +282,7 @@ try {
     const text = labels[locale];
     const { context, page, seen } = await openContext(locale);
     try {
-      // Only turn 2 is expanded; the report still covers all four turns.
+      // Only turn 2 is expanded; the archive still covers all four turns.
       await page.goto(tracePage(`conversation=${conversationId}&turn=${turns[1].id}`));
       await page.getByRole("heading", { name: text.title, exact: true }).waitFor();
       const button = page.getByRole("button", { name: text.exportButton, exact: true });
@@ -291,6 +338,94 @@ try {
       await sleep(300);
       assert.equal(downloaded, false);
       assert.deepEqual(seen.errors.filter((message) => !message.includes("blocked for test")), []);
+    } finally {
+      await context.close();
+    }
+  }
+
+  // Blocked, refused and oversized exports: explicit message, no download, no partial ZIP.
+  const indexRoute = /\/assistant\/conversations\/[^/]+\/trace$/;
+  async function withStatus(page, state) {
+    await page.route(indexRoute, async (route) => {
+      try {
+        const response = await route.fetch();
+        const body = await response.json();
+        if (state.streaming) body.turns[1].status = "streaming";
+        await route.fulfill({ response, json: body });
+      } catch {
+        // The page navigated away or closed while this poll was in flight.
+      }
+    });
+  }
+  for (const locale of ["zh-CN", "en-US"]) {
+    const text = labels[locale];
+    const { context, page, seen } = await openContext(locale);
+    try {
+      const downloads = [];
+      page.on("download", (download) => downloads.push(download));
+      const state = { streaming: true };
+      await withStatus(page, state);
+      const button = page.getByRole("button", { name: text.exportButton, exact: true });
+
+      // A streaming turn in the conversation disables the button and says why.
+      await page.goto(tracePage(`conversation=${conversationId}&turn=${turns[0].id}`));
+      await page.getByText(text.running, { exact: true }).waitFor();
+      assert.equal(await button.isDisabled(), true);
+
+      // Stale page state: the page shows the conversation as idle, the server now says streaming.
+      state.streaming = false;
+      await page.goto(tracePage(`conversation=${conversationId}&turn=${turns[0].id}`));
+      await button.waitFor();
+      await page.waitForFunction(() => !document.body.textContent.includes("still running") && !document.body.textContent.includes("仍在执行"));
+      assert.equal(await button.isEnabled(), true);
+      state.streaming = true;
+      const before = seen.requests.length;
+      await button.click();
+      await page.getByRole("alert").filter({ hasText: text.runningError }).waitFor();
+      assert.ok(!seen.requests.slice(before).some((entry) => /\/traces\/[^/]+\/(model|opencode|codex)$/.test(entry)),
+        "no log is read once the recheck sees a running turn");
+      state.streaming = false;
+
+      // 403 on one source aborts the whole export.
+      await page.route(new RegExp(`/traces/${turns[1].id}/codex$`), (route) =>
+        route.fulfill({ status: 403, body: "denied" }));
+      await button.click();
+      await page.getByRole("alert").filter({ hasText: text.read403 }).waitFor();
+      await page.unroute(new RegExp(`/traces/${turns[1].id}/codex$`));
+
+      // Over the 64 MiB total: names turn 1 and source model.
+      const huge = Buffer.alloc(65 * 1024 * 1024, 0x61);
+      const modelUrl = new RegExp(`/traces/${turns[0].id}/model$`);
+      await page.route(modelUrl, (route) => route.fulfill({ status: 200, body: huge }));
+      await button.click();
+      await page.getByRole("alert").filter({ hasText: text.tooLarge }).waitFor();
+      await page.unroute(modelUrl);
+      assert.equal(await button.isEnabled(), true);
+      await sleep(300);
+      assert.equal(downloads.length, 0, "failures never produce a download");
+      assertReadOnly(seen);
+    } finally {
+      await context.close();
+    }
+  }
+
+  // A single 48 MiB source exports under the 64 MiB total, byte for byte (route-intercepted response).
+  {
+    const text = labels["en-US"];
+    const { context, page, seen } = await openContext("en-US");
+    try {
+      const big = Buffer.alloc(48 * 1024 * 1024);
+      for (let index = 0; index < big.length; index += 7) big[index] = (index >> 3) & 0x7f | 0x20;
+      for (let index = 0; index < big.length; index += 1000) big[index] = 0x0a;
+      await page.route(new RegExp(`/traces/${turns[1].id}/codex$`), (route) =>
+        route.fulfill({ status: 200, body: big }));
+      await page.goto(tracePage(`conversation=${conversationId}&turn=${turns[1].id}`));
+      const files = await exportArchive(page, seen, text);
+      const entry = files.get("turn-0002/codex.jsonl");
+      assert.equal(entry.length, big.length);
+      assert.equal(sha256(entry), sha256(big));
+      assert.equal(files.get("turn-0001/opencode.jsonl")?.toString("utf8"), logs[turns[0].id + ".opencode.jsonl"]);
+      assertReadOnly(seen);
     } finally {
       await context.close();
     }

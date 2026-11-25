@@ -7,7 +7,8 @@ import { traceCategory, isThinkingTokenEstimate, readableTraceValue } from "./tr
 import { initialTurn, normalizeTrace, runtimeName, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
 
 import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
-import { conversationTraceArchive } from "./traceExport.ts";
+import { downloadFile } from "./assets.ts";
+import { conversationTraceArchive, TraceExportError } from "./traceExport.ts";
 
 import "./assistant-trace.css";
 
@@ -307,24 +308,39 @@ function ConversationTrace({ project, conversationId, target, turns }: {
   const placed = useRef(false);
   const initial = initialTurn(turns, target);
   const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportAbort = useRef<AbortController | null>(null);
+  const running = turns.some((item) => item.status === "streaming");
+  useEffect(() => () => exportAbort.current?.abort(), []);
+  function exportMessage(error: unknown): string | null {
+    if (!(error instanceof TraceExportError)) return t("trace.export.failed");
+    const { turn, source, status, limit } = error.detail;
+    const params = { turn: turn ?? "-", source: source ?? "-", status: status ?? "-",
+      limit: limit ? Math.round(limit / 1048576) : 0 };
+    switch (error.code) {
+      case "aborted": return null;
+      case "running": return t("trace.export.error.running", params);
+      case "tooLarge": return t("trace.export.error.tooLarge", params);
+      case "tooManyFiles": return t("trace.export.error.tooManyFiles", params);
+      case "timeout": return t("trace.export.error.timeout", params);
+      case "changed": return t("trace.export.error.changed", params);
+      case "incomplete": return t("trace.export.error.incomplete", params);
+      default: return t("trace.export.error.read", params);
+    }
+  }
   async function exportArchive() {
-    if (exporting || !window.confirm(t("trace.export.warning"))) return;
+    if (exporting || running || !window.confirm(t("trace.export.warning"))) return;
+    const controller = new AbortController();
+    exportAbort.current = controller;
     setExporting(true);
-    setExportError(false);
+    setExportError(null);
     try {
-      const archive = await conversationTraceArchive(project, conversationId, turns);
-      const url = URL.createObjectURL(new Blob([archive.buffer as ArrayBuffer], { type: "application/zip" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "opendirector-trace-" + conversationId + ".zip";
-      document.body.append(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      setExportError(true);
+      const archive = await conversationTraceArchive(project, conversationId, { signal: controller.signal });
+      downloadFile(archive, "opendirector-trace-" + conversationId + ".zip");
+    } catch (error) {
+      setExportError(exportMessage(error));
     } finally {
+      exportAbort.current = null;
       setExporting(false);
     }
   }
@@ -351,10 +367,12 @@ function ConversationTrace({ project, conversationId, target, turns }: {
   return (
     <>
       <div className="cw-trace-export">
-        <button type="button" disabled={exporting || turns.length === 0} onClick={() => void exportArchive()}>
+        <button type="button" disabled={exporting || running || turns.length === 0} onClick={() => void exportArchive()}>
           {t(exporting ? "trace.export.working" : "trace.export.button")}
         </button>
-        {exportError && <span role="alert">{t("trace.export.failed")}</span>}
+        {exporting && <button type="button" onClick={() => exportAbort.current?.abort()}>{t("trace.export.cancel")}</button>}
+        {running && !exporting && <span role="status">{t("trace.export.blockedRunning")}</span>}
+        {exportError && <span role="alert">{exportError}</span>}
       </div>
       <nav className="cw-trace-turnnav" aria-label={t("trace.turns.nav")}>
         {turns.map((item) => (
