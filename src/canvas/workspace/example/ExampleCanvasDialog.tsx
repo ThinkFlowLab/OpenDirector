@@ -36,6 +36,16 @@ export function ExampleCanvasDialog({
   }, []);
 
   const busy = entries.some((entry) => isRunning(entry.id));
+  // A finished import already opened the example, so the dialog leaves on its
+  // own: keeping it up asked for a second click to reach what was just made.
+  const done = entries.some((entry) => statuses[entry.id]?.phase === "done");
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => closeRef.current(), 600);
+    return () => window.clearTimeout(timer);
+  }, [done]);
 
   return (
     <dialog
