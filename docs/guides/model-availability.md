@@ -8,7 +8,7 @@
 
 模型接入可以读取服务的可选能力声明。自托管连接默认自动检查，其他连接默认关闭；服务级 `capabilityAutoCheck` 可以覆盖默认值。省略该字段会保留已有设置，旧配置无需转换。共享同一 `providerId` 的模型使用相同设置和查询缓存。独立服务及旧的独立配置保留自己的归属，相同 URL 和密钥不会合并它们。自动检查只查询能力接口，不生成内容、不唤醒模型。
 
-“检查服务能力”可以检查未保存的表单。草稿检查不会保存配置，也不会更新已保存模型的状态。显式刷新已保存模型可以检查关闭自动检查的服务。
+“检查服务能力”可以检查未保存的表单。草稿检查不会保存配置，也不会更新已保存模型的状态。显式刷新已保存模型可以检查关闭自动检查的服务。文本模型的行内不显示这项检查：每行的“测试”按钮会发送一条简短消息，已经能证明模型可用，该行只保留“服务能力”的文本与图片理解开关。
 
 在“设置 → 模型接入”选择模型类别，展开服务卡片的“服务能力”，即可查看每种操作的状态和检查时间。编辑服务时，可在高级连接设置中调整“自动检查服务能力”。输入过程中不会查询；保存后在后台检查。生成按钮和助手会说明明确不可用的原因，并保留当前输入和选择。暂停观察到期后会解除该观察产生的禁用，提交时仍执行后端检查。
 
@@ -32,7 +32,7 @@ Example capability card showing operation states and declared input limits:
 
 Model connections can read an optional service capability declaration. Self-hosted connections check automatically by default; other connections require explicit enablement or a manual check. The optional service-level `capabilityAutoCheck` preference and query cache are shared by models with the same `providerId`. Independent providers and legacy standalone configuration IDs stay isolated even at the same URL with the same credential. Checks query declarations without inference or wake-up requests.
 
-The unsaved form check uses an isolated draft identity. It saves neither configuration nor observations for saved connections. Explicit refresh can check selected saved connections even when automatic checks are disabled.
+The unsaved form check uses an isolated draft identity. It saves neither configuration nor observations for saved connections. Explicit refresh can check selected saved connections even when automatic checks are disabled. Rows for text models do not show this check: their Test button sends a short message, which already proves the model answers, so the row keeps only the text and image-understanding switches under Service capabilities.
 
 In Settings → Model connections, select a category and expand Service capabilities on a connection card to see operation states and check times. Advanced connection settings contain Automatically check service capabilities. Typing does not query the service; saving starts a background check. Generation and assistant controls explain explicit unavailability while retaining inputs and selections. Pause observations expire locally; submission still runs the backend check.
 

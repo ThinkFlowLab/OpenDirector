@@ -12,10 +12,12 @@ export function DraftAvailabilityCheck({
   connection,
   configId,
   modelId,
+  compact,
 }: {
   connection: ModelConfigInput;
   configId?: string;
   modelId: string;
+  compact?: boolean;
 }) {
   const signature = JSON.stringify([connection, configId, modelId]);
   const latest = useRef(signature);
@@ -67,6 +69,7 @@ export function DraftAvailabilityCheck({
   };
   return (
     <ModelAvailabilityCard
+      compact={compact}
       value={value?.signature === signature ? value.observation : null}
       checking={pending === signature}
       onRefresh={() => void check()}

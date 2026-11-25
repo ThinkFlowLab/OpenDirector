@@ -125,6 +125,9 @@ export function ModelServiceForm({
       : [],
   );
   const [modelIds, setModelIds] = useState<string[]>(selectedModels);
+  // A fresh service starts with the preset's models selected. Once the user
+  // changes that selection, discovery must not silently replace it.
+  const [selectionEdited, setSelectionEdited] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState("");
@@ -214,7 +217,21 @@ export function ModelServiceForm({
         ? [...mediaPresetModels]
         : (await discoverModels(value, connection?.id)).models;
       setModelIds(models);
-      if (mediaPresetModels && !connection) setSelectedModels(models);
+      // One API key normally covers every model the service returns, so a new
+      // service starts with the discovered list selected, as presets already
+      // did. A saved service keeps the user's selection, an edited selection is
+      // never replaced, and a list above the enable limit stays manual instead
+      // of becoming unsavable.
+      if (mediaPresetModels) {
+        if (!connection) setSelectedModels(models);
+      } else if (
+        !connection &&
+        !selectionEdited &&
+        models.length > 0 &&
+        models.length <= 200
+      ) {
+        setSelectedModels(models);
+      }
       setLoaded(true);
       setConnectionOpen(false);
     } catch (failure) {
@@ -282,6 +299,7 @@ export function ModelServiceForm({
     setConnection(undefined);
     const presetModels = [...(preset?.modelsByKind?.[kind] ?? [])];
     setSelectedModels(presetModels);
+    setSelectionEdited(false);
     setModelIds(presetModels);
     setModelOptions({});
     setModelErrors({});
@@ -326,6 +344,7 @@ export function ModelServiceForm({
           : item.id === model.id),
     );
     setSelectedModels(peers.map((item) => item.modelId));
+    setSelectionEdited(false);
     setModelIds(peers.map((item) => item.modelId));
     setLoaded(false);
     setDiscoveryError("");
@@ -540,31 +559,44 @@ export function ModelServiceForm({
           onFetch={() => void loadModels()}
           onChange={(ids) => {
             setSelectedModels(ids);
+            setSelectionEdited(true);
             setError("");
           }}
           onTest={kind === "agent" ? (id) => void test(id) : undefined}
           results={results}
           renderDetails={(id) => (
             <>
-            <DraftAvailabilityCheck connection={{ ...value, ...optionsFor(id) }} configId={connection?.id} modelId={id} />
-            <ModelCapabilityCard
-              key={`${connection?.id ?? "new"}:${value.protocol}:${id}`}
-              modelId={id}
-              connection={value}
-              configId={connection?.id}
-              saved={savedModel(id)}
-              options={optionsFor(id)}
-              disabled={locked}
-              onChange={(patch) =>
-                setModelOptions((current) => ({
-                  ...current,
-                  [id]: { ...current[id], ...patch },
-                }))
-              }
-              onValidity={(message) =>
-                setModelErrors((current) => ({ ...current, [id]: message }))
-              }
-            />
+              {/* A text model is proved by the row's own test button, which
+                  sends a real message, so the capability probe stays for the
+                  kinds that have no test and whose operations and input rules
+                  differ per service. */}
+              {kind !== "agent" && (
+                <DraftAvailabilityCheck
+                  compact
+                  connection={{ ...value, ...optionsFor(id) }}
+                  configId={connection?.id}
+                  modelId={id}
+                />
+              )}
+              <ModelCapabilityCard
+                compact
+                key={`${connection?.id ?? "new"}:${value.protocol}:${id}`}
+                modelId={id}
+                connection={value}
+                configId={connection?.id}
+                saved={savedModel(id)}
+                options={optionsFor(id)}
+                disabled={locked}
+                onChange={(patch) =>
+                  setModelOptions((current) => ({
+                    ...current,
+                    [id]: { ...current[id], ...patch },
+                  }))
+                }
+                onValidity={(message) =>
+                  setModelErrors((current) => ({ ...current, [id]: message }))
+                }
+              />
             </>
           )}
         />

@@ -20,12 +20,15 @@ export function ModelAvailabilityCard({
   checking = false,
   title,
   error,
+  compact = false,
 }: {
   value?: ModelAvailability | null;
   onRefresh?: () => void;
   checking?: boolean;
   title?: string;
   error?: string;
+  /** One line inside a model row: no card heading, chips instead of rows. */
+  compact?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [tick, setTick] = useState(0);
@@ -43,19 +46,26 @@ export function ModelAvailabilityCard({
   const message = checking
     ? null
     : error || (notice ? availabilityReason(notice) : null);
+  // A row keeps the action but not the "not checked yet" placeholder: the
+  // button already says what it does, and the empty line only cost space.
+  const showMessage = !(compact && !error && notice === "not_checked");
   const details = availabilityCardDetails(current?.operations ?? []);
   const commonSource =
     details.length > 0 &&
     details.every((detail) => detail.source === details[0].source)
       ? details[0].source
       : null;
+  const messageNode = message && showMessage ? (
+    <p role={error ? "alert" : "status"}>{message}</p>
+  ) : null;
   return (
     <section
-      className="cw-model-availability"
-      aria-label={t("availability.title")}
+      className={`cw-model-availability${compact ? " is-compact" : ""}`}
+      aria-label={title ?? t("availability.title")}
     >
       <div className="cw-model-availability-heading">
         <strong>{title ?? t("availability.title")}</strong>
+        {compact && messageNode}
         {onRefresh && (
           <button
             type="button"
@@ -75,7 +85,7 @@ export function ModelAvailabilityCard({
           </button>
         )}
       </div>
-      {message && <p role={error ? "alert" : "status"}>{message}</p>}
+      {!compact && messageNode}
       {current?.operations.length ? (
         <ul>
           {current.operations.map((item) => {

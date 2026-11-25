@@ -104,6 +104,9 @@ try {
   } finally {
     await page.unroute(discoveryEndpoint);
   }
+  // Per-model details are collapsed; open the native video model to read its
+  // declared capabilities.
+  await page.locator(".cw-model-row-toggle").first().click();
   await page
     .getByText("Text-to-video / first-last frame / multimodal references", { exact: true }).first()
     .waitFor();
@@ -135,9 +138,9 @@ try {
     .locator(".cw-model-option")
     .filter({ hasText: "image-card" });
   const textCard = page.locator(".cw-model-option").filter({ hasText: "text-card" });
-  await textCard.locator("summary").click();
+  await textCard.locator(".cw-model-row-toggle").click();
   await textCard.getByRole("checkbox", { name: "Image understanding", exact: true }).uncheck();
-  await card.locator("summary").click();
+  await card.locator(".cw-model-row-toggle").click();
   await card.getByRole("checkbox", { name: "Image understanding", exact: true }).check();
   await page.screenshot({ path: "/tmp/provider-settings-agent.png" });
   await page.getByRole("button", { name: "Save service", exact: true }).click();
