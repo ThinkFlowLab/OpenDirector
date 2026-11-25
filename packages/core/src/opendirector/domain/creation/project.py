@@ -87,6 +87,8 @@ class ProjectSnapshot(Contract):
         parents = {}
         for item in self.canvasItems:
             if item.parentId:
+                if item.kind == 'group' and item.autoLayout == 'run':
+                    raise ValueError('Run layout requires a top-level group')
                 if item.parentId not in items or items[item.parentId].kind != 'group':
                     raise ValueError('Parent must be a group in the same project')
                 parents[item.id] = [item.parentId]

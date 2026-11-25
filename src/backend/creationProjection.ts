@@ -632,6 +632,7 @@ export class CreationProjection {
           height: item.height,
           locked: item.locked,
           ...(item.color ? { color: item.color } : {}),
+          ...(item.kind === "group" && item.autoLayout ? { autoLayout: item.autoLayout } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -1654,6 +1655,7 @@ export class CreationProjection {
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
               ...(node.color ? { color: node.color } : {}),
+              ...(node.type === "group" && node.autoLayout ? { autoLayout: node.autoLayout } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,

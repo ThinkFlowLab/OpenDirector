@@ -191,6 +191,8 @@ class DirectorCanvasItem(EditorCanvasItem):
 
 class GroupCanvasItem(CanvasItemBase):
     kind: Literal['group'] = Field(description='Business object or media type.')
+    autoLayout: Literal['run'] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.')
     binding: ContainerBinding = Field(default_factory=lambda: ContainerBinding(role='container'), description='Business object displayed by this canvas item.')
 
 

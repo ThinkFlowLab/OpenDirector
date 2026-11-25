@@ -294,6 +294,7 @@ class Client:
                     value["canvasItems"].append({
                         **{field: item[field] for field in
                            ("id", "kind", "revision", "parentId", "position", "width", "height", "visible")},
+                        **({"autoLayout": item["autoLayout"]} if item.get("autoLayout") else {}),
                         "coordinateSpace": "canvas" if item["parentId"] is None else "parent",
                     })
             except (ProjectError, OSError, httpx.HTTPError) as error:
@@ -395,6 +396,7 @@ def summarize(snapshot):
                    for asset in snapshot.get("assets", ())],
         "canvasItems": [{"id": item["id"], "revision": item["revision"], "kind": item.get("kind"),
                          "title": item.get("title"), "visible": item.get("visible", True),
+                         **({"autoLayout": item["autoLayout"]} if item.get("autoLayout") else {}),
                          "binding": {"role": item["binding"]["role"],
                                      "objectRef": item["binding"].get("objectRef", {}).get("id") or
                                                   item["binding"].get("objectRef", {}).get("assetId")} }

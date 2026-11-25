@@ -155,6 +155,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       data: parsedData.value,
       ...(typeof raw.locked === "boolean" ? { locked: raw.locked } : {}),
       ...(typeof raw.color === "string" ? { color: raw.color } : {}),
+      ...(raw.type === "group" && raw.autoLayout === "run" ? { autoLayout: raw.autoLayout } : {}),
       ...(typeof raw.zIndex === "number" ? { zIndex: raw.zIndex } : {}),
       ...(typeof raw.parentId === "string" ? { parentId: raw.parentId } : {}),
     });

@@ -25,6 +25,12 @@ opendirector --project PROJECT_UUID video create   --model MODEL_CONFIG_UUID   -
 
 `canvas add-material` 和 `video create` 通过必填的 `--x`、`--y` 明确创建位置。Agent 先读取画布对象的位置、尺寸及分组，再安排新元素布局。`video create` 创建可编辑的生成节点与参考关系，返回 `specId` 和 `itemId`。所有画布修改命令以及批量事务通过共用返回层提供 `canvasItems`，包含元素身份、版本、位置、尺寸、父级、坐标系及可见性。位置未变化的操作也返回目标元素的几何信息，供后续布局判断。几何信息读取失败时，回执保留已提交状态并返回 `geometryReadError`。模型可通过配置 UUID 或唯一匹配的完整模型名指定。重名配置返回候选 UUID 和端点，由调用者明确选择。模型的输入模式必须支持所选参数。`--reference-item` 支持重复指定参考节点。提交生成时使用创建回执中的对象版本，后台任务由服务端继续执行。
 
+### Run 自动布局 / Run auto-layout
+
+在画布中右键顶层分组，选择「加入 Run 自动布局」。通过 CLI 或 Agent 新建 Run 时，在 `canvas.show` 的 group 对象设置 `autoLayout: "run"`，并将本轮的计划、片段和时间线节点的 `parentId` 设为该分组 ID。同批新增或改变尺寸的节点会在保存时统一排布。各轮以稳定顺序换行，锁定的 Run 和普通顶层节点作为固定占位。不同 Run 可复用已登记素材，各自保存生成配置和编辑文档。要重新整理，右键画布空白处选择「整理 Run」，或运行 `opendirector canvas layout-runs`。通过 `canvas update --item-id ID --auto-layout free --expected-version canvas_item:ID:REV` 恢复手动布局。
+
+On the canvas, right-click a top-level group and select **Include in Run layout**. From the CLI or Agent, set `autoLayout: "run"` on the group in `canvas.show`, then set `parentId` on its plan, clip, and timeline nodes to that group ID. New and resized nodes are arranged in the same save. Runs wrap in a stable order around locked Runs and ordinary top-level nodes. Runs can reuse registered assets, and each Run owns its own generation configurations and editor documents. To arrange Runs explicitly, right-click the canvas background or run `opendirector canvas layout-runs`. Use `canvas update --item-id ID --auto-layout free --expected-version canvas_item:ID:REV` to return a group to manual layout.
+
 ```bash
 opendirector --project PROJECT_UUID generation submit   --spec-id SPEC_UUID   --expected-spec-revision 1   --origin-item-id ITEM_UUID   --expected-version generation_spec:SPEC_UUID:1   --expected-version canvas_item:ITEM_UUID:1
 opendirector --project PROJECT_UUID job show JOB_UUID
