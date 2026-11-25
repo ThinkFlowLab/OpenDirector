@@ -474,3 +474,38 @@ def test_concurrent_turns_keep_independent_durations(assistant, manual, tmp_path
     manual.advance(50)
     done = {m['id']: m for m in conversations.update(project, finish=finish_message(second))['messages']}
     assert done[str(uuid5(UUID(second), 'assistant'))]['durationMs'] == 350
+
+
+def test_begin_rejected_by_the_agent_session_or_admission_check_starts_no_timer(assistant, tmp_path, monkeypatch):
+    client, path, _ = assistant
+    project = UUID(path.split('/projects/')[1].split('/')[0])
+    conversations = agent.Conversations(CreationProjects(LocalProjects(tmp_path)))
+    def refuse():
+        raise agent.ProjectError('connection changed', 409)
+    with pytest.raises(agent.ProjectError):
+        conversations.update(project, begin=begin_message(str(uuid4())), before_begin=refuse)
+    def busy(*args, **kwargs):
+        raise agent.ProjectError('project busy', 409)
+    monkeypatch.setattr(LocalProjects, 'start_agent_session', busy)
+    with pytest.raises(agent.ProjectError):
+        conversations.update(project, begin=begin_message(str(uuid4())), agent_session=str(uuid4()))
+    assert conversations._started == {}
+    assert client.get(path).json()['messages'] == []
+
+
+def test_tool_ledger_and_turn_duration_are_independent(assistant, clock, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    async def stream(self, run):
+        yield {'type': 'tool', 'id': 'cli:1', 'name': 'opendirector', 'status': 'complete',
+               'timing': {'spawn': 1.1, 'work': 0.2}}
+        yield {'type': 'delta', 'text': '完成'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    conversation = client.get(path).json()['conversationId']
+    turn = str(uuid4())
+    response = client.post(path + '/turns', json={'id': turn, 'runtime': 'default',
+        'conversationId': conversation, 'text': '导出'})
+    saved = frames(response)[-1]['conversation']['messages'][-1]
+    assert saved['durationMs'] == 250 and 'timing' not in json.dumps(saved['tools'])
+    ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{turn}.json')).read_text(encoding='utf-8'))
+    assert ledger['summary']['calls'] == 1 and ledger['calls'][0]['work'] == 0.2
+    assert 'durationMs' not in json.dumps(ledger)

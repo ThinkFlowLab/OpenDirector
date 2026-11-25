@@ -89,6 +89,8 @@ The canvas saves automatically. Before closing it or switching projects, check t
 3. Connect a source node that has content to the target node, or type `@` in the input field to select reference assets.
 4. Check the references and parameters, then generate. When the task finishes, view its result in the node or **Generation history**.
 
+In an image or video node, enter a draft and click the **Optimize prompt** wand below the editor. Optimization follows the model selected in the Agent panel, including the CLI default for Codex and Claude Code. The built-in skill applies to H3 and Seedance 2.0 video models. In model settings, enable the input types supported by the model's API. OpenDirector sends full-length videos to models with video input and samples frames for models with image input only. Audio files and video soundtracks are sent only when the model accepts audio. Press Ctrl+Z (Command+Z on Mac) to undo the replacement. Edit the text to optimize it again. Optimizing a prompt does not submit a generation job.
+
 For GPT Image models, open **Generation settings** and choose **Quality** from **Auto**, **Low**, **Medium**, or **High**. **Auto** keeps the service default. The choice is saved with the project and frozen when a task is submitted. Changing it later affects subsequent tasks. Other image services do not show this option. Standalone image tools retain their service default. The Agent can set the same value through `parameters.quality` in the image generation spec.
 
 After typing `@`, use the up and down arrow keys to select an asset, the left and right arrow keys to switch categories, `Enter` to insert, and `Esc` to close the picker. References are inserted into the text as single units. Removing the last reference to a source also removes its corresponding reference connection.
@@ -153,6 +155,14 @@ Use **New conversation** at the top of the panel to start a separate chat. **Con
 - Click the collapse button at the top right to hide the chat panel. Drag its left edge to resize it.
 
 Asset generation may continue after the reply ends. Check its progress in **Generation history**.
+
+### Download the original trace
+
+Open the conversation trace page and choose **Download original trace (.zip)** to save the raw per-turn log files for local debugging. The ZIP holds one `manifest.json` and, under `turn-NNNN/`, the unmodified `.jsonl` log of each source (the Default runtime also includes `model.jsonl`, the model requests). Nothing is redacted, so the files can contain credentials, prompts, tool inputs and outputs and private paths. A confirmation appears first; review the files before sharing them.
+
+- The archive is read source by source and is not an atomic snapshot across files. It is only built when no turn is running, and turn status is checked again at click time and after reading. While a turn is running the button is disabled; wait for it to finish.
+- A source file that does not exist is listed as `missing` in `manifest.json`. A failed Jobs lookup is recorded as `jobsStatus: "unavailable"`, which differs from a turn that has no linked Jobs (`jobs: []`).
+- The total is capped at 64 MiB including ZIP overhead. If a read fails, times out, ends early, or goes over the cap, the page names the turn and source and no ZIP is saved. You can cancel while it is preparing.
 
 ## Edit images, video, and audio
 

@@ -80,12 +80,13 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
     def _checkpoint(self, stage):
         """Fault-injection boundary. Never participates in production decisions."""
 
-    def _lease(self, db, project_id, path, session):
+    def _lease(self, db, project_id, path, session, *, browser_only=False):
         if session is None:
             raise ProjectError('修改工程需要已打开的会话。', 409)
         identifier(session)
-        lease = db.execute('SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?',
-                           (session, str(project_id), time.time())).fetchone()
+        agent_key = session if browser_only else self.local.agent_session_key(session)
+        lease = db.execute('SELECT path FROM sessions WHERE id IN (?,?) AND project_id=? AND expires>?',
+                           (session, agent_key, str(project_id), time.time())).fetchone()
         if lease is None:
             # A stable code lets the page renew its lease and resend instead of failing every save.
             raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409, code='session_expired')

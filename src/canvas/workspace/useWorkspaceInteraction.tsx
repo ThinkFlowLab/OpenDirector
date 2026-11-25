@@ -632,6 +632,10 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     if (bounds) selectionPresentation.reveal(bounds);
   };
   useCanvasWheelBoundary(root, selectionPresentation.userNavigation);
+  const managedRunIds = useMemo(
+    () => new Set(doc.nodes.filter((node) => node.autoLayout === "run").map((node) => node.id)),
+    [doc.nodes],
+  );
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -640,6 +644,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
         selected: selected.includes(n.id),
         draggable:
           !lockedIds.has(n.id) &&
+          !n.autoLayout &&
+          !(n.parentId && managedRunIds.has(n.parentId)) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
         connectable:
@@ -669,6 +675,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       spacePressed,
       measurements,
       lockedIds,
+      managedRunIds,
       activeAction?.nodeId,
     ],
   );

@@ -523,8 +523,12 @@ class CreationCanvas:
                 if (ref and str(ref.get('id')) == str(obj['id'])) or attached:
                     self._editable(data, item['id'])
             old.update(obj)
+        elif kind == 'canvas.layoutRuns':
+            pass  # The commit arranges the authoritative canvas after validating edits.
         elif kind == 'canvas.show':
             obj = payload.item.model_dump(mode='json')
+            if obj.get('autoLayout') == 'run' and obj['parentId'] is not None:
+                raise ContractError('canvas_run_layout_group', '自动排列只适用于顶层分组。', payload.item.id)
             if str(obj['projectId']) != str(data['project']['id']):
                 raise ContractError('invalid_input', '节点不属于当前工程。')
             old = next((o for o in data['canvasItems'] if o['id'] == obj['id']), None)
@@ -556,7 +560,16 @@ class CreationCanvas:
                 self._editable(data, move.itemId)['position'] = move.position.model_dump()
         elif kind == 'canvas.update':
             item = self._editable(data, payload.itemId, unlocking=value.get('locked') is False)
+            layout = value.pop('autoLayout', None)
+            if layout is not None and item['kind'] != 'group':
+                raise ContractError('canvas_run_layout_group', '自动排列只适用于顶层分组。', payload.itemId)
+            if layout == 'run':
+                item['autoLayout'] = 'run'
+            elif layout == 'free':
+                item.pop('autoLayout', None)
             item.update({key: val for key, val in value.items() if key != 'itemId' and (val is not None or key == 'parentId')})
+            if item.get('autoLayout') == 'run' and item['parentId'] is not None:
+                raise ContractError('canvas_run_layout_group', '自动排列只适用于顶层分组。', payload.itemId)
             if item.get('color') == '':
                 item.pop('color')
         elif kind == 'canvas.hide':

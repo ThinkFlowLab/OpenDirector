@@ -113,6 +113,8 @@ class CanvasPresentationUpdate(Contract):
     color: CanvasColor | None = Field(default=None, exclude_if=lambda value: value is None, description="Group background color in #RRGGBB format, or '' for the default.")
     parentId: UUID | None = Field(default=None, description='Parent canvas group ID, or null for the root.')
     # Presence of parentId distinguishes retaining a group from ungrouping.
+    autoLayout: Literal['run', 'free'] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Enable Run layout for a top-level group, or use free to return it to manual layout.')
 
 
 class CanvasHide(Contract):
@@ -339,6 +341,7 @@ _COMMANDS = (
     ('CanvasShowCommand', 'canvas.show', CanvasShow, 'Create or restore a canvas display item.'),
     ('CanvasMoveCommand', 'canvas.move', CanvasMove, 'Move one or more canvas items.'),
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate, 'Update canvas presentation, grouping or lock state.'),
+    ('CanvasLayoutRunsCommand', 'canvas.layoutRuns', EmptyPayload, 'Arrange the current canvas Run groups and their children without moving locked groups.'),
     ('CanvasHideCommand', 'canvas.hide', CanvasHide, 'Remove a canvas item; preserves project contents. Remove all visible items to clear the canvas.'),
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize, 'Bind an asset to an empty or material canvas item.'),
     ('CanvasApplyEditCommand', 'canvas.applyEdit', CanvasApplyEdit, 'Apply an editor result to a canvas item.'),
@@ -373,7 +376,7 @@ for _name, _type, _payload, _description in _COMMANDS:
     COMMAND_MODELS[_type] = _model
     globals()[_name] = _model
 
-_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit',
+_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.layoutRuns', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit',
                 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'generationSpec.create', 'generationSpec.update',
                 'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'editor.create', 'editor.save', 'result.select', 'generationSpec.setPrompt'}
 _OPERATIONS = tuple(create_model(name + 'Operation', __base__=Contract,
@@ -407,7 +410,7 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'canvas_run_layout_group', 'canvas_run_layout_conflict', 'canvas_run_layout_extent', 'canvas_run_layout_shared_object', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
@@ -432,6 +435,8 @@ class ContractIssue(Contract):
     message: str = Field(min_length=1, max_length=500, description='Human-readable issue description.')
     objectId: UUID | None = Field(default=None, description='Target business object ID.')
     field: str | None = Field(default=None, max_length=200, description='Path of the field responsible for this issue.')
+    relatedObjectId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Other business object involved in the issue.')
 
 
 class CommandReceipt(Contract):

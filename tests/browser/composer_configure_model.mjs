@@ -20,14 +20,8 @@ async function call(path, body) {
 }
 assert.equal((await call("/api/creation-test-health")).isolated, true);
 const configs = await call("/api/model-configs");
-const list = Array.isArray(configs) ? configs : (configs.models ?? configs.items ?? []);
 assert.equal(
-  list.some((item) => item.kind === "video"),
-  false,
-  "needs a fixture API without a video model",
-);
-assert.equal(
-  list.some((item) => item.kind === "image"),
+  configs.some((item) => item.kind === "image"),
   true,
   "needs a fixture API with an image model",
 );
@@ -44,9 +38,22 @@ try {
     locale: "zh-CN",
     viewport: { width: 1600, height: 1000 },
   });
-  await page.addInitScript(() =>
-    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
-  );
+  await page.addInitScript(() => {
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+    localStorage.setItem("opendirector.locale.v1", "zh-CN");
+  });
+  // The shared fixture may already contain video models from other tests.
+  // Scope the empty video catalog to this page and keep the real image models.
+  await page.route("**/api/model-configs", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
+    const models = await response.json();
+    await route.fulfill({
+      response,
+      json: models.filter((item) => item.kind !== "video"),
+    });
+  });
   page.setDefaultTimeout(15000);
   const errors = [];
   const generation = [];
@@ -56,7 +63,18 @@ try {
       generation.push(request.url());
   });
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
-  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await page
+    .getByText("已保存到本机", { exact: true })
+    .waitFor()
+    .catch(async (error) => {
+      console.error(
+        "Canvas did not open",
+        page.url(),
+        errors,
+        await page.locator("body").innerText(),
+      );
+      throw error;
+    });
   const rail = page.getByRole("toolbar", { name: "画布创作工具" });
 
   // Another category being configured must not hide the action.

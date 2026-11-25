@@ -122,6 +122,7 @@ export function ModelCapabilityCard({
     }
   };
   if (connection.kind !== "agent" && !video) return null;
+  const inputModalities = options.inputModalities ?? saved?.inputModalities ?? ["text"];
   return (
     <details
       className="cw-model-capability-card"
@@ -140,27 +141,25 @@ export function ModelCapabilityCard({
                 <input type="checkbox" checked disabled />
                 {t("models.service.textInput")}
               </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={
-                    (
-                      options.inputModalities ?? saved?.inputModalities
-                    )?.includes("image") ?? false
-                  }
-                  onChange={(event) =>
-                    onChange({
-                      inputModalities: event.target.checked
-                        ? ["text", "image"]
-                        : ["text"],
-                    })
-                  }
-                />
-                {t("models.service.imageInput")}
-              </label>
+              {(["image", "video", "audio"] as const).map((kind) => (
+                <label key={kind}>
+                  <input
+                    type="checkbox"
+                    checked={inputModalities.includes(kind)}
+                    onChange={(event) =>
+                      onChange({
+                        inputModalities: event.target.checked
+                          ? [...inputModalities, kind]
+                          : inputModalities.filter((input) => input !== kind),
+                      })
+                    }
+                  />
+                  {t(`models.service.${kind}Input`)}
+                </label>
+              ))}
             </div>
             <p className="cw-model-note">
-              {t("models.service.imageInputNote")}
+              {t("models.service.mediaInputNote")}
             </p>
           </>
         ) : official ? (

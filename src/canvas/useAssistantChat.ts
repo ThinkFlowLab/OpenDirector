@@ -1,6 +1,6 @@
 import { availabilityBlocker } from "../backend/availability.ts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { builtinThinking, preferredMediaModel, rememberAgentSelection, rememberMediaSelection, restoreAgentSelection } from "./agentPreferences";
+import { assistantModelSelection, preferredMediaModel, rememberAgentSelection, rememberMediaSelection, restoreAgentSelection } from "./agentPreferences";
 import { errorMessage } from "../backend/api";
 import {
   attachChat,
@@ -470,13 +470,10 @@ export function useAssistantChat(
         {
           id,
           conversationId: input.conversationId,
-          modelId: agent?.id,
-          runtime: input.runtime ?? "default",
-          runtimeModel: input.runtimeModel,
+          ...assistantModelSelection(input, agent?.id),
           text: input.draft,
           content: input.draftContent,
           assets: input.assets.map((asset) => asset.id),
-          thinking: builtinThinking(input, agent?.id),
           modelSelections: input.modelSelections,
           skills: input.skills ?? [],
         },

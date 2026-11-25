@@ -87,7 +87,7 @@ export interface ModelConfig {
   authMode: "none" | "bearer" | null;
   proxyMode?: "system" | "direct";
   inputRules: InputRules;
-  inputModalities?: ("text" | "image")[] | null;
+  inputModalities?: ("text" | "image" | "video" | "audio")[] | null;
   videoAdapter?: VideoAdapter;
   videoCapabilities?: VideoCapabilities | null;
 }

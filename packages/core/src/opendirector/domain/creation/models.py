@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
-from opendirector.domain.capabilities import agent_input_modalities
+from opendirector.domain.capabilities import AgentInputModality, agent_input_modalities
 from opendirector.domain.video_capabilities import VideoCapabilities as ExistingVideoCapabilities
 from opendirector.domain.video_capabilities import VideoAdapter, check_video_config
 from opendirector.domain.projects import ProjectError
@@ -107,7 +107,7 @@ class ModelConnection(Contract):
     protocol: Protocol = Field(description='Provider wire protocol.')
     authMode: Literal['none', 'bearer'] = Field(description='Authentication mode for the provider connection.')
     proxyMode: Literal['system', 'direct'] = Field(default='system', description='Use the system proxy or connect directly to the model service.')
-    inputModalities: tuple[Literal['text', 'image'], ...] | None = Field(default=None, description='Supported model input media kinds.')
+    inputModalities: tuple[AgentInputModality, ...] | None = Field(default=None, description='Supported model input media kinds.')
     videoAdapter: VideoAdapter = Field(default='auto', description='Provider-specific video adapter.')
     videoCapabilities: VideoCapabilities | None = Field(default=None, description='Supported video generation capabilities.')
 
@@ -244,7 +244,7 @@ class ModelSnapshot(Contract):
     protocol: Protocol = Field(description='Provider wire protocol.')
     connectionType: Literal['api', 'self_hosted'] = Field(description='Hosted or local model connection type.')
     proxyMode: Literal['system', 'direct'] = Field(default='system', exclude_if=lambda value: value == 'system', description='Network routing selected when the job was accepted.')
-    inputModalities: tuple[Literal['text', 'image'], ...] | None = Field(default=None, exclude_if=lambda value: value is None, description='Supported model input media kinds.')
+    inputModalities: tuple[AgentInputModality, ...] | None = Field(default=None, exclude_if=lambda value: value is None, description='Supported model input media kinds.')
     videoAdapter: VideoAdapter = Field(default='auto', description='Provider-specific video adapter.')
     inputRules: InputRules | None = Field(default=None, description='Verified model input limits and output choices.')
 

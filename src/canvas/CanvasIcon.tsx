@@ -211,6 +211,12 @@ const icons: Record<string, ReactNode> = {
       <circle cx="15" cy="7" r=".7" />
     </>
   ),
+  promptWand: (
+    <>
+      <path d="m3 19 9-9 3 3-9 9-3-3Zm6.5-6.5 3 3" />
+      <path d="m18 2 1.2 3.8L23 7l-3.8 1.2L18 12l-1.2-3.8L13 7l3.8-1.2L18 2Z" />
+    </>
+  ),
   sparkle: (
     <>
       <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4M18 4h4" />

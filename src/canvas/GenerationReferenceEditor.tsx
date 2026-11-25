@@ -47,6 +47,9 @@ export interface GenerationReferenceControls {
   referenceId: (nodeId: string) => string | undefined;
 }
 export interface GenerationReferenceHandle {
+  promptContent: () => ReferenceContent | null;
+  replacePrompt: (content: ReferenceContent) => boolean;
+  focusPrompt: () => void;
   openPicker: () => void;
   openUpload: () => void;
   insert: (node: CanvasNode) => void;
@@ -337,6 +340,9 @@ export function GenerationReferenceEditor({
     return adoptAsset(asset, signal);
   };
   useImperativeHandle(pickerRef, () => ({
+    promptContent: () => uploading ? null : latestContent.current,
+    replacePrompt: (content) => editor.current?.replace(content) ?? false,
+    focusPrompt: () => editor.current?.focus(),
     openPicker: () => editor.current?.openPicker(),
     openUpload: () => {
       if (!running && !uploading) file.current?.click();

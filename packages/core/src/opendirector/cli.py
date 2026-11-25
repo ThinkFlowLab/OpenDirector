@@ -294,6 +294,7 @@ class Client:
                     value["canvasItems"].append({
                         **{field: item[field] for field in
                            ("id", "kind", "revision", "parentId", "position", "width", "height", "visible")},
+                        **({"autoLayout": item["autoLayout"]} if item.get("autoLayout") else {}),
                         "coordinateSpace": "canvas" if item["parentId"] is None else "parent",
                     })
             except (ProjectError, OSError, httpx.HTTPError) as error:
@@ -395,6 +396,7 @@ def summarize(snapshot):
                    for asset in snapshot.get("assets", ())],
         "canvasItems": [{"id": item["id"], "revision": item["revision"], "kind": item.get("kind"),
                          "title": item.get("title"), "visible": item.get("visible", True),
+                         **({"autoLayout": item["autoLayout"]} if item.get("autoLayout") else {}),
                          "binding": {"role": item["binding"]["role"],
                                      "objectRef": item["binding"].get("objectRef", {}).get("id") or
                                                   item["binding"].get("objectRef", {}).get("assetId")} }
@@ -531,6 +533,20 @@ def asset_import(ctx: typer.Context,
         client.request("PUT", client.path(f"/uploads/{handle}"),
             headers={"X-Asset-Name": quote(name or file.name), "X-Asset-Kind": kind}, content=stream)
     emit(client.execute("asset.import", payload, identity=operation))
+
+
+@group("canvas").command("optimize-prompt", help="Rewrite an image or video prompt with the node's references and a configured text model; does not edit the canvas.")
+def optimize_prompt(ctx: typer.Context,
+                    item: Annotated[UUID, typer.Option(help="Image or video canvas item ID.")],
+                    prompt: Annotated[str, typer.Option(help="Draft to refine; use [[OD_REF_n]] for inline reference tokens.")],
+                    inline_reference: Annotated[list[UUID] | None, typer.Option(help="Reference IDs in inline marker order.")] = None):
+    client = ctx.obj
+    client.command = ctx.command_path
+    data = {"prompt": prompt, "inlineReferences": [str(value) for value in inline_reference or []]}
+    if client.live:
+        emit(client.call("prompt_optimize", {"itemId": str(item), **data}))
+    else:
+        emit(client.request("POST", client.path(f"/items/{item}/optimize-prompt"), json=data))
 
 
 @group("canvas").command("add-material", help="Display a registered asset as a new canvas item.")

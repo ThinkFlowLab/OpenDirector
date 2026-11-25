@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from typing import Annotated, Literal
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 from anyio import CancelScope
 from fastapi import APIRouter, Header
@@ -151,18 +151,18 @@ class Conversations:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
             if session:
-                self.projects._lease(db, project_id, directory, session)
+                self.projects._lease(db, project_id, directory, session, browser_only=True)
             return directory
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
-               before_begin=None) -> dict:
+               before_begin=None, agent_session: str | None = None) -> dict:
         finish_mono, finish_at = (_monotonic(), _utc_now()) if finish is not None else (None, None)
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
             if session:
-                self.projects._lease(db, project_id, directory, session)
+                self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -181,6 +181,8 @@ class Conversations:
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
                 if before_begin is not None:
                     before_begin()
+                if agent_session is not None:
+                    self.projects.local.start_agent_session(db, project_id, directory, agent_session)
                 value['messages'].append(begin)
                 reply_id = str(uuid5(UUID(begin['id']), 'assistant'))
                 value['messages'].append({'id': reply_id,
@@ -295,7 +297,7 @@ class Conversations:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
-            self.projects._lease(db, project_id, directory, session)
+            self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -531,6 +533,16 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 if config is not None:
                     current = configs.resolve(str(value.modelId), 'agent')
                     generation.availability.require(current, _assistant_request(current), prepared)
+            async def renew_agent_session(run_session: str) -> None:
+                while True:
+                    await asyncio.sleep(projects.local.LEASE_SECONDS / 3)
+                    try:
+                        if not await asyncio.to_thread(projects.local.renew_agent_session, run_session):
+                            return
+                    except Exception:
+                        # A transient lock or I/O failure can recover before the lease expires.
+                        logger.exception('Could not renew Agent project write session')
+
             async def produce() -> None:
                 text, status, error, accepted = '', 'complete', None, False
                 activities = []
@@ -539,6 +551,9 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 sources = {}
                 previous_sources = {}
                 plan = None
+                run_session = str(uuid4())
+                renewal = None
+                admission_write = None
                 try:
                     user = {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
                         'assets': [{'id': str(asset.id), 'name': asset.name, 'type': asset.metadata.mimeType,
@@ -547,9 +562,19 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                         'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
                         'modelSelections': dict(value.modelSelections),
                         'model': model, 'modelIsCliDefault': model_is_cli_default, 'status': 'complete'}
-                    saved = await asyncio.to_thread(conversations.update, project_id, session, begin=user,
-                        conversation_id=value.conversationId, before_begin=validate_connection)
+                    admission_write = asyncio.create_task(asyncio.to_thread(
+                        conversations.update, project_id, session, begin=user,
+                        conversation_id=value.conversationId, before_begin=validate_connection,
+                        agent_session=run_session))
+                    try:
+                        saved = await asyncio.shield(admission_write)
+                    except asyncio.CancelledError:
+                        # A worker already writing admission can outlive task cancellation.
+                        await admission_write
+                        accepted = True
+                        raise
                     accepted = True
+                    renewal = asyncio.create_task(renew_agent_session(run_session))
                     events.put({'type': 'start', 'conversation': saved})
                     previous_sources = {source['id']: source for message in saved['messages'][:-2]
                                         for source in message.get('sources', [])}
@@ -571,7 +596,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                         context[-1]['content'] += '\nUser model preferences for this turn: ' + json.dumps(preferences, ensure_ascii=False)
                         context[-1]['content'] += '\nUse these models for new generation unless the user explicitly requests another. If unavailable or unsuitable, explain and ask before substituting. Keep existing nodes on their configured models unless the user requests a change.'
                     run = RunContext(runtime=value.runtime, project_id=project_id, turn_id=value.id,
-                        session=session, directory=directory, config=config, messages=context,
+                        session=run_session, directory=directory, config=config, messages=context,
                         selected_skills=value.skills, thinking=value.thinking, model_selections=model_selections,
                         runtime_model=value.runtimeModel, skills=available, conversation_id=UUID(saved['conversationId']))
                     async with aclosing(runtimes.stream(run)) as stream:
@@ -619,21 +644,33 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                             status=500, code='operation_rejected')
                     logger.exception(f'agent.turn.failed project_id={project_id} turn_id={value.id}')
                 finally:
-                    # Measurement is best effort: losing the ledger is acceptable,
-                    # losing the turn's reply is not.
-                    if accepted:
-                        agent_timing.write(directory, value.id, timing, round(time.monotonic() - turn_started, 3))
-                        for activity in activities:
-                            if activity['status'] == 'running':
-                                activity['status'] = 'interrupted'
-                        saved = await asyncio.to_thread(conversations.update, project_id, finish={
-                            'id': str(uuid5(value.id, 'assistant')), 'role': 'assistant', 'text': text, 'status': status,
-                            'model': model, 'modelIsCliDefault': model_is_cli_default,
-                            'runtime': value.runtime, 'thinking': value.thinking, 'tools': activities,
-                            'sources': list(sources.values()),
-                            **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId)
-                    else:
-                        saved = None
+                    try:
+                        # Measurement is best effort: losing the ledger is acceptable,
+                        # losing the turn's reply is not.
+                        if accepted:
+                            agent_timing.write(directory, value.id, timing, round(time.monotonic() - turn_started, 3))
+                            for activity in activities:
+                                if activity['status'] == 'running':
+                                    activity['status'] = 'interrupted'
+                            saved = await asyncio.to_thread(conversations.update, project_id, finish={
+                                'id': str(uuid5(value.id, 'assistant')), 'role': 'assistant', 'text': text, 'status': status,
+                                'model': model, 'modelIsCliDefault': model_is_cli_default,
+                                'runtime': value.runtime, 'thinking': value.thinking, 'tools': activities,
+                                'sources': list(sources.values()),
+                                **({'plan': plan} if plan is not None else {})}, conversation_id=value.conversationId)
+                        else:
+                            saved = None
+                    finally:
+                        if renewal is not None:
+                            renewal.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await renewal
+                        if admission_write is not None:
+                            try:
+                                await asyncio.to_thread(projects.local.release_agent_session, run_session)
+                            except Exception:
+                                # The lease still expires when renewal stops.
+                                logger.exception('Could not release Agent project write session')
                     events.put({'type': 'end', 'conversation': saved, 'error': error})
 
             if project_id in active:

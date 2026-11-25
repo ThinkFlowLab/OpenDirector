@@ -60,7 +60,7 @@ export interface ModelConfigInput {
   protocol: NonNullable<ModelConfig["protocol"]>;
   authMode: "none" | "bearer";
   proxyMode?: "system" | "direct";
-  inputModalities?: ("text" | "image")[] | null;
+  inputModalities?: ModelConfig["inputModalities"];
   videoAdapter?: VideoAdapter;
   videoCapabilities?: VideoCapabilities | null;
 }

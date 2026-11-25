@@ -97,7 +97,8 @@ class ToolGateway:
                 value = await self.business.execute(self.run.project_id, self.run.turn_id, self.run.session,
                     call_id, name, arguments, self.roots, self.run.config,
                     self.run.runtime if self.run.config is None else None,
-                    self.execution_directory)
+                    self.execution_directory, **({'runtime_model': self.run.runtime_model, 'thinking': self.run.thinking}
+                        if name == 'prompt_optimize' else {}))
                 if name == 'read_project':
                     value['modelSelections'] = dict(self.model_selections)
                 error = None

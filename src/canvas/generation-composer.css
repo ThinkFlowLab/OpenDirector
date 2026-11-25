@@ -2,6 +2,7 @@
   --chat-border: #ffffff20;
   --chat-surface: #303034;
   --chat-text: #e9e9ed;
+  --chat-muted: #a3a4ae;
   --input-min-height: 112px;
   --prompt-line-height: 1.7;
   --input-max-height: calc(10em * var(--prompt-line-height) + 4px);
@@ -23,13 +24,108 @@
   overflow: visible;
 }
 
+/* Status line under the prompt: always secondary to the prompt itself, whether
+   it reports progress, a finished run or a failure. */
 .cw-composer-provider-note {
   flex: 0 0 auto;
   margin: 6px 0;
-  color: var(--chat-text);
+  color: var(--chat-muted);
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* The running label breathes between the muted and normal text colour. A
+   1.6 s cycle feels alive without reading as a warning blink. */
+.cw-optimizing-blink {
+  animation: cw-optimizing-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cw-optimizing-pulse {
+  0%,
+  100% {
+    color: var(--chat-muted);
+  }
+  50% {
+    color: var(--chat-text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-optimizing-blink {
+    animation: none;
+    color: var(--chat-muted);
+  }
+}
+
+@property --cw-optimize-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.cw-composer.cw-composer-optimizing {
+  border-color: #ffffff24;
+}
+
+/* One white segment sweeps around the composer border while the prompt is
+   being rewritten, so the card itself reads as busy. */
+.cw-composer.cw-composer-optimizing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--cw-optimize-angle),
+    transparent 0deg 280deg,
+    #ffffff59 318deg,
+    #ffffffb3 350deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: cw-optimize-sweep 4.2s linear infinite;
+}
+
+@keyframes cw-optimize-sweep {
+  to {
+    --cw-optimize-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-composer.cw-composer-optimizing::after {
+    animation: none;
+    background: #ffffff26;
+  }
+}
+
+/* The light sheet would swallow a white band; use the primary blue instead. */
+:root[data-theme="light"] .cw-composer.cw-composer-optimizing {
+  border-color: #00000014;
+}
+:root[data-theme="light"] .cw-composer.cw-composer-optimizing::after {
+  background: conic-gradient(
+    from var(--cw-optimize-angle),
+    transparent 0deg 280deg,
+    #3d6bd680 318deg,
+    #3d6bd6cc 350deg,
+    transparent 360deg
+  );
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="light"] .cw-composer.cw-composer-optimizing::after {
+    background: #3d6bd626;
+  }
 }
 
 .cw-composer-body {

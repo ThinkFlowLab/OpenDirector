@@ -964,7 +964,12 @@
   padding: 0;
   font-size: 16px;
 }
-.cw-generation-mode-controls {
+.cw-composer-options .cw-prompt-optimization[aria-disabled="true"] {
+  opacity: 0.4;
+  /* Nothing to do: the text is already optimized, empty, or a run is active. */
+  cursor: not-allowed;
+  background: transparent;
+}.cw-generation-mode-controls {
   display: contents;
 }
 .cw-composer-options .cw-generation-mode-controls select,
