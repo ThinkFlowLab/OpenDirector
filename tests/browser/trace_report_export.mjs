@@ -1,4 +1,4 @@
-/** Conversation Trace report export (#421): real UI click, real browser download.
+/** Original Trace archive export (#421): real UI click, real ZIP browser download.
  * Run against creation_server.py --assistant-fixture; no model or provider is called.
  *
  * Real: project, conversation, turns (fixture agent, runtimes default and codex),
@@ -47,7 +47,7 @@ const assistant = `/creation/projects/${projectId}/assistant`;
 const modelId = (await api("/model-configs")).find((model) => model.kind === "agent").id;
 
 // Four executed turns with two runtimes. No prompt text here is a secret: the
-// report may show the request preview by design.
+// raw traces are intentionally sensitive; fixtures contain only synthetic sentinels.
 const specs = [
   { runtime: "default", text: `Plan the opening shot ${unique}` },
   { runtime: "codex", text: `Render the second scene ${unique}` },
@@ -94,6 +94,7 @@ const SECRETS = [
 const [prompt, system, args, result, key] = SECRETS;
 const line = (value) => JSON.stringify(value) + "\n";
 const logs = {
+  [turns[0].id + ".model.jsonl"]: line({ event: "model.request", payload: { messages: [{ content: system }], apiKey: key } }),
   // opencode-style log for turn 1
   [`${turns[0].id}.opencode.jsonl`]:
     line({ event: "session.start", message: system }) +
@@ -128,17 +129,30 @@ const failingJobs = turns[3].id;
 
 const tracePage = (query) =>
   `${base}/?traceProject=${projectId}&${query}`;
-const unescape = (text) => text.replace(/\\([\\`*_{}[\]()#+.!|])/g, "$1");
-const section = (report, number) => {
-  const found = report.split(/^## /m).find((part) => part.startsWith(`Turn ${number}\n`));
-  assert.ok(found, `Turn ${number} section`);
-  return unescape(found);
-};
+function unpack(zip) {
+  const files = new Map();
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  let offset = 0;
+  while (offset + 4 < zip.length && view.getUint32(offset, true) === 0x04034b50) {
+    assert.equal(view.getUint16(offset + 8, true), 0, "ZIP file uses STORE");
+    const length = view.getUint32(offset + 18, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const name = zip.subarray(offset + 30, offset + 30 + nameLength).toString("utf8");
+    const start = offset + 30 + nameLength + extraLength;
+    files.set(name, zip.subarray(start, start + length));
+    offset = start + length;
+  }
+  assert.equal(view.getUint32(offset, true), 0x02014b50, "central directory exists");
+  assert.equal(view.getUint32(zip.length - 22, true), 0x06054b50, "ZIP end record exists");
+  return files;
+}
 
 const labels = {
-  "zh-CN": { exportButton: "导出轨迹报告（.md）", failed: "导出轨迹报告失败，请重试。",
+  "zh-CN": { exportButton: "下载原始轨迹（.zip）", failed: "原始轨迹下载失败（可能是来源不可用或超过容量上限），未保存不完整压缩包。",
     empty: "该对话还没有已执行的轮次。", title: "对话轨迹" },
-  "en-US": { exportButton: "Export report (.md)", failed: "Could not export the trace report. Please retry.",
+  "en-US": { exportButton: "Download original trace (.zip)",
+    failed: "Could not download original traces (an unavailable source or size limit may be the cause). No partial archive was saved.",
     empty: "This conversation has no executed turns.", title: "Conversation trace" },
 };
 
@@ -152,6 +166,7 @@ try {
     }, locale);
     const page = await context.newPage();
     page.setDefaultTimeout(15000);
+    page.on("dialog", (dialog) => dialog.accept()); // Accept the sensitive raw-data warning explicitly.
     const seen = { errors: [], requests: [] };
     page.on("pageerror", (error) => seen.errors.push(error.message));
     page.on("request", (request) => {
@@ -165,54 +180,47 @@ try {
     });
     return { context, page, seen };
   }
-  async function exportReport(page, seen, text) {
+  async function exportArchive(page, seen, text) {
     const before = seen.requests.length;
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: text.exportButton, exact: true }).click(),
     ]);
-    // The click itself performs only GETs (trace logs and job lists).
     const during = seen.requests.slice(before);
     assert.ok(during.length > 0 && during.every((entry) => entry.startsWith("GET ")), JSON.stringify(during));
-    assert.ok(!during.some((entry) => /\/traces\/[^/]+\/model$/.test(entry)), "raw model requests not fetched");
+    assert.ok(during.some((entry) => /\/traces\/[^/]+\/model$/.test(entry)), "model requests are included");
     assert.ok(!during.some((entry) => /\/stop$|\/events$|\/resume|\/cancel|\/turns$/.test(entry)));
-    assert.equal(download.suggestedFilename(), `opendirector-trace-${conversationId}.md`);
+    assert.equal(download.suggestedFilename(), "opendirector-trace-" + conversationId + ".zip");
     const path = await download.path();
-    assert.ok(path, "download must be saved");
-    return readFile(path, "utf8");
+    assert.ok(path);
+    return unpack(await readFile(path));
   }
-  function assertReport(report) {
-    assert.match(report, /^# OpenDirector Agent Trace Report/);
-    assert.ok(report.includes(projectId) && report.includes(conversationId));
-    // Every executed turn is present, not only the expanded one.
-    for (const [index, turn] of turns.entries()) {
-      const part = section(report, index + 1);
-      assert.ok(part.includes(`Turn ID: ${turn.id}`), `turn ${index + 1} id`);
-      assert.ok(part.includes(`Runtime: ${turn.runtime}`), `turn ${index + 1} runtime`);
-      assert.ok(part.includes("Status: complete"), `turn ${index + 1} status`);
-      assert.ok(part.includes(turn.text), `turn ${index + 1} request preview`);
+  function assertArchive(files) {
+    const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
+    assert.equal(manifest.format, "opendirector-original-trace-archive");
+    assert.equal(manifest.projectId, projectId);
+    assert.equal(manifest.conversationId, conversationId);
+    assert.equal(manifest.turns.length, 4);
+    const names = [...files.keys()];
+    assert.deepEqual(names, ["manifest.json", "turn-0001/model.jsonl", "turn-0001/opencode.jsonl",
+      "turn-0002/codex.jsonl", "turn-0004/codex.jsonl"]);
+    assert.ok(manifest.warning.includes("credentials"));
+    assert.equal(manifest.turns[0].jobs[0].jobId, jobIds.succeeded);
+    assert.equal(manifest.turns[1].jobs[0].status, "failed");
+    assert.equal(manifest.turns[2].jobs[0].status, "running");
+    assert.equal(manifest.turns[2].sources[0].status, "missing");
+    assert.equal(manifest.turns[3].jobs, null);
+    assert.equal(manifest.turns[0].sources[0].source, "model");
+    for (const [file, content] of Object.entries(logs)) {
+      const index = turns.findIndex((turn) => file.startsWith(turn.id + "."));
+      const name = "turn-" + String(index + 1).padStart(4, "0") + "/" +
+        file.slice(turns[index].id.length + 1);
+      assert.equal(files.get(name)?.toString("utf8"), content, "raw byte-for-byte preservation: " + file);
     }
-    const [one, two, three, four] = [1, 2, 3, 4].map((number) => section(report, number));
-    assert.ok(one.includes("#### opencode") && !one.includes("#### codex"));
-    assert.ok(two.includes("#### codex") && !two.includes("#### opencode"));
-    assert.ok(!report.includes("#### model"), "raw model requests are not exported");
-    // Event kinds and statuses only.
-    assert.match(one, /- session\.start\n/);
-    assert.match(one, /- tool \(completed\)/);
-    assert.match(one, /- assistant\.message\n/);
-    assert.match(two, /- item\.completed \(completed\)/);
-    assert.match(two, /- item\.completed \(failed\)/);
-    // Linked Jobs.
-    assert.match(one, new RegExp(`${jobIds.succeeded}: succeeded \\(adopted\\)`));
-    assert.match(two, new RegExp(`${jobIds.failed}: failed \\(not adopted\\)`));
-    assert.match(three, new RegExp(`${jobIds.running}: running \\(not adopted\\)`));
-    assert.ok(three.includes("Trace not recorded"), "missing log");
-    assert.ok(four.includes("Job data unavailable"), "failed job request");
-    assert.match(four, /- item\.started \(in_progress\)/);
-    assert.ok(!/- item\.completed/.test(four), "a cut line must not create an event");
-    // No raw content or credentials.
-    for (const secret of SECRETS) assert.ok(!report.includes(secret), `report leaks ${secret}`);
-    assert.ok(!/sk-DEMO/.test(report));
+    const raw = [...files.values()].map((value) => value.toString("utf8")).join("\n");
+    for (const sentinel of SECRETS)
+      assert.ok(raw.includes(sentinel), "raw diagnostic content preserved: " + sentinel);
+    assert.ok(raw.includes("not json "), "invalid JSONL lines must not be discarded");
   }
   function assertReadOnly(seen) {
     assert.deepEqual(seen.errors, []);
@@ -239,23 +247,17 @@ try {
         await mkdir(evidence, { recursive: true });
         await page.screenshot({ path: join(evidence, `trace-page-${locale}.png`), fullPage: true });
       }
-      const report = await exportReport(page, seen, text);
-      assertReport(report);
+      const files = await exportArchive(page, seen, text);
+      assertArchive(files);
       assert.equal(await button.isEnabled(), true, "button is usable again");
       assert.equal(await page.getByRole("alert").count(), 0);
       assert.equal(await page.locator("details[open]").count(), 1, "export does not expand turns");
-      if (evidence) {
-        const viewer = await context.newPage();
-        await viewer.setContent(`<pre style="font:14px/1.5 monospace;white-space:pre-wrap">${report
-          .replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`);
-        await viewer.screenshot({ path: join(evidence, `report-${locale}.png`), fullPage: true });
-        await viewer.close();
-      }
+      if (evidence) await writeFile(join(evidence, "manifest-" + locale + ".json"), files.get("manifest.json"));
 
       // An old single-turn link for a listed turn resolves to the conversation and exports.
       await page.goto(`${base}/?traceProject=${projectId}&turn=${turns[2].id}&runtime=opencode`);
       await page.getByRole("heading", { name: text.title, exact: true }).waitFor();
-      assertReport(await exportReport(page, seen, text));
+      assertArchive(await exportArchive(page, seen, text));
 
       // An unknown turn keeps the single-turn page, which has no export button.
       const unknown = crypto.randomUUID();
@@ -312,4 +314,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log("trace report export: ok");
+console.log("original trace ZIP archive: ok");
