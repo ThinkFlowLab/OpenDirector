@@ -395,6 +395,40 @@ try {
   await until(() => api(path), (value) => value.messages.length === edited.messages.length + 2 &&
     value.messages.at(-1)?.status === "complete", "Complete the manually submitted turn");
 
+  // #502: a turn whose final write failed ends with `end.error` and no
+  // conversation. The panel must leave the running state, show the error and
+  // keep the partial reply. Only the SSE response is faked here.
+  const unsaved = "回复未能保存，请检查后端日志。";
+  const before = await api(path);
+  await page.route(/\/assistant\/turns$/, (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const { id, text } = route.request().postDataJSON();
+    const started = {
+      ...before,
+      messages: [
+        ...before.messages,
+        { id: crypto.randomUUID(), role: "user", text, status: "complete" },
+        { id, role: "assistant", text: "", status: "streaming" },
+      ],
+    };
+    return route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: [
+        { type: "start", conversation: started },
+        { type: "delta", text: "断盘前的部分回复" },
+        { type: "end", turnId: id, nextTurnId: null, conversation: null, error: unsaved },
+      ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    });
+  });
+  await editor.fill("写盘失败");
+  await send.click();
+  await panel.getByRole("alert").filter({ hasText: unsaved }).waitFor();
+  await panel.getByText("断盘前的部分回复", { exact: true }).waitFor();
+  assert.equal(await panel.getByRole("button", { name: "停止回复", exact: true }).count(), 0);
+  await send.waitFor();
+  await page.unroute(/\/assistant\/turns$/);
+
   // History stays inside a narrow assistant, closes outside, and all header controls fit.
   await panel.evaluate((element) =>
     element.style.setProperty("--assistant-width", "300px"),

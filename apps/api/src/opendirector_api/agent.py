@@ -27,7 +27,7 @@ from opendirector.domain.rule_facts import MAX_REFERENCES, PROMPT_MAX_LENGTH
 from opendirector.infrastructure.creation_projects import durable_json
 from opendirector.infrastructure.local_projects import child, read_json
 from opendirector.integrations.chat_completions import CHAT_MAX_TOKENS
-from opendirector_api.localization import localized_error_for_language
+from opendirector_api.localization import localized_error_for_language, wants_english_language
 
 logger = logging.getLogger(__name__)
 
@@ -416,6 +416,7 @@ class Chain:
     task: asyncio.Task | None = None
     stopped: bool = False
     last: dict | None = None
+    unsaved: str | None = None  # why the latest reply could not be saved
 
 
 def agent_routes(projects, generation, configs, provider=None, *, active=None) -> APIRouter:
@@ -636,6 +637,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         steps = None
         run_session = plan.get('run_session') or chain.session
         timing: dict = {}
+        chain.unsaved = chain.last = None
         turn_started = time.monotonic()
         renewal: asyncio.Task | None = None
 
@@ -739,20 +741,33 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             except Exception:
                 logger.exception(f'agent.turn.unfinished project_id={project_id} turn_id={turn_id}')
                 saved = None
+                # The reply was streamed but never saved: say so instead of ending
+                # as if nothing went wrong, keep any earlier run error beside it,
+                # and do not let the chain start a queued message behind it.
+                unsaved = ('The reply could not be saved. Check the backend log.'
+                           if wants_english_language(plan.get('accept_language'))
+                           else '回复未能保存，请检查后端日志。')
+                error = f'{error}\n{unsaved}' if error else unsaved
+                chain.unsaved = error
+                if status == 'complete':
+                    status = 'interrupted'
             finally:
                 if renewal is not None:
                     renewal.cancel()
                     with suppress(asyncio.CancelledError):
                         await renewal
+                # Measurement and the lease are both best effort and independent:
+                # losing either may cost a file or a lock, never the turn's end.
                 try:
-                    # Measurement and the lease are both best effort: losing
-                    # either may cost a file or a lock, never the turn's reply.
                     await asyncio.to_thread(agent_timing.write, plan['directory'], turn_id, timing,
                                             round(time.monotonic() - turn_started, 3))
+                except Exception:
+                    logger.exception(f'agent.turn.timing.failed project_id={project_id} turn_id={turn_id}')
+                try:
                     if plan.get('run_session'):
                         await asyncio.to_thread(projects.local.release_agent_session, plan['run_session'])
                 except Exception:
-                    logger.exception(f'agent.turn.timing.failed project_id={project_id} turn_id={turn_id}')
+                    logger.exception(f'agent.session.release.failed project_id={project_id} turn_id={turn_id}')
             chain.last = saved
         return saved, error, status
 
@@ -786,7 +801,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 plan['run_session'] = run_session
                 saved = None
         except asyncio.CancelledError:
-            status, error = 'stopped', None
+            status, error = 'stopped', chain.unsaved
             raise
         finally:
             chain.events.put({'type': 'end', 'turnId': str(turn_id), 'nextTurnId': None,
