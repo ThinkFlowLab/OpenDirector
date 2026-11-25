@@ -1,4 +1,12 @@
 export const canvasWorkspace = {
+  "canvas.workspace.preview.mode": "Preview mode",
+  "canvas.workspace.preview.request": "Edit in this window",
+  "canvas.workspace.preview.requested": "Edit access requested",
+  "canvas.workspace.preview.busy": "Another window is waiting for edit access",
+  "canvas.workspace.preview.handoff": "Hand off editing to the other window?",
+  "canvas.workspace.preview.accept": "Save and hand off",
+  "canvas.workspace.preview.decline": "Keep editing here",
+  "canvas.workspace.preview.closeEditor": "Save and close the active editor before handing off editing.",
   "canvas.workspace.help.toggleAssistant": "Toggle AI chat",
   "canvas.workspace.help.doubleShift": "Press Shift twice",
 

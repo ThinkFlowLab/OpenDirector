@@ -148,6 +148,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
             <button
               type="button"
               className="cw-placeholder-upload nodrag nopan"
+              disabled={actions?.readOnly}
               onClick={(event) => {
                 event.stopPropagation();
                 media.retry();
@@ -276,6 +277,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         <NodeResizeControl
           position="bottom-right"
           className="cw-text-resize nodrag nopan"
+          shouldResize={() => !actions?.readOnly}
           minWidth={TEXT_NODE_MIN_SIZE.width}
           minHeight={TEXT_NODE_MIN_SIZE.height}
           onResizeStart={() => actions?.beginResize()}

@@ -21,6 +21,7 @@ function openProjectInNewTab(project: WorkspaceProject) {
 
 export function ProjectSelector({
   currentId,
+  readOnly = false,
   editNameForId,
   name,
   disabled,
@@ -32,6 +33,7 @@ export function ProjectSelector({
   onDeleteProject,
 }: {
   currentId: string;
+  readOnly?: boolean;
   editNameForId?: string | null;
   name: string;
   disabled: boolean;
@@ -94,14 +96,14 @@ export function ProjectSelector({
   }, [currentId]);
   const editedNewProject = useRef<string | null>(null);
   useEffect(() => {
-    if (disabled || editNameForId !== currentId || editedNewProject.current === currentId) return;
+    if (readOnly || disabled || editNameForId !== currentId || editedNewProject.current === currentId) return;
     editedNewProject.current = currentId;
     setOpen(false);
     setDraftName(name);
     setRenameError("");
     editingRef.current = true;
     setEditing(true);
-  }, [currentId, editNameForId, disabled, name]);
+  }, [currentId, editNameForId, disabled, name, readOnly]);
   const closeActions = useCallback((restoreFocus: boolean) => {
     setActions((current) => {
       if (current && restoreFocus)
@@ -155,6 +157,7 @@ export function ProjectSelector({
     setBusy(true);
     setRenameError("");
     try {
+      if (readOnly) return false;
       await onRename(nextName);
       finishEditing(restoreFocus);
       return true;
@@ -311,7 +314,7 @@ export function ProjectSelector({
           <button
             className="cw-project-name"
             ref={nameButton}
-            disabled={disabled || busy}
+            disabled={readOnly || disabled || busy}
             title={t("canvas.project.editNameHint")}
             onKeyDown={(event) => {
               // Focus returns here after saving; a held submit key must not reopen editing.
@@ -456,7 +459,7 @@ export function ProjectSelector({
                         actionButtons.current.set(project.id, element);
                       else actionButtons.current.delete(project.id);
                     }}
-                    disabled={disabled || busy}
+                    disabled={readOnly || disabled || busy}
                     aria-label={t("canvas.project.actionsFor", {
                       name: displayName,
                     })}
@@ -464,6 +467,7 @@ export function ProjectSelector({
                     aria-haspopup="menu"
                     aria-expanded={actions?.id === project.id}
                     onClick={(event) => {
+                      if (readOnly) return;
                       if (actions?.id === project.id) closeActions(true);
                       else openActions(project, event.currentTarget);
                     }}
@@ -491,7 +495,7 @@ export function ProjectSelector({
             <button
               className="cw-project-cleanup"
               role="menuitem"
-              disabled={busy || loading || disabled}
+              disabled={readOnly || busy || loading || disabled}
               onClick={() => setCleanupOpen(true)}
             >
               <span>
@@ -504,10 +508,10 @@ export function ProjectSelector({
             <button
               className="cw-project-examples"
               role="menuitem"
-              disabled={busy || loading || disabled}
+              disabled={readOnly || busy || loading || disabled}
               onClick={() => {
                 setOpen(false);
-                onExamples();
+                if (!readOnly) onExamples();
               }}
             >
               <span>{t("canvas.project.examples")}</span>
@@ -517,10 +521,10 @@ export function ProjectSelector({
           <button
             className="cw-project-create"
             role="menuitem"
-            disabled={busy || loading || disabled}
+            disabled={readOnly || busy || loading || disabled}
             onClick={() => {
               setOpen(false);
-              onCreate();
+              if (!readOnly) onCreate();
             }}
           >
             <span>{t("canvas.project.create")}</span>
@@ -574,7 +578,7 @@ export function ProjectSelector({
           hint={t("canvas.project.renameHint")}
           onClose={() => setRenameTarget(null)}
           onSubmit={async (nextName) => {
-            await onRenameProject(renameTarget, nextName);
+            if (!readOnly) await onRenameProject(renameTarget, nextName);
             await loadProjects();
           }}
         />
@@ -585,7 +589,7 @@ export function ProjectSelector({
           recycleBin={recycleBin}
           onClose={() => setDeleteTarget(null)}
           onSubmit={async () => {
-            await onDeleteProject(deleteTarget);
+            if (!readOnly) await onDeleteProject(deleteTarget);
             // The project is gone on the server; drop the row in place instead
             // of another full list read before the dialog can close. The next
             // selector open reloads the authoritative list.
@@ -609,6 +613,7 @@ export function ProjectSelector({
           recycleBin={recycleBin}
           onClose={() => setCleanupOpen(false)}
           onSubmit={async () => {
+            if (readOnly) return;
             const result = await cleanupUnreadableWorkspaceProjects();
             await loadProjects();
             if (result.failed.length) {

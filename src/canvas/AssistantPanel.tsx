@@ -64,6 +64,7 @@ function kindOf(asset: ChatAsset) {
 /** Shared conversation and composer for chat creation and the canvas assistant. */
 export function AssistantPanel({
   documentId,
+  readOnly = false,
   documentTitle,
   catalog,
   nodes,
@@ -86,6 +87,7 @@ export function AssistantPanel({
   onEditResult,
 }: {
   documentId: string;
+  readOnly?: boolean;
   documentTitle: string;
   catalog: BackendModels;
   nodes: CanvasNode[];
@@ -109,7 +111,7 @@ export function AssistantPanel({
   onViewResultOnCanvas: (asset: Asset, itemId?: string | null) => Promise<void>;
 }) {
   const t = useT();
-  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
+  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open, readOnly);
   const { value } = chat;
   const { results, timelines, snapshot } = useAssistantResults(documentId, open && !collapsible, value.messages);
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
@@ -163,6 +165,7 @@ export function AssistantPanel({
   }, [documentId, chat.loaded, chat.changing, chat.agent?.id, value.runtime, value.runtimeModel,
     value.thinking, value.builtinModelThinking, onAgentModel]);
   const locked =
+    readOnly ||
     !chat.loaded ||
     chat.adding ||
     checkingReferences ||
@@ -175,8 +178,8 @@ export function AssistantPanel({
   const currentRuntime = chat.runtimes.find((item) => item.id === (value.runtime ?? "default"));
   const missingAgentModel = needsAgentModel(chat.loaded, currentRuntime, !!chat.agent);
   const referenceDisabled =
-    !chat.loaded || chat.adding || checkingReferences || chat.sending;
-  const sessionDisabledReason = chat.changing
+    readOnly || !chat.loaded || chat.adding || checkingReferences || chat.sending;
+  const sessionDisabledReason = readOnly ? t("canvas.workspace.preview.mode") : chat.changing
     ? t("assistant.sessions.disabled.switching")
     : !chat.loaded
       ? t("assistant.sessions.disabled.loading")
@@ -386,6 +389,17 @@ export function AssistantPanel({
   }
   const hoveredAsset = mediaPreview && displayedAssets.find(item => item.id === mediaPreview.assetId);
 
+  const projectAssetsButton = !collapsible && (
+    <span ref={assetListAnchor} className="cw-asset-list-anchor">
+      <button type="button" className="cw-assistant-icon-button" data-chat-project-assets
+        aria-label={t("workspaceModes.projectAssets")} title={t("workspaceModes.projectAssets")}
+        aria-haspopup="dialog" aria-expanded={projectAssetsOpen}
+        onClick={() => setProjectAssetsOpen((previous) => !previous)}>
+        <CanvasIcon name="folder" size={18} />
+      </button>
+    </span>
+  );
+
   const latestUser = value.messages.at(-2);
   const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
     new URLSearchParams({
@@ -422,7 +436,7 @@ export function AssistantPanel({
         if (event.dataTransfer.types.includes("Files")) {
           event.preventDefault();
           event.stopPropagation();
-          setDragOver(true);
+          if (!readOnly) setDragOver(true);
         }
       }}
       onDragLeave={(event) => {
@@ -569,6 +583,8 @@ export function AssistantPanel({
                   key={result.resultId ?? result.assetId}
                   projectId={documentId}
                   result={result}
+                  readOnly={readOnly}
+                  locateDisabled={readOnly && !visibleNodes.some(node => node.id === result.itemId)}
                   referenceDisabled={referenceDisabled || chat.changing}
                   onPreview={onPreviewResult}
                   onReference={referenceResult}
@@ -580,7 +596,7 @@ export function AssistantPanel({
             {!collapsible && message.role === "assistant" && message.publishedTimelines?.projectId === documentId &&
               message.publishedTimelines.timelines.map(result => (
                 <AssistantTimelineResultCard key={result.editorId} result={result} projectId={documentId}
-                  eventCursor={message.publishedTimelines?.eventCursor} snapshot={snapshot} onEdit={onEditResult} />
+                  readOnly={readOnly} eventCursor={message.publishedTimelines?.eventCursor} snapshot={snapshot} onEdit={onEditResult} />
               ))}
             {trace && (
               <a className="cw-assistant-message-status cw-assistant-trace-link"
@@ -602,6 +618,7 @@ export function AssistantPanel({
         })}
       </div>
       <div className="cw-assistant-composer-area">
+        {readOnly && projectAssetsButton}
         {chat.error && (
           <div className="cw-assistant-error" role="alert">
             <span>{chat.error}</span>
@@ -630,6 +647,7 @@ export function AssistantPanel({
         <form
           className="cw-assistant-composer"
           aria-label={t("assistant.panel.composer")}
+          inert={readOnly}
           onSubmit={(event) => {
             event.preventDefault();
             pendingReferences.cancel();
@@ -778,16 +796,7 @@ export function AssistantPanel({
           />
           <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />
           <div className="cw-assistant-toolbar">
-            {!collapsible && (
-              <span ref={assetListAnchor} className="cw-asset-list-anchor">
-                <button type="button" className="cw-assistant-icon-button" data-chat-project-assets
-                  aria-label={t("workspaceModes.projectAssets")} title={t("workspaceModes.projectAssets")}
-                  aria-haspopup="dialog" aria-expanded={projectAssetsOpen}
-                  onClick={() => setProjectAssetsOpen((previous) => !previous)}>
-                  <CanvasIcon name="folder" size={18} />
-                </button>
-              </span>
-            )}
+            {!readOnly && projectAssetsButton}
             <button
               type="button"
               className="cw-assistant-icon-button cw-assistant-upload"
@@ -918,6 +927,7 @@ export function AssistantPanel({
         ref={fileInput}
         className="sr-only"
         type="file"
+        disabled={readOnly}
         multiple
         accept="image/*,.heic,.heif,video/*,audio/*,text/*,.md,.markdown,.txt"
         aria-label={t("assistant.panel.selectFiles")}
@@ -937,7 +947,7 @@ export function AssistantPanel({
         projectId={documentId}
         anchor={assetListAnchor.current}
         onClose={() => setProjectAssetsOpen(false)}
-        actions={{
+        actions={readOnly ? { kind: "preview", onPreview: onPreviewResult } : {
           kind: "chat",
           referenceDisabled: referenceDisabled || chat.changing,
           onReference: referenceResult,

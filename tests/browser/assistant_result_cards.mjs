@@ -30,6 +30,97 @@ async function until(read, matches, label) {
   }
 }
 
+async function verifyPreviewWindow({ page, locale, labels, result, root, visibleItemId, timelineId }) {
+  const preview = await page.context().newPage();
+  try {
+    await preview.goto(page.url());
+    const workspace = preview.locator('[data-testid="canvas-workspace"][data-edit-mode="preview"][aria-busy="false"]');
+    await workspace.waitFor();
+    await preview.getByTestId("workspace-mode-agent").click();
+    const card = workspace.locator(`.cw-chat-result[data-asset-id="${result.asset.assetId}"]`);
+    const button = name => card.getByRole("button", { name, exact: true });
+    await card.waitFor();
+    assert.ok(await workspace.locator(".cw-edit-request").isVisible());
+    assert.ok(await button(labels.reference).isDisabled());
+    assert.ok(await button(locale === "zh-CN" ? "编辑媒体" : "Edit media").isDisabled());
+
+    const writes = [];
+    preview.on("request", req => {
+      const path = new URL(req.url()).pathname;
+      if (req.method() !== "GET" && path.startsWith("/api" + root + "/") &&
+          /\/(commands|uploads|assistant)(\/|$)/.test(path)) writes.push(`${req.method()} ${path}`);
+    });
+    const before = await api(root);
+    const chat = await api(root + "/assistant");
+    const media = preview.locator("dialog.cw-preview");
+    await button(labels.preview).click();
+    await media.locator("img").evaluate(element => element.decode());
+    await preview.keyboard.press("Escape");
+    await media.waitFor({ state: "hidden" });
+
+    await workspace.locator("[data-chat-project-assets]").click();
+    const list = workspace.locator('.cw-creation-assets[data-actions="preview"]');
+    await list.waitFor();
+    assert.equal(await list.locator("[data-project-import], [data-reference-asset], [data-create-timeline], [data-open-timeline]").count(), 0);
+    const name = before.assets.find(asset => asset.id === result.asset.assetId).name;
+    const search = preview.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith("/asset-list") && url.searchParams.get("text") === name;
+    });
+    await list.getByRole("textbox").fill(name);
+    const response = await search;
+    assert.ok(response.ok(), await response.text());
+    const items = (await response.json()).items;
+    const row = list.getByTitle(name, { exact: true });
+    if (labels.policy === "candidate_only" && !visibleItemId) {
+      // Unadopted generation candidates live in the results inventory until placed.
+      assert.ok(!items.some(entry => entry.asset.id === result.asset.assetId));
+      assert.equal(await row.count(), 0);
+      await preview.keyboard.press("Escape");
+      await list.waitFor({ state: "hidden" });
+    } else {
+      const matches = items.filter(entry => entry.asset.name === name);
+      const index = matches.findIndex(entry => entry.asset.id === result.asset.assetId);
+      assert.ok(index >= 0);
+      await until(() => row.count(), count => count === matches.length, "all matching asset rows must render");
+      await row.nth(index).click();
+      const hash = await media.locator("img").evaluate(async element => {
+        await element.decode();
+        const bytes = await (await fetch(element.currentSrc)).arrayBuffer();
+        return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+          value => value.toString(16).padStart(2, "0")).join("");
+      });
+      assert.equal("sha256:" + hash, result.asset.fingerprint);
+      await preview.keyboard.press("Escape");
+      await media.waitFor({ state: "hidden" });
+    }
+
+    await workspace.locator("#canvas-assistant").evaluate(panel => {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(new File(["preview"], "preview-drop.txt", { type: "text/plain" }));
+      panel.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+    });
+    if (timelineId) {
+      const timelineAction = workspace.locator(`.cw-chat-result[data-editor-id="${timelineId}"] button`);
+      assert.ok(await timelineAction.isDisabled());
+    }
+    if (visibleItemId) {
+      await button(labels.locate).click();
+      await workspace.locator(`.react-flow__node.selected[data-id="${visibleItemId}"]`).waitFor();
+    } else {
+      assert.ok(await button(labels.locate).isDisabled(), "a preview cannot show a hidden or unplaced result");
+      await preview.getByTestId("workspace-mode-canvas").click();
+    }
+    await until(() => preview.getByTestId("workspace-mode-canvas").getAttribute("aria-pressed"),
+      value => value === "true", "the preview must remain navigable");
+    assert.equal((await api(root)).eventCursor, before.eventCursor);
+    assert.deepEqual((await api(root + "/assistant")).draftContent, chat.draftContent);
+    assert.deepEqual(writes, [], "viewing results and dropping a file in preview must not send business writes");
+  } finally {
+    await preview.close();
+  }
+}
+
 async function openResultImage(page, card, locale) {
   await card.getByRole("button", { name: locale === "zh-CN" ? "编辑媒体" : "Edit media", exact: true }).click();
   const media = page.locator(".cw-image-editor");
@@ -264,7 +355,8 @@ try {
     ] })).status, "applied");
     await api(`/creation/sessions/${setupSession}`, { method: "DELETE" });
 
-    const page = await browser.newPage({ locale, viewport: { width: 1440, height: 900 } });
+    const context = await browser.newContext({ locale, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(language => {
@@ -341,6 +433,7 @@ try {
       await card.waitFor();
       await page.setViewportSize({ width: 600, height: 850 });
     }
+    await verifyPreviewWindow({ page, locale, labels, result, root });
     await verifyReadOnlyImage({ page, card, locale, root, conversation });
     if (!adopted) {
       const configs = "**/api/model-configs";
@@ -450,11 +543,12 @@ try {
     await timeline.getByText("Agent cut track", { exact: true }).waitFor();
     await timeline.getByRole("button", { name: locale === "zh-CN" ? "关闭编辑器" : "Close editor", exact: true }).click();
     await timeline.waitFor({ state: "hidden" });
+    await verifyPreviewWindow({ page, locale, labels, result, root, visibleItemId: selectedId, timelineId: target.editorId });
     const returned = await conversation();
     assert.equal(returned.conversationId, delivered.conversationId);
     assert.deepEqual(returned.messages, delivered.messages);
     assert.deepEqual(errors, []);
-    await page.close();
+    await context.close();
     console.log(`PASS ${locale}: read-only open and cancel, rotated image save and undo, canvas identity, chosen timeline, playable MP4, publication retry, and timeline-only reply (${labels.policy})`);
   }
 } finally {

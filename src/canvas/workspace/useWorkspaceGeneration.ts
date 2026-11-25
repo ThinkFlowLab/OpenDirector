@@ -1,3 +1,4 @@
+import { getEditingState } from "../../backend/editSession.ts";
 import { useEffect, useRef } from "react";
 import { errorMessage } from "../../backend/api.ts";
 import { creationClient } from "../../backend/creationClient.ts";
@@ -29,7 +30,7 @@ import { toolOutputKind, jobTime, incomingNodes } from "./workspaceChrome.tsx";
 import type { ServiceRun } from "./workspaceChrome.tsx";
 
 
-export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
+export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolean) {
   const {
     actionSessionRef,
     addLinkedOutputs,
@@ -468,7 +469,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
   const placingTools = useRef(new Set<string>());
   const placementRetryAfter = useRef(new Map<string, number>());
   useEffect(() => {
-    if (!ready || !backendCatalog.connected) return;
+    if (writePaused || !ready || !backendCatalog.connected) return;
     for (const job of jobs) {
       const placementKey = `${doc.id}:${job.id}`;
       if (
@@ -505,7 +506,8 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
       const place = async () => {
         const origin = job.resultSource!;
         const current = () => historyRef.current.present;
-        if (!mounted.current || current().id !== origin.documentId) return;
+        if (!mounted.current || current().id !== origin.documentId ||
+            rt.switchPending.current || getEditingState(origin.documentId)?.mode === "preview") return;
         {
           // The service validates frozen sources/locks and publishes the owned
           // outputs atomically. React Flow only observes the resulting snapshot.
@@ -531,7 +533,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime) {
           placingTools.current.delete(placementKey);
         });
     }
-  }, [jobs, ready, backendCatalog.connected, doc.id, change, persist, notify]);
+  }, [jobs, ready, backendCatalog.connected, doc.id, change, persist, notify, writePaused, rt]);
   const submissionAssets = () => [
     ...(creationClient(doc.id).snapshot?.assets ?? []),
     ...referenceAssets.assets,

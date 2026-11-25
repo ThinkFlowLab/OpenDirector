@@ -36,6 +36,11 @@ from opendirector_api.localization import localized_receipt
 from opendirector_api.localization import localized_error_for_language
 
 
+class EditHandoffDecision(BaseModel):
+    requester: UUID
+    accept: bool
+
+
 class FontCoverageResponse(BaseModel):
     fingerprint: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
     # One bit per Unicode scalar position: fixed 139,264 bytes / 185,688 base64 chars.
@@ -131,14 +136,33 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
         return projects.open(project_id, str(x_opendirector_session))
 
     @router.post('/projects/{project_id}/open-canvas')
-    def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header()):
+    def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header(),
+                            x_opendirector_allow_preview: bool = Header(default=False)):
         # The canvas needs its reference edges and text on first render too. Reuse the
         # single snapshot this open read already published instead of making the
         # page read the same project again through GET /canvas. The no-flag
         # route above still returns a bare ProjectSnapshot.
-        snapshot = projects.open(project_id, str(x_opendirector_session))
+        session = str(x_opendirector_session)
+        editing = {}
+        if x_opendirector_allow_preview:
+            snapshot, state = projects.open_canvas(project_id, session, allow_preview=True)
+            editing['editing'] = state
+        else:
+            snapshot = projects.open(project_id, session)
         return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot),
-                'texts': canvas.text_contents(snapshot)}
+                'texts': canvas.text_contents(snapshot), **editing}
+
+    @router.get('/projects/{project_id}/edit-session')
+    def edit_session(project_id: UUID, x_opendirector_session: UUID = Header()):
+        return projects.editing_state(project_id, str(x_opendirector_session))
+
+    @router.post('/projects/{project_id}/edit-session')
+    def request_edit_session(project_id: UUID, x_opendirector_session: UUID = Header()):
+        return projects.request_edit(project_id, str(x_opendirector_session))
+
+    @router.put('/projects/{project_id}/edit-session')
+    def resolve_edit_session(project_id: UUID, value: EditHandoffDecision, x_opendirector_session: UUID = Header()):
+        return projects.resolve_edit(project_id, str(x_opendirector_session), str(value.requester), value.accept)
 
     @router.put('/sessions/{session_id}')
     def heartbeat(session_id: UUID, value: Session):

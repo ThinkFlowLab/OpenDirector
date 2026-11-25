@@ -22,6 +22,7 @@ const tabs: readonly { key: LibraryTab; labelKey: MessageKey }[] = [
 export function AssetLibraryDialog({
   initialTab = "assets",
   currentId,
+  readOnly = false,
   liveCanvas,
   onClose,
   onInsert,
@@ -33,6 +34,7 @@ export function AssetLibraryDialog({
 }: {
   initialTab?: LibraryTab;
   currentId: string;
+  readOnly?: boolean;
   /** Rows of the open canvas, so its tab never waits on the network. */
   liveCanvas?: { projectId: string; sources: CanvasSource[] };
   onClose: () => void;
@@ -219,10 +221,11 @@ export function AssetLibraryDialog({
               disabled={busy}
               reloadKey={reload}
               onBackup={() => {
-                if (onBackupSubject) void run(onBackupSubject, false);
+                if (!readOnly && onBackupSubject) void run(onBackupSubject, false);
               }}
               backupIssue={
-                busy ? t("library.busy") : (backupSubjectIssue ?? null)
+                readOnly ? t("canvas.workspace.preview.mode") :
+                  busy ? t("library.busy") : (backupSubjectIssue ?? null)
               }
             />
           )}
@@ -265,7 +268,7 @@ export function AssetLibraryDialog({
             ) : (
               <button
                 type="button"
-                disabled={Boolean(issue)}
+                disabled={readOnly || Boolean(issue)}
                 title={issue ?? t("library.insertHint")}
                 onClick={insert}
               >

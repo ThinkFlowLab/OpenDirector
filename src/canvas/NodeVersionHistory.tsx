@@ -191,6 +191,7 @@ export function NodeVersionHistory({
   itemId,
   anchor,
   preparation,
+  readOnly = false,
   onClose,
   onApplied,
 }: {
@@ -198,6 +199,7 @@ export function NodeVersionHistory({
   itemId: string;
   anchor: DOMRect;
   preparation: Promise<void>;
+  readOnly?: boolean;
   onClose: () => void;
   onApplied: (referencesChanged: boolean) => void;
 }) {
@@ -411,7 +413,7 @@ export function NodeVersionHistory({
           <button
             className="cw-version-apply"
             disabled={
-              busy || stale || !current?.available || listing?.item.locked
+              readOnly || busy || stale || !current?.available || listing?.item.locked
             }
             onClick={() => void apply()}
           >

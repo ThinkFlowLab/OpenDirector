@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getEditingState } from "../../backend/editSession.ts";
 import type { Asset } from "../../contracts/generated.ts";
 import { creationClient, currentAsset, visibleItems } from "../../backend/creationClient.ts";
 import { findAssetItem, showExistingItem, showNewAssetItem } from "../canvasAssetPlacement.ts";
@@ -46,6 +47,9 @@ export function useChatResultLocation(rt: WorkspaceRuntime, requestCanvasEntry: 
       throw new Error(rt.t("canvasNodes.assets.versionChanged"));
 
     const item = findAssetItem(snapshot, saved.id, preferredId);
+    // A handoff or a remote hide may have occurred while refreshing the snapshot.
+    if (getEditingState(asset.projectId)?.mode === "preview" && (!item || !visibleItems(snapshot).has(item.id)))
+      throw new Error(rt.t("canvas.workspace.preview.mode"));
     // Showing an unadopted candidate creates a material binding to this version.
     const itemId = item ? await showExistingItem(client, item)
       : await showNewAssetItem(client, saved, rt.center());

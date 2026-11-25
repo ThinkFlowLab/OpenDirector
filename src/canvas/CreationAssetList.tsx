@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { Asset } from "../contracts/generated.ts";
 import {
   creationClient,
@@ -88,6 +88,7 @@ export function CreationAssetList({
   hidden?: boolean;
   onClose: () => void;
   actions:
+    | { kind: "preview"; onPreview: (asset: Asset) => void }
     | { kind: "canvas"; onLocate: (id: string) => void; position: Point }
     | {
         kind: "chat";
@@ -152,6 +153,10 @@ export function CreationAssetList({
   } | null>(null);
   const dialog = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const importController = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    if (actions.kind === "preview") importController.current?.abort();
+  }, [actions.kind]);
   const [createdTimelineId, setCreatedTimelineId] = useState<string | null>(null);
   const alive = useRef(true);
   useEffect(() => {
@@ -299,18 +304,31 @@ export function CreationAssetList({
   const importFiles = async (files: File[]) => {
     const client = creationClient(projectId);
     setImporting(true);
-    const { failures } = await readImportBatch(files, async (file) => {
-      await client.importBlob(file, file.name, classifyImportFile(file).kind);
-    }, new AbortController().signal);
-    if (alive.current) {
-      setAttempt((value) => value + 1);
-      setImporting(false);
+    const controller = new AbortController();
+    importController.current = controller;
+    try {
+      const { failures } = await readImportBatch(files, async (file, signal) => {
+        await client.importBlob(file, file.name, classifyImportFile(file).kind, undefined, undefined, signal);
+      }, controller.signal);
+      if (failures.length) throw new Error(failures.map(({ name, message }) =>
+        t("canvas.workspace.toast.assetIssue", { name, reason: message }),
+      ).join(t("canvas.workspace.list.separator")));
+    } catch (cause) {
+      if (!controller.signal.aborted) throw cause;
+    } finally {
+      importController.current = null;
+      if (alive.current) {
+        setAttempt((value) => value + 1);
+        setImporting(false);
+      }
     }
-    if (failures.length) throw new Error(failures.map(({ name, message }) =>
-      t("canvas.workspace.toast.assetIssue", { name, reason: message }),
-    ).join(t("canvas.workspace.list.separator")));
   };
   const open = async (row: Row) => {
+    if (actions.kind === "preview") {
+      onClose();
+      actions.onPreview(row.asset);
+      return;
+    }
     if (actions.kind === "chat") {
       actions.onReference(row.asset);
       onClose();
@@ -329,6 +347,11 @@ export function CreationAssetList({
     onClose();
   };
   const openNode = async (row: NodeRow) => {
+    if (actions.kind === "preview") {
+      if (row.asset) actions.onPreview(row.asset);
+      onClose();
+      return;
+    }
     if (actions.kind === "chat") {
       if (row.kind === "timeline") await actions.onOpenTimeline(row.itemId);
       else if (row.asset) actions.onReference(row.asset);
@@ -553,7 +576,7 @@ export function CreationAssetList({
                         : undefined
                     }
                     data-open-timeline={actions.kind === "chat" && row.kind === "timeline" ? row.itemId : undefined}
-                    disabled={busy || (actions.kind === "chat" && row.kind !== "timeline" && (!row.asset || actions.referenceDisabled))}
+                    disabled={busy || (actions.kind === "preview" && !row.asset) || (actions.kind === "chat" && row.kind !== "timeline" && (!row.asset || actions.referenceDisabled))}
                     onClick={() => void perform(() => openNode(row))}
                     onMouseEnter={(event) =>
                       showPreview(event.currentTarget, {
@@ -590,7 +613,9 @@ export function CreationAssetList({
                       {row.title}
                     </span>
                     <small>
-                      {actions.kind === "chat"
+                      {actions.kind === "preview"
+                        ? row.asset && t("assistant.result.preview")
+                        : actions.kind === "chat"
                         ? t(row.kind === "timeline" ? "canvas.workspace.menu.openEditor" : "workspaceModes.referenceAsset")
                         : row.visible
                         ? t("canvasNodes.assets.locate")
@@ -679,7 +704,9 @@ export function CreationAssetList({
                         {name}
                       </span>
                       <small>
-                        {actions.kind === "chat"
+                        {actions.kind === "preview"
+                          ? t("assistant.result.preview")
+                          : actions.kind === "chat"
                           ? t("workspaceModes.referenceAsset")
                           : owner?.visible
                           ? t("canvasNodes.assets.locate")

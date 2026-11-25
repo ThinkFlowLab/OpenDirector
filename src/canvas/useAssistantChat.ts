@@ -77,10 +77,13 @@ export function useAssistantChat(
   onTurnEnd: () => void,
   t: Translate,
   open: boolean,
+  readOnly = false,
 ) {
   const [value, setValue] = useState<Conversation>(empty);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const mode = readOnly ? "preview" : "edit";
+  const [loadedMode, setLoadedMode] = useState<typeof mode | null>(null);
+  const loaded = loadedMode === mode;
   const [runtimesLoading, setRuntimesLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [sending, setSending] = useState(false);
@@ -137,6 +140,8 @@ export function useAssistantChat(
   const onEnd = useRef(onTurnEnd);
   onEnd.current = onTurnEnd;
 
+  const canWrite = useRef(!readOnly);
+  canWrite.current = !readOnly;
   const refreshConversations = useCallback(async (saveDraft = false) => {
     listController.current?.abort();
     const abort = new AbortController();
@@ -144,7 +149,7 @@ export function useAssistantChat(
     setThreadsLoading(true);
     setThreadsError("");
     try {
-      if (saveDraft) {
+      if (saveDraft && canWrite.current) {
         rememberChat(projectId, current.current);
         await flushChatDraft(projectId);
         abort.signal.throwIfAborted();
@@ -167,7 +172,7 @@ export function useAssistantChat(
   useEffect(() => {
     alive.current = true;
     let cancelled = false;
-    setLoaded(false);
+    setLoadedMode(null);
     setRuntimes([]);
     setRuntimesLoading(true);
     setError("");
@@ -190,7 +195,7 @@ export function useAssistantChat(
       .then(({ conversation: saved, activeTurnId }) => {
         if (cancelled) return;
         setValue(restoreConversation(projectId, saved, Boolean(activeTurnId)));
-        setLoaded(true);
+        setLoadedMode(mode);
         // Navigation only detached the previous view; pick the run back up.
         if (activeTurnId) void resume.current(activeTurnId);
       })
@@ -217,7 +222,7 @@ export function useAssistantChat(
       uploadController.current?.abort();
       listController.current?.abort();
     };
-  }, [projectId, loadAttempt, refreshConversations]);
+  }, [projectId, loadAttempt, refreshConversations, mode]);
 
   useEffect(() => {
     if (loaded && !runtimesLoading && runtimes.length && value.runtime &&
@@ -227,11 +232,11 @@ export function useAssistantChat(
   }, [loaded, runtimesLoading, runtimes, value.runtime]);
 
   useLayoutEffect(() => {
-    if (loaded) rememberChat(projectId, value);
-  }, [projectId, loaded, value]);
+    if (loaded && !readOnly) rememberChat(projectId, value);
+  }, [projectId, loaded, value, readOnly]);
   useEffect(() => {
     if (
-      !loaded ||
+      readOnly || !loaded ||
       !runtimes.some((item) => item.id === (value.runtime ?? "default"))
     )
       return;
@@ -259,6 +264,7 @@ export function useAssistantChat(
     value.runtimeModel,
     value.harnessModels,
     runtimes,
+    readOnly,
   ]);
 
   useEffect(() => {
@@ -362,6 +368,7 @@ export function useAssistantChat(
     commit?: (assets: ReferenceAsset[]) => boolean | Promise<boolean>,
   ) => {
     if (
+      !canWrite.current ||
       !loaded ||
       switching.current ||
       uploading.current ||
@@ -379,7 +386,7 @@ export function useAssistantChat(
     try {
       const assets = await read(abort.signal);
       abort.signal.throwIfAborted();
-      if (!alive.current) return false;
+      if (!alive.current || !canWrite.current) return false;
       if (
         new Set([...current.current.assets, ...assets].map((asset) => asset.id))
           .size > 64
@@ -454,6 +461,7 @@ export function useAssistantChat(
 
   const send = async () => {
     if (
+      !canWrite.current ||
       !loaded ||
       switching.current ||
       submitting.current ||
@@ -608,14 +616,14 @@ export function useAssistantChat(
     id?: string,
     create = false,
   ): Promise<boolean> => {
-    if (!loaded || submitting.current || uploading.current || switching.current)
+    if (!canWrite.current || !loaded || submitting.current || uploading.current || switching.current)
       return false;
     if (create && conversationIsEmpty(current.current)) return true;
     if (!create && current.current.conversationId === id) return true;
     id ??= crypto.randomUUID();
     switching.current = true;
     setChanging(true);
-    setLoaded(false);
+    setLoadedMode(null);
     setError("");
     try {
       rememberChat(projectId, current.current);
@@ -636,12 +644,12 @@ export function useAssistantChat(
       switching.current = false;
       if (alive.current) {
         setChanging(false);
-        setLoaded(true);
+        setLoadedMode(mode);
       }
     }
   };
   const stop = async () => {
-    if (!turnId.current || stopping) return;
+    if (!canWrite.current || !turnId.current || stopping) return;
     setStopping(true);
     try {
       await stopChat(projectId, turnId.current);

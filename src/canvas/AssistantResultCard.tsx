@@ -33,12 +33,14 @@ function useResultAction() {
 }
 
 export function AssistantResultCard({
-  projectId, result, timelines, referenceDisabled, onPreview, onReference, onViewOnCanvas, onEdit,
+  projectId, result, timelines, readOnly, locateDisabled, referenceDisabled, onPreview, onReference, onViewOnCanvas, onEdit,
 }: {
   projectId: string;
   result: AssistantResult;
   timelines: (ProjectTimelineTarget & { itemId: string; title: string })[];
   onEdit: (target: ProjectEditorTarget, signal: AbortSignal) => Promise<void>;
+  readOnly: boolean;
+  locateDisabled: boolean;
   referenceDisabled: boolean;
   onPreview: (asset: Asset) => void;
   onReference: (asset: Asset) => void;
@@ -84,12 +86,12 @@ export function AssistantResultCard({
           <CanvasIcon name="link" size={14} />{t("assistant.result.reference")}
         </button>
         {["image", "audio", "video"].includes(asset.kind) && (
-          <button type="button" aria-disabled={busy}
+          <button type="button" disabled={readOnly} aria-disabled={readOnly || busy}
             onClick={() => void open(signal => onEdit({ kind: "media", asset, itemId: result.itemId }, signal))}>
             <CanvasIcon name="edit" size={14} />{t("assistant.result.editMedia")}
           </button>
         )}
-        <button type="button" aria-disabled={busy}
+        <button type="button" disabled={locateDisabled} aria-disabled={locateDisabled || busy}
           onClick={() => void open(() => onViewOnCanvas(asset, result.itemId))}>
           <CanvasIcon name="canvas" size={14} />{t("assistant.result.viewOnCanvas")}
         </button>
@@ -97,7 +99,7 @@ export function AssistantResultCard({
       {timelines.length > 0 && (
         <div className="cw-chat-result-actions">
           {timelines.length > 1 && (
-            <select aria-label={t("assistant.result.timeline")} value={timeline?.itemId ?? ""}
+            <select disabled={readOnly} aria-label={t("assistant.result.timeline")} value={timeline?.itemId ?? ""}
               onChange={event => setTimelineId(event.target.value)}>
               <option value="">{t("assistant.result.timeline")}</option>
               {timelines.map(target => (
@@ -109,7 +111,7 @@ export function AssistantResultCard({
               ))}
             </select>
           )}
-          <button type="button" disabled={!timeline} aria-disabled={!timeline || busy}
+          <button type="button" disabled={readOnly || !timeline} aria-disabled={readOnly || !timeline || busy}
             onClick={() => timeline && void open(signal => onEdit(timeline, signal))}>
             <CanvasIcon name="timeline" size={14} />{t("assistant.result.openTimeline")}
           </button>
@@ -120,8 +122,9 @@ export function AssistantResultCard({
   );
 }
 
-export function AssistantTimelineResultCard({ result, projectId, eventCursor, snapshot, onEdit }: {
+export function AssistantTimelineResultCard({ result, projectId, eventCursor, snapshot, readOnly, onEdit }: {
   result: DeliveredTimeline;
+  readOnly: boolean;
   projectId: string;
   eventCursor?: number;
   snapshot?: ProjectSnapshot;
@@ -144,7 +147,7 @@ export function AssistantTimelineResultCard({ result, projectId, eventCursor, sn
       </div>
       {current.status === "available" && (
         <div className="cw-chat-result-actions">
-          <button type="button" aria-disabled={busy} onClick={() => void open(signal => onEdit({
+          <button type="button" disabled={readOnly} aria-disabled={readOnly || busy} onClick={() => void open(signal => onEdit({
             kind: "timeline", projectId, itemId: result.itemId,
             editorId: result.editorId, revision: current.revision,
           }, signal))}>

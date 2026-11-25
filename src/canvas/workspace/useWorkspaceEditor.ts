@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { currentAsset } from "../../backend/creationClient";
 import { creationClient } from "../../backend/creationClient.ts";
+import { getEditingState } from "../../backend/editSession.ts";
 
 import { CreationProjection } from "../../backend/creationProjection";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
@@ -25,7 +26,7 @@ import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import type { EditorMode } from "./workspaceChrome.tsx";
 
 
-export function useWorkspaceEditor(rt: WorkspaceRuntime) {
+export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
   const {
     actionNode,
     actionSession,
@@ -33,6 +34,7 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
     change,
     command,
     doc,
+    editing,
     editorOrigin,
     editorSaving,
     editorSession,
@@ -65,6 +67,15 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
   }, [actionSession, actionNode]);
   useEffect(() => () => quickAction.current?.abort(), [doc.id]);
 
+  useEffect(() => {
+    if (readOnly || editing?.type !== "timeline" || editorSession.current) return;
+    const current = historyRef.current.present;
+    const node = current.nodes.find((item) => item.id === editing.id);
+    if (!node) return;
+    editorSession.current = new CreationEditorSession(creationClient(current.id), current, node.id);
+    editorOrigin.current = captureEditorSource(current.id, node);
+  }, [readOnly, editing, editorOrigin, editorSession, historyRef]);
+
   const resources = useMemo(
     () =>
       doc.nodes.flatMap((node) => {
@@ -86,6 +97,15 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
     setMenu(null);
   };
   const openEditor = async (node: CanvasNode, mode: EditorMode = "default") => {
+    if (readOnly) {
+      if (node.type === "timeline") {
+        setEditorMode("default");
+        setEditing(node);
+      } else if (node.type === "text" || node.data.src) {
+        setPreview(node);
+      }
+      return;
+    }
     if (node.type === "subject") return;
     if (lockedIds.has(node.id)) {
       notify(t("canvas.workspace.toast.unlockFirst"));
@@ -122,7 +142,7 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime) {
   const openProjectEditor = async (target: ProjectEditorTarget, signal?: AbortSignal) => {
     const projectId = target.kind === "media" ? target.asset.projectId : target.projectId;
     const active = () => rt.mounted.current && !signal?.aborted && !rt.switchPending.current
-      && rt.doc.id === projectId && !rt.editing;
+      && rt.doc.id === projectId && getEditingState(projectId)?.mode !== "preview" && !rt.editing;
     if (!active() || openingProjectEditor.current) throw new Error(t("canvas.workspace.error.editorUnavailable"));
     openingProjectEditor.current = true;
     try {

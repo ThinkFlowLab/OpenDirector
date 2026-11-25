@@ -76,6 +76,8 @@ class LocalProjects:
     # separate key lets browsers open or release their own editing session.
     _AGENT_SESSION_PREFIX = "agent:"
 
+    HANDOFF_SECONDS = 120
+
     def __init__(self, repository: Path):
         self.repository = repository.resolve()
         self.root = self.repository / "projects"
@@ -88,6 +90,10 @@ class LocalProjects:
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL, expires REAL NOT NULL,
                     path TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS edit_handoffs (
+                    project_id TEXT PRIMARY KEY, owner TEXT NOT NULL,
+                    requester TEXT NOT NULL, expires REAL NOT NULL
                 );
             """)
             db.execute("DELETE FROM sessions WHERE expires<=?", (time.time(),))
@@ -122,9 +128,10 @@ class LocalProjects:
                 raise ProjectError("该位置已有同名文件或文件夹，请使用其他名称。", 409)
 
 
-    def _open(self, db, project: dict, session: str):
+    def acquire_edit_lease(self, db: sqlite3.Connection, project: dict[str, str], session: str) -> None:
         identifier(session)
         project_id = project["id"]
+        self.clear_other_edit_requests(db, project_id, session)
         if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND id NOT LIKE ? AND expires>?",
                       (project_id, session, self._AGENT_SESSION_PREFIX + "%", time.time())).fetchone():
             raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="project_open_elsewhere")
@@ -133,6 +140,58 @@ class LocalProjects:
             raise ProjectError("项目目录已在应用外改名或移动，请复制未保存内容并刷新页面。", 409)
         db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,expires=excluded.expires,path=excluded.path", (session, project_id, time.time() + self.LEASE_SECONDS, project["path"]))
 
+
+    def clear_other_edit_requests(self, db, project_id, session):
+        db.execute(
+            "DELETE FROM edit_handoffs WHERE project_id!=? AND (owner=? OR requester=?)",
+            (project_id, session, session),
+        )
+
+    def editor(self, db, project_id, *, now=None):
+        return db.execute(
+            "SELECT id FROM sessions WHERE project_id=? AND id NOT LIKE ? AND expires>?",
+            (project_id, self._AGENT_SESSION_PREFIX + "%", time.time() if now is None else now),
+        ).fetchone()
+
+    def editing_state(self, db, project_id, session, *, now=None):
+        now = time.time() if now is None else now
+        editor = self.editor(db, project_id, now=now)
+        if editor is None:
+            return {'mode': 'preview', 'handoff': 'available'}
+        owner = editor['id']
+        pending = db.execute(
+            "SELECT requester FROM edit_handoffs WHERE project_id=? AND owner=? AND expires>?",
+            (project_id, owner, now),
+        ).fetchone()
+        if owner == session:
+            return {'mode': 'edit', 'requester': pending['requester'] if pending else None}
+        return {'mode': 'preview', 'handoff': (
+            'requested' if pending and pending['requester'] == session
+            else 'busy' if pending else 'occupied'
+        )}
+
+    def request_edit(self, db, project, session):
+        project_id = project['id']
+        now = time.time()
+        state = self.editing_state(db, project_id, session, now=now)
+        if state == {'mode': 'preview', 'handoff': 'available'}:
+            self.acquire_edit_lease(db, project, session)
+        elif state == {'mode': 'preview', 'handoff': 'occupied'}:
+            db.execute("""
+                INSERT INTO edit_handoffs(project_id,owner,requester,expires) VALUES (?,?,?,?)
+                ON CONFLICT(project_id) DO UPDATE SET owner=excluded.owner,
+                    requester=excluded.requester, expires=excluded.expires
+            """, (project_id, self.editor(db, project_id, now=now)['id'], session, now + self.HANDOFF_SECONDS))
+        return self.editing_state(db, project_id, session)
+
+    def resolve_edit(self, db, project, session, requester, accept):
+        project_id = project['id']
+        if self.editing_state(db, project_id, session) == {'mode': 'edit', 'requester': requester}:
+            db.execute("DELETE FROM edit_handoffs WHERE project_id=?", (project_id,))
+            if accept:
+                db.execute("DELETE FROM sessions WHERE id=?", (session,))
+                self.acquire_edit_lease(db, project, requester)
+        return self.editing_state(db, project_id, session)
 
     def agent_session_key(self, session: str) -> str:
         return self._AGENT_SESSION_PREFIX + identifier(session)
@@ -156,4 +215,5 @@ class LocalProjects:
 
     def release(self, session: str):
         with self.transaction() as db:
+            db.execute("DELETE FROM edit_handoffs WHERE owner=? OR requester=?", (session, session))
             db.execute("DELETE FROM sessions WHERE id=?", (session,))
