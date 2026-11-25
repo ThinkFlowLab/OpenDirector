@@ -294,6 +294,8 @@ jobs:
         env:
           CREATION_WEB_URL: http://127.0.0.1:5180
           CREATION_API_URL: http://127.0.0.1:8020
+          ASSISTANT_FINISH_FAILURE_SCREENSHOT_EN: ${{ runner.temp }}/assistant-finish-failure-en.png
+          ASSISTANT_FINISH_FAILURE_SCREENSHOT_ZH: ${{ runner.temp }}/assistant-finish-failure-zh.png
         run: |
           export PLAYWRIGHT_MODULE="$RUNNER_TEMP/opendirector-browser/node_modules/playwright-core/index.mjs"
           python tests/browser/creation_server.py --port 8020 --assistant-fixture >"$RUNNER_TEMP/assistant-creation-server.log" 2>&1 &
@@ -311,7 +313,18 @@ jobs:
           curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
           node tests/browser/bilingual_defaults.mjs
           node tests/browser/assistant_auxiliary_panels.mjs
+          node tests/browser/assistant_finish_failure.mjs
           node tests/browser/trace_original_export.mjs
+      - name: Upload finish-failure UI screenshots
+        if: always() && matrix.journey == 'assistant'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: assistant-finish-failure-screenshots-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/assistant-finish-failure-en.png
+            ${{ runner.temp }}/assistant-finish-failure-zh.png
+          retention-days: 14
+          if-no-files-found: warn
       - name: Print isolated service logs on failure
         if: failure()
         run: |
