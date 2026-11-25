@@ -16,6 +16,20 @@ from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
+    'higgsfield_model': 'Choose MAGI-2 with the official Higgsfield Open API address.',
+    'higgsfield_key': 'Enter your Higgsfield Open KEY_ID:KEY_SECRET.',
+    'higgsfield_output': 'MAGI-2 supports 1080p and whole-second durations from 4 to 30 seconds.',
+    'higgsfield_parameters': 'Choose an aspect ratio and audio option supported by MAGI-2.',
+    'higgsfield_mode': 'MAGI-2 supports first/last frames and reference media.',
+    'higgsfield_image': 'Use valid JPEG, PNG, WebP, or GIF images, each smaller than 30 MB.',
+    'higgsfield_format': 'Use MP4 video and WAV audio references. Convert MOV to MP4 and MP3 to WAV before uploading.',
+    'higgsfield_media_size': 'Each reference video must be at most 200 MB; each audio file at most 15 MB.',
+    'higgsfield_duration': 'Each reference video or audio clip must be 2–30 seconds. The total for each media type cannot exceed 30 seconds.',
+    'higgsfield_reference_count': 'MAGI-2 accepts up to 10 images, 5 videos, and 5 audio references.',
+    'higgsfield_reference_changed': 'A reference asset changed. Review the inputs before submitting again.',
+    'higgsfield_frames': 'Each frame slot accepts one image. A last frame requires a first frame.',
+    'higgsfield_references': 'Reference mode requires at least one image, video, or audio clip. Check the reference roles.',
+    'higgsfield_prompt': 'MAGI-2 prompts allow up to 15,000 characters. Text-to-video requires a prompt.',
     "desktop_auth_required": "The desktop connection has expired. Reopen the application.",
     'prompt_optimization_empty': 'Enter a prompt to optimize.',
     'prompt_optimization_refs': 'Prompt references changed. Try again.',

@@ -13,7 +13,7 @@ from opendirector.domain.rule_facts import SERVICE_VOICE_PATTERN
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
-Protocol = Literal['openai', 'volcengine', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
+Protocol = Literal['openai', 'volcengine', 'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
 VideoMode = Literal['first_frame', 'reference', 'continuation', 'control']
 ImageQuality = Literal['auto', 'low', 'medium', 'high']
 Count = Annotated[int, Field(strict=True, ge=0)]
@@ -65,6 +65,12 @@ class InputRules(Contract):
     maxAudios: Count = Field(description='Maximum reference audio count.')
     imageBytes: Count = Field(description='Maximum bytes per reference image.')
     videoBytes: Count = Field(description='Maximum bytes per reference video.')
+    audioBytes: Count | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Maximum bytes per reference audio; omitted preserves the existing request budget.')
+    referenceMediaMinSeconds: float | None = Field(default=None, ge=0, exclude_if=lambda value: value is None,
+        description='Minimum duration of each reference video or audio clip.')
+    referenceMediaSeconds: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None,
+        description='Maximum total reference duration, applied separately to video and audio.')
     requestBytes: Count = Field(description='Maximum aggregate reference bytes per request.')
     videoModes: tuple[VideoMode, ...] = Field(description='Supported video generation modes.')
     imageOutputs: tuple[ImageOutput, ...] = Field(default=(), description='Supported image aspect ratios and sizes.')
@@ -136,7 +142,7 @@ class ModelConnection(Contract):
     @model_validator(mode='after')
     def connection(self):
         allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
-                   'video': {'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
+                   'video': {'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                    'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
         if self.protocol not in allowed[self.kind]:
             raise ValueError('Protocol is incompatible with model category')

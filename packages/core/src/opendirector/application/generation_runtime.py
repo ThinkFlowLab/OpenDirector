@@ -92,6 +92,10 @@ class GenerationRuntime(ABC):
         if (details.get('stage') == 'submit' and details.get('httpStatus') in {400, 401, 402, 403, 404, 413, 422, 429}
                 and details.get('category') not in {'submission_unknown', 'local', 'protocol'}):
             return 'retry'  # An explicit continuation may create a new attempt.
+        if task.get('protocol') == 'higgsfield_open':
+            submission = cache.submission()
+            if submission:
+                return 'remote' if submission.get('remote') else 'submit'
         return 'review'
 
 
@@ -147,7 +151,10 @@ class GenerationRuntime(ABC):
                         stage = 'poll' if task.get('externalTaskId') else 'submit'
                         task['phase'] = stage
                         await save()  # Mark submission before entering any provider call.
-                        if hasattr(self.provider, 'resume_result'):
+                        if task.get('protocol') == 'higgsfield_open':
+                            suffix, data = await self.provider.generate(config, task, submitted,
+                                result_ready=result_ready, recovery_cache=cache)
+                        elif hasattr(self.provider, 'resume_result'):
                             suffix, data = await self.provider.generate(config, task, submitted, result_ready=result_ready)
                         else:
                             suffix, data = await self.provider.generate(config, task, submitted)
@@ -180,7 +187,10 @@ class GenerationRuntime(ABC):
                     cancel_config = config or self.configs.resolve(task['modelConfigId'], task['kind'])
                     if cancel_config['url'] != task['baseURL'] or cancel_config['modelId'] != task['model'] or task.get('protocol') and cancel_config.get('protocol') != task['protocol']:
                         raise ProjectError('原模型配置已变化，供应商取消未确认。', 409)
-                    await self.provider.cancel(cancel_config, task["externalTaskId"])
+                    if task.get('protocol') == 'higgsfield_open':
+                        await self.provider.cancel(cancel_config, task["externalTaskId"], recovery_cache=cache)
+                    else:
+                        await self.provider.cancel(cancel_config, task["externalTaskId"])
                     task["error"] = "已请求取消供应商任务，实际取消与费用以服务控制台为准。"
                 except (ProjectError, OSError) as failure:
                     task["error"] = "本地已停止，供应商取消未确认，请在控制台核对任务。"

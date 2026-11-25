@@ -159,6 +159,10 @@ class CreationGeneration(GenerationRuntime):
             'video': {'duration': 5, 'ratio': 'adaptive', 'generate_audio': True},
             'audio': {'speaker': 'zh_female_vv_uranus_bigtts', 'audio_params': {'format': 'mp3', 'sample_rate': 24000}}}[spec.kind]
         intent = spec.parameters.model_dump(exclude_none=True)
+        if spec.kind == 'video' and config['protocol'] == 'higgsfield_open':
+            from opendirector.domain.higgsfield import parameters as magi2_parameters
+            return magi2_parameters(config, intent, node['videoMode'],
+                                    any(records[key]['kind'] == 'image' for key in node['referenceIds']))
         if spec.kind == 'video' and config['protocol'] == 'bigmodel_video':
             from opendirector.domain.bigmodel_video import cogvideo_parameters
             return {**cogvideo_parameters(config, intent), 'watermark': not self.settings.get()['removeWatermark']}

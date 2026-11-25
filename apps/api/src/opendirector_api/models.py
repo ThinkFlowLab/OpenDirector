@@ -25,7 +25,7 @@ class AssetSource(Model):
 
 class ModelConnection(Model):
     connectionType: Literal['api', 'self_hosted'] = 'api'
-    protocol: Literal['openai', 'volcengine', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
+    protocol: Literal['openai', 'volcengine', 'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
     authMode: Literal['none', 'bearer'] | None = None
     proxyMode: Literal['system', 'direct'] | None = None
     capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None)

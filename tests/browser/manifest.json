@@ -1,6 +1,11 @@
 {
   "scripts": [
     {
+      "file": "higgsfield_open.mjs",
+      "lanes": ["manual"],
+      "note": "Run with higgsfield_server.py and Vite. Bilingual provider setup, actual MAGI-2 HTTP adapter with mocked transport, all three routes, mixed media, format rejection, adoption and reload. No real service calls."
+    },
+    {
       "file": "fasth3_capability_flow.mjs",
       "helper": true
     },

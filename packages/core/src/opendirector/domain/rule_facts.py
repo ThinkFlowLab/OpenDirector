@@ -96,7 +96,7 @@ def aspect_ratio_choices(spec):
     if kind == 'image':
         return ['auto', *_unique(ratio for ratio in spec.get('imageOutputRatios') or [] if ratio != 'auto')]
     if kind == 'video' and published is not None:
-        if video_mode in {'first-last', 'control'}:
+        if video_mode == 'control' or video_mode == 'first-last' and spec.get('protocol') != 'higgsfield_open':
             return ['auto']
         return ['auto', *list(published)]
     framed = spec.get('protocol') == 'volcengine' or bool(spec.get('dimensioned'))
@@ -168,7 +168,14 @@ def reference_byte_limit(spec):
         return AGENT_IMAGE_BYTES if spec.get('imageBytes') is None else spec['imageBytes']
     if kind == 'video':
         return DEFAULT_VIDEO_BYTES if spec.get('videoBytes') is None else spec['videoBytes']
+    if kind == 'audio' and spec.get('audioBytes') is not None:
+        return spec['audioBytes']
     return DEFAULT_VIDEO_BYTES
+
+
+def prompt_optional_with_media(spec):
+    """MAGI-2 image/reference endpoints allow an omitted prompt."""
+    return spec.get('profile') == 'higgsfield-magi-2' and bool(spec.get('hasMedia'))
 
 
 DERIVATIONS = {
@@ -177,9 +184,17 @@ DERIVATIONS = {
     'effectiveVideoMode': effective_video_mode,
     'generateAudioOptions': generate_audio_options,
     'referenceByteLimit': reference_byte_limit,
+    'promptOptionalWithMedia': prompt_optional_with_media,
 }
 
 _CASES = (
+    ('magi2-image-ratios', 'aspectRatioChoices', {
+        'kind': 'video', 'videoMode': 'first-last', 'publishedRatios': ['16:9', '9:16'],
+        'protocol': 'higgsfield_open', 'dimensioned': False, 'imageOutputRatios': []}),
+    ('magi2-audio-bytes', 'referenceByteLimit', {'kind': 'audio', 'audioBytes': 15 * 1024 * 1024}),
+    ('magi2-media-prompt-optional', 'promptOptionalWithMedia', {'profile': 'higgsfield-magi-2', 'hasMedia': True}),
+    ('magi2-text-prompt-required', 'promptOptionalWithMedia', {'profile': 'higgsfield-magi-2', 'hasMedia': False}),
+    ('other-model-prompt-required', 'promptOptionalWithMedia', {'profile': 'minimax-h3-official', 'hasMedia': True}),
     ('image-ratios-drop-auto-and-duplicates', 'aspectRatioChoices', {
         'kind': 'image', 'videoMode': None, 'publishedRatios': None, 'protocol': None,
         'dimensioned': False, 'imageOutputRatios': ['16:9', 'auto', '16:9', '1:1']}),
@@ -333,7 +348,7 @@ export function aspectRatioChoices(input: {
     ];
   }
   if (input.kind === "video" && input.publishedRatios != null) {
-    if (input.videoMode === "first-last" || input.videoMode === "control") return ["auto"];
+    if (input.videoMode === "control" || input.videoMode === "first-last" && input.protocol !== "higgsfield_open") return ["auto"];
     return ["auto", ...input.publishedRatios];
   }
   const framed = input.protocol === "volcengine" || input.dimensioned;
@@ -434,6 +449,7 @@ export function referenceByteLimit(input: {
   readonly kind: string;
   readonly imageBytes?: number | null;
   readonly videoBytes?: number | null;
+  readonly audioBytes?: number | null;
 }): number {
   if (input.kind === "text") return RULE_FACTS.textReferenceBytes;
   if (input.kind === "image") {
@@ -442,7 +458,15 @@ export function referenceByteLimit(input: {
   if (input.kind === "video") {
     return input.videoBytes ?? RULE_FACTS.defaultVideoBytes;
   }
+  if (input.kind === "audio" && input.audioBytes != null) return input.audioBytes;
   return RULE_FACTS.defaultVideoBytes;
+}
+
+export function promptOptionalWithMedia(input: {
+  readonly profile?: string;
+  readonly hasMedia: boolean;
+}): boolean {
+  return input.profile === "higgsfield-magi-2" && input.hasMedia;
 }
 
 export const RULE_DERIVATION_VECTORS = __VECTORS__ as const;

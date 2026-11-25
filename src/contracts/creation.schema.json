@@ -3909,6 +3909,20 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "higgsfield_model",
+              "higgsfield_key",
+              "higgsfield_output",
+              "higgsfield_parameters",
+              "higgsfield_mode",
+              "higgsfield_image",
+              "higgsfield_format",
+              "higgsfield_media_size",
+              "higgsfield_duration",
+              "higgsfield_reference_count",
+              "higgsfield_reference_changed",
+              "higgsfield_frames",
+              "higgsfield_references",
+              "higgsfield_prompt",
               "capability_unavailable",
               "capability_paused",
               "capability_connection_changed",
@@ -7243,6 +7257,48 @@
             "title": "Videobytes",
             "type": "integer"
           },
+          "audioBytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum bytes per reference audio; omitted preserves the existing request budget.",
+            "title": "Audiobytes"
+          },
+          "referenceMediaMinSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum duration of each reference video or audio clip.",
+            "title": "Referencemediaminseconds"
+          },
+          "referenceMediaSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum total reference duration, applied separately to video and audio.",
+            "title": "Referencemediaseconds"
+          },
           "requestBytes": {
             "description": "Maximum aggregate reference bytes per request.",
             "minimum": 0,
@@ -8903,6 +8959,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -9088,6 +9145,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -9250,6 +9308,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -9380,6 +9439,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -20227,6 +20287,20 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "higgsfield_model",
+              "higgsfield_key",
+              "higgsfield_output",
+              "higgsfield_parameters",
+              "higgsfield_mode",
+              "higgsfield_image",
+              "higgsfield_format",
+              "higgsfield_media_size",
+              "higgsfield_duration",
+              "higgsfield_reference_count",
+              "higgsfield_reference_changed",
+              "higgsfield_frames",
+              "higgsfield_references",
+              "higgsfield_prompt",
               "capability_unavailable",
               "capability_paused",
               "capability_connection_changed",
@@ -23702,6 +23776,48 @@
             "title": "Videobytes",
             "type": "integer"
           },
+          "audioBytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum bytes per reference audio; omitted preserves the existing request budget.",
+            "title": "Audiobytes"
+          },
+          "referenceMediaMinSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum duration of each reference video or audio clip.",
+            "title": "Referencemediaminseconds"
+          },
+          "referenceMediaSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum total reference duration, applied separately to video and audio.",
+            "title": "Referencemediaseconds"
+          },
           "requestBytes": {
             "description": "Maximum aggregate reference bytes per request.",
             "minimum": 0,
@@ -25431,6 +25547,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -25606,6 +25723,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -25773,6 +25891,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -25907,6 +26026,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",

@@ -1280,7 +1280,7 @@ export function NodeComposer({
             </div>
           </div>
           {mode === "video" &&
-            (!backend || config?.protocol === "volcengine") && (
+            (!backend || config?.protocol === "volcengine" || config?.protocol === "higgsfield_open") && (
               <label className="cw-audio-toggle">
                 <span>
                   <CanvasIcon name="volume" size={16} />

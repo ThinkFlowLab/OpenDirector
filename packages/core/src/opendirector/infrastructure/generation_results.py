@@ -1,4 +1,6 @@
 """Private recovery cache. Locators never appear in public task receipts."""
+import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -7,6 +9,11 @@ from urllib.parse import urlsplit
 from opendirector.domain.assets import MAX_ASSET_BYTES
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.infrastructure.local_projects import child, read_json, write_json
+
+
+def _submission_digest(value):
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class GenerationResults:
@@ -44,6 +51,24 @@ class GenerationResults:
             raise ProjectError('生成结果地址无效，未重新提交生成。', 409)
         write_json(child(self.directory, 'result.json'), {'suffix': suffix, 'url': url})
 
+    def submission(self):
+        """Exact idempotent request and provider locators; never public receipts."""
+        path = child(self.directory, 'submission.json')
+        if not path.exists():
+            return None
+        try:
+            record = read_json(path)
+            value = record['submission']
+            if not isinstance(value, dict) or record['sha256'] != _submission_digest(value):
+                raise ValueError()
+            return value
+        except (KeyError, ValueError, TypeError):
+            raise ProjectError('生成恢复缓存无效，请保留原文件并核对任务。', 409) from None
+
+    def save_submission(self, value):
+        self._prepare()
+        write_json(child(self.directory, 'submission.json'), {'submission': value, 'sha256': _submission_digest(value)})
+
     def data(self):
         metadata = self.metadata()
         path = child(self.directory, 'output')
@@ -77,7 +102,7 @@ class GenerationResults:
 
     def clear(self):
         # Remove only this task's cache after the durable success receipt.
-        for name in ('output', 'result.json'):
+        for name in ('output', 'result.json', 'submission.json'):
             child(self.directory, name).unlink(missing_ok=True)
         for directory in (self.directory, self.root):
             try:

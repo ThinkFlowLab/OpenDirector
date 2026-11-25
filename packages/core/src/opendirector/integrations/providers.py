@@ -18,6 +18,7 @@ from opendirector.integrations.volcengine import VolcengineGeneration, bounded, 
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
+from opendirector.integrations.higgsfield_open import HiggsfieldOpenGeneration
 from opendirector.integrations.bigmodel_video import BigModelVideoGeneration
 from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload
 from opendirector.integrations.fasth3 import generation_fields as fasth3_generation_fields
@@ -36,6 +37,7 @@ class GenerationProviders(VolcengineGeneration):
         self.minimax_video = MinimaxVideoGeneration(store, transport, poll_interval)
         self.bigmodel_video = BigModelVideoGeneration(store, transport, poll_interval, retry_delays)
         self.kling_video = KlingVideoGeneration(store, transport, poll_interval, retry_delays)
+        self.higgsfield_open = HiggsfieldOpenGeneration(store, transport, poll_interval, retry_delays)
         self.vllm_omni = VllmOmniGeneration(store, transport, poll_interval)
         self.vllm_omni_image = VllmOmniImageGeneration(store, transport, poll_interval)
         self.minimax_image = MinimaxH3Images(transport, poll_interval)
@@ -46,6 +48,8 @@ class GenerationProviders(VolcengineGeneration):
         self.zhipu_speech = ZhipuSpeech(transport, poll_interval)
 
     def _profile_adapter(self, config):
+        if config and config.get('protocol') == 'higgsfield_open':
+            return self.higgsfield_open
         if config and config.get('protocol') == 'bigmodel_video':
             return self.bigmodel_video
         if config and config.get('protocol') == 'kling_video':
@@ -126,7 +130,9 @@ class GenerationProviders(VolcengineGeneration):
         except (httpx.InvalidURL, ValueError, TypeError, KeyError, AttributeError):
             raise protocol_failure('download') from None
 
-    async def generate(self, config, task, submitted, *, result_ready=None):
+    async def generate(self, config, task, submitted, *, result_ready=None, recovery_cache=None):
+        if config.get('protocol') == 'higgsfield_open':
+            return await self.higgsfield_open.generate(config, task, submitted, result_ready=result_ready, recovery_cache=recovery_cache)
         if input_rules(config)['profile'] == 'bigmodel-glm-image':
             prepared = await asyncio.to_thread(generation_references, self.store, task, config)
             width, height = map(int, task['parameters']['size'].split('x'))
@@ -282,7 +288,9 @@ class GenerationProviders(VolcengineGeneration):
         return await VllmOmniScore(self.transport).score(config, ScoreRequest(
             data, meta['name'], melody_only=params['score_mode'] == 'melody'))
 
-    async def cancel(self, config, external_id):
+    async def cancel(self, config, external_id, *, recovery_cache=None):
+        if config.get('protocol') == 'higgsfield_open':
+            return await self.higgsfield_open.cancel(config, external_id, recovery_cache=recovery_cache)
         adapter = self._profile_adapter(config)
         if adapter:
             return await adapter.cancel(config, external_id)

@@ -1,4 +1,6 @@
 export const errors = {
+  "errors.generationFailure.higgsfieldAccount": "The Higgsfield API Key ID changed. Restore the original connection before recovering this task.",
+  "errors.rules.referenceDuration": "Each reference video or audio clip must be {minimum}–{maximum} seconds. The total for each media type cannot exceed {maximum} seconds.",
   "errors.rules.imageQualityUnsupported": "The selected model does not support this image quality. Choose Auto or another model.",
   "errors.generationFailure.policy": "The provider rejected the prompt or reference images under its content policy. Adjust the input before generating again.",
   "errors.archive.identityConflict":

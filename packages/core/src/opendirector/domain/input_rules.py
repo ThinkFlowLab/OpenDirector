@@ -7,6 +7,7 @@ from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
 from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTERS, is_minimax_speech
 from .projects import ProjectError
+from .higgsfield import AUDIO_BYTES, IMAGE_BYTES, VIDEO_BYTES, PROFILE, RATIOS, validate_model
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 from .bigmodel_image import is_bigmodel_image
 from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
@@ -22,6 +23,16 @@ def _adapter_rules(config):
              'maxAudios': 0, 'imageBytes': 8 * 1024 * 1024, 'requestBytes': 48 * 1024 * 1024,
              'videoModes': ['first_frame'] if kind == 'video' else []}
     rules.update(maxVideos=0, videoBytes=DEFAULT_VIDEO_BYTES)
+    if config.get('protocol') == 'higgsfield_open':
+        validate_model(config)
+        rules.update(profile=PROFILE, allowedKinds=['text', 'image', 'video', 'audio'],
+                     maxImages=10, maxVideos=5, maxAudios=5, imageBytes=IMAGE_BYTES,
+                     videoBytes=VIDEO_BYTES, audioBytes=AUDIO_BYTES,
+                     requestBytes=10 * IMAGE_BYTES + 5 * VIDEO_BYTES + 5 * AUDIO_BYTES + MAX_REFERENCES * 64 * 1024,
+                     referenceMediaMinSeconds=2, referenceMediaSeconds=30, maxPromptCharacters=15000,
+                     videoModes=['first_frame', 'reference'], frameRoles=['first_frame', 'last_frame'],
+                     audioReferenceStandalone=True, aspectRatios=list(RATIOS))
+        return rules
     if is_bigmodel_image(config):
         rules.update(profile='bigmodel-glm-image', allowedKinds=['text'], maxImages=0)
         return rules
@@ -165,7 +176,7 @@ def input_rules(config):
         if library is not None:
             rules['voiceLibrary'] = library
     if config['kind'] == 'video':
-        rules['generateAudioOptions'] = [True, False] if config.get('protocol') in {'volcengine', 'bigmodel_video'} else [True]
+        rules['generateAudioOptions'] = [True, False] if config.get('protocol') in {'volcengine', 'bigmodel_video', 'higgsfield_open'} else [True]
     if config['kind'] == 'image' and rules['profile'] != 'vllm-omni-segmentation':
         from .image_output import image_outputs
         rules['imageOutputs'] = image_outputs(config, rules['profile'])

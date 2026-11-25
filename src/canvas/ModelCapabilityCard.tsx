@@ -47,7 +47,7 @@ export function ModelCapabilityCard({
     saved?.videoAdapter ??
     connection.videoAdapter ??
     "auto";
-  const official = ["minimax_video_v2", "kling_video", "bigmodel_video"].includes(
+  const official = ["minimax_video_v2", "kling_video", "bigmodel_video", "higgsfield_open"].includes(
     connection.protocol,
   );
   const nativeKey = `${connection.protocol}:${modelId}`;
@@ -168,6 +168,8 @@ export function ModelCapabilityCard({
               {t(
                 connection.protocol === "bigmodel_video"
                   ? "models.service.bigmodelVideoSummary"
+                  : connection.protocol === "higgsfield_open"
+                  ? "models.service.higgsfieldSummary"
                   : connection.protocol === "kling_video"
                   ? modelId === "kling-4.0-flash"
                     ? "models.service.klingFlashSummary"
@@ -196,6 +198,8 @@ export function ModelCapabilityCard({
               {t(
                 connection.protocol === "bigmodel_video"
                   ? "models.service.bigmodelVideoReferences"
+                  : connection.protocol === "higgsfield_open"
+                  ? "models.service.higgsfieldReferences"
                   : connection.protocol === "kling_video"
                   ? "models.service.klingReferences"
                   : "models.service.officialReferences",
