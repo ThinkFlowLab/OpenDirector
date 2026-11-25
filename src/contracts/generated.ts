@@ -432,7 +432,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "impact_scope_exceeded" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -447,7 +447,8 @@ export interface CreationContractsInput extends ContractInput {
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
   readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | JobStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | JobStatusQueryInput | AssetPreviewQueryInput | GenerationImpactQueryInput;
+  readonly generationImpact: GenerationImpactReportInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -581,6 +582,37 @@ export interface GenerationFailureInput {
   readonly providerStatus?: "failed" | "cancelled" | "expired" | null;
 }
 
+export interface GenerationImpactItemInput extends ContractInput {
+  readonly specId: string;
+  readonly specRevision: number;
+  readonly currentResultId?: string | null;
+  readonly baselineJobId?: string | null;
+  readonly baselineInputFingerprint?: string | null;
+  readonly currentInputFingerprint?: string | null;
+  readonly inputState: "equal" | "changed" | "unresolved" | "no_baseline";
+  readonly reuseState: "reusable" | "stale" | "pending_upstream" | "unavailable" | "unknown" | "no_result";
+  readonly relation: "root" | "downstream" | "independent";
+  readonly upstreamSpecIds?: ReadonlyArray<string>;
+  readonly activeJobIds?: ReadonlyArray<string>;
+  readonly reasons?: ReadonlyArray<ImpactReasonInput>;
+}
+
+export interface GenerationImpactQueryInput extends QueryBaseInput {
+  readonly type: "generation.impact";
+  readonly rootSpecIds: ReadonlyArray<string>;
+  readonly maxNodes?: number;
+}
+
+export interface GenerationImpactReportInput extends ContractInput {
+  readonly analysisVersion?: 1;
+  readonly projectVersion: ObjectVersionInput;
+  readonly eventCursor: number;
+  readonly rootSpecIds: ReadonlyArray<string>;
+  readonly items: ReadonlyArray<GenerationImpactItemInput>;
+  readonly dependencies: ReadonlyArray<ImpactDependencyInput>;
+  readonly timelineConsumers: ReadonlyArray<TimelineClipImpactConsumerInput | TimelineTextImpactConsumerInput>;
+}
+
 export interface GenerationSpecBaseInput extends ProjectEntityInput {
   readonly purpose?: "draft" | "generation";
   readonly modelConfigId?: string | null;
@@ -710,6 +742,24 @@ export interface ImageParametersInput extends ContractInput {
   readonly preset?: "none" | "product-views";
   readonly responseFormat?: "url";
   readonly outputFormat?: "png";
+}
+
+export interface ImpactDependencyInput extends ContractInput {
+  readonly sourceSpecId?: string | null;
+  readonly sourceItemId: string;
+  readonly targetSpecId: string;
+  readonly referenceId: string;
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
+  readonly assetId?: string | null;
+  readonly documentId?: string | null;
+  readonly inputConfirmed: boolean;
+}
+
+export interface ImpactReasonInput extends ContractInput {
+  readonly code: "inputs_changed" | "upstream_pending" | "output_unavailable" | "baseline_missing" | "input_unresolved" | "model_unresolved" | "dependency_unresolved" | "execution_basis_incomplete" | "dependency_cycle";
+  readonly objectId?: string | null;
+  readonly referenceId?: string | null;
+  readonly fieldPaths?: ReadonlyArray<"spec.prompt" | "spec.promptContent" | "spec.parameters" | "model" | "references">;
 }
 
 export interface InputRulesInput extends ContractInput {
@@ -1370,6 +1420,11 @@ export interface TimelineClipInput extends ContractInput {
   readonly muted?: boolean;
 }
 
+export interface TimelineClipImpactConsumerInput extends TimelineImpactConsumerBaseInput {
+  readonly kind?: "clip";
+  readonly clipId: string;
+}
+
 export interface TimelineDataInput extends ContractInput {
   readonly fps: number;
   readonly width: number;
@@ -1389,6 +1444,15 @@ export interface TimelineFontResourceInput extends ContractInput {
   readonly id: string;
   readonly title: string;
   readonly asset: AssetRefInput;
+}
+
+export interface TimelineImpactConsumerBaseInput extends ContractInput {
+  readonly editorDocumentId: string;
+  readonly revision: number;
+  readonly assetId: string;
+  readonly specIds: ReadonlyArray<string>;
+  readonly association: "asset" | "source" | "asset_and_source";
+  readonly sourceItemId?: string | null;
 }
 
 export interface TimelinePackageExportFileInput extends ContractInput {
@@ -1464,6 +1528,13 @@ export interface TimelineTextBackgroundInput extends ContractInput {
   readonly color: string;
   readonly opacity: number;
   readonly padding: number;
+}
+
+export interface TimelineTextImpactConsumerInput extends TimelineImpactConsumerBaseInput {
+  readonly association: "asset";
+  readonly sourceItemId?: null;
+  readonly kind?: "text_overlay";
+  readonly overlayId: string;
 }
 
 export interface TimelineTextOverlayInput extends ContractInput {
@@ -1670,6 +1741,8 @@ export type RoleActionInput = "configure_generation" | "save_manual_text" | "upl
 export type ModelKindInput = "agent" | "image" | "video" | "audio" | "vision";
 
 export type VideoModeInput = "first_frame" | "reference" | "continuation" | "control";
+
+export type TimelineImpactConsumerInput = TimelineClipImpactConsumerInput | TimelineTextImpactConsumerInput;
 
 export interface ArtifactPublish extends Contract {
   readonly path: string;
@@ -2101,7 +2174,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "impact_scope_exceeded" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2116,7 +2189,8 @@ export interface CreationContracts extends Contract {
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
   readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery;
+  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery | GenerationImpactQuery;
+  readonly generationImpact: GenerationImpactReport;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2250,6 +2324,37 @@ export interface GenerationFailure {
   readonly providerStatus?: "failed" | "cancelled" | "expired" | null;
 }
 
+export interface GenerationImpactItem extends Contract {
+  readonly specId: string;
+  readonly specRevision: number;
+  readonly currentResultId: string | null;
+  readonly baselineJobId: string | null;
+  readonly baselineInputFingerprint: string | null;
+  readonly currentInputFingerprint: string | null;
+  readonly inputState: "equal" | "changed" | "unresolved" | "no_baseline";
+  readonly reuseState: "reusable" | "stale" | "pending_upstream" | "unavailable" | "unknown" | "no_result";
+  readonly relation: "root" | "downstream" | "independent";
+  readonly upstreamSpecIds: ReadonlyArray<string>;
+  readonly activeJobIds: ReadonlyArray<string>;
+  readonly reasons: ReadonlyArray<ImpactReason>;
+}
+
+export interface GenerationImpactQuery extends QueryBase {
+  readonly type: "generation.impact";
+  readonly rootSpecIds: ReadonlyArray<string>;
+  readonly maxNodes: number;
+}
+
+export interface GenerationImpactReport extends Contract {
+  readonly analysisVersion: 1;
+  readonly projectVersion: ObjectVersion;
+  readonly eventCursor: number;
+  readonly rootSpecIds: ReadonlyArray<string>;
+  readonly items: ReadonlyArray<GenerationImpactItem>;
+  readonly dependencies: ReadonlyArray<ImpactDependency>;
+  readonly timelineConsumers: ReadonlyArray<TimelineClipImpactConsumer | TimelineTextImpactConsumer>;
+}
+
 export interface GenerationSpecBase extends ProjectEntity {
   readonly purpose: "draft" | "generation";
   readonly modelConfigId: string | null;
@@ -2379,6 +2484,24 @@ export interface ImageParameters extends Contract {
   readonly preset: "none" | "product-views";
   readonly responseFormat: "url";
   readonly outputFormat: "png";
+}
+
+export interface ImpactDependency extends Contract {
+  readonly sourceSpecId: string | null;
+  readonly sourceItemId: string;
+  readonly targetSpecId: string;
+  readonly referenceId: string;
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
+  readonly assetId: string | null;
+  readonly documentId: string | null;
+  readonly inputConfirmed: boolean;
+}
+
+export interface ImpactReason extends Contract {
+  readonly code: "inputs_changed" | "upstream_pending" | "output_unavailable" | "baseline_missing" | "input_unresolved" | "model_unresolved" | "dependency_unresolved" | "execution_basis_incomplete" | "dependency_cycle";
+  readonly objectId: string | null;
+  readonly referenceId: string | null;
+  readonly fieldPaths: ReadonlyArray<"spec.prompt" | "spec.promptContent" | "spec.parameters" | "model" | "references">;
 }
 
 export interface InputRules extends Contract {
@@ -3038,6 +3161,11 @@ export interface TimelineClip extends Contract {
   readonly muted: boolean;
 }
 
+export interface TimelineClipImpactConsumer extends TimelineImpactConsumerBase {
+  readonly kind: "clip";
+  readonly clipId: string;
+}
+
 export interface TimelineData extends Contract {
   readonly fps: number;
   readonly width: number;
@@ -3057,6 +3185,15 @@ export interface TimelineFontResource extends Contract {
   readonly id: string;
   readonly title: string;
   readonly asset: AssetRef;
+}
+
+export interface TimelineImpactConsumerBase extends Contract {
+  readonly editorDocumentId: string;
+  readonly revision: number;
+  readonly assetId: string;
+  readonly specIds: ReadonlyArray<string>;
+  readonly association: "asset" | "source" | "asset_and_source";
+  readonly sourceItemId: string | null;
 }
 
 export interface TimelinePackageExportFile extends Contract {
@@ -3132,6 +3269,13 @@ export interface TimelineTextBackground extends Contract {
   readonly color: string;
   readonly opacity: number;
   readonly padding: number;
+}
+
+export interface TimelineTextImpactConsumer extends TimelineImpactConsumerBase {
+  readonly association: "asset";
+  readonly sourceItemId: null;
+  readonly kind: "text_overlay";
+  readonly overlayId: string;
 }
 
 export interface TimelineTextOverlay extends Contract {
@@ -3338,3 +3482,5 @@ export type RoleAction = "configure_generation" | "save_manual_text" | "upload_m
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
 
 export type VideoMode = "first_frame" | "reference" | "continuation" | "control";
+
+export type TimelineImpactConsumer = TimelineClipImpactConsumer | TimelineTextImpactConsumer;

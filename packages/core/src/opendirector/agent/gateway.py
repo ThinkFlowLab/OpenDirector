@@ -12,6 +12,7 @@ from opendirector.agent.context import AgentEvent, RunContext
 from opendirector.agent.tools import AgentTools, tools
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.creation.commands import COMMAND_MODELS
+from opendirector.domain.creation.validation import ContractError
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,6 +119,8 @@ class ToolGateway:
                     messages.append(f"{path or 'command'}: {issue['msg']}")
                 error = '; '.join(messages)
                 return ToolResult(value={'error': error}, error=error)
+            except ContractError as failure:
+                return ToolResult(value={'error': str(failure), 'code': failure.issue.code}, error=str(failure))
             except (ProjectError, ValueError, KeyError, OSError, UnicodeError) as failure:
                 details = {'error': str(failure)}
                 if isinstance(failure, ProjectError):

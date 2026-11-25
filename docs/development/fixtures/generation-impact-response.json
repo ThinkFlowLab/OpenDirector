@@ -1,0 +1,138 @@
+{
+  "analysisVersion": 1,
+  "projectVersion": {
+    "objectType": "project",
+    "id": "83f26cfd-cc61-4fef-96cd-d5c6f7e88226",
+    "revision": 1
+  },
+  "eventCursor": 33,
+  "rootSpecIds": [
+    "56d1b593-545a-4cb9-8903-fbf620101873"
+  ],
+  "items": [
+    {
+      "specId": "9264a3d1-0870-4c79-af14-35ce50eaf4e9",
+      "specRevision": 4,
+      "currentResultId": "66382380-52d2-5474-bd6f-5c77f63a523a",
+      "baselineJobId": "22f37f8f-cb26-539b-aeb3-819556ea075c",
+      "baselineInputFingerprint": "84ef83d051aee309c805f5cd83018d7697fcd0a4ecd930d680993d9e03a132b6",
+      "currentInputFingerprint": "84ef83d051aee309c805f5cd83018d7697fcd0a4ecd930d680993d9e03a132b6",
+      "inputState": "equal",
+      "reuseState": "reusable",
+      "relation": "independent",
+      "upstreamSpecIds": [],
+      "activeJobIds": [],
+      "reasons": []
+    },
+    {
+      "specId": "56d1b593-545a-4cb9-8903-fbf620101873",
+      "specRevision": 5,
+      "currentResultId": "fa016899-6647-51c0-a2b2-168fe74fbc78",
+      "baselineJobId": "00f89541-bc7a-5835-a49d-8b99e8a0c873",
+      "baselineInputFingerprint": "4f752409b7a68fb14a679c25afe640fe61d1d27ea0cae9a4d45841677581db28",
+      "currentInputFingerprint": "77088f9d501af32ea6f1044ceaef9592757e1914f354eae1cd0f1cf9001d242a",
+      "inputState": "changed",
+      "reuseState": "stale",
+      "relation": "root",
+      "upstreamSpecIds": [
+        "9264a3d1-0870-4c79-af14-35ce50eaf4e9"
+      ],
+      "activeJobIds": [],
+      "reasons": [
+        {
+          "code": "inputs_changed",
+          "objectId": "56d1b593-545a-4cb9-8903-fbf620101873",
+          "referenceId": null,
+          "fieldPaths": [
+            "spec.prompt"
+          ]
+        }
+      ]
+    },
+    {
+      "specId": "2997eb24-2271-4595-aebc-f336c55a92fe",
+      "specRevision": 4,
+      "currentResultId": "6e7f2451-d616-53ea-8c73-d4488db11cff",
+      "baselineJobId": "5b45d7a6-deed-55f2-92a0-97b175037193",
+      "baselineInputFingerprint": "4196061e7d0e8067cdcb34c7a72da8a9d3e240564da3beefffd6d1179d79758d",
+      "currentInputFingerprint": "4196061e7d0e8067cdcb34c7a72da8a9d3e240564da3beefffd6d1179d79758d",
+      "inputState": "equal",
+      "reuseState": "pending_upstream",
+      "relation": "downstream",
+      "upstreamSpecIds": [
+        "56d1b593-545a-4cb9-8903-fbf620101873"
+      ],
+      "activeJobIds": [],
+      "reasons": [
+        {
+          "code": "upstream_pending",
+          "objectId": "56d1b593-545a-4cb9-8903-fbf620101873",
+          "referenceId": "1278b110-a3ec-4b05-9453-c680eae89508",
+          "fieldPaths": []
+        }
+      ]
+    },
+    {
+      "specId": "39390819-baf0-47cc-bc4e-dceb4fbb51b7",
+      "specRevision": 4,
+      "currentResultId": "9059cef8-0d63-58ba-9cc4-082f51796ac5",
+      "baselineJobId": "c283b814-6d48-531e-8b31-4981f3a53df3",
+      "baselineInputFingerprint": "8406aced182d2b10851fa5029a7f199a17dd9421455a7d907e867921b1cbb0c7",
+      "currentInputFingerprint": "8406aced182d2b10851fa5029a7f199a17dd9421455a7d907e867921b1cbb0c7",
+      "inputState": "equal",
+      "reuseState": "reusable",
+      "relation": "independent",
+      "upstreamSpecIds": [],
+      "activeJobIds": [],
+      "reasons": []
+    }
+  ],
+  "dependencies": [
+    {
+      "sourceSpecId": "9264a3d1-0870-4c79-af14-35ce50eaf4e9",
+      "sourceItemId": "5b47a640-b73a-416b-9308-a9e04e9e77f2",
+      "targetSpecId": "56d1b593-545a-4cb9-8903-fbf620101873",
+      "referenceId": "fdef75ed-6736-4644-8367-2b83a1fb5158",
+      "role": "reference",
+      "assetId": "5252d9b7-3f06-502a-b1a1-c3b3a010d6b3",
+      "documentId": null,
+      "inputConfirmed": true
+    },
+    {
+      "sourceSpecId": "56d1b593-545a-4cb9-8903-fbf620101873",
+      "sourceItemId": "c7adfdb2-33e1-4c6d-9651-e1381c87439f",
+      "targetSpecId": "2997eb24-2271-4595-aebc-f336c55a92fe",
+      "referenceId": "1278b110-a3ec-4b05-9453-c680eae89508",
+      "role": "reference",
+      "assetId": "ef2016b4-9d94-505f-a0bd-a70b5f045343",
+      "documentId": null,
+      "inputConfirmed": true
+    }
+  ],
+  "timelineConsumers": [
+    {
+      "editorDocumentId": "185ed3f0-7c98-4c58-adea-5a5fc565ed3a",
+      "revision": 1,
+      "assetId": "ef2016b4-9d94-505f-a0bd-a70b5f045343",
+      "specIds": [
+        "56d1b593-545a-4cb9-8903-fbf620101873"
+      ],
+      "association": "asset_and_source",
+      "sourceItemId": "c7adfdb2-33e1-4c6d-9651-e1381c87439f",
+      "kind": "clip",
+      "clipId": "B"
+    },
+    {
+      "editorDocumentId": "185ed3f0-7c98-4c58-adea-5a5fc565ed3a",
+      "revision": 1,
+      "assetId": "ed2582c2-fb58-5cfd-b91f-8186b29d3eb3",
+      "specIds": [
+        "2997eb24-2271-4595-aebc-f336c55a92fe"
+      ],
+      "association": "asset_and_source",
+      "sourceItemId": "bb0fa4f2-9e65-4d6e-9d90-7251cf7a7e8e",
+      "kind": "clip",
+      "clipId": "C"
+    }
+  ]
+}

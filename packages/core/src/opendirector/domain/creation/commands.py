@@ -411,6 +411,7 @@ def command_fingerprint(command: Command) -> str:
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
 IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'canvas_run_layout_group', 'canvas_run_layout_conflict', 'canvas_run_layout_extent', 'canvas_run_layout_shared_object', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+                    'impact_scope_exceeded',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
@@ -466,6 +467,17 @@ class QueryBase(Contract):
     projectId: UUID = Field(description='Owning project ID.')
 
 
+class GenerationImpactQuery(QueryBase):
+    type: Literal['generation.impact'] = Field(description='Read adopted-result reuse and dependency impact; never submits, adopts or edits. Limited to 20000 reference edges.')
+    rootSpecIds: tuple[UUID, ...] = Field(min_length=1, max_length=100, description='Unique generation configuration roots belonging to this project.')
+    maxNodes: int = Field(default=2000, strict=True, ge=1, le=10000, description='Maximum project generation configurations to analyze; overflow fails without a partial report.')
+
+    @model_validator(mode='after')
+    def roots(self):
+        unique(self.rootSpecIds, 'impact roots')
+        return self
+
+
 class ProjectQuery(QueryBase):
     type: Literal['project.get'] = Field(description='Read the current project.')
 
@@ -514,7 +526,7 @@ class AssetPreviewQuery(QueryBase):
 
 
 Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
-                  CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
+                  CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery | GenerationImpactQuery, Field(discriminator='type')]
 
 
 class ChangedObject(Contract):

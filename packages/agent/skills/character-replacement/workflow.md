@@ -52,6 +52,10 @@ Change one variable per comparison and retain previous outputs. Editing a segmen
 
 Use versioned output prefixes only on affected outputs where possible; changing every prefix can invalidate otherwise reusable save nodes. Retry within the agreed budget and report persistent defects rather than silently changing the model, replacement scope or reference images.
 
+For relationships already registered in an OpenDirector project, save `{"rootSpecIds":["<actual GenerationSpec UUID>"]}` as `impact-query.json` and run `opendirector --project <actual Project UUID> query generation.impact --file impact-query.json`. It compares current inputs with the adopted result's original Job. `pending_upstream` means current inputs still match but future upstream adoption may affect them; `stale` means current inputs already differ. Unadopted candidates and pinned inputs do not create live propagation. Inspect the returned reasons and original Job IDs; unknown submissions follow the existing recovery workflow. Re-read versions and locks before authorized edits. This read-only report does not execute reruns, promise creative quality, or guarantee ComfyUI/Omni latent or execution-cache availability. External graphs/history/cache remain subject to the checks above; unregistered guide/window/direction inputs are outside its proven coverage.
+
+对于已登记到 OpenDirector 工程的业务关系，将 `{"rootSpecIds":["<真实 GenerationSpec UUID>"]}` 保存为 `impact-query.json`，执行 `opendirector --project <真实 Project UUID> query generation.impact --file impact-query.json`。查询比较当前输入与已采用结果的原 Job：`pending_upstream` 表示当前输入仍相同、后续上游采用可能影响它；`stale` 表示当前输入已不同。未采用候选和固定引用不产生跟随传播。检查原因与原 Job，未知提交沿用现有恢复流程，授权修改前重读版本与锁定。查询不执行重做，不证明创作质量，也不保证 ComfyUI/Omni latent 或执行缓存可用；外部 graph/history/cache 仍按上述流程核对，未登记的 guide/窗口/方向不在已验证覆盖内。
+
 ## First-run qualification and history backup
 
 Validate the execution path once with empty history and new inputs. A workflow-to-API exporter/helper must handle native subgraphs, changed instance counts and current widget values without a matching prior run. A documented manual export handoff is a remaining automation limitation, not a completed one-sentence flow.

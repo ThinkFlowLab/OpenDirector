@@ -14,6 +14,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Capability mapping contract](architecture/capability-contract.md) | Evidenced upstream vocabulary, the `(operation, profile) → capability` table, the untranslatable declarations, and how it feeds discovery | Upstream vocabulary, capability ids, or discovery matching change |
 | [Roadmap](development/roadmap.md) | Capability dependencies and delivery criteria | Scope, dependencies, or acceptance criteria change |
 | [Validation guide](development/validation.md) | Reproducible checks and evidence requirements | Tools, runtime requirements, or validation entry points change |
+| [Generation impact integration](development/generation-impact-validation.md) | Shared impact query, recorded request/response and workbench integration boundary | Impact semantics, validation or workbench integration changes |
 | [Agent turn timing](development/agent-timing.md) ([中文](development/agent-timing.zh-CN.md)) | Where one agent turn spends its time, and the pre-registered bands that decide the next optimization | The ledger, its reader, or a decision band changes |
 | [CI layer assessment](development/ci-layer-assessment.md) | Timing evidence, critical PR representatives and staged Python classification | Measured evidence or classification decisions change |
 | [Issue #87 Windows handoff](development/issue-87-windows-handoff.md) ([中文](development/issue-87-windows-handoff.zh-CN.md)) | Native ACL repair and final text acceptance | The shared checkpoint or native validation scope changes |

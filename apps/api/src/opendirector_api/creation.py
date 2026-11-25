@@ -82,7 +82,7 @@ async def preview_until_disconnect(request: Request, operation):
 def creation_routes(projects: CreationProjects, generation=None, prompt_optimization=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
-    canvas = CreationCanvas(projects)
+    canvas = CreationCanvas(projects, availability=getattr(generation, 'availability', None), assets=assets)
     history = CreationHistory(projects, assets=assets)
     timeline_packages = CreationTimelinePackages(projects)
 

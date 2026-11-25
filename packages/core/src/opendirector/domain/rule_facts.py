@@ -12,6 +12,7 @@ import json
 
 # Storage/structure guard. Provider budgets are checked separately.
 MAX_REFERENCES = 64
+GENERATION_IMPACT_EVIDENCE_LIMIT = 20000
 TEXT_REFERENCE_BYTES = 64 * 1024
 # Chat and agent image references, and the browser fallback when a payload
 # omits imageBytes. Adapter profiles publish their own imageBytes.

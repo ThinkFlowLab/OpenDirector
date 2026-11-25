@@ -7,6 +7,7 @@ from .canvas import CanvasItem, CanvasItemBase, MediaRole, NodeCapabilities, Rol
 from .commands import Command, CommandReceipt, ProjectEvent, Query
 from .editors import EditorDocument
 from .generation import ExecutionParameters, GenerationSpec, InputSnapshot, Job, PromptPart, Reference, ResultVersion
+from .impact import GenerationImpactReport, TimelineImpactConsumer
 from .models import ModelConfigPublic, ModelConfigWrite, ModelKind, VideoMode
 from .project import ProjectSnapshot, ViewState
 from .timeline_packages import TimelinePackageManifest, TimelinePackageImportRequest, TimelinePackageImportReceipt
@@ -21,6 +22,7 @@ class CreationContracts(Contract):
     command: Command = Field(description='Immutable command recorded in this commit.')
     receipt: CommandReceipt = Field(description='Immutable command execution receipt.')
     query: Query = Field(description='Read-only project query.')
+    generationImpact: GenerationImpactReport = Field(description='Read-only generation dependency and result reuse report.')
     event: ProjectEvent = Field(description='Project change event, if emitted.')
     job: Job = Field(description='Generation execution record.')
     result: ResultVersion = Field(description='Generated result schema.')
@@ -42,4 +44,5 @@ ALIASES = {
     'EditorDocument': EditorDocument, 'Command': Command, 'ExecutionParameters': ExecutionParameters,
     'PromptPart': PromptPart, 'MediaRole': MediaRole, 'RoleAction': RoleAction,
     'ModelKind': ModelKind, 'VideoMode': VideoMode,
+    'TimelineImpactConsumer': TimelineImpactConsumer,
 }

@@ -364,6 +364,16 @@ def execution_spec(spec, references, rules):
     return spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': mode})})
 
 
+def freeze_input_snapshot(spec: GenerationSpec, model: ModelSnapshot,
+                          references: tuple[ResolvedReference, ...]) -> InputSnapshot:
+    """Freeze the same normalized creative inputs for acceptance and read-only comparison."""
+    if model.inputRules is None:
+        raise ValueError('Effective input rules are required to freeze current inputs')
+    effective = execution_spec(spec, references, model.inputRules)
+    return InputSnapshot(spec=effective.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
+                         model=model, references=references)
+
+
 def implicit_text_prompt(spec: GenerationSpec, references: tuple[ResolvedReference, ...] = ()) -> bool:
     """A connected text reference implicitly supplies an image or video prompt.
 

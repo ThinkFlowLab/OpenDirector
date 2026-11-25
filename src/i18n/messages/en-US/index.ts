@@ -14,6 +14,7 @@ import { common } from "./common.ts";
 import { editors } from "./editors.ts";
 import { errors } from "./errors.ts";
 import { generation } from "./generation.ts";
+import { generationImpact } from "./generationImpact.ts";
 import { library } from "./library.ts";
 import { models } from "./models.ts";
 import { settings } from "./settings.ts";
@@ -36,6 +37,7 @@ export const enUS: Record<keyof ZhCatalog, MessageEntry> = {
   ...canvasNodes,
   ...canvasWorkspace,
   ...generation,
+  ...generationImpact,
   ...tools,
   ...editors,
   ...timeline,

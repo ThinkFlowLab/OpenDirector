@@ -293,10 +293,11 @@ def bind_unique_timeline_sources(data, document, *, new_slot_ids):
 
 
 class CreationCanvas:
-    def __init__(self, projects):
+    def __init__(self, projects, *, availability=None, assets=None):
         self.projects = projects
+        self.availability = availability
         from opendirector.application.creation_assets import CreationAssets
-        self.assets = CreationAssets(projects)
+        self.assets = assets if assets is not None else CreationAssets(projects)
 
     def _available(self, asset):
         return self.assets.reference_available(asset.projectId, asset.id)
@@ -948,6 +949,9 @@ class CreationCanvas:
 
     def query_snapshot(self, query):
         from opendirector.application.creation_history import CreationHistory
+        if query.type == 'generation.impact':
+            from opendirector.application.creation_impact import CreationImpact
+            return CreationImpact(self.projects, availability=self.availability, assets=self.assets).query(query)
         snapshot = self.projects.snapshot(query.projectId)
         history = CreationHistory(self.projects)
         if query.type == 'project.get':

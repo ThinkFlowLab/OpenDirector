@@ -22,7 +22,7 @@ from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
 from opendirector.domain.creation.commands import parse_command
-from opendirector.domain.creation.generation import (DEFAULT_MUSIC_SECONDS, InputSnapshot, Job, ResultVersion, execution_spec,
+from opendirector.domain.creation.generation import (DEFAULT_MUSIC_SECONDS, InputSnapshot, Job, ResultVersion, execution_spec, freeze_input_snapshot,
                                                      reference_music_seconds, validate_generation)
 from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
@@ -410,8 +410,8 @@ class CreationGeneration(GenerationRuntime):
                 if reference.transmission != 'context_only':
                     self.assets.reference_available(command.projectId, reference.asset.assetId)
             self.provider.validate(spec.kind, config)
-            snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
-                model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
+            snapshot = freeze_input_snapshot(spec,
+                ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
                     **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved)
             # Use the same rendering, protocol validation and parameter resolver
             # as the established adapters, with immutable media from the facade.
