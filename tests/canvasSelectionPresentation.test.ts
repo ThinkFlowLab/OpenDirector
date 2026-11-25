@@ -71,6 +71,36 @@ test("manual pan tracks anchored controls without forcing viewport; offscreen se
   assert.deepEqual(viewport, { x: 350, y: 120, zoom: 0.7 });
 });
 
+test("toolbar never rises above the safe area into the top bar (#513)", () => {
+  const node = { x: 40, y: 80, width: 300, height: 300 };
+  const chrome: SelectionChrome = {
+    safe: { x: 80, y: 72, width: 1400, height: 850 },
+    toolbar: { width: 1260, height: 36 },
+    composer: { width: 0, height: 0 },
+  };
+  // After a drag or manual pan the viewport is deliberately not refitted.
+  for (const viewport of [
+    { x: 30, y: 24, zoom: 1 },
+    { x: 0, y: -60, zoom: 1 },
+    { x: 0, y: 0, zoom: 0.5 },
+    { x: 0, y: 0, zoom: 1.5 },
+  ]) {
+    const placed = selectionPlacement(node, viewport, chrome);
+    assert.equal(placed.toolbar.top, chrome.safe.y, JSON.stringify(viewport));
+    assert.equal(placed.visible, true);
+  }
+  // A fitted selection keeps the ordinary anchored position above the node.
+  const fitted = selectionViewport(node, { x: 0, y: 0, zoom: 1 }, chrome);
+  const placed = selectionPlacement(node, fitted, chrome);
+  assert.equal(placed.toolbar.top, node.y * fitted.zoom + fitted.y - 32 - 8 - 36);
+  assert.ok(placed.toolbar.top >= chrome.safe.y);
+  // Far below the top bar the toolbar still follows the node exactly.
+  assert.equal(
+    selectionPlacement(node, { x: 0, y: 400, zoom: 1 }, chrome).toolbar.top,
+    80 + 400 - 32 - 8 - 36,
+  );
+});
+
 test("fitting a distant node preserves its screen center while reducing zoom", () => {
   const node = { x: 10000, y: 8000, width: 600, height: 600 };
   const view = { x: 640 - 10300, y: 200 - 8000, zoom: 1 };

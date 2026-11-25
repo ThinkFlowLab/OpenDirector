@@ -128,7 +128,9 @@ export function selectionPlacement(
   return {
     toolbar: {
       left: left(toolbar.width),
-      top: top - TITLE_SPACE - TOOLBAR_GAP - toolbar.height,
+      // Never above the safe area: the top bar's global controls sit there and
+      // the toolbar would intercept their clicks when the node is near the top.
+      top: Math.max(safe.y, top - TITLE_SPACE - TOOLBAR_GAP - toolbar.height),
     },
     composer: {
       left: scaleComposer

@@ -190,6 +190,11 @@
       "note": "Bilingual structure-first opening with one held and one failed media read, retained asset bindings, retry and late reads across a project switch. Seeds projects through /src on Vite."
     },
     {
+      "file": "canvas_toolbar_topbar.mjs",
+      "lanes": ["gate"],
+      "note": "#513: after dragging a node near the top, a manual pan and at several zoom levels, the selected node toolbar never covers the top bar or its project switcher; real clicks in both locales. Seeds projects through /src on Vite."
+    },
+    {
       "file": "canvas_wheel.mjs",
       "previewSafe": true,
       "lanes": [
