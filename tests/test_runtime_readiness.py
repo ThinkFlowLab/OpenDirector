@@ -9,6 +9,9 @@ from opendirector.agent import runtime
 from process_helpers import python_cli
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize(('engine', 'output', 'exit_code', 'expected'), [
     ('codex', '', 0, 'ready'),
     ('codex', '', 1, 'needs_login'),

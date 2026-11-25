@@ -11,6 +11,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def api(tmp_path):
     local = LocalProjects(tmp_path)
@@ -296,6 +299,7 @@ def test_open_canvas_returns_one_snapshot_with_authoritative_reference_edges(api
     assert body['edges'] == projection['edges']
     assert body['edges'] == [dict(referenceId=reference['id'], sourceItemId=source_item,
                                   targetSpecId=target_spec, state='pending')]
+    assert body['texts'] == {asset['id']: 'v1'}
     # The no-flag open keeps its established bare snapshot response.
     plain = client.post(path + '/open').json()
     assert plain == body['snapshot']

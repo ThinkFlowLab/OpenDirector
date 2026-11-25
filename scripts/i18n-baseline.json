@@ -1,5 +1,5 @@
 {
-  "total": 165,
+  "total": 169,
   "counts": {
     "src/canvas/assets.ts": 14,
     "src/canvas/dataBoundary.ts": 3,
@@ -9,7 +9,7 @@
     "src/canvas/model.ts": 1,
     "src/canvas/NodeComposer.tsx": 1,
     "src/canvas/referenceMentions.ts": 1,
-    "src/canvas/toolCatalog.ts": 123,
+    "src/canvas/toolCatalog.ts": 127,
     "src/canvas/workspace/useWorkspaceTransfer.ts": 1
   }
 }

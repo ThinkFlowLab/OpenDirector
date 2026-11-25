@@ -7,6 +7,7 @@ import {
   layoutTimelineText,
   type TimelineTextLayout,
 } from "./timelineTextLayout.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 
 export interface TimelineFontSession {
   family(fontId: string): string;
@@ -151,7 +152,7 @@ export async function prepareTimelineFonts(
       if (!font) throw new Error(tNow("errors.render.fontMissing", { fontId }));
       if (!font.src)
         throw new Error(tNow("errors.render.fontLoad", { title: font.title }));
-      const response = await fetch(font.src, { signal });
+      const response = await fetchMediaSource(font.src, { signal });
       if (!response.ok)
         throw new Error(
           tNow("errors.render.readFailed", {

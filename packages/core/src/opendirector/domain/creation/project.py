@@ -137,10 +137,10 @@ class ProjectSnapshot(Contract):
                 source = items.get(reference.source.id)
                 if source is None or source.kind not in {'text', 'image', 'video', 'audio', 'subject'}:
                     raise ValueError('Following reference needs a stable logical media source')
-                if reference.role == 'first_frame' and source.kind != 'image' or reference.role == 'continuation' and source.kind != 'video':
+                if reference.role == 'first_frame' and source.kind != 'image' or reference.role in {'continuation', 'control'} and source.kind != 'video':
                     raise ValueError('Reference source kind does not match its role')
             elif ((reference.role == 'first_frame' and reference.source.kind != 'image')
-                  or (reference.role == 'continuation' and reference.source.kind != 'video')):
+                  or (reference.role in {'continuation', 'control'} and reference.source.kind != 'video')):
                 raise ValueError('Reference source kind does not match its role')
         for spec in self.generationSpecs:
             if spec.promptContent:

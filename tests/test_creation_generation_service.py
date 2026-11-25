@@ -11,6 +11,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'

@@ -9,6 +9,9 @@ from opendirector.domain.image_inputs import image_input_policy, native_mask_app
 from opendirector.domain.projects import ProjectError
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png(mode='RGB', size=(64, 64), color=128):
     output = BytesIO()
     Image.new(mode, size, color).save(output, format='PNG')

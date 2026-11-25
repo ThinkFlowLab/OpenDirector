@@ -25,6 +25,9 @@ from test_native_runtime import real_opencode_worker
 from visual_model_fixture import anthropic_stream, image_bytes, latest_tool_output, responses_stream, serve_model
 
 
+pytestmark = pytest.mark.cpu
+
+
 COLORS = {'red': (240, 20, 20), 'blue': (20, 20, 240),
           'green': (20, 200, 20), 'yellow': (240, 240, 20)}
 STILL = ('red', 'blue')

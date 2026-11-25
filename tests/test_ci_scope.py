@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 
-pytestmark = pytest.mark.ready
+pytestmark = [pytest.mark.cpu, pytest.mark.ready]
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/ci/select_checks.py'
 spec = importlib.util.spec_from_file_location('check_scope', SCRIPT)

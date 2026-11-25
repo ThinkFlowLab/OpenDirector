@@ -108,6 +108,7 @@ import "../workspace.css";
 import "../desktop-chrome.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
+import { AssetMedia } from "../useAssetMedia.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
@@ -282,6 +283,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setSelected,
     setSelectedEdges,
     setSettingsCategory,
+    setSettingsModelKind,
     setSettingsOpen,
     setShowEdges,
     setSubjectImport,
@@ -292,6 +294,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     setZoom,
     setZoomMenu,
     settingsCategory,
+    settingsModelKind,
     settingsOpen,
     showAssistant,
     showEdges,
@@ -1723,6 +1726,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={activeAction.token}
                 node={actionNode}
                 tool={activeAction.tool}
+                nodes={doc.nodes}
                 draft={actionNode.data.taskDraft}
                 mediaContainer={actionMedia}
                 onDraftChange={(task) => saveActionDraft(activeAction, task)}
@@ -1941,6 +1945,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 backendModels={backendCatalog.models}
                 onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}
+                onConfigureModel={(kind) => {
+                  setSettingsCategory("models");
+                  setSettingsModelKind(kind);
+                  setSettingsOpen(true);
+                }}
               />
             )}
           </div>
@@ -2193,7 +2202,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                       }}
                     >
                       {n.type === "image" ? (
-                        <img src={n.data.src} alt={n.data.title} />
+                        <AssetMedia as="img" src={n.data.src} alt={n.data.title} />
                       ) : (
                         <CanvasIcon name={n.type} size={34} />
                       )}
@@ -2570,11 +2579,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           </header>
           <div onClick={(e) => e.stopPropagation()}>
             {preview.type === "image" && preview.data.src ? (
-              <img src={preview.data.src} alt={preview.data.title} />
+              <AssetMedia as="img" src={preview.data.src} alt={preview.data.title} />
             ) : preview.type === "video" && preview.data.src ? (
-              <video src={preview.data.src} controls />
+              <AssetMedia as="video" src={preview.data.src} controls />
             ) : preview.type === "audio" && preview.data.src ? (
-              <audio src={preview.data.src} controls />
+              <AssetMedia as="audio" src={preview.data.src} controls />
             ) : (
               <p>
                 {preview.data.text ||
@@ -2960,7 +2969,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           catalog={backendCatalog}
           theme={theme}
           initialCategory={settingsCategory}
-          onClose={() => setSettingsOpen(false)}
+          initialModelKind={settingsModelKind}
+          onClose={() => {
+            setSettingsModelKind(null);
+            setSettingsOpen(false);
+          }}
         />
       )}
       {exampleEntries && (

@@ -13,6 +13,9 @@ from opendirector.integrations import http_settings
 from opendirector.integrations.volcengine import _public_result_url
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def answers(monkeypatch):
     values, calls = ['93.184.216.34'], []

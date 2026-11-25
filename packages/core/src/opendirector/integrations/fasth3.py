@@ -15,12 +15,38 @@ def generation_fields(parameters, *, frame_indices=None):
             parameters.get('fps', FPS), parameters.get('num_frames')))
     extra = {'task': 'ref2va', 'audio_flow_shift': 3}
     steps = 8
+    if parameters.get('control_type'):
+        # Fun ControlNet: the control video travels as control_reference with its type as a form field.
+        fields['control_type'] = parameters['control_type']
+        extra[parameters['control_type']] = {'control_context_scale': float(parameters.get('control_scale', 1.0))}
+        if int(parameters.get('num_frames', 0)) > CONTROL_WINDOW_FRAMES:
+            extra.update(long_video=True, long_video_mode='full')
     if frame_indices is not None:
         extra.update(task='fl2va', sampler='res_multistep', frame_indices=tuple(frame_indices))
         steps = parameters.get('num_inference_steps', 20)
     fields.update(size=parameters.get('size', '832x480'), num_inference_steps=steps,
                   guidance_scale=1, fps=24, seed=parameters.get('seed', 1234))
     return fields, extra
+
+
+CONTROL_WINDOW_FRAMES = 17 * 20 + 5  # One native FastH3 window; longer control clips run as one long_video_mode=full pass.
+CONTROL_RATIOS = ('16:9', '4:3', '1:1', '3:4', '9:16')
+
+
+def control_parameters(node, records, *, resolution=None):
+    """FastH3 structure control follows its control video: the longest 17n+5 length it covers and the H3
+    bucket nearest its aspect (768P unless 480P is chosen). The service holds the last control frame if short."""
+    from opendirector.domain.rule_facts import CONTROL_VIDEO_SECONDS
+    from opendirector.domain.video_output import _ratio, h3_output_size
+    control = next(records[key] for key in node['referenceIds'] if records[key]['kind'] == 'video')
+    seconds = min(control['durationMs'] / 1000, CONTROL_VIDEO_SECONDS[1])
+    frames = 17 * max((int(seconds * 24 + 1e-6) - 5) // 17, 6) + 5
+    aspect = (control.get('width') or 16) / (control.get('height') or 9)
+    ratio = min(CONTROL_RATIOS, key=lambda name: abs(math.log(_ratio(name) / aspect)))
+    resolution = resolution if resolution in {'480P', '768P'} else '768P'
+    return {'seconds': str(math.ceil(frames / 24)), 'duration': frames / 24, 'size': h3_output_size(resolution, ratio),
+            'fps': 24, 'num_frames': frames, 'num_inference_steps': 8, 'guidance_scale': 1,
+            'control_type': 'depth', 'control_scale': 1.0}
 
 
 def native_prompt(task, sources):

@@ -149,6 +149,20 @@ try {
   });
   await trigger.click();
   await popup.waitFor();
+  const followControl = popup.getByRole("checkbox", {
+    name: "跟随控制视频",
+    exact: true,
+  });
+  const mode = page.getByRole("combobox", {
+    name: "视频创作模式",
+    exact: true,
+  });
+  await followControl.check();
+  assert.equal(await mode.inputValue(), "control");
+  assert.equal(await trigger.innerText(), "跟随控制视频");
+  assert.equal(await slider.count(), 0);
+  await followControl.uncheck();
+  assert.equal(await mode.inputValue(), "reference");
   await slider.press("End");
   assert.equal(await slider.getAttribute("aria-valuetext"), "15 秒");
   assert.equal(await select.inputValue(), "15");
@@ -168,7 +182,8 @@ try {
     Math.abs(triggerBox.y - popupBox.y - popupBox.height - 8) <= 1,
     JSON.stringify({ triggerBox, popupBox }),
   );
-  assert.ok(popupBox.height <= 75, JSON.stringify(popupBox));
+  const manualControlsBox = await popup.locator(".cw-duration-controls").boundingBox();
+  assert.ok(manualControlsBox.height <= 59, JSON.stringify(manualControlsBox));
   assert.equal(
     await popup.getByRole("button").count(),
     0,
@@ -250,6 +265,9 @@ try {
   await chooseGenerationModel(page, `config:${config.id}`);
   await trigger.click();
   await popup.waitFor();
+  assert.equal(await followControl.count(), 0);
+  const fixedDurationBox = await popup.boundingBox();
+  assert.ok(fixedDurationBox.height <= 75, JSON.stringify(fixedDurationBox));
   assert.deepEqual(await popup.locator(".cw-duration-tick").allTextContents(), [
     "0",
     "5",

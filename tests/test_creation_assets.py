@@ -23,6 +23,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def command(project_id, kind='project.create', **payload):
     return parse_command(dict(projectId=project_id, commandId=uuid4(), type=kind, payload=payload))
 
@@ -639,3 +642,27 @@ def test_imported_assets_record_the_archive_source_they_came_from():
     # A generated asset still needs real job evidence, not just a claim.
     with pytest.raises(ValueError, match='job and input identity'):
         AssetProvenance(source='generated', importedFrom='generated')
+
+
+def test_media_reads_replay_a_chain_once_and_keep_rejecting_a_damaged_ancestor(storage):
+    projects, project_id, _ = storage
+    asset, *_ = import_asset(storage)
+    replays = []
+    fresh = CreationProjects(LocalProjects(projects.local.repository))
+    fresh._schedule_warm = lambda *args: None
+    original_fresh = fresh._history
+    fresh._history = lambda *args: (replays.append(1), original_fresh(*args))[1]
+    reader = CreationAssets(fresh)
+    for _ in range(3):
+        stream, _asset = reader.open_media(project_id, asset.id)
+        stream.close()
+    assert len(replays) == 1
+    root = projects.root / 'Assets' / 'commits'
+    head = json.loads((projects.root / 'Assets' / 'project.json').read_text())['head']
+    ancestor = next(path for path in root.iterdir() if path.stem != head)
+    ancestor.write_bytes(ancestor.read_bytes().replace(b'Assets', b'Corrupt', 1))
+    cold = CreationProjects(LocalProjects(projects.local.repository))
+    cold._schedule_warm = lambda *args: None
+    with pytest.raises(ProjectError) as damaged:
+        CreationAssets(cold).open_media(project_id, asset.id)
+    assert damaged.value.code == 'storage_unavailable'

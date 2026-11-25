@@ -53,6 +53,7 @@ import { importedNodeIds, uploadPickerPlan, uploadTargetUnchanged } from "./entr
 import { assertUpload } from "../uploadPolicy.ts";
 import { prefetchLibrary } from "../library/libraryPrefetch";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
+import { parseAssetSource } from "../../backend/assetSource.ts";
 
 export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   const {
@@ -567,7 +568,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     try {
       if (node.data.src)
         downloadFile(
-          ["image/heic", "image/heif"].includes(node.data.mimeType ?? "")
+          ["image/heic", "image/heif"].includes(node.data.mimeType ?? "") || parseAssetSource(node.data.src)
             ? await creationClient(historyRef.current.present.id).originalMedia(node.data.src, node.data.mimeType)
             : node.data.src,
           downloadFilename(node.data.title, node.data.mimeType),
@@ -606,7 +607,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
         members.map(async (node) => {
           let blob: Blob;
           if (node.data.src) {
-            const source = ["image/heic", "image/heif"].includes(node.data.mimeType ?? "")
+            const source = ["image/heic", "image/heif"].includes(node.data.mimeType ?? "") || parseAssetSource(node.data.src)
               ? await creationClient(document.id).originalMedia(node.data.src, node.data.mimeType)
               : node.data.src;
             if (source instanceof Blob) blob = source;

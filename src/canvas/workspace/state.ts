@@ -15,6 +15,7 @@ import type { SubjectMediaSlot } from "../subjectMedia.ts";
 import type { CanvasToolId, ToolParameters } from "../toolCatalog.ts";
 import type { SubjectImportTab } from "../library/SubjectImportDialog.tsx";
 import type { PortSide } from "../connectionPorts.ts";
+import type { SettingsModelKind } from "../ModelServiceForm.tsx";
 
 export type WorkspacePanel = "assets" | "search" | "history" | null;
 
@@ -120,6 +121,7 @@ export type WorkspaceState = {
   settingsOpen: boolean;
   businessHistory: { undo: boolean; redo: boolean };
   settingsCategory: "general" | "models";
+  settingsModelKind: SettingsModelKind | null;
   welcomeOpen: boolean;
   activeGenerations: ActiveGeneration[];
   arrivingNodes: ReadonlySet<string>;
@@ -189,6 +191,7 @@ const workspaceKeys = [
   "settingsOpen",
   "businessHistory",
   "settingsCategory",
+  "settingsModelKind",
   "welcomeOpen",
   "activeGenerations",
   "arrivingNodes",
@@ -249,6 +252,7 @@ export function createWorkspaceState(): WorkspaceState {
     settingsOpen: false,
     businessHistory: { undo: false, redo: false },
     settingsCategory: "general",
+    settingsModelKind: null,
     welcomeOpen: false,
     activeGenerations: [],
     arrivingNodes: new Set(),

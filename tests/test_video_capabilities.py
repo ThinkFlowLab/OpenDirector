@@ -19,6 +19,9 @@ from opendirector.integrations.providers import GenerationProviders
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 CAPS = {'outputs': [
     {'resolution': '540P', 'durations': [3, 5], 'width': 960, 'height': 540},
     {'resolution': '720P', 'durations': [5, 7], 'width': 1280, 'height': 720}],

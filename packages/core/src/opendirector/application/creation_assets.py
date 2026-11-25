@@ -210,8 +210,10 @@ class CreationAssets:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             if snapshot is None:
-                path, _, records = self.projects._load(db, project_id)
-                snapshot = records[0].snapshot
+                # A head whose chain was already proven needs no replay per read.
+                path, manifest = self.projects._find(db, project_id)
+                record, validated = self.projects._current_record(db, project_id, path, manifest)
+                snapshot = (record if validated else self.projects._load(db, project_id)[2][0]).snapshot
             else:
                 if snapshot.project.id != UUID(str(project_id)):
                     raise ProjectError('素材读取快照不属于当前工程。', 409)

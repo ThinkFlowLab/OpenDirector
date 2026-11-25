@@ -15,6 +15,9 @@ from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_atomic_json_publication_preserves_open_reader_and_publishes_after_close(tmp_path, monkeypatch):
     path = tmp_path / 'state.json'
     before, after = {'revision': 1}, {'revision': 2, 'text': '中文'}

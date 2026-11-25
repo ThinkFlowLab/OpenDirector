@@ -42,6 +42,7 @@ import { resolveGenerationModel } from "./modelResolution.ts";
 import { GenerationComposerShell } from "./GenerationComposerShell";
 import { useI18n } from "../i18n/I18nProvider";
 import { getNodeGenerationSettings } from "./generationSettings.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
 export { getNodeGenerationSettings };
 import {
   GenerationReferenceEditor,
@@ -70,6 +71,8 @@ export interface NodeComposerProps {
   onCheckModels?: (ids: readonly string[]) => Promise<void>;
   removeWatermark?: boolean;
   referenceControls?: GenerationReferenceControls;
+  /** Opens model settings on the category the node needs when none is configured. */
+  onConfigureModel?: (kind: "image" | "video" | "audio") => void;
 }
 
 export type ComposerSettings = GenerationSettings;
@@ -97,6 +100,7 @@ export function NodeComposer({
   onCheckModels,
   removeWatermark = false,
   referenceControls,
+  onConfigureModel,
 }: NodeComposerProps) {
   const { t } = useI18n();
   const [openPanel, setPanel] = useState<Panel>(null);
@@ -197,8 +201,13 @@ export function NodeComposer({
       : backend && music
         ? { min: MUSIC_SECONDS.min, max: MUSIC_SECONDS.max, step: 1 }
         : model?.duration;
-  const durationValues =
-    backend && mode === "video"
+  const serviceModes = config?.inputRules.videoModes ?? [];
+  const supportsControl = mode === "video" && serviceModes.includes("control");
+  // The adapter derives duration from the control clip and aligns to model frames.
+  const followsControl = backend && mode === "video" && settings.videoMode === "control";
+  const durationValues = followsControl
+    ? []
+    : backend && mode === "video"
       ? serviceSeconds
       : duration
         ? Array.from(
@@ -209,12 +218,15 @@ export function NodeComposer({
             (_, index) => duration.min + index * duration.step,
           )
         : [];
-  const serviceModes = config?.inputRules.videoModes ?? [];
+  const hasDurationPicker = supportsControl || durationValues.length > 0;
   const videoModes = [
     ["reference", t("generation.mode.reference")],
     ["first-last", t("generation.mode.firstLast")],
     ...(serviceModes.includes("continuation")
       ? [["continuation", t("generation.mode.continuation")] as const]
+      : []),
+    ...(serviceModes.includes("control")
+      ? [["control", t("generation.mode.control")] as const]
       : []),
   ] as const;
   const modeUnsupported = (value: NonNullable<ComposerSettings["videoMode"]>) =>
@@ -226,8 +238,8 @@ export function NodeComposer({
         ),
       )) ||
     (backend
-      ? !(value === "continuation"
-          ? serviceModes.includes("continuation")
+      ? !(value === "continuation" || value === "control"
+          ? serviceModes.includes(value)
           : value === "first-last"
             ? serviceModes.includes("first_frame")
             : serviceModes.includes("reference") ||
@@ -239,7 +251,7 @@ export function NodeComposer({
       updateSettings({
         model: value,
         modelConfigId: undefined,
-        ...(settings.videoMode === "continuation"
+        ...(settings.videoMode === "continuation" || settings.videoMode === "control"
           ? { videoMode: "reference" as const }
           : {}),
       });
@@ -314,7 +326,8 @@ export function NodeComposer({
                 >
                   <span className="cw-frame-thumbnail">
                     {node?.data.src && node.data.assetState !== "missing" ? (
-                      <img
+                      <AssetMedia
+                        as="img"
                         src={node.data.src}
                         alt={`${label}：${node.data.title}`}
                         draggable={false}
@@ -498,44 +511,64 @@ export function NodeComposer({
         )}
       <div className="cw-composer-footer">
         <div className="cw-composer-options">
-          <SearchableSelect
-            compact
-            label={t("generation.model.select")}
-            value={
-              backend ? `config:${settings.modelConfigId}` : "unconfigured"
-            }
-            disabled={running || serviceModels.length === 0}
-            onChange={chooseModel}
-            options={[
-              ...(!serviceModels.length
-                ? [
-                    {
-                      id: "unconfigured",
-                      name: t("generation.model.unconfiguredOption"),
-                    },
-                  ]
-                : []),
-              ...(backend && !config
-                ? [
-                    {
-                      id: `config:${settings.modelConfigId}`,
-                      name: `${
-                        settings.model === LOCAL_DEMO_MODEL
-                          ? t("generation.model.localDemo")
-                          : settings.model
-                      }${t("generation.model.unavailableTag")}`,
-                    },
-                  ]
-                : []),
-              ...serviceModels.map((item) => ({
-                id: `config:${item.id}`,
-                name: modelLabel(item),
-                modelId: item.modelId,
-                description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
-                group: providerLabel(item),
-              })),
-            ]}
-          />
+          {!serviceModels.length && onConfigureModel ? (
+            <button
+              type="button"
+              className="cw-parameter-trigger cw-model-setup-trigger"
+              disabled={running}
+              onClick={() => onConfigureModel(mode)}
+            >
+              <CanvasIcon name="model" size={15} />
+              <span>
+                {t(
+                  mode === "video"
+                    ? "modelSetup.videoAction"
+                    : mode === "audio"
+                      ? "modelSetup.audioAction"
+                      : "modelSetup.imageAction",
+                )}
+              </span>
+            </button>
+          ) : (
+            <SearchableSelect
+              compact
+              label={t("generation.model.select")}
+              value={
+                backend ? `config:${settings.modelConfigId}` : "unconfigured"
+              }
+              disabled={running || serviceModels.length === 0}
+              onChange={chooseModel}
+              options={[
+                ...(!serviceModels.length
+                  ? [
+                      {
+                        id: "unconfigured",
+                        name: t("generation.model.unconfiguredOption"),
+                      },
+                    ]
+                  : []),
+                ...(backend && !config
+                  ? [
+                      {
+                        id: `config:${settings.modelConfigId}`,
+                        name: `${
+                          settings.model === LOCAL_DEMO_MODEL
+                            ? t("generation.model.localDemo")
+                            : settings.model
+                        }${t("generation.model.unavailableTag")}`,
+                      },
+                    ]
+                  : []),
+                ...serviceModels.map((item) => ({
+                  id: `config:${item.id}`,
+                  name: modelLabel(item),
+                  modelId: item.modelId,
+                  description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
+                  group: providerLabel(item),
+                })),
+              ]}
+            />
+          )}
           <button
             type="button"
             className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}
@@ -737,20 +770,24 @@ export function NodeComposer({
               aria-label={t("generation.duration")}
               aria-haspopup="dialog"
               aria-expanded={panel === "duration"}
-              disabled={running || !durationValues.length}
+              disabled={running || !hasDurationPicker}
               title={
-                !durationValues.length
-                  ? t("generation.duration.unavailable")
-                  : t("generation.duration.choose")
+                followsControl
+                  ? t("generation.duration.followsControl")
+                  : hasDurationPicker
+                    ? t("generation.duration.choose")
+                    : t("generation.duration.unavailable")
               }
               onClick={(event) => togglePanel("duration", event.currentTarget)}
             >
               <span>
-                {durationValues.length
-                  ? t("generation.duration.seconds", {
-                      count: settings.durationSeconds,
-                    })
-                  : t("generation.duration.default")}
+                {followsControl
+                  ? t("generation.duration.followsControl")
+                  : durationValues.length
+                    ? t("generation.duration.seconds", {
+                        count: settings.durationSeconds,
+                      })
+                    : t("generation.duration.default")}
               </span>
               <CanvasIcon name="chevronDown" size={12} />
             </button>
@@ -805,15 +842,32 @@ export function NodeComposer({
           label={t("generation.duration.settings")}
           placement="above-anchor"
         >
-          <DurationControl
-            fractional={!!config?.inputRules.fractionalDuration}
-            outputFrames={config?.inputRules.profile === "vllm-omni-h3" ? h3FrameCount(settings.durationSeconds) : undefined}
-            values={durationValues}
-            value={settings.durationSeconds}
-            disabled={running}
-            scale={{ min: 0, max: 30, step: 5 }}
-            onChange={(durationSeconds) => updateSettings({ durationSeconds })}
-          />
+          {supportsControl && (
+            <label className="cw-audio-toggle cw-duration-follow-control">
+              <span>{t("generation.duration.followsControl")}</span>
+              <input
+                type="checkbox"
+                checked={followsControl}
+                disabled={running}
+                onChange={(event) =>
+                  updateSettings({
+                    videoMode: event.target.checked ? "control" : "reference",
+                  })
+                }
+              />
+            </label>
+          )}
+          {durationValues.length > 0 && (
+            <DurationControl
+              fractional={!!config?.inputRules.fractionalDuration}
+              outputFrames={config?.inputRules.profile === "vllm-omni-h3" ? h3FrameCount(settings.durationSeconds) : undefined}
+              values={durationValues}
+              value={settings.durationSeconds}
+              disabled={running}
+              scale={{ min: 0, max: 30, step: 5 }}
+              onChange={(durationSeconds) => updateSettings({ durationSeconds })}
+            />
+          )}
         </ComposerPopover>
       )}
       {panel === "parameters" && (

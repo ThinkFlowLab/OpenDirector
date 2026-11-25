@@ -6,6 +6,7 @@ import {
   flushChatDraft,
   rememberChat,
 } from "../src/backend/chatDrafts.ts";
+import { request } from "../src/backend/api.ts";
 import {
   openBackendProject,
   releaseBackendProject,
@@ -246,4 +247,62 @@ test("unified projects retain their own session endpoint for switches and page e
     f.calls.some((call) => call.path.endsWith("/close")),
     false,
   );
+});
+
+const expired = () =>
+  Response.json({ detail: "会话已过期", code: "session_expired" }, { status: 409 });
+
+test("a lapsed-lease recovery waits for a pending switch and never reacquires the project left", async (t) => {
+  const f = fixture(t),
+    id = crypto.randomUUID(),
+    next = crypto.randomUUID();
+  await openBackendProject(id, "A");
+  let release!: () => void, entered!: () => void;
+  const closing = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.intercept(async (path, options) => {
+    if (path.includes("/sessions/") && options.method === "DELETE") {
+      entered();
+      await blocked;
+    }
+    if (path.endsWith(`/${id}/commands`)) return expired();
+    return undefined;
+  });
+  const switching = openBackendProject(next, "B");
+  await closing;
+  // A save from the editor being left is rejected while the close is in flight.
+  const save = request(`/creation/projects/${id}/commands`, { method: "POST", body: "{}" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  release();
+  await switching;
+  await assert.rejects(save, { code: "session_expired" });
+  assert.equal(f.lease(), next);
+  assert.equal(
+    f.calls.some((call) => call.method === "PUT" && call.value.projectId === id),
+    false,
+  );
+});
+
+test("writes rejected together for a lapsed lease share one renewal", async (t) => {
+  const f = fixture(t),
+    id = crypto.randomUUID();
+  await openBackendProject(id, "A");
+  f.expire();
+  f.intercept(async (path) =>
+    path.endsWith(`/${id}/commands`)
+      ? f.lease() === id
+        ? Response.json({ status: "applied" })
+        : expired()
+      : undefined,
+  );
+  const saves = [1, 2, 3].map(() =>
+    request(`/creation/projects/${id}/commands`, { method: "POST", body: "{}" }),
+  );
+  assert.deepEqual(await Promise.all(saves), [1, 2, 3].map(() => ({ status: "applied" })));
+  assert.equal(f.calls.filter((call) => call.method === "PUT").length, 1);
+  assert.equal(f.lease(), id);
 });

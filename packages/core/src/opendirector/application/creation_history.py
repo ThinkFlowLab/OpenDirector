@@ -125,7 +125,7 @@ class CreationHistory:
         for asset in snapshot.assets:
             file_available = True
             try:
-                service.reference_available(project_id, asset.id)
+                service.reference_available(project_id, asset.id, snapshot=snapshot)
             except (ContractError, ProjectError, OSError, ValueError):
                 file_available = False
             available = file_available and (asset.id in listed or asset.id in owners)

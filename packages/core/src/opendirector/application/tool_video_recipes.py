@@ -113,7 +113,7 @@ def _write_mattes(tracks: Tracks, folder):
 
 async def video_matting(ctx: ToolContext):
     source = _source_video(ctx)
-    background = ctx.choice('background', ('black', 'green', 'transparent'), 'green')
+    background = ctx.choice('background', ('black', 'green', 'transparent', 'mask'), 'green')
     pairs = await ctx.concepts(ctx.text('prompt'), ('人物',))
     with media.Workspace() as work:
         raw = work.write('source', source.data)
@@ -132,9 +132,85 @@ async def video_matting(ctx: ToolContext):
                                  code='tool_no_video_match', label=label)
         await ctx.progress('正在合成抠像视频')
         await blocking(_write_mattes, tracks, work.path / 'mattes')
+        if background == 'mask':
+            # White where the tracked objects are, black elsewhere: an input for 遮罩合成 and other masked steps.
+            data = await blocking(media.encode_frames, str(work.path / 'mattes' / '%05d.png'), info['fps'], work.path / 'mask.mp4')
+            return [Output('video', data, 'mp4', '视频遮罩')]
         data, suffix = await blocking(media.matte, clip, str(work.path / 'mattes' / '%05d.png'), info['fps'],
                                                work.path / 'matted', background=background)
     return [Output('video', data, suffix, '视频抠像')]
+
+COMPOSITE_MAX_FRAMES = 2048
+
+def _grow(mask: Image.Image) -> Image.Image:
+    """The mask thresholded and grown by about four pixels, so hair and loose clothing edges stay inside."""
+    return mask.point(lambda value: 255 if value > 127 else 0).filter(ImageFilter.GaussianBlur(3)).point(
+        lambda value: 255 if value > 16 else 0)
+
+def composite_frames(content: list, masks: list, folder, *, stretch: bool) -> int:
+    """content inside the mask (white in masks), black elsewhere; returns the frame count.
+
+    With stretch, brightness inside the mask is spread over 50..255 from its own 1st..99.5th percentile,
+    so a person's depth uses the full control range and stays distinct from the black background.
+    """
+    count = min(len(content), len(masks))
+    if not count:
+        raise ProjectError('视频中没有可合成的画面。', 422)
+    curve = list(range(256))
+    if stretch:
+        histogram = [0] * 256
+        for index in range(0, count, max(1, count // 48)):
+            picture = Image.open(content[index]).convert('L')
+            mask = _grow(Image.open(masks[index]).convert('L').resize(picture.size))
+            histogram = [a + b for a, b in zip(histogram, picture.histogram(mask))]
+        total = sum(histogram)
+        if not total:
+            raise ProjectError('遮罩视频中没有白色区域，请检查遮罩。', 422)
+        def percentile(share):
+            running = 0
+            for value, number in enumerate(histogram):
+                running += number
+                if running >= share * total:
+                    return value
+            return 255
+        low, high = percentile(0.01), percentile(0.995)
+        span = max(high - low, 1)
+        curve = [round(50 + 205 * min(max((value - low) / span, 0.0), 1.0)) for value in range(256)]
+    folder.mkdir()
+    for index in range(count):
+        picture = Image.open(content[index]).convert('RGB')
+        frame = Image.new('RGB', picture.size, 0)
+        frame.paste(picture.point(curve * 3), mask=_grow(Image.open(masks[index]).convert('L').resize(picture.size)))
+        frame.save(folder / f'{index:05d}.png', compress_level=1)
+    return count
+
+async def mask_composite(ctx: ToolContext):
+    if len(ctx.sources) != 2 or any(source.kind != 'video' for source in ctx.sources):
+        raise ProjectError('遮罩合成需要两个视频：先选内容视频（例如深度视频），再选遮罩视频。', 422)
+    stretch = ctx.parameters.get('stretch', True)
+    if not isinstance(stretch, bool):
+        raise ProjectError('参数 stretch 无效。', 422)
+    content, mask = ctx.sources
+    with media.Workspace() as work:
+        raw = work.write('content', content.data)
+        info = await blocking(media.video_info, raw)
+        if info['duration'] * info['fps'] > COMPOSITE_MAX_FRAMES:
+            raise ProjectError(f'遮罩合成单次最多处理 {COMPOSITE_MAX_FRAMES} 帧，请先裁剪视频。', 422)
+        mask_raw = work.write('mask', mask.data)
+        mask_info = await blocking(media.video_info, mask_raw)
+        # Frames are paired by index, so the mask must share the content's timeline
+        # (e.g. both made from the same source clip); otherwise the mask drifts silently.
+        if abs(mask_info['fps'] - info['fps']) > 0.01:
+            raise ProjectError('遮罩视频与内容视频的帧率不一致，请使用由同一段视频生成的遮罩。', 422)
+        await ctx.progress('正在读取画面和遮罩')
+        frames = await blocking(media.frames_of, raw, work.path / 'content-frames')
+        mattes = await blocking(media.frames_of, mask_raw, work.path / 'mask-frames', gray=True)
+        if abs(len(frames) - len(mattes)) > 1:
+            raise ProjectError('遮罩视频与内容视频的帧数不一致，请使用由同一段视频生成的遮罩。', 422)
+        await ctx.progress('正在合成')
+        await blocking(composite_frames, frames, mattes, work.path / 'composite', stretch=stretch)
+        data = await blocking(media.encode_frames, str(work.path / 'composite' / '%05d.png'), info['fps'], work.path / 'composite.mp4')
+    return [Output('video', data, 'mp4', '遮罩合成')]
 
 DEPTH_MAX_SECONDS = 30
 

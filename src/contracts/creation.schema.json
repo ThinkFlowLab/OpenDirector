@@ -4235,6 +4235,7 @@
                 "canvas.versions": "#/$defs/VersionsQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
+                "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
                 "project.get": "#/$defs/ProjectQuery"
               },
@@ -4258,6 +4259,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasStatusQuery"
+              },
+              {
+                "$ref": "#/$defs/JobStatusQuery"
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
@@ -5392,7 +5396,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -7112,7 +7117,8 @@
               "enum": [
                 "first_frame",
                 "reference",
-                "continuation"
+                "continuation",
+                "control"
               ],
               "type": "string"
             },
@@ -7867,6 +7873,65 @@
         "title": "JobRecoverCommand",
         "type": "object"
       },
+      "JobStatusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.status",
+            "description": "Read several generation jobs, optionally waiting for terminal states.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectIds": {
+            "default": [],
+            "description": "Generation job IDs; every unfinished project job when empty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Objectids",
+            "type": "array"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait for terminal states; zero returns immediately.",
+            "maximum": 300,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          },
+          "until": {
+            "default": "all",
+            "description": "Return after every selected job or any job reaches a terminal state.",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type"
+        ],
+        "title": "JobStatusQuery",
+        "type": "object"
+      },
       "JsonValue": {},
       "LayerContentBase": {
         "additionalProperties": false,
@@ -8253,6 +8318,7 @@
               "video-matting",
               "video-crop",
               "video-translation",
+              "video-mask-composite",
               "extract-audio",
               "audio-separation",
               "video-trim",
@@ -9743,7 +9809,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -10801,7 +10868,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -11131,7 +11199,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -15146,7 +15215,8 @@
             "enum": [
               "first_frame",
               "reference",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Videomode",
             "type": "string"
@@ -15823,6 +15893,7 @@
             "canvas.versions": "#/$defs/VersionsQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
+            "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
             "project.get": "#/$defs/ProjectQuery"
           },
@@ -15846,6 +15917,9 @@
           },
           {
             "$ref": "#/$defs/CanvasStatusQuery"
+          },
+          {
+            "$ref": "#/$defs/JobStatusQuery"
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
@@ -20329,6 +20403,7 @@
                 "canvas.versions": "#/$defs/VersionsQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
+                "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
                 "project.get": "#/$defs/ProjectQuery"
               },
@@ -20352,6 +20427,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasStatusQuery"
+              },
+              {
+                "$ref": "#/$defs/JobStatusQuery"
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
@@ -21535,7 +21613,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -23345,7 +23424,8 @@
               "enum": [
                 "first_frame",
                 "reference",
-                "continuation"
+                "continuation",
+                "control"
               ],
               "type": "string"
             },
@@ -24133,6 +24213,68 @@
         "title": "JobRecoverCommand",
         "type": "object"
       },
+      "JobStatusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.status",
+            "description": "Read several generation jobs, optionally waiting for terminal states.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectIds": {
+            "default": [],
+            "description": "Generation job IDs; every unfinished project job when empty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Objectids",
+            "type": "array"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait for terminal states; zero returns immediately.",
+            "maximum": 300,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          },
+          "until": {
+            "default": "all",
+            "description": "Return after every selected job or any job reaches a terminal state.",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectIds",
+          "waitSeconds",
+          "until"
+        ],
+        "title": "JobStatusQuery",
+        "type": "object"
+      },
       "JsonValue": {},
       "LayerContentBase": {
         "additionalProperties": false,
@@ -24535,6 +24677,7 @@
               "video-matting",
               "video-crop",
               "video-translation",
+              "video-mask-composite",
               "extract-audio",
               "audio-separation",
               "video-trim",
@@ -26052,7 +26195,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -27147,7 +27291,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -27487,7 +27632,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -31676,7 +31822,8 @@
             "enum": [
               "first_frame",
               "reference",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Videomode",
             "type": "string"
@@ -32375,6 +32522,7 @@
             "canvas.versions": "#/$defs/VersionsQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
+            "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
             "project.get": "#/$defs/ProjectQuery"
           },
@@ -32398,6 +32546,9 @@
           },
           {
             "$ref": "#/$defs/CanvasStatusQuery"
+          },
+          {
+            "$ref": "#/$defs/JobStatusQuery"
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"

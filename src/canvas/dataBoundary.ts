@@ -109,7 +109,8 @@ export function isGenerationSettings(
     (value.videoMode === undefined ||
       value.videoMode === "reference" ||
       value.videoMode === "first-last" ||
-      value.videoMode === "continuation") &&
+      value.videoMode === "continuation" ||
+      value.videoMode === "control") &&
     (value.firstFrameNodeId === undefined ||
       nonempty(value.firstFrameNodeId)) &&
     (value.lastFrameNodeId === undefined || nonempty(value.lastFrameNodeId)) &&

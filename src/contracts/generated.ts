@@ -435,7 +435,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
   readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | JobStatusQueryInput | AssetPreviewQueryInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -714,7 +714,7 @@ export interface InputRulesInput extends ContractInput {
   readonly imageBytes: number;
   readonly videoBytes: number;
   readonly requestBytes: number;
-  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
+  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation" | "control">;
   readonly imageOutputs?: ReadonlyArray<ImageOutputInput>;
   readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions?: ReadonlyArray<string>;
@@ -784,6 +784,13 @@ export interface JobRecoverCommandInput extends CommandBaseInput {
   readonly payload: JobControlInput;
 }
 
+export interface JobStatusQueryInput extends QueryBaseInput {
+  readonly type: "job.status";
+  readonly objectIds?: ReadonlyArray<string>;
+  readonly waitSeconds?: number;
+  readonly until?: "all" | "any";
+}
+
 export type JsonValueInput = unknown;
 
 export interface LayerContentBaseInput extends ContractInput {
@@ -818,7 +825,7 @@ export interface MediaCanvasItemInput extends CanvasItemBaseInput {
 }
 
 export interface MediaEditDataInput extends ContractInput {
-  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
+  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "video-mask-composite" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
   readonly sources?: ReadonlyArray<AssetRefInput>;
   readonly sourceItems?: ReadonlyArray<string>;
   readonly parameters?: Readonly<Record<string, string | boolean | number>>;
@@ -1095,7 +1102,7 @@ export interface ReferenceAddCommandOperationInput {
 
 export interface ReferenceBaseInput extends ProjectEntityInput {
   readonly targetSpecId: string;
-  readonly role?: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role?: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly order?: number;
   readonly active?: boolean;
 }
@@ -1140,7 +1147,7 @@ export interface ReferenceWriteInput extends ContractInput {
 
 export interface ResolvedReferenceInput extends ContractInput {
   readonly referenceId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly asset: AssetRefInput;
   readonly metadata: MediaMetadataInput;
   readonly sourceVersion?: ObjectVersionInput | null;
@@ -1584,7 +1591,7 @@ export interface VideoOutputInput {
 
 export interface VideoParametersInput extends ContractInput {
   readonly generateAudio?: boolean;
-  readonly videoMode?: "first_frame" | "reference" | "continuation";
+  readonly videoMode?: "first_frame" | "reference" | "continuation" | "control";
   readonly durationSeconds?: number | null;
   readonly aspectRatio?: string | null;
   readonly resolution?: string;
@@ -1649,7 +1656,7 @@ export type RoleActionInput = "configure_generation" | "save_manual_text" | "upl
 
 export type ModelKindInput = "agent" | "image" | "video" | "audio" | "vision";
 
-export type VideoModeInput = "first_frame" | "reference" | "continuation";
+export type VideoModeInput = "first_frame" | "reference" | "continuation" | "control";
 
 export interface ArtifactPublish extends Contract {
   readonly path: string;
@@ -2084,7 +2091,7 @@ export interface CreationContracts extends Contract {
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
   readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | AssetPreviewQuery;
+  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2363,7 +2370,7 @@ export interface InputRules extends Contract {
   readonly imageBytes: number;
   readonly videoBytes: number;
   readonly requestBytes: number;
-  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation">;
+  readonly videoModes: ReadonlyArray<"first_frame" | "reference" | "continuation" | "control">;
   readonly imageOutputs: ReadonlyArray<ImageOutput>;
   readonly imageQualities?: ReadonlyArray<"auto" | "low" | "medium" | "high"> | null;
   readonly outputResolutions: ReadonlyArray<string>;
@@ -2433,6 +2440,13 @@ export interface JobRecoverCommand extends CommandBase {
   readonly payload: JobControl;
 }
 
+export interface JobStatusQuery extends QueryBase {
+  readonly type: "job.status";
+  readonly objectIds: ReadonlyArray<string>;
+  readonly waitSeconds: number;
+  readonly until: "all" | "any";
+}
+
 export type JsonValue = unknown;
 
 export interface LayerContentBase extends Contract {
@@ -2467,7 +2481,7 @@ export interface MediaCanvasItem extends CanvasItemBase {
 }
 
 export interface MediaEditData extends Contract {
-  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
+  readonly tool: "layers" | "crop" | "smart-edit" | "outpaint" | "cutout" | "inpainting-remove" | "image-hd" | "view-control" | "lighting" | "layer-decompose" | "panorama" | "product-replacement" | "multi-size" | "dynamic-poster" | "ecommerce-main" | "image-presets" | "grid-split" | "composition" | "annotation" | "video-edit" | "video-extend" | "video-partial-reshoot" | "video-upscale" | "video-frame-interpolation" | "video-depth-capture" | "video-subtitle-erasure" | "video-matting" | "video-crop" | "video-translation" | "video-mask-composite" | "extract-audio" | "audio-separation" | "video-trim" | "audio-trim" | "video-frame-capture" | "director-stage";
   readonly sources: ReadonlyArray<AssetRef>;
   readonly sourceItems: ReadonlyArray<string>;
   readonly parameters: Readonly<Record<string, string | boolean | number>>;
@@ -2743,7 +2757,7 @@ export interface ReferenceAddCommandOperation {
 
 export interface ReferenceBase extends ProjectEntity {
   readonly targetSpecId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly order: number;
   readonly active: boolean;
 }
@@ -2788,7 +2802,7 @@ export interface ReferenceWrite extends Contract {
 
 export interface ResolvedReference extends Contract {
   readonly referenceId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
   readonly asset: AssetRef;
   readonly metadata: MediaMetadata;
   readonly sourceVersion: ObjectVersion | null;
@@ -3232,7 +3246,7 @@ export interface VideoOutput {
 
 export interface VideoParameters extends Contract {
   readonly generateAudio: boolean;
-  readonly videoMode: "first_frame" | "reference" | "continuation";
+  readonly videoMode: "first_frame" | "reference" | "continuation" | "control";
   readonly durationSeconds: number | null;
   readonly aspectRatio: string | null;
   readonly resolution: string;
@@ -3297,4 +3311,4 @@ export type RoleAction = "configure_generation" | "save_manual_text" | "upload_m
 
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
 
-export type VideoMode = "first_frame" | "reference" | "continuation";
+export type VideoMode = "first_frame" | "reference" | "continuation" | "control";

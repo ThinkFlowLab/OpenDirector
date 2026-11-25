@@ -11,7 +11,7 @@ from opendirector.agent import owner_rights as rights
 from test_owner_rights_lifecycle import security
 from process_helpers import directory_link
 
-pytestmark = pytest.mark.skipif(os.name != 'nt', reason='requires native Windows ACL and file identity APIs')
+pytestmark = [pytest.mark.cpu, pytest.mark.skipif(os.name != 'nt', reason='requires native Windows ACL and file identity APIs')]
 
 
 def initialized_work(tmp_path):

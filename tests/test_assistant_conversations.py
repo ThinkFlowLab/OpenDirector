@@ -12,6 +12,9 @@ from opendirector_api.main import create_app
 from opendirector_api import agent
 
 
+pytestmark = pytest.mark.cpu
+
+
 def frames(response):
     return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
 
@@ -556,3 +559,31 @@ def test_plain_request_reaches_each_runtime_without_delivery_instructions(assist
     saved = client.get(path).json()['messages']
     assert saved[0]['text'] == text
     assert saved[-1]['status'] == 'complete'
+
+
+def test_a_turn_writes_its_timing_beside_its_runtime_state(assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    async def stream(self, run):
+        yield {'type': 'tool', 'id': 'cli:1', 'name': 'opendirector', 'status': 'running',
+               'timing': {'spawn': 1.1}}
+        yield {'type': 'tool', 'id': 'cli:1', 'name': 'opendirector', 'status': 'complete',
+               'timing': {'spawn': 1.1, 'work': 0.2}}
+        yield {'type': 'delta', 'text': '已导出。'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    conversation = client.get(path).json()['conversationId']
+    turn = str(uuid4())
+    response = client.post(path + '/turns', json={'id': turn, 'runtime': 'default',
+        'conversationId': conversation, 'text': '导出视频'})
+    assert response.status_code == 200, response.text
+    assert frames(response)[-1]['error'] is None
+
+    ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{turn}.json')).read_text(encoding='utf-8'))
+    assert ledger['summary']['calls'] == 1
+    assert ledger['summary']['decomposed'] == 1
+    assert ledger['summary']['spawnSeconds'] == 1.1
+    assert ledger['calls'][0]['work'] == 0.2
+
+    # Measurement stays out of the turn the user and the next run read back.
+    saved = client.get(path).json()['messages'][-1]
+    assert 'timing' not in json.dumps(saved['tools'])
+    assert json.loads(next(tmp_path.glob('**/agent-runs/conversation.json')).read_text(encoding='utf-8'))['messages'][-1] == saved

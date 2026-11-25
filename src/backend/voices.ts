@@ -67,16 +67,18 @@ export function voiceIssue(
     return "voiceLibrary.transcriptRequired";
   return null;
 }
+export const VOICE_PAGE_SIZE = 150;
+
 export function listVoices(
   modelConfigId: string,
   signal?: AbortSignal,
-  page?: { connectionId: string; after?: string },
+  scope?: { connectionId: string; page?: { after?: string; size?: number } },
 ) {
   const query = new URLSearchParams({ modelConfigId });
-  if (page) {
-    query.set("pageSize", "150");
-    query.set("connectionId", page.connectionId);
-    if (page.after) query.set("after", page.after);
+  if (scope) query.set("connectionId", scope.connectionId);
+  if (scope?.page) {
+    query.set("pageSize", String(scope.page.size ?? VOICE_PAGE_SIZE));
+    if (scope.page.after) query.set("after", scope.page.after);
   }
   return request<VoiceLibraryData>(`/voices?${query}`, { signal });
 }

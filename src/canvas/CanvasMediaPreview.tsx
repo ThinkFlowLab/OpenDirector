@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { VideoControls } from "./CanvasVideoControls";
+import { useAssetMedia } from "./useAssetMedia.tsx";
 
 /** Milliseconds a pointer must rest on a node before preview playback starts. */
 const HOVER_PLAY_DELAY_MS = 300;
@@ -77,6 +78,7 @@ export function CanvasVideoPreview({
   ...props
 }: CanvasVideoPreviewProps) {
   const playback = useContext(Playback);
+  const resolved = useAssetMedia(props.src);
   const element = useRef<HTMLVideoElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState(false);
@@ -255,6 +257,7 @@ export function CanvasVideoPreview({
     >
       <video
         {...props}
+        src={resolved.src}
         ref={element}
         className={`${props.className ?? ""}${fullscreen ? " is-fullscreen" : ""}`.trim()}
         muted={muted}

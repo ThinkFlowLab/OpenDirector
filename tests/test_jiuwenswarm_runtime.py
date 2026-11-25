@@ -18,6 +18,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 FAKE = r'''import json, os, shutil, subprocess, sys, time
 from pathlib import Path
 request = json.loads(sys.stdin.readline())

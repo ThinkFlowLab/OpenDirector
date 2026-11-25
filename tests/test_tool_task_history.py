@@ -17,6 +17,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png():
     out = BytesIO()
     Image.new('RGB', (64, 48), 'blue').save(out, 'PNG')

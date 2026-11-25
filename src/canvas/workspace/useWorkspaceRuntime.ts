@@ -7,6 +7,7 @@ import { useNodeVersionCounts } from "../NodeVersionHistory";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
 import { MediaPublication } from "../../backend/mediaPublication";
 import { useBackendModels } from "../../backend/models.ts";
+import { isGenerationModel } from "../../backend/rules.ts";
 import { useToolCatalog } from "../../backend/tools.ts";
 import { type CanvasFlowSurfaceHandle } from "../CanvasFlowSurface";
 import { useCanvasNotifications } from "../CanvasNotifications";
@@ -17,6 +18,7 @@ import { modelFrameCapabilities } from "../frameReferences";
 import { validateNodeActionSource, type ResultSource } from "../linkedResults";
 
 import { newNodeGenerationSettings } from "../modelResolution.ts";
+import { preferredMediaModel } from "../agentPreferences.ts";
 import { type CanvasDocument, type CanvasNode, type CanvasNodeData, type CanvasNodeKind, type Point } from "../model";
 import { type CanvasFragment } from "../operations";
 import { type ClipboardMedia } from "../clipboardMedia.ts";
@@ -284,11 +286,15 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         : {};
     }
     if (kind !== "image" && kind !== "video" && kind !== "audio") return {};
+    const preferred = assistantModels[kind] ?? preferredMediaModel(
+      doc.id, undefined, kind,
+      backendCatalog.models.filter((model) => model.kind === kind && isGenerationModel(model)),
+    );
     return {
       settings: newNodeGenerationSettings(
         kind,
         backendCatalog.models,
-        assistantModels,
+        { [kind]: preferred },
       ),
     };
   };

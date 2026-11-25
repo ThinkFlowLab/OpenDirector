@@ -9,6 +9,9 @@ from opendirector.agent import catalog
 from opendirector.domain.projects import ProjectError
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('engine', ['codex', 'claude'])
 def test_native_model_catalog(tmp_path, monkeypatch, engine):
     script = tmp_path / 'cli'

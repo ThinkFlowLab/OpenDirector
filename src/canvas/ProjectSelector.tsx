@@ -15,6 +15,10 @@ import { useT } from "../i18n/I18nProvider";
 
 const ACTION_MENU_HEIGHT = 92;
 
+function openProjectInNewTab(project: WorkspaceProject) {
+  window.open(`/ai-tool/ai-canvas/${encodeURIComponent(project.id)}`, "_blank", "noopener");
+}
+
 export function ProjectSelector({
   currentId,
   editNameForId,
@@ -40,6 +44,7 @@ export function ProjectSelector({
   onDeleteProject: (project: WorkspaceProject) => Promise<void>;
 }) {
   const t = useT();
+  const canOpenInNewTab = !window.opendirectorDesktop;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
@@ -397,14 +402,24 @@ export function ProjectSelector({
               </p>
             ) : (
               filteredProjects.map(({ project, displayName }) => (
-                <div className="cw-project-row" key={project.id}>
+                <div className="cw-project-row" data-new-tab={canOpenInNewTab} key={project.id}>
                   <button
                     role="menuitemradio"
                     aria-checked={project.id === currentId}
                     disabled={disabled || busy}
                     className="cw-project-option"
                     title={displayName}
-                    onClick={async () => {
+                    onContextMenu={(event) => {
+                      // macOS delivers Control + primary click as a context menu.
+                      if (!canOpenInNewTab || disabled || busy || !event.ctrlKey || event.button !== 0) return;
+                      event.preventDefault();
+                      openProjectInNewTab(project);
+                    }}
+                    onClick={async (event) => {
+                      if (canOpenInNewTab && (event.ctrlKey || event.metaKey)) {
+                        openProjectInNewTab(project);
+                        return;
+                      }
                       if (project.id === currentId) {
                         setOpen(false);
                         return;
@@ -455,6 +470,19 @@ export function ProjectSelector({
                   >
                     <CanvasIcon name="more" size={18} />
                   </button>
+                  {canOpenInNewTab && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="cw-project-open-tab"
+                      disabled={disabled || busy}
+                      aria-label={t("canvas.project.openInNewTabFor", { name: displayName })}
+                      title={t("canvas.project.openInNewTab")}
+                      onClick={() => openProjectInNewTab(project)}
+                    >
+                      <CanvasIcon name="arrowUpRight" size={18} />
+                    </button>
+                  )}
                 </div>
               ))
             )}

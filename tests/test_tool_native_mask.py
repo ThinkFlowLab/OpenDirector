@@ -27,6 +27,9 @@ from test_tool_tasks import project, configure, upload, png, output_image, outpu
 from test_model_availability import document
 
 
+pytestmark = pytest.mark.cpu
+
+
 MODEL = ('image', 'http://image.test/v1', 'test-native-edit')
 
 

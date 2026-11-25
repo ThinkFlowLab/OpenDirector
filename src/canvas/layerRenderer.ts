@@ -4,6 +4,8 @@ import {
   type LayerDocument,
   type MaskStroke,
 } from "./layerDocument.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { resolveMediaSource } from "../backend/creationClient.ts";
 import { tNow } from "../i18n/messages.ts";
 
 export function localLayerSource(src: string): boolean {
@@ -18,7 +20,8 @@ export function localLayerSource(src: string): boolean {
     return false;
   }
 }
-export function loadLayerImage(src: string): Promise<HTMLImageElement> {
+export async function loadLayerImage(source: string): Promise<HTMLImageElement> {
+  const src = parseAssetSource(source) ? await resolveMediaSource(source) : source;
   return new Promise((resolve, reject) => {
     if (!localLayerSource(src)) {
       reject(new Error(tNow("errors.render.layerLocalOnly")));

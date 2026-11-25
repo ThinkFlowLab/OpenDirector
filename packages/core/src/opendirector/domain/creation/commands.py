@@ -496,13 +496,20 @@ class CanvasStatusQuery(QueryBase):
     waitSeconds: float = Field(default=0, ge=0, le=30, description='Wait for generation changes; zero returns immediately.')
 
 
+class JobStatusQuery(QueryBase):
+    type: Literal['job.status'] = Field(description='Read several generation jobs, optionally waiting for terminal states.')
+    objectIds: tuple[UUID, ...] = Field(default=(), max_length=50, description='Generation job IDs; every unfinished project job when empty.')
+    waitSeconds: float = Field(default=0, ge=0, le=300, description='Wait for terminal states; zero returns immediately.')
+    until: Literal['all', 'any'] = Field(default='all', description='Return after every selected job or any job reaches a terminal state.')
+
+
 class AssetPreviewQuery(QueryBase):
     type: Literal['asset.preview'] = Field(description='Preview an asset; does not establish model observation.')
     objectId: UUID = Field(description='Asset ID.')
 
 
 Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
-                  CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
+                  CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
 
 
 class ChangedObject(Contract):
