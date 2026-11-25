@@ -67,10 +67,8 @@ export interface InheritedJob {
   commandId: string;
   callId: string;
   name: string;
+  /** Null when the earlier attempt never produced a job for this call. */
   jobId: string | null;
-  status: string;
-  asset?: unknown;
-  errorDetails?: unknown;
 }
 export interface ChatMessage {
   /** The stopped attempt this message revises, so history keeps both. */

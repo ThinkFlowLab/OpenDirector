@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import openDirectorLogo from "../assets/open_director_logo.png";
-import { runtimeModels, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { runtimeModels, type ChatAsset, type ChatMessage, type ModelSelections } from "../backend/chat";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
@@ -51,6 +51,11 @@ function kindOf(asset: ChatAsset) {
       : asset.type.startsWith("audio/")
         ? "audio"
         : "text";
+}
+
+/** The inherited calls that produced a job, so the count does not claim a submission that never happened. */
+function submittedJobs(message: ChatMessage) {
+  return (message.inheritedJobs ?? []).filter((job) => job.jobId);
 }
 
 /** OpenDirector conversation tools in an OpenDirector floating canvas window. */
@@ -517,18 +522,18 @@ export function AssistantPanel({
                 {t("assistant.panel.editResend")}
               </button>
             )}
-            {!!message.inheritedJobs?.length && (
+            {!!submittedJobs(message).length && (
               <details className="cw-assistant-inherited">
                 <summary>
                   {t("assistant.panel.inheritedJobs", {
-                    count: message.inheritedJobs.length,
+                    count: submittedJobs(message).length,
                   })}
                 </summary>
                 <ul>
-                  {message.inheritedJobs.map((job) => (
+                  {(message.inheritedJobs ?? []).map((job) => (
                     <li key={job.commandId}>
                       <span>{job.name}</span>
-                      <small>{job.status}</small>
+                      {!job.jobId && <small>{t("assistant.panel.inheritedJobNotSubmitted")}</small>}
                     </li>
                   ))}
                 </ul>

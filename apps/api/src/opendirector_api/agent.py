@@ -122,6 +122,14 @@ def inherited_jobs(messages, revision_of, jobs=()):
     so it is always present. The job record only exists when the submission was
     accepted; ``jobId`` stays None for a call that never produced one, which is
     what tells the new attempt to submit rather than reuse.
+
+    Only the identity of the inherited calls is written here, because only that
+    cannot change. Job status, its asset and its error belong to the job record:
+    a copy taken at the moment the new turn is written goes stale as soon as the
+    job progresses, and an expanded view that reads it would report a state that
+    is no longer true. Readers that want the current state query the job by the
+    ids kept here; a missing or failed lookup must not be read as proof that
+    resubmitting a side-effectful call is safe.
     """
     reply = next((message for message in messages
                   if message['id'] == str(uuid5(UUID(revision_of), 'assistant'))), None)
@@ -134,10 +142,7 @@ def inherited_jobs(messages, revision_of, jobs=()):
         job = by_call.get(str(tool.get('id')))
         snapshot.append({'commandId': str(agent_command_id(turn, tool.get('id'))),
                          'callId': tool.get('id'), 'name': tool.get('name'),
-                         'jobId': str(job.id) if job else None,
-                         'status': str(job.status) if job else tool.get('status'),
-                         'asset': job.asset.model_dump(mode='json') if job and job.asset else None,
-                         'errorDetails': job.errorDetails.model_dump(mode='json') if job and job.errorDetails else None})
+                         'jobId': str(job.id) if job else None})
     return snapshot
 
 

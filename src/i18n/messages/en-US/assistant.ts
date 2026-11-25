@@ -62,6 +62,7 @@ export const assistant = {
   "assistant.panel.editingNotice": "Editing a stopped message. Sending it starts a new attempt.",
   "assistant.panel.cancelEdit": "Cancel editing",
   "assistant.panel.inheritedJobs": "Tasks already submitted ({{count}})",
+  "assistant.panel.inheritedJobNotSubmitted": "not submitted",
   "assistant.panel.interrupted": "Reply interrupted",
   "assistant.panel.send": "Send message",
   "assistant.panel.stop": "Stop reply",

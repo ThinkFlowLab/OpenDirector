@@ -236,12 +236,17 @@ def test_inherited_jobs_resolves_the_job_receipt_by_call_id():
 
     done = next(item for item in snapshot if item['callId'] == 'call-done')
     lost = next(item for item in snapshot if item['callId'] == 'call-lost')
-    # The accepted job is resolved and its status wins over the stale tool record.
-    assert done['jobId'] == str(job.id) and done['status'] == 'succeeded'
+    # The accepted job is resolved to its id.
+    assert done['jobId'] == str(job.id)
     assert done['commandId'] == str(agent.agent_command_id(UUID(turn), 'call-done'))
     # A call that never produced a job keeps its command id and reports no job.
-    assert lost['jobId'] is None and lost['status'] == 'failed'
+    assert lost['jobId'] is None
     assert lost['commandId'] == str(agent.agent_command_id(UUID(turn), 'call-lost'))
+    # Only identity is persisted: a status or asset copied here would go stale as
+    # the job progresses, and the expanded view would report a state that is no
+    # longer true. The job id is the handle a live lookup needs.
+    for item in snapshot:
+        assert set(item) == {'commandId', 'callId', 'name', 'jobId'}, item
 
 
 def test_a_running_turn_rejects_a_concurrent_submission(assistant):

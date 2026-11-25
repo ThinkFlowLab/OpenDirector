@@ -61,6 +61,7 @@ export const assistant = {
   "assistant.panel.editingNotice": "正在编辑已停止的消息，发送后会作为新的尝试。",
   "assistant.panel.cancelEdit": "取消编辑",
   "assistant.panel.inheritedJobs": "已提交的任务（{{count}}）",
+  "assistant.panel.inheritedJobNotSubmitted": "未提交",
   "assistant.panel.interrupted": "回复已中断",
   "assistant.panel.send": "发送消息",
   "assistant.panel.stop": "停止回复",
