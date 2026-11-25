@@ -2,6 +2,7 @@
 import { normalizeClaudeTrace } from "./claudeTrace.ts";
 import { normalizeCodexTrace } from "./codexTrace.ts";
 import { normalizeDeepseekTrace } from "./deepseekTrace.ts";
+import { normalizePiTrace } from "./piTrace.ts";
 
 export type ConversationTurn = {
   id: string;
@@ -30,6 +31,7 @@ export function normalizeTrace(source: string, body: string): string {
   return source === "deepseek" ? normalizeDeepseekTrace(body)
     : source === "codex" ? normalizeCodexTrace(body)
     : source === "claude" ? normalizeClaudeTrace(body)
+    : source === "pi" ? normalizePiTrace(body)
     : body;
 }
 
