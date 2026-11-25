@@ -55,6 +55,11 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 
 - **Shared model catalog follow-up:** [Nightly run 45309310680](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45309310680/job/138160760923) reached the empty-video-selector test after an earlier script saved a video model. A new page still reads the shared server's catalog. For a UI test of an empty category, scope that catalog response to the test page and verify the flow with a model already present on the shared server.
 
+## Canvas media readiness depends on the viewport
+
+- Browser checks that inspect a canvas image or video after reopening a project or placing a result should bring the target node into view first.
+- The subject-library and video-review checks in Nightly run 45572808123 reached their persisted-state assertions before the lazy previews were ready. After fitting the canvas, wait for the target image to load or the video to load metadata, then verify the dimensions or duration. [Nightly run 45572808123](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45572808123/job/139063347523)
+
 ## Browser clock pauses must precede short-lived observations
 
 - **Trigger:** Freezing browser time to inspect a short-lived response in both languages.

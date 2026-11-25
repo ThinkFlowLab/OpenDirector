@@ -615,12 +615,14 @@ try {
         .durationSeconds,
       15,
     );
-    assert.equal(
-      await node(fixture.blank)
-        .locator(".cw-subject-main img")
-        .evaluate((img) => img.complete && img.naturalWidth > 0),
-      true,
-    );
+    await page.locator(".cw-workspace").focus();
+    await page.keyboard.press("Shift+1");
+    await page.waitForFunction((id) => {
+      const img = document.querySelector(
+        `.react-flow__node[data-id="${id}"] .cw-subject-main img`,
+      );
+      return img?.complete && img.naturalWidth > 0;
+    }, fixture.blank);
     console.log(
       JSON.stringify({
         mode: "unified",

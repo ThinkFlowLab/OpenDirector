@@ -449,6 +449,11 @@ try {
     );
     assert.ok(task.outputs[0].durationMs > 0);
     assert.equal(task.modelConfigIds["video.first_frame"], config.id);
+    await page
+      .locator(`.react-flow__node[data-id="${task.canvas.targetNodeId}"]`)
+      .waitFor();
+    await page.locator(".cw-workspace").focus();
+    await page.keyboard.press("Shift+1");
     await page.waitForFunction((id) => {
       const video = document.querySelector(
         `.react-flow__node[data-id="${id}"] video.cw-video-preview`,
@@ -459,8 +464,6 @@ try {
         video.duration > 0
       );
     }, task.canvas.targetNodeId);
-    await page.locator(".cw-workspace").focus();
-    await page.keyboard.press("Shift+1");
     assert.deepEqual(errors, []);
     if (process.env.CREATION_SCREENSHOTS) {
       await mkdir(process.env.CREATION_SCREENSHOTS, { recursive: true });
