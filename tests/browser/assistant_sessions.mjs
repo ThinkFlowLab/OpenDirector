@@ -427,6 +427,14 @@ try {
   await panel.getByText("断盘前的部分回复", { exact: true }).waitFor();
   assert.equal(await panel.getByRole("button", { name: "停止回复", exact: true }).count(), 0);
   await send.waitFor();
+  const failedReply = panel
+    .locator(".cw-assistant-message.is-assistant")
+    .filter({ hasText: "断盘前的部分回复" });
+  assert.equal(
+    await failedReply.locator('.cw-chat-progress[role="status"]').count(),
+    0,
+    "a terminal end without a saved conversation must stop the reply progress indicator",
+  );
   await page.unroute(/\/assistant\/turns$/);
 
   // History stays inside a narrow assistant, closes outside, and all header controls fit.
