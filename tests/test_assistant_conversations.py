@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from fastapi.testclient import TestClient
 import pytest
@@ -67,7 +67,7 @@ def test_timeline_edit_finishes_in_its_original_conversation_after_switching_pro
     project = path.removesuffix('/assistant')
     pid = project.rsplit('/', 1)[1]
     origin = client.get(path).json()['conversationId']
-    other_id, editor_id, turn = (str(uuid4()) for _ in range(3))
+    other_id, editor_id, turn, follow_up = (str(uuid4()) for _ in range(4))
     other = f'/api/creation/projects/{other_id}'
     created = client.post(other + '/commands', json={'type': 'project.create', 'projectId': other_id,
         'commandId': str(uuid4()), 'payload': {'name': 'Other project'}}).json()
@@ -83,6 +83,16 @@ def test_timeline_edit_finishes_in_its_original_conversation_after_switching_pro
     sessions = []
     async def edit(self, run, gateway):
         sessions.append(run.session)
+        if str(run.turn_id) == follow_up:
+            assert run.messages[-1]['content'] == 'Write the note'
+            yield {'type': 'tool', 'id': 'note', 'name': 'execute_command', 'status': 'running'}
+            result = await gateway.call('note', 'execute_command', {'type': 'asset.writeText',
+                'payload': {'name': 'note.md', 'text': 'Follow-up'}})
+            assert result.value.get('status') == 'applied', result
+            yield {'type': 'tool', 'id': 'note', 'name': 'execute_command', 'status': 'complete'}
+            yield {'type': 'delta', 'text': 'Note ready'}
+            return
+        assert str(run.turn_id) == turn
         yield {'type': 'delta', 'text': 'Editing'}
         assert await asyncio.to_thread(resume.wait, 10)
         yield {'type': 'tool', 'id': 'cut', 'name': 'execute_command', 'status': 'running'}
@@ -104,12 +114,18 @@ def test_timeline_edit_finishes_in_its_original_conversation_after_switching_pro
 
     disconnect_turn(client, path, turn, conversation_id=origin)
     try:
+        queued = client.post(path + '/messages', json={'id': follow_up, 'runtime': 'default',
+            'conversationId': origin, 'text': 'Write the note', 'modelId': str(uuid4())})
+        assert queued.status_code == 202 and queued.json()['turnId'] == turn, queued.text
         initial = agent_lease()
         assert initial[0] == pid
         assert client.post(other + '/open').status_code == 200
         other_chat = client.get(other + '/assistant').json()
         assert other_chat['conversationId'] != origin
         assert not other_chat['messages']
+        late = client.post(path + '/messages', json={'id': str(uuid4()), 'runtime': 'default',
+            'conversationId': origin, 'text': 'No longer editing this project'})
+        assert late.status_code == 409 and late.json()['code'] == 'session_expired'
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline and agent_lease()[1] == initial[1]:
             time.sleep(0.02)
@@ -125,18 +141,31 @@ def test_timeline_edit_finishes_in_its_original_conversation_after_switching_pro
     snapshot = client.get(project).json()
     edited, = snapshot['editorDocuments']
     assert (edited['id'], edited['revision'], edited['data']['fps']) == (editor_id, 2, 30)
-    user, reply = client.get(path).json()['messages']
-    assert user['id'] == turn
+    user, reply, queued, note = client.get(path).json()['messages']
+    assert [user['id'], queued['id']] == [turn, follow_up]
+    assert [reply['id'], note['id']] == [str(uuid5(UUID(key), 'assistant')) for key in (turn, follow_up)]
     assert reply['status'] == 'complete' and reply['text'] == 'Editing complete'
-    assert reply['publishedTimelines'] == {'projectId': pid, 'eventCursor': snapshot['eventCursor'],
-        'timelines': [{'editorId': editor_id, 'revision': 2, 'itemId': None, 'title': ''}]}
-    ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{turn}.json')).read_text(encoding='utf-8'))
-    assert ledger['summary']['calls'] == ledger['summary']['measured'] == 1
-    assert ledger['calls'][0]['id'] == 'cut' and ledger['calls'][0]['status'] == 'complete'
+    assert note['status'] == 'complete' and note['text'] == 'Note ready'
+    assert 'publishedAssets' not in reply and 'publishedTimelines' not in note
+    timeline = reply['publishedTimelines']
+    assert timeline['projectId'] == pid and timeline['eventCursor'] < snapshot['eventCursor']
+    assert timeline['timelines'] == [{'editorId': editor_id, 'revision': 2, 'itemId': None, 'title': ''}]
+    asset, = snapshot['assets']
+    assert asset['provenance']['agentRunId'] == follow_up
+    assert note['publishedAssets'] == {'projectId': pid, 'eventCursor': snapshot['eventCursor'],
+        'assets': [{key: asset[key] for key in ('id', 'name', 'fingerprint')}]}
+    assert len(set(sessions)) == 2
+    with store.transaction() as db:
+        assert db.execute('SELECT 1 FROM sessions WHERE project_id=?', (pid,)).fetchone() is None
+    for key, call_id in [(turn, 'cut'), (follow_up, 'note')]:
+        ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{key}.json')).read_text(encoding='utf-8'))
+        assert ledger['summary']['calls'] == ledger['summary']['measured'] == 1
+        assert ledger['calls'][0]['id'] == call_id and ledger['calls'][0]['status'] == 'complete'
     assert client.post(project + '/open').status_code == 200
     assert client.post(path + '/conversations', json={'id': str(uuid4())}).json()['messages'] == []
-    assert client.get(path + f'/traces/{turn}/conversation').json() == {'conversationId': origin}
-    assert client.post(path + f'/conversations/{origin}/activate').json()['messages'] == [user, reply]
+    for key in (turn, follow_up):
+        assert client.get(path + f'/traces/{key}/conversation').json() == {'conversationId': origin}
+    assert client.post(path + f'/conversations/{origin}/activate').json()['messages'] == [user, reply, queued, note]
 
 
 def test_timeline_reply_uses_committed_tool_versions_and_survives_reopening(assistant, monkeypatch):
@@ -532,6 +561,7 @@ def test_concurrent_and_archived_replays_cannot_share_a_turn_between_conversatio
     second = client.post(path + '/conversations', json={'id': str(uuid4())}).json()['conversationId']
     replay = frames(client.post(path + '/turns', json={**turn, 'conversationId': second}))[-1]
     assert replay['error'] and replay['conversation'] is None
+    assert client.post(path + '/messages', json={**turn, 'conversationId': second}).status_code == 409
     assert len(contexts) == 1 and client.get(path).json()['messages'] == []
     assert client.post(path + f'/conversations/{first}/activate').json()['messages'] == original
 
@@ -668,11 +698,11 @@ def test_sse_disconnect_keeps_the_run_and_a_new_stream_resumes_it(assistant, mon
         yield {'type': 'delta', 'text': '，返回后完成'}
     monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
     follow, calls = agent.RunEvents.follow, []
-    async def counted(self):
+    async def counted(self, after=0):
         calls.append(self)
         if len(calls) > 1:
             attached.set()
-        async for item in follow(self):
+        async for item in follow(self, after):
             yield item
     monkeypatch.setattr(agent.RunEvents, 'follow', counted)
     turn_id = str(uuid4())

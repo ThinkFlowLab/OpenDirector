@@ -73,7 +73,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             await creation_tools.start()
             yield
         finally:
-            agents = [entry[1] for entry in list(active_agents.values())]
+            agents = [entry.task for entry in list(active_agents.values()) if entry.task is not None]
             for agent in agents:
                 agent.cancel()
             await asyncio.gather(*agents, return_exceptions=True)
