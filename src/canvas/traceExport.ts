@@ -1,155 +1,154 @@
-/** Read-only, user-initiated report of conversation trace metadata and safe event summaries. */
-import { normalizeTrace, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
+/** Exact-byte, user-triggered archive of per-turn raw trace files. No normalization or redaction. */
+import { traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
 
-const MAX_LOG_CHARS = 1_000_000;
-const MAX_EVENTS_PER_SOURCE = 400;
-const EVENT_PATTERN = /^[A-Za-z][A-Za-z0-9_.:/-]{0,72}$/;
-const JOB_STATES = new Set(["queued", "running", "succeeded", "failed", "cancelled", "interrupted"]);
+const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 32 * 1024 * 1024;
+const MAX_FILES = 512;
+const SOURCES = new Set(["opencode", "model", "codex", "claude", "jiuwenswarm", "deepseek"]);
+const encoder = new TextEncoder();
 
-type TraceEvent = { kind: string; status?: string };
-type SourceReport = { name: string; state: "available" | "missing" | "unavailable"; events: TraceEvent[]; truncated: boolean };
-type JobReport = { id: string; status: string; adopted: boolean };
-type TurnReport = { turn: ConversationTurn; sources: SourceReport[]; jobs: JobReport[] | null };
+type ZipEntry = { name: string; data: Uint8Array };
+type SourceEntry = { source: string; file?: string; status: "included" | "missing" | "unsupported" };
+type JobEntry = { jobId: string; status: string; adopted: boolean };
+type ManifestTurn = {
+  id: string; number: number; runtime: string; status: string;
+  sources: SourceEntry[]; jobs: JobEntry[] | null;
+};
 
-const record = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const eventCode = (value: unknown): string | null =>
-  typeof value === "string" && EVENT_PATTERN.test(value) ? value : null;
-
-/** Extract event codes and fixed states only; never include prompts, arguments, outputs or raw JSON. */
-export function traceEventSummary(body: string): { events: TraceEvent[]; truncated: boolean } {
-  const clipped = body.length > MAX_LOG_CHARS;
-  const lines = body.slice(0, MAX_LOG_CHARS).split("\n");
-  if (clipped) lines.pop(); // Last line may contain incomplete JSON.
-  const events: TraceEvent[] = [];
-  let truncated = clipped;
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    let parsed: unknown;
-    try { parsed = JSON.parse(line); } catch { continue; }
-    const outer = record(parsed);
-    const native = record(outer.native);
-    const part = record(native.part);
-    const item = record(native.item);
-    const state = record(part.state);
-    const kind = eventCode(native.event_type) ?? eventCode(native.type) ??
-      eventCode(outer.event) ?? eventCode(outer.type);
-    if (!kind) continue;
-    const rawStatus = state.status ?? item.status;
-    const status = eventCode(rawStatus);
-    events.push(status ? { kind, status } : { kind });
-    if (events.length >= MAX_EVENTS_PER_SOURCE) { truncated = true; break; }
-  }
-  return { events, truncated };
-}
-
-const inline = (value: string): string =>
-  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/\s+/g, " ").replace(/[\\`*_{}\[\]()#+.!|]/g, "\\$&");
-
-/** Reads at most MAX_LOG_CHARS characters (plus one chunk) and cancels the stream once the limit is exceeded. */
-async function readBoundedText(response: Response): Promise<{ text: string; clipped: boolean }> {
+/** Read bytes, not text; fail closed on oversized or unsuccessful source reads. */
+async function readBytes(response: Response, limit: number): Promise<Uint8Array> {
+  const length = response.headers.get("content-length");
+  if (length && Number(length) > limit) throw new Error("Trace archive size limit exceeded");
   if (!response.body) {
-    const text = await response.text();
-    return { text: text.slice(0, MAX_LOG_CHARS), clipped: text.length > MAX_LOG_CHARS };
+    const value = new Uint8Array(await response.arrayBuffer());
+    if (value.byteLength > limit) throw new Error("Trace archive size limit exceeded");
+    return value;
   }
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  let text = "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
   try {
-    while (text.length <= MAX_LOG_CHARS) {
+    while (true) {
       const { done, value } = await reader.read();
-      if (done) { text += decoder.decode(); break; }
-      text += decoder.decode(value, { stream: true });
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error("Trace archive size limit exceeded");
+      chunks.push(value);
     }
   } finally {
-    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+    // The browser's source stream is released on success; cancel a failed/oversized read.
+    if (size > limit) await response.body?.cancel().catch(() => undefined);
   }
-  if (text.length <= MAX_LOG_CHARS) return { text, clipped: false };
-  // Drop the cut-off last line so a partial record is never normalized.
-  const head = text.slice(0, MAX_LOG_CHARS);
-  return { text: head.slice(0, head.lastIndexOf("\n") + 1), clipped: true };
+  const result = new Uint8Array(size);
+  let cursor = 0;
+  for (const chunk of chunks) { result.set(chunk, cursor); cursor += chunk.byteLength; }
+  return result;
 }
 
-async function sourceReport(fetcher: typeof fetch, base: string, turn: ConversationTurn, source: string): Promise<SourceReport> {
+async function linkedJobs(fetcher: typeof fetch, base: string, id: string): Promise<JobEntry[] | null> {
   try {
-    const response = await fetcher(base + "/traces/" + encodeURIComponent(turn.id) + "/" + encodeURIComponent(source),
-      { headers: { "X-OpenDirector-Request": "1" } });
-    if (response.status === 404) return { name: source, state: "missing", events: [], truncated: false };
-    if (!response.ok) return { name: source, state: "unavailable", events: [], truncated: false };
-    const { text, clipped } = await readBoundedText(response);
-    const summary = traceEventSummary(normalizeTrace(source, text));
-    return { name: source, state: "available", events: summary.events, truncated: summary.truncated || clipped };
-  } catch {
-    return { name: source, state: "unavailable", events: [], truncated: false };
-  }
-}
-
-async function jobReport(fetcher: typeof fetch, base: string, turn: ConversationTurn): Promise<JobReport[] | null> {
-  try {
-    const response = await fetcher(base + "/turns/" + encodeURIComponent(turn.id) + "/jobs",
+    const response = await fetcher(base + "/turns/" + encodeURIComponent(id) + "/jobs",
       { headers: { "X-OpenDirector-Request": "1" } });
     if (!response.ok) return null;
-    const raw: unknown = await response.json();
-    if (!Array.isArray(raw)) return null;
-    return raw.flatMap((entry: unknown) => {
-      const job = record(entry);
-      if (typeof job.jobId !== "string") return [];
-      return [{ id: job.jobId, status: typeof job.status === "string" && JOB_STATES.has(job.status)
-        ? job.status : "unknown", adopted: job.adopted === true }];
+    const payload: unknown = await response.json();
+    if (!Array.isArray(payload)) return null;
+    return payload.flatMap((entry: unknown) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const value = entry as Record<string, unknown>;
+      if (typeof value.jobId !== "string") return [];
+      return [{ jobId: value.jobId, status: typeof value.status === "string" ? value.status : "unknown",
+        adopted: value.adopted === true }];
     });
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-/** Every turn is fetched independently, including collapsed turns; no project writes or provider calls. */
-export async function conversationTraceReport(project: string, conversationId: string, turns: ConversationTurn[],
-  fetcher: typeof fetch = fetch, generatedAt = new Date().toISOString()): Promise<string> {
+function crc32(bytes: Uint8Array): number {
+  let crc = -1;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+/** ZIP32 with uncompressed STORE entries: original JSONL bytes stay byte-for-byte identical. */
+export function zipStore(entries: ZipEntry[]): Uint8Array {
+  if (entries.length > MAX_FILES + 1) throw new Error("Too many trace archive files");
+  const prepared = entries.map(({ name, data }) => ({
+    name: encoder.encode(name), data, crc: crc32(data),
+  }));
+  let localSize = 0, centralSize = 0;
+  for (const item of prepared) {
+    if (item.name.length > 65535) throw new Error("Trace filename is too long");
+    localSize += 30 + item.name.length + item.data.length;
+    centralSize += 46 + item.name.length;
+  }
+  if (localSize + centralSize + 22 > MAX_ARCHIVE_BYTES + 65536)
+    throw new Error("Trace archive size limit exceeded");
+  const bytes = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(bytes.buffer);
+  let pos = 0;
+  const u16 = (value: number) => { view.setUint16(pos, value, true); pos += 2; };
+  const u32 = (value: number) => { view.setUint32(pos, value, true); pos += 4; };
+  const put = (value: Uint8Array) => { bytes.set(value, pos); pos += value.length; };
+  const offsets: number[] = [];
+  for (const item of prepared) {
+    offsets.push(pos);
+    u32(0x04034b50); u16(20); u16(0x0800); u16(0); u16(0); u16(0);
+    u32(item.crc); u32(item.data.length); u32(item.data.length);
+    u16(item.name.length); u16(0); put(item.name); put(item.data);
+  }
+  const centralOffset = pos;
+  prepared.forEach((item, index) => {
+    u32(0x02014b50); u16(20); u16(20); u16(0x0800); u16(0); u16(0); u16(0);
+    u32(item.crc); u32(item.data.length); u32(item.data.length);
+    u16(item.name.length); u16(0); u16(0); u16(0); u16(0); u32(0);
+    u32(offsets[index]); put(item.name);
+  });
+  u32(0x06054b50); u16(0); u16(0); u16(prepared.length); u16(prepared.length);
+  u32(pos - centralOffset); u32(centralOffset); u16(0);
+  return bytes;
+}
+
+/**
+ * Fetch each source as-is. Missing (404) logs appear in the manifest; other errors abort.
+ * All turns are included, regardless of which UI panels are expanded.
+ */
+export async function conversationTraceArchive(project: string, conversationId: string,
+  turns: ConversationTurn[], fetcher: typeof fetch = fetch,
+  generatedAt = new Date().toISOString()): Promise<Uint8Array> {
   const base = "/api/creation/projects/" + encodeURIComponent(project) + "/assistant";
-  const reports: TurnReport[] = [];
-  for (const turn of turns) {
-    const sources = traceSources(traceRuntime(turn.runtime)).filter((name) => name !== "model");
-    const [logs, jobs] = await Promise.all([
-      Promise.all(sources.map((source) => sourceReport(fetcher, base, turn, source))),
-      jobReport(fetcher, base, turn),
-    ]);
-    reports.push({ turn, sources: logs, jobs });
-  }
-  const lines = [
-    "# OpenDirector Agent Trace Report", "",
-    "- Project ID: " + inline(project),
-    "- Conversation ID: " + inline(conversationId),
-    "- Generated at: " + inline(generatedAt), "",
-    "> This is a read-only execution summary. Raw model requests, prompts, tool arguments/results and asset data are not exported. Review user request previews and identifiers before sharing.", "",
-  ];
-  for (const { turn, sources, jobs } of reports) {
-    lines.push("## Turn " + turn.number, "",
-      "- Turn ID: " + inline(turn.id),
-      "- Request preview: " + inline(turn.text),
-      "- Runtime: " + inline(turn.runtime),
-      "- Model: " + inline(turn.model ?? "not recorded"),
-      "- Status: " + inline(turn.status) + (turn.status === "streaming" ? " (partial snapshot)" : ""), "",
-      "### Trace events (metadata only)", "");
-    for (const source of sources) {
-      lines.push("#### " + inline(source.name), "");
-      if (source.state !== "available") {
-        lines.push("- Trace " + (source.state === "missing" ? "not recorded" : "unavailable"), "");
-      } else if (!source.events.length) {
-        lines.push("- No readable events", "");
-      } else {
-        for (const event of source.events)
-          lines.push("- " + inline(event.kind) + (event.status ? " (" + inline(event.status) + ")" : ""));
-        if (source.truncated) lines.push("- Event list truncated at the report limit");
-        lines.push("");
-      }
+  const files: ZipEntry[] = [];
+  const manifestTurns: ManifestTurn[] = [];
+  let total = 0;
+  for (const [index, turn] of turns.entries()) {
+    const sources: SourceEntry[] = [];
+    const names = traceSources(traceRuntime(turn.runtime));
+    const directory = "turn-" + String(index + 1).padStart(4, "0") + "/";
+    for (const source of names) {
+      if (!SOURCES.has(source)) { sources.push({ source, status: "unsupported" }); continue; }
+      const response = await fetcher(base + "/traces/" + encodeURIComponent(turn.id) + "/" +
+        encodeURIComponent(source), { headers: { "X-OpenDirector-Request": "1" } });
+      if (response.status === 404) { sources.push({ source, status: "missing" }); continue; }
+      if (!response.ok) throw new Error("Could not read original trace: " + source);
+      const bytes = await readBytes(response, Math.min(MAX_SOURCE_BYTES, MAX_ARCHIVE_BYTES - total));
+      const name = directory + source + ".jsonl";
+      files.push({ name, data: bytes });
+      total += bytes.byteLength;
+      if (files.length > MAX_FILES) throw new Error("Too many trace archive files");
+      sources.push({ source, file: name, status: "included" });
     }
-    lines.push("### Linked generation jobs", "");
-    if (jobs === null) lines.push("- Job data unavailable");
-    else if (!jobs.length) lines.push("- No linked jobs");
-    else for (const job of jobs)
-      lines.push("- " + inline(job.id) + ": " + inline(job.status) +
-        (job.adopted ? " (adopted)" : " (not adopted)"));
-    lines.push("");
+    manifestTurns.push({ id: turn.id, number: turn.number, runtime: turn.runtime,
+      status: turn.status, sources, jobs: await linkedJobs(fetcher, base, turn.id) });
   }
-  return lines.join("\n") + "\n";
+  const manifest = encoder.encode(JSON.stringify({
+    format: "opendirector-original-trace-archive", version: 1,
+    projectId: project, conversationId, exportedAt: generatedAt,
+    warning: "Original trace data may include credentials, prompts, tool inputs/outputs and private paths. Review before sharing.",
+    turns: manifestTurns,
+  }, null, 2) + "\n");
+  if (total + manifest.length > MAX_ARCHIVE_BYTES) throw new Error("Trace archive size limit exceeded");
+  files.unshift({ name: "manifest.json", data: manifest });
+  return zipStore(files);
 }
