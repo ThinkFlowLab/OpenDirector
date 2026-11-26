@@ -1,19 +1,11 @@
-import { json, request } from "./api.ts";
+import { request, rotateSession } from "./api.ts";
 
-export type EditingState =
-  | { mode: "edit"; requester: string | null }
-  | { mode: "preview"; handoff: "available" | "occupied" | "requested" | "busy" };
+export type EditingState = { mode: "edit" | "preview" };
 
 export function parseEditingState(value: unknown): EditingState {
-  if (typeof value === "object" && value !== null && "mode" in value) {
-    if (value.mode === "edit" && "requester" in value &&
-        (value.requester === null || typeof value.requester === "string"))
-      return { mode: value.mode, requester: value.requester };
-    if (value.mode === "preview" && "handoff" in value &&
-        (value.handoff === "available" || value.handoff === "occupied" ||
-         value.handoff === "requested" || value.handoff === "busy"))
-      return { mode: value.mode, handoff: value.handoff };
-  }
+  if (typeof value === "object" && value !== null && "mode" in value &&
+      (value.mode === "edit" || value.mode === "preview"))
+    return { mode: value.mode };
   throw new TypeError("Invalid editing session response");
 }
 
@@ -31,9 +23,7 @@ export function getEditingState(projectId: string) {
 
 export function installEditingState(projectId: string, state: EditingState) {
   const previous = getEditingState(projectId);
-  if (previous?.mode === "edit" && state.mode === "edit" && previous.requester === state.requester ||
-      previous?.mode === "preview" && state.mode === "preview" && previous.handoff === state.handoff)
-    return;
+  if (previous?.mode === state.mode) return;
   current = { projectId, state };
   for (const listener of listeners) listener();
 }
@@ -42,6 +32,8 @@ export async function readEditingState(projectId: string, init?: RequestInit) {
   return parseEditingState(await request<unknown>(`/creation/projects/${projectId}/edit-session`, init));
 }
 
-export const requestEditing = (projectId: string) => readEditingState(projectId, { method: "POST" });
-export const resolveEditing = (projectId: string, requester: string, accept: boolean) =>
-  readEditingState(projectId, json("PUT", { requester, accept }));
+export async function takeEditingOwnership(projectId: string) {
+  // Each takeover uses a fresh write identity, even when returning to the same tab.
+  await rotateSession();
+  return readEditingState(projectId, { method: "POST", signal: AbortSignal.timeout(10000) });
+}

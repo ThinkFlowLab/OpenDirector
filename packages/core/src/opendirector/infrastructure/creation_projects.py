@@ -122,7 +122,7 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
             return None if missing_ok else ViewState(projectId=project_id, clientId=client_id)
 
     def open_canvas(
-        self, project_id: UUID | str, session: str, *, allow_preview: bool,
+        self, project_id: UUID | str, session: str, *, allow_preview: bool, persistent: bool = False,
     ) -> tuple[ProjectSnapshot, dict[str, str | None]]:
         with self.local.transaction() as db:
             self._recover()
@@ -131,12 +131,11 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
             if allow_preview:
                 editor = self.local.editor(db, str(project_id))
                 if editor and editor['id'] != session:
-                    self.local.clear_other_edit_requests(db, str(project_id), session)
                     db.execute("DELETE FROM sessions WHERE id=?", (session,))
                 else:
-                    self.local.acquire_edit_lease(db, project, session)
+                    self.local.acquire_edit_lease(db, project, session, persistent=True)
             else:
-                self.local.acquire_edit_lease(db, project, session)
+                self.local.acquire_edit_lease(db, project, session, persistent=persistent)
             state = self.local.editing_state(db, str(project_id), session)
             record, validated = self._current_record(db, project_id, path, manifest)
             if not validated:
@@ -145,23 +144,18 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
                 self._schedule_warm(path, manifest)
             return record.snapshot.model_copy(deep=True), state
 
-    def open(self, project_id: UUID | str, session: str) -> ProjectSnapshot:
-        snapshot, _ = self.open_canvas(project_id, session, allow_preview=False)
+    def open(self, project_id: UUID | str, session: str, *, persistent=False) -> ProjectSnapshot:
+        snapshot, _ = self.open_canvas(project_id, session, allow_preview=False, persistent=persistent)
         return snapshot
 
     def editing_state(self, project_id, session):
         with self.local.transaction() as db:
             return self.local.editing_state(db, str(project_id), session)
 
-    def request_edit(self, project_id, session):
+    def take_edit_ownership(self, project_id, session):
         with self.local.transaction() as db:
             path, _ = self._find(db, project_id)
-            return self.local.request_edit(db, dict(id=str(project_id), path=str(path)), session)
-
-    def resolve_edit(self, project_id, session, requester, accept):
-        with self.local.transaction() as db:
-            path, _ = self._find(db, project_id)
-            return self.local.resolve_edit(db, dict(id=str(project_id), path=str(path)), session, requester, accept)
+            return self.local.take_edit_ownership(db, dict(id=str(project_id), path=str(path)), session)
 
     def heartbeat(self, session, project_id):
         self.open(project_id, session)

@@ -602,7 +602,7 @@ test("a stale in-memory revision is reread and the trash retried once", async (t
   assert.equal(f.projects.size, 0);
 });
 
-test("a canvas read that outlives the lease renews it before adopting", async (t) => {
+test("a slow canvas read keeps editing ownership without renewal", async (t) => {
   const f = fixture(t);
   await initializeWorkspace();
   const id = crypto.randomUUID();
@@ -613,7 +613,7 @@ test("a canvas read that outlives the lease renews it before adopting", async (t
   let now = 1_000_000;
   Date.now = () => now;
   CreationProjection.prototype.open = async function (this: CreationProjection) {
-    // Media hydration streams longer than the server's 60 s lease.
+    // Media hydration runs past the old lease timeout.
     now += 61_000;
     return stub.call(this);
   };
@@ -624,63 +624,15 @@ test("a canvas read that outlives the lease renews it before adopting", async (t
     const renewals = f.calls.filter(
       (call) => call.method === "PUT" && call.path.includes("/sessions/"),
     );
-    assert.equal(renewals.length, 1);
-    assert.equal(renewals[0]!.body.projectId, id);
+    assert.equal(renewals.length, 0);
     assert.equal(
       f.calls.some((call) => call.method === "DELETE"),
       false,
     );
-    // The renewed lease is the adopted one, so saving right after works.
+    // Saving after the slow read still uses the same ownership.
     await saveWorkspaceDocument({ ...opened, title: "Slow saved" });
     assert.equal(f.documents.get(id)?.title, "Slow saved");
   } finally {
-    Date.now = realNow;
-    CreationProjection.prototype.open = stub;
-  }
-});
-
-test("a long read that lost its lease fails instead of adopting it", async (t) => {
-  const f = fixture(t);
-  const first = await initializeWorkspace();
-  const id = crypto.randomUUID();
-  f.projects.set(id, { id, name: "Stolen", path: "/projects/Stolen" });
-  f.documents.set(id, { ...createDocument("Stolen"), id });
-  const stub = CreationProjection.prototype.open;
-  const realNow = Date.now;
-  let now = 2_000_000;
-  Date.now = () => now;
-  CreationProjection.prototype.open = async function (this: CreationProjection) {
-    now += 61_000;
-    return stub.call(this);
-  };
-  const plain = globalThis.fetch;
-  globalThis.fetch = async (url, options = {}) => {
-    if (
-      String(url).includes("/sessions/") &&
-      (options.method ?? "GET") === "PUT"
-    )
-      return Response.json(
-        { detail: "工程正在其他窗口中打开", code: "project_open_elsewhere" },
-        { status: 409 },
-      );
-    return plain(url, options);
-  };
-  try {
-    await assert.rejects(openWorkspaceProject(f.projects.get(id)!));
-    // A failed adoption must not point heartbeats at the stolen project.
-    assert.equal(activeBackendProjectId(), first.id);
-    // The session moved with the read and the renewal was rejected, so this
-    // window's lease is put back on the project the canvas is still showing.
-    assert.equal(
-      f.calls.filter(
-        (call) =>
-          call.method === "POST" &&
-          call.path === `/api/creation/projects/${first.id}/open`,
-      ).length,
-      1,
-    );
-  } finally {
-    globalThis.fetch = plain;
     Date.now = realNow;
     CreationProjection.prototype.open = stub;
   }

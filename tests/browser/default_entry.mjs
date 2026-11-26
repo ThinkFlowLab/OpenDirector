@@ -105,16 +105,18 @@ try {
   }
   await page.getByRole("button", { name: "切换项目", exact: true }).click();
   await page.getByText(/使用旧格式/).waitFor();
-  // The current project's check shares the trailing slot with its row actions
-  // button, which covers it while the row is hovered.
+  // On hover the new-tab shortcut takes the checkmark's trailing slot.
   const currentRow = page
     .locator(".cw-project-row:has(.cw-project-check)")
     .first();
   const checkBox = await currentRow.locator(".cw-project-check").boundingBox();
   const moreBox = await currentRow.locator(".cw-project-more").boundingBox();
-  assert.ok(checkBox && moreBox);
-  assert.equal(Math.round(checkBox.x), Math.round(moreBox.x));
-  assert.equal(Math.round(checkBox.width), Math.round(moreBox.width));
+  const openTab = currentRow.locator(".cw-project-open-tab");
+  const openTabBox = await openTab.boundingBox();
+  assert.ok(checkBox && moreBox && openTabBox);
+  assert.equal(Math.round(checkBox.x), Math.round(openTabBox.x));
+  assert.equal(Math.round(checkBox.width), Math.round(openTabBox.width));
+  assert.ok(Math.round(moreBox.x + moreBox.width) <= Math.round(openTabBox.x));
   await currentRow.hover();
   await page.waitForTimeout(250);
   assert.equal(
@@ -127,6 +129,10 @@ try {
     await currentRow
       .locator(".cw-project-more")
       .evaluate((element) => getComputedStyle(element).opacity),
+    "1",
+  );
+  assert.equal(
+    await openTab.evaluate((element) => getComputedStyle(element).opacity),
     "1",
   );
   assert.equal(

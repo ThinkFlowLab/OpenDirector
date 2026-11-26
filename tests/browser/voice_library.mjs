@@ -42,11 +42,7 @@ async function until(check) {
 }
 async function reopenAudio(page, assetPath, savedLabel) {
   await waitForSaved(page, savedLabel);
-  // Acknowledge this page's lease release before reopening its persisted audio.
-  const released = page.waitForResponse(response => response.request().method() === "DELETE" &&
-    new URL(response.url()).pathname.startsWith("/api/creation/sessions/"));
-  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
-  assert.ok((await released).ok());
+  const session = await page.evaluate(() => sessionStorage.getItem("opendirector.session.v1"));
   const started = Date.now();
   const statuses = [];
   let receive, timer;
@@ -63,6 +59,8 @@ async function reopenAudio(page, assetPath, savedLabel) {
     // document has not started the project's media read yet.
     await page.reload({ waitUntil: "domcontentloaded", timeout: reopenTimeout });
     await waitForSaved(page, savedLabel);
+    await page.locator('[data-testid="canvas-workspace"][data-edit-mode="edit"]').waitFor();
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("opendirector.session.v1")), session);
     console.log(JSON.stringify({
       event: "voice-reopen-ready", assetPath, elapsedMs: Date.now() - started,
     }));

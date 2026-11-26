@@ -50,6 +50,7 @@ export interface NodeSelectionToolbarProps {
   /** Group actions: run the members' generation workflow, ungroup, arrange, recolor. */
   onRunWorkflow?: () => void;
   workflowRunning?: boolean;
+  onViewGroupPlan?: () => void;
   onUngroup?: () => void;
   onLayout?: (layout: GroupLayout) => void;
   onGroupColor?: (color: string) => void;
@@ -147,6 +148,7 @@ export function NodeSelectionToolbar({
   onDelete,
   onRunWorkflow,
   workflowRunning = false,
+  onViewGroupPlan,
   onUngroup,
   onLayout,
   onGroupColor,
@@ -227,6 +229,8 @@ export function NodeSelectionToolbar({
         run: onRunWorkflow,
         disabled: workflowRunning || locked,
       });
+    if (onViewGroupPlan)
+      editing.push({ id: "view-group-plan", label: t("canvas.selection.group.viewPlan"), icon: "text", run: onViewGroupPlan });
     if (onUngroup)
       editing.push({ id: "ungroup", label: t("canvas.selection.group.ungroup"), icon: "group", run: onUngroup, disabled: locked });
     if (onLayout)

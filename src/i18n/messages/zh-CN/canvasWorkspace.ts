@@ -2,12 +2,6 @@
 export const canvasWorkspace = {
   "canvas.workspace.preview.mode": "预览模式",
   "canvas.workspace.preview.request": "在此编辑",
-  "canvas.workspace.preview.requested": "已请求编辑权",
-  "canvas.workspace.preview.busy": "另一窗口正在等待交接",
-  "canvas.workspace.preview.handoff": "将编辑权交给另一个窗口？",
-  "canvas.workspace.preview.accept": "保存并交接",
-  "canvas.workspace.preview.decline": "继续在此编辑",
-  "canvas.workspace.preview.closeEditor": "请先保存并关闭当前编辑面板，再交接编辑权。",
   "canvas.workspace.help.toggleAssistant": "打开 / 收起 AI 对话",
   "canvas.workspace.help.doubleShift": "连按两次 Shift",
 

@@ -10,6 +10,7 @@ import {
   effectiveVideoMode,
   generateAudioOptions,
   referenceByteLimit,
+  promptOptionalWithMedia,
   resolutionChoices,
 } from "../contracts/ruleFacts.generated.ts";
 import { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
@@ -43,6 +44,9 @@ export interface InputRules {
   maxImages: number;
   imageBytes?: number;
   videoBytes?: number;
+  audioBytes?: number | null;
+  referenceMediaMinSeconds?: number | null;
+  referenceMediaSeconds?: number | null;
   requestBytes?: number;
   maxPromptCharacters?: number | null;
   voiceRequired?: boolean | null;
@@ -75,6 +79,7 @@ export interface ModelConfig {
   protocol:
     | "openai"
     | "volcengine"
+    | "higgsfield_open"
     | "minimax_video_v2"
     | "kling_video"
     | "bigmodel_video"
@@ -586,7 +591,11 @@ export function backendBlocker(
   if (capabilityIssue) return capabilityIssue;
   if (
     !settings.prompt.trim() &&
-    !hasImplicitTextPrompt(settings, [...incoming, ...pinned], config)
+    !hasImplicitTextPrompt(settings, [...incoming, ...pinned], config) &&
+    !promptOptionalWithMedia({
+      profile: config.inputRules.profile,
+      hasMedia: references.some((ref) => ["image", "video", "audio"].includes(ref.node.data.kind)),
+    })
   )
     return settings.mode !== "audio"
       ? tNow("errors.rules.promptRequired")
@@ -774,12 +783,24 @@ export function referenceBudgetIssue(
       kind: source.type,
       imageBytes: config.inputRules.imageBytes,
       videoBytes: config.inputRules.videoBytes,
+      audioBytes: config.inputRules.audioBytes,
     });
     if (size > limit) return tNow("errors.rules.referenceFileSize");
     total += size;
   }
   if (total > (config.inputRules.requestBytes ?? Infinity))
     return tNow("errors.rules.referenceBudget");
+  const maximumSeconds = config.inputRules.referenceMediaSeconds;
+  if (maximumSeconds != null) {
+    const minimumSeconds = config.inputRules.referenceMediaMinSeconds ?? 0;
+    for (const kind of ["video", "audio"] as const) {
+      const seconds = usable.filter((source) => source.type === kind)
+        .map((source) => source.data.media?.durationSeconds);
+      if (seconds.some((value) => value == null || value < minimumSeconds) ||
+          seconds.reduce<number>((sum, value) => sum + (value ?? 0), 0) > maximumSeconds)
+        return tNow("errors.rules.referenceDuration", { minimum: minimumSeconds, maximum: maximumSeconds });
+    }
+  }
   for (const [kind, maximum] of [
     ["image", config.inputRules.maxImages],
     ["video", config.inputRules.maxVideos],

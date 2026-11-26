@@ -31,6 +31,15 @@ test("unknown 429 includes service load without diagnosing account quota", () =>
   }
 });
 
+test("an account change explains why an unknown MAGI-2 submission cannot be replayed", () => {
+  const value = failure({ category: "protocol", stage: "prepare",
+    message: "原请求的 Higgsfield API Key ID 已变化，请恢复原连接后再恢复任务。" });
+  setActiveLocale("en-US");
+  assert.match(generationFailureMessage(value), /Restore the original connection/);
+  setActiveLocale("zh-CN");
+  assert.match(generationFailureMessage(value), /恢复原连接/);
+});
+
 test("non-public download DNS explains the cause in both languages", () => {
   const value = failure({
     category: "protocol",

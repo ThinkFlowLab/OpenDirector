@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { getEditingState, subscribeEditingState } from "../backend/editSession.ts";
-import { EditHandoff, useEditSession } from "./workspace/EditSession.tsx";
+import { useEditSession } from "./workspace/EditSession.tsx";
 import { ReactFlowProvider } from "@xyflow/react";
 import { TooltipProvider } from "./TooltipButton";
 import { WorkspaceView } from "./workspace/WorkspaceView.tsx";
@@ -35,9 +35,5 @@ function Workspace() {
   useWorkspaceGeneration(rt, readOnly || editSession.working);
   useWorkspaceTransfer(rt, readOnly);
   useWorkspaceInteraction(rt, readOnly);
-  return <>
-    <WorkspaceView rt={rt} editingState={editing} editSession={editSession} />
-    {rt.ready && editing?.mode === "edit" && editing.requester &&
-      <EditHandoff rt={rt} requester={editing.requester} session={editSession} />}
-  </>;
+  return <WorkspaceView rt={rt} editingState={editing} editSession={editSession} />;
 }

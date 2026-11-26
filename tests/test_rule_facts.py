@@ -60,6 +60,11 @@ def test_menu_derivations_follow_published_rules_then_the_catalog():
     rows = {row['name']: row['expected'] for row in derivation_vectors()}
     catalog = ['auto', *VIDEO_ASPECT_RATIOS]
     assert rows == {
+        'magi2-image-ratios': ['auto', '16:9', '9:16'],
+        'magi2-audio-bytes': 15 * 1024 * 1024,
+        'magi2-media-prompt-optional': True,
+        'magi2-text-prompt-required': False,
+        'other-model-prompt-required': False,
         'image-ratios-drop-auto-and-duplicates': ['auto', '16:9', '1:1'],
         'video-published-first-last-is-auto-only': ['auto'],
         'video-published-ratios-keep-order': ['auto', '9:16', '9:16'],

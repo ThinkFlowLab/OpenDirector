@@ -9,6 +9,7 @@ from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.minimax_models import MINIMAX_MODELS, minimax_capabilities
 from opendirector.domain.kling_models import kling_capabilities
 from opendirector.domain.bigmodel_video import cogvideo_capabilities, validate_cogvideo_outputs
+from opendirector.domain.higgsfield import magi2_capabilities, validate_outputs as validate_magi2_outputs
 
 VideoAdapter = Literal['auto', 'fasth3', 'fasth3_dual', 'minimax_h3', 'standard']
 Second = Annotated[StrictInt, Field(ge=1, le=60)]
@@ -64,6 +65,8 @@ def seedance_20_variant(model):
 
 
 def preset_capabilities(profile, model=''):
+    if profile == 'higgsfield-magi-2':
+        return magi2_capabilities()
     if profile == 'bigmodel-cogvideox-3':
         return cogvideo_capabilities(model)
     if profile == 'kling-official':
@@ -98,6 +101,8 @@ def capability_fields(config, rules):
         validate_cogvideo_outputs(capabilities)
     if rules['profile'] == 'kling-official':
         validate_kling_outputs(capabilities, config['modelId'])
+    if rules['profile'] == 'higgsfield-magi-2':
+        validate_magi2_outputs(capabilities)
     if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'}:
         rules['fractionalDuration'] = True
     rules['videoCapabilities'] = capabilities
@@ -131,6 +136,9 @@ def check_video_config(kind, protocol, adapter, capabilities):
             raise ProjectError('视频输出规格无效，请检查分辨率、尺寸、时长和默认值。') from None
         if protocol == 'bigmodel_video':
             validate_cogvideo_outputs(capabilities)
+            return capabilities
+        if protocol == 'higgsfield_open':
+            validate_magi2_outputs(capabilities)
             return capabilities
         if protocol == 'kling_video':
             validate_kling_outputs(capabilities)

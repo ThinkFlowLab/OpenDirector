@@ -146,6 +146,7 @@ export const canvasShell = {
   "canvas.selection.previewFullscreen": "Full-screen preview",
   "canvas.selection.group.run": "Run workflow",
   "canvas.selection.group.running": "Workflow running",
+  "canvas.selection.group.viewPlan": "View plan",
   "canvas.selection.group.ungroup": "Ungroup",
   "canvas.selection.group.layout": "Layout",
   "canvas.selection.group.layoutGrid": "Grid",

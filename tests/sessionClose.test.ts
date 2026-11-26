@@ -13,7 +13,6 @@ import {
   requireActiveBackendProject,
 } from "../src/backend/projects.ts";
 
-const listeners = new Map<string, () => void>();
 let heartbeat: () => void;
 const draft = (text: string): Conversation => ({
   messages: [],
@@ -34,8 +33,6 @@ function fixture(t: TestContext, unified = true) {
         heartbeat = callback;
         return 1;
       },
-      addEventListener: (name: string, callback: () => void) =>
-        listeners.set(name, callback),
     },
   });
   const prefix = unified ? "/api/creation" : "/api";
@@ -43,7 +40,6 @@ function fixture(t: TestContext, unified = true) {
     path: string;
     method: string;
     value: Record<string, unknown>;
-    keepalive?: boolean;
   }[] = [];
   let lease: string | null = null;
   let saved: Conversation | undefined;
@@ -54,7 +50,7 @@ function fixture(t: TestContext, unified = true) {
     const path = String(url),
       method = options.method ?? "GET";
     const value = options.body ? JSON.parse(String(options.body)) : {};
-    calls.push({ path, method, value, keepalive: options.keepalive });
+    calls.push({ path, method, value });
     const response = await intercept?.(path, options);
     if (response) return response;
     if (path.endsWith("/open")) {
@@ -115,24 +111,6 @@ test("unconnected assistant drafts never write legacy project data", async (t) =
   assert.ok(f.calls.every((call) => call.path.startsWith("/api/creation/")));
 });
 
-test("page exit releases the unified session with keepalive and tolerates a repeated exit", async (t) => {
-  const f = fixture(t),
-    id = crypto.randomUUID();
-  await openBackendProject(id, "A");
-  rememberChat(id, draft("exit draft"));
-  listeners.get("pagehide")!();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  rememberChat(id, draft("late stale draft"));
-  listeners.get("pagehide")!();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  const close = f.calls.filter((call) => call.method === "DELETE");
-  assert.equal(close.length, 2);
-  assert.ok(close.every((call) => call.method === "DELETE" && call.keepalive));
-  assert.equal(f.saved(), undefined);
-  assert.equal(currentChat(id)?.draft, "late stale draft");
-  assert.equal(f.calls.filter((call) => call.path.endsWith("/open")).length, 1);
-});
-
 test("release errors prevent release or switching and preserve the active draft", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID(),
@@ -182,37 +160,17 @@ test("a failed target open reacquires the old project without writing chat draft
   assert.equal(f.calls.at(-1)!.path, `${f.prefix}/projects/${id}/open`);
 });
 
-test("pending heartbeat completes before close and cannot reacquire the released lease", async (t) => {
+test("browser editing ownership does not need a heartbeat", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID();
   await openBackendProject(id, "A");
-  rememberChat(id, draft("closed"));
-  let release!: () => void, entered!: () => void;
-  const started = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  const blocked = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  f.intercept(async (path, options) => {
-    if (path.includes("/sessions/") && options.method === "PUT") {
-      entered();
-      await blocked;
-    }
-    return undefined;
-  });
   heartbeat();
-  await started;
-  const closing = releaseBackendProject();
-  await Promise.resolve();
-  assert.equal(
-    f.calls.some((call) => call.method === "DELETE"),
-    false,
-  );
-  release();
-  await closing;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(f.lease(), id);
+  assert.equal(f.calls.some((call) => call.method === "PUT"), false);
+  await releaseBackendProject();
   heartbeat();
-  await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(f.lease(), null);
   assert.equal(f.calls.at(-1)!.method, "DELETE");
 });
@@ -229,20 +187,18 @@ test("expired close neither reopens the project nor claims to save the stale dra
   assert.equal(f.calls.filter((call) => call.path.endsWith("/open")).length, 1);
 });
 
-test("unified projects retain their own session endpoint for switches and page exit", async (t) => {
+test("switching projects releases only the project being left", async (t) => {
   const f = fixture(t, true),
     id = crypto.randomUUID(),
     next = crypto.randomUUID();
   await openBackendProject(id, "A");
   await openBackendProject(next, "B");
-  listeners.get("pagehide")!();
-  await new Promise<void>((resolve) => setImmediate(resolve));
   const closes = f.calls.filter((call) => call.method === "DELETE");
-  assert.equal(closes.length, 2);
+  assert.equal(closes.length, 1);
+  assert.equal(f.lease(), next);
   assert.ok(
     closes.every((call) => call.path.startsWith("/api/creation/sessions/")),
   );
-  assert.equal(closes.at(-1)!.keepalive, true);
   assert.equal(
     f.calls.some((call) => call.path.endsWith("/close")),
     false,
@@ -287,7 +243,7 @@ test("a lapsed-lease recovery waits for a pending switch and never reacquires th
   );
 });
 
-test("writes rejected together for a lapsed lease share one renewal", async (t) => {
+test("rejected writes cannot renew a lost browser editing session", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID();
   await openBackendProject(id, "A");
@@ -302,7 +258,7 @@ test("writes rejected together for a lapsed lease share one renewal", async (t) 
   const saves = [1, 2, 3].map(() =>
     request(`/creation/projects/${id}/commands`, { method: "POST", body: "{}" }),
   );
-  assert.deepEqual(await Promise.all(saves), [1, 2, 3].map(() => ({ status: "applied" })));
-  assert.equal(f.calls.filter((call) => call.method === "PUT").length, 1);
-  assert.equal(f.lease(), id);
+  await Promise.all(saves.map((save) => assert.rejects(save, { code: "session_expired" })));
+  assert.equal(f.calls.some((call) => call.method === "PUT"), false);
+  assert.equal(f.lease(), null);
 });

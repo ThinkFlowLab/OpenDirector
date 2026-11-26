@@ -36,11 +36,6 @@ from opendirector_api.localization import localized_receipt
 from opendirector_api.localization import localized_error_for_language
 
 
-class EditHandoffDecision(BaseModel):
-    requester: UUID
-    accept: bool
-
-
 class FontCoverageResponse(BaseModel):
     fingerprint: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
     # One bit per Unicode scalar position: fixed 139,264 bytes / 185,688 base64 chars.
@@ -132,7 +127,10 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
         return projects.snapshot(project_id)
 
     @router.post('/projects/{project_id}/open', response_model=ProjectSnapshot)
-    def open_project(project_id: UUID, x_opendirector_session: UUID = Header()):
+    def open_project(project_id: UUID, x_opendirector_session: UUID = Header(),
+                     x_opendirector_persistent: bool = Header(default=False)):
+        if x_opendirector_persistent:
+            return projects.open(project_id, str(x_opendirector_session), persistent=True)
         return projects.open(project_id, str(x_opendirector_session))
 
     @router.post('/projects/{project_id}/open-canvas')
@@ -157,12 +155,8 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
         return projects.editing_state(project_id, str(x_opendirector_session))
 
     @router.post('/projects/{project_id}/edit-session')
-    def request_edit_session(project_id: UUID, x_opendirector_session: UUID = Header()):
-        return projects.request_edit(project_id, str(x_opendirector_session))
-
-    @router.put('/projects/{project_id}/edit-session')
-    def resolve_edit_session(project_id: UUID, value: EditHandoffDecision, x_opendirector_session: UUID = Header()):
-        return projects.resolve_edit(project_id, str(x_opendirector_session), str(value.requester), value.accept)
+    def take_edit_ownership(project_id: UUID, x_opendirector_session: UUID = Header()):
+        return projects.take_edit_ownership(project_id, str(x_opendirector_session))
 
     @router.put('/sessions/{session_id}')
     def heartbeat(session_id: UUID, value: Session):

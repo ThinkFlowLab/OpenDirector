@@ -159,6 +159,10 @@ class CreationGeneration(GenerationRuntime):
             'video': {'duration': 5, 'ratio': 'adaptive', 'generate_audio': True},
             'audio': {'speaker': 'zh_female_vv_uranus_bigtts', 'audio_params': {'format': 'mp3', 'sample_rate': 24000}}}[spec.kind]
         intent = spec.parameters.model_dump(exclude_none=True)
+        if spec.kind == 'video' and config['protocol'] == 'higgsfield_open':
+            from opendirector.domain.higgsfield import parameters as magi2_parameters
+            return magi2_parameters(config, intent, node['videoMode'],
+                                    any(records[key]['kind'] == 'image' for key in node['referenceIds']))
         if spec.kind == 'video' and config['protocol'] == 'bigmodel_video':
             from opendirector.domain.bigmodel_video import cogvideo_parameters
             return {**cogvideo_parameters(config, intent), 'watermark': not self.settings.get()['removeWatermark']}
@@ -498,7 +502,9 @@ class CreationGeneration(GenerationRuntime):
             return current.model_copy(update={'jobs': tuple(updated if j.id == job.id else j for j in current.jobs)})
         receipt = self.projects.commit(command, apply, source='background')
         if receipt.status == 'rejected':
-            raise ProjectError('任务状态发生并发修改，请重新读取原任务。', 409)
+            code = 'revision_conflict' if receipt.issues and all(
+                issue.code == 'revision_conflict' for issue in receipt.issues) else None
+            raise ProjectError('任务状态发生并发修改，请重新读取原任务。', 409, code=code)
 
     def _result_asset(self, task, directory):
         job = self.get_job(task['projectId'], task['id'])

@@ -154,6 +154,10 @@ export const models = {
   "models.protocolOption.videos": "Async /videos API (including vLLM-Omni)",
   "models.protocolOption.minimaxVideo": "MiniMax official video V2",
   "models.protocolOption.klingVideo": "Kling official video API",
+  "models.protocolOption.higgsfieldOpen": "Higgsfield Open API",
+  "models.service.higgsfieldNote": "Enter KEY_ID:KEY_SECRET from Higgsfield Open.",
+  "models.service.higgsfieldSummary": "Text-to-video / first-last frames / image, video and audio references",
+  "models.service.higgsfieldReferences": "References: up to 10 JPEG/PNG/WebP/GIF images, 5 MP4 videos and 5 WAV audio clips. Each clip must be 2–30 seconds; video and audio each allow 30 seconds in total. Convert MOV to MP4 and MP3 to WAV before uploading.",
   "models.protocolOption.depth": "vLLM-Omni depth API (Video Depth Anything)",
   "models.protocolOption.tts":
     "OpenAI-compatible speech synthesis (including vLLM-Omni TTS)",

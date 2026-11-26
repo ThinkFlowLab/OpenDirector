@@ -42,6 +42,7 @@ const PROTOCOLS: Record<
     ["vllm_omni", "models.protocolOption.videos"],
     ["minimax_video_v2", "models.protocolOption.minimaxVideo"],
     ["kling_video", "models.protocolOption.klingVideo"],
+    ["higgsfield_open", "models.protocolOption.higgsfieldOpen"],
     ["bigmodel_video", "models.protocolOption.bigmodelVideo"],
     ["volcengine", "models.protocolOption.volcengine"],
     ["vllm_omni_segmentation", "models.protocolOption.segmentation"],
@@ -164,7 +165,7 @@ export function ModelServiceForm({
     setValue((current) => ({
       ...current,
       ...patch,
-      ...(["minimax_video_v2", "kling_video", "bigmodel_video"].includes(patch.protocol ?? "")
+      ...(["minimax_video_v2", "kling_video", "bigmodel_video", "higgsfield_open"].includes(patch.protocol ?? "")
         ? ({
             connectionType: "api",
             authMode: "bearer",
@@ -508,6 +509,8 @@ export function ModelServiceForm({
                   ? t("models.service.noAuthPlaceholder")
                   : hasSavedKey
                     ? t("models.service.savedKeyPlaceholder")
+                    : value.protocol === "higgsfield_open"
+                      ? "KEY_ID:KEY_SECRET"
                     : t("models.service.apiKeyPlaceholder")
               }
               onChange={(event) => update({ apiKey: event.target.value })}
@@ -526,6 +529,9 @@ export function ModelServiceForm({
         </fieldset>
         {["minimax_video_v2", "kling_video", "bigmodel_video"].includes(value.protocol) && (
           <p className="cw-model-note">{t("models.service.minimaxNote")}</p>
+        )}
+        {value.protocol === "higgsfield_open" && (
+          <p className="cw-model-note">{t("models.service.higgsfieldNote")}</p>
         )}
         <ModelPicker
           modelPlaceholder={t("models.service.modelPlaceholder")}

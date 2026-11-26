@@ -6,7 +6,8 @@ from pydantic import ConfigDict, Field, TypeAdapter, create_model, model_validat
 
 from .assets import AssetRef, MediaMetadata
 from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
-from .canvas import CanvasItem
+from .segment_run import SegmentRunPlan
+from .canvas import GroupAssembly, CanvasItem
 from .editors import EditorDocument
 from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
 from .generation import GenerationSpec, Job, PromptPart, Reference
@@ -62,6 +63,38 @@ class AssetDelete(Contract):
     def assets(self):
         unique(self.assetIds, 'delete asset IDs')
         return self
+
+
+class GroupPlanDraft(Contract):
+    model_config = ConfigDict(json_schema_extra={'examples': [{
+        'groupId': '00000000-0000-0000-0000-000000000001',
+        'plan': {
+            'source': {
+                'assetId': '00000000-0000-0000-0000-000000000002',
+                'kind': 'video', 'revision': 1, 'fingerprint': 'sha256:' + '0' * 64,
+            },
+            'fps': 24, 'frameCount': 24,
+            'entries': [{
+                'kind': 'generated', 'sourceStart': 0, 'sourceEnd': 24,
+                'itemId': '00000000-0000-0000-0000-000000000003',
+                'shot': 'opening', 'step': {'kind': 'anchor'},
+            }],
+        },
+        'assembly': {
+            'timelineItemId': '00000000-0000-0000-0000-000000000004',
+            'outputItemId': '00000000-0000-0000-0000-000000000005',
+            'clips': [{
+                'itemId': '00000000-0000-0000-0000-000000000003',
+                'inFrame': 0, 'outFrame': 24,
+            }],
+        },
+    }]})
+
+    groupId: UUID = Field(description='Canvas group holding the draft.')
+    plan: SegmentRunPlan = Field(description='Segment intervals in source order.')
+    assembly: GroupAssembly = Field(description='Retained frames for the generated intervals.')
+    planLocale: Literal['zh-CN', 'en-US'] = Field(default='zh-CN', description='Language of the published plan.')
+    planNotes: str = Field(default='', max_length=16000, description='Notes accompanying the plan.')
 
 
 class CanvasShow(Contract):
@@ -293,6 +326,8 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
+        elif self.type in {'group.saveRunPlan', 'group.publishRun'}:
+            required = [('canvas_item', payload.groupId)]
         elif self.type == 'canvas.publishMedia':
             required = [('canvas_item', payload.itemId), *[('asset', o.asset.assetId) for o in payload.outputs]]
             if payload.sourceEditorId:
@@ -338,6 +373,8 @@ _COMMANDS = (
     ('AssetMetadataCommand', 'asset.updateMetadata', AssetMetadataUpdate, 'Rename an asset.'),
     ('AssetDeleteCommand', 'asset.delete', AssetDelete, 'Delete assets after an impact preview.'),
     ('CanvasCreateGenerationCommand', 'canvas.createGeneration', CanvasCreateGeneration, 'Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones.'),
+    ('GroupSavePlanCommand', 'group.saveRunPlan', GroupPlanDraft, 'Save a draft segment plan.'),
+    ('GroupPublishRunCommand', 'group.publishRun', GroupPlanDraft, 'Publish the segment plan as a Markdown canvas node.'),
     ('CanvasShowCommand', 'canvas.show', CanvasShow, 'Create or restore a canvas display item.'),
     ('CanvasMoveCommand', 'canvas.move', CanvasMove, 'Move one or more canvas items.'),
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate, 'Update canvas presentation, grouping or lock state.'),
@@ -414,6 +451,9 @@ IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'ro
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
+                    'higgsfield_model', 'higgsfield_key', 'higgsfield_output', 'higgsfield_parameters', 'higgsfield_mode',
+                    'higgsfield_image', 'higgsfield_format', 'higgsfield_media_size', 'higgsfield_duration',
+                    'higgsfield_reference_count', 'higgsfield_reference_changed', 'higgsfield_frames', 'higgsfield_references', 'higgsfield_prompt',
                     'capability_unavailable', 'capability_paused', 'capability_connection_changed',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',

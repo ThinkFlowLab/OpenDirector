@@ -66,7 +66,7 @@ export function aspectRatioChoices(input: {
     ];
   }
   if (input.kind === "video" && input.publishedRatios != null) {
-    if (input.videoMode === "first-last" || input.videoMode === "control") return ["auto"];
+    if (input.videoMode === "control" || input.videoMode === "first-last" && input.protocol !== "higgsfield_open") return ["auto"];
     return ["auto", ...input.publishedRatios];
   }
   const framed = input.protocol === "volcengine" || input.dimensioned;
@@ -167,6 +167,7 @@ export function referenceByteLimit(input: {
   readonly kind: string;
   readonly imageBytes?: number | null;
   readonly videoBytes?: number | null;
+  readonly audioBytes?: number | null;
 }): number {
   if (input.kind === "text") return RULE_FACTS.textReferenceBytes;
   if (input.kind === "image") {
@@ -175,10 +176,74 @@ export function referenceByteLimit(input: {
   if (input.kind === "video") {
     return input.videoBytes ?? RULE_FACTS.defaultVideoBytes;
   }
+  if (input.kind === "audio" && input.audioBytes != null) return input.audioBytes;
   return RULE_FACTS.defaultVideoBytes;
 }
 
+export function promptOptionalWithMedia(input: {
+  readonly profile?: string;
+  readonly hasMedia: boolean;
+}): boolean {
+  return input.profile === "higgsfield-magi-2" && input.hasMedia;
+}
+
 export const RULE_DERIVATION_VECTORS = [
+  {
+    "name": "magi2-image-ratios",
+    "fn": "aspectRatioChoices",
+    "input": {
+      "kind": "video",
+      "videoMode": "first-last",
+      "publishedRatios": [
+        "16:9",
+        "9:16"
+      ],
+      "protocol": "higgsfield_open",
+      "dimensioned": false,
+      "imageOutputRatios": []
+    },
+    "expected": [
+      "auto",
+      "16:9",
+      "9:16"
+    ]
+  },
+  {
+    "name": "magi2-audio-bytes",
+    "fn": "referenceByteLimit",
+    "input": {
+      "kind": "audio",
+      "audioBytes": 15728640
+    },
+    "expected": 15728640
+  },
+  {
+    "name": "magi2-media-prompt-optional",
+    "fn": "promptOptionalWithMedia",
+    "input": {
+      "profile": "higgsfield-magi-2",
+      "hasMedia": true
+    },
+    "expected": true
+  },
+  {
+    "name": "magi2-text-prompt-required",
+    "fn": "promptOptionalWithMedia",
+    "input": {
+      "profile": "higgsfield-magi-2",
+      "hasMedia": false
+    },
+    "expected": false
+  },
+  {
+    "name": "other-model-prompt-required",
+    "fn": "promptOptionalWithMedia",
+    "input": {
+      "profile": "minimax-h3-official",
+      "hasMedia": true
+    },
+    "expected": false
+  },
   {
     "name": "image-ratios-drop-auto-and-duplicates",
     "fn": "aspectRatioChoices",

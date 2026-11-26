@@ -5,6 +5,11 @@
       "helper": true
     },
     {
+      "file": "higgsfield_open.mjs",
+      "lanes": ["manual"],
+      "note": "Run with higgsfield_server.py and Vite. Bilingual provider setup, actual MAGI-2 HTTP adapter with mocked transport, all three routes, mixed media, format rejection, adoption and reload. No real service calls."
+    },
+    {
       "file": "fasth3_capability_flow.mjs",
       "helper": true
     },
@@ -476,7 +481,7 @@
       "lanes": [
         "gate"
       ],
-      "note": "Reload after a lost lease release reopens at once. A second window previews live changes, can request editing, and can take over without letting stale writes through."
+      "note": "Reload retains ownership. A second window previews live changes and takes over immediately. Old writes are rejected even after the original window takes over again."
     },
     {
       "file": "project_title_enter.mjs",

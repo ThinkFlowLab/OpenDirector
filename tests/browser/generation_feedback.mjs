@@ -142,7 +142,11 @@ try {
           dark,
           light,
           enabled: [...element.querySelectorAll("button:enabled")]
-            .filter((button) => button.getClientRects().length)
+            .filter(
+              (button) =>
+                button.getClientRects().length &&
+                button.getAttribute("aria-disabled") !== "true",
+            )
             .map((button) => button.getAttribute("aria-label")),
         };
       });
@@ -150,6 +154,12 @@ try {
       assert.equal(locked.dark, "rgb(125, 130, 145)");
       assert.equal(locked.light, "rgb(123, 130, 144)");
       assert.deepEqual(locked.enabled, ["取消生成"]);
+      assert.equal(
+        await dock
+          .getByRole("button", { name: "提示词优化", exact: true })
+          .isDisabled(),
+        true,
+      );
       assert.equal((await state()).jobs.length, 0);
       hold.release();
       await until(async () => (await state()).jobs.length === 1);

@@ -23,6 +23,7 @@ import "./text-node-window.css";
 export function TextNodeWindow({
   node,
   locked,
+  readOnly = false,
   selections,
   onUpdate,
   onClose,
@@ -31,6 +32,7 @@ export function TextNodeWindow({
 }: {
   node: CanvasNode;
   locked: boolean;
+  readOnly?: boolean;
   selections: TextSelections;
   onUpdate: (text: string) => void;
   onClose: () => void;
@@ -39,14 +41,19 @@ export function TextNodeWindow({
 }) {
   const t = useT();
   const panel = useRef<HTMLDivElement>(null);
+  const previewBody = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState(false);
   const titleId = useId();
   const hintId = useId();
   const text = node.data.text ?? "";
   useLayoutEffect(() => {
+    if (readOnly) {
+      previewBody.current?.focus({ preventScroll: true });
+      return;
+    }
     onBeginEdit();
     return onEndEdit;
-  }, [onBeginEdit, onEndEdit]);
+  }, [onBeginEdit, onEndEdit, readOnly]);
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape" && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -93,12 +100,12 @@ export function TextNodeWindow({
               {node.data.title || t("canvas.kind.text")}
             </strong>
             <small id={hintId}>
-              {locked
+              {locked || readOnly
                 ? t("canvas.textWindow.locked")
                 : t("canvas.textWindow.hint")}
             </small>
           </div>
-          <div
+          {!readOnly && <div
             className="cw-text-window-modes"
             role="group"
             aria-label={t("canvas.textWindow.mode")}
@@ -117,7 +124,7 @@ export function TextNodeWindow({
             >
               {t("canvas.textWindow.preview")}
             </button>
-          </div>
+          </div>}
           <div className="cw-text-window-controls">
             <TooltipButton
               label={t("common.close")}
@@ -129,8 +136,9 @@ export function TextNodeWindow({
             </TooltipButton>
           </div>
         </header>
-        {preview ? (
+        {preview || readOnly ? (
           <div
+            ref={previewBody}
             className="cw-text-window-input cw-text-window-preview nodrag nopan nowheel"
             tabIndex={0}
           >

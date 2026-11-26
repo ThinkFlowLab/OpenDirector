@@ -6,6 +6,7 @@ import {
   type CanvasNode,
 } from "../src/canvas/model.ts";
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
+import { newNodeGenerationSettings } from "../src/canvas/modelResolution.ts";
 import { appendServiceResults } from "../src/canvas/linkedResults.ts";
 import { isGenerationSettings } from "../src/canvas/dataBoundary.ts";
 import {
@@ -13,6 +14,7 @@ import {
   backendReferenceIssue,
   backendReferences,
   backendVideoMode,
+  referenceBudgetIssue,
   hasImplicitTextPrompt,
   isGenerationModel,
   serviceGenerationSettings,
@@ -91,6 +93,35 @@ const video = (patch: object) => ({
   prompt: "雨夜街头",
   durationSeconds: 5,
   ...patch,
+});
+
+test("MAGI-2 keeps ordinary image references, optional media prompts and native clip budgets", () => {
+  const magi = { ...config("video", {
+    profile: "higgsfield-magi-2", maxImages: 10, maxVideos: 5, maxAudios: 5,
+    videoModes: ["first_frame", "reference"], frameRoles: ["first_frame", "last_frame"],
+    audioReferenceStandalone: true, generateAudioOptions: [true, false],
+    referenceMediaMinSeconds: 2, referenceMediaSeconds: 30, audioBytes: 15 * 1024 * 1024,
+    videoCapabilities: { outputs: [{ resolution: "1080P", durations: [4, 5, 30] }], defaultResolution: "1080P", defaultDuration: 5, dimensionStep: 2 },
+    outputResolutions: ["1080P"],
+  }), protocol: "higgsfield_open" as const };
+  const settings = { ...video({ videoMode: "reference", prompt: "", audioEnabled: false, resolution: "1080P" }), modelConfigId: magi.id };
+  assert.equal(newNodeGenerationSettings("video", [magi]).durationSeconds, 5);
+  assert.equal(serviceGenerationSettings({ ...settings, durationSeconds: 4 }, magi).durationSeconds, 4);
+  const image = media("image");
+  assert.equal(backendBlocker(settings, [image], [magi]), null);
+  assert.equal(backendVideoMode(settings, backendReferences(settings, [image], magi), magi), "reference");
+  assert.ok(backendBlocker(settings, [], [magi]));
+  const clip = media("video"), sound = media("audio");
+  clip.data.media = { durationSeconds: 30 };
+  sound.data.media = { durationSeconds: 30 };
+  assert.equal(referenceBudgetIssue([clip, sound], magi, settings), null);
+  sound.data.media.durationSeconds = 1.9;
+  setActiveLocale("en-US");
+  assert.match(referenceBudgetIssue([clip, sound], magi, settings)!, /2–30 seconds/);
+  setActiveLocale("zh-CN");
+  assert.match(referenceBudgetIssue([clip, sound], magi, settings)!, /2–30 秒/);
+  sound.data.media.durationSeconds = 30.01;
+  assert.ok(referenceBudgetIssue([sound], magi, settings));
 });
 
 test("SAM stays tool-only in both media categories and legacy vision configurations", () => {

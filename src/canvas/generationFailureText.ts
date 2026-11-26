@@ -11,6 +11,7 @@ import { capabilityErrorText } from "./capabilityErrorText.ts";
  * messages without ever showing Chinese in the English interface.
  */
 const BY_MESSAGE: Record<string, MessageKey> = {
+  "原请求的 Higgsfield API Key ID 已变化，请恢复原连接后再恢复任务。": "errors.generationFailure.higgsfieldAccount",
   "供应商判定提示词或参考图片违反内容政策，已拒绝生成。": "errors.generationFailure.policy",
   "生成服务拒绝了输入内容或参数。": "errors.generationFailure.input",
   "所选音色不存在或不可用。": "errors.generationFailure.voiceNotFound",

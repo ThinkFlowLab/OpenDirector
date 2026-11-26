@@ -179,7 +179,7 @@ export class CreationClient {
         if ("editing" in opened)
           installEditingState(this.id, parseEditingState(opened.editing));
         else
-          installEditingState(this.id, { mode: "edit", requester: null });
+          installEditingState(this.id, { mode: "edit" });
         canvas = "snapshot" in opened ? opened : undefined;
         if (canvas)
           this.referenceStates = new Map(

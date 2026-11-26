@@ -1,5 +1,6 @@
 """Provider doubles exercise the real durable runtime, files and restart path."""
 import asyncio
+from threading import Event
 from uuid import UUID, uuid4
 
 import pytest
@@ -49,6 +50,56 @@ def configure(project, config):
     changed = spec.model_copy(update={'prompt': 'Use the source', 'modelConfigId': UUID(config['id'])})
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=changed).status == 'applied'
     return target, store.snapshot(pid).generationSpecs[-1]
+
+
+@pytest.mark.anyio
+async def test_cancel_wins_over_an_in_flight_running_checkpoint(project, monkeypatch):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    started = asyncio.Event()
+    release = Event()
+    loop = asyncio.get_running_loop()
+    commit = store.commit
+    cancel = runner.cancel
+    conflicts = []
+
+    def hold_running_checkpoint(command, *args, **kwargs):
+        if command.type == 'job.checkpoint' and command.payload.job.status == 'running':
+            loop.call_soon_threadsafe(started.set)
+            assert release.wait(10)
+            receipt = commit(command, *args, **kwargs)
+            conflicts.extend(issue.code for issue in receipt.issues)
+            return receipt
+        return commit(command, *args, **kwargs)
+
+    async def release_after_cancelling(project_id, job_id, edit_session):
+        # cancel() sends the worker's cancellation before it yields.
+        loop.call_soon(release.set)
+        await cancel(project_id, job_id, edit_session)
+
+    monkeypatch.setattr(store, 'commit', hold_running_checkpoint)
+    monkeypatch.setattr(runner, 'cancel', release_after_cancelling)
+    try:
+        submit = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+            expectedVersions=[ver('canvas_item', target), ver('generation_spec', spec)],
+            payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+        assert (await runner.execute(submit, session=session)).status == 'accepted'
+        await asyncio.wait_for(started.wait(), 5)
+        job = store.snapshot(pid).jobs[0]
+        command = parse_command(dict(commandId=uuid4(), projectId=pid, type='job.cancel',
+            expectedVersions=[ver('job', job)], payload=dict(jobId=job.id)))
+        assert (await runner.execute(command, session=session)).status == 'applied'
+        final = store.snapshot(pid).jobs[0]
+        assert conflicts == ['revision_conflict']
+        assert final.id == job.id and final.cancelRequested
+        assert final.status == 'cancelled'
+        assert not final.resumeAllowed
+        assert not provider.calls
+    finally:
+        release.set()
+        await runner.close()
 
 
 @pytest.mark.anyio

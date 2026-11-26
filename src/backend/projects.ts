@@ -48,7 +48,7 @@ let recovering: { projectId: string; renewed: Promise<boolean> } | null = null;
 setLeaseRecovery((projectId) => {
   if (recovering?.projectId === projectId) return recovering.renewed;
   const renewed = serializeSessionChange(async () => {
-    if (active !== projectId || getEditingState(projectId)?.mode === "preview") return false;
+    if (active !== projectId || getEditingState(projectId) !== undefined) return false;
     await renewLease(projectId);
     return active === projectId;
   });
@@ -65,26 +65,19 @@ setLeaseRecovery((projectId) => {
 function keepAlive() {
   if (heartbeat !== undefined) return;
   heartbeat = window.setInterval(() => {
-    if (active && !opening && getEditingState(active)?.mode !== "preview") {
+    if (active && !opening && getEditingState(active) === undefined) {
       const projectId = active;
       // A pending renewal must finish before an explicit close or project switch.
       void serializeSessionChange(async () => {
-        if (active !== projectId || getEditingState(projectId)?.mode === "preview") return;
+        if (active !== projectId || getEditingState(projectId) !== undefined) return;
         await renewLease(projectId);
       }).catch(() => {});
     }
   }, 15000);
-  window.addEventListener("pagehide", () => {
-    if (!active) return;
-    void closeProjectSession(true).catch(() => {});
-  });
 }
 
-function closeProjectSession(keepalive = false) {
-  return request(`/creation/sessions/${sessionId}`, {
-    method: "DELETE",
-    keepalive,
-  });
+function closeProjectSession() {
+  return request(`/creation/sessions/${sessionId}`, { method: "DELETE" });
 }
 
 export function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
@@ -131,9 +124,7 @@ function activateBackendProject<T>(
       if (switching && previousMode?.mode === "preview") active = previous;
       if (switching && previousMode?.mode !== "preview") {
         try {
-          await request(`/creation/projects/${previous}/open`, {
-            method: "POST",
-          });
+          await openEditingProject(previous);
           active = previous;
         } catch (restoreFailure) {
           throw new Error(
@@ -153,23 +144,21 @@ function activateBackendProject<T>(
   });
 }
 
-/** Opening again renews a lease that lapsed while the page was suspended. */
-export function openBackendProject(documentId: string, _title: string) {
-  const id = backendProjectId(documentId);
-  return activateBackendProject(id, async () => {
-    await request(`/creation/projects/${id}/open`, { method: "POST" });
-    installEditingState(id, { mode: "edit", requester: null });
-    return id;
+function openEditingProject(projectId: string) {
+  return request(`/creation/projects/${projectId}/open`, {
+    method: "POST",
+    headers: { "X-OpenDirector-Persistent": "true" },
   });
 }
 
-/** Longest canvas read that can rely on the lease it acquired at the start.
- *
- * The server grants a 60 s lease, and heartbeat renewal is suppressed while a
- * read owns the session-change queue. A media-heavy read can stream for longer
- * than that (one asset read is bounded at 120 s per attempt), so a read that
- * outlived this window renews the lease before adoption. */
-const LEASE_RECONFIRM_MS = 30_000;
+export function openBackendProject(documentId: string, _title: string) {
+  const id = backendProjectId(documentId);
+  return activateBackendProject(id, async () => {
+    await openEditingProject(id);
+    installEditingState(id, { mode: "edit" });
+    return id;
+  });
+}
 
 /** Read a canvas and adopt the session lease that read acquires.
  *
@@ -188,16 +177,9 @@ export function openBackendProjectCanvas<T>(
   return serializeSessionChange(async () => {
     const previous = active;
     const previousMode = previous ? getEditingState(previous) : undefined;
-    const startedAt = Date.now();
     let value: T;
     try {
       value = await read();
-      if (Date.now() - startedAt >= LEASE_RECONFIRM_MS && getEditingState(id)?.mode !== "preview")
-        // Hydration kept the normal heartbeat from running. Renewing here keeps
-        // the lease alive when it outlived the 60 s grant; if another window has
-        // taken over the expired lease the server rejects this renewal and the
-        // open fails instead of adopting a session we no longer own.
-        await request(`/creation/sessions/${sessionId}`, json("PUT", { projectId: id }));
     } catch (failure) {
       // read() moves this window's session before it finishes the view. A
       // failure after that acceptance would leave the lease on `id` while
@@ -210,9 +192,7 @@ export function openBackendProjectCanvas<T>(
         installEditingState(previous, previousMode);
       } else if (previous && previous !== id) {
         try {
-          await request(`/creation/projects/${previous}/open`, {
-            method: "POST",
-          });
+          await openEditingProject(previous);
         } catch (restoreFailure) {
           throw new Error(
             tNow("errors.backend.openFailed", {

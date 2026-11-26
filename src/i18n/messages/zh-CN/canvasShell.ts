@@ -142,6 +142,7 @@ export const canvasShell = {
   "canvas.selection.previewFullscreen": "全屏预览",
   "canvas.selection.group.run": "运行工作流",
   "canvas.selection.group.running": "工作流运行中",
+  "canvas.selection.group.viewPlan": "查看计划",
   "canvas.selection.group.ungroup": "解除编组",
   "canvas.selection.group.layout": "布局",
   "canvas.selection.group.layoutGrid": "网格排列",

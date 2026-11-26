@@ -6,6 +6,7 @@ infrastructure does not import application modules.
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.creation_history import CreationHistory
+from opendirector.application.creation_segment_run_publication import publish_segment_plan, save_segment_plan
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.projects import ProjectError, project_name
 from opendirector.ports.dispatch import register_command_dispatcher
@@ -27,6 +28,10 @@ class CreationCommands:
                 command, session=session, source=source, imported_from=imported_from)
         if imported_from is not None:
             raise ProjectError('只有素材导入可以声明归档来源。', 400, code='invalid_input')
+        if command.type == 'group.saveRunPlan':
+            return save_segment_plan(projects, command, session=session, source=source)
+        if command.type == 'group.publishRun':
+            return publish_segment_plan(projects, command, session=session, source=source)
         if command.type == 'project.create':
             return projects._create(command, source)
         if command.type in _HISTORY_COMMANDS:

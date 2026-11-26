@@ -196,7 +196,7 @@ page.on("requestfailed", (request) => {
 });
 async function reloadAfterRenewal() {
   // Advancing the capability clock can also start a session heartbeat. Finish
-  // that request before pagehide releases the session during this reload.
+  // that request before reloading.
   await until(() => sessionRenewals.size === 0);
   assert.deepEqual(
     renewalFailures,

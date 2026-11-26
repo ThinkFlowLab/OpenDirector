@@ -10,6 +10,7 @@ from .assets import AssetRef
 from .base import CanvasColor, CanvasItemVersion, Contract, Identifier, Point, Positive, ProjectEntity, unique
 from .generation import FollowingSource, GenerationSpec, ResolvedReference, validate_generation
 from .models import ModelConfigPublic
+from .segment_run import SegmentRunPlan
 
 
 class FollowingReferenceSource(Contract):
@@ -189,11 +190,70 @@ class DirectorCanvasItem(EditorCanvasItem):
     kind: Literal['external'] = Field(description='Business object or media type.')
 
 
+class WorkflowClip(Contract):
+    itemId: UUID = Field(description='Generation canvas node providing the raw video.')
+    inFrame: Annotated[int, Field(strict=True, ge=0, le=4095)] = Field(description='First retained frame in playback order.')
+    outFrame: Annotated[int, Field(strict=True, ge=1, le=4096)] = Field(description='Exclusive end of the retained frames.')
+    reverse: bool = Field(default=False, description='Reverse the raw window before keeping the selected frames.')
+    frameLimit: Annotated[int, Field(strict=True, ge=1, le=4096)] | None = Field(
+        default=None, description='Optional cap on the raw window before reversal.')
+
+    @model_validator(mode='after')
+    def frame_window(self):
+        if self.outFrame <= self.inFrame or (self.frameLimit is not None and self.outFrame > self.frameLimit):
+            raise ValueError('Invalid workflow frame window')
+        return self
+
+
+class GroupAssembly(Contract):
+    timelineItemId: UUID = Field(description='Timeline canvas node receiving the assembled clips.')
+    outputItemId: UUID = Field(description='Stable canvas node ID for the published video.')
+    clips: tuple[WorkflowClip, ...] = Field(min_length=1, max_length=50, description='Generated clips in assembly order.')
+    requireTimelineGuides: bool = Field(default=False, strict=True, exclude_if=lambda value: not value,
+        description='Required for H3 segmented plans. A confirmed plan keeps its guide requirement when its assembly is edited.')
+    guideExemptItemId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='The only generation anchor that may omit a timeline guide. Omit this to require a guide on every clip.')
+
+    @model_validator(mode='after')
+    def distinct_items(self):
+        clip_ids = {clip.itemId for clip in self.clips}
+        ids = {self.timelineItemId, self.outputItemId, *clip_ids}
+        if len(ids) != len(self.clips) + 2:
+            raise ValueError('Assembly nodes must have distinct identities')
+        if self.guideExemptItemId is not None and (not self.requireTimelineGuides or self.guideExemptItemId not in clip_ids):
+            raise ValueError('The guide-exempt anchor must be a clip in a guide-required assembly')
+        return self
+
+
 class GroupCanvasItem(CanvasItemBase):
     kind: Literal['group'] = Field(description='Business object or media type.')
     autoLayout: Literal['run'] | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.')
+    runPlan: SegmentRunPlan | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Frozen plan assigned only by the Run publication command.')
+    draftRunPlan: SegmentRunPlan | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Editable plan input from a published Run. Publish it before starting execution.')
+    runPlanItemId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Read-only canvas node showing the published plan.')
+    runDefinitionId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Publication command ID identifying this frozen Run definition.')
+    runPlanLocale: Literal['zh-CN', 'en-US'] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Language of the visible Run plan.')
+    runPlanNotes: str | None = Field(default=None, exclude_if=lambda value: value is None, max_length=16000,
+        description='Editable notes accompanying the Run plan.')
+    assembly: GroupAssembly | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Optional frame-accurate assembly after the group generation run.')
     binding: ContainerBinding = Field(default_factory=lambda: ContainerBinding(role='container'), description='Business object displayed by this canvas item.')
+
+    @model_validator(mode='after')
+    def published_plan(self) -> 'GroupCanvasItem':
+        if self.runPlan is not None and (
+                self.runPlanItemId is None or self.runDefinitionId is None or self.assembly is None
+                or self.draftRunPlan is not None):
+            raise ValueError('Published plans require a plan card, a definition ID and an assembly.')
+        if self.runPlan is None and (self.runPlanItemId is not None or self.runDefinitionId is not None):
+            raise ValueError('Only published plans can reference a plan card or definition ID.')
+        return self
 
 
 CanvasItem = Annotated[TextCanvasItem | ImageCanvasItem | VideoCanvasItem | AudioCanvasItem | FileCanvasItem |

@@ -11,7 +11,7 @@ from opendirector.domain.creation.base import digest
 from opendirector.domain.creation.commands import Command, CommandReceipt, ProjectEvent, command_fingerprint
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.run_layout import reflow_runs
-from opendirector.domain.creation.validation import ContractError, validate_command
+from opendirector.domain.creation.validation import ContractError, validate_command, validate_published_plans
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.infrastructure.creation_files import cleanup_staging, delete_files, install_files
 from opendirector.infrastructure.creation_records import (
@@ -73,6 +73,7 @@ class CommitPublication:
                     raise ContractError('invalid_input', 'Services cannot replace project identity or event cursors')
                 if snapshot.project.name != before.project.name and command.type != 'project.rename':
                     raise ContractError('invalid_input', 'Only the rename command can rename a project')
+                validate_published_plans(command, before, snapshot)
                 changed = object_changes(before, snapshot, command)
                 operations = command.payload.operations if command.type == 'creation.batch' else (command,)
                 organize_runs = any(operation.type == 'canvas.layoutRuns' for operation in operations)

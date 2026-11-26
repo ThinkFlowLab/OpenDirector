@@ -3909,6 +3909,20 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "higgsfield_model",
+              "higgsfield_key",
+              "higgsfield_output",
+              "higgsfield_parameters",
+              "higgsfield_mode",
+              "higgsfield_image",
+              "higgsfield_format",
+              "higgsfield_media_size",
+              "higgsfield_duration",
+              "higgsfield_reference_count",
+              "higgsfield_reference_changed",
+              "higgsfield_frames",
+              "higgsfield_references",
+              "higgsfield_prompt",
               "capability_unavailable",
               "capability_paused",
               "capability_connection_changed",
@@ -4199,6 +4213,8 @@
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
                 "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
+                "group.publishRun": "#/$defs/GroupPublishRunCommand",
+                "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
@@ -4247,6 +4263,12 @@
               },
               {
                 "$ref": "#/$defs/CanvasCreateGenerationCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupSavePlanCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPublishRunCommand"
               },
               {
                 "$ref": "#/$defs/CanvasShowCommand"
@@ -6027,6 +6049,60 @@
         "title": "GenerationSubmitCommand",
         "type": "object"
       },
+      "GroupAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "timelineItemId": {
+            "description": "Timeline canvas node receiving the assembled clips.",
+            "format": "uuid",
+            "title": "Timelineitemid",
+            "type": "string"
+          },
+          "outputItemId": {
+            "description": "Stable canvas node ID for the published video.",
+            "format": "uuid",
+            "title": "Outputitemid",
+            "type": "string"
+          },
+          "clips": {
+            "description": "Generated clips in assembly order.",
+            "items": {
+              "$ref": "#/$defs/WorkflowClip"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Clips",
+            "type": "array"
+          },
+          "requireTimelineGuides": {
+            "default": false,
+            "description": "Required for H3 segmented plans. A confirmed plan keeps its guide requirement when its assembly is edited.",
+            "title": "Requiretimelineguides",
+            "type": "boolean"
+          },
+          "guideExemptItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The only generation anchor that may omit a timeline guide. Omit this to require a guide on every clip.",
+            "title": "Guideexemptitemid"
+          }
+        },
+        "required": [
+          "timelineItemId",
+          "outputItemId",
+          "clips"
+        ],
+        "title": "GroupAssembly",
+        "type": "object"
+      },
       "GroupCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -6152,6 +6228,101 @@
             "description": "Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.",
             "title": "Autolayout"
           },
+          "runPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen plan assigned only by the Run publication command."
+          },
+          "draftRunPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable plan input from a published Run. Publish it before starting execution."
+          },
+          "runPlanItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Read-only canvas node showing the published plan.",
+            "title": "Runplanitemid"
+          },
+          "runDefinitionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Publication command ID identifying this frozen Run definition.",
+            "title": "Rundefinitionid"
+          },
+          "runPlanLocale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Language of the visible Run plan.",
+            "title": "Runplanlocale"
+          },
+          "runPlanNotes": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable notes accompanying the Run plan.",
+            "title": "Runplannotes"
+          },
+          "assembly": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GroupAssembly"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional frame-accurate assembly after the group generation run."
+          },
           "binding": {
             "$ref": "#/$defs/ContainerBinding",
             "description": "Business object displayed by this canvas item."
@@ -6163,6 +6334,205 @@
           "kind"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupPlanDraft": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "assembly": {
+              "clips": [
+                {
+                  "inFrame": 0,
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "outFrame": 24
+                }
+              ],
+              "outputItemId": "00000000-0000-0000-0000-000000000005",
+              "timelineItemId": "00000000-0000-0000-0000-000000000004"
+            },
+            "groupId": "00000000-0000-0000-0000-000000000001",
+            "plan": {
+              "entries": [
+                {
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "kind": "generated",
+                  "shot": "opening",
+                  "sourceEnd": 24,
+                  "sourceStart": 0,
+                  "step": {
+                    "kind": "anchor"
+                  }
+                }
+              ],
+              "fps": 24,
+              "frameCount": 24,
+              "source": {
+                "assetId": "00000000-0000-0000-0000-000000000002",
+                "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "video",
+                "revision": 1
+              }
+            }
+          }
+        ],
+        "properties": {
+          "groupId": {
+            "description": "Canvas group holding the draft.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/$defs/SegmentRunPlan",
+            "description": "Segment intervals in source order."
+          },
+          "assembly": {
+            "$ref": "#/$defs/GroupAssembly",
+            "description": "Retained frames for the generated intervals."
+          },
+          "planLocale": {
+            "default": "zh-CN",
+            "description": "Language of the published plan.",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Planlocale",
+            "type": "string"
+          },
+          "planNotes": {
+            "default": "",
+            "description": "Notes accompanying the plan.",
+            "maxLength": 16000,
+            "title": "Plannotes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "plan",
+          "assembly"
+        ],
+        "title": "GroupPlanDraft",
+        "type": "object"
+      },
+      "GroupPublishRunCommand": {
+        "additionalProperties": false,
+        "description": "Publish the segment plan as a Markdown canvas node.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.publishRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Publish the segment plan as a Markdown canvas node."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupPublishRunCommand",
+        "type": "object"
+      },
+      "GroupSavePlanCommand": {
+        "additionalProperties": false,
+        "description": "Save a draft segment plan.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.saveRunPlan",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Save a draft segment plan."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupSavePlanCommand",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -7242,6 +7612,48 @@
             "minimum": 0,
             "title": "Videobytes",
             "type": "integer"
+          },
+          "audioBytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum bytes per reference audio; omitted preserves the existing request budget.",
+            "title": "Audiobytes"
+          },
+          "referenceMediaMinSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum duration of each reference video or audio clip.",
+            "title": "Referencemediaminseconds"
+          },
+          "referenceMediaSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum total reference duration, applied separately to video and audio.",
+            "title": "Referencemediaseconds"
           },
           "requestBytes": {
             "description": "Maximum aggregate reference bytes per request.",
@@ -8903,6 +9315,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -9088,6 +9501,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -9250,6 +9664,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -9380,6 +9795,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -11632,6 +12048,214 @@
           "inputFingerprint"
         ],
         "title": "ResultVersion",
+        "type": "object"
+      },
+      "SegmentRunAnchor": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "anchor",
+            "description": "One independent generation anchor in the declared source shot.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "SegmentRunAnchor",
+        "type": "object"
+      },
+      "SegmentRunContinuation": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "continuation",
+            "description": "Generation requires the selected upstream result as a guide.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "upstreamItemId": {
+            "description": "Generation node providing the raw guide frames.",
+            "format": "uuid",
+            "title": "Upstreamitemid",
+            "type": "string"
+          },
+          "sourceFrames": {
+            "description": "Two distinct indices into the raw upstream result for destination frames 0 and 21, in that order.",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              }
+            ],
+            "title": "Sourceframes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "upstreamItemId",
+          "sourceFrames"
+        ],
+        "title": "SegmentRunContinuation",
+        "type": "object"
+      },
+      "SegmentRunGenerated": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "generated",
+            "description": "Use the retained result from a generation step.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Generation canvas node that provides the result.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "shot": {
+            "description": "Identity of the inspected continuous shot used to determine guide dependencies.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Shot",
+            "type": "string"
+          },
+          "step": {
+            "description": "Independent anchor or guided continuation in this shot.",
+            "discriminator": {
+              "mapping": {
+                "anchor": "#/$defs/SegmentRunAnchor",
+                "continuation": "#/$defs/SegmentRunContinuation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SegmentRunAnchor"
+              },
+              {
+                "$ref": "#/$defs/SegmentRunContinuation"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind",
+          "itemId",
+          "shot",
+          "step"
+        ],
+        "title": "SegmentRunGenerated",
+        "type": "object"
+      },
+      "SegmentRunPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Exact normalized working video whose entire frame range is delivered."
+          },
+          "fps": {
+            "description": "Integer frames per second of the normalized working video.",
+            "minimum": 1,
+            "title": "Fps",
+            "type": "integer"
+          },
+          "frameCount": {
+            "description": "Decoded frame count of the normalized working video.",
+            "minimum": 1,
+            "title": "Framecount",
+            "type": "integer"
+          },
+          "entries": {
+            "description": "Delivery intervals in source playback order.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "generated": "#/$defs/SegmentRunGenerated",
+                  "source": "#/$defs/SegmentRunSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SegmentRunSource"
+                },
+                {
+                  "$ref": "#/$defs/SegmentRunGenerated"
+                }
+              ]
+            },
+            "maxItems": 101,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "fps",
+          "frameCount",
+          "entries"
+        ],
+        "title": "SegmentRunPlan",
+        "type": "object"
+      },
+      "SegmentRunSource": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "source",
+            "description": "Retain these frames from the frozen working source.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind"
+        ],
+        "title": "SegmentRunSource",
         "type": "object"
       },
       "SelectionBox": {
@@ -15701,6 +16325,59 @@
         ],
         "title": "VoiceSelection",
         "type": "object"
+      },
+      "WorkflowClip": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Generation canvas node providing the raw video.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "inFrame": {
+            "description": "First retained frame in playback order.",
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Inframe",
+            "type": "integer"
+          },
+          "outFrame": {
+            "description": "Exclusive end of the retained frames.",
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Outframe",
+            "type": "integer"
+          },
+          "reverse": {
+            "default": false,
+            "description": "Reverse the raw window before keeping the selected frames.",
+            "title": "Reverse",
+            "type": "boolean"
+          },
+          "frameLimit": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional cap on the raw window before reversal.",
+            "title": "Framelimit"
+          }
+        },
+        "required": [
+          "itemId",
+          "inFrame",
+          "outFrame"
+        ],
+        "title": "WorkflowClip",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -15883,6 +16560,8 @@
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
             "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
+            "group.publishRun": "#/$defs/GroupPublishRunCommand",
+            "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
@@ -15931,6 +16610,12 @@
           },
           {
             "$ref": "#/$defs/CanvasCreateGenerationCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupSavePlanCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPublishRunCommand"
           },
           {
             "$ref": "#/$defs/CanvasShowCommand"
@@ -20227,6 +20912,20 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "higgsfield_model",
+              "higgsfield_key",
+              "higgsfield_output",
+              "higgsfield_parameters",
+              "higgsfield_mode",
+              "higgsfield_image",
+              "higgsfield_format",
+              "higgsfield_media_size",
+              "higgsfield_duration",
+              "higgsfield_reference_count",
+              "higgsfield_reference_changed",
+              "higgsfield_frames",
+              "higgsfield_references",
+              "higgsfield_prompt",
               "capability_unavailable",
               "capability_paused",
               "capability_connection_changed",
@@ -20519,6 +21218,8 @@
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
                 "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
+                "group.publishRun": "#/$defs/GroupPublishRunCommand",
+                "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
@@ -20567,6 +21268,12 @@
               },
               {
                 "$ref": "#/$defs/CanvasCreateGenerationCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupSavePlanCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPublishRunCommand"
               },
               {
                 "$ref": "#/$defs/CanvasShowCommand"
@@ -22417,6 +23124,60 @@
         "title": "GenerationSubmitCommand",
         "type": "object"
       },
+      "GroupAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "timelineItemId": {
+            "description": "Timeline canvas node receiving the assembled clips.",
+            "format": "uuid",
+            "title": "Timelineitemid",
+            "type": "string"
+          },
+          "outputItemId": {
+            "description": "Stable canvas node ID for the published video.",
+            "format": "uuid",
+            "title": "Outputitemid",
+            "type": "string"
+          },
+          "clips": {
+            "description": "Generated clips in assembly order.",
+            "items": {
+              "$ref": "#/$defs/WorkflowClip"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Clips",
+            "type": "array"
+          },
+          "requireTimelineGuides": {
+            "default": false,
+            "description": "Required for H3 segmented plans. A confirmed plan keeps its guide requirement when its assembly is edited.",
+            "title": "Requiretimelineguides",
+            "type": "boolean"
+          },
+          "guideExemptItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The only generation anchor that may omit a timeline guide. Omit this to require a guide on every clip.",
+            "title": "Guideexemptitemid"
+          }
+        },
+        "required": [
+          "timelineItemId",
+          "outputItemId",
+          "clips"
+        ],
+        "title": "GroupAssembly",
+        "type": "object"
+      },
       "GroupCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -22542,6 +23303,101 @@
             "description": "Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.",
             "title": "Autolayout"
           },
+          "runPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen plan assigned only by the Run publication command."
+          },
+          "draftRunPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable plan input from a published Run. Publish it before starting execution."
+          },
+          "runPlanItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Read-only canvas node showing the published plan.",
+            "title": "Runplanitemid"
+          },
+          "runDefinitionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Publication command ID identifying this frozen Run definition.",
+            "title": "Rundefinitionid"
+          },
+          "runPlanLocale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Language of the visible Run plan.",
+            "title": "Runplanlocale"
+          },
+          "runPlanNotes": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable notes accompanying the Run plan.",
+            "title": "Runplannotes"
+          },
+          "assembly": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GroupAssembly"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional frame-accurate assembly after the group generation run."
+          },
           "binding": {
             "$ref": "#/$defs/ContainerBinding",
             "description": "Business object displayed by this canvas item."
@@ -22564,6 +23420,211 @@
           "binding"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupPlanDraft": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "assembly": {
+              "clips": [
+                {
+                  "inFrame": 0,
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "outFrame": 24
+                }
+              ],
+              "outputItemId": "00000000-0000-0000-0000-000000000005",
+              "timelineItemId": "00000000-0000-0000-0000-000000000004"
+            },
+            "groupId": "00000000-0000-0000-0000-000000000001",
+            "plan": {
+              "entries": [
+                {
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "kind": "generated",
+                  "shot": "opening",
+                  "sourceEnd": 24,
+                  "sourceStart": 0,
+                  "step": {
+                    "kind": "anchor"
+                  }
+                }
+              ],
+              "fps": 24,
+              "frameCount": 24,
+              "source": {
+                "assetId": "00000000-0000-0000-0000-000000000002",
+                "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "video",
+                "revision": 1
+              }
+            }
+          }
+        ],
+        "properties": {
+          "groupId": {
+            "description": "Canvas group holding the draft.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/$defs/SegmentRunPlan",
+            "description": "Segment intervals in source order."
+          },
+          "assembly": {
+            "$ref": "#/$defs/GroupAssembly",
+            "description": "Retained frames for the generated intervals."
+          },
+          "planLocale": {
+            "default": "zh-CN",
+            "description": "Language of the published plan.",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Planlocale",
+            "type": "string"
+          },
+          "planNotes": {
+            "default": "",
+            "description": "Notes accompanying the plan.",
+            "maxLength": 16000,
+            "title": "Plannotes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "plan",
+          "assembly",
+          "planLocale",
+          "planNotes"
+        ],
+        "title": "GroupPlanDraft",
+        "type": "object"
+      },
+      "GroupPublishRunCommand": {
+        "additionalProperties": false,
+        "description": "Publish the segment plan as a Markdown canvas node.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.publishRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Publish the segment plan as a Markdown canvas node."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupPublishRunCommand",
+        "type": "object"
+      },
+      "GroupSavePlanCommand": {
+        "additionalProperties": false,
+        "description": "Save a draft segment plan.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.saveRunPlan",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Save a draft segment plan."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupSavePlanCommand",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -23701,6 +24762,48 @@
             "minimum": 0,
             "title": "Videobytes",
             "type": "integer"
+          },
+          "audioBytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum bytes per reference audio; omitted preserves the existing request budget.",
+            "title": "Audiobytes"
+          },
+          "referenceMediaMinSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum duration of each reference video or audio clip.",
+            "title": "Referencemediaminseconds"
+          },
+          "referenceMediaSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum total reference duration, applied separately to video and audio.",
+            "title": "Referencemediaseconds"
           },
           "requestBytes": {
             "description": "Maximum aggregate reference bytes per request.",
@@ -25431,6 +26534,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -25606,6 +26710,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -25773,6 +26878,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -25907,6 +27013,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
               "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
@@ -28226,6 +29333,214 @@
           "inputFingerprint"
         ],
         "title": "ResultVersion",
+        "type": "object"
+      },
+      "SegmentRunAnchor": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "anchor",
+            "description": "One independent generation anchor in the declared source shot.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "SegmentRunAnchor",
+        "type": "object"
+      },
+      "SegmentRunContinuation": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "continuation",
+            "description": "Generation requires the selected upstream result as a guide.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "upstreamItemId": {
+            "description": "Generation node providing the raw guide frames.",
+            "format": "uuid",
+            "title": "Upstreamitemid",
+            "type": "string"
+          },
+          "sourceFrames": {
+            "description": "Two distinct indices into the raw upstream result for destination frames 0 and 21, in that order.",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              }
+            ],
+            "title": "Sourceframes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "upstreamItemId",
+          "sourceFrames"
+        ],
+        "title": "SegmentRunContinuation",
+        "type": "object"
+      },
+      "SegmentRunGenerated": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "generated",
+            "description": "Use the retained result from a generation step.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Generation canvas node that provides the result.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "shot": {
+            "description": "Identity of the inspected continuous shot used to determine guide dependencies.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Shot",
+            "type": "string"
+          },
+          "step": {
+            "description": "Independent anchor or guided continuation in this shot.",
+            "discriminator": {
+              "mapping": {
+                "anchor": "#/$defs/SegmentRunAnchor",
+                "continuation": "#/$defs/SegmentRunContinuation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SegmentRunAnchor"
+              },
+              {
+                "$ref": "#/$defs/SegmentRunContinuation"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind",
+          "itemId",
+          "shot",
+          "step"
+        ],
+        "title": "SegmentRunGenerated",
+        "type": "object"
+      },
+      "SegmentRunPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Exact normalized working video whose entire frame range is delivered."
+          },
+          "fps": {
+            "description": "Integer frames per second of the normalized working video.",
+            "minimum": 1,
+            "title": "Fps",
+            "type": "integer"
+          },
+          "frameCount": {
+            "description": "Decoded frame count of the normalized working video.",
+            "minimum": 1,
+            "title": "Framecount",
+            "type": "integer"
+          },
+          "entries": {
+            "description": "Delivery intervals in source playback order.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "generated": "#/$defs/SegmentRunGenerated",
+                  "source": "#/$defs/SegmentRunSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SegmentRunSource"
+                },
+                {
+                  "$ref": "#/$defs/SegmentRunGenerated"
+                }
+              ]
+            },
+            "maxItems": 101,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "fps",
+          "frameCount",
+          "entries"
+        ],
+        "title": "SegmentRunPlan",
+        "type": "object"
+      },
+      "SegmentRunSource": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "source",
+            "description": "Retain these frames from the frozen working source.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind"
+        ],
+        "title": "SegmentRunSource",
         "type": "object"
       },
       "SelectionBox": {
@@ -32482,6 +33797,61 @@
         ],
         "title": "VoiceSelection",
         "type": "object"
+      },
+      "WorkflowClip": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Generation canvas node providing the raw video.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "inFrame": {
+            "description": "First retained frame in playback order.",
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Inframe",
+            "type": "integer"
+          },
+          "outFrame": {
+            "description": "Exclusive end of the retained frames.",
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Outframe",
+            "type": "integer"
+          },
+          "reverse": {
+            "default": false,
+            "description": "Reverse the raw window before keeping the selected frames.",
+            "title": "Reverse",
+            "type": "boolean"
+          },
+          "frameLimit": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional cap on the raw window before reversal.",
+            "title": "Framelimit"
+          }
+        },
+        "required": [
+          "itemId",
+          "inFrame",
+          "outFrame",
+          "reverse",
+          "frameLimit"
+        ],
+        "title": "WorkflowClip",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -32664,6 +34034,8 @@
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
             "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
+            "group.publishRun": "#/$defs/GroupPublishRunCommand",
+            "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
@@ -32712,6 +34084,12 @@
           },
           {
             "$ref": "#/$defs/CanvasCreateGenerationCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupSavePlanCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPublishRunCommand"
           },
           {
             "$ref": "#/$defs/CanvasShowCommand"

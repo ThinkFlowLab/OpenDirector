@@ -58,6 +58,7 @@ GROUP_HELP = {
     "result": "Select a generated result for adoption.",
     "editor": "Create and save editable media documents.",
     "timeline": "Discover resources for editable timelines.",
+    "group": "Save and publish segment run plans.",
     "history": "Undo or redo reversible project operations.",
     "creation": "Apply multiple project operations atomically.",
 }

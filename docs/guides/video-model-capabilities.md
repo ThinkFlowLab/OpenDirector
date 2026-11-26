@@ -67,6 +67,8 @@ Protocol references: [create task](https://platform.minimax.cn/docs/api-referenc
 
 ## Providers and per-model settings
 
+Higgsfield Open supports `sand/magi-2` through one video connection: text, first/last frames and mixed image/video/audio references. Output is 1080p at 4–30 seconds with optional generated audio. See the [MAGI-2 guide](higgsfield-magi-2.md) for setup, input limits and recovery.
+
 Kling 4.0 uses the separate `kling_video` protocol and picks the official submit path for text, first/last frames and image references, sharing the existing task query, recovery and result-adoption flow. Its fixed capabilities are published by the backend. `kling-4.0` supports 720P / 1080P, 3–30 seconds and first/last frames; `kling-4.0-flash` supports 720P, 3–20 seconds and a first frame, without a last frame. Both models support image references and native audio, and do not accept custom pixel sizes. Setup and input limits are in the [English guide](kling-video.md) and the [Chinese guide](kling-video.zh-CN.md).
 
 MiniMax official video offers four models; adding a service selects all of them by default, and they become active after saving. Editing an existing service keeps the previous selection. Standard H3 supports 768P / 2K and 4–15 seconds; Highspeed and Lite support 480P / 768P and 4–15 seconds; Max supports 480P / 768P and 5–15 seconds. Output tiers and durations are validated per model by the backend.

@@ -1,5 +1,7 @@
 /** Shared validation and storage errors. */
 export const errors = {
+  "errors.generationFailure.higgsfieldAccount": "原请求的 Higgsfield API Key ID 已变化，请恢复原连接后再恢复任务。",
+  "errors.rules.referenceDuration": "参考视频和音频每段须为 {minimum}–{maximum} 秒，同类素材总时长不能超过 {maximum} 秒。",
   "errors.rules.imageQualityUnsupported": "当前模型不支持所选图片质量，请选择自动或切换模型。",
   "errors.generationFailure.policy": "供应商因内容政策拒绝了提示词或参考图片，请调整输入后再生成。",
   "errors.archive.identityConflict":

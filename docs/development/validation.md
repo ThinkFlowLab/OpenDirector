@@ -512,6 +512,10 @@ Local visible-Chrome test: upload `IMG_8066.HEIC` through the system file picker
 
 `browser-image` also supplies the pixel dimensions for cropping, masks and image editing, so this patch does not impose a 2048-pixel limit on that shared route. A bounded display rendition must be separate from editing inputs. The first full-resolution PNG transfer remains about 14 MB. Other platforms, HDR accuracy and the full Python suite were not revalidated.
 
+MAGI-2 protocol checks use `python -m pytest tests/test_higgsfield_open.py -q`. For its bilingual browser workflow, start `python tests/browser/higgsfield_server.py --port 8504`, run Vite with `OPENDIRECTOR_API_URL=http://127.0.0.1:8504 npm run dev -- --port 5504`, and run `node tests/browser/higgsfield_open.mjs`. The fixture creates an isolated temporary project directory and uses the actual upload/generation adapter with mocked HTTP. It checks all three routes, mixed media, output adoption, reload and MP3 rejection. Screenshots and a JSON receipt are written to `output/playwright/higgsfield` or `CREATION_SCREENSHOTS`.
+
+MAGI-2 协议测试命令为 `python -m pytest tests/test_higgsfield_open.py -q`。双语浏览器检查使用上述独立服务和命令，验证真实适配器发送的请求与工程保存结果，供应商 HTTP 由模拟服务代替。检查不调用真实模型，不证明账户权限、计费或生成质量。真实验收需另行记录实际提交、查询、下载、采用和远端任务编号，不保存密钥。
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh

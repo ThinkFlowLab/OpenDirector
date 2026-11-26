@@ -1,5 +1,6 @@
 """Probe uploaded/generated media using a bounded local ffprobe process."""
 
+from fractions import Fraction
 import json
 import math
 from pathlib import Path
@@ -88,3 +89,22 @@ def probe_file(file: Path, kind: str, *, include_container=False, include_codecs
         return {**common, "sampleRate": int(stream["sample_rate"]), "channels": stream["channels"]}
     except (subprocess.SubprocessError, ValueError, TypeError, KeyError, StopIteration, OverflowError):
         raise ProjectError("无法读取视频或音频，请检查文件格式及完整性。") from None
+
+
+
+def count_video_frames(path: Path, *, fps: int) -> int:
+    require_ffprobe()
+    try:
+        output = subprocess.run(
+            ['ffprobe', '-v', 'error', '-protocol_whitelist', 'file,pipe',
+             '-select_streams', 'v:0', '-count_frames', '-show_entries',
+             'stream=avg_frame_rate,nb_read_frames', '-of', 'json', str(path)],
+            check=True, capture_output=True, timeout=90,
+        )
+        stream = json.loads(output.stdout)['streams'][0]
+        count = int(stream['nb_read_frames'])
+        if Fraction(stream['avg_frame_rate']) == fps and count > 0:
+            return count
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, KeyError, IndexError, ValueError, ZeroDivisionError):
+        raise ProjectError('无法核对源片的帧数或帧率。', 409, code='reference_invalid') from None
+    raise ProjectError('计划帧率与实际源片不一致。', 409, code='reference_invalid')

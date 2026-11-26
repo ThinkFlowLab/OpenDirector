@@ -1,53 +1,14 @@
-.cw-edit-handoff {
-  position: fixed;
-  z-index: 1200;
-  top: 76px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: max-content;
-  max-width: calc(100% - 32px);
-  padding: 6px 8px;
-  border: 1px solid var(--cw-border, #ffffff20);
-  border-radius: 10px;
-  background: var(--cw-surface, #202022);
-  color: #ededee;
-  box-shadow: 0 4px 16px #0002;
-}
-
-.cw-edit-handoff button,
 .cw-edit-request {
   cursor: pointer;
   color: inherit;
-}
-
-.cw-edit-handoff button {
-  padding: 4px 8px;
-  background: transparent;
-  border: 1px solid var(--cw-border, #ffffff20);
-  border-radius: 6px;
-}
-
-.cw-edit-request {
   font-size: 12px;
   white-space: nowrap;
-}
-
-:root[data-theme="light"] .cw-edit-handoff {
-  --cw-surface: #fff;
-  --cw-border: #dfe2e7;
-  color: #24262a;
-}
-
-.cw-preview-selection-controls {
-  display: contents;
-}
-
-.cw-edit-request {
   background: transparent;
   border: 1px solid var(--cw-border);
   border-radius: 6px;
   padding: 4px 8px;
+}
+
+.cw-preview-selection-controls {
+  display: contents;
 }

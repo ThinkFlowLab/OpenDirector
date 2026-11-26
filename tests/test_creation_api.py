@@ -2,6 +2,7 @@ from itertools import combinations
 from legacy_fixtures import legacy_project
 from uuid import uuid4
 import shutil
+import subprocess
 
 from fastapi.testclient import TestClient
 import pytest
@@ -539,3 +540,105 @@ def test_run_layout_rejects_unrepresentable_placement(api):
     assert receipt['status'] == 'rejected', receipt
     assert receipt['issues'][0]['code'] == 'canvas_run_layout_extent'
     assert client.get(path).json() == before
+
+
+def test_publish_segment_plan_persists_a_read_only_card(api, tmp_path):
+    client, _ = api
+    path, created, _ = create(client, 'Segment plan')
+    project_id = created['projectId']
+    assert client.post(path + '/open').is_success
+    source_path = tmp_path / 'source.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=s=64x64:r=24',
+         '-frames:v', '24', '-c:v', 'mpeg4', str(source_path)], check=True)
+    handle = str(uuid4())
+    assert client.put(f'{path}/uploads/{handle}', content=source_path.read_bytes(),
+                      headers={'X-Asset-Name': 'source.mp4'}).is_success
+    imported = _layout_command(client, path, project_id, 'asset.import',
+                               dict(uploadHandle=handle, name='source.mp4', expectedKind='video'))
+    asset = client.get(f'{path}/assets/{imported["changed"][0]["id"]}').json()
+    source = dict(assetId=asset['id'], revision=asset['revision'], fingerprint=asset['fingerprint'], kind='video')
+
+    group = _show_layout_item(project_id, 'group', title='Replacement')
+    group_id = _layout_item_id(group)
+    spec_id = str(uuid4())
+    segment = _show_layout_item(project_id, 'video', title='First segment', parentId=group_id,
+                                binding=dict(role='generation', objectRef=dict(id=spec_id)))
+    segment_id = _layout_item_id(segment)
+    timeline_id = str(uuid4())
+    timeline = _show_layout_item(project_id, 'timeline', title='Timeline', parentId=group_id,
+                                 binding=dict(role='editor', objectRef=dict(id=timeline_id, kind='timeline')))
+    operations = [
+        group,
+        dict(type='generationSpec.create', payload=dict(spec=dict(
+            id=spec_id, projectId=project_id, kind='video', purpose='generation'))),
+        segment,
+        dict(type='editor.create', payload=dict(document=dict(
+            id=timeline_id, projectId=project_id, kind='timeline',
+            data=dict(fps=24, width=64, height=64, tracks=[dict(id='visual', kind='visual', title='Visual')])))),
+        timeline,
+    ]
+    _layout_command(client, path, project_id, 'creation.batch', dict(operations=operations))
+    payload = dict(groupId=group_id, planLocale='en-US', planNotes='Keep the final half.',
+                   plan=dict(source=source, fps=24, frameCount=24, entries=[
+                       dict(kind='generated', sourceStart=0, sourceEnd=12, itemId=segment_id, shot='first',
+                            step=dict(kind='anchor')),
+                       dict(kind='source', sourceStart=12, sourceEnd=24),
+                   ]),
+                   assembly=dict(timelineItemId=_layout_item_id(timeline), outputItemId=str(uuid4()),
+                                 clips=[dict(itemId=segment_id, inFrame=0, outFrame=12)]))
+    version = dict(objectType='canvas_item', id=group_id, revision=1)
+    _layout_command(client, path, project_id, 'group.saveRunPlan', payload, expected_versions=[version])
+    saved = _canvas_items(client.get(path).json())
+    assert saved[group_id]['draftRunPlan']['source'] == source
+    assert 'runPlanItemId' not in saved[group_id]
+
+    publication = dict(type='group.publishRun', commandId=str(uuid4()), projectId=project_id, payload=payload,
+                       expectedVersions=[dict(version, revision=saved[group_id]['revision'])])
+    wrong_count = {**payload['plan'], 'frameCount': 25, 'entries': [
+        payload['plan']['entries'][0], {'kind': 'source', 'sourceStart': 12, 'sourceEnd': 25},
+    ]}
+    invalid = client.post(f'{path}/commands', json={**publication, 'commandId': str(uuid4()),
+                          'payload': {**payload, 'plan': wrong_count}})
+    assert invalid.status_code == 409 and invalid.json()['code'] == 'reference_invalid'
+    assert 'runPlanItemId' not in _canvas_items(client.get(path).json())[group_id]
+
+    response = client.post(f'{path}/commands', json=publication)
+    assert response.is_success and response.json()['status'] == 'applied', response.text
+    assert response.json()['jobIds'] == []
+    assert client.post(f'{path}/commands', json=publication).json() == response.json()
+    published = _canvas_items(client.post(f'{path}/open').json())
+    card = published[published[group_id]['runPlanItemId']]
+    assert card['locked'] and card['parentId'] == group_id
+    markdown = client.get(f'{path}/assets/{card["binding"]["objectRef"]["assetId"]}/content')
+    assert markdown.is_success and '| Source frames |' in markdown.text
+    assert 'First segment' in markdown.text and 'Keep the final half.' in markdown.text
+    _layout_command(client, path, project_id, 'canvas.update', dict(itemId=card['id'], locked=False),
+                    expected_versions=[dict(objectType='canvas_item', id=card['id'], revision=card['revision'])],
+                    status='rejected')
+
+
+def test_canvas_owner_survives_expiry_and_server_restart_until_takeover(api, monkeypatch):
+    from opendirector.infrastructure import local_projects
+
+    client, local = api
+    path, command, _ = create(client)
+    owner = client.headers['x-opendirector-session']
+    preview = str(uuid4())
+    allow_preview = {'X-OpenDirector-Allow-Preview': 'true'}
+    opened = client.post(path + '/open-canvas', headers=allow_preview)
+    assert opened.json()['editing'] == {'mode': 'edit'}
+
+    clock = local_projects.time.time
+    future = clock() + LocalProjects.LEASE_SECONDS + 1
+    monkeypatch.setattr(local_projects.time, 'time', lambda: future)
+    restarted = LocalProjects(local.repository)
+    with TestClient(create_app(restarted), headers={'X-OpenDirector-Request': '1'}) as other:
+        viewer = {'X-OpenDirector-Session': preview}
+        editor = {'X-OpenDirector-Session': owner}
+        assert other.post(path + '/open-canvas', headers={**allow_preview, **viewer}).json()['editing'] == {'mode': 'preview'}
+        assert other.get(path + '/edit-session', headers=editor).json() == {'mode': 'edit'}
+        assert other.post(path + '/edit-session', headers=viewer).json() == {'mode': 'edit'}
+        assert other.get(path + '/edit-session', headers=editor).json() == {'mode': 'preview'}
+        assert other.post(path + '/commands', json=rename(command), headers=editor).status_code == 409
+        assert other.delete('/api/creation/sessions/' + preview).is_success
+        assert other.post(path + '/open-canvas', headers={**allow_preview, **editor}).json()['editing'] == {'mode': 'edit'}

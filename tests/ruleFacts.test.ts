@@ -12,6 +12,7 @@ import {
   effectiveVideoMode,
   generateAudioOptions,
   referenceByteLimit,
+  promptOptionalWithMedia,
   resolutionChoices,
 } from "../src/contracts/ruleFacts.generated.ts";
 import { assistant as enAssistant } from "../src/i18n/messages/en-US/assistant.ts";
@@ -25,6 +26,7 @@ const derivations = {
   effectiveVideoMode,
   generateAudioOptions,
   referenceByteLimit,
+  promptOptionalWithMedia,
 };
 
 function mentions(text: string, value: number) {

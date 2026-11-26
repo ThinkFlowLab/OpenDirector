@@ -72,6 +72,16 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
+    id: "higgsfield-open",
+    name: "Higgsfield Open",
+    kinds: ["video"],
+    url: "https://api.higgsfield.ai",
+    protocol: "higgsfield_open",
+    connectionType: "api",
+    authMode: "bearer",
+    modelsByKind: { video: ["sand/magi-2"] },
+  },
+  {
     id: "bigmodel-video",
     name: "智谱 BigModel 视频",
     logoOrganization: "zai-org",

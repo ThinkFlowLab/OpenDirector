@@ -15,7 +15,7 @@ from opendirector.domain.rule_facts import (
     CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
     MUSIC_SECONDS_INITIAL, MUSIC_SECONDS_MAX, MUSIC_SECONDS_MIN, PROMPT_MAX_LENGTH,
     REFERENCE_MEDIA_SECONDS, STORED_VOICE_PATTERN, TEXT_DEFAULT_MAX_TOKENS, TEXT_MAX_TOKENS,
-    duration_matches, effective_video_mode, generate_audio_options,
+    duration_matches, effective_video_mode, generate_audio_options, prompt_optional_with_media,
 )
 from .assets import AssetRef, MediaMetadata
 from .base import CanvasItemVersion, Contract, Digest, GenerationKind, NonNegative, ObjectVersion, PositiveInt, ProjectEntity, Revision, digest, unique
@@ -389,7 +389,11 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         raise ValueError('扒谱模型仅用于参照音乐生成，请选择音乐生成模型。')
     written = (any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)
                if spec.promptContent is not None else bool(spec.prompt.strip()))
-    if not written and not implicit_text_prompt(spec, references):
+    optional_prompt = prompt_optional_with_media({
+        'profile': model.inputRules.profile,
+        'hasMedia': any(ref.transmission != 'context_only' and ref.asset.kind in {'image', 'video', 'audio'} for ref in references),
+    })
+    if not written and not implicit_text_prompt(spec, references) and not optional_prompt:
         raise ValueError('请填写生成提示词。')
     rules = model.inputRules
     if rules.referencesAllowed is False and references:
@@ -415,7 +419,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if sum(ref.metadata.size for ref in transmitted) > rules.requestBytes:
         raise ValueError('参考素材总大小超过模型请求上限。')
     for ref in transmitted:
-        limit = rules.imageBytes if ref.asset.kind == 'image' else rules.videoBytes if ref.asset.kind == 'video' else rules.requestBytes
+        limit = (rules.imageBytes if ref.asset.kind == 'image' else rules.videoBytes if ref.asset.kind == 'video'
+                 else rules.audioBytes if ref.asset.kind == 'audio' and rules.audioBytes is not None else rules.requestBytes)
         if ref.metadata.size > limit:
             raise ValueError('参考文件超过模型的单文件大小限制。')
     kinds = [ref.asset.kind for ref in references if ref.transmission != 'context_only']
@@ -516,8 +521,12 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         # The control video is the output's timeline, not a reference clip; its own limit applies above.
         seconds = [ref.metadata.durationSeconds for ref in transmitted if ref.asset.kind == kind and ref.role != 'control']
         minimum = 2 if kind == 'audio' or rules.profile == 'minimax-h3-official' else 0
-        if any(value is None or value < minimum or value <= 0 for value in seconds) or sum(seconds) > REFERENCE_MEDIA_SECONDS:
+        minimum = rules.referenceMediaMinSeconds if rules.referenceMediaMinSeconds is not None else minimum
+        maximum = rules.referenceMediaSeconds if rules.referenceMediaSeconds is not None else REFERENCE_MEDIA_SECONDS
+        if any(value is None or value < minimum or value <= 0 for value in seconds) or sum(seconds) > maximum:
             label = '视频' if kind == 'video' else '音频'
+            if rules.referenceMediaSeconds is not None:
+                raise ProjectError('参考视频和音频每段须为 2–30 秒，同类素材总时长不能超过 30 秒。', 422, code='higgsfield_duration')
             raise ValueError(f'{label}参考的时长必须已知，且总时长不能超过 {REFERENCE_MEDIA_SECONDS} 秒。')
     if rules.profile == 'fasth3-omni' and sum(kind in {'image', 'video', 'audio'} for kind in kinds) > FASTH3_MEDIA_REFERENCE_LIMIT:
         raise ValueError(f'FastH3 最多支持 {FASTH3_MEDIA_REFERENCE_LIMIT} 个媒体参考。')
