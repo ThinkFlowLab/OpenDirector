@@ -897,6 +897,120 @@ def test_stop_during_the_run_then_a_failed_final_write_ends_once(finish_probe, a
     assert_project_released(client, path, tmp_path, finish_probe)
 
 
+@pytest.fixture
+def cancel_landed(monkeypatch):
+    """Wait until a chain task is cancelling, so a test never stops 'late' by guessing."""
+    chains = []
+    class RecordedChain(agent.Chain):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            chains.append(self)
+    monkeypatch.setattr(agent, 'Chain', RecordedChain)
+    def wait(timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if any(chain.task is not None and chain.task.cancelling() for chain in chains):
+                return True
+            time.sleep(0.005)
+        return False
+    return wait
+
+
+@pytest.mark.parametrize('write_fails', [True, False], ids=['write-fails', 'write-succeeds'])
+def test_stop_during_the_final_write_waits_for_its_outcome(
+        finish_probe, assistant, cancel_landed, monkeypatch, tmp_path, write_fails):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    writing, proceed = threading.Event(), threading.Event()
+    update = agent.Conversations.update
+    def blocking_update(self, *args, **kwargs):
+        if kwargs.get('finish') is not None:
+            writing.set()
+            assert proceed.wait(10)
+            if write_fails:
+                finish_probe.finishes += 1
+                raise OSError(28, 'No space left on device')
+        return update(self, *args, **kwargs)
+    monkeypatch.setattr(agent.Conversations, 'update', blocking_update)
+    turn_id = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+        assert writing.wait(5)
+        stopping = pool.submit(client.post, path + f'/turns/{turn_id}/stop')
+        assert cancel_landed()   # the cancel lands while the write is still in flight
+        proceed.set()
+        assert stopping.result(timeout=10).status_code == 200
+        events = frames(pending.result(timeout=10))
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0] and len(finish_probe.ends) == 1
+    if write_fails:
+        assert '回复未能保存' in ends[0]['error'] and ends[0]['conversation'] is None, ends[0]
+        assert client.get(path).json()['messages'][-1]['status'] == 'streaming'
+    else:
+        assert ends[0]['error'] is None and ends[0]['conversation']['messages'][-1]['status'] != 'streaming', ends[0]
+        assert client.get(path).json()['messages'][-1]['status'] != 'streaming'
+    assert finish_probe.finishes == 1, "the final write is not retried"
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_stop_during_a_successful_final_write_keeps_the_runtime_error(
+        finish_probe, assistant, cancel_landed, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    async def stream(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'delta', 'text': '已输出的部分回复'}
+        raise agent.ProjectError('模型额度已用尽', 429)
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    writing, proceed = threading.Event(), threading.Event()
+    update = agent.Conversations.update
+    def blocking_update(self, *args, **kwargs):
+        if kwargs.get('finish') is not None:
+            writing.set()
+            assert proceed.wait(10)
+        return update(self, *args, **kwargs)
+    monkeypatch.setattr(agent.Conversations, 'update', blocking_update)
+    turn_id = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+        assert writing.wait(5)
+        stopping = pool.submit(client.post, path + f'/turns/{turn_id}/stop')
+        assert cancel_landed()
+        proceed.set()
+        assert stopping.result(timeout=10).status_code == 200
+        events = frames(pending.result(timeout=10))
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0] and len(finish_probe.ends) == 1
+    assert '模型额度已用尽' in ends[0]['error'], ends[0]
+    assert ends[0]['conversation']['messages'][-1]['status'] != 'streaming'
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_stop_during_the_timing_write_still_releases_the_lease(
+        finish_probe, assistant, cancel_landed, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    timing, proceed = threading.Event(), threading.Event()
+    def blocking_write(*args):
+        timing.set()
+        proceed.wait(10)
+    monkeypatch.setattr(agent.agent_timing, 'write', blocking_write)
+    turn_id = str(uuid4())
+    try:
+        with ThreadPoolExecutor() as pool:
+            pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+            assert timing.wait(5)
+            stopping = pool.submit(client.post, path + f'/turns/{turn_id}/stop')
+            assert cancel_landed()
+            assert stopping.result(timeout=10).status_code == 200
+            events = frames(pending.result(timeout=10))
+            # The ledger is still blocked: the lease must not wait for it.
+            assert_project_released(client, path, tmp_path, finish_probe)
+    finally:
+        proceed.set()
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0] and len(finish_probe.ends) == 1
+
+
 def test_failed_final_write_does_not_start_a_queued_message(finish_probe, assistant, monkeypatch, tmp_path):
     client, path, _ = assistant
     started, release = threading.Event(), threading.Event()

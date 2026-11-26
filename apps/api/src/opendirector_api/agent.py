@@ -416,7 +416,7 @@ class Chain:
     task: asyncio.Task | None = None
     stopped: bool = False
     last: dict | None = None
-    unsaved: str | None = None  # why the latest reply could not be saved
+    unsaved: str | None = None  # the error this turn reports if the chain is cancelled
 
 
 def agent_routes(projects, generation, configs, provider=None, *, active=None) -> APIRouter:
@@ -731,13 +731,21 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             for activity in activities:
                 if activity['status'] == 'running':
                     activity['status'] = 'interrupted'
+            cancelled = False
             try:
-                saved = await asyncio.to_thread(conversations.update, project_id, finish={
+                # A Stop landing mid-write must not abandon the write unobserved:
+                # wait for its real outcome, then let the cancellation continue.
+                write = asyncio.ensure_future(asyncio.to_thread(conversations.update, project_id, finish={
                     'id': str(uuid5(turn_id, 'assistant')), 'role': 'assistant', 'text': text, 'status': status,
                     'model': plan['model'], 'modelIsCliDefault': plan.get('model_is_cli_default', False),
                     'runtime': message['runtime'], 'thinking': plan['thinking'], 'tools': activities,
                     'sources': list(sources.values()),
-                    **({'plan': steps} if steps is not None else {})}, conversation_id=chain.conversation_id)
+                    **({'plan': steps} if steps is not None else {})}, conversation_id=chain.conversation_id))
+                try:
+                    saved = await asyncio.shield(write)
+                except asyncio.CancelledError:
+                    cancelled = True
+                    saved = await write
             except Exception:
                 logger.exception(f'agent.turn.unfinished project_id={project_id} turn_id={turn_id}')
                 saved = None
@@ -754,21 +762,30 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             finally:
                 if renewal is not None:
                     renewal.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await renewal
+                    try:
+                        await asyncio.wait([renewal])
+                    except asyncio.CancelledError:
+                        cancelled = True
                 # Measurement and the lease are both best effort and independent:
                 # losing either may cost a file or a lock, never the turn's end.
                 try:
                     await asyncio.to_thread(agent_timing.write, plan['directory'], turn_id, timing,
                                             round(time.monotonic() - turn_started, 3))
+                except asyncio.CancelledError:
+                    cancelled = True   # stop waiting on the ledger, still release the lease
                 except Exception:
                     logger.exception(f'agent.turn.timing.failed project_id={project_id} turn_id={turn_id}')
                 try:
                     if plan.get('run_session'):
                         await asyncio.to_thread(projects.local.release_agent_session, plan['run_session'])
+                except asyncio.CancelledError:
+                    cancelled = True   # the release thread keeps running
                 except Exception:
                     logger.exception(f'agent.session.release.failed project_id={project_id} turn_id={turn_id}')
             chain.last = saved
+            if cancelled:
+                chain.unsaved = error   # run_chain reports this on the stopped end
+                raise asyncio.CancelledError
         return saved, error, status
 
     async def run_chain(chain: Chain, plan: dict) -> None:
