@@ -118,6 +118,12 @@
       "note": "First launch: assistant prerequisite, task-specific model setup and direct access to examples."
     },
     {
+      "file": "model_editor_hosts.mjs",
+      "previewSafe": true,
+      "lanes": ["gate"],
+      "note": "The model service editor keeps the shared control metrics, font and checkbox rows in the first-run host as well as in the settings dialog."
+    },
+    {
       "file": "canvas_crop.mjs",
       "previewSafe": true,
       "lanes": [

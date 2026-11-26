@@ -1,9 +1,5 @@
 /* OpenDirector's general/model settings layout, with OpenDirector model forms. */
 .cw-settings-dialog {
-  --settings-label-size: 14px;
-  --settings-control-size: 13px;
-  --settings-caption-size: 12px;
-  --settings-control-height: 36px;
   box-sizing: border-box;
   width: min(900px, calc(100vw - 32px));
   height: min(620px, calc(100dvh - 32px));
@@ -17,6 +13,16 @@
   color: var(--settings-text);
   background: var(--settings-background);
   box-shadow: 0 16px 60px #0005;
+}
+/* The model editor is also hosted outside the settings dialog (first-run
+   setup), so every shared metric, font and control rule below hangs off
+   both roots. */
+.cw-settings-dialog,
+.cw-model-editor {
+  --settings-label-size: 14px;
+  --settings-control-size: 13px;
+  --settings-caption-size: 12px;
+  --settings-control-height: 36px;
   font:
     13px Inter,
     -apple-system,
@@ -52,12 +58,12 @@
   flex-direction: column;
   gap: 4px;
 }
-.cw-settings-dialog button {
+:is(.cw-settings-dialog, .cw-model-editor) button {
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
-.cw-settings-dialog .cw-settings-button {
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -71,25 +77,25 @@
   color: var(--settings-text);
   line-height: 20px;
 }
-.cw-settings-dialog .cw-settings-button:hover:not(:disabled) {
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button:hover:not(:disabled) {
   background: var(--settings-hover);
 }
-.cw-settings-dialog .cw-settings-button-quiet,
-.cw-settings-dialog .cw-settings-button-icon {
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button-quiet,
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button-icon {
   border-color: transparent;
   background: transparent;
   color: var(--settings-muted);
 }
-.cw-settings-dialog .cw-settings-button-icon {
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button-icon {
   width: 36px;
   padding: 7px;
 }
-.cw-settings-dialog .cw-settings-button-primary {
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button-primary {
   border-color: var(--cw-control-accent);
   color: var(--cw-control-on-accent);
   background: var(--cw-control-accent);
 }
-.cw-settings-dialog .cw-settings-button-primary:hover:not(:disabled) {
+:is(.cw-settings-dialog, .cw-model-editor) .cw-settings-button-primary:hover:not(:disabled) {
   color: var(--cw-control-on-accent);
   background: var(--cw-control-accent-hover);
 }
@@ -178,7 +184,7 @@
   line-height: 20px;
   color: var(--settings-muted);
 }
-.cw-settings-dialog
+:is(.cw-settings-dialog, .cw-model-editor)
   :is(
     input:not([type="checkbox"], [type="radio"], [type="range"]),
     select,
@@ -195,7 +201,7 @@
   font-size: var(--settings-control-size);
   line-height: 20px;
 }
-.cw-settings-dialog :is(.cw-settings-field, .cw-model-connection) select {
+:is(.cw-settings-dialog, .cw-model-editor) :is(.cw-settings-field, .cw-model-connection) select {
   appearance: none;
   padding-right: 34px;
   overflow: hidden;
@@ -246,7 +252,7 @@
 .cw-settings-switch[aria-checked="true"] span {
   transform: translateX(14px);
 }
-.cw-settings-dialog button:disabled {
+:is(.cw-settings-dialog, .cw-model-editor) button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -318,7 +324,7 @@
   color: var(--settings-text);
   background: var(--settings-input);
 }
-.cw-settings-dialog input::placeholder {
+:is(.cw-settings-dialog, .cw-model-editor) input::placeholder {
   color: var(--settings-muted);
 }
 .cw-settings-dialog .cw-model-section button {

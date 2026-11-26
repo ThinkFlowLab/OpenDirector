@@ -211,6 +211,12 @@
 .cw-model-connection-field > label {
   margin-bottom: 0;
 }
+/* A checkbox leads its own label, so the pair reads as one row. */
+.cw-model-connection-field > label:has(> input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
 .cw-model-connection-field > .cw-model-note {
   margin-top: 4px;
 }
@@ -219,13 +225,15 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
 }
-.cw-model-connection :is(input, select) {
+/* The model editor is also hosted outside the settings dialog (first-run
+   setup), so its styling hangs off its own root instead of the dialog. */
+.cw-model-connection :is(input:not([type="checkbox"]), select) {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   min-height: var(--settings-control-height);
 }
-.cw-settings-dialog .cw-model-connection :is(input:not([type="checkbox"]), select):focus-visible {
+.cw-model-editor .cw-model-connection :is(input:not([type="checkbox"]), select):focus-visible {
   outline: none;
   border-color: var(--cw-control-accent);
   box-shadow: 0 0 0 1px var(--cw-control-accent);
@@ -248,10 +256,10 @@
   position: relative;
   display: flex;
 }
-.cw-settings-dialog .cw-model-settings .cw-model-key-input > input {
+.cw-model-editor .cw-model-key-input > input {
   padding-right: 52px;
 }
-.cw-settings-dialog .cw-model-key-input button {
+.cw-model-editor .cw-model-key-input button {
   position: absolute;
   right: 4px;
   top: 3px;
@@ -391,7 +399,7 @@
 .cw-model-option > label span {
   overflow-wrap: anywhere;
 }
-.cw-model-settings input[type="checkbox"] {
+.cw-model-editor input[type="checkbox"] {
   width: 14px;
   height: 14px;
   min-height: 0;
@@ -400,7 +408,7 @@
   accent-color: var(--cw-control-accent);
   cursor: pointer;
 }
-.cw-settings-dialog .cw-model-row-test {
+.cw-model-editor .cw-model-row-test {
   min-height: 28px;
   padding: 2px 6px;
   font-size: var(--settings-caption-size);

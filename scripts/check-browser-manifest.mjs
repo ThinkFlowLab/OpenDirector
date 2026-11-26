@@ -53,7 +53,12 @@ const FIXTURE_LANES = ["extendedFixture", "extendedHttpFixture"];
 const KNOWN_LANES = new Set(["gate", "extended", ...FIXTURE_LANES, "production", "perf", "manual"]);
 // Static harness pages do not open the workspace, so they do not see the welcome dialog.
 // These scenarios exercise the welcome dialog itself.
-const welcomeExempt = new Set(["assistant_activity.mjs", "bilingual_defaults.mjs", "first_run.mjs"]);
+const welcomeExempt = new Set([
+  "assistant_activity.mjs",
+  "bilingual_defaults.mjs",
+  "first_run.mjs",
+  "model_editor_hosts.mjs",
+]);
 for (const entry of entries) {
   const text = entry.file === undefined ? "" : fs.readFileSync(path.join(browserDir, entry.file), "utf8");
   const importsSrc = text.includes('"/src/');
