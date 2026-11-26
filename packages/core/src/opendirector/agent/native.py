@@ -133,7 +133,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     else:
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
-        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.5'}))
+        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.2.0'}))
         skill_root = work / '.agents/skills'
         skill_root.mkdir(parents=True, exist_ok=True)
         unlink_directory(plugin / 'skills')
