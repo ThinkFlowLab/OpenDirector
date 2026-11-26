@@ -104,15 +104,30 @@ class GenerationRuntime(ABC):
         cache = gateway().results(pinned, task['id'])
         trace_token = MODEL_JOB_CONTEXT.set((str(task['projectId']), str(task['id'])))
         async def save():
+            async def write_checkpoint():
+                try:
+                    await asyncio.to_thread(self.checkpoint, task['projectId'], dict(task), pinned)
+                except ProjectError as error:
+                    if error.code != 'revision_conflict':
+                        raise
+                    return error
+                return None
+
             # Cancelling to_thread does not stop the underlying write. Drain it
             # before saving the terminal state so an old running receipt cannot
             # overwrite a later cancellation.
-            pending = asyncio.create_task(asyncio.to_thread(self.checkpoint, task["projectId"], dict(task), pinned))
+            pending = asyncio.create_task(write_checkpoint())
             try:
-                await asyncio.shield(pending)
+                conflict = await asyncio.shield(pending)
             except asyncio.CancelledError:
-                await pending
+                conflict = await pending
+                # An accepted cancel advances the job revision. A stale
+                # checkpoint must not replace cancellation with failure.
+                if conflict is not None and task['id'] not in self.cancelled:
+                    raise conflict
                 raise
+            if conflict is not None:
+                raise conflict
 
         async def submitted(external_id):
             nonlocal stage

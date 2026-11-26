@@ -502,7 +502,9 @@ class CreationGeneration(GenerationRuntime):
             return current.model_copy(update={'jobs': tuple(updated if j.id == job.id else j for j in current.jobs)})
         receipt = self.projects.commit(command, apply, source='background')
         if receipt.status == 'rejected':
-            raise ProjectError('任务状态发生并发修改，请重新读取原任务。', 409)
+            code = 'revision_conflict' if receipt.issues and all(
+                issue.code == 'revision_conflict' for issue in receipt.issues) else None
+            raise ProjectError('任务状态发生并发修改，请重新读取原任务。', 409, code=code)
 
     def _result_asset(self, task, directory):
         job = self.get_job(task['projectId'], task['id'])

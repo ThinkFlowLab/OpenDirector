@@ -55,6 +55,11 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 
 - **Shared model catalog follow-up:** [Nightly run 45309310680](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45309310680/job/138160760923) reached the empty-video-selector test after an earlier script saved a video model. A new page still reads the shared server's catalog. For a UI test of an empty category, scope that catalog response to the test page and verify the flow with a model already present on the shared server.
 
+## A pending checkpoint can race with accepted cancellation
+
+- **Evidence:** The generation-feedback test in [Nightly run 45734069088](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45734069088/job/139622924333) timed out waiting for durable cancellation. Holding the initial running checkpoint until cancellation committed reproduced an accepted cancel that ended in `failed`.
+- **Check:** Drain the in-flight write and preserve explicit cancellation when that write loses its revision check. Verify the original job reaches `cancelled` and that the provider was never called when cancellation wins before submission.
+
 ## Canvas media readiness depends on the viewport
 
 - Browser checks that inspect a canvas image or video after reopening a project or placing a result should bring the target node into view first.
