@@ -5,10 +5,11 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { useReactFlow, useViewport } from "@xyflow/react";
+import { useReactFlow, useStore, useViewport } from "@xyflow/react";
 import type { Rect, Viewport } from "./model";
 import {
   centeredViewport,
+  projectSelectionRect,
   selectionPlacement,
   selectionViewport,
   type SelectionChrome,
@@ -45,6 +46,7 @@ export function useSelectionPresentation({
 }) {
   const flow = useReactFlow();
   const viewport = useViewport();
+  const canvas = useStore((state) => state.domNode);
   const measurementKey = JSON.stringify([
     nodeId,
     panel,
@@ -73,8 +75,12 @@ export function useSelectionPresentation({
     const measure = () => {
       const rect = host.getBoundingClientRect();
       const panels = [...host.querySelectorAll(".cw-side-panel,.cw-assistant-panel:not([hidden])")];
-      let left = rect.width < 700 ? 64 : 80;
-      let right = rect.width - 20;
+      const canvasRect = canvas?.getBoundingClientRect() ?? rect;
+      const canvasOrigin = { x: canvasRect.left - rect.left, y: canvasRect.top - rect.top };
+      const canvasLeft = canvasOrigin.x + (rect.width < 700 ? 64 : 80);
+      const canvasRight = Math.min(rect.right, canvasRect.right) - rect.left - 20;
+      let left = canvasLeft;
+      let right = canvasRight;
       for (const panel of panels) {
         const sidebar = panel.getBoundingClientRect();
         if (!panel.classList.contains("cw-assistant-panel") && sidebar.left - rect.left < rect.width / 2)
@@ -83,14 +89,16 @@ export function useSelectionPresentation({
       }
       const covered = right - left < 240;
       if (covered) {
-        left = rect.width < 700 ? 64 : 80;
-        right = rect.width - 20;
+        left = canvasLeft;
+        right = canvasRight;
       }
+      const top = Math.max(72, canvasOrigin.y);
+      const bottom = Math.min(rect.bottom - 78, canvasRect.bottom) - rect.top;
       const safe = {
         x: left,
-        y: 72,
+        y: top,
         width: Math.max(1, right - left),
-        height: Math.max(1, rect.height - 150),
+        height: Math.max(1, bottom - top),
       };
       const size = (element: HTMLDivElement | null, canvasUnits = false) => {
         const box = element?.getBoundingClientRect();
@@ -108,6 +116,7 @@ export function useSelectionPresentation({
         obscured: covered,
         chrome: {
           safe,
+          canvasOrigin,
           toolbar: size(toolbar.current),
           composer: size(composer.current, scaleComposer),
           scaleComposer,
@@ -119,12 +128,13 @@ export function useSelectionPresentation({
     };
     const observer = new ResizeObserver(measure);
     observer.observe(host);
+    if (canvas) observer.observe(canvas);
     if (toolbar.current) observer.observe(toolbar.current);
     if (composer.current) observer.observe(composer.current);
     for (const panel of host.querySelectorAll(".cw-side-panel,.cw-assistant-panel:not([hidden])")) observer.observe(panel);
     measure();
     return () => observer.disconnect();
-  }, [root, toolbar, composer, measurementKey, scaleComposer]);
+  }, [root, canvas, toolbar, composer, measurementKey, scaleComposer]);
 
   const lastLayout = useRef("");
   const origin = useRef<{ key: string; viewport: Viewport } | null>(null);
@@ -207,6 +217,9 @@ export function useSelectionPresentation({
   const placement = bounds
     ? selectionPlacement(bounds, viewport, chrome)
     : null;
+  const media = mediaBounds
+    ? projectSelectionRect(mediaBounds, viewport, chrome.canvasOrigin)
+    : null;
   return {
     userNavigation: () => {
       stopPresentation();
@@ -216,12 +229,10 @@ export function useSelectionPresentation({
       if (!bounds || obscured || !chrome.safe.width) return;
       const view = { ...flow.getViewport(), zoom: maxZoom };
       // The explicit Fit command may enlarge; normal selection only contains.
-      const center = {
-        x: chrome.safe.x + chrome.safe.width / 2,
-        y: chrome.safe.y + chrome.safe.height / 2,
-      };
-      view.x = center.x - (bounds.x + bounds.width / 2) * maxZoom;
-      view.y = center.y - (bounds.y + bounds.height / 2) * maxZoom;
+      view.x = chrome.safe.x + chrome.safe.width / 2 -
+        (bounds.x + bounds.width / 2) * maxZoom - (chrome.canvasOrigin?.x ?? 0);
+      view.y = chrome.safe.y + chrome.safe.height / 2 -
+        (bounds.y + bounds.height / 2) * maxZoom - (chrome.canvasOrigin?.y ?? 0);
       origin.current = {
         key: JSON.stringify([nodeId, focusRequest, panel]),
         viewport: view,
@@ -231,16 +242,16 @@ export function useSelectionPresentation({
     reveal: (bounds: Rect) => {
       if (obscured || !chrome.safe.width) return;
       present(centeredViewport(bounds, flow.getViewport(), {
-        safe: chrome.safe, toolbar: { width: 0, height: 0 }, composer: { width: 0, height: 0 },
+        safe: chrome.safe, canvasOrigin: chrome.canvasOrigin, toolbar: { width: 0, height: 0 }, composer: { width: 0, height: 0 },
       }));
     },
     placement,
-    mediaRect: mediaBounds
+    mediaRect: media
       ? {
-          left: mediaBounds.x * viewport.zoom + viewport.x + viewport.zoom,
-          top: mediaBounds.y * viewport.zoom + viewport.y + viewport.zoom,
-          width: (mediaBounds.width - 2) * viewport.zoom,
-          height: (mediaBounds.height - 2) * viewport.zoom,
+          left: media.x + viewport.zoom,
+          top: media.y + viewport.zoom,
+          width: media.width - 2 * viewport.zoom,
+          height: media.height - 2 * viewport.zoom,
         }
       : null,
     visible: Boolean(placement?.visible) && !obscured,

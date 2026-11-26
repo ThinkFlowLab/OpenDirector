@@ -35,6 +35,7 @@ const workflows = [
   { name: "new model discovery", script: "tests/browser/new_model_discovery.mjs" },
   { name: "Zhipu model settings feedback", script: "tests/browser/zhipu_provider.mjs" },
   { name: "capability discovery", script: "tests/browser/capability_discovery.mjs" },
+  { name: "canvas composer placement", script: "tests/browser/canvas_composer_placement.mjs" },
   { name: "created node focus", script: "tests/browser/created_node_focus.mjs" },
   { name: "cross canvas paste", script: "tests/browser/cross_canvas_paste.mjs" },
   { name: "reference reconnect", script: "tests/browser/reference_reconnect.mjs" },

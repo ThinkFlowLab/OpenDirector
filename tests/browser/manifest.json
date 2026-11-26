@@ -240,6 +240,12 @@
       ]
     },
     {
+      "file": "canvas_composer_placement.mjs",
+      "lanes": [
+        "gate"
+      ]
+    },
+    {
       "file": "created_node_focus.mjs",
       "lanes": [
         "gate"
