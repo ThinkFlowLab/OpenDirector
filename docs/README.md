@@ -18,6 +18,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [CI layer assessment](development/ci-layer-assessment.md) | Timing evidence, critical PR representatives and staged Python classification | Measured evidence or classification decisions change |
 | [Issue #87 Windows handoff](development/issue-87-windows-handoff.md) ([中文](development/issue-87-windows-handoff.zh-CN.md)) | Native ACL repair and final text acceptance | The shared checkpoint or native validation scope changes |
 | [Development lessons](development/lessons.md) | Risks identified from recent fixes | New evidence emerges or a lesson no longer applies |
+| [Mid-turn messages](development/midturn-message.md) | Design record: why a supplementary message was refused during a turn, the alternatives weighed, and the queued-delivery rules now in place | A design trade-off changes; behaviour semantics live in the agent runtime page |
 | [CI failure patterns](development/ci-failures.md) | Known timing-sensitive CI failures and how to tell flakes from regressions | A pattern is fixed, newly observed, or the watchlist changes |
 | [Public website](../website/README.md) | Local preview, installer links, and GitHub Pages deployment | Website deployment or installer publishing changes |
 | [Release tags and daily cuts](development/release.md) | Public SemVer tags and the daily patch cut | The tag scheme, daily cut gate, or version-field set changes |
