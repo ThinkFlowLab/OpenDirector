@@ -1,4 +1,5 @@
 """Shared input contract for SDK, CLI and service-backed runtimes."""
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +28,8 @@ class RunContext:
     thinking: str = 'auto'
     runtime_model: str | None = None
     skills: list[dict[str, str]] = field(default_factory=list)
+    # Text handed to a runtime that can reach the model inside a running turn.
+    steer: asyncio.Queue[str] | None = None
 
     def native_session_path(self) -> Path | None:
         if self.conversation_id is None:

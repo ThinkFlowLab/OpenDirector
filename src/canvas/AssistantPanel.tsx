@@ -511,6 +511,42 @@ export function AssistantPanel({
               </a>
             )}
             {message.role === "user" && !!message.assets?.length && <AttachmentStrip projectId={documentId} assets={message.assets.map(resolveAsset)} />}
+            {message.status === "queued" && (
+              <small className="cw-assistant-message-status">
+                {t("assistant.panel.queued", {
+                  position:
+                    value.messages
+                      .filter((item) => item.status === "queued")
+                      .findIndex((item) => item.id === message.id) + 1,
+                })}
+                <button
+                  type="button"
+                  className="cw-assistant-message-action"
+                  title={t("assistant.panel.retractHint")}
+                  onClick={() => void chat.retract(message.id)}
+                >
+                  {t("assistant.panel.retract")}
+                </button>
+              </small>
+            )}
+            {message.status === "inserted" && (
+              <small className="cw-assistant-message-status">
+                {t("assistant.panel.inserted")}
+              </small>
+            )}
+            {message.status === "cancelled" && (
+              <small className="cw-assistant-message-status">
+                {t("assistant.panel.cancelled")}
+                <button
+                  type="button"
+                  className="cw-assistant-message-action"
+                  title={t("assistant.panel.refillHint")}
+                  onClick={() => chat.refill(message)}
+                >
+                  {t("assistant.panel.refill")}
+                </button>
+              </small>
+            )}
             {(message.status === "stopped" ||
               message.status === "interrupted") && (
               <small className="cw-assistant-message-status">
@@ -549,6 +585,25 @@ export function AssistantPanel({
             </button>
           </div>
         )}
+        {!chat.sending &&
+          value.messages.some((message) => message.status === "queued") && (
+            <div className="cw-assistant-queue-banner" role="status">
+              <span>
+                {t("assistant.panel.waiting", {
+                  count: value.messages.filter(
+                    (message) => message.status === "queued",
+                  ).length,
+                })}
+              </span>
+              <button
+                type="button"
+                onClick={() => void chat.proceed()}
+                disabled={!chat.canSend}
+              >
+                {t("assistant.panel.proceed")}
+              </button>
+            </div>
+          )}
         <form
           className="cw-assistant-composer"
           aria-label={t("assistant.panel.composer")}
@@ -696,7 +751,10 @@ export function AssistantPanel({
             onSubmit={() => {
               nearBottom.current = true;
               pendingReferences.cancel();
-              void chat.send();
+              // Enter reaches the running reply when the runtime can take it;
+              // otherwise it queues behind that reply.
+              if (chat.sending && chat.steerable) void chat.insert();
+              else void chat.send();
             }}
           />
           <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />
@@ -750,10 +808,10 @@ export function AssistantPanel({
               onConfigure={onOpenSettings}
             />
             <div className="cw-assistant-toolbar-spacer" />
-            {chat.sending ? (
+            {chat.sending && (
               <button
                 type="button"
-                className="cw-assistant-send"
+                className="cw-assistant-send is-stop"
                 aria-label={t("assistant.panel.stop")}
                 title={t("assistant.panel.stop")}
                 disabled={!chat.started || chat.stopping}
@@ -761,17 +819,35 @@ export function AssistantPanel({
               >
                 <CanvasIcon name="stop" size={16} />
               </button>
-            ) : (
+            )}
+            {chat.sending && (
               <button
-                type="submit"
-                className="cw-assistant-send"
-                aria-label={t("assistant.panel.send")}
-                title={t("assistant.panel.send")}
+                type="button"
+                className="cw-assistant-queue-button"
+                title={t("assistant.panel.queueHint")}
                 disabled={!chat.canSend || locked || !value.draft.trim()}
+                onClick={() => void chat.send()}
               >
-                <CanvasIcon name="arrow" size={19} />
+                {t("assistant.panel.queueShort")}
               </button>
             )}
+            <button
+              type="submit"
+              className="cw-assistant-send"
+              aria-label={chat.sending
+                ? chat.steerable
+                  ? t("assistant.panel.insert")
+                  : t("assistant.panel.queue")
+                : t("assistant.panel.send")}
+              title={chat.sending
+                ? chat.steerable
+                  ? t("assistant.panel.insertHint")
+                  : t("assistant.panel.queueHint")
+                : t("assistant.panel.send")}
+              disabled={!chat.canSend || locked || !value.draft.trim()}
+            >
+              <CanvasIcon name="arrow" size={19} />
+            </button>
           </div>
         </form>
         <div className="cw-assistant-footnote">
@@ -795,6 +871,13 @@ export function AssistantPanel({
           ) : (
             `${chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.label ?? t("assistant.panel.chooseAgent")}`
           )}
+        {chat.sending && !!value.draft.trim() && (
+          <span className="cw-assistant-queue-hint">
+            {chat.steerable
+              ? t("assistant.panel.insertWhileRunning")
+              : t("assistant.panel.queueWhileRunning")}
+          </span>
+        )}
         {latestTrace && (
             <a className="cw-assistant-trace-link cw-assistant-live-trace"
               href={`/?${latestTrace}`} target="_blank" rel="noopener noreferrer">
