@@ -17,6 +17,7 @@ export function EditorModal({
   error,
   className = "",
   actions,
+  headerAction,
 }: {
   title: string;
   subtitle: string;
@@ -28,6 +29,7 @@ export function EditorModal({
   error?: string;
   className?: string;
   actions?: ReactNode;
+  headerAction?: ReactNode;
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null),
@@ -103,6 +105,7 @@ export function EditorModal({
             <h2 id={id}>{title}</h2>
             <p>{subtitle}</p>
           </div>
+          {headerAction}
           <button onClick={onClose} aria-label={t("editors.modal.closeAria")}>
             <CanvasIcon name="close" />
           </button>

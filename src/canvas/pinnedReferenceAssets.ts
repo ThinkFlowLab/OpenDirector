@@ -1,5 +1,17 @@
-import type { ProjectSnapshot } from "../contracts/generated.ts";
+import type { Asset, ProjectSnapshot } from "../contracts/generated.ts";
 import type { ReferenceAsset } from "./chatReferenceContent.ts";
+
+export function pinnedReferenceAsset(asset: Asset): ReferenceAsset {
+  return {
+    id: asset.id,
+    name: asset.name,
+    binding: "asset",
+    kind: asset.kind,
+    type: asset.metadata.mimeType,
+    size: asset.metadata.size,
+    fingerprint: asset.fingerprint,
+  };
+}
 
 /** Presentation metadata only: the reference continues to bind its fixed asset. */
 export function pinnedReferenceAssets(
@@ -22,16 +34,10 @@ export function pinnedReferenceAssets(
     );
     return [
       {
-        id: asset.id,
-        name: asset.name,
+        ...pinnedReferenceAsset(asset),
         nodeTitle: source?.title,
         logicalNodeId: source?.id,
         referenceId: ref.id,
-        binding: "asset" as const,
-        kind: asset.kind,
-        type: asset.metadata.mimeType,
-        size: asset.metadata.size,
-        fingerprint: asset.fingerprint,
       },
     ];
   });

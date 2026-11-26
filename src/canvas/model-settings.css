@@ -1,11 +1,16 @@
 /* Service connections and model selection share the settings theme. */
 .cw-settings-body:has(.cw-model-settings) {
   display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding-bottom: 0;
 }
+.cw-settings-body > .cw-settings-notice {
+  flex-shrink: 0;
+}
 .cw-model-settings {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   width: 100%;
   min-height: 0;
@@ -13,7 +18,8 @@
 }
 .cw-model-categories {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  column-gap: 20px;
   border-bottom: 1px solid var(--settings-border);
   flex-shrink: 0;
 }
@@ -506,7 +512,7 @@
 }
 @media (max-width: 600px) {
   .cw-model-categories {
-    gap: 22px;
+    column-gap: 22px;
   }
   .cw-model-overview-heading {
     padding: 18px 0;

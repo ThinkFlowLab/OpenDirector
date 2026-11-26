@@ -910,7 +910,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime, readOnly: boolean) {
   };
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (readOnly || event.defaultPrevented || !ready || switchPending.current) return;
+      if (readOnly || !rt.canvasVisible || event.defaultPrevented || !ready || switchPending.current) return;
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (

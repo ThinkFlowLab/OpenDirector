@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from fastapi.testclient import TestClient
 import pytest
@@ -59,6 +59,205 @@ def send(client, path, conversation_id, text):
         'conversationId': conversation_id, 'text': text})
     assert response.status_code == 200, response.text
     return response
+
+
+
+def test_timeline_edit_finishes_in_its_original_conversation_after_switching_projects(assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    project = path.removesuffix('/assistant')
+    pid = project.rsplit('/', 1)[1]
+    origin = client.get(path).json()['conversationId']
+    other_id, editor_id, turn, follow_up = (str(uuid4()) for _ in range(4))
+    other = f'/api/creation/projects/{other_id}'
+    created = client.post(other + '/commands', json={'type': 'project.create', 'projectId': other_id,
+        'commandId': str(uuid4()), 'payload': {'name': 'Other project'}}).json()
+    assert created['status'] == 'applied', created
+    assert client.post(project + '/open').status_code == 200
+    document = {'id': editor_id, 'projectId': pid, 'kind': 'timeline', 'data': {
+        'fps': 24, 'width': 128, 'height': 96, 'tracks': [{'id': 'v', 'kind': 'visual', 'title': 'Visual'}]}}
+    created = client.post(project + '/commands', json={'type': 'editor.create', 'projectId': pid,
+        'commandId': str(uuid4()), 'payload': {'document': document}}).json()
+    assert created['status'] == 'applied', created
+
+    resume = threading.Event()
+    sessions = []
+    async def edit(self, run, gateway):
+        sessions.append(run.session)
+        if str(run.turn_id) == follow_up:
+            assert run.messages[-1]['content'] == 'Write the note'
+            yield {'type': 'tool', 'id': 'note', 'name': 'execute_command', 'status': 'running'}
+            result = await gateway.call('note', 'execute_command', {'type': 'asset.writeText',
+                'payload': {'name': 'note.md', 'text': 'Follow-up'}})
+            assert result.value.get('status') == 'applied', result
+            yield {'type': 'tool', 'id': 'note', 'name': 'execute_command', 'status': 'complete'}
+            yield {'type': 'delta', 'text': 'Note ready'}
+            return
+        assert str(run.turn_id) == turn
+        yield {'type': 'delta', 'text': 'Editing'}
+        assert await asyncio.to_thread(resume.wait, 10)
+        yield {'type': 'tool', 'id': 'cut', 'name': 'execute_command', 'status': 'running'}
+        result = await gateway.call('cut', 'execute_command', {'type': 'editor.save',
+            'expectedVersions': [{'objectType': 'editor_document', 'id': editor_id, 'revision': 1}],
+            'payload': {'document': {**document, 'revision': 1, 'data': {**document['data'], 'fps': 30}}}})
+        assert result.value.get('status') == 'applied', result
+        yield {'type': 'tool', 'id': 'cut', 'name': 'execute_command', 'status': 'complete'}
+        yield {'type': 'delta', 'text': ' complete'}
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', runtime_stream)
+    monkeypatch.setattr(NativeRuntime, 'stream', edit)
+    monkeypatch.setattr(LocalProjects, 'LEASE_SECONDS', 1.5)
+    store = LocalProjects(tmp_path)
+    def agent_lease():
+        with store.transaction() as db:
+            return db.execute('SELECT project_id, expires FROM sessions WHERE id=?',
+                              (store.agent_session_key(sessions[0]),)).fetchone()
+
+    disconnect_turn(client, path, turn, conversation_id=origin)
+    try:
+        queued = client.post(path + '/messages', json={'id': follow_up, 'runtime': 'default',
+            'conversationId': origin, 'text': 'Write the note', 'modelId': str(uuid4())})
+        assert queued.status_code == 202 and queued.json()['turnId'] == turn, queued.text
+        initial = agent_lease()
+        assert initial[0] == pid
+        assert client.post(other + '/open').status_code == 200
+        other_chat = client.get(other + '/assistant').json()
+        assert other_chat['conversationId'] != origin
+        assert not other_chat['messages']
+        late = client.post(path + '/messages', json={'id': str(uuid4()), 'runtime': 'default',
+            'conversationId': origin, 'text': 'No longer editing this project'})
+        assert late.status_code == 409 and late.json()['code'] == 'session_expired'
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and agent_lease()[1] == initial[1]:
+            time.sleep(0.02)
+        assert agent_lease()[1] > initial[1], 'the source project lease must renew while the browser is away'
+    finally:
+        resume.set()
+    settled = client.get(path + f'/turns/{turn}/events')
+    assert settled.status_code in (200, 404), settled.text
+    if settled.status_code == 200:
+        assert frames(settled)[-1]['error'] is None
+    assert agent_lease() is None
+    assert client.get(other + '/assistant').json() == other_chat
+    snapshot = client.get(project).json()
+    edited, = snapshot['editorDocuments']
+    assert (edited['id'], edited['revision'], edited['data']['fps']) == (editor_id, 2, 30)
+    user, reply, queued, note = client.get(path).json()['messages']
+    assert [user['id'], queued['id']] == [turn, follow_up]
+    assert [reply['id'], note['id']] == [str(uuid5(UUID(key), 'assistant')) for key in (turn, follow_up)]
+    assert reply['status'] == 'complete' and reply['text'] == 'Editing complete'
+    assert note['status'] == 'complete' and note['text'] == 'Note ready'
+    assert 'publishedAssets' not in reply and 'publishedTimelines' not in note
+    timeline = reply['publishedTimelines']
+    assert timeline['projectId'] == pid and timeline['eventCursor'] < snapshot['eventCursor']
+    assert timeline['timelines'] == [{'editorId': editor_id, 'revision': 2, 'itemId': None, 'title': ''}]
+    asset, = snapshot['assets']
+    assert asset['provenance']['agentRunId'] == follow_up
+    assert note['publishedAssets'] == {'projectId': pid, 'eventCursor': snapshot['eventCursor'],
+        'assets': [{key: asset[key] for key in ('id', 'name', 'fingerprint')}]}
+    assert len(set(sessions)) == 2
+    with store.transaction() as db:
+        assert db.execute('SELECT 1 FROM sessions WHERE project_id=?', (pid,)).fetchone() is None
+    for key, call_id in [(turn, 'cut'), (follow_up, 'note')]:
+        ledger = json.loads(next(tmp_path.glob(f'**/agent-runs/timing/{key}.json')).read_text(encoding='utf-8'))
+        assert ledger['summary']['calls'] == ledger['summary']['measured'] == 1
+        assert ledger['calls'][0]['id'] == call_id and ledger['calls'][0]['status'] == 'complete'
+    assert client.post(project + '/open').status_code == 200
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).json()['messages'] == []
+    for key in (turn, follow_up):
+        assert client.get(path + f'/traces/{key}/conversation').json() == {'conversationId': origin}
+    assert client.post(path + f'/conversations/{origin}/activate').json()['messages'] == [user, reply, queued, note]
+
+
+def test_timeline_reply_uses_committed_tool_versions_and_survives_reopening(assistant, monkeypatch):
+    from opendirector.agent.gateway import ToolGateway
+    client, path, _ = assistant
+    cid = client.get(path).json()['conversationId']
+    editor_id, item_id = str(uuid4()), str(uuid4())
+
+    async def make_timeline(self, run):
+        gateway = ToolGateway(self.business, run)
+        document = {'id': editor_id, 'projectId': str(run.project_id), 'kind': 'timeline',
+                    'data': {'fps': 24, 'width': 128, 'height': 96, 'tracks': [{'id': 'v', 'kind': 'visual', 'title': 'Visual'}]}}
+        command = {'type': 'creation.batch', 'expectedVersions': [], 'payload': {'operations': [
+            {'type': 'editor.create', 'payload': {'document': document}},
+            {'type': 'canvas.show', 'payload': {'item': {'id': item_id, 'projectId': str(run.project_id),
+                'kind': 'timeline', 'title': 'Cut', 'binding': {'role': 'editor',
+                'objectRef': {'id': editor_id, 'kind': 'timeline'}}}}},
+        ]}}
+        try:
+            for _ in range(2):
+                outcome = await gateway.call('make-cut', 'execute_command', command)
+                assert outcome.value.get('status') == 'applied', outcome
+            # Another call with stale expectations cannot replace the committed revision.
+            stale = {'type': 'editor.save', 'payload': {'document': {**document, 'revision': 9}},
+                     'expectedVersions': [{'objectType': 'editor_document', 'id': editor_id, 'revision': 9}]}
+            rejected = await gateway.call('stale-cut', 'execute_command', stale)
+            assert rejected.value.get('status') == 'rejected', rejected
+            yield {'type': 'delta', 'text': 'Cut'}
+            raise RuntimeError('interrupted after the commit')
+        finally:
+            await gateway.close()
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', make_timeline)
+    reply = frames(send(client, path, cid, 'Edit'))[-1]['conversation']['messages'][-1]
+    assert reply['text'] == 'Cut'
+    assert reply['status'] == 'interrupted'
+    assert 'publishedAssets' not in reply
+    assert reply['publishedTimelines'] == {
+        'projectId': path.split('/')[-2],
+        'eventCursor': client.get(path.removesuffix('/assistant')).json()['eventCursor'],
+        'timelines': [{'editorId': editor_id, 'itemId': item_id, 'revision': 1, 'title': 'Cut'}],
+    }
+    async def discuss(self, run):
+        yield {'type': 'delta', 'text': editor_id}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', discuss)
+    later = frames(send(client, path, cid, 'Discuss'))[-1]['conversation']['messages']
+    assert 'publishedTimelines' not in later[-1]
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+    reopened = client.post(path + f'/conversations/{cid}/activate').json()
+    assert reopened['messages'][1]['publishedTimelines'] == reply['publishedTimelines']
+
+
+@pytest.mark.parametrize('interrupted', [False, True])
+def test_direct_publication_identity_survives_deletion_and_reopening(assistant, monkeypatch, interrupted):
+    client, path, _ = assistant
+    project = path.removesuffix('/assistant')
+    cid = client.get(path).json()['conversationId']
+    async def publish(self, run):
+        command = {'type': 'asset.writeText', 'payload': {'name': 'shot.md', 'text': 'wide shot'}}
+        for _ in range(2):  # Replaying a tool call must still deliver one immutable output.
+            receipt = await self.business.execute(run.project_id, run.turn_id, run.session,
+                'write', 'execute_command', command, [], run.config)
+            assert receipt['status'] == 'applied'
+        yield {'type': 'delta', 'text': 'Written'}
+        if interrupted:
+            raise RuntimeError('injected failure after publication')
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', publish)
+    saved = frames(send(client, path, cid, 'Write'))[-1]['conversation']['messages'][-1]
+    snapshot = client.get(project).json()
+    asset, = snapshot['assets']
+    assert saved['status'] == ('interrupted' if interrupted else 'complete')
+    assert saved['publishedAssets'] == {'projectId': snapshot['project']['id'],
+        'eventCursor': snapshot['eventCursor'], 'assets': [{key: asset[key] for key in ('id', 'name', 'fingerprint')}]}
+
+    # A different turn can discuss an existing file without delivering it again.
+    async def discuss(self, run):
+        yield {'type': 'delta', 'text': asset['id']}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', discuss)
+    assert 'publishedAssets' not in frames(send(client, path, cid, 'Discuss'))[-1]['conversation']['messages'][-1]
+    assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
+    payload = {'assetIds': [asset['id']], 'clearHistory': True}
+    preview = client.post(project + '/asset-delete-preview', json=payload).json()
+    assert preview['canDelete']
+    deleted = client.post(project + '/commands', json={'type': 'asset.delete', 'commandId': str(uuid4()),
+        'projectId': snapshot['project']['id'], 'payload': {**payload, 'clearHistory': preview['clearsAllUndoRedo']},
+        'expectedVersions': [{'objectType': 'asset', 'id': asset['id'], 'revision': asset['revision']}],
+        'expectedPreview': preview['fingerprint']}).json()
+    assert deleted['status'] == 'applied', deleted
+    assert client.get(project).json()['assets'] == []
+    reopened = client.post(path + f'/conversations/{cid}/activate').json()
+    assert reopened['messages'][1] == saved
+    assert client.get(path).json()['messages'] == reopened['messages']
 
 
 def test_citation_metadata_streams_and_persists_without_changing_raw_text_or_offsets(assistant, monkeypatch, tmp_path):
@@ -343,6 +542,30 @@ def test_stale_draft_and_stale_turn_cannot_modify_active_thread(assistant):
         headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
 
 
+def test_concurrent_and_archived_replays_cannot_share_a_turn_between_conversations(assistant):
+    client, path, contexts = assistant
+    first = client.get(path).json()['conversationId']
+    turn = {'id': str(uuid4()), 'conversationId': first, 'runtime': 'default', 'text': 'One output'}
+    ready = threading.Barrier(2)
+    def submit():
+        ready.wait(timeout=10)
+        return client.post(path + '/turns', json=turn)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(submit) for _ in range(2)]
+        replies = [request.result(timeout=20) for request in requests]
+    assert sum(reply.status_code == 200 and frames(reply)[-1]['error'] is None for reply in replies) == 1
+    assert len(contexts) == 1
+    original = client.get(path).json()['messages']
+    assert len(original) == 2 and original[0]['id'] == turn['id']
+
+    second = client.post(path + '/conversations', json={'id': str(uuid4())}).json()['conversationId']
+    replay = frames(client.post(path + '/turns', json={**turn, 'conversationId': second}))[-1]
+    assert replay['error'] and replay['conversation'] is None
+    assert client.post(path + '/messages', json={**turn, 'conversationId': second}).status_code == 409
+    assert len(contexts) == 1 and client.get(path).json()['messages'] == []
+    assert client.post(path + f'/conversations/{first}/activate').json()['messages'] == original
+
+
 def test_history_identifies_unsent_drafts_and_replays_creation_without_duplicates(assistant):
     client, path, _ = assistant
     first = client.get(path).json()['conversationId']
@@ -525,11 +748,12 @@ def test_explicit_stop_after_disconnect_still_stops_the_run(assistant, monkeypat
     assert client.post(path + '/conversations', json={'id': str(uuid4())}).status_code == 200
 
 
-def disconnect_turn(client, path, turn_id):
+def disconnect_turn(client, path, turn_id, *, conversation_id=None):
     """Start a turn over raw ASGI and close the stream after its first delta."""
     async def disconnect():
         disconnected = asyncio.Event()
-        body = json.dumps({'id': turn_id, 'runtime': 'default', 'text': '断线测试'}).encode()
+        body = json.dumps({'id': turn_id, 'runtime': 'default', 'text': '断线测试',
+                           'conversationId': conversation_id}).encode()
         requested = False
         async def receive():
             nonlocal requested

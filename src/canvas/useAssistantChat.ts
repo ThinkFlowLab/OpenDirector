@@ -368,6 +368,7 @@ export function useAssistantChat(
     commit?: (assets: ReferenceAsset[]) => boolean | Promise<boolean>,
   ) => {
     if (
+      !canWrite.current ||
       !loaded ||
       switching.current ||
       uploading.current ||
@@ -385,7 +386,7 @@ export function useAssistantChat(
     try {
       const assets = await read(abort.signal);
       abort.signal.throwIfAborted();
-      if (!alive.current) return false;
+      if (!alive.current || !canWrite.current) return false;
       if (
         new Set([...current.current.assets, ...assets].map((asset) => asset.id))
           .size > 64

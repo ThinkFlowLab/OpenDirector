@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Real image/layer editing against the isolated creation fixture; no model calls. */
 import assert from "node:assert/strict";
@@ -63,9 +64,9 @@ async function saved() {
   await page.getByText("Saved on this device", { exact: true }).waitFor();
 }
 async function menu(itemId, action) {
-  await page
-    .locator(".react-flow__pane")
-    .click({ position: { x: 1400, y: 800 } });
+  const pane = page.locator(".react-flow__pane");
+  const canvas = await pane.boundingBox();
+  await pane.click({ position: { x: canvas.width - 200, y: canvas.height - 200 } });
   await page.keyboard.press("Escape");
   await page
     .locator(`.react-flow__node[data-id="${itemId}"] .cw-node-title`)
@@ -86,10 +87,7 @@ async function apply() {
 try {
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await saved();
-  await page
-    .getByRole("toolbar", { name: "Canvas creation tools" })
-    .getByRole("button", { name: "Add Image", exact: true })
-    .click();
+  await addCanvasNode(page, "Image");
   await chooseGenerationModel(page, { label: "fixture-image" });
   await page
     .getByRole("textbox", { name: "Prompt", exact: true })

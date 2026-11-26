@@ -1,6 +1,7 @@
 /** Real UI/API loop using tests/browser/creation_server.py. No paid models.
  * Set PLAYWRIGHT_MODULE and CHROMIUM_PATH when using an existing installation.
  */
+import { addCanvasNode } from "../tests/browser/canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { launchBrowser } from "../tests/browser/engine.mjs";
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
@@ -58,10 +59,6 @@ const until = async (predicate, label) => {
   }
   throw new Error(`Timeout: ${label}; jobs: ${JSON.stringify(snapshot?.jobs)}`);
 };
-const rail = (label) =>
-  page
-    .getByRole("toolbar", { name: "Canvas creation tools" })
-    .getByRole("button", { name: `Add ${label}`, exact: true });
 try {
   if (reopen) {
     const before = await state();
@@ -90,7 +87,7 @@ try {
   } else {
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
     await page.getByText("Saved on this device", { exact: true }).waitFor();
-    await rail("Text").click();
+    await addCanvasNode(page, "Text");
     let snapshot = await until(
       (value) => value.canvasItems.length === 1,
       "source created",
@@ -99,7 +96,7 @@ try {
     const source = page.locator(`.react-flow__node[data-id="${sourceId}"]`);
     await source.locator(".cw-text-display").dblclick();
     await source.getByRole("textbox").fill("Source version one");
-    await rail("Text").click();
+    await addCanvasNode(page, "Text");
     snapshot = await until(
       (value) => value.canvasItems.length === 2 && value.assets.length === 1,
       "material and target saved",
@@ -164,6 +161,9 @@ try {
     await prompt.fill("Based on @");
     await prompt.press("Enter");
     await prompt.locator("[data-reference]").waitFor();
+    // Selecting the target can pan the source outside the visible canvas.
+    await page.getByRole("button", { name: "Zoom options", exact: true }).click();
+    await page.getByRole("button", { name: /^Fit all content/ }).click();
     await source.locator(".cw-node-title").dblclick();
     await page
       .getByRole("textbox", { name: "Node name", exact: true })
@@ -302,7 +302,7 @@ try {
       .getByRole("button", { name: "Close asset list", exact: true })
       .click();
     for (const kind of ["Image", "Video", "Audio", "Subject", "Timeline"])
-      await rail(kind).click();
+      await addCanvasNode(page, kind);
     snapshot = await until(
       (value) => value.canvasItems.length === 7,
       "all six node kinds persisted",

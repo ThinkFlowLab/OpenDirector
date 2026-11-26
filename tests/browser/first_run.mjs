@@ -20,7 +20,11 @@ assert.ok(create.ok, await create.text());
 const browser = await launchBrowser();
 const configuredIds = [];
 try {
-  const page = await browser.newPage({ locale: "en-US", viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => {
+    if (localStorage.getItem("opendirector.locale.v1") === null)
+      localStorage.setItem("opendirector.locale.v1", "en-US");
+  });
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -44,8 +48,10 @@ try {
   const languageModel = `first-run-agent-${projectId.slice(0, 8)}`;
   const videoModels = ["alpha", "beta"].map((suffix) => `first-run-video-${projectId.slice(0, 8)}-${suffix}`);
   const imageModel = `first-run-image-${projectId.slice(0, 8)}`;
+  const chatImageModel = `chat-canvas-image-${projectId.slice(0, 8)}`;
   let failCatalog = true;
   let showBlockedImage = false;
+  let onlyLanguage = false;
   let blockedImage;
   await page.route(/\/api\/model-configs$/, async (route) => {
     if (failCatalog) {
@@ -54,9 +60,9 @@ try {
     }
     const response = await route.fetch();
     const configs = await response.json();
-    const models = configs.filter((item) => item.modelId === languageModel ||
-      videoModels.includes(item.modelId) || (!showBlockedImage && item.modelId === imageModel));
-    if (showBlockedImage) {
+    const models = configs.filter((item) => item.modelId === languageModel || item.modelId === chatImageModel ||
+      (!onlyLanguage && !showBlockedImage && (videoModels.includes(item.modelId) || item.modelId === imageModel)));
+    if (showBlockedImage && !onlyLanguage) {
       const image = configs.find((item) => item.modelId === "fixture-image");
       blockedImage = {
         ...image.availability,
@@ -75,6 +81,9 @@ try {
   const welcome = page.locator("dialog.cw-welcome");
   const welcomeTitle = welcome.getByRole("heading", { name: "Welcome to OpenDirector" });
   const getStarted = welcome.getByRole("button", { name: "Get started" });
+  const canvasMode = welcome.getByRole("button", { name: "Create on canvas", exact: true });
+  const agentMode = welcome.getByRole("button", { name: "Create with chat", exact: true });
+  const savedMode = () => page.evaluate(() => localStorage.getItem("opendirector.workspaceMode.v1"));
   const assistantTitle = welcome.getByRole("heading", { name: "Connect an LLM" });
   const chooseHarness = async () => {
     await welcome.getByRole("button", { name: "Use an existing harness", exact: true }).click();
@@ -82,8 +91,11 @@ try {
     await codexButton.waitFor();
     assert.equal(await welcome.getByRole("button", { name: /^Claude Code/ }).isDisabled(), true);
     await codexButton.click();
-    await welcome.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
+    await welcome.getByRole("heading", { name: "Choose how to create" }).waitFor();
   };
+  await page.goto(`${url}?setup=models`);
+  await page.locator("#settings-dialog .cw-settings-close").click();
+  await welcomeTitle.waitFor();
   await page.goto(`${url}?setup=welcome&from=onboarding`);
   await welcomeTitle.waitFor();
   await welcome.getByRole("alert").getByText("Could not read model configuration. Try again.").waitFor();
@@ -95,13 +107,17 @@ try {
   await page.keyboard.press("Escape");
   assert.ok(await welcomeTitle.isVisible());
   assert.equal(await assistantTitle.count(), 0);
-  assert.equal(await welcome.getByRole("button").count(), 1);
+  assert.equal(await canvasMode.count(), 0);
+  const enter = welcome.getByRole("button", { name: "Enter canvas", exact: true });
+  assert.equal(await enter.count(), 0);
+  assert.equal(await savedMode(), null);
   await page.setViewportSize({ width: 375, height: 640 });
   assert.ok(await getStarted.evaluate((element) => element.getBoundingClientRect().bottom <= window.innerHeight));
-  await page.keyboard.press("Tab");
-  assert.ok(await getStarted.evaluate((element) => document.activeElement === element));
-  await page.keyboard.press("Enter");
+  await getStarted.press("Enter");
   await assistantTitle.waitFor();
+  assert.equal(await agentMode.count(), 0);
+  assert.equal(await enter.count(), 0);
+  assert.equal(await savedMode(), null);
   await welcome.getByRole("button", { name: "Back", exact: true }).click();
   await welcomeTitle.waitFor();
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -140,7 +156,21 @@ try {
   assert.ok(languageReceipt.ok(), await languageReceipt.text());
   const [savedLanguage] = await languageReceipt.json();
   configuredIds.push(savedLanguage.id);
-  await welcome.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
+  await welcome.getByRole("heading", { name: "Choose how to create" }).waitFor();
+  assert.ok(await agentMode.isVisible() && await canvasMode.isVisible());
+  assert.equal(await welcome.getByRole("checkbox").count(), 0);
+  assert.equal(await welcome.getByRole("button", { name: "Import media" }).count(), 0);
+  assert.equal(await welcome.getByRole("button", { name: "More ways to start" }).count(), 0);
+  await agentMode.focus();
+  await page.keyboard.press("Tab");
+  assert.ok(await canvasMode.evaluate(button => button === document.activeElement));
+  await canvasMode.click();
+  await welcome.getByRole("heading", { name: "How would you like to start your canvas?" }).waitFor();
+  assert.ok(await enter.isDisabled());
+  assert.ok(await welcome.getByRole("button", { name: "Import media", exact: true }).isDisabled());
+  assert.ok(await welcome.getByRole("button", { name: "Open an example canvas", exact: true }).isDisabled());
+  assert.equal(await savedMode(), null);
+  await welcome.getByRole("button", { name: "Back" }).click();
   const languageAssistant = await page.request.get(base + projectPath + "/assistant", { headers });
   assert.ok(languageAssistant.ok(), await languageAssistant.text());
   assert.equal((await languageAssistant.json()).modelSelections.agent, savedLanguage.id);
@@ -155,6 +185,7 @@ try {
   assert.equal((await assistant.json()).runtime, "codex");
 
   assert.equal(await welcome.getByRole("checkbox", { checked: true }).count(), 0);
+  await canvasMode.click();
   const videoTask = welcome.getByRole("checkbox", { name: "Make a video" });
   await page.setViewportSize({ width: 375, height: 720 });
   await videoTask.check();
@@ -179,6 +210,7 @@ try {
   assert.equal(configured.kind, "video");
   const videoPicker = welcome.getByRole("combobox", { name: "Choose a video model" });
   await videoPicker.waitFor();
+  assert.ok(await welcome.getByRole("button", { name: "Import media", exact: true }).isEnabled(), "One saved video model unlocks the canvas");
   assert.ok(await videoTask.isChecked());
   const start = welcome.getByRole("button", { name: "Start creating" });
   assert.ok(await start.isDisabled());
@@ -284,6 +316,8 @@ try {
   await page.goto(url + "?setup=welcome");
   await getStarted.click();
   await chooseHarness();
+  await canvasMode.click();
+  assert.ok(await enter.isDisabled(), "A paused image model cannot unlock the canvas");
   await imageTask.check();
   const blocked = welcome.getByRole("listitem").filter({ hasText: "fixture-image" });
   await blocked.getByText("Service paused").waitFor();
@@ -305,8 +339,133 @@ try {
   await blocked.getByRole("button", { name: "Retry", exact: true }).click();
   await recheck;
   await welcome.getByRole("combobox", { name: "Choose a text-to-image model" }).waitFor();
+  assert.ok(await welcome.getByRole("button", { name: "Import media", exact: true }).isEnabled(), "One ready image model unlocks the canvas");
+
+  onlyLanguage = true;
+  // An unavailable model catalog cannot be bypassed, even on a project deep link.
+  failCatalog = true;
+  await page.evaluate(() => {
+    localStorage.removeItem("opendirector.modelSetup.v1");
+    localStorage.removeItem("opendirector.workspaceMode.v1");
+  });
+  await page.setViewportSize({ width: 375, height: 640 });
+  await page.goto(url + "?from=mode-choice");
+  await welcomeTitle.waitFor();
+  await welcome.getByRole("alert").waitFor();
+  assert.equal(await enter.count(), 0);
+  await getStarted.click();
+  assert.equal(await agentMode.count(), 0);
+  assert.ok(await configureLanguage.isDisabled());
+  failCatalog = false;
+  await welcome.getByRole("button", { name: "Reload", exact: true }).click();
+  await chooseHarness();
+  assert.ok(await canvasMode.isVisible());
+  const commands = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith(projectPath + "/commands"))
+      commands.push(request.postDataJSON());
+  });
+  const canvasRegion = page.getByTestId("canvas-region");
+  const chat = page.locator("#canvas-assistant");
+  await agentMode.press("Enter");
+  await welcome.waitFor({ state: "hidden" });
+  await chat.waitFor();
+  assert.equal(await canvasRegion.isVisible(), false);
+  assert.equal(await savedMode(), "agent");
+  assert.equal(await dismissed(), "chat-ready");
+  assert.equal(new URL(page.url()).search, "?from=mode-choice");
+  await page.reload();
+  await page.locator('.cw-workspace[aria-busy="false"][data-workspace-mode="agent"]').waitFor();
+  assert.equal(await welcome.isVisible(), false);
+  const settings = page.locator("#settings-dialog");
+  for (const locale of ["en-US", "zh-CN"]) {
+    const zh = locale === "zh-CN";
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await page.getByTestId("workspace-mode-canvas").click();
+      const notice = settings.locator(".cw-settings-notice");
+      await notice.getByText(zh ? "首次进入画布前，请先配置一个图片或视频生成模型。" :
+        "Set up an image or video generation model before entering the canvas for the first time.").waitFor();
+      assert.ok(await notice.getByRole("button", { name: zh ? "进入画布" : "Enter canvas" }).isDisabled());
+      const categories = settings.locator(".cw-model-categories");
+      const bounds = await settings.locator(".cw-settings-body").boundingBox();
+      const message = await notice.boundingBox();
+      for (const button of await categories.getByRole("button").all()) {
+        const rect = await button.boundingBox();
+        assert.ok(rect && rect.y >= message.y + message.height &&
+          rect.x >= bounds.x && rect.x + rect.width <= bounds.x + bounds.width &&
+          rect.y + rect.height <= bounds.y + bounds.height,
+          `${locale} ${width}px: ${await button.innerText()} must be fully inside settings and below the notice`);
+        assert.ok(await button.evaluate(el => {
+          const { x, y, width, height } = el.getBoundingClientRect();
+          return el.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+        }), "The visible category must receive the pointer");
+      }
+      const audio = categories.getByRole("button", { name: zh ? "音频" : "Audio", exact: true });
+      await audio.click();
+      assert.equal(await audio.getAttribute("aria-pressed"), "true");
+      await categories.getByRole("button", { name: zh ? "概览" : "Overview", exact: true }).click();
+      const language = settings.locator("#model-setup-language");
+      assert.equal(await language.inputValue(), locale);
+      if (width === 1440) await language.selectOption(zh ? "en-US" : "zh-CN");
+      await page.keyboard.press("Escape");
+      await settings.waitFor({ state: "hidden" });
+    }
+  }
+  assert.equal(await savedMode(), "agent");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("workspace-float-chat").click();
+  await settings.waitFor();
+  assert.equal(await dismissed(), "chat-ready");
+  await page.keyboard.press("Escape");
+  assert.equal(await chat.getAttribute("data-floating"), null);
+  await page.getByTestId("workspace-float-chat").click();
+  await settings.getByRole("button", { name: "Add service", exact: true }).click();
+  await settings.getByLabel("Service URL (Base URL)").fill("http://127.0.0.1:12345/v1");
+  await settings.getByRole("button", { name: "Add manually", exact: true }).click();
+  await settings.getByLabel(manualModelId, { exact: true }).fill(chatImageModel);
+  await settings.getByRole("button", { name: "Add", exact: true }).click();
+  const chatModelSaved = page.waitForResponse(response => response.url().endsWith("/api/model-configs/batch"));
+  await settings.getByRole("button", { name: "Save service", exact: true }).click();
+  const receiptFromSettings = await chatModelSaved;
+  assert.ok(receiptFromSettings.ok());
+  configuredIds.push(...(await receiptFromSettings.json()).map(model => model.id));
+  await settings.getByRole("button", { name: "Enter canvas" }).click();
+  await page.locator('.cw-workspace[data-workspace-mode="canvas"] #canvas-assistant[data-floating="true"]').waitFor();
+  assert.equal(await dismissed(), "dismissed");
+  onlyLanguage = false;
+  showBlockedImage = false;
+  await page.setViewportSize({ width: 375, height: 640 });
+  await page.goto(url + "?setup=welcome");
+  await getStarted.click();
+  await chooseHarness();
+  assert.ok(await agentMode.isVisible());
+  await canvasMode.click();
+  await enter.click();
+  await welcome.waitFor({ state: "hidden" });
+  await canvasRegion.waitFor();
+  assert.equal(await chat.isVisible(), false);
+  assert.equal(await savedMode(), "canvas");
+
+  await page.goto(url + "?setup=welcome");
+  await getStarted.click();
+  await chooseHarness();
+  await page.evaluate(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "opendirector.workspaceMode.v1")
+        throw new DOMException("Storage write denied", "SecurityError");
+      return setItem.call(this, key, value);
+    };
+  });
+  await agentMode.click();
+  await welcome.waitFor({ state: "hidden" });
+  await page.getByText("Switched modes. This browser could not save your preference.", { exact: true }).waitFor();
+  assert.equal(await page.locator(".cw-workspace").getAttribute("data-workspace-mode"), "agent");
+  assert.equal(await savedMode(), "canvas");
+  assert.deepEqual(commands, []);
   assert.deepEqual(errors, []);
-  console.log("Browser first-run setup, cancellation, retry, and model availability passed");
+  console.log("Browser first-run workspace selection, model setup, cancellation and retry passed");
 } finally {
   await browser.close();
   for (const id of configuredIds) await fetch(base + "/api/model-configs/" + id, { method: "DELETE", headers });

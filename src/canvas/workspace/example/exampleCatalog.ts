@@ -68,8 +68,7 @@ export interface ExampleCatalogResult {
 
 export const EXAMPLE_CATALOG_SCHEMA_VERSION = 1;
 
-/** The two stable ids the empty-state buttons import directly. */
-export const IMAGE_EXAMPLE_ID = "image-canvas";
+/** The video example offered during first-run setup. */
 export const VIDEO_EXAMPLE_ID = "video-canvas";
 
 /**

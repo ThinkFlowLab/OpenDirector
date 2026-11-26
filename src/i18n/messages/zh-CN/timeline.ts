@@ -36,6 +36,7 @@ export const timeline = {
   "timeline.action.addedToCanvas": "已加入画布",
   "timeline.pack.progress": "素材打包 {percent}%",
   "timeline.render.progress": "正在合成 {percent}%",
+  "timeline.render.downloadStarted": "已开始下载",
   "timeline.render.done": "MP4 已完成 · {size} MB（合成时的时间线）",
 
   "timeline.library.title": "素材库",

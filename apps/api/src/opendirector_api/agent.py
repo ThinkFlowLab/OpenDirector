@@ -128,10 +128,11 @@ class Conversations:
 
     def update(self, project_id: UUID, session: str | None = None, *, draft: Draft | None = None,
                begin: dict | None = None, finish: dict | None = None, conversation_id: UUID | None = None,
+               finish_turn_id: UUID | None = None, edited_documents: dict[str, int] | None = None,
                before_begin=None, agent_session: str | None = None) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
-            directory, _, _ = self.projects._load(db, project_id)
+            directory, _, records = self.projects._load(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
@@ -147,7 +148,10 @@ class Conversations:
                 value.update(draft.model_dump(mode="json", exclude={"conversationId"}))
                 changed = True
             if begin is not None:
-                if any(message['id'] == begin['id'] for message in value['messages']):
+                # Tool commands and completed jobs use project + turn as their origin.
+                if any(message['id'] == begin['id']
+                       for conversation in [value, *value.get('archivedConversations', [])]
+                       for message in conversation['messages']):
                     raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
                 if before_begin is not None:
                     before_begin()
@@ -160,6 +164,29 @@ class Conversations:
                 value.update(draft='', draftContent=None, assets=[], skills=[])
                 changed = True
             if finish is not None:
+                # Unlike job results, directly published files can later be deleted.
+                # Keep just their immutable identity with the reply that delivered them.
+                if finish_turn_id is not None:
+                    snapshot = records[0].snapshot
+                    outputs = [{'id': str(asset.id), 'name': asset.name, 'fingerprint': asset.fingerprint}
+                               for asset in snapshot.assets if asset.provenance.source == 'agent_written'
+                               and asset.provenance.agentRunId == finish_turn_id]
+                    if outputs:
+                        finish = {**finish, 'publishedAssets': {'projectId': str(project_id),
+                            'eventCursor': snapshot.eventCursor, 'assets': outputs}}
+                    if edited_documents:
+                        owners = {str(item.binding.objectRef.id): item for item in snapshot.canvasItems
+                                  if item.kind == 'timeline'}
+                        timelines = []
+                        for doc in snapshot.editorDocuments:
+                            revision = edited_documents.get(str(doc.id))
+                            if doc.kind == 'timeline' and revision is not None:
+                                owner = owners.get(str(doc.id))
+                                timelines.append({'editorId': str(doc.id), 'revision': revision,
+                                    'itemId': str(owner.id) if owner else None, 'title': owner.title if owner else ''})
+                        if timelines:
+                            finish = {**finish, 'publishedTimelines': {'projectId': str(project_id),
+                                'eventCursor': snapshot.eventCursor, 'timelines': timelines}}
                 value['messages'] = [finish if message['id'] == finish['id'] else message for message in value['messages']]
                 changed = True
             if changed:
@@ -177,7 +204,7 @@ class Conversations:
         with self.projects.local.transaction() as db:
             self.projects._recover()
             directory, _, _ = self.projects._load(db, project_id)
-            self.projects._lease(db, project_id, directory, session)
+            self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -185,7 +212,9 @@ class Conversations:
             value['conversationId'] = value.get('conversationId') or str(uuid5(project_id, 'assistant'))
             if conversation_id is not None and str(conversation_id) != value['conversationId']:
                 raise ProjectError('当前对话已切换，请重新加载后重试；原对话未覆盖。', 409)
-            if any(item['id'] == message['id'] for item in value['messages']):
+            if any(item['id'] == message['id']
+                   for conversation in [value, *value.get('archivedConversations', [])]
+                   for item in conversation['messages']):
                 raise ProjectError('这条消息已接受，请读取对话，不要重复发送。', 409)
             if 'queueSeq' in value:
                 value['_queueSeq'] = value.pop('queueSeq')
@@ -208,8 +237,6 @@ class Conversations:
             directory, _, _ = self.projects._load(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session)
-            if agent_session is not None:
-                self.projects.local.start_agent_session(db, project_id, directory, agent_session)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -218,6 +245,8 @@ class Conversations:
             pending = next((item for item in value['messages'] if item.get('status') == 'queued'), None)
             if pending is None:
                 return None
+            if agent_session is not None:
+                self.projects.local.start_agent_session(db, project_id, directory, agent_session)
             index = value['messages'].index(pending)
             pending['status'] = 'complete'
             value['messages'].insert(index + 1, {
@@ -599,14 +628,13 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                     'thinking': value.thinking, 'status': 'complete',
                     **({'modelConfigId': str(value.modelId)} if value.modelId else {})}}
 
-    async def plan_for(project_id: UUID, message: dict, session: str, accept_language: str | None) -> dict:
+    async def plan_for(project_id: UUID, message: dict, session: str, directory: Path, accept_language: str | None) -> dict:
         """Settings for a message that was accepted earlier and is due now.
 
         The message was validated when the user sent it, so this rebuilds the
         run settings without rejecting input that is already typed: a model that
         has disappeared in the meantime falls back to the runtime default.
         """
-        directory = await asyncio.to_thread(conversations.path, project_id, session)
         spec = runtime_spec(message['runtime'])
         config = None
         if spec.modelSource == 'settings' and message.get('modelConfigId'):
@@ -631,10 +659,11 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         turn_id = UUID(message['id'])
         text, status, error = '', 'complete', None
         activities: list[dict] = []
+        edited_documents: dict[str, int] = {}
         sources: dict = {}
         previous_sources: dict = {}
         steps = None
-        run_session = plan.get('run_session') or chain.session
+        run_session = plan['run_session']
         timing: dict = {}
         turn_started = time.monotonic()
         renewal: asyncio.Task | None = None
@@ -679,7 +708,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 session=run_session, directory=plan['directory'], config=plan['config'], messages=context,
                 selected_skills=message.get('skills') or [], thinking=plan['thinking'],
                 model_selections=plan['model_selections'], runtime_model=message.get('runtimeModel'),
-                skills=plan['available'], conversation_id=chain.conversation_id)
+                skills=plan['available'], conversation_id=chain.conversation_id, edited_documents=edited_documents)
             async with aclosing(runtimes.stream(run)) as stream:
                 async for event in stream:
                     if event['type'] == 'delta':
@@ -735,7 +764,8 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                     'model': plan['model'], 'modelIsCliDefault': plan.get('model_is_cli_default', False),
                     'runtime': message['runtime'], 'thinking': plan['thinking'], 'tools': activities,
                     'sources': list(sources.values()),
-                    **({'plan': steps} if steps is not None else {})}, conversation_id=chain.conversation_id)
+                    **({'plan': steps} if steps is not None else {})}, conversation_id=chain.conversation_id,
+                    finish_turn_id=turn_id, edited_documents=edited_documents)
             except Exception:
                 logger.exception(f'agent.turn.unfinished project_id={project_id} turn_id={turn_id}')
                 saved = None
@@ -745,16 +775,18 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                     with suppress(asyncio.CancelledError):
                         await renewal
                 try:
-                    # Measurement and the lease are both best effort: losing
-                    # either may cost a file or a lock, never the turn's reply.
                     await asyncio.to_thread(agent_timing.write, plan['directory'], turn_id, timing,
                                             round(time.monotonic() - turn_started, 3))
-                    if plan.get('run_session'):
-                        await asyncio.to_thread(projects.local.release_agent_session, plan['run_session'])
                 except Exception:
                     logger.exception(f'agent.turn.timing.failed project_id={project_id} turn_id={turn_id}')
             chain.last = saved
         return saved, error, status
+
+    async def release_session(session: str) -> None:
+        try:
+            await asyncio.to_thread(projects.local.release_agent_session, session)
+        except Exception:
+            logger.exception('Could not release Agent project write session')
 
     async def run_chain(chain: Chain, plan: dict) -> None:
         """Run a turn, then take the next queued message until the queue is empty.
@@ -766,22 +798,31 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
         """
         project_id = chain.project_id
         turn_id, saved, error, status = chain.turn, None, None, 'complete'
+        run_session = plan['run_session']
         try:
             while True:
                 saved, error, status = await produce_one(chain, plan)
                 turn_id = UUID(plan['message']['id'])
                 if status != 'complete' or chain.stopped:
                     break
-                run_session = str(uuid4())
+                next_session = str(uuid4())
                 async with admission.setdefault(project_id, asyncio.Lock()):
+                    # The queue was admitted by the browser. Authorize its
+                    # successor under the still-live project lease of this turn.
                     dispatched = None if chain.stopped else await asyncio.to_thread(
-                        conversations.dispatch, project_id, chain.session, run_session)
-                if dispatched is None:
-                    break
+                        conversations.dispatch, project_id, run_session, next_session)
+                    if dispatched is None:
+                        # Keep admission closed until the empty chain releases
+                        # its lease and synchronously leaves the active slot.
+                        await release_session(run_session)
+                        run_session = None
+                        break
+                previous_session, run_session = run_session, next_session
+                await release_session(previous_session)
                 chain.turn = UUID(dispatched['message']['id'])
                 chain.events.put({'type': 'end', 'turnId': str(turn_id), 'nextTurnId': str(chain.turn),
                                   'conversation': dispatched['conversation'], 'error': None})
-                plan = await plan_for(project_id, dispatched['message'], chain.session, None)
+                plan = await plan_for(project_id, dispatched['message'], chain.session, plan['directory'], None)
                 plan['start'] = dispatched['conversation']
                 plan['run_session'] = run_session
                 saved = None
@@ -789,6 +830,8 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             status, error = 'stopped', None
             raise
         finally:
+            if run_session is not None:
+                await release_session(run_session)
             chain.events.put({'type': 'end', 'turnId': str(turn_id), 'nextTurnId': None,
                               'conversation': saved if saved is not None else chain.last, 'error': error})
             if active.get(project_id) is chain:
@@ -907,7 +950,7 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             dispatched = await asyncio.to_thread(conversations.dispatch, project_id, session, start_session)
             if dispatched is None:
                 raise ProjectError('这条消息未能开始执行，请重新发送。', 409)
-            started = await plan_for(project_id, dispatched['message'], session, accept_language)
+            started = await plan_for(project_id, dispatched['message'], session, plan['directory'], accept_language)
             started['start'] = dispatched['conversation']
             started['run_session'] = start_session
             return launch(project_id, started, UUID(dispatched['conversation']['conversationId']))

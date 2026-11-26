@@ -70,9 +70,7 @@ class CreationHistory:
     @staticmethod
     def _states(records):
         return CreationHistory._entry_states(records[0].snapshot.undoClearedThrough,
-            [dict(commandId=r.command.commandId, type=r.command.type, cursor=r.event.cursor,
-                  source=r.event.source, targetCommandId=getattr(r.command.payload, 'targetCommandId', None))
-             for r in records if r.event is not None])
+            [entry for record in records if (entry := record.history_entry())])
 
     @staticmethod
     def _entry_states(cleared, entries):

@@ -36,12 +36,13 @@ try {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Model connections", exact: true }).click();
   await page.locator(".cw-model-setup-row").filter({ hasText: "Image model" }).getByRole("button").click();
+  const modelCategories = page.getByRole("navigation", { name: "Model categories", exact: true });
   for (const [category, interfaces] of [
     ["Image", ["vLLM-Omni image API", "vLLM-Omni segmentation API"]],
     ["Audio", ["vLLM-Omni speech synthesis API", "vLLM-Omni music generation API", "vLLM-Omni transcription API"]],
     ["Chat", ["OpenAI compatible"]],
   ]) {
-    await page.getByRole("button", { name: category, exact: true }).click();
+    await modelCategories.getByRole("button", { name: category, exact: true }).click();
     await page.getByRole("button", { name: "Add service", exact: true }).click();
     for (const name of interfaces) {
       await page.getByRole("combobox", { name: "Provider", exact: true }).click();
@@ -53,7 +54,7 @@ try {
     await page.screenshot({ path: `/tmp/provider-${category}.png` });
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
   }
-  await page.getByRole("button", { name: "Video", exact: true }).click();
+  await modelCategories.getByRole("button", { name: "Video", exact: true }).click();
   await page.getByRole("button", { name: "Add service", exact: true }).click();
   await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   assert.equal(await page.getByRole("option", { name: "Custom service", exact: true }).count(), 0);
@@ -116,7 +117,7 @@ try {
   await page.screenshot({ path: "/tmp/provider-settings-video.png" });
   await page.getByRole("button", { name: "Save service", exact: true }).click();
   await page.getByRole("button", { name: "Add service", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await modelCategories.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByRole("button", { name: "Add service", exact: true }).click();
   await page.getByRole("combobox", { name: "Provider", exact: true }).click();
   await page.getByRole("option", { name: "DeepSeek", exact: true }).click();
@@ -186,7 +187,8 @@ try {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal((await call("/api/model-configs")).length, models.length);
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
-  await page.locator(".cw-chat-button").click();
+  const chatToggle = page.locator(".cw-chat-button");
+  if (await chatToggle.getAttribute("aria-expanded") === "false") await chatToggle.click();
   await page.getByRole("button", { name: "Model settings: Multimodal", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Model settings", exact: true });
   await picker.getByRole("tab", { name: /Video/ }).click();

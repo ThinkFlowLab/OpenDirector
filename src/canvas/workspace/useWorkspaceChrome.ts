@@ -24,6 +24,7 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
     setWelcomeOpen,
     setupChecked,
     switching,
+    workspaceMode,
   } = rt;
 
   useEffect(() => {
@@ -33,7 +34,8 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
     if (preview === "models") {
       setSettingsCategory("models");
       setSettingsOpen(true);
-    } else if (preview === "welcome" || shouldShowModelSetup()) {
+    }
+    if (preview === "welcome" || shouldShowModelSetup()) {
       setWelcomeOpen(true);
     }
   }, [ready, setupChecked, setSettingsCategory, setSettingsOpen, setWelcomeOpen]);
@@ -44,7 +46,11 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
   const assistantReturnFocus = useRef<HTMLElement | null>(null);
   const toggleAssistantShortcut = useRef(() => {});
   toggleAssistantShortcut.current = () => {
-    if (!ready || switching || document.querySelector("dialog[open], .cw-modal-backdrop")) return;
+    if (!ready || switching || document.querySelector('dialog[open], .cw-modal-backdrop, [aria-modal="true"]')) return;
+    if (workspaceMode === "agent") {
+      root.current?.querySelector<HTMLElement>(".cw-assistant-composer [contenteditable=true]")?.focus({ preventScroll: true });
+      return;
+    }
     if (assistantOpen) {
       setAssistantOpen(false);
       const target = assistantReturnFocus.current;
@@ -91,6 +97,7 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
         ?.focus({ preventScroll: true });
     }
     const close = (event: PointerEvent) => {
+      if (event.target instanceof Node && menu.trigger?.contains(event.target)) return;
       if (
         !(event.target instanceof Element) ||
         !event.target.closest(".cw-context-menu")

@@ -401,9 +401,20 @@ async function smokeTraceWindows(window, projectId) {
     .then(response => response.json()).then(({projects}) => projects.find(project => project.id === '${projectId}').path)`);
   const folder = join(projectPath, 'agent-runs');
   mkdirSync(folder, { recursive: true });
-  await evaluate("document.querySelector('.cw-chat-button').click()");
+  const openedChat = await evaluate(`(() => {
+    const toggle = document.querySelector('.cw-chat-button');
+    if (toggle.getAttribute('aria-expanded') === 'true') return false;
+    toggle.click();
+    return true;
+  })()`);
   const editor = ".cw-assistant-composer [contenteditable=true]";
-  await waitFor(() => evaluate(`!!document.querySelector(${JSON.stringify(editor)})`), 'Assistant composer did not open');
+  await waitFor(() => evaluate(`document.querySelector(${JSON.stringify(editor)})?.checkVisibility()`), 'Assistant composer did not open');
+  await waitFor(() => evaluate(`(() => {
+    const chat = document.querySelector('#canvas-assistant').getBoundingClientRect();
+    const canvas = document.querySelector('.cw-canvas-region').getBoundingClientRect();
+    const sidebar = document.querySelector('.cw-workspace[data-desktop-sidebar=open] .od-project-sidebar');
+    return chat.left >= (sidebar?.getBoundingClientRect().right ?? 0) && chat.right <= canvas.left;
+  })()`), 'The project sidebar, conversation and canvas overlap');
   await evaluate(`document.querySelector(${JSON.stringify(editor)}).focus()`);
   await window.webContents.insertText('Draft before opening trace');
   const draft = () => evaluate(`document.querySelector(${JSON.stringify(editor)})?.textContent`);
@@ -433,7 +444,7 @@ async function smokeTraceWindows(window, projectId) {
   await evaluate(`document.querySelector(${JSON.stringify(editor)}).focus()`);
   await window.webContents.insertText(' and continued afterward');
   await waitFor(async () => (await draft())?.includes('continued afterward'), 'Assistant composer stopped accepting input');
-  await evaluate("document.querySelector('.cw-chat-button').click()");
+  if (openedChat) await evaluate("document.querySelector('.cw-chat-button').click()");
 }
 
 async function waitFor(check, message, attempts = 150) {

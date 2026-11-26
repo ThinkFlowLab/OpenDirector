@@ -76,3 +76,52 @@ def test_refusal_keeps_all_outputs_unpublished(project,change):
     receipt=send(store,pid,'canvas.publishMedia',session=session,versions=versions,**payload)
     assert receipt.status=='rejected',receipt
     assert store.snapshot(pid)==before
+
+def test_unplaced_audio_publication_retries_with_one_hidden_source_and_preserves_undo(project):
+    from test_creation_node_versions import versions
+    from test_voice_library import wav
+
+    store, pid, session = project
+    service = CreationToolAssets(store)
+    def upload(seconds):
+        record = service.import_file(pid, uuid4(), 'clip.wav', wav(seconds), session, provenance=AssetProvenance(source='upload'))
+        return service.assets.get(pid, record['id'])
+
+    source, output = upload(2), upload(1)
+    previous_id, anchor_id, output_id = uuid4(), uuid4(), uuid4()
+    earlier = send(store, pid, 'canvas.show', session=session, item=dict(id=previous_id, projectId=pid, kind='group'))
+    anchor = send(store, pid, 'creation.batch', session=session, versions=[ver('asset', source)], operations=[
+        dict(type='canvas.show', payload=dict(item=dict(id=anchor_id, kind='audio', projectId=pid,
+             binding=dict(role='material', objectRef=asset_ref(source))))),
+        dict(type='canvas.hide', payload=dict(itemId=anchor_id)),
+    ])
+    assert earlier.status == anchor.status == 'applied'
+    def node(item_id):
+        return next(item for item in store.snapshot(pid).canvasItems if item.id == item_id)
+    assert not node(anchor_id).visible and node(anchor_id).revision == 1
+    assert anchor.commandId not in CreationHistory(store).states(pid)
+    document = dict(id=uuid4(), projectId=pid, kind='media_edit', data=dict(tool='audio-trim',
+                    sourceItems=[anchor_id], sources=[asset_ref(source)], parameters={}))
+    payload = dict(itemId=anchor_id, source=asset_ref(source), document=document,
+                   outputs=[dict(itemId=output_id, asset=asset_ref(output), title='Trim')])
+    current = [ver('canvas_item', node(anchor_id)), ver('asset', output)]
+    stale = [{**current[0], 'revision': 2}, current[1]]
+    before = store.snapshot(pid)
+    refusal = send(store, pid, 'canvas.publishMedia', session=session, versions=stale, **payload)
+    assert refusal.status == 'rejected' and store.snapshot(pid) == before
+    publish = parse_command(dict(commandId=uuid4(), projectId=pid, type='canvas.publishMedia', payload=payload, expectedVersions=current))
+    receipt = store.execute(publish, session=session)
+    assert receipt.status == 'applied', receipt
+    assert store.execute(publish, session=session) == receipt
+    persisted = next(a for a in store.snapshot(pid).assets if a.id == output.id)
+    assert persisted.provenance.sources == (asset_ref(source),) and persisted.provenance.sourceItemId == anchor_id
+    for transition, target, expected in [('undo', receipt, (True, False)), ('undo', earlier, (False, False)),
+                                         ('redo', earlier, (True, False)), ('redo', receipt, (True, True))]:
+        state = 'applied' if transition == 'undo' else 'undone'
+        offered = next(entry for entry in CreationHistory(store).operations(pid) if entry['state'] == state)
+        assert offered['commandId'] == target.commandId
+        result = send(store, pid, 'history.' + transition, session=session, versions=versions(store.snapshot(pid)),
+                      targetCommandId=target.commandId)
+        assert result.status == 'applied', result
+        assert not node(anchor_id).visible and node(anchor_id).revision == 1
+        assert (node(previous_id).visible, node(output_id).visible) == expected

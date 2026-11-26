@@ -56,9 +56,6 @@
 :root[data-theme="light"] .cw-language-toggle > span {
   color: #c3c7cf;
 }
-:root[data-theme="light"] .cw-rail-mask {
-  background: linear-gradient(90deg, #f7f8faf5 20%, #f7f8fad9 55%, #f7f8fa00);
-}
 :root[data-theme="light"]
   :is(
     .cw-rail,
@@ -150,7 +147,6 @@
   :is(
     .cw-project-row:hover .cw-project-option,
     .cw-project-option[aria-checked="true"],
-    .cw-rail-button:hover,
     .cw-icon-button:hover,
     .cw-selection-toolbar button:hover
   ) {
@@ -216,8 +212,6 @@
   :is(
     .cw-node-title,
     .cw-node-heading,
-    .cw-rail-label,
-    .cw-empty h1,
     .cw-zoom-button,
     .cw-side-panel h3
   ) {
@@ -298,18 +292,6 @@
 :root[data-theme="light"] .cw-placeholder-upload:hover {
   background: #f3f4f6 !important;
   color: #23262c;
-}
-:root[data-theme="light"] .cw-empty p,
-:root[data-theme="light"] .cw-empty small {
-  color: #77808e;
-}
-:root[data-theme="light"] .cw-empty button {
-  background: #fff;
-  color: #404957;
-  border-color: #dfe2e7;
-}
-:root[data-theme="light"] .cw-aurora {
-  opacity: 0.35;
 }
 :root[data-theme="light"]
   :is(

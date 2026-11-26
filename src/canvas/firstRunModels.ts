@@ -33,6 +33,11 @@ export function firstRunModelIssue(model: ModelConfig, capability: FirstRunCapab
   return issues.some((issue) => issue === null) ? null : issues[0];
 }
 
+export function hasFirstCanvasModel(models: readonly ModelConfig[]) {
+  return models.some(model => (["text_to_image", "video_generation"] as const).some(capability =>
+    firstRunModelKind(model, capability) && firstRunModelIssue(model, capability) === null));
+}
+
 function supportsVideoProfile(model: ModelConfig, capability: "text_to_video" | "image_to_video") {
   const hasImage = capability === "image_to_video";
   const rules = model.inputRules;

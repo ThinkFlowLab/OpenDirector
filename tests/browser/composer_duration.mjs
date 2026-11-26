@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Isolated API only: independent duration control obeys model choices and persists. */
 import assert from "node:assert/strict";
@@ -107,10 +108,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加视频", exact: true })
-    .click();
+  await addCanvasNode(page, "视频");
   const editor = page.getByRole("textbox", { name: "生成提示词", exact: true });
   await chooseGenerationModel(page, `config:${fastConfig.id}`);
   await editor.fill(

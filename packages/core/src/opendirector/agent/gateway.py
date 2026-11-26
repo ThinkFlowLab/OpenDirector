@@ -99,6 +99,12 @@ class ToolGateway:
                     self.run.runtime if self.run.config is None else None,
                     self.execution_directory, **({'runtime_model': self.run.runtime_model, 'thinking': self.run.thinking}
                         if name == 'prompt_optimize' else {}))
+                if name in {'execute_command', 'timeline_package_import'} and isinstance(value, dict):
+                    receipt = value.get('receipt') if name == 'timeline_package_import' else value
+                    if receipt and receipt.get('status') == 'applied':
+                        for changed in receipt['changed']:
+                            if changed['objectType'] == 'editor_document':
+                                self.run.edited_documents[changed['id']] = changed['revision']
                 if name == 'read_project':
                     value['modelSelections'] = dict(self.model_selections)
                 error = None

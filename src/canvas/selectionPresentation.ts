@@ -16,6 +16,72 @@ const COMPOSER_GAP = 16;
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+/** Keep the current fit when it clears the floating panel. Otherwise pick a
+ * free strip that holds the node and its controls with the least shrinking. */
+export function visibleSelectionArea(
+  node: Rect,
+  view: Viewport,
+  chrome: SelectionChrome,
+  overlay: Rect | null,
+): Rect {
+  const { safe, toolbar, composer } = chrome;
+  if (!overlay) return safe;
+  const x = node.x * view.zoom + view.x;
+  const y = node.y * view.zoom + view.y;
+  const nodeWidth = node.width * view.zoom;
+  const nodeHeight = node.height * view.zoom;
+  const placement = selectionPlacement(node, view, chrome);
+  const scale = chrome.scaleComposer ? view.zoom : 1;
+  const boxes: Rect[] = [
+    { x, y: y - TITLE_SPACE, width: nodeWidth, height: nodeHeight + TITLE_SPACE },
+    { x: placement.toolbar.left, y: placement.toolbar.top, ...toolbar },
+    {
+      x: placement.composer.left,
+      y: placement.composer.top,
+      width: composer.width * scale,
+      height: composer.height * scale,
+    },
+  ];
+  const right = overlay.x + overlay.width;
+  const bottom = overlay.y + overlay.height;
+  const overlaps = boxes.some(box =>
+    box.width > 0 && box.height > 0 &&
+    box.x < right && box.y < bottom &&
+    box.x + box.width > overlay.x && box.y + box.height > overlay.y,
+  );
+  if (!overlaps) return safe;
+  const afterX = Math.max(safe.x, right);
+  const afterY = Math.max(safe.y, bottom);
+  const candidates = [
+    { ...safe, width: Math.min(safe.width, overlay.x - safe.x) },
+    { ...safe, x: afterX, width: safe.x + safe.width - afterX },
+    { ...safe, height: Math.min(safe.height, overlay.y - safe.y) },
+    { ...safe, y: afterY, height: safe.y + safe.height - afterY },
+  ];
+  const wantedWidth = Math.max(nodeWidth, toolbar.width, composer.width * scale, 1);
+  const wantedHeight = nodeHeight + TITLE_SPACE + (toolbar.height ? toolbar.height + TOOLBAR_GAP : 0) +
+    (composer.height ? (composer.height + COMPOSER_GAP) * scale : 0);
+  const centerX = x + nodeWidth / 2;
+  const centerY = y + nodeHeight / 2;
+  let best = safe;
+  let bestFit = 0;
+  let leastDistance = Infinity;
+  for (const rect of candidates) {
+    const fit = Math.min(1, rect.width / wantedWidth, rect.height / wantedHeight);
+    if (fit <= 0) continue;
+    const distance = Math.hypot(
+      centerX - clamp(centerX, rect.x, rect.x + rect.width),
+      centerY - clamp(centerY, rect.y, rect.y + rect.height),
+    );
+    if (fit > bestFit || (fit === bestFit && distance < leastDistance)) {
+      best = rect;
+      bestFit = fit;
+      leastDistance = distance;
+    }
+  }
+  return best;
+}
+
 /** Center content in the usable canvas, preserving zoom unless it cannot fit. */
 export function centeredViewport(node: Rect, viewport: Viewport, chrome: SelectionChrome): Viewport {
   return selectionViewport(node, {

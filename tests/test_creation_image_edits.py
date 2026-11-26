@@ -217,3 +217,34 @@ async def test_direct_edit_requires_document_version_and_available_output(projec
         assert applied.status == 'applied', applied
     finally:
         await runner.close()
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('changed', ['parent_lock', 'item_revision'])
+async def test_hidden_result_edit_rechecks_original_version_and_current_parent_lock_on_save(project, changed):
+    store, pid, session = project
+    runner, _ = await generated(project)
+    try:
+        item_id = store.snapshot(pid).canvasItems[0].id
+        parent_id = uuid4()
+        assert send(store, pid, 'creation.batch', session=session, versions=versions(store.snapshot(pid)), operations=[
+            dict(type='canvas.show', payload=dict(item=dict(id=parent_id, kind='group', projectId=pid))),
+            dict(type='canvas.update', payload=dict(itemId=item_id, parentId=parent_id)),
+            dict(type='canvas.hide', payload=dict(itemId=item_id)),
+            dict(type='canvas.hide', payload=dict(itemId=parent_id)),
+        ]).status == 'applied'
+        edit = edit_command(project)
+        # The modal pins its item and asset versions; the ancestor is checked by
+        # the service at commit even though its version is absent from the draft.
+        edit = parse_command({**edit.model_dump(), 'expectedVersions':
+                              [v for v in edit.expectedVersions if v.id != parent_id]})
+        patch = dict(itemId=parent_id, locked=True) if changed == 'parent_lock' else dict(itemId=item_id, title='Renamed')
+        assert send(store, pid, 'canvas.update', session=session, versions=versions(store.snapshot(pid)), **patch).status == 'applied'
+        before = store.snapshot(pid)
+        receipt = store.execute(edit, session=session)
+        assert receipt.status == 'rejected'
+        assert receipt.issues[0].code == ('role_restricted' if changed == 'parent_lock' else 'revision_conflict')
+        assert store.snapshot(pid) == before
+        assert all(not item.visible for item in before.canvasItems)
+        assert not before.editorDocuments
+    finally:
+        await runner.close()

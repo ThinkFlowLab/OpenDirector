@@ -128,12 +128,14 @@ export function SettingsDialog({
   theme,
   initialCategory,
   initialModelKind = null,
+  canvasEntry,
   onClose,
 }: {
   catalog: BackendModels;
   theme: ThemeControls;
   initialCategory: "general" | "models";
   initialModelKind?: SettingsModelKind | null;
+  canvasEntry?: { ready: boolean; onContinue: () => void };
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -219,6 +221,12 @@ export function SettingsDialog({
             </h2>
           </header>
           <div className="cw-settings-body">
+            {canvasEntry && (
+              <div className="cw-settings-notice">
+                <span role="status">{t(canvasEntry.ready ? "firstRun.canvasModelReady" : "firstRun.canvasModelRequired")}</span>
+                <button type="button" disabled={!canvasEntry.ready} onClick={canvasEntry.onContinue}>{t("firstRun.enterCanvas")}</button>
+              </div>
+            )}
             {theme.error && (
               <div className="cw-settings-notice" role="alert">
                 <span>{theme.error}</span>

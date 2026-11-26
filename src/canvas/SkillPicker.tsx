@@ -83,17 +83,22 @@ export function SkillPicker({
   useLayoutEffect(() => {
     if (!open || !root.current) return;
     const popover = root.current.querySelector<HTMLElement>(".cw-skill-popover")!;
-    const bounds = root.current.closest(".cw-assistant-composer")!.getBoundingClientRect();
-    const width = Math.min(420, bounds.width, window.innerWidth - 16);
-    popover.style.width = `${width}px`;
-    popover.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8))}px`;
-    popover.style.bottom = `${window.innerHeight - bounds.top + 8}px`;
-    popover.style.maxHeight = `${Math.max(120, bounds.top - 24)}px`;
+    const composer = root.current.closest(".cw-assistant-composer")!;
+    const position = () => {
+      const bounds = composer.getBoundingClientRect();
+      const width = Math.min(420, bounds.width, window.innerWidth - 16);
+      popover.style.width = `${width}px`;
+      popover.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8))}px`;
+      popover.style.bottom = `${window.innerHeight - bounds.top + 8}px`;
+      popover.style.maxHeight = `${Math.max(120, bounds.top - 24)}px`;
+    };
+    position();
     popover.showPopover();
     if (!slash) popover.querySelector<HTMLInputElement>("input")?.focus({preventScroll: true});
-    const dismiss = () => {setManual(false); setDismissed(true);};
-    window.addEventListener("resize", dismiss);
-    return () => window.removeEventListener("resize", dismiss);
+    const observer = new ResizeObserver(position);
+    observer.observe(composer);
+    window.addEventListener("resize", position);
+    return () => { observer.disconnect(); window.removeEventListener("resize", position); };
   }, [open, slash]);
 
   function close() {

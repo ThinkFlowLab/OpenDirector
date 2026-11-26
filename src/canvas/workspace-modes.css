@@ -1,0 +1,151 @@
+/* One project surface with stable conversation and editor instances. */
+.cw-workspace {
+  --chat-left-inset: var(--assistant-column-width, 0px);
+  --chat-right-inset: 0px;
+}
+.cw-workspace[data-chat-dock="right"] {
+  --chat-left-inset: 0px;
+  --chat-right-inset: var(--assistant-column-width);
+}
+.cw-canvas-region {
+  position: absolute;
+  inset: 0 var(--chat-right-inset) 0 var(--chat-left-inset);
+  overflow: clip;
+  min-width: 0;
+}
+.cw-canvas-region[data-visible="false"] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.cw-workspace .cw-top-actions {
+  transform: none;
+  transition: none;
+}
+.cw-canvas-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cw-canvas-top-actions[hidden],
+.cw-language-toggle[hidden] { display: none; }
+.cw-float-on-canvas {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: var(--settings-muted);
+  white-space: nowrap;
+}
+.cw-float-on-canvas:hover {
+  background: var(--settings-hover);
+  color: var(--settings-text);
+}
+.cw-workspace-mode-switch {
+  display: flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border: 1px solid var(--cw-border);
+  border-radius: 10px;
+  background: var(--cw-surface);
+}
+.cw-workspace-mode-switch button {
+  padding: 7px 12px;
+  border-radius: 7px;
+  color: #99999e;
+  white-space: nowrap;
+}
+.cw-workspace-mode-switch button[aria-pressed="true"] {
+  color: #fff;
+  background: #414145;
+  font-weight: 600;
+}
+.cw-workspace .cw-assistant-panel {
+  top: 78px;
+  left: 14px;
+  right: auto;
+  bottom: 14px;
+}
+.cw-workspace[data-workspace-mode="agent"] .cw-assistant-panel {
+  inset: var(--cw-topbar-height) 0 0;
+  width: auto;
+}
+:root:not([data-desktop-chrome]) .cw-workspace[data-workspace-mode="agent"] .cw-topbar {
+  border-bottom: 1px solid var(--cw-border);
+}
+.cw-workspace .cw-assistant-resizer {
+  left: auto;
+  right: 0;
+}
+.cw-workspace[data-chat-dock="right"] .cw-assistant-panel:not([data-floating]) {
+  left: auto;
+  right: 14px;
+}
+.cw-workspace[data-chat-dock="right"] .cw-assistant-resizer {
+  left: 0;
+  right: auto;
+}
+.cw-workspace[data-assistant-open="true"] .cw-side-panel:not(.from-left) {
+  right: 20px;
+}
+.cw-workspace[data-workspace-mode="canvas"] .cw-creation-assets {
+  right: calc(20px + var(--chat-right-inset));
+  width: min(370px, calc(100vw - var(--assistant-column-width, 0px) - 40px));
+}
+.cw-canvas-region .cw-side-panel.from-left {
+  max-width: calc(100% - 96px);
+}
+.cw-narrow-region-toggle {
+  position: absolute;
+  z-index: 35;
+  bottom: 14px;
+  right: 14px;
+  padding: 9px 16px;
+  border: 1px solid var(--cw-border);
+  border-radius: 20px;
+  background: var(--cw-surface);
+  color: inherit;
+}
+:root[data-theme="light"] .cw-workspace-mode-switch button { color: #757b86; }
+:root[data-theme="light"] .cw-workspace-mode-switch button[aria-pressed="true"] {
+  color: #30343c;
+  background: #e4e7ed;
+}
+@media (max-width: 1000px) {
+  .cw-workspace .cw-topbar { gap: 8px; padding-inline: 12px; }
+  .cw-workspace .cw-project-heading { gap: 5px; }
+  .cw-workspace .cw-project-title { max-width: 180px; }
+  .cw-workspace .cw-save-status { display: none; }
+  .cw-workspace .cw-top-actions { gap: 5px; }
+  .cw-canvas-top-actions { gap: 2px; }
+  .cw-workspace-mode-switch button { padding-inline: 9px; }
+}
+@media (max-width: 700px) {
+  .cw-workspace .cw-canvas-region { left: 0; }
+  .cw-workspace[data-workspace-mode="canvas"] .cw-assistant-panel {
+    width: calc(100% - 28px);
+    bottom: 62px;
+  }
+  .cw-workspace .cw-project-title { max-width: 110px; }
+  .cw-workspace .cw-brand { width: 26px; height: 26px; margin-right: 0; }
+  .cw-workspace .cw-language-toggle,
+  .cw-workspace .cw-node-info { display: none; }
+  .cw-workspace[data-canvas-visible="false"] .cw-canvas-top-actions { display: none; }
+  .cw-canvas-top-actions {
+    position: absolute;
+    top: 72px;
+    right: 12px;
+    padding: 4px;
+    border-radius: 9px;
+    background: var(--cw-surface);
+  }
+  .cw-workspace[data-workspace-mode="canvas"] .cw-creation-assets {
+    top: 120px;
+    max-height: min(760px, calc(100dvh - 182px));
+  }
+  .cw-workspace .cw-side-panel:not(.from-left) {
+    top: 120px;
+  }
+  .cw-workspace-mode-switch button { font-size: 12px; padding: 7px; }
+}

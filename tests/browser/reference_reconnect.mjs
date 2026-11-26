@@ -58,7 +58,8 @@ try {
       context.fillRect(0, 0, 96, 64);
       const source = createNode(
         "image",
-        { x: 150, y: 160 },
+        // Keep both nodes reachable after the canvas focuses the generated video.
+        { x: 390, y: 160 },
         {
           title: "Source",
           mediaRole: "asset",
@@ -108,22 +109,14 @@ try {
     const target = page.locator(
       `.react-flow__node[data-id="${fixture.target}"]`,
     );
+    const sourcePort = page.locator(
+      `.cw-node-reference-port[data-reference-source="${fixture.source}"][data-side="right"]`,
+    );
     const connect = async (steps = 15) => {
-      const sourceBox = await source.boundingBox(),
-        targetBox = await target.boundingBox();
-      assert.ok(sourceBox && targetBox);
-      await page.mouse.move(
-        sourceBox.x + sourceBox.width + 7,
-        sourceBox.y + sourceBox.height / 2,
-      );
-      const port = page.getByRole("button", {
-        name: "Add downstream reference node",
-        exact: true,
-      });
-      await port.waitFor();
-      const box = await port.boundingBox();
-      assert.ok(box);
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await source.hover();
+      await sourcePort.hover();
+      const targetBox = await target.boundingBox();
+      assert.ok(targetBox);
       await page.mouse.down();
       await page.mouse.move(
         targetBox.x + targetBox.width / 2,

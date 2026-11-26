@@ -1,7 +1,6 @@
 /**
- * Isolated UI regression: the empty canvas imports the two hosted samples
- * directly with a progress bar, the project menu still opens the full picker,
- * and a blocked page is reported instead of imported.
+ * The empty canvas and project menu share one example picker. Verify download
+ * progress, import, and the error shown when a download serves a blocked page.
  *
  * The download route returns either a ZIP around one `.canvas` or an HTML
  * page like a blocked share link does.
@@ -87,23 +86,22 @@ try {
   const openCanvas = async () => {
     await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
-    // The example buttons enable once the canvas is ready.
-    await page.waitForFunction(() => {
-      const button = [...document.querySelectorAll("button")].find((item) =>
-        item.textContent?.includes("体验图片示例"),
-      );
-      return !!button && !button.disabled;
-    });
+  };
+  const dialog = page.locator(".cw-example-dialog");
+  const image = dialog.getByRole("listitem").filter({ hasText: "图像创作示例画布" });
+  const chooseImageExample = async () => {
+    await page.getByRole("button", { name: "浏览示例画布", exact: true }).click();
+    await image.getByRole("button", { name: "下载并导入", exact: true }).click();
   };
 
-  // 1. The empty-state button downloads, shows progress, imports and closes the bar.
+  // 1. Choose the image example from the empty canvas and watch its progress.
   await openCanvas();
-  await page.getByRole("button", { name: "体验图片示例" }).click();
-  await page.locator(".cw-empty-example-status").waitFor();
+  await chooseImageExample();
+  await image.getByRole("progressbar", { name: "下载进度" }).waitFor();
   await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
   assert.equal(await page.locator(".react-flow__node").count(), 2);
-  // The progress block lives in the empty state, which the imported canvas replaces.
-  assert.equal(await page.locator(".cw-empty-example-status").count(), 0);
+  await image.getByRole("progressbar").waitFor({ state: "hidden" });
+  await dialog.getByRole("button", { name: "关闭", exact: true }).last().click();
 
   // 2. The project menu still reaches the full picker.
   // The switch saves the new project first; the switcher is disabled until then.
@@ -113,7 +111,6 @@ try {
   });
   await page.getByRole("button", { name: "切换项目", exact: true }).click();
   await page.getByRole("menuitem", { name: "示例画布", exact: true }).click();
-  const dialog = page.locator(".cw-example-dialog");
   await dialog.waitFor();
   // The catalog ships with the app, so the rows carry its titles.
   await dialog.getByText("图像创作示例画布", { exact: true }).waitFor();
@@ -123,8 +120,8 @@ try {
   await page.unroute(samplePattern);
   await page.route(samplePattern, (route) => route.fulfill(served("text/html")));
   await openCanvas();
-  await page.getByRole("button", { name: "体验图片示例" }).click();
-  await page.getByText(/服务器返回的是网页/).waitFor();
+  await chooseImageExample();
+  await image.getByRole("alert").filter({ hasText: /服务器返回的是网页/ }).waitFor();
   assert.equal(await page.locator(".react-flow__node").count(), 0);
 
   // 4. A single click in setup starts the video example on step two.
@@ -150,6 +147,7 @@ try {
   await welcome.getByRole("button", { name: "开始设置", exact: true }).click();
   await welcome.getByRole("button", { name: "配置语言模型", exact: true }).click();
   await welcome.getByRole("button", { name: /^fixture-agent/ }).click();
+  await welcome.getByRole("button", { name: "画布创作", exact: true }).click();
   const openSample = welcome.getByRole("button", { name: "打开示例画布", exact: true });
   const videoTask = welcome.getByRole("checkbox", { name: "做一段视频" });
   await videoTask.check();

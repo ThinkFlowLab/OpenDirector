@@ -330,11 +330,7 @@ class CommitLog:
         """Small detached event metadata; toolbar queries need no snapshots."""
         path, manifest = self._read_manifest(project_id)
         records = self._history(path, manifest)
-        return records[0].snapshot.undoClearedThrough, tuple(dict(
-            commandId=r.command.commandId, type=r.command.type,
-            cursor=r.event.cursor, source=r.event.source,
-            targetCommandId=getattr(r.command.payload, 'targetCommandId', None),
-        ) for r in records if r.event is not None)
+        return records[0].snapshot.undoClearedThrough, tuple(entry for record in records if (entry := record.history_entry()))
 
     def receipt(self, project_id, command_id):
         with self.local.transaction() as db:

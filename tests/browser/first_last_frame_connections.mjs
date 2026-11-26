@@ -2,6 +2,7 @@
  * both frame slots when the model declares a last frame (#83).
  * Uses the isolated creation_server.py; no remote generation.
  */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { launchBrowser } from "./engine.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
@@ -93,10 +94,7 @@ try {
 
   // A blank video node on the MiniMax model in first-last mode. The frame
   // pickers are left untouched: the connections alone must fill them.
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加视频", exact: true })
-    .click();
+  await addCanvasNode(page, "视频");
   const created = await until(
     snapshot,
     (value) => value.canvasItems.length === 3,

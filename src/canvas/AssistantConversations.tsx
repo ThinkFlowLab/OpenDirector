@@ -3,11 +3,18 @@ import type { ConversationSummary } from "../backend/chat";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { useT } from "../i18n/I18nProvider.tsx";
+import type { AssistantLayout } from "./useAssistantLayout";
+
+const dockControls = {
+  left: { icon: "dockLeft", label: "assistant.panel.dock" },
+  right: { icon: "dockRight", label: "assistant.panel.dockRight" },
+} as const;
 
 /** Session navigation stays inside the assistant, independent of canvas projects. */
 export function AssistantConversations({
   activeId,
-  hasMessages,
+  messageCount,
+  hasDraft,
   projectTitle,
   items,
   loading,
@@ -17,9 +24,12 @@ export function AssistantConversations({
   onRefresh,
   onChange,
   onClose,
+  collapsible = true,
+  placement,
 }: {
   activeId?: string;
-  hasMessages: boolean;
+  messageCount: number;
+  hasDraft: boolean;
   projectTitle: string;
   items: ConversationSummary[];
   loading: boolean;
@@ -29,6 +39,8 @@ export function AssistantConversations({
   onRefresh: () => void;
   onChange: (id?: string, create?: boolean) => Promise<boolean>;
   onClose: () => void;
+  collapsible?: boolean;
+  placement?: Pick<AssistantLayout, "floating" | "toggleFloating" | "moveHandle" | "side" | "dockTo">;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -36,12 +48,25 @@ export function AssistantConversations({
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const oppositeSide = placement?.side === "left" ? "right" : "left";
+  const floatControl = placement?.floating
+    ? dockControls[placement.side]
+    : { icon: "floatPanel", label: "assistant.panel.float" } as const;
   const titleText = (item?: ConversationSummary) =>
-    item?.title ?? t(item?.messageCount ? "assistant.sessions.media" : "assistant.sessions.new");
+    item?.title ??
+    t(
+      item?.messageCount
+        ? "assistant.sessions.media"
+        : "assistant.sessions.new",
+    );
   const shown = items.filter((item) =>
-    titleText(item).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+    titleText(item)
+      .toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase()),
   );
-  const title = titleText(items.find((item) => item.id === activeId));
+  const title = messageCount
+    ? titleText(items.find((item) => item.id === activeId))
+    : t("assistant.sessions.new");
   const closeHistory = (focus = false) => {
     setOpen(false);
     if (focus)
@@ -66,7 +91,10 @@ export function AssistantConversations({
 
   const choose = async (id?: string, create = false) => {
     if (disabledReason) return;
-    if (await onChange(id, create)) closeHistory();
+    if (await onChange(id, create)) {
+      if (create) setQuery("");
+      closeHistory();
+    }
   };
 
   return (
@@ -107,9 +135,25 @@ export function AssistantConversations({
       }}
     >
       <header className="cw-assistant-header">
-        <h2 title={hasMessages ? title : t("assistant.sessions.new")}>
-          {hasMessages ? title : t("assistant.sessions.new")}
-        </h2>
+        {placement ? (
+          <h2
+            className="cw-assistant-move-handle"
+            tabIndex={0}
+            title={t("assistant.panel.moveHint")}
+            aria-description={t("assistant.panel.moveHint")}
+            aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+            {...placement.moveHandle}
+            onPointerDown={(event) => {
+              if (open) closeHistory();
+              placement.moveHandle.onPointerDown(event);
+            }}
+          >
+            <CanvasIcon name="grip" size={16} />
+            <span>{title}</span>
+          </h2>
+        ) : (
+          <h2 title={title}>{title}</h2>
+        )}
         <div className="cw-assistant-header-actions">
           <TooltipButton
             className="cw-assistant-new-session"
@@ -142,16 +186,44 @@ export function AssistantConversations({
           >
             <CanvasIcon name="history" size={18} />
           </TooltipButton>
-          <TooltipButton
-            className="cw-assistant-collapse"
-            label={t("assistant.sessions.collapse")}
-            tooltipSide="bottom"
-            aria-controls="canvas-assistant"
-            aria-expanded="true"
-            onClick={onClose}
-          >
-            <CanvasIcon name="collapse" size={18} />
-          </TooltipButton>
+          {placement && <>
+            <TooltipButton
+              className="cw-assistant-icon-button"
+              label={t(dockControls[oppositeSide].label)}
+              tooltipSide="bottom"
+              aria-controls="canvas-assistant"
+              onClick={() => {
+                closeHistory();
+                placement.dockTo(oppositeSide);
+              }}
+            >
+              <CanvasIcon name={dockControls[oppositeSide].icon} size={18} />
+            </TooltipButton>
+            <TooltipButton
+              className="cw-assistant-icon-button cw-assistant-placement-toggle"
+              label={t(floatControl.label)}
+              tooltipSide="bottom"
+              aria-controls="canvas-assistant"
+              onClick={() => {
+                closeHistory();
+                placement.toggleFloating();
+              }}
+            >
+              <CanvasIcon name={floatControl.icon} size={18} />
+            </TooltipButton>
+          </>}
+          {collapsible && (
+            <TooltipButton
+              className="cw-assistant-collapse"
+              label={t("assistant.sessions.collapse")}
+              tooltipSide="bottom"
+              aria-controls="canvas-assistant"
+              aria-expanded="true"
+              onClick={onClose}
+            >
+              <CanvasIcon name="collapse" size={18} />
+            </TooltipButton>
+          )}
         </div>
       </header>
       {open && (
@@ -163,9 +235,7 @@ export function AssistantConversations({
         >
           <div className="cw-assistant-session-heading">
             <strong>{t("assistant.sessions.history")}</strong>
-            <span title={projectTitle}>
-              {t("assistant.sessions.currentCanvas")}
-            </span>
+            <span title={projectTitle}>{t("assistant.sessions.currentCanvas")}</span>
           </div>
           <label className="cw-assistant-session-search">
             <CanvasIcon name="search" size={16} />
@@ -194,38 +264,43 @@ export function AssistantConversations({
               {t("assistant.sessions.loading")}
             </p>
           ) : (
-            <div className="cw-assistant-session-list" aria-busy={changing}>
-              {shown.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="cw-assistant-session-row"
-                  aria-current={item.id === activeId ? "true" : undefined}
-                  disabled={!!disabledReason}
-                  title={titleText(item)}
-                  onClick={() => void choose(item.id)}
-                >
-                  <span className="cw-assistant-session-details">
-                    <strong>{titleText(item)}</strong>
-                    <small>
-                      {item.messageCount
-                        ? t("assistant.sessions.messageCount", {
-                            count: item.messageCount,
-                          })
-                        : t("assistant.sessions.noMessages")}
-                      {item.hasDraft
-                        ? ` · ${t("assistant.sessions.hasDraft")}`
-                        : ""}
-                    </small>
-                  </span>
-                  {item.id === activeId && (
-                    <span className="cw-assistant-session-current">
-                      <CanvasIcon name="check" size={14} />
-                      {t("assistant.sessions.current")}
+            <div
+              className="cw-assistant-session-list"
+              aria-busy={changing || loading}
+            >
+              {shown.map((item) => {
+                const active = item.id === activeId;
+                const count = active ? messageCount : item.messageCount;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="cw-assistant-session-row"
+                    aria-current={active || undefined}
+                    disabled={!!disabledReason}
+                    title={titleText(item)}
+                    onClick={() => void choose(item.id)}
+                  >
+                    <span className="cw-assistant-session-details">
+                      <strong>{titleText(item)}</strong>
+                      <small>
+                        {count
+                          ? t("assistant.sessions.messageCount", { count })
+                          : t("assistant.sessions.noMessages")}
+                        {(active ? hasDraft : item.hasDraft)
+                          ? ` · ${t("assistant.sessions.hasDraft")}`
+                          : ""}
+                      </small>
                     </span>
-                  )}
-                </button>
-              ))}
+                    {active && (
+                      <span className="cw-assistant-session-current">
+                        <CanvasIcon name="check" size={14} />
+                        {t("assistant.sessions.current")}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
               {!shown.length && (
                 <p className="cw-assistant-session-notice">
                   {query.trim()

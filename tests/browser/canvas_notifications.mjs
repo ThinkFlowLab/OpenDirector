@@ -1,4 +1,5 @@
 /** Isolated UI regression: missing models and independent notification lifetimes. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -57,10 +58,7 @@ try {
   // Without a configured model, submitting is disabled and the button itself
   // explains where to add one; the draft prompt is kept.
   for (const kind of ["图片", "视频", "音频"]) {
-    await page
-      .getByRole("toolbar", { name: "画布创作工具" })
-      .getByRole("button", { name: `添加${kind}`, exact: true })
-      .click();
+    await addCanvasNode(page, kind);
     const prompt = page.getByRole("textbox", {
       name: "生成提示词",
       exact: true,

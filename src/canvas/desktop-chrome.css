@@ -8,11 +8,12 @@ html[data-desktop-platform="darwin"] .cw-workspace {
 html[data-desktop-chrome] {
   --desktop-toolbar-height: 48px;
 }
-html[data-desktop-chrome] .cw-workspace .react-flow {
+html[data-desktop-chrome] .cw-workspace .cw-canvas-region {
   top: var(--desktop-toolbar-height);
+  left: calc(var(--od-sidebar-width) + var(--chat-left-inset));
+}
+html[data-desktop-chrome] .cw-workspace .react-flow {
   background: #0d0d0d;
-  left: var(--od-sidebar-width);
-  transition: left 200ms ease;
 }
 html[data-desktop-chrome][data-theme="light"] .cw-workspace .react-flow {
   background: #f7f8fa;
@@ -80,7 +81,7 @@ html[data-desktop-chrome] .cw-topbar .cw-language-toggle button.is-active {
 html[data-desktop-chrome] .cw-topbar .cw-top-actions {
   gap: 2px;
 }
-html[data-desktop-chrome] .cw-topbar .cw-top-actions button {
+html[data-desktop-chrome] .cw-topbar .cw-top-actions .cw-icon-button {
   width: 30px;
   height: 30px;
 }
@@ -206,7 +207,6 @@ html[data-desktop-chrome][data-theme="light"] .od-sidebar-create-shortcut { colo
 .od-project-sidebar button:focus-visible, .od-caption-actions button:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
 .od-project-sidebar .od-sidebar-settings { align-self: flex-start; margin-left: 8px; background: transparent; box-shadow: none; }
 .od-sidebar-error { color: #e7a4a4; font-size: 11px; overflow-wrap: anywhere; }
-html[data-desktop-chrome] .cw-workspace[data-desktop-sidebar="open"] .cw-bottom-left { left: 260px; }
 html[data-desktop-chrome] .cw-workspace[data-desktop-sidebar="open"] .cw-bottom-left > .cw-settings-control { visibility: hidden; }
 html[data-desktop-chrome][data-theme="light"] .od-project-sidebar { background: linear-gradient(155deg, #8e8dda20, #98afcd18), #f4f4f780; color: #282b33; }
 html[data-desktop-chrome][data-theme="light"] .od-project-sidebar nav button { color: #3c414d; }
@@ -214,17 +214,36 @@ html[data-desktop-chrome][data-theme="light"] .od-project-sidebar nav button[ari
 html[data-desktop-chrome][data-desktop-fullscreen] .od-caption-actions { left: 12px; }
 html[data-desktop-chrome][data-desktop-fullscreen] [data-desktop-sidebar="open"] .od-caption-actions { left: 196px; }
 html[data-desktop-chrome][data-desktop-fullscreen] .cw-workspace[data-desktop-sidebar="closed"] .cw-topbar { padding-left: 92px; }
+html[data-desktop-chrome] .cw-workspace[data-workspace-mode="agent"] .cw-topbar { padding-left: 16px; }
+html[data-desktop-platform="darwin"]:not([data-desktop-fullscreen]) .cw-workspace[data-workspace-mode="agent"] .cw-topbar { padding-left: 92px; }
 @media (prefers-reduced-motion: reduce) {
   .od-project-sidebar, .od-caption-actions,
-  html[data-desktop-chrome] .cw-workspace .cw-topbar,
-  html[data-desktop-chrome] .cw-workspace .react-flow { transition: none; }
+  html[data-desktop-chrome] .cw-workspace .cw-topbar { transition: none; }
 }
 @media (prefers-reduced-transparency: reduce) { .od-project-sidebar { background: #272735; } }
-html[data-desktop-chrome] .cw-workspace .cw-rail-shell { left: var(--od-sidebar-width); transition: left 200ms ease; }
-html[data-desktop-chrome] .cw-workspace .cw-empty { left: calc(50% + var(--od-sidebar-width) / 2); width: min(calc(80vw - var(--od-sidebar-width)), 600px); }
+html[data-desktop-chrome] .cw-workspace .cw-empty { width: min(80%, 600px); }
 html[data-desktop-chrome] .cw-workspace:not([data-assistant-open="true"]) .cw-top-actions { transform: none; }
 html[data-desktop-chrome] .cw-workspace .cw-assistant-panel {
   top: calc(var(--desktop-toolbar-height) + 14px);
+  left: calc(var(--od-sidebar-width) + 14px);
+}
+html[data-desktop-chrome] .cw-workspace[data-workspace-mode="agent"] .cw-assistant-panel {
+  top: var(--desktop-toolbar-height);
+  left: var(--od-sidebar-width);
+}
+html[data-desktop-chrome] .cw-workspace[data-narrow="true"][data-workspace-mode="canvas"] .cw-assistant-panel {
+  bottom: 62px;
+}
+html[data-desktop-chrome] .cw-workspace[data-narrow="true"] .cw-canvas-top-actions {
+  position: absolute;
+  top: calc(var(--desktop-toolbar-height) + 6px);
+  right: 12px;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--cw-surface);
+}
+html[data-desktop-chrome] .cw-workspace[data-narrow="true"][data-canvas-visible="false"] .cw-canvas-top-actions {
+  display: none;
 }
 
 .od-sidebar-heading {

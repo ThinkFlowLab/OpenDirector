@@ -3,6 +3,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { useToolCatalog } from "../../backend/tools.ts";
 import type { Translate } from "../../i18n/I18nProvider.tsx";
 import type { Locale } from "../../i18n/types.ts";
+import type { ProjectEditorTarget } from "../assistantResultEditors.ts";
 import type { GenerationJob } from "../generationHistory.ts";
 import type { NodeGenerationActivity } from "../generationActivity.ts";
 import type { CanvasHistory } from "../history.ts";
@@ -15,6 +16,7 @@ import type {
   CanvasNodeKind,
 } from "../model.ts";
 import { SaveQueue } from "../saveQueue.ts";
+import type { WorkspaceMode } from "../workspaceMode";
 import { multiSelectionGeometry } from "../selectionReferences.ts";
 import type { SubjectMediaSlot } from "../subjectMedia.ts";
 import type { CanvasToolId, ToolParameters } from "../toolCatalog.ts";
@@ -36,6 +38,7 @@ type CanvasReferences = ReturnType<typeof useCanvasReferences>;
  */
 export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   doc: CanvasDocument;
+  openProjectEditor: (target: ProjectEditorTarget, signal?: AbortSignal) => Promise<void>;
   single: CanvasNode | null;
   composerNode: CanvasNode | undefined;
   textWindowNode: CanvasNode | undefined;
@@ -87,6 +90,11 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   >;
   selectionAtPointerDown: RefObject<string[]>;
   root: RefObject<HTMLDivElement | null>;
+  canvasRegion: RefObject<HTMLDivElement | null>;
+  workspaceMode: WorkspaceMode;
+  changeWorkspaceMode: (mode: WorkspaceMode) => boolean;
+  assistantVisible: boolean;
+  canvasVisible: boolean;
   composerElement: RefObject<HTMLDivElement | null>;
   toolbarElement: RefObject<HTMLDivElement | null>;
   fileInput: RefObject<HTMLInputElement | null>;

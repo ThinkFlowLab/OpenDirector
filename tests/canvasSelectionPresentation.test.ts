@@ -4,8 +4,32 @@ import {
   centeredViewport,
   selectionPlacement,
   selectionViewport,
+  visibleSelectionArea,
   type SelectionChrome,
 } from "../src/canvas/selectionPresentation.ts";
+
+test("a floating chat only changes the usable area when it covers the selection or its controls", () => {
+  const chrome = {
+    safe: { x: 80, y: 72, width: 1200, height: 700 },
+    toolbar: { width: 160, height: 32 },
+    composer: { width: 300, height: 100 },
+  };
+  const node = { x: 370, y: 200, width: 160, height: 130 };
+  const view = { x: 0, y: 0, zoom: 1 };
+  const away = { x: 850, y: 100, width: 410, height: 480 };
+  assert.equal(visibleSelectionArea(node, view, chrome, null), chrome.safe);
+  assert.equal(visibleSelectionArea(node, view, chrome, away), chrome.safe);
+  const overlap = { x: 440, y: 355, width: 480, height: 360 };
+  const safe = visibleSelectionArea(node, view, chrome, overlap);
+  assert.notEqual(safe, chrome.safe, "the composer alone intersects chat");
+  const target = selectionViewport(node, view, { ...chrome, safe });
+  const placed = selectionPlacement(node, target, { ...chrome, safe });
+  assert.equal(target.zoom, view.zoom);
+  assert.ok(placed.composer.left + chrome.composer.width <= overlap.x);
+  const wideOverlay = { x: 80, y: 250, width: 1200, height: 165 };
+  const below = visibleSelectionArea(node, view, chrome, wideOverlay);
+  assert.equal(below.y, wideOverlay.y + wideOverlay.height, "can use space below a wide panel");
+});
 
 test("selection fits node and both fixed-size controls without changing authored geometry", () => {
   const node = { x: 840, y: 620, width: 720, height: 480 };

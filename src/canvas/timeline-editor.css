@@ -1,3 +1,11 @@
+.cw-timeline-dialog .cw-domain-header {
+  gap: 10px;
+}
+.cw-timeline-dialog .cw-domain-header > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .cw-timeline-dialog {
   /* Neutral editing surfaces; accents remain consistent with workspace controls. */
   --cw-timeline-surface: #242528;

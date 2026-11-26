@@ -37,6 +37,22 @@ class CommitRecord(Contract):
     receipt: CommandReceipt = Field(description='Immutable command execution receipt.')
     event: ProjectEvent | None = Field(description='Project change event, if emitted.')
 
+    def history_entry(self):
+        """Detached user-history metadata. A source created off-canvas has no display edit to undo."""
+        if self.event is None:
+            return None
+        if self.command.type == 'creation.batch' and len(self.command.payload.operations) == 2:
+            show, hide = self.command.payload.operations
+            if show.type == 'canvas.show' and hide.type == 'canvas.hide':
+                item = show.payload.item
+                changed = self.event.changed
+                if (item.kind in {'audio', 'video'} and item.binding.role == 'material' and item.id == hide.payload.itemId
+                        and len(changed) == 1 and changed[0].change == 'created'
+                        and changed[0].version.objectType == 'canvas_item' and changed[0].version.id == item.id):
+                    return None
+        return dict(commandId=self.command.commandId, type=self.command.type, cursor=self.event.cursor,
+                    source=self.event.source, targetCommandId=getattr(self.command.payload, 'targetCommandId', None))
+
     @model_validator(mode='after')
     def consistent(self):
         if (self.command.projectId != self.snapshot.project.id

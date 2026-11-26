@@ -1,6 +1,10 @@
 {
   "scripts": [
     {
+      "file": "canvas_creation.mjs",
+      "helper": true
+    },
+    {
       "file": "higgsfield_open.mjs",
       "lanes": ["manual"],
       "note": "Run with higgsfield_server.py and Vite. Bilingual provider setup, actual MAGI-2 HTTP adapter with mocked transport, all three routes, mixed media, format rejection, adoption and reload. No real service calls."
@@ -95,6 +99,29 @@
       "note": "Needs --assistant-fixture services; holds the fixture gate."
     },
     {
+      "file": "prompt_optimizer_workspace.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"],
+      "note": "Chat-selected loopback providers receive capability-appropriate media for canvas prompt rewrites; undo and delayed replies preserve the targeted draft."
+    },
+    {
+      "file": "play_downloaded_mp4.mjs",
+      "helper": true
+    },
+    {
+      "file": "chat_local_editing.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"],
+      "note": "Edits and reopens imported project media from an unsent chat with an empty model catalog."
+    },
+    {
+      "file": "assistant_result_cards.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": ["extendedFixture", "production"],
+      "note": "Exercises output cards with actual Agent jobs and isolated assistant and generation providers."
+    },
+    {
       "file": "assistant_sessions.mjs",
       "fixture": true,
       "previewSafe": true,
@@ -103,6 +130,19 @@
         "production"
       ],
       "note": "Needs --assistant-fixture services."
+    },
+    {
+      "file": "workspace_mode_performance.mjs",
+      "previewSafe": true,
+      "lanes": ["manual"],
+      "note": "RFC #386 mode-switch timing in a production preview. Run alone on the target machine; prints first and warm samples for empty and twelve-image projects."
+    },
+    {
+      "file": "workspace_modes.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": ["extendedFixture", "production"],
+      "note": "Mode layout, drafts, references, viewport and active turn/job preservation in both languages; needs --assistant-fixture services."
     },
     {
       "file": "bilingual_defaults.mjs",
@@ -115,7 +155,7 @@
       "file": "first_run.mjs",
       "previewSafe": true,
       "lanes": ["gate"],
-      "note": "First launch: assistant prerequisite, task-specific model setup and direct access to examples."
+      "note": "First launch: workspace mode, assistant prerequisite, task-specific model setup and direct access to examples."
     },
     {
       "file": "canvas_crop.mjs",

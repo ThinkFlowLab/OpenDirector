@@ -20,6 +20,13 @@ try {
   const projectName = page.locator(".cw-project-name");
   const welcome = page.locator("#welcome-language");
   const setup = page.locator("dialog.cw-welcome");
+  async function checkModeChoices(groupName, chat, canvas) {
+    const choices = setup.getByRole("group", { name: groupName, exact: true });
+    for (const label of [chat, canvas]) {
+      assert.ok(await choices.getByRole("button", { name: label, exact: true }).isVisible());
+    }
+    assert.equal(await setup.getByRole("checkbox").count(), 0);
+  }
   await page.route("**/assistant/runtimes/default/status", (route) => route.fulfill({ json: {
     id: "default", label: "Default Agent", group: "default", modelSource: "settings",
     modelOverride: false, available: true, status: "ready",
@@ -27,11 +34,13 @@ try {
   await projectName.filter({ hasText: /^未命名项目$/ }).waitFor();
   await page.getByRole("heading", { name: "欢迎使用 OpenDirector" }).waitFor();
   assert.ok(await page.getByRole("button", { name: "开始设置" }).isVisible());
+  assert.equal(await setup.getByRole("button", { name: "进入画布", exact: true }).count(), 0);
   const chineseCanvas = page.getByRole("img", { name: "OpenDirector 画布截图：六个分镜和下方的剪辑时间线" });
   await chineseCanvas.evaluate((element) => element.decode());
   const chineseCanvasSrc = await chineseCanvas.getAttribute("src");
   await welcome.selectOption("en-US");
   await page.getByRole("heading", { name: "Welcome to OpenDirector" }).waitFor();
+  assert.equal(await setup.getByRole("radio").count(), 0);
   const englishCanvas = page.getByRole("img", { name: "OpenDirector canvas screenshot with six storyboard shots and the editing timeline below" });
   await englishCanvas.evaluate((element) => element.decode());
   assert.notEqual(await englishCanvas.getAttribute("src"), chineseCanvasSrc);
@@ -45,8 +54,15 @@ try {
   await setup.getByText("OpenDirector needs a configured language model to understand what you want to create, plan the work, and use tools.", { exact: true }).waitFor();
   await setup.getByRole("button", { name: "Set up a language model", exact: true }).click();
   await page.getByRole("button", { name: /^fixture-agent/ }).click();
-  await page.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
+  await page.getByRole("heading", { name: "Choose how to create" }).waitFor();
   await welcome.selectOption("zh-CN");
+  await checkModeChoices("创作方式", "对话创作", "画布创作");
+  await setup.getByText(/图片、视频和音频模型可以在对话过程中按需配置/).waitFor();
+  await welcome.selectOption("en-US");
+  await checkModeChoices("Creation mode", "Create with chat", "Create on canvas");
+  await setup.getByText(/set up an image or video model for your first canvas/).waitFor();
+  await welcome.selectOption("zh-CN");
+  await setup.getByRole("button", { name: "画布创作", exact: true }).click();
   const videoTask = setup.getByRole("checkbox", { name: "做一段视频" });
   await videoTask.check();
   await setup.getByRole("heading", { name: "配置视频模型", exact: true }).waitFor();
@@ -71,7 +87,9 @@ try {
     await page.locator(`html[lang="${locale}"]`).waitFor({ state: "attached" });
   };
   const showChat = async () => {
-    await page.locator(".cw-chat-button").click();
+    const toggle = page.locator(".cw-chat-button");
+    if (await toggle.getAttribute("aria-expanded") === "true") await toggle.click();
+    await toggle.click();
     await page.locator('#canvas-assistant [contenteditable="true"]:focus').waitFor();
   };
   const heading = page.locator(".cw-assistant-header h2");

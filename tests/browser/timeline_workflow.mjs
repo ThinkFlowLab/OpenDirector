@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { spawnOwned as spawn, stopOwned, pythonExecutable, sourcePythonPath, executable } from "./host.mjs";
 /** Owns isolated API/Vite processes; restarts the API over the SAME project root. */
 import assert from "node:assert/strict";
@@ -325,37 +326,72 @@ try {
 
   const state = () => call(`/api/creation/projects/${pid}`);
   const doc = (s) => s.editorDocuments.find((d) => d.id === editorId);
+  const dialog = page.locator(".cw-timeline-dialog");
+  const playhead = dialog.locator(".cw-timeline-seek");
+  const mutations = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/commands"))
+      mutations.push(request.postDataJSON());
+  });
+  async function switchWithEditorOpen(check) {
+    const count = mutations.length;
+    const position = await playhead.inputValue();
+    for (const mode of ["agent", "canvas"]) {
+      await dialog.getByTestId(`workspace-mode-${mode}`).click();
+      await page.locator(`.cw-workspace[data-workspace-mode="${mode}"]`).waitFor();
+      assert.equal(await dialog.isVisible(), true);
+      assert.equal(await playhead.inputValue(), position);
+      await check();
+    }
+    assert.equal(mutations.length, count, "mode switches submit no project command");
+  }
   async function open() {
-    await page
-      .locator(`.react-flow__node[data-id="${itemId}"] .cw-node-title`)
-      .click({ button: "right" });
-    await page
-      .getByRole("menuitem", { name: "Open editor", exact: true })
-      .click();
+    const item = page.locator(`.react-flow__node[data-id="${itemId}"]`);
+    await item.getByRole("button", { name: "Open timeline", exact: true }).click();
     await page.getByRole("button", { name: "Render MP4", exact: true }).waitFor();
   }
   await page.goto(full ? base + "/" : url);
   await saved();
   if (full) {
-    await page.getByRole("button", { name: "Switch project", exact: true }).click();
-    const [response] = await Promise.all([
-      page.waitForResponse((r) => r.url().endsWith("/commands") &&
-        r.request().postDataJSON()?.type === "project.create"),
-      page.getByRole("menuitem", { name: "New canvas project", exact: true }).click(),
-    ]);
-    assert.equal((await response.json()).status, "applied");
-    pid = response.request().postDataJSON().projectId;
-    url = base + `/ai-tool/ai-canvas/${pid}`;
-    const projectName = page.getByRole("textbox", { name: "Project name", exact: true });
-    const name = "Full creation " + crypto.randomUUID().slice(0, 8);
-    await projectName.fill(name);
-    await projectName.press("Enter");
-    await page.getByRole("button", { name, exact: true }).waitFor();
-    await saved();
-    await page
-      .getByRole("toolbar", { name: "Canvas creation tools" })
-      .getByRole("button", { name: "Add Timeline", exact: true })
-      .click();
+    await page.waitForFunction(() => document.querySelector('#canvas-assistant [role="textbox"]')?.isContentEditable);
+    // The new project's chat can load after its name editor has already opened.
+    let releaseAssistant;
+    const assistantGate = new Promise(resolve => { releaseAssistant = resolve; });
+    const assistantPath = /\/creation\/projects\/[^/]+\/assistant$/;
+    await page.route(assistantPath, async route => {
+      const response = await route.fetch();
+      await assistantGate;
+      await route.fulfill({ response });
+    }, { times: 1 });
+    const releaseDeadline = setTimeout(() => releaseAssistant(), 20000);
+    try {
+      await page.getByRole("button", { name: "Switch project", exact: true }).click();
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().endsWith("/commands") &&
+          r.request().postDataJSON()?.type === "project.create"),
+        page.getByRole("menuitem", { name: "New canvas project", exact: true }).click(),
+      ]);
+      assert.equal((await response.json()).status, "applied");
+      pid = response.request().postDataJSON().projectId;
+      url = base + `/ai-tool/ai-canvas/${pid}`;
+      const projectName = page.getByRole("textbox", { name: "Project name", exact: true });
+      await projectName.waitFor();
+      releaseAssistant();
+      await page.waitForFunction(() => document.querySelector('#canvas-assistant [role="textbox"]')?.isContentEditable);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await projectName.isVisible(), true, "chat loading must keep the new project's name editor open");
+      assert.equal(await projectName.evaluate(element => element === document.activeElement), true);
+      const name = "Full creation " + crypto.randomUUID().slice(0, 8);
+      await projectName.fill(name);
+      await projectName.press("Enter");
+      await page.getByRole("button", { name, exact: true }).waitFor();
+      await saved();
+    } finally {
+      clearTimeout(releaseDeadline);
+      releaseAssistant();
+      await page.unroute(assistantPath);
+    }
+    await addCanvasNode(page, "Timeline");
     const timelineItem = await until(async () =>
       (await state()).canvasItems.find((i) => i.kind === "timeline"),
     );
@@ -408,17 +444,28 @@ try {
       });
     return route.continue();
   });
+  await playhead.press("ArrowRight");
+  assert.ok(Number(await playhead.inputValue()) > 0);
   await page.getByRole("button", { name: "Apply edits", exact: true }).click();
-  await page
-    .getByRole("alert")
-    .filter({ hasText: "fixture: editor save refused" })
-    .waitFor();
-  assert.equal(await page.locator(".cw-timeline-clip").count(), full ? 4 : 3);
-  assert.equal(doc(await state()).data.tracks[0].clips.length, 0);
+  const refusal = dialog.getByRole("alert").filter({ hasText: "fixture: editor save refused" });
+  await refusal.waitFor();
+  const rejectedSave = mutations.at(-1);
+  const beforeRetry = doc(await state());
+  assert.equal(beforeRetry.data.tracks[0].clips.length, 0);
+  assert.deepEqual(rejectedSave.expectedVersions.find((v) => v.id === editorId), {
+    objectType: "editor_document", id: editorId, revision: beforeRetry.revision,
+  });
+  await switchWithEditorOpen(async () => {
+    assert.equal(await refusal.isVisible(), true);
+    assert.equal(await page.locator(".cw-timeline-clip").count(), full ? 4 : 3);
+    assert.deepEqual(doc(await state()), beforeRetry);
+  });
   reject = false;
   await page.getByRole("button", { name: "Apply edits", exact: true }).click();
   await page.locator(".cw-timeline-dialog").waitFor({ state: "hidden" });
   await saved();
+  const retriedSave = mutations.findLast((entry) => entry.payload.operations?.some((op) => op.type === "editor.save"));
+  assert.deepEqual(retriedSave, rejectedSave, "retry replays the same draft, CAS basis and command ID");
   const first = doc(await state());
   assert.equal(first.data.tracks[0].clips[0].speed, 2);
   assert.equal(first.data.tracks[1].clips[0].volume, 0.3);
@@ -432,8 +479,34 @@ try {
   await open();
   const reopened = doc(await state());
   assert.deepEqual(reopened, first);
-  async function renderAndDownload(name) {
-    await page.getByRole("button", { name: "Render MP4", exact: true }).click();
+
+  // Give the real player headroom so the natural end cannot mask a reset.
+  await dialog.locator(".cw-timeline-clip.visual").first().click();
+  const clipSpeed = dialog.getByLabel(/Playback speed/);
+  const originalSpeed = await clipSpeed.inputValue();
+  await clipSpeed.selectOption("0.25");
+  await playhead.press("Home");
+  await playhead.press("PageUp");
+  const readPosition = () => playhead.evaluate((slider) => slider.valueAsNumber);
+  const start = await readPosition();
+  assert.ok(start > 0 && start < Number(await playhead.getAttribute("max")) / 2);
+  const pause = dialog.getByRole("button", { name: "Pause the timeline", exact: true });
+  await dialog.getByRole("button", { name: "Play the timeline", exact: true }).click();
+  const commandCount = mutations.length;
+  for (const mode of ["agent", "canvas"]) {
+    await pause.waitFor();
+    const before = await readPosition();
+    await dialog.getByTestId(`workspace-mode-${mode}`).click();
+    await page.locator(`.cw-workspace[data-workspace-mode="${mode}"]`).waitFor();
+    assert.equal(await pause.isVisible(), true);
+    assert.ok(await readPosition() >= before, "playing timeline does not jump backwards");
+    await until(async () => await readPosition() > before);
+  }
+  await pause.click();
+  assert.equal(mutations.length, commandCount, "playing through both mode switches sends no project command");
+  await clipSpeed.selectOption(originalSpeed);
+
+  async function downloadRender(name) {
     await page
       .getByRole("button", { name: "Download MP4", exact: true })
       .waitFor({ timeout: 60000 });
@@ -443,7 +516,37 @@ try {
     await (await download).saveAs(path);
     return path;
   }
-  const one = await renderAndDownload("first.mp4");
+  // The renderer has already submitted a video frame when it mixes audio.
+  // Hold the first real audio buffer so a fast local encode cannot finish
+  // before the two mode clicks. The same MP4 is decoded and checked below.
+  let releaseMix;
+  let mixStarted = false;
+  const mixGate = new Promise((resolve) => { releaseMix = resolve; });
+  await page.exposeFunction("waitForTimelineMix", () => {
+    mixStarted = true;
+    return mixGate;
+  });
+  await page.evaluate(() => {
+    const proto = OfflineAudioContext.prototype;
+    const start = proto.startRendering;
+    proto.startRendering = async function () {
+      proto.startRendering = start;
+      const buffer = await start.call(this);
+      await window.waitForTimelineMix();
+      return buffer;
+    };
+  });
+  try {
+    await dialog.getByRole("button", { name: "Render MP4", exact: true }).click();
+    await until(() => mixStarted);
+    await switchWithEditorOpen(async () => {
+      assert.equal(await dialog.getByRole("button", { name: "Cancel rendering", exact: true }).isEnabled(), true);
+      assert.equal(await dialog.getByRole("button", { name: "Download MP4", exact: true }).count(), 0);
+    });
+  } finally {
+    releaseMix();
+  }
+  const one = await downloadRender("first.mp4");
   const info = probe(one);
   assert.ok(Math.abs(Number(info.format.duration) - (full ? 2 : 1.5)) < 0.12);
   assert.ok(info.streams.some((s) => s.codec_type === "audio"));
@@ -476,12 +579,55 @@ try {
     energy += samples.readFloatLE(i) ** 2;
   const rms = Math.sqrt(energy / (samples.length / 4));
   assert.ok(rms > 0.015 && rms < 0.04, rms);
-  await page
-    .getByRole("button", { name: "Add rendered video to canvas", exact: true })
-    .click();
+  const publish = dialog.getByRole("button", { name: "Add rendered video to canvas", exact: true });
+  const download = dialog.getByRole("button", { name: "Download MP4", exact: true });
+  await switchWithEditorOpen(async () => {
+    assert.equal(await publish.isEnabled(), true);
+    assert.equal(await download.isEnabled(), true);
+  });
+  let releasePublication;
+  const publicationGate = new Promise((resolve) => { releasePublication = resolve; });
+  const publicationAttempts = [];
+  const delayPublication = async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.type !== "timeline.publishRender") return route.continue();
+    publicationAttempts.push(body);
+    if (publicationAttempts.length === 1) {
+      await publicationGate;
+      return route.fulfill({ status: 503, json: { detail: "fixture: publication unavailable" } });
+    }
+    return route.continue();
+  };
+  await page.route("**/commands", delayPublication);
+  try {
+    await publish.click();
+    await until(() => publicationAttempts.length === 1);
+    await switchWithEditorOpen(async () => {
+      const publishing = dialog.getByRole("button", { name: "Adding video to canvas…", exact: true });
+      assert.equal(await publishing.isDisabled(), true);
+      assert.equal(publicationAttempts.length, 1);
+    });
+  } finally {
+    releasePublication();
+  }
+  const publicationError = dialog.getByRole("alert").filter({ hasText: "fixture: publication unavailable" });
+  await publicationError.waitFor();
+  const pendingAssets = (await state()).assets.length;
+  await switchWithEditorOpen(async () => {
+    assert.equal(await publicationError.isVisible(), true);
+    assert.equal(await publish.isEnabled(), true);
+    assert.equal(await download.isEnabled(), true);
+  });
+  await publish.click();
   await page.getByRole("button", { name: "Added to canvas", exact: true }).waitFor();
+  await page.unroute("**/commands", delayPublication);
+  assert.equal(publicationAttempts.length, 2);
+  assert.deepEqual(publicationAttempts[1], publicationAttempts[0]);
   const published = await state(),
     output = published.assets.find((a) => a.provenance.source === "rendered");
+  assert.equal(published.assets.length, pendingAssets, "publication retry uses the same rendered bytes");
+  assert.equal(publicationAttempts[0].payload.editorId, editorId);
+  assert.equal(publicationAttempts[0].payload.itemId, itemId);
   assert.ok(output);
   assert.equal(output.provenance.editorDocumentId, editorId);
   assert.equal(output.provenance.editorRevision, first.revision);
@@ -531,9 +677,16 @@ try {
   };
   await page.route("**/commands", hold);
   await page.getByRole("button", { name: "Render MP4", exact: true }).click();
-  await until(() => saveStarted);
-  await page.getByRole("button", { name: "Cancel rendering", exact: true }).click();
-  releaseSave();
+  try {
+    await until(() => saveStarted);
+    await switchWithEditorOpen(async () => {
+      assert.equal(await dialog.getByRole("button", { name: "Cancel rendering", exact: true }).isEnabled(), true);
+      assert.equal(await dialog.getByRole("button", { name: "Render MP4", exact: true }).isDisabled(), true);
+    });
+    await dialog.getByRole("button", { name: "Cancel rendering", exact: true }).click();
+  } finally {
+    releaseSave();
+  }
   await page
     .getByRole("button", { name: "Cancel rendering", exact: true })
     .waitFor({ state: "hidden" });
@@ -542,7 +695,36 @@ try {
     await page.getByRole("button", { name: "Download MP4", exact: true }).count(),
     0,
   );
-  const two = await renderAndDownload("second.mp4");
+  const outputId = publicationAttempts[0].payload.outputId;
+  // A second writer locks the existing output before rendering captures it.
+  async function setOutputLocked(locked) {
+    await page.evaluate(async ({ pid, outputId, locked }) => {
+      const { creationClient, objectVersion } = await import("/src/backend/creationClient.ts");
+      const client = creationClient(pid);
+      const output = (await client.refresh()).canvasItems.find((item) => item.id === outputId);
+      await client.command("canvas.update", { itemId: outputId, locked }, [objectVersion("canvas_item", output)]);
+    }, { pid, outputId, locked });
+  }
+  await setOutputLocked(true);
+  await dialog.getByRole("button", { name: "Render MP4", exact: true }).click();
+  const two = await downloadRender("second.mp4");
+  const publishReply = page.waitForResponse((r) => r.url().endsWith("/commands") &&
+    r.request().method() === "POST" && r.request().postDataJSON().type === "timeline.publishRender");
+  await publish.click();
+  const lockedReceipt = await (await publishReply).json();
+  assert.equal(lockedReceipt.status, "rejected");
+  assert.ok(lockedReceipt.issues.some((issue) => issue.code === "role_restricted"));
+  const lockError = dialog.getByRole("alert");
+  await lockError.waitFor();
+  const lockMessage = await lockError.innerText();
+  await switchWithEditorOpen(async () => {
+    assert.equal(await lockError.innerText(), lockMessage);
+    assert.equal(await download.isEnabled(), true);
+    const target = (await state()).canvasItems.find((item) => item.id === outputId);
+    assert.equal(target.locked, true);
+    assert.equal(target.binding.objectRef.assetId, output.id);
+  });
+  await setOutputLocked(false);
   const updated = doc(await state());
   assert.deepEqual(
     updated.data.tracks[0].clips.map((c) => c.id),
@@ -596,9 +778,47 @@ try {
   } finally {
     await rename(sourcePath + ".held", sourcePath);
   }
+
+  // After an external edit, switching must not silently advance the dirty
+  // editor's version basis. Its retry still conflicts with the saved revision.
+  await dialog.locator(".cw-timeline-clip.visual").first().click();
+  const speed = dialog.getByLabel(/Playback speed/);
+  await speed.selectOption("2");
+  const changedDoc = await page.evaluate(async ({ pid, editorId }) => {
+    const { creationClient, objectVersion } = await import("/src/backend/creationClient.ts");
+    const client = creationClient(pid);
+    const current = (await client.refresh()).editorDocuments.find((entry) => entry.id === editorId);
+    await client.command("editor.save", {
+      document: { ...current, data: { ...current.data, fps: 30 } },
+    }, [objectVersion("editor_document", current)]);
+    return client.snapshot.editorDocuments.find((entry) => entry.id === editorId);
+  }, { pid, editorId });
+  async function attemptStaleSave() {
+    const response = page.waitForResponse((r) => r.url().endsWith("/commands") &&
+      r.request().method() === "POST" &&
+      r.request().postDataJSON().payload.operations?.some((op) => op.type === "editor.save"));
+    await dialog.getByRole("button", { name: "Apply edits", exact: true }).click();
+    const reply = await response;
+    const receipt = await reply.json();
+    assert.equal(receipt.status, "rejected");
+    assert.ok(receipt.issues.some((issue) => issue.code === "revision_conflict"));
+    return reply.request().postDataJSON().expectedVersions.find((version) => version.id === editorId);
+  }
+  const staleBasis = await attemptStaleSave();
+  assert.ok(staleBasis.revision < changedDoc.revision);
+  const conflict = dialog.getByRole("alert");
+  await conflict.waitFor();
+  const conflictMessage = await conflict.innerText();
+  await switchWithEditorOpen(async () => {
+    assert.equal(await speed.inputValue(), "2");
+    assert.equal(await conflict.innerText(), conflictMessage);
+    assert.deepEqual(doc(await state()), changedDoc);
+  });
+  assert.deepEqual(await attemptStaleSave(), staleBasis);
+  assert.deepEqual(doc(await state()), changedDoc);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS cancelled render produces no result; missing source refuses rendering and preserves the editor",
+    "PASS workspace switches preserve playhead, refused drafts, conflicting versions, locked output and retryable publication",
   );
   console.log(
     "PASS actual service restart, stable source identities, UI speed/order edits and second playable export",

@@ -1,3 +1,4 @@
+import { addCanvasNode } from "./canvas_creation.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
 /** Isolated model double + real project storage. Deliberately stalled network reads. */
 import assert from "node:assert/strict";
@@ -80,13 +81,7 @@ async function setup(kind = "image") {
   const state = () => call(`/api/creation/projects/${id}`);
   await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", {
-      name: kind === "video" ? "添加视频" : "添加图片",
-      exact: true,
-    })
-    .click();
+  await addCanvasNode(page, kind === "video" ? "视频" : "图片");
   await chooseGenerationModel(page, kind === "video" ? `config:${config.id}` : { label: "fixture-image" });
   await page
     .getByRole("textbox", { name: "生成提示词", exact: true })

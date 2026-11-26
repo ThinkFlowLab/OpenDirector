@@ -37,6 +37,9 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
     arrivingNodes,
     assistantLayout,
     assistantOpen,
+    canvasRegion,
+    canvasVisible,
+    workspaceMode,
     begin,
     bypassSnapping,
     cancelResultImport,
@@ -600,7 +603,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
         }
       : mediaBounds;
   const selectionPresentation = useSelectionPresentation({
-    root,
+    root: canvasRegion,
     toolbar: toolbarElement,
     composer: composerElement,
     // Generators are screen-space UI, like the toolbar and sidebar. Only their
@@ -613,6 +616,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
     panel,
     focusRequest: presentationFocus,
     blocked:
+      !canvasVisible ||
       composerExpanded ||
       interacting ||
       references.connecting ||
@@ -620,9 +624,10 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
       pointerGesture.current.moved ||
       !selectionControls,
     controlsKey: `${assistantOpen}:${assistantLayout.width}:${hasComposer}:${hasToolbar}:${composerExpanded}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
+    preserveViewportKey: `${workspaceMode}:${canvasVisible}:${assistantOpen}:${assistantLayout.columnWidth}:${assistantLayout.side}`,
   });
   revealCreatedNodes.current = (nodes, allNodes) => {
-    if (switchPending.current || viewportMoving.current || interacting || pointerGesture.current.active ||
+    if (!canvasVisible || switchPending.current || viewportMoving.current || interacting || pointerGesture.current.active ||
         references.connecting || spacePressed || selectedRef.current.length > 1 ||
         editing || preview || activeAction || textEditingId || composerExpanded) return;
     const focused = document.activeElement;
@@ -631,7 +636,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
     const bounds = boundsOfNodes(nodes, allNodes);
     if (bounds) selectionPresentation.reveal(bounds);
   };
-  useCanvasWheelBoundary(root, selectionPresentation.userNavigation);
+  useCanvasWheelBoundary(canvasRegion, selectionPresentation.userNavigation, canvasVisible);
   const managedRunIds = useMemo(
     () => new Set(doc.nodes.filter((node) => node.autoLayout === "run").map((node) => node.id)),
     [doc.nodes],
@@ -784,7 +789,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
 
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const el = event.target as HTMLElement;
-    if (el.closest("dialog[open]")) return;
+    if (!canvasVisible || el.closest("dialog[open]")) return;
     bypassSnapping.current = event.metaKey || event.ctrlKey;
     if (bypassSnapping.current) clearGuides();
     if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
@@ -816,7 +821,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".od-desktop-navigation,.cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
+        ".od-desktop-navigation,.cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-preview,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
       )
     )
       return;

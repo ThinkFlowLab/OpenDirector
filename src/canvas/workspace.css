@@ -1,4 +1,5 @@
 .cw-workspace {
+  --cw-topbar-height: 68px;
   position: fixed;
   inset: 0;
   overflow: clip;
@@ -308,7 +309,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 68px;
+  height: var(--cw-topbar-height);
   padding: 14px 20px;
   display: flex;
   align-items: center;
@@ -928,152 +929,62 @@
 .cw-import-button:hover {
   background: #333336;
 }
-.cw-rail-shell {
+.cw-rail {
   position: absolute;
   z-index: 10;
-  top: 76px;
-  bottom: 76px;
-  left: 0;
-  width: min(248px, calc(100vw - 24px));
-  display: flex;
-  align-items: center;
-  pointer-events: none;
-}
-.cw-rail-mask {
-  position: absolute;
-  top: -76px;
-  bottom: -76px;
-  left: 0;
-  right: 0;
-  background: linear-gradient(90deg, #0d0d0df5 20%, #0d0d0dd9 55%, #0d0d0d00);
-  opacity: 0;
-  transition: opacity 300ms ease;
-  pointer-events: none;
-}
-.cw-rail-scroll {
-  position: relative;
-  max-height: 100%;
-  width: 100%;
-  overflow-y: auto;
-  scrollbar-width: none;
-  padding: 4px 0;
-  pointer-events: none;
-}
-.cw-rail-scroll::-webkit-scrollbar {
-  display: none;
-}
-.cw-rail {
-  position: relative;
-  margin-left: 10px;
-  width: 46px;
-  padding: 4px;
+  top: 82px;
+  left: 14px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  border: 1px solid #ffffff0b;
-  border-radius: 10px;
-  background: #202022;
-  box-shadow: 0 8px 24px #0003;
-  pointer-events: auto;
+  width: max-content;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid var(--cw-border);
+  border-radius: 14px;
+  background: var(--cw-surface);
+  box-shadow: 0 4px 18px #0002;
 }
-.cw-rail-item {
-  flex-shrink: 0;
+html[data-desktop-chrome] .cw-rail {
+  top: 16px;
 }
 .cw-rail-button {
-  position: relative;
   display: flex;
-  align-items: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  color: #eee;
-  background: transparent;
-}
-.cw-rail-icon {
-  display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: 8px;
+  gap: 5px;
+  min-height: 54px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--settings-muted);
+}
+.cw-rail-button:hover,
+.cw-rail-button[aria-expanded="true"] {
+  background: var(--settings-active);
+  color: var(--settings-text);
+}
+.cw-rail .cw-rail-add {
+  background: var(--cw-control-active);
+  color: var(--cw-control-highlight);
+}
+.cw-rail .cw-rail-add:hover,
+.cw-rail .cw-rail-add[aria-expanded="true"] {
+  background: var(--cw-control-accent);
+  color: var(--cw-control-on-accent);
 }
 .cw-rail-label {
-  position: absolute;
-  left: 60px;
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateX(-16px);
-  transition:
-    opacity 300ms ease,
-    transform 300ms ease;
   font-size: var(--cw-ui-font-size);
+  line-height: 1.15;
   font-weight: 500;
-  color: #a5a5a9;
-  pointer-events: none;
-}
-.cw-rail-shell[data-revealed="true"] .cw-rail-mask,
-.cw-rail-shell[data-revealed="true"] .cw-rail-label {
-  opacity: 1;
-}
-.cw-rail-shell[data-revealed="true"] .cw-rail-label {
-  transform: translateX(0);
-}
-.cw-rail-shell[data-revealed="true"] .cw-rail-scroll {
-  pointer-events: auto;
-}
-.cw-rail-shell[data-revealed="true"] .cw-rail-button {
-  width: min(210px, calc(100vw - 52px));
-}
-.cw-rail-button:hover {
-  color: #fff;
-}
-.cw-rail-button:hover .cw-rail-label {
-  color: #fff;
-}
-.cw-rail-button[aria-disabled="true"],
-.cw-rail-button[aria-disabled="true"]:hover {
-  color: #77777d;
-  cursor: not-allowed;
-}
-.cw-rail-button[aria-disabled="true"] .cw-rail-label {
-  color: inherit;
-}
-.cw-rail-button[aria-disabled="true"]:hover .cw-rail-icon {
-  background: transparent;
-  color: inherit;
-}
-:root[data-theme="light"] .cw-rail-button {
-  color: #58616e;
-}
-:root[data-theme="light"] .cw-rail-button[aria-disabled="true"],
-:root[data-theme="light"] .cw-rail-button[aria-disabled="true"]:hover,
-:root[data-theme="light"] .cw-rail-button[aria-disabled="true"] .cw-rail-label {
-  color: #a0a6af;
-}
-:root[data-theme="light"] .cw-rail-button[aria-disabled="true"]:hover {
-  background: transparent;
-}
-.cw-rail-button:hover .cw-rail-icon,
-.cw-rail-button.is-active .cw-rail-icon {
-  background: #ffffff10;
-  color: #fff;
-}
-.cw-rail-button:focus-visible {
-  outline-offset: 0 !important;
+  white-space: nowrap;
 }
 .cw-rail .cw-divider {
-  display: block;
-  margin: 4px 2px;
+  margin: 2px 6px;
+  background: var(--cw-border);
 }
-@media (prefers-reduced-motion: reduce) {
-  .cw-rail-mask,
-  .cw-rail-label {
-    transition: none;
-  }
-}
+
 .cw-divider {
   height: 1px;
   background: #ffffff10;
@@ -1176,95 +1087,40 @@
   position: absolute;
   z-index: 2;
   left: 50%;
-  top: 45%;
+  top: 48%;
+  width: min(calc(100% - 48px), 430px);
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  width: min(80vw, 600px);
-}
-.cw-empty > * {
-  position: relative;
-}
-.cw-empty .cw-aurora {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 560px;
-  height: 360px;
-  transform: translate(-50%, -50%);
-  background:
-    radial-gradient(ellipse at 30% 50%, #22382f28, transparent 58%),
-    radial-gradient(ellipse at 70% 50%, #42333222, transparent 58%);
-  filter: blur(18px);
-  border-radius: 50%;
-}
-.cw-empty-orb {
-  color: #c9cbd0;
-  opacity: 0.65;
-  margin-bottom: 12px;
-  line-height: 0;
 }
 .cw-empty h1 {
-  font-size: 23px;
-  letter-spacing: 3px;
-  font-weight: 450;
-  margin: 0 0 16px;
-  color: #dfdfe0;
+  margin: 0 0 9px;
+  font-size: 22px;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+  color: var(--settings-text);
 }
 .cw-empty p {
-  font-size: 12px;
-  color: #727277;
-  margin-bottom: 26px;
-}
-.cw-empty > div:not(.cw-aurora):not(.cw-empty-orb) {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
+  margin: 0 auto 13px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--settings-muted);
+  text-wrap: balance;
 }
 .cw-empty button {
-  pointer-events: auto;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid #ffffff16;
-  background: #1b1b1dd9;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 12px;
+  gap: 4px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--settings-muted);
+  pointer-events: auto;
 }
-
-.cw-empty-example-status {
-  gap: 8px;
-  margin: 16px auto 0;
-  max-width: 320px;
-  font-size: 12px;
-  color: #9599a8;
-}
-
-.cw-empty-example-status .cw-example-progress {
-  flex: 1;
-  min-width: 120px;
-}
-
-/* Specificity beats the shared .cw-empty small tagline rule. */
-.cw-empty small.cw-empty-example-error {
-  display: block;
-  margin: 12px auto 0;
-  max-width: 420px;
-  color: #e08a8a;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 .cw-empty button:hover {
-  background: #2a2a2d;
-}
-.cw-empty small {
-  display: block;
-  margin-top: 27px;
-  color: #49494d;
-  font-size: 10px;
-  letter-spacing: 1px;
+  background: var(--settings-hover);
+  color: var(--settings-text);
 }
 .cw-loading {
   position: absolute;
@@ -1904,6 +1760,13 @@
   margin: 0;
 }
 .cw-preview {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  color: inherit;
   background: #0a0a0bf2;
 }
 .cw-preview > header {
@@ -1921,7 +1784,9 @@
 .cw-preview > div {
   max-width: 92vw;
   max-height: 84vh;
+  overflow: auto;
 }
+.cw-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cw-preview img,
 .cw-preview video {
   max-width: 92vw;
@@ -1943,16 +1808,10 @@
   }
 }
 @media (max-width: 700px) {
-  .cw-rail-shell {
-    top: 68px;
-    bottom: 116px;
-  }
-  .cw-rail-mask {
-    top: -68px;
-    bottom: -116px;
+  .cw-workspace {
+    --cw-topbar-height: 58px;
   }
   .cw-topbar {
-    height: 58px;
     padding: 10px;
   }
   .cw-project-title {
@@ -1978,30 +1837,16 @@
     width: 30px;
   }
   .cw-rail {
-    margin-left: 8px;
-    width: 42px;
-    padding: 3px;
+    top: 72px;
+    left: 8px;
   }
-  .cw-rail-button,
-  .cw-rail-icon {
-    width: 34px;
-  }
-  .cw-rail-label {
-    left: 58px;
+  .cw-rail-button {
+    min-height: 46px;
+    gap: 3px;
+    padding: 4px 6px;
   }
   .cw-empty h1 {
-    font-size: 19px;
-  }
-  .cw-empty {
-    top: 40%;
-    width: 70vw;
-  }
-  .cw-empty button {
-    font-size: 10px;
-    padding: 9px;
-  }
-  .cw-empty small {
-    font-size: 9px;
+    font-size: 20px;
   }
   .cw-bottom-left {
     left: 10px;
@@ -2057,6 +1902,7 @@
   }
 }
 .cw-context-menu {
+  position: fixed;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
 }

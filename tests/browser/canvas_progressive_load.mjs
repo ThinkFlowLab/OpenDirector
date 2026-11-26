@@ -148,8 +148,33 @@ async function verifyLocale(browser, locale) {
   await decoded(fixture.failed);
 
   // A late read belongs to its project and cannot appear in another one.
+  const otherProject = await snapshot(fixture.b.id);
+  const otherAssetId = assetOf(otherProject, fixture.other);
+  const otherAsset = otherProject.assets.find(asset => asset.id === otherAssetId);
+  const contentPath = `/api/creation/projects/${fixture.b.id}/assets/${otherAssetId}/content`;
+  const read = page.waitForResponse(response => new URL(response.url()).pathname === contentPath);
   await open(fixture.b);
   await decoded(fixture.other);
+  assert.equal((await read).status(), 200);
+  // The open project supplies a stable asset key to both the node and the modal.
+  const source = await page.evaluate(async ({ projectId, nodeId }) => {
+    const { workspaceProjection } = await import("/src/backend/workspace.ts");
+    return workspaceProjection(projectId).baseline.nodes.find(node => node.id === nodeId).data.src;
+  }, { projectId: fixture.b.id, nodeId: fixture.other });
+  assert.equal(source, `opendirector-asset://${fixture.b.id}/${otherAssetId}`);
+  await node(fixture.other).locator("img.cw-image-preview").click();
+  await page.locator(`[data-node-id="${fixture.other}"] [data-action="preview"]`).click();
+  const preview = page.locator("dialog.cw-preview");
+  const displayed = await preview.locator("img").evaluate(async image => {
+    await image.decode();
+    const bytes = await (await fetch(image.currentSrc)).arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return { protocol: new URL(image.currentSrc).protocol, width: image.naturalWidth, height: image.naturalHeight,
+      fingerprint: "sha256:" + Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("") };
+  });
+  assert.deepEqual(displayed, { protocol: "blob:", width: 96, height: 96, fingerprint: otherAsset.fingerprint });
+  await page.keyboard.press("Escape");
+  await preview.waitFor({ state: "hidden" });
   release.resolve();
   await page.waitForTimeout(250);
   assert.equal(await node(fixture.delayed).count(), 0);

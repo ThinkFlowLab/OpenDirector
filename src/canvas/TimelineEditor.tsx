@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { TimelineTextInspector } from "./TimelineTextInspector";
 import { TimelineTextLane, TimelineTextPosition } from "./TimelineTextLane";
@@ -66,8 +67,11 @@ import { fetchMediaSource } from "../backend/creationClient.ts";
 
 export interface TimelineEditorProps {
   node: CanvasNode;
+  modeSwitch?: ReactNode;
   readOnly?: boolean;
   resources?: CanvasResource[];
+  projectResources?: CanvasResource[];
+  onReadProjectMedia?: (assetId: string, signal: AbortSignal) => Promise<string>;
   /** Returns false when the canvas rejected the edit, so the session stays open. */
   onApply: (data: TimelineData) => boolean | void | Promise<boolean | void>;
   onRender: (result: LinkedMediaResult) => boolean | Promise<boolean>;
@@ -107,8 +111,11 @@ interface ClipDrag {
 
 export function TimelineEditor({
   node,
+  modeSwitch,
   readOnly = false,
   resources = [],
+  projectResources = [],
+  onReadProjectMedia,
   onApply,
   onRender,
   onPrepareRender,
@@ -178,13 +185,18 @@ export function TimelineEditor({
     [busy, setBusy] = useState(false),
     [audioTrack, setAudioTrack] = useState("");
   const [inserted, setInserted] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [downloadStarted, setDownloadStarted] = useState(false);
   const [renderProgress, setRenderProgress] = useState<number | null>(null);
   const [rendered, setRendered] = useState<Blob | null>(null);
   const [textSourceId, setTextSourceId] = useState("");
   const fontInput = useRef<HTMLInputElement>(null);
-  const textResources = resources.filter(
-    (r) => r.kind === "text" && !/\.(srt|ass|vtt)$/i.test(r.title),
-  );
+  const textResources = useMemo(() => {
+    const canvasText = resources.filter((r) => r.kind === "text");
+    const canvasIds = new Set(canvasText.map((r) => r.assetId));
+    const projectText = projectResources.filter((r) => r.kind === "text" && !canvasIds.has(r.assetId));
+    return [...canvasText, ...projectText].filter((r) => !/\.(srt|ass|vtt)$/i.test(r.title));
+  }, [resources, projectResources]);
   const jsonInput = useRef<HTMLInputElement>(null),
     history = useRef<{ past: TimelineData[]; future: TimelineData[] }>({
       past: [],
@@ -308,8 +320,8 @@ export function TimelineEditor({
     [librarySource, setLibrarySource] = useState<TimelineLibrarySource>("all");
   const libraryResources = useMemo(
     () =>
-      timelineLibraryResources(timeline, resources, librarySource, libraryKind),
-    [resources, timeline, libraryKind, librarySource],
+      timelineLibraryResources(timeline, resources, librarySource, libraryKind, projectResources),
+    [resources, projectResources, timeline, libraryKind, librarySource],
   );
   const segments = useMemo(
     () => timelineSegments(dragPreview ?? timeline),
@@ -605,7 +617,10 @@ export function TimelineEditor({
   const addResource = async (resource: CanvasResource) => {
     const controller = beginLoad();
     try {
-      const resolved = await withMediaDuration(resource, controller.signal);
+      const source = !resource.src && resource.assetId && onReadProjectMedia
+        ? { ...resource, src: await onReadProjectMedia(resource.assetId, controller.signal) }
+        : resource;
+      const resolved = await withMediaDuration(source, controller.signal);
       if (ownsLoad(controller))
         change((current) =>
           addTimelineClip(
@@ -1065,6 +1080,7 @@ export function TimelineEditor({
     setPlaying(false);
     setRendered(null);
     setInserted(false);
+    setDownloadStarted(false);
     setRenderProgress(0);
     try {
       const publish = onPrepareRender
@@ -1100,6 +1116,7 @@ export function TimelineEditor({
   };
   const insertRender = async () => {
     if (!rendered) return;
+    setPublishing(true);
     const controller = beginLoad();
     try {
       const src = await mediaBlobDataUrl(rendered, controller.signal);
@@ -1132,7 +1149,20 @@ export function TimelineEditor({
             : t("timeline.error.addCanvasFailed"),
         );
     } finally {
-      if (ownsLoad(controller)) setBusy(false);
+      if (ownsLoad(controller)) {
+        setPublishing(false);
+        setBusy(false);
+      }
+    }
+  };
+  const downloadRender = () => {
+    if (!rendered) return;
+    try {
+      downloadFile(rendered, downloadFilename(node.data.title, "video/mp4"));
+      setDownloadStarted(true);
+    } catch (cause) {
+      setDownloadStarted(false);
+      setError(cause instanceof Error ? cause.message : t("canvas.workspace.toast.downloadFailed"));
     }
   };
   const editableAtPlayhead =
@@ -1324,6 +1354,7 @@ export function TimelineEditor({
       title={t("timeline.header.title", { title: node.data.title })}
       subtitle={t("timeline.header.subtitle")}
       className="cw-timeline-dialog"
+      headerAction={modeSwitch}
       onClose={onClose}
       onApply={() => void applyTimeline()}
       disabled={readOnly || busy || node.locked || !textInputValid || gesturePending}
@@ -1448,12 +1479,7 @@ export function TimelineEditor({
           </span>
           <button
             disabled={busy}
-            onClick={() =>
-              downloadFile(
-                rendered,
-                downloadFilename(node.data.title, "video/mp4"),
-              )
-            }
+            onClick={downloadRender}
           >
             {t("timeline.action.downloadMp4")}
           </button>
@@ -1461,10 +1487,11 @@ export function TimelineEditor({
             disabled={busy || node.locked || inserted}
             onClick={() => void insertRender()}
           >
-            {inserted
+            {publishing ? t("timeline.output.publishing") : inserted
               ? t("timeline.action.addedToCanvas")
               : t("timeline.action.addToCanvas")}
           </button>
+          {downloadStarted && <span>{t("timeline.render.downloadStarted")}</span>}
         </div>
       )}
       <fieldset

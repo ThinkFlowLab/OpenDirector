@@ -1,4 +1,5 @@
 /** Real UI copy/paste and history against an isolated creation server. */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -81,10 +82,7 @@ try {
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     return snapshot;
   }
-  await page
-    .getByRole("toolbar", { name: "画布创作工具" })
-    .getByRole("button", { name: "添加文本", exact: true })
-    .click();
+  await addCanvasNode(page, "文本");
   const original = (await count(1)).canvasItems[0];
   await page
     .locator(`.react-flow__node[data-id="${original.id}"] .cw-node-title`)

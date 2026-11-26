@@ -930,22 +930,23 @@ export function currentAsset(
   snapshot: ProjectSnapshot,
   item: CanvasItem,
 ): Asset | undefined {
-  if (item.binding.role === "material") {
-    const binding = item.binding;
-    return snapshot.assets.find((a) => a.id === binding.objectRef.assetId);
-  }
-  if (item.binding.role === "generation") {
-    const binding = item.binding;
-    if (binding.materialOverride)
-      return snapshot.assets.find(
-        (a) => a.id === binding.materialOverride!.assetId,
-      );
-    const spec = snapshot.generationSpecs.find(
-      (s) => s.id === binding.objectRef.id,
-    );
+  const assetId = displayedAssetId(item, (specId) => {
+    const spec = snapshot.generationSpecs.find((s) => s.id === specId);
     const result = snapshot.results.find((r) => r.id === spec?.currentResultId);
-    return snapshot.assets.find((a) => a.id === result?.asset.assetId);
-  }
+    return result?.asset.assetId;
+  });
+  return assetId ? snapshot.assets.find((a) => a.id === assetId) : undefined;
+}
+
+/** Resolve the asset actually displayed, including an explicit material override. */
+export function displayedAssetId(
+  item: CanvasItem,
+  adoptedAssetId: (specId: string) => string | undefined,
+): string | undefined {
+  const binding = item.binding;
+  if (binding.role === "material") return binding.objectRef.assetId;
+  if (binding.role === "generation")
+    return binding.materialOverride?.assetId ?? adoptedAssetId(binding.objectRef.id);
 }
 export function visibleItems(snapshot: ProjectSnapshot) {
   const items = new Map(snapshot.canvasItems.map((item) => [item.id, item]));

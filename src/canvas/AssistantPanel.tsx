@@ -5,11 +5,17 @@ import { assistantModelSelection } from "./agentPreferences";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
+import type { Asset } from "../contracts/generated.ts";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import "./assistant-experience.css";
+import "./assistant-workspace.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
 import { AssistantReply } from "./AssistantReply";
+import type { ProjectEditorTarget } from "./assistantResultEditors.ts";
+import { AssistantResultCard, AssistantTimelineResultCard } from "./AssistantResultCard";
+import { useAssistantResults } from "./useAssistantResults.ts";
+import { CreationAssetList } from "./CreationAssetList.tsx";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
 import { ModelPicker } from "./AssistantPickers";
@@ -26,6 +32,7 @@ import {
   type ChatReferenceEditorHandle,
 } from "./ChatReferenceEditor";
 import { nodeReferenceAsset } from "./generationReferenceContent.ts";
+import { pinnedReferenceAsset } from "./pinnedReferenceAssets.ts";
 import type { CanvasNode } from "./model";
 import {
   pendingCanvasReferences,
@@ -54,7 +61,7 @@ function kindOf(asset: ChatAsset) {
         : "text";
 }
 
-/** OpenDirector conversation tools in an OpenDirector floating canvas window. */
+/** Shared conversation and composer for chat creation and the canvas assistant. */
 export function AssistantPanel({
   documentId,
   readOnly = false,
@@ -64,6 +71,7 @@ export function AssistantPanel({
   visibleNodes,
   selectedNodes,
   open,
+  collapsible = true,
   layout,
   selectionRequest,
   onClose,
@@ -72,6 +80,11 @@ export function AssistantPanel({
   onAgentModel,
   onOpenSettings,
   onPrepareReferences,
+  onCreateProjectTimeline,
+  onOpenProjectTimeline,
+  onPreviewResult,
+  onViewResultOnCanvas,
+  onEditResult,
 }: {
   documentId: string;
   readOnly?: boolean;
@@ -81,6 +94,7 @@ export function AssistantPanel({
   visibleNodes: CanvasNode[];
   selectedNodes: CanvasNode[];
   open: boolean;
+  collapsible?: boolean;
   layout: AssistantLayout;
   selectionRequest: number;
   onClose: () => void;
@@ -88,12 +102,18 @@ export function AssistantPanel({
   /** Lets the canvas default new nodes to the model this dialog is using. */
   onModelSelections?: (selections: ModelSelections) => void;
   onAgentModel?: (projectId: string, selection: AssistantModelSelection | null) => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (kind: keyof ModelSelections) => void;
   onPrepareReferences: () => Promise<boolean>;
+  onCreateProjectTimeline: () => Promise<string>;
+  onOpenProjectTimeline: (itemId: string) => Promise<void>;
+  onPreviewResult: (asset: Asset) => void;
+  onEditResult: (target: ProjectEditorTarget, signal?: AbortSignal) => Promise<void>;
+  onViewResultOnCanvas: (asset: Asset, itemId?: string | null) => Promise<void>;
 }) {
   const t = useT();
   const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open, readOnly);
   const { value } = chat;
+  const { results, timelines, snapshot } = useAssistantResults(documentId, open && !collapsible, value.messages);
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
@@ -114,6 +134,8 @@ export function AssistantPanel({
   const uploads = useReferenceUploads(documentId);
   const projectReferences = useProjectMentionAssets(documentId);
   const editor = useRef<ChatReferenceEditorHandle>(null);
+  const assetListAnchor = useRef<HTMLSpanElement>(null);
+  const [projectAssetsOpen, setProjectAssetsOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{assetId: string; anchor: DOMRect} | null>(null);
@@ -156,7 +178,7 @@ export function AssistantPanel({
   const currentRuntime = chat.runtimes.find((item) => item.id === (value.runtime ?? "default"));
   const missingAgentModel = needsAgentModel(chat.loaded, currentRuntime, !!chat.agent);
   const referenceDisabled =
-    !chat.loaded || chat.adding || checkingReferences || chat.sending;
+    readOnly || !chat.loaded || chat.adding || checkingReferences || chat.sending;
   const sessionDisabledReason = readOnly ? t("canvas.workspace.preview.mode") : chat.changing
     ? t("assistant.sessions.disabled.switching")
     : !chat.loaded
@@ -187,8 +209,27 @@ export function AssistantPanel({
       chat.setContent(content, projectReferences.assets);
   }, [projectReferences.assets]);
 
+  const previouslyOpen = useRef(open);
+  const openFocusTarget = useRef<Element | null>(null);
   useEffect(() => {
-    if (open && chat.loaded) editor.current?.focus();
+    if (open && !previouslyOpen.current) {
+      // A mode change can reveal chat while the user is still editing elsewhere.
+      openFocusTarget.current = collapsible ? document.activeElement : null;
+    }
+    previouslyOpen.current = open;
+    if (!open) {
+      openFocusTarget.current = null;
+      return;
+    }
+    if (!chat.loaded) return;
+    const active = document.activeElement;
+    // Loading a default-open chat must not dismiss a project menu or rename.
+    // An explicit open retains focus intent until the user chooses another control.
+    if (!active?.closest('[aria-modal="true"]') &&
+        (active === document.body || active?.closest("#canvas-assistant") ||
+         active === openFocusTarget.current))
+      editor.current?.focus();
+    openFocusTarget.current = null;
   }, [open, chat.loaded, value.conversationId]);
   const displayedAssets = [
     ...new Map(
@@ -232,7 +273,7 @@ export function AssistantPanel({
   useEffect(() => {
     if (nearBottom.current && log.current)
       log.current.scrollTop = log.current.scrollHeight;
-  }, [value.messages, open]);
+  }, [value.messages, open, results]);
   useEffect(() => () => confirming.current?.abort(), [pending?.id]);
   const confirmPending = async (end: number) => {
     if (!pending || referenceDisabled || confirming.current) return;
@@ -317,6 +358,21 @@ export function AssistantPanel({
       (assets) => editor.current?.insert(assets) ?? false,
     );
 
+  function referenceResult(asset: Asset) {
+    const input = editor.current;
+    if (!input || referenceDisabled || chat.changing) return;
+    if (value.draftContent?.some((part) =>
+      part.type === "reference" && part.binding === "asset" &&
+      part.assetId === asset.id && part.fingerprint === asset.fingerprint
+    )) {
+      input.focus();
+      return;
+    }
+    // Insert beside a selection so clicking a result keeps any highlighted draft.
+    const end = input.caret().end;
+    input.insert([pinnedReferenceAsset(asset)], { start: end, end });
+  }
+
   useEffect(() => {setMediaPreview(null);}, [documentId, value.conversationId, open]);
   useEffect(() => {
     const closePreview = () => setMediaPreview(null);
@@ -333,6 +389,17 @@ export function AssistantPanel({
   }
   const hoveredAsset = mediaPreview && displayedAssets.find(item => item.id === mediaPreview.assetId);
 
+  const projectAssetsButton = !collapsible && (
+    <span ref={assetListAnchor} className="cw-asset-list-anchor">
+      <button type="button" className="cw-assistant-icon-button" data-chat-project-assets
+        aria-label={t("workspaceModes.projectAssets")} title={t("workspaceModes.projectAssets")}
+        aria-haspopup="dialog" aria-expanded={projectAssetsOpen}
+        onClick={() => setProjectAssetsOpen((previous) => !previous)}>
+        <CanvasIcon name="folder" size={18} />
+      </button>
+    </span>
+  );
+
   const latestUser = value.messages.at(-2);
   const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
     new URLSearchParams({
@@ -347,6 +414,8 @@ export function AssistantPanel({
     <aside
       id="canvas-assistant"
       className={`cw-assistant-panel${dragOver ? " is-drag-over" : ""}`}
+      data-floating={layout.floating || undefined}
+      style={layout.floatingStyle}
       aria-label={t("assistant.panel.aria")}
       hidden={!open}
       onScrollCapture={() => setMediaPreview(null)}
@@ -360,14 +429,14 @@ export function AssistantPanel({
           event.preventDefault();
           event.stopPropagation();
           if (mediaPreview) setMediaPreview(null);
-          else onClose();
+          else if (collapsible) onClose();
         }
       }}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) {
           event.preventDefault();
           event.stopPropagation();
-          setDragOver(true);
+          if (!readOnly) setDragOver(true);
         }
       }}
       onDragLeave={(event) => {
@@ -387,7 +456,8 @@ export function AssistantPanel({
       <AssistantConversations
         key={`${documentId}:${open}`}
         activeId={value.conversationId}
-        hasMessages={!!value.messages.length}
+        messageCount={value.messages.length}
+        hasDraft={Boolean(value.draft.trim() || value.assets.length || value.skills?.length)}
         projectTitle={documentTitle}
         items={chat.threads}
         loading={chat.threadsLoading}
@@ -399,6 +469,8 @@ export function AssistantPanel({
         }
         onChange={changeConversation}
         onClose={onClose}
+        collapsible={collapsible}
+        placement={collapsible && !layout.mobile ? layout : undefined}
       />
       <div
         className="cw-assistant-log"
@@ -441,6 +513,7 @@ export function AssistantPanel({
           >
             {message.role === "assistant" && (
               <div className="cw-assistant-message-heading">
+                {!collapsible && <img src={openDirectorLogo} width={20} height={20} alt="" />}
                 OpenDirector
                 {(message.modelIsCliDefault || message.model) && <small>{message.modelIsCliDefault
                   ? t("assistant.agent.cliDefault")
@@ -504,6 +577,27 @@ export function AssistantPanel({
                   : t("assistant.reply.empty"))
               )}
             </div>
+            {!collapsible && message.role === "assistant" && previous?.role === "user" &&
+              results.get(previous.id)?.map((result) => (
+                <AssistantResultCard
+                  key={result.resultId ?? result.assetId}
+                  projectId={documentId}
+                  result={result}
+                  readOnly={readOnly}
+                  locateDisabled={readOnly && !visibleNodes.some(node => node.id === result.itemId)}
+                  referenceDisabled={referenceDisabled || chat.changing}
+                  onPreview={onPreviewResult}
+                  onReference={referenceResult}
+                  onViewOnCanvas={onViewResultOnCanvas}
+                  timelines={timelines.get(result.assetId) ?? []}
+                  onEdit={onEditResult}
+                />
+              ))}
+            {!collapsible && message.role === "assistant" && message.publishedTimelines?.projectId === documentId &&
+              message.publishedTimelines.timelines.map(result => (
+                <AssistantTimelineResultCard key={result.editorId} result={result} projectId={documentId}
+                  readOnly={readOnly} eventCursor={message.publishedTimelines?.eventCursor} snapshot={snapshot} onEdit={onEditResult} />
+              ))}
             {trace && (
               <a className="cw-assistant-message-status cw-assistant-trace-link"
                 href={`/?${trace}`} target="_blank" rel="noopener noreferrer">
@@ -524,6 +618,7 @@ export function AssistantPanel({
         })}
       </div>
       <div className="cw-assistant-composer-area">
+        {readOnly && projectAssetsButton}
         {chat.error && (
           <div className="cw-assistant-error" role="alert">
             <span>{chat.error}</span>
@@ -701,15 +796,23 @@ export function AssistantPanel({
           />
           <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />
           <div className="cw-assistant-toolbar">
+            {!readOnly && projectAssetsButton}
             <button
               type="button"
-              className="cw-assistant-icon-button"
+              className="cw-assistant-icon-button cw-assistant-upload"
               aria-label={t("assistant.panel.upload")}
               title={t("assistant.panel.uploadHint")}
               disabled={referenceDisabled || value.assets.length >= 64}
               onClick={() => fileInput.current?.click()}
             >
-              <span className="cw-assistant-symbol cw-assistant-symbol-plus" aria-hidden="true">+</span>
+              {collapsible ? (
+                <span className="cw-assistant-symbol cw-assistant-symbol-plus" aria-hidden="true">+</span>
+              ) : (
+                <>
+                  <CanvasIcon name="upload" size={16} />
+                  <span>{t("assistant.panel.upload")}</span>
+                </>
+              )}
             </button>
             <button
               type="button"
@@ -732,7 +835,7 @@ export function AssistantPanel({
               disabled={!chat.loaded || chat.sending}
               initializing={!chat.loaded || !chat.runtimes.length}
               onChange={chat.selectAgent}
-              onConfigure={onOpenSettings}
+              onConfigure={() => onOpenSettings("agent")}
             />
             <SkillPicker
               projectId={documentId}
@@ -788,7 +891,7 @@ export function AssistantPanel({
           ) : missingAgentModel ? (
             <>
               {t("assistant.agent.noAgentModels")}{" · "}
-              <button type="button" onClick={onOpenSettings}>
+              <button type="button" onClick={() => onOpenSettings("agent")}>
                 {t("assistant.agent.configureModel")}
               </button>
             </>
@@ -803,7 +906,7 @@ export function AssistantPanel({
           )}
         </div>
       </div>
-      {!layout.mobile && (
+      {collapsible && !layout.mobile && !layout.floating && (
         <div
           className="cw-assistant-resizer"
           role="separator"
@@ -824,6 +927,7 @@ export function AssistantPanel({
         ref={fileInput}
         className="sr-only"
         type="file"
+        disabled={readOnly}
         multiple
         accept="image/*,.heic,.heif,video/*,audio/*,text/*,.md,.markdown,.txt"
         aria-label={t("assistant.panel.selectFiles")}
@@ -838,6 +942,19 @@ export function AssistantPanel({
           <span>{t("assistant.panel.dropHint")}</span>
         </div>
       )}
+      {projectAssetsOpen && <CreationAssetList
+        hidden={!open || collapsible}
+        projectId={documentId}
+        anchor={assetListAnchor.current}
+        onClose={() => setProjectAssetsOpen(false)}
+        actions={readOnly ? { kind: "preview", onPreview: onPreviewResult } : {
+          kind: "chat",
+          referenceDisabled: referenceDisabled || chat.changing,
+          onReference: referenceResult,
+          onCreateTimeline: onCreateProjectTimeline,
+          onOpenTimeline: onOpenProjectTimeline,
+        }}
+      />}
       {uploads.dialog}
     </aside>
   );

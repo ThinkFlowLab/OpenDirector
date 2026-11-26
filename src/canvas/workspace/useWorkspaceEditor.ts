@@ -1,13 +1,17 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { currentAsset } from "../../backend/creationClient";
 import { creationClient } from "../../backend/creationClient.ts";
+import { getEditingState } from "../../backend/editSession.ts";
 
+import { CreationProjection } from "../../backend/creationProjection";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
 import { MediaPublication } from "../../backend/mediaPublication";
 import { backendModel } from "../../backend/rules.ts";
 import { workspaceProjection } from "../../backend/workspace";
 
+import { prepareProjectEditorItem, resolveProjectEditorItem, type ProjectEditorTarget } from "../assistantResultEditors.ts";
+import type { CanvasItem, ProjectSnapshot } from "../../contracts/generated.ts";
 import { lockedNodeIds } from "../hierarchy";
 import { captureEditorSource, validateNodeActionSource, type LinkedMediaResult, type ResultSource } from "../linkedResults";
 import { type CanvasDocument, type CanvasNode, type CanvasNodeData } from "../model";
@@ -80,6 +84,18 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
       }),
     [doc.nodes],
   );
+  const showEditor = (document: CanvasDocument, node: CanvasNode, mode: EditorMode, basis?: ProjectSnapshot, unplaced?: CanvasItem) => {
+    editorSession.current = ["image", "timeline", "stack", "tool", "external"].includes(node.type)
+      ? new CreationEditorSession(creationClient(document.id), document, node.id, basis, unplaced) : null;
+    const source = captureEditorSource(document.id, node);
+    editorOrigin.current = source;
+    if (basis && (node.type === "video" || node.type === "audio"))
+      mediaPublications.current.set(source, new MediaPublication(creationClient(document.id), basis, node.id, unplaced));
+    setActionSession(null);
+    setEditorMode(mode);
+    setEditing(node);
+    setMenu(null);
+  };
   const openEditor = async (node: CanvasNode, mode: EditorMode = "default") => {
     if (readOnly) {
       if (node.type === "timeline") {
@@ -100,7 +116,6 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
       return;
     }
     const projectId = historyRef.current.present.id;
-    editorSession.current = null;
     if (
       ["image", "timeline", "stack", "tool", "external"].includes(node.type)
     ) {
@@ -117,18 +132,50 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
       if (current.id !== projectId) return;
       node = current.nodes.find((item) => item.id === node.id)!;
       if (!node || lockedNodeIds(current.nodes).has(node.id)) return;
-      editorSession.current = new CreationEditorSession(
-        creationClient(projectId),
-        current,
-        node.id,
-      );
     }
-    editorOrigin.current = captureEditorSource(projectId, node);
-    setActionSession(null);
-    setEditorMode(mode);
-    setEditing(node);
-    setMenu(null);
+    showEditor(historyRef.current.present, node, mode);
   };
+
+  // Cards and the project menu can target items outside the visible projection.
+  // Hydrate the exact acknowledged item, without installing another workspace.
+  const openingProjectEditor = useRef(false);
+  const openProjectEditor = async (target: ProjectEditorTarget, signal?: AbortSignal) => {
+    const projectId = target.kind === "media" ? target.asset.projectId : target.projectId;
+    const active = () => rt.mounted.current && !signal?.aborted && !rt.switchPending.current
+      && rt.doc.id === projectId && getEditingState(projectId)?.mode !== "preview" && !rt.editing;
+    if (!active() || openingProjectEditor.current) throw new Error(t("canvas.workspace.error.editorUnavailable"));
+    openingProjectEditor.current = true;
+    try {
+      if (!(await persistCurrentDocument(() => historyRef.current.present, persist)))
+        throw new Error(t("canvas.workspace.toast.editorUnsaved"));
+      if (!active()) return;
+      const client = creationClient(projectId);
+      await client.refresh();
+      if (!active()) return;
+      const { itemId, unplaced } = await prepareProjectEditorItem(client, target, rt.center);
+      if (!active()) return;
+      const snapshot = client.snapshot;
+      const source = unplaced ? target : { ...target, itemId };
+      const bound = resolveProjectEditorItem(snapshot, source, unplaced?.id);
+      const basis = unplaced ? {
+        ...snapshot, canvasItems: [...snapshot.canvasItems.filter(item => item.id !== unplaced.id), unplaced],
+      } : snapshot;
+      // Only this modal sees the provisional item. The workspace keeps the real projection.
+      const projection = unplaced ? new CreationProjection(client) : workspaceProjection(projectId);
+      const document = await projection.read(basis);
+      if (!active()) return;
+      const latest = resolveProjectEditorItem(client.snapshot, source, unplaced?.id);
+      if ((!unplaced && !latest) || bound?.revision !== latest?.revision)
+        throw new Error(t("assistant.result.editorChanged"));
+      const node = document.nodes.find(candidate => candidate.id === itemId)
+        ?? document.hiddenNodes?.find(candidate => candidate.id === itemId);
+      if (!node) throw new Error(t("canvas.workspace.error.editorUnavailable"));
+      showEditor(document, node, node.type === "audio" || node.type === "video" ? "trim" : "default", basis, unplaced);
+    } finally {
+      openingProjectEditor.current = false;
+    }
+  };
+
   const closeEditor = () => {
     if (editorSaving.current) return;
     setEditing(null);
@@ -170,7 +217,8 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
         projection.baseline = merged;
         projection.basis = snapshot;
         setHistory((history) => ({ ...history, present: merged }));
-        const node = merged.nodes.find((item) => item.id === session.itemId);
+        const node = merged.nodes.find((item) => item.id === session.itemId)
+          ?? merged.hiddenNodes?.find((item) => item.id === session.itemId);
         if (node) editorOrigin.current = captureEditorSource(projectId, node);
       }
       notify(t("canvas.workspace.toast.editorSaved"));
@@ -386,6 +434,7 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
   };
   rt.resources = resources;
   rt.openEditor = openEditor;
+  rt.openProjectEditor = openProjectEditor;
   rt.closeEditor = closeEditor;
   rt.commitEditorData = commitEditorData;
   rt.addLinkedOutputs = addLinkedOutputs;

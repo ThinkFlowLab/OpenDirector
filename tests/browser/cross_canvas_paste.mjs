@@ -1,4 +1,5 @@
 /** Isolated model double + real project storage: copy media between canvases (#69). */
+import { addCanvasNode } from "./canvas_creation.mjs";
 import assert from "node:assert/strict";
 import { launchBrowser } from "./engine.mjs";
 import { chooseGenerationModel } from "./model_picker.mjs";
@@ -49,7 +50,7 @@ try {
   await page.goto(`${base}/ai-tool/ai-canvas/${source.id}`);
   await saved();
   // One generated image and one upload.
-  await page.getByRole("toolbar", { name: "Canvas creation tools" }).getByRole("button", { name: "Add Image", exact: true }).click();
+  await addCanvasNode(page, "Image");
   await chooseGenerationModel(page, { label: "fixture-image" });
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Copied generation");
   await until(async () => (await source.state()).generationSpecs[0]?.modelConfigId);

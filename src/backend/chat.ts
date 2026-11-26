@@ -63,6 +63,16 @@ export interface ChatSource {
   title: string;
 }
 export interface ChatMessage {
+  publishedTimelines?: {
+    projectId: string;
+    eventCursor?: number;
+    timelines: Array<{ editorId: string; itemId: string | null; revision: number; title: string }>;
+  };
+  publishedAssets?: {
+    projectId: string;
+    eventCursor: number;
+    assets: Array<{ id: string; name: string; fingerprint: string }>;
+  };
   sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;

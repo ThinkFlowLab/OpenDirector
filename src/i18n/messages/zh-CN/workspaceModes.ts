@@ -1,0 +1,16 @@
+export const workspaceModes = {
+  "workspaceModes.label": "创作方式",
+  "workspaceModes.agent": "对话创作",
+  "workspaceModes.canvas": "画布创作",
+  "workspaceModes.short.agent": "对话",
+  "workspaceModes.short.canvas": "画布",
+  "workspaceModes.preferenceFailed": "已切换，本浏览器未能保存模式偏好。",
+  "workspaceModes.showCanvas": "查看画布",
+  "workspaceModes.floatOnCanvas": "在画布中浮动",
+  "workspaceModes.projectAssets": "项目素材",
+  "workspaceModes.importMedia": "导入素材",
+  "workspaceModes.createTimeline": "新建时间线",
+  "workspaceModes.retryOpenTimeline": "重试打开已创建的时间线",
+  "workspaceModes.referenceAsset": "在对话中引用",
+  "workspaceModes.importingMedia": "正在导入素材…",
+} as const;
