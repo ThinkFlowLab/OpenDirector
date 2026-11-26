@@ -26,13 +26,13 @@ try {
     }, session);
     await command("project.create", { name: `Composer placement ${projectId}` });
     const page = await browser.newPage({
-      locale: desktop ? "zh-CN" : "en-US",
       viewport: { width: 1400, height: 880 },
       deviceScaleFactor: desktop ? 1.5 : 1,
     });
     try {
       page.setDefaultTimeout(10000);
       await page.addInitScript((desktop) => {
+        localStorage.setItem("opendirector.locale.v1", desktop ? "zh-CN" : "en-US");
         localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
         if (desktop) {
           window.opendirectorDesktop = { registerSession() {}, setLocale() {} };
