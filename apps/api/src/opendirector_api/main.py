@@ -83,7 +83,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                 await creation_generation.close()
                 availability.probe.close()
 
-    app = FastAPI(title="OpenDirector Local API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="OpenDirector Local API", version="0.1.6", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation,
         PromptOptimization(creation_projects, model_configs, chat_provider or ChatCompletions(),
             cli_rewrite=_cli_prompt_rewrite)))
