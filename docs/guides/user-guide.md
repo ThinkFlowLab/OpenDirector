@@ -176,6 +176,7 @@ Select a node, then choose an action from its toolbar.
 
 - **Images**: Crop, rotate, flip, adjust colors, work with layers, add text, shapes, or annotations, and edit selections.
 - **Video and audio**: Extract frames, trim, extract audio tracks, and process clips.
+  When trimming a video, choose WebM (the default) or MP4 under **Output format**. Choose MP4 if your model requires MP4 reference video.
 - **AI tools**: Extend images, erase content, remove backgrounds, edit images with AI, upscale, and more. Availability depends on the connected models.
 
 For a local edit, mark an area or create a selection first, then enter your instructions and confirm the action. If a required model capability is missing, follow the tool's instructions to configure it. Hover over a disabled control for an explanation.

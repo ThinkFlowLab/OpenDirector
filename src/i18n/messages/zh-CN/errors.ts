@@ -363,6 +363,7 @@ export const errors = {
   "errors.videoAction.audioTrack": "音轨",
   "errors.videoAction.cropTitle": "画面裁剪",
   "errors.videoAction.trimTitle": "时长修剪",
+  "errors.videoAction.mp4TrimFailed": "无法将所选片段编码为 MP4。请检查源视频，或选择 WebM。",
   "errors.text.noAgent": "请先在设置中配置并选择 Agent 模型",
   "errors.text.promptRequired": "请输入生成要求",
   "errors.text.maxTokens": "最大输出长度应为 1–32768",

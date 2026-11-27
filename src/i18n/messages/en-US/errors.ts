@@ -468,6 +468,8 @@ export const errors = {
   "errors.videoAction.audioTrack": "audio track",
   "errors.videoAction.cropTitle": "Frame crop",
   "errors.videoAction.trimTitle": "Duration trim",
+  "errors.videoAction.mp4TrimFailed":
+    "Could not encode the selected clip as MP4. Check the source video or choose WebM.",
   "errors.text.noAgent":
     "Configure and select an Agent model in Settings first.",
   "errors.text.promptRequired": "Enter a generation request.",
