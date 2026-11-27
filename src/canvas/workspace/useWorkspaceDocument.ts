@@ -520,8 +520,8 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime, readOnly: boolean) {
     const epoch = autosaveEpoch.current;
     if (contentChanged) setSaveStatus({ state: "saving" });
     const timeout = setTimeout(() => {
-      // An editor transaction explicitly flushes the current canvas draft.
-      // Its preceding timer must not save that old document after the receipt.
+      // Editor transactions and remote refreshes invalidate preceding timers
+      // so they cannot save an old document against the new baseline.
       if (epoch === autosaveEpoch.current && !switchPending.current && !editorSaving.current)
         void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
@@ -600,6 +600,9 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime, readOnly: boolean) {
           const known = new Set(
             (projection.basis?.canvasItems ?? []).map((item) => item.id),
           );
+          // A due timer still holds current until React installs merged. It
+          // must not undo this refresh against the new authoritative baseline.
+          invalidateScheduledAutosave();
           projection.baseline = merged;
           projection.basis = snapshot;
           setHistory((history) => ({ ...history, present: merged }));
@@ -618,7 +621,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime, readOnly: boolean) {
       active = false;
       unsubscribe();
     };
-  }, [doc.id, ready, notify, historyRenderVersion, readOnly]);
+  }, [doc.id, ready, notify, historyRenderVersion, readOnly, invalidateScheduledAutosave]);
   useEffect(() => {
     if (!ready) return;
     const projection = workspaceProjection(doc.id);
