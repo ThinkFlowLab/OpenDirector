@@ -604,6 +604,10 @@ export const errors = {
   "errors.files.read": "无法读取 {name}",
   "errors.files.clipboardRead": "素材读取失败。",
   "errors.files.clipboardExpired": "复制的素材已失效，请重新复制。",
+  "errors.files.clipboardUnavailable":
+    "当前浏览器无法写入系统剪贴板，请改为下载素材。",
+  "errors.files.clipboardWrite":
+    "系统剪贴板拒绝了复制，请允许剪贴板访问或改为下载素材。",
   "errors.media.sharedTable": "画布共享媒体表无效。",
   "errors.media.sharedMissing": "画布引用了不存在的共享媒体。",
   "errors.refEvidence.editSource": "编辑结果来源",

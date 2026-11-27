@@ -216,6 +216,12 @@ export const canvasWorkspace = {
     one: "已复制 {count} 个节点",
     other: "已复制 {count} 个节点",
   },
+  "canvas.workspace.toast.copiedImage":
+    "已复制图片，可粘贴到画布或其他应用。",
+  "canvas.workspace.toast.copiedText":
+    "已复制文本，可粘贴到画布或其他应用。",
+  "canvas.workspace.toast.copiedInAppOnly":
+    "已复制，仅可粘贴到画布。{error}",
   "canvas.workspace.toast.selectEditable": "请先选择可编辑的节点。",
   "canvas.workspace.toast.cutLocked": "节点或其成员受锁定引用保护，未剪切。",
   "canvas.workspace.toast.cut": {

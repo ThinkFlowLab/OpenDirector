@@ -223,6 +223,12 @@ export const canvasWorkspace = {
     one: "Copied {count} node",
     other: "Copied {count} nodes",
   },
+  "canvas.workspace.toast.copiedImage":
+    "Copied the image. Paste it on the canvas or in another app.",
+  "canvas.workspace.toast.copiedText":
+    "Copied the text. Paste it on the canvas or in another app.",
+  "canvas.workspace.toast.copiedInAppOnly":
+    "Copied for pasting on the canvas only. {error}",
   "canvas.workspace.toast.selectEditable": "Select an editable node first.",
   "canvas.workspace.toast.cutLocked":
     "The node or its members are protected by a locked reference; nothing was cut.",

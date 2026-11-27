@@ -799,6 +799,10 @@ export const errors = {
   "errors.files.clipboardRead": "Could not read the media.",
   "errors.files.clipboardExpired":
     "The copied media has expired. Copy it again.",
+  "errors.files.clipboardUnavailable":
+    "This browser cannot write to the system clipboard. Download the asset instead.",
+  "errors.files.clipboardWrite":
+    "The system clipboard rejected the copy. Allow clipboard access or download the asset instead.",
   "errors.media.sharedTable": "The canvas shared-media table is invalid.",
   "errors.media.sharedMissing":
     "The canvas references shared media that does not exist.",

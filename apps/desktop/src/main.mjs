@@ -133,7 +133,10 @@ async function start() {
   });
   await host.ready;
   const ownedSession = session.fromPartition('persist:opendirector');
-  ownedSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  // Copying a canvas node to other apps writes the system clipboard; reading
+  // it and every other permission stay denied.
+  ownedSession.setPermissionRequestHandler((_contents, permission, callback) =>
+    callback(permission === 'clipboard-sanitized-write'));
   let projectSubscription;
   ownedSession.protocol.handle('opendirector', request => proxyRequest(request, host, async (url, options) => {
     const pathname = new URL(url).pathname;
