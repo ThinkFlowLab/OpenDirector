@@ -16,9 +16,10 @@ try {
     viewport: { width: 1500, height: 1000 },
   });
   // Skip the first-run model setup welcome; it covers the canvas.
-  await page.addInitScript(() =>
-    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
-  );
+  await page.addInitScript(() => {
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
+    localStorage.setItem("opendirector.locale.v1", "zh-CN");
+  });
   page.setDefaultTimeout(20000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -31,6 +32,18 @@ try {
     ).isolated,
     true,
   );
+  const projectId = crypto.randomUUID();
+  const projectPath = `/api/creation/projects/${projectId}`;
+  const created = await page.request.post(base + projectPath + "/commands", {
+    headers,
+    data: {
+      projectId,
+      commandId: crypto.randomUUID(),
+      type: "project.create",
+      payload: { name: `JiuwenSwarm picker ${projectId.slice(0, 8)}` },
+    },
+  });
+  assert.equal((await created.json()).status, "applied");
   let status = "needs_configuration";
   await page.route(/\/assistant\/runtimes(?:\?.*)?$/, (route) =>
     route.fulfill({
@@ -84,7 +97,7 @@ try {
       ],
     }),
   );
-  await page.goto(base);
+  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   await page.getByRole("button", { name: "与 AI 对话", exact: true }).click();
   const trigger = page.getByRole("button", { name: /^Agent：/ });
@@ -135,16 +148,11 @@ try {
       exact: true,
     })
     .waitFor();
-  const project = (
-    await (
-      await page.request.get(base + "/api/creation/projects", { headers })
-    ).json()
-  ).projects[0];
   const deadline = Date.now() + 10000;
   while (true) {
     const saved = await (
       await page.request.get(
-        `${base}/api/creation/projects/${project.id}/assistant`,
+        `${base}${projectPath}/assistant`,
         { headers },
       )
     ).json();
