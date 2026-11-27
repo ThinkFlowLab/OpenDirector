@@ -129,3 +129,40 @@ Pika、LightX2V Turbo、PAI Acc 都要求每个请求带 `lora` 字段，并使�
 局部重绘：「视频编辑」在 FastH3-Omni 请求格式的模型上可用。
 
 ![视频编辑](images/h3-conditioning/video-edit-zh.png)
+
+## 8. 敦煌素材实测
+
+同一组素材在 OpenDirector 里走完四项能力，服务同第 7 节。每项只跑了一个种子，没有挑选：能说明功能通不通，不能说明质量高低。
+
+素材与结果都在 [`assets/h3-conditioning/`](assets/h3-conditioning/)，视频为便于入库压缩到 540 像素宽：
+
+| 文件 | 内容 |
+| --- | --- |
+| [`source-dance.mp4`](assets/h3-conditioning/source-dance.mp4) | 原始舞蹈视频，25.5 秒，提供动作。来源：哔哩哔哩 BV1yFyWziEGF，由原作者上传，仅作测试输入 |
+| [`reference-picture.jpg`](assets/h3-conditioning/reference-picture.jpg) | 敦煌飞天造型图，提供服装和风格，由测试者提供 |
+| [`control-person-depth.mp4`](assets/h3-conditioning/control-person-depth.mp4) | 人物深度控制视频：视频分割得到的人物遮罩与深度图相乘，凳子和房间不在其中 |
+| [`result-structure-control.mp4`](assets/h3-conditioning/result-structure-control.mp4) | 结构控制：控制视频加造型图，768×1344、600 帧，音轨换成了原视频的音乐 |
+| [`result-continuation.mp4`](assets/h3-conditioning/result-continuation.mp4) | 潜空间接续：接在上一段成片之后，119 帧 |
+| [`result-video-edit.mp4`](assets/h3-conditioning/result-video-edit.mp4) | 局部重绘：对接续结果用「视频编辑」框选画面上方 37%，重画成夜空 |
+| [`keyframe-a.jpg`](assets/h3-conditioning/keyframe-a.jpg)、[`keyframe-b.jpg`](assets/h3-conditioning/keyframe-b.jpg) | 两张指定帧图片，取自结构控制成片 |
+| [`result-keyframes.mp4`](assets/h3-conditioning/result-keyframes.mp4) | 指定帧：两张图片分别钉在 1.25 秒和 4.583 秒，480×832、124 帧 |
+
+从左到右：原始视频、人物深度控制视频、结构控制成片的同一时刻（第 10 秒）、成片第 21 秒、接续片段第 4 秒。
+
+![结构控制与接续](images/h3-conditioning/dunhuang-structure-control.jpg)
+
+从左到右：重绘前（接续片段）、重绘后；指定帧图片 A、成片 1.25 秒处；指定帧图片 B、成片 4.583 秒处。
+
+![局部重绘与指定帧](images/h3-conditioning/dunhuang-edit-keyframes.jpg)
+
+| 能力 | 入口 | 测量 | 耗时 |
+| --- | --- | --- | ---: |
+| 结构控制 | 视频节点的「结构控制」模式 | 另一版提示词下，与原动作的平均关键点距离为画面对角线的 0.026；成片未单独重测 | 126 秒 |
+| 潜空间接续 | 视频节点的「接续」模式 | 接缝两帧 SSIM 0.878，片内相邻帧 0.926 | 20 秒 |
+| 局部重绘 | 「视频编辑」工具 | 框外 PSNR 39.2 dB，框内 19.7 dB | 27 秒 |
+| 指定帧 | 素材参考模式下给图片填时间 | 两帧与指定图 SSIM 0.82 和 0.80（输出 480×832，比较时放大到 768×1344） | 11 秒 |
+
+- 结构控制的入口原本就有，另外三项是这次为 FastH3-Omni 请求格式新增的。
+- 原视频里舞者坐在凳子上。提示词把人物写成悬浮在空中的飞天、脚下是空的石地；只写「没有凳子」时，模型会因为坐姿再画一个。
+- 局部重绘里，月亮和夜空在片段后半段才出现，前面几十帧框内仍是壁画。
+- 结构控制的输出长度取不超过控制视频的最大 `17n+5` 帧，可能比控制视频短不到 0.7 秒。
