@@ -1,7 +1,7 @@
 
 import pytest
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from test_assistant_conversations import assistant, send  # noqa: F401
 
@@ -26,13 +26,30 @@ def test_trace_lists_executed_turns_in_order_with_their_own_runtime(assistant, t
     saved['messages'][5]['runtime'] = 'deepseek'
     file.write_text(json.dumps(saved))
 
-    result = client.get(f'{path}/conversations/{conversation}/trace')
+    trace_url = f'{path}/conversations/{conversation}/trace'
+    result = client.get(trace_url)
     assert result.status_code == 200
     body = result.json()
     assert body['conversationId'] == conversation and body['active'] is True
     assert [(turn['id'], turn['number'], turn['text'], turn['runtime']) for turn in body['turns']] == [
         (ids[0], 1, '第一轮', 'default'), (ids[1], 2, '第二轮', 'codex'), (ids[2], 3, '第三轮', 'deepseek')]
     assert all(turn['status'] == 'complete' for turn in body['turns'])
+
+    continuation, execution, orphan = (str(uuid4()) for _ in range(3))
+    for index, turn_id, kind in ((2, continuation, 'continuation'), (5, execution, 'execution'), (6, orphan, 'unknown')):
+        saved['messages'].insert(index, {
+            'id': str(uuid5(UUID(turn_id), 'assistant')), 'role': 'assistant',
+            'turnId': turn_id, 'segmentKind': kind, 'text': kind, 'status': 'complete',
+        })
+    file.write_text(json.dumps(saved))
+
+    turns = client.get(trace_url).json()['turns']
+    assert [(turn['id'], turn['number']) for turn in turns] == [
+        (ids[0], 1), (continuation, 2), (ids[1], 3), (execution, 4), (ids[2], 5),
+    ]
+    for turn_id in (continuation, execution):
+        assert client.get(f'{path}/traces/{turn_id}/conversation').json() == {'conversationId': conversation}
+    assert client.get(f'{path}/traces/{orphan}/conversation').status_code == 404
 
 
 def test_trace_ignores_messages_that_never_executed_and_does_not_pair_by_position(assistant, tmp_path):

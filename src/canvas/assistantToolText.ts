@@ -7,6 +7,14 @@ import { capabilityErrorText } from "./capabilityErrorText.ts";
 
 const CJK = /[\u3400-\u9fff]/;
 
+const DECISION_ERRORS = new Map<string, MessageKey>([
+  ["task_waiting_input", "assistant.reply.toolWaitingForAnswer"],
+  ["plan_confirmation_required", "assistant.reply.toolPlanConfirmationRequired"],
+  ["plan_revision_stale", "assistant.reply.toolPlanRevisionStale"],
+  ["plan_step_kind_mismatch", "assistant.reply.toolPlanStepKindMismatch"],
+  ["continuation_status_unknown", "assistant.question.statusUnknownNotice"],
+]);
+
 const BY_MESSAGE: Record<string, MessageKey> = {
   "本轮工具入口已关闭。": "assistant.reply.toolClosed",
   "工具调用标识被用于不同输入。": "assistant.reply.toolIdConflict",
@@ -23,12 +31,14 @@ const BY_MESSAGE: Record<string, MessageKey> = {
   "批量命令包含未开放的 Agent 操作。": "assistant.reply.toolForbidden",
 };
 
-/** Keep English tool errors and codes; replace Chinese detail in English UI. */
+/** Translate known decision codes and preserve useful detail for other tools. */
 export function assistantToolText(
   text: string,
   t: Translate = defaultTranslate,
   code?: string,
 ): string {
+  const decisionError = code ? DECISION_ERRORS.get(code) : undefined;
+  if (decisionError) return t(decisionError);
   if (getActiveLocale() !== "en-US" || !CJK.test(text)) return text;
   const capability = capabilityErrorText(text, t);
   if (capability) return capability;

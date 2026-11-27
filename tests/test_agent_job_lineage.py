@@ -5,16 +5,15 @@ and command are recovered from the project's committed state alone, including af
 a restart. Provider doubles only; nothing leaves the process.
 """
 import asyncio
-import json
 from uuid import UUID, uuid4, uuid5
 
 from fastapi.testclient import TestClient
 import pytest
 
+from opendirector.agent.decisions import DecisionStore, PlanConfirmInput, step_operation_id
 from opendirector.agent.tools import AgentTools
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.domain.creation.base import agent_command_id
-from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.creation.generation import Job
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
@@ -22,7 +21,8 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.agent import Conversations
 from opendirector_api.main import create_app
-from test_creation_canvas_service import media, project, send, ver  # noqa: F401  (project is a fixture)
+from generation_helpers import command
+from test_creation_canvas_service import project  # noqa: F401  (project is a fixture)
 
 
 pytestmark = pytest.mark.cpu
@@ -36,6 +36,7 @@ def anyio_backend():
 class Provider:
     def __init__(self, mode='ok'):
         self.mode, self.calls, self.started = mode, [], asyncio.Event()
+        self.release = asyncio.Event()
 
     def validate(self, kind, config):
         pass
@@ -44,7 +45,7 @@ class Provider:
         self.calls.append(task['id'])
         self.started.set()
         if self.mode == 'hang':
-            await asyncio.Event().wait()
+            await self.release.wait()
         if self.mode == 'fail':
             raise ProjectError('provider exploded', 400)
         return 'md', b'generated'
@@ -60,16 +61,9 @@ def stack(project, provider):
 
 
 async def submit(tools, project, config, turn, call, before=None):
-    store, pid, session = project
-    item, spec = media(project, 'text')
-    changed = spec.model_copy(update={'prompt': call, 'modelConfigId': UUID(config['id'])})
-    assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=changed).status == 'applied'
-    snapshot = store.snapshot(pid)
-    spec = next(s for s in snapshot.generationSpecs if s.id == spec.id)
-    item = next(i for i in snapshot.canvasItems if i.id == item.id)
-    arguments = dict(type='generation.submit',
-                     payload=dict(specId=str(spec.id), expectedSpecRevision=spec.revision, originItemId=str(item.id)),
-                     expectedVersions=json.loads(json.dumps([ver('generation_spec', spec), ver('canvas_item', item)], default=str)))
+    _, pid, session = project
+    request = command(project, config, prompt=call)
+    arguments = request.model_dump(mode='json', include={'type', 'payload', 'expectedVersions'}, exclude_unset=True)
     if before:
         before()
     return await tools.execute(pid, turn, session, call, 'execute_command', arguments, [], None)
@@ -96,6 +90,35 @@ def commit_files(store):
 
 async def settled(runner):
     await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
+
+
+@pytest.mark.anyio
+async def test_plan_recovery_follows_accepted_job_until_it_succeeds(project, agent_plan):
+    store, pid, session = project
+    provider = Provider('hang')
+    runner, tools, config = stack(project, provider)
+    decisions = tools.decisions
+    plan = agent_plan(decisions, 'Generate a result')
+    task_id = UUID(plan['taskId'])
+    turn = UUID(decisions.claim_plan_execution(pid, session, task_id, PlanConfirmInput(planRevision=1))['continuationId'])
+    decisions.mark_model_dispatched(pid, task_id, turn)
+    call = f"cli:{step_operation_id(plan, plan['plan']['steps'][0])}"
+    try:
+        receipt = await submit(tools, project, config, turn, call)
+        assert receipt['status'] == 'accepted'
+        await asyncio.wait_for(provider.started.wait(), 5)
+        waiting = decisions.finalize_segment(pid, turn, reply_text='Submitted.', segment_status='complete')
+        assert waiting['stage'] == 'waiting_jobs'
+        assert waiting['plan']['steps'][0]['status'] == 'in_progress'
+        provider.release.set()
+        await settled(runner)
+        restored = CreationProjects(LocalProjects(store.local.repository))
+        done = DecisionStore(restored).public_state(pid, plan['conversationId'])['tasks'][0]
+        assert done['stage'] == 'completed' and done['plan']['steps'][0]['status'] == 'completed'
+        assert len(provider.calls) == 1 and restored.snapshot(pid).jobs[0].asset is not None
+    finally:
+        provider.release.set()
+        await runner.close()
 
 
 @pytest.mark.anyio
@@ -143,16 +166,7 @@ async def test_one_turn_records_every_job_it_accepted_and_nothing_else(project):
     first = await submit(tools, project, config, turn, 'call-a')
     second = await submit(tools, project, config, turn, 'call-b')
     await submit(tools, project, config, other, 'call-a')      # same call id, different turn
-    item, spec = media(project, 'text')                        # a job nobody's Agent submitted
-    spec = spec.model_copy(update={'prompt': 'ui', 'modelConfigId': UUID(config['id'])})
-    current = store.snapshot(pid)
-    base = next(s for s in current.generationSpecs if s.id == spec.id)
-    assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', base)], spec=spec).status == 'applied'
-    current = store.snapshot(pid)
-    spec, item = next(s for s in current.generationSpecs if s.id == spec.id), next(i for i in current.canvasItems if i.id == item.id)
-    ui = await runner.execute(parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
-        expectedVersions=[ver('generation_spec', spec), ver('canvas_item', item)],
-        payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=item.id))), session=session)
+    ui = await runner.execute(command(project, config, prompt='ui'), session=session)
     await settled(runner)
     await runner.close()
     jobs = store.snapshot(pid).jobs

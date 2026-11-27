@@ -104,11 +104,33 @@ On Windows, Codex explicitly sets `windows.sandbox="elevated"` so ignoring user 
 
 CLI 通过环境变量中的本轮本地 Socket 地址连接业务网关，不使用连接令牌或凭据文件。网关继续校验工程范围、轮次生命周期及业务输入。
 
+## 交互式规划与恢复 / Interactive planning and recovery
+
+右侧助手默认使用自动模式。Default、OpenCode、Claude Code、Codex 和 DeepSeek Harness 可选择询问模式。其他运行时在界面禁用询问入口，API 收到显式 `mode: ask` 时返回 `409 ask_mode_runtime_unsupported`。由 `mode: ask` 或显式 `planOnly: true` 进入规划阶段。规划与接续阶段允许查询和规划工具，工程写入和生成提交须经当前计划版本授权。
+
+`agent-runs/decisions.json` 随工程保存任务、题组、答案、计划版本、已确认版本和执行回执。任务及其申请、回答、接续与执行标识关联原会话。`ask_user` 使当前片段进入等待回答，释放工程的运行名额。答案保存后，接续使用固定的续跑 ID，并按该任务最新要求保存计划。确认以计划版本为准，改版后旧确认失效。
+
+提交答案返回任务和决策回执，调整计划返回更新后的任务。回执中的 `task.conversationId` 标识所属会话。完整会话通过助手会话接口或流事件读取。
+
+计划步骤保存为 `write`、`read` 或 `inspection`，文本步骤采用 `write`。写入步骤凭业务回执完成。只读步骤凭使用对应操作 ID 的查询结果完成，原生检查步骤通过 `plan complete-step` 登记结果。CLI 的 `asset write-text --file` 接受命令 JSON，`--text-file` 接受字面文本，两者均可用 `-` 读取标准输入。文本大小限制按解码后的内容计算。
+
+执行前记录操作 ID、输入指纹及 `pendingWrites`。确认发生在业务提交前的文件读取和本地校验失败会清除待处理记录，并保留按原操作 ID 和输入重试的能力。DeepSeek 完成 ACP 初始化和模型配置后，在发送 `session/prompt` 前记录模型派发。重启时根据新版计划的接续 ID 和已提交业务回执恢复状态，时间线导入也核对最终批次回执。读取失败和状态未明的远端提交保留待核对记录。
+
+English summary: the right-hand assistant defaults to Auto. Default, OpenCode, Claude Code, Codex, and DeepSeek Harness support Ask mode. The UI disables Ask on other runtimes, and an explicit unsupported `mode: ask` request receives `409 ask_mode_runtime_unsupported`. Ask or explicit `planOnly: true` enters planning. Planning and continuation permit read and planning tools. Project writes and generation submissions require authorization for the current plan revision.
+
+The project stores tasks, question groups, answers, plan revisions, confirmations, and execution receipts in `agent-runs/decisions.json`. Questions, answers, continuations, and execution segments belong to the original conversation. `ask_user` pauses the segment and releases the project's run slot. A saved answer has a stable continuation ID. A revised plan supersedes authorization for the previous revision.
+
+Submitting answers returns the task and decision receipt. Adjusting a plan returns the updated task. Both identify the owning conversation through `task.conversationId`. Read the full conversation through the assistant conversation endpoint or stream.
+
+Plan step kinds are `write`, `read`, and `inspection`. A plain text step defaults to `write`. Write steps require business receipts, read steps record queries under the matching operation ID, and native inspection steps record their findings via `plan complete-step`. The CLI accepts command JSON via `asset write-text --file` and literal content via `--text-file`. Either option accepts `-` for standard input. The asset size limit applies to the decoded text.
+
+Before dispatch, the service records the operation ID, input fingerprint, and `pendingWrites` entry. Confirmed preflight failures clear the pending write and allow retry with the same ID and input. DeepSeek records model dispatch after ACP setup and immediately before sending `session/prompt`. Restart recovery uses the saved plan's continuation ID and authoritative business receipts, including the final batch receipt for timeline imports. Unreadable records and uncertain remote submissions remain pending verification.
+
 ## 对话轨迹页 / Conversation trace page
 
-轨迹页 `/?traceProject=…&conversation=…&turn=…` 在一页内按顺序列出一个对话的全部已执行轮次，每轮可独立展开，展开时才读取该轮日志与关联 Job；“下载原始轨迹”是用户显式触发的例外，见下。轮次索引来自只读接口 `GET .../assistant/conversations/{conversation_id}/trace`，它解析当前对话、已归档对话和 `reusedCreateIds` 别名，只返回轮次元数据（序号、用户输入摘要、运行时、状态），不读取日志正文，不激活对话，不获取编辑租约。轮次由持久化的身份关系确定：用户消息与 id 为 `uuid5(用户消息 id, 'assistant')` 的助手消息成对才算已执行的一轮；没有该助手记录的用户消息（例如排队中、未执行）不出现。每轮使用自己记录的运行时选择日志源和解析器，仅 Default（opencode）显示模型原始请求。`GET .../traces/{turn_id}/conversation` 供旧的单轮链接查找所属对话；找不到时保持原单轮页面。
+轨迹页 `/?traceProject=…&conversation=…&turn=…` 在一页内按顺序列出一个对话的全部已执行轮次和独立分段，每项可独立展开，展开时才读取其日志与关联 Job；“下载原始轨迹”是用户显式触发的例外，见下。轮次索引来自只读接口 `GET .../assistant/conversations/{conversation_id}/trace`，它解析当前对话、已归档对话和 `reusedCreateIds` 别名，只返回序号、摘要、运行时、状态等元数据，不读取日志正文，不激活对话，不获取编辑租约。普通轮次由持久化的身份关系确定：用户消息与 id 为 `uuid5(用户消息 id, 'assistant')` 的助手消息成对才算已执行的一轮，只计一次；没有该助手记录的用户消息（例如排队中、未执行）不出现。`segmentKind` 为 `continuation` 或 `execution` 的独立助手消息按自己的 `turnId` 入列。每项使用自己记录的运行时选择日志源和解析器，仅 Default（opencode）显示模型原始请求。`GET .../traces/{turn_id}/conversation` 供旧的单轮链接查找所属对话；找不到时保持原单轮页面。
 
-English summary: the trace page lists every executed turn of a conversation, expanded one at a time, and reads a turn's logs and linked Jobs only when it is opened; the user-triggered original trace download is the one exception (below). The turn index comes from the read-only `GET .../assistant/conversations/{conversation_id}/trace`, which resolves current, archived and aliased (`reusedCreateIds`) conversation ids and returns metadata only (number, input summary, runtime, status). It never reads log bodies, activates a conversation or takes a lease. A turn is a user message paired with the assistant message whose id is `uuid5(user id, 'assistant')`, so queued or never executed user messages are not listed. Each turn uses its own recorded runtime for the log source and parser, and raw model requests are offered for the Default (opencode) runtime only. `GET .../traces/{turn_id}/conversation` lets old single-turn links find their conversation; when none is found the single-turn page remains.
+English summary: the trace page lists every executed turn and standalone segment of a conversation, expanded one at a time, and reads a row's logs and linked Jobs only when it is opened; the user-triggered original trace download is the one exception (below). The turn index comes from the read-only `GET .../assistant/conversations/{conversation_id}/trace`, which resolves current, archived and aliased (`reusedCreateIds`) conversation ids and returns metadata only (number, summary, runtime, status). It never reads log bodies, activates a conversation or takes an editing lease. An ordinary turn is a user message paired with the assistant message whose id is `uuid5(user id, 'assistant')`, appearing once, so queued or never executed user messages are not listed. Standalone assistant records with `segmentKind` of `continuation` or `execution` appear under their own `turnId`. Each row uses its own recorded runtime for the log source and parser, and raw model requests are offered for the Default (opencode) runtime only. `GET .../traces/{turn_id}/conversation` lets old single-turn links find their conversation; when none is found the single-turn page remains.
 
 ### 原始轨迹归档 / Original trace archive
 

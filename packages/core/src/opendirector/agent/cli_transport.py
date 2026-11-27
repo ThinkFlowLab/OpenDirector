@@ -73,6 +73,18 @@ async def start_server(gateway, queue, endpoint, pending):
                     'arguments': arguments, 'result': detail[:65536],
                     'resultTruncated': len(detail) > 65536,
                     'timing': {'spawn': spawn, 'work': round(time.monotonic() - received, 3)}})
+                if not outcome.error and isinstance(outcome.value, dict):
+                    if name == 'ask_user' and outcome.value.get('decision'):
+                        await queue.put({
+                            'type': 'decision',
+                            'decision': outcome.value['decision'],
+                            'task': outcome.value.get('task'),
+                        })
+                    elif name == 'update_plan' and outcome.value.get('task'):
+                        await queue.put({
+                            'type': 'task',
+                            'task': outcome.value['task'],
+                        })
             except (ProjectError, ValueError, KeyError, OSError, TimeoutError) as failure:
                 response = {'error': str(failure)}
             writer.write(json.dumps(response, ensure_ascii=False).encode() + b'\n')
@@ -83,6 +95,15 @@ async def start_server(gateway, queue, endpoint, pending):
             pending.discard(task)
 
     if hasattr(asyncio, 'start_unix_server'):
+        if sys.platform == 'linux' and len(os.fsencode(endpoint)) >= 104:
+            path = Path(endpoint)
+            descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                return await asyncio.start_unix_server(
+                    connection, f'/proc/self/fd/{descriptor}/{path.name}', limit=4 * 1024 * 1024,
+                ), None
+            finally:
+                os.close(descriptor)
         return await asyncio.start_unix_server(connection, endpoint, limit=4 * 1024 * 1024), None
     server = await asyncio.start_server(connection, '127.0.0.1', 0, limit=4 * 1024 * 1024)
     host, port = server.sockets[0].getsockname()[:2]

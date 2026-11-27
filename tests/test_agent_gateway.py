@@ -436,3 +436,44 @@ async def test_read_only_query_answers_while_a_write_holds_the_execution_slot(ga
     release.set()
     await asyncio.gather(write, queued)
     await gateway.close()
+
+
+@pytest.mark.anyio
+async def test_schema_validation_failure_releases_call_id_until_valid_command_commits(gateway):
+    from opendirector.domain.creation.commands import parse_command
+
+    run, projects = gateway.run, gateway.business.projects
+    projects.execute(parse_command(dict(
+        type='project.create', projectId=run.project_id, commandId=uuid4(), payload={'name': 'Schema retry'},
+    )))
+    projects.open(run.project_id, run.session)
+
+    op_id = 'cli:' + str(uuid4())
+    # 1. Malformed command fails schema validation before any write or receipt is recorded.
+    malformed = await gateway.call(op_id, 'execute_command', {'type': 'canvas.createGeneration', 'payload': {}})
+    assert malformed.error is not None and malformed.release_id is True
+    assert not projects.snapshot(run.project_id).generationSpecs
+
+    # 2. Correcting the schema with the same operation ID succeeds and binds the ID to the valid mutation.
+    spec_id, item_id = str(uuid4()), str(uuid4())
+    valid_args = {
+        'type': 'canvas.createGeneration',
+        'payload': {
+            'spec': {'id': spec_id, 'projectId': str(run.project_id), 'kind': 'image', 'purpose': 'generation'},
+            'item': {
+                'id': item_id, 'projectId': str(run.project_id), 'kind': 'image',
+                'position': {'x': 100, 'y': 100},
+                'binding': {'role': 'generation', 'objectRef': {'id': spec_id}},
+            },
+        },
+    }
+    created = await gateway.call(op_id, 'execute_command', valid_args)
+    assert created.error is None and created.value['status'] == 'applied'
+
+    # 3. Once a valid mutation has executed, reusing the same ID with different input is strictly rejected.
+    tampered = await gateway.call(op_id, 'execute_command', {
+        **valid_args,
+        'payload': {**valid_args['payload'], 'spec': {**valid_args['payload']['spec'], 'prompt': 'different'}},
+    })
+    assert tampered.error == '工具调用标识被用于不同输入。'
+    await gateway.close()

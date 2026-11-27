@@ -5,7 +5,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import sys
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
@@ -52,7 +52,7 @@ def test_cli_preserves_the_font_error_code_and_english_diagnostic(tmp_path, monk
 ])
 def test_voice_list_forwards_pagination(live, options, expected, monkeypatch):
     model = str(uuid4())
-    client = Mock(live=live, opened=False)
+    client = Mock(live=live, opened=False, operation_id=None)
     page = {'voices': [], 'connectionId': 'scope', 'nextCursor': 'next'}
     client.call.return_value = client.request.return_value = page
     monkeypatch.setattr(cli, 'Client', lambda *args: client)
@@ -61,7 +61,7 @@ def test_voice_list_forwards_pagination(live, options, expected, monkeypatch):
     assert json.loads(result.output) == page
     arguments = {'modelConfigId': model, **expected}
     if live:
-        client.call.assert_called_once_with('voice_list', arguments)
+        client.call.assert_called_once_with('voice_list', arguments, identity=None)
     else:
         client.request.assert_called_once_with('GET', '/api/voices', params=arguments)
 
@@ -109,15 +109,160 @@ def test_agent_voice_create_forwards_recording_path(tmp_path, monkeypatch):
     model = str(uuid4())
     recording = tmp_path / 'take.wav'
     recording.touch()
-    client = Mock(live=True, opened=False)
+    client = Mock(live=True, opened=False, operation_id=None)
     client.call.return_value = {'voiceId': 'confirmed-voice'}
     monkeypatch.setattr(cli, 'Client', lambda *args: client)
     result = CliRunner().invoke(cli.app, ['voice', 'create', str(recording), '--model', model,
         '--connection', 'scope', '--name', 'Voice'])
     assert result.exit_code == 0, result.exception
     client.call.assert_called_once_with('voice_create', {'modelConfigId': model, 'connectionId': 'scope',
-                                                       'name': 'Voice', 'path': str(recording.resolve())})
+                                                       'name': 'Voice', 'path': str(recording.resolve())}, identity=None)
     client.request.assert_not_called()
+
+
+def _mock_live_client(monkeypatch, **attrs):
+    client = Mock(live=True, opened=False, operation_id=None, **attrs)
+
+    def build(_project, _url, _session, operation_id):
+        client.operation_id = operation_id
+        return client
+
+    monkeypatch.setattr(cli, 'Client', build)
+    return client
+
+
+def test_agent_voice_commands_forward_operation_id(tmp_path, monkeypatch):
+    model = str(uuid4())
+    op_id = uuid4()
+    recording = tmp_path / 'take.wav'
+    recording.write_bytes(b'audio')
+    client = _mock_live_client(monkeypatch)
+    client.call.return_value = {'voiceId': 'v-1', 'connectionId': 'scope'}
+    runner = CliRunner()
+    res_create = runner.invoke(cli.app, ['--operation-id', str(op_id), 'voice', 'create', str(recording),
+                                         '--model', model, '--connection', 'scope', '--name', 'Voice'])
+    assert res_create.exit_code == 0, res_create.output
+    client.call.assert_called_once_with(
+        'voice_create',
+        {'modelConfigId': model, 'connectionId': 'scope', 'name': 'Voice', 'path': str(recording.resolve())},
+        identity=op_id,
+    )
+    client.call.reset_mock()
+    res_delete = runner.invoke(cli.app, ['--operation-id', str(op_id), 'voice', 'delete', 'v-1',
+                                         '--model', model, '--connection', 'scope'])
+    assert res_delete.exit_code == 0, res_delete.output
+    client.call.assert_called_once_with(
+        'voice_delete',
+        {'modelConfigId': model, 'connectionId': 'scope', 'voiceId': 'v-1'},
+        identity=op_id,
+    )
+
+
+def test_agent_reads_forward_operation_id(monkeypatch):
+    op_id = uuid4()
+    item_id = uuid4()
+    job_id = uuid4()
+    client = _mock_live_client(monkeypatch)
+    client.call.return_value = []
+    client.models.return_value = [{'id': str(uuid4()), 'modelId': 'm1', 'kind': 'video', 'url': 'http://x'}]
+    client.query.side_effect = lambda kind, **kw: (
+        {'id': str(item_id), 'kind': 'text', 'revision': 1, 'width': 320, 'height': 180, 'binding': {'role': 'empty'}}
+        if kind == 'object.get' else {'job': {'id': str(job_id), 'status': 'running'}}
+    )
+    runner = CliRunner()
+    assert runner.invoke(cli.app, ['--operation-id', str(op_id), 'model', 'availability']).exit_code == 0
+    client.call.assert_called_once_with('model_availability', {'manual': False, 'refresh': False}, identity=op_id)
+    assert runner.invoke(cli.app, ['--operation-id', str(op_id), 'model', 'list']).exit_code == 0
+    client.models.assert_called_with(identity=op_id)
+    assert runner.invoke(cli.app, ['--operation-id', str(op_id), 'canvas', 'text', 'show', '--id', str(item_id)]).exit_code == 0
+    client.query.assert_called_with('object.get', identity=op_id, objectId=str(item_id))
+    assert runner.invoke(cli.app, ['--operation-id', str(op_id), 'job', 'show', str(job_id)]).exit_code == 0
+    client.query.assert_called_with('job.get', identity=op_id, objectId=str(job_id))
+
+
+@pytest.mark.parametrize(('terminal', 'exit_code'), [('succeeded', 0), ('failed', 1)])
+def test_agent_job_wait_uses_step_identity_only_for_successful_terminal_read(monkeypatch, terminal, exit_code):
+    op_id, job_id = uuid4(), str(uuid4())
+    client = _mock_live_client(monkeypatch)
+    finished = {'jobs': [{'id': job_id, 'status': terminal}]}
+    client.query.side_effect = [{'jobs': [{'id': job_id, 'status': 'running'}]}, finished]
+
+    result = CliRunner().invoke(cli.app, ['--operation-id', str(op_id), 'job', 'wait', job_id])
+
+    assert result.exit_code == exit_code, result.exception
+    emitted = json.loads(result.output)
+    assert emitted['jobs'] == finished['jobs']
+    assert len(client.query.call_args_list) == 2
+    assert all(item.args == ('job.status',) and item.kwargs['objectIds'] == [job_id] and item.kwargs['until'] == 'all'
+               for item in client.query.call_args_list)
+    if terminal == 'succeeded':
+        client.call.assert_called_once_with(
+            'query', {'type': 'job.status', 'objectIds': [job_id], 'waitSeconds': 0, 'until': 'all'}, identity=op_id,
+        )
+    else:
+        client.call.assert_not_called()
+
+
+@pytest.fixture
+def cli_api(tmp_path, monkeypatch):
+    original_client = httpx.Client
+    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'}) as api:
+        def forward(request):
+            response = api.request(request.method, request.url.path, headers=dict(request.headers), content=request.read())
+            return httpx.Response(response.status_code, headers=response.headers, content=response.content)
+
+        monkeypatch.setattr(cli.httpx, 'Client', lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(forward)))
+        yield api
+
+
+def test_asset_write_text_distinguishes_literal_text_from_command_json(tmp_path, cli_api):
+    runner = CliRunner()
+    project = str(uuid4())
+    assert runner.invoke(cli.app, ['--project', project, 'project', 'create', '--name', 'Merged write-text']).exit_code == 0
+
+    prefix = ['--project', project, 'asset', 'write-text']
+    md_stdin = runner.invoke(
+        cli.app, [*prefix, '--name', 'outline.md', '--text-file', '-'],
+        input='\ufeff# 分镜大纲\n\n- 第一镜\n',
+    )
+    assert md_stdin.exit_code == 0, md_stdin.output
+    first_asset_id = json.loads(md_stdin.output)['assetId']
+    snap = json.loads(runner.invoke(cli.app, ['--project', project, 'project', 'show']).output)
+    first_asset = next(a for a in snap['assets'] if a['id'] == first_asset_id)
+    assert first_asset['name'] == 'outline.md'
+
+    for content in ['{"type":"storyboard","shots":[]}', '{"payload":{"text":"keep the complete document"}}']:
+        result = runner.invoke(cli.app, [*prefix, '--text-file', '-'], input=content)
+        assert result.exit_code == 0, result.output
+        asset_id = json.loads(result.output)['assetId']
+        response = cli_api.get(f'/api/creation/projects/{project}/assets/{asset_id}/content')
+        assert response.content == content.encode('utf-8')
+    malformed = runner.invoke(cli.app, [*prefix, '--file', '-'], input='{"payload":')
+    assert malformed.exit_code == 1
+
+    large_text = '分' * 180_000
+    cmd_json = tmp_path / 'write_v2.json'
+    cmd_json.write_text(json.dumps({
+        'type': 'asset.writeText',
+        'payload': {
+            'name': 'outline-v2.md',
+            'text': large_text,
+            'previousAsset': {
+                'assetId': first_asset['id'],
+                'revision': first_asset['revision'],
+                'fingerprint': first_asset['fingerprint'],
+                'kind': 'text',
+            },
+        },
+        'expectedVersions': [{'objectType': 'asset', 'id': first_asset['id'], 'revision': first_asset['revision']}],
+    }), encoding='utf-8')
+    assert cmd_json.stat().st_size > 1024 * 1024 > len(large_text.encode())
+    v2_res = runner.invoke(cli.app, [*prefix, '--file', str(cmd_json)])
+    assert v2_res.exit_code == 0, v2_res.output
+    v2_receipt = json.loads(v2_res.output)
+    assert v2_receipt['status'] == 'applied'
+    response = cli_api.get(f'/api/creation/projects/{project}/assets/{v2_receipt["assetId"]}/content')
+    assert response.content == large_text.encode('utf-8')
 
 
 def test_cli_project_write_replay_and_lock(tmp_path, monkeypatch):
@@ -228,22 +373,12 @@ def test_cli_project_write_replay_and_lock(tmp_path, monkeypatch):
     assert len(invoke(["project", "show"])["assets"]) == 2
 
 
-def test_cli_repeated_trash_reports_the_missing_project(tmp_path, monkeypatch):
+def test_cli_repeated_trash_reports_the_missing_project(cli_api):
     """An accepted trash stores no receipt, so the same commandId is a 404.
 
     The workspace maps that 404 to success. The CLI reports it: the id may
     simply be wrong, and there is no stored receipt to replay.
     """
-    api = TestClient(create_app(LocalProjects(tmp_path)), headers={"X-OpenDirector-Request": "1"})
-    original_client = httpx.Client
-
-    def forward(request):
-        response = api.request(request.method, request.url.path, headers=dict(request.headers),
-                               content=request.read())
-        return httpx.Response(response.status_code, headers=response.headers, content=response.content)
-
-    monkeypatch.setattr(cli.httpx, "Client", lambda **kwargs:
-                        original_client(**kwargs, transport=httpx.MockTransport(forward)))
     runner = CliRunner()
     project, operation = uuid4(), uuid4()
     prefix = ["--project", str(project)]
@@ -420,14 +555,7 @@ def test_asset_query_error_suggests_existing_queries(monkeypatch):
     assert 'query asset.preview' in str(result.exception)
 
 
-def test_full_spec_file_update_preserves_fields_and_rejects_stale_version(tmp_path, monkeypatch):
-    api = TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'})
-    original_client = httpx.Client
-    def forward(request):
-        response = api.request(request.method, request.url.path, headers=dict(request.headers), content=request.read())
-        return httpx.Response(response.status_code, headers=response.headers, content=response.content)
-    monkeypatch.setattr(cli.httpx, 'Client', lambda **kwargs:
-        original_client(**kwargs, transport=httpx.MockTransport(forward)))
+def test_full_spec_file_update_preserves_fields_and_rejects_stale_version(tmp_path, cli_api):
     runner = CliRunner()
     project, identity = str(uuid4()), str(uuid4())
     def invoke(args):
@@ -637,3 +765,15 @@ def test_capabilities_names_commands_that_have_no_command_model(help_color):
     detailed = json.loads(CliRunner().invoke(cli.app, ["capabilities"]).output)["commands"]
     assert "--asset-id" not in [option.split()[-1] for entry in detailed for option in entry.get("options", ())]
     assert "--object-id" in [option for entry in detailed for option in entry.get("options", ())]
+
+
+def test_command_file_without_payload_envelope_fails_locally_without_executing(monkeypatch):
+    monkeypatch.setattr(cli.Client, "execute", lambda *args, **kwargs: pytest.fail("Unwrapped --file reached execution"))
+    result = CliRunner().invoke(
+        cli.app,
+        ["--operation-id", str(uuid4()), "canvas", "create-generation", "--file", "-"],
+        input=json.dumps({"spec": {"id": str(uuid4())}, "item": {"id": str(uuid4())}}),
+    )
+    assert result.exit_code != 0
+    assert "Unexpected top-level field(s) in --file: item, spec" in str(result.exception)
+    assert '"payload"' in str(result.exception)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { errorMessage } from "../backend/api";
 import {
-  chatRuntimeInventory, chatRuntimeStatus, conversation, saveChatDraft,
+  chatRuntimeInventory, chatRuntimeStatus, conversation, draftOf, saveChatDraft,
   type RuntimeInfo,
 } from "../backend/chat";
 import type { BackendModels } from "../backend/models";
@@ -233,7 +233,8 @@ export function WelcomeScreen({ catalog, projectId, onCreate, onImport, exampleS
         return;
       }
       const selected = restoreAgentSelection(projectId, stored);
-      const { messages, ...draft } = stored;
+      const { messages } = stored;
+      const draft = draftOf(stored);
       const runtimeModel = runtime !== "default" && status.modelSource === "cli"
         ? selected.harnessModels?.[runtime] ?? (selected.runtime === runtime ? selected.runtimeModel : null) ?? null
         : null;

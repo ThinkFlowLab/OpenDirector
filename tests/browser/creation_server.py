@@ -155,9 +155,43 @@ assistant_gate.set()
 assistant_contexts = []
 if args.assistant_fixture:
     from opendirector_api import agent
+    from opendirector.agent.gateway import ToolGateway
 
     async def fixture_agent(self, run):
         assistant_contexts.append(run.messages)
+        if run.mode == 'ask':
+            gateway = ToolGateway(self.business, run)
+            try:
+                if run.task_stage == 'planning' and run.messages[-1]['content'].partition('\n')[0] == '请改版计划':
+                    result = await gateway.call('plan', 'update_plan', {'summary': '已保留自定义结尾并改版计划。'})
+                    assert result.error is None
+                elif run.task_stage == 'planning':
+                    result = await gateway.call('question', 'ask_user', {'questions': [{
+                        'id': 'duration', 'question': '请选择时长',
+                        'options': [
+                            {'id': '8', 'label': '8 秒', 'impact': '节奏紧凑'},
+                            {'id': '15', 'label': '15 秒', 'impact': '节奏舒缓'},
+                        ],
+                    }]})
+                    assert result.error is None
+                    yield {'type': 'decision', 'decision': result.value['decision'], 'task': result.value['task']}
+                elif run.task_stage == 'resuming':
+                    assert '12 秒，自定义结尾' in run.messages[-1]['content']
+                    result = await gateway.call('plan', 'update_plan', {'summary': '按 12 秒，自定义结尾制定计划。'})
+                    assert result.error is None
+                    yield {'type': 'delta', 'text': '按 12 秒，自定义结尾制定计划。'}
+                elif run.task_stage == 'executing':
+                    yield {'type': 'delta', 'text': '已开始按确认计划执行。'}
+                    await assistant_gate.wait()
+                    step = run.current_plan['steps'][0]
+                    result = await gateway.call(f"cli:{step['operationId']}", 'execute_command', {
+                        'type': 'artifact.publish',
+                        'payload': {'path': 'missing.txt', 'name': 'missing.txt', 'expectedKind': 'text'},
+                    })
+                    assert result.error is not None and result.retryable
+            finally:
+                await gateway.close()
+            return
         if run.messages[-1]['content'].partition('\n')[0] == '建议回复验收':
             yield {'type': 'delta', 'text': (
                 '- 展开海边重逢的完整分镜\n'

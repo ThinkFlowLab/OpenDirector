@@ -22,6 +22,13 @@ const TOOL_NAMES: Readonly<Partial<Record<string, MessageKey>>> = {
   bash: "assistant.tool.bash",
   web_search: "assistant.tool.web_search",
   web_fetch: "assistant.tool.web_fetch",
+  ask_user: "assistant.tool.ask_user",
+  update_plan: "assistant.tool.update_plan",
+  complete_step: "assistant.tool.complete_step",
+  "opendirector ask-user": "assistant.tool.ask_user",
+  "opendirector plan save": "assistant.tool.update_plan",
+  "opendirector plan complete-step": "assistant.tool.complete_step",
+  "opendirector asset write-text": "assistant.tool.save_text_asset",
 };
 
 export function toolLabel(

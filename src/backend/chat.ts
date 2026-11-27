@@ -2,7 +2,7 @@ import { assistant as chineseAssistant } from "../i18n/messages/zh-CN/assistant.
 import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
 import { defaultTranslate } from "../canvas/assistantTranslate.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
-import { headers, json, request, responseError } from "./api.ts";
+import { json, request, responseError, sessionFetch } from "./api.ts";
 
 export type AgentRuntime =
   | "default"
@@ -62,6 +62,106 @@ export interface ChatSource {
   url: string;
   title: string;
 }
+export type InteractionMode = "auto" | "ask";
+
+export interface DecisionOption {
+  id: string;
+  label: string;
+  impact: string;
+}
+
+export interface DecisionQuestion {
+  id: string;
+  question: string;
+  multiSelect?: boolean;
+  required?: boolean;
+  defaultOptionIds?: string[];
+  defaultText?: string | null;
+  options: DecisionOption[];
+}
+
+export type AnswerSource = "options" | "custom" | "default";
+
+export interface QuestionAnswerItem {
+  questionId: string;
+  source: AnswerSource;
+  selectedOptionIds: string[];
+  selectedLabels?: string[];
+  customText?: string | null;
+  displayText?: string;
+}
+
+export type DecisionStatus =
+  | "waiting_input"
+  | "answer_saved"
+  | "resuming"
+  | "completed"
+  | "invalidated"
+  | "resume_failed"
+  | "status_unknown";
+
+export interface DecisionRecord {
+  requestId: string;
+  taskId: string;
+  conversationId: string;
+  turnId: string;
+  messageId: string;
+  stage: string;
+  planRevision: number;
+  questions: DecisionQuestion[];
+  status: DecisionStatus;
+  answers?: QuestionAnswerItem[] | null;
+  answerFingerprint?: string | null;
+  continuationId?: string | null;
+  error?: string | null;
+  errorCode?: string | null;
+}
+
+export interface VersionedPlanStep {
+  kind?: "write" | "read" | "inspection";
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "failed";
+}
+
+export interface VersionedPlan {
+  revision: number;
+  summary: string;
+  steps: VersionedPlanStep[];
+  updatedAtTurnId: string;
+}
+
+export type LogicalTaskStage =
+  | "running"
+  | "planning"
+  | "waiting_input"
+  | "answer_saved"
+  | "resuming"
+  | "waiting_confirmation"
+  | "executing"
+  | "waiting_jobs"
+  | "execution_failed"
+  | "completed"
+  | "interrupted"
+  | "status_unknown";
+
+export interface LogicalTaskRecord {
+  taskId: string;
+  conversationId: string;
+  mode: InteractionMode;
+  runtime: AgentRuntime;
+  planOnly?: boolean;
+  stage: LogicalTaskStage;
+  planRevision: number;
+  plan?: VersionedPlan | null;
+  confirmedPlanRevision?: number | null;
+  executionContinuationId?: string | null;
+  activeDecisionId?: string | null;
+  pendingContinuationId?: string | null;
+  segmentTurnIds: string[];
+  error?: string | null;
+}
+
 export interface ChatMessage {
   sources?: ChatSource[];
   plan?: ChatPlanEntry[];
@@ -78,6 +178,12 @@ export interface ChatMessage {
   runtimeModel?: string | null;
   thinking?: Thinking;
   source?: "preview" | "model";
+  mode?: InteractionMode;
+  turnId?: string;
+  taskId?: string;
+  segmentKind?: "continuation" | "execution";
+  parentRequestId?: string;
+  decisionRequestId?: string;
 }
 
 export type Thinking = "auto" | "low" | "medium" | "high";
@@ -114,6 +220,8 @@ export interface ChatDraft {
 }
 export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
+  decisions?: DecisionRecord[];
+  tasks?: LogicalTaskRecord[];
 }
 
 export function draftContentIsEmpty(
@@ -139,13 +247,16 @@ export function conversationIsEmpty(value: Conversation) {
 }
 
 export type ChatEvent =
-  | { type: "start"; conversation: Conversation }
+  | { type: "start"; turnId?: string; conversation: Conversation }
+  | { type: "queued"; message: ChatMessage }
   | { type: "thinking" }
   | { type: "plan"; entries: ChatPlanEntry[] }
   | ({ type: "tool" } & ChatTool)
   | { type: "delta"; text: string }
   | { type: "sources"; sources: ChatSource[] }
-  | { type: "end"; conversation: Conversation | null; error: string | null };
+  | { type: "decision"; decision: DecisionRecord; task?: LogicalTaskRecord | null }
+  | { type: "task"; task: LogicalTaskRecord }
+  | { type: "end"; turnId?: string; nextTurnId?: string | null; conversation: Conversation | null; error: string | null };
 
 export interface ChatRequest {
   conversationId?: string;
@@ -159,6 +270,8 @@ export interface ChatRequest {
   runtime?: AgentRuntime;
   runtimeModel?: string | null;
   skills?: string[];
+  mode?: InteractionMode;
+  planOnly?: boolean;
 }
 
 function normalizeConversation(value: Conversation): Conversation {
@@ -219,8 +332,28 @@ export async function conversation(
   >(path(id));
   return { conversation: normalizeConversation(saved), activeTurnId: activeTurnId ?? null };
 }
+/**
+ * The draft endpoint validates strictly and rejects unknown members, so send
+ * the fields it owns instead of forwarding whatever a view or conversation read
+ * happens to hold (`messages`, `activeTurnId`, `decisions`, `tasks`).
+ */
+export function draftOf(value: ChatDraft): ChatDraft {
+  return {
+    conversationId: value.conversationId,
+    draft: value.draft,
+    draftContent: value.draftContent,
+    assets: value.assets,
+    thinking: value.thinking,
+    builtinModelThinking: value.builtinModelThinking,
+    modelSelections: value.modelSelections,
+    runtime: value.runtime,
+    runtimeModel: value.runtimeModel,
+    harnessModels: value.harnessModels,
+    skills: value.skills,
+  };
+}
 export const saveChatDraft = (id: string, draft: ChatDraft) =>
-  request(path(id) + "/draft", json("PUT", draft));
+  request(path(id) + "/draft", json("PUT", draftOf(draft)));
 export const chatSkills = (id: string, signal?: AbortSignal) =>
   request<ChatSkill[]>(path(id) + "/skills", { signal });
 export const stopChat = (id: string, turn: string) =>
@@ -232,9 +365,8 @@ export async function streamChat(
   onEvent: (event: ChatEvent) => void,
   t: Translate = defaultTranslate,
 ) {
-  const response = await fetch("/api" + path(id) + "/turns", {
+  const response = await sessionFetch(path(id) + "/turns", {
     ...json("POST", value),
-    headers: { ...headers, "Content-Type": "application/json" },
     signal,
   });
   await readChatEvents(response, onEvent, t);
@@ -255,8 +387,7 @@ export async function attachChat(
   onEvent: (event: ChatEvent) => void,
   t: Translate = defaultTranslate,
 ) {
-  const response = await fetch("/api" + path(id) + `/turns/${turn}/events`, {
-    headers,
+  const response = await sessionFetch(path(id) + `/turns/${turn}/events`, {
     signal,
   });
   if (response.status === 404) throw new ChatTurnEnded();
@@ -285,7 +416,8 @@ async function readChatEvents(
         buffer = buffer.slice(boundary + 2);
         if (frame.startsWith("data: ")) {
           const event = JSON.parse(frame.slice(6)) as ChatEvent;
-          ended ||= event.type === "end";
+          if (event.type === "start") ended = false;
+          if (event.type === "end" && !event.nextTurnId) ended = true;
           if ((event.type === "start" || event.type === "end") && event.conversation) {
             event.conversation = normalizeConversation(event.conversation);
           }
@@ -314,4 +446,89 @@ export async function runtimeModels(projectId: string, runtime: AgentRuntime, se
     (selected ? `?selected=${encodeURIComponent(selected)}` : ""), { signal });
   if (!selected) runtimeModelCatalogs.set(runtime, { value, expires: Date.now() + discoveryTtlMs });
   return value;
+}
+
+export interface DecisionAnswerSubmissionItem {
+  questionId: string;
+  source: AnswerSource;
+  selectedOptionIds: string[];
+  customText?: string | null;
+}
+
+export interface DecisionAnswerReceipt {
+  replayed: boolean;
+  requestId: string;
+  status: DecisionStatus;
+  continuationId: string;
+  busy: boolean;
+  decision: DecisionRecord;
+  task: LogicalTaskRecord;
+}
+
+async function streamSegmentPost(
+  endpoint: string,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate,
+) {
+  const response = await sessionFetch(endpoint, {
+    ...json("POST", body),
+    signal,
+  });
+  await readChatEvents(response, onEvent, t);
+}
+
+export function submitDecisionAnswer(
+  projectId: string,
+  requestId: string,
+  answers: DecisionAnswerSubmissionItem[],
+): Promise<DecisionAnswerReceipt> {
+  return request<DecisionAnswerReceipt>(
+    path(projectId) + `/decisions/${requestId}/answers`,
+    json("POST", { answers }),
+  );
+}
+
+export const streamDecisionContinuation = (
+  projectId: string,
+  continuationId: string,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+) =>
+  streamSegmentPost(
+    path(projectId) + `/continuations/${continuationId}`,
+    {},
+    signal,
+    onEvent,
+    t,
+  );
+
+export const streamPlanConfirmation = (
+  projectId: string,
+  taskId: string,
+  planRevision: number,
+  signal: AbortSignal,
+  onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
+) =>
+  streamSegmentPost(
+    path(projectId) + `/tasks/${taskId}/confirm-plan`,
+    { planRevision },
+    signal,
+    onEvent,
+    t,
+  );
+
+export function adjustTaskPlan(
+  projectId: string,
+  taskId: string,
+  planRevision: number,
+  prompt?: string | null,
+) {
+  return request<{ task: LogicalTaskRecord }>(
+    path(projectId) + `/tasks/${taskId}/adjust-plan`,
+    json("POST", { planRevision, prompt: prompt ?? null }),
+  );
 }

@@ -96,11 +96,11 @@ export function setLeaseRecovery(recover: LeaseRecovery | undefined) {
 
 const PROJECT_PATH = /^\/creation\/projects\/([^/?]+)\//;
 
-export async function request<T>(
+export async function sessionFetch(
   path: string,
   options: RequestInit = {},
   leaseRenewed = false,
-): Promise<T> {
+): Promise<Response> {
   await sessionReady;
   const requestedSession = sessionId;
   let response: Response;
@@ -114,22 +114,34 @@ export async function request<T>(
     throw new ApiError(tNow("api.networkError"), null, "network_error");
   }
   if (!response.ok) {
-    const error = await responseError(response);
     const projectId = PROJECT_PATH.exec(path)?.[1];
     if (
-      error.status === 409 &&
-      error.code === "session_expired" &&
+      response.status === 409 &&
       !leaseRenewed &&
       requestedSession === sessionId &&
       projectId &&
       leaseRecovery &&
-      !options.signal?.aborted &&
-      (await leaseRecovery(projectId).catch(() => false))
+      !options.signal?.aborted
     ) {
-      if (requestedSession === sessionId) return request<T>(path, options, true);
+      const error = await responseError(response.clone());
+      if (
+        error.code === "session_expired" &&
+        (await leaseRecovery(projectId).catch(() => false)) &&
+        requestedSession === sessionId
+      ) {
+        return sessionFetch(path, options, true);
+      }
     }
-    throw error;
   }
+  return response;
+}
+
+export async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const response = await sessionFetch(path, options);
+  if (!response.ok) throw await responseError(response);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

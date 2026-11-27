@@ -18,6 +18,8 @@ from opendirector.domain.creation.commands import COMMAND_MODELS
 class ToolResult:
     value: JsonValue
     error: str | None = None
+    retryable: bool = False
+    release_id: bool = False
 
     def event(self, name: str) -> AgentEvent:
         code = self.value.get('code') if isinstance(self.value, dict) else None
@@ -39,6 +41,19 @@ READ_ONLY_QUERIES = frozenset({'job.status', 'job.get', 'object.get', 'canvas.st
 # Queries that wait for a business state. Closing a turn cancels them; a read
 # that has not been answered is worth nothing once the turn is over.
 WAITING_QUERIES = frozenset({'job.status', 'canvas.status'})
+
+READ_AND_PLANNING_TOOLS = frozenset({
+    'read_project',
+    'read',
+    'model_availability',
+    'query',
+    'command_schema',
+    'prompt_optimize',
+    'voice_list',
+    'timeline_package_export',
+    'ask_user',
+    'update_plan',
+})
 
 
 def _read_only(name, arguments) -> bool:
@@ -62,10 +77,27 @@ class ToolGateway:
         self.execution_directory: Path | None = None
         self.roots: list[Path] = []
         self.closed = False
-        self.calls: dict[str, tuple[str, asyncio.Task[ToolResult]]] = {}
+        self.waiting_input = False
+        self.waiting_decision: dict | None = None
+        self.waiting_task: dict | None = None
+        self.waiting_event = asyncio.Event()
+        self.attempted_after_waiting = asyncio.Event()
+        self.calls: dict[str, tuple[str, asyncio.Task[ToolResult] | None]] = {}
         self.lock = asyncio.Lock()
         self.execution_lock = asyncio.Lock()
         self.names = {item['function']['name'] for item in tools()}
+
+    async def _current_stage(self) -> str:
+        if self.waiting_input:
+            return 'waiting_input'
+        if self.run.task_stage == 'running' and self.waiting_task is None:
+            return 'running'
+        decisions = getattr(self.business, 'decisions', None)
+        if decisions is not None:
+            task = await asyncio.to_thread(decisions.task_for_turn, self.run.project_id, self.run.turn_id)
+            if task is not None and isinstance(task.get('stage'), str):
+                return task['stage']
+        return self.run.task_stage
 
     async def call(self, call_id: str, name: str, arguments: dict[str, JsonValue]) -> ToolResult:
         identity = json.dumps([name, arguments], ensure_ascii=False, sort_keys=True)
@@ -78,10 +110,20 @@ class ToolGateway:
                     return ToolResult(value={'error': '工具调用标识被用于不同输入。'}, error='工具调用标识被用于不同输入。')
                 task = previous[1]
             else:
+                task = None
+            if task is None:
                 task = asyncio.create_task(self.execute(call_id, name, deepcopy(arguments)))
                 self.calls[call_id] = (identity, task)
         # Transport cancellation must not discard an accepted write or its receipt.
-        return await asyncio.shield(task)
+        outcome = await asyncio.shield(task)
+        if outcome.release_id or outcome.retryable:
+            async with self.lock:
+                if self.calls.get(call_id) == (identity, task):
+                    if outcome.release_id:
+                        self.calls.pop(call_id, None)
+                    else:
+                        self.calls[call_id] = (identity, None)
+        return outcome
 
     async def execute(self, call_id: str, name: str, arguments: dict[str, JsonValue]) -> ToolResult:
         async with (nullcontext() if _read_only(name, arguments) else self.execution_lock):
@@ -90,10 +132,24 @@ class ToolGateway:
                     raise ProjectError('本轮工具入口已关闭。', 409)
                 if not call_id or len(call_id) > 512 or name not in self.names:
                     raise ProjectError('工具调用标识或名称无效。')
+                if self.run.on_dispatched is not None and self.run.runtime != 'deepseek':
+                    await self.run.on_dispatched()
+                stage = await self._current_stage()
+                if stage == 'waiting_input':
+                    self.attempted_after_waiting.set()
+                    raise ProjectError('当前任务正在等待用户回答，已停止派发后续业务操作。', 409, code='task_waiting_input')
+                if stage in {'planning', 'resuming', 'waiting_confirmation'} and name not in READ_AND_PLANNING_TOOLS:
+                    raise ProjectError(
+                        '当前处于交互式计划阶段，需用户确认当前计划版本后才能修改工程或发起生成。',
+                        409,
+                        code='plan_confirmation_required',
+                    )
                 arguments = TypeAdapter(dict[str, JsonValue]).validate_python(arguments, strict=True)
                 schema = next(item['function']['parameters'] for item in tools() if item['function']['name'] == name)
                 if 'properties' in schema and (set(arguments) - set(schema['properties']) or set(schema.get('required', [])) - set(arguments)):
-                    raise ProjectError('工具参数缺失或包含未定义字段。')
+                    err = ProjectError('工具参数缺失或包含未定义字段。')
+                    err._invalid_tool_input = True
+                    raise err
                 value = await self.business.execute(self.run.project_id, self.run.turn_id, self.run.session,
                     call_id, name, arguments, self.roots, self.run.config,
                     self.run.runtime if self.run.config is None else None,
@@ -101,6 +157,14 @@ class ToolGateway:
                         if name == 'prompt_optimize' else {}))
                 if name == 'read_project':
                     value['modelSelections'] = dict(self.model_selections)
+                elif name == 'ask_user' and isinstance(value, dict) and value.get('status') == 'waiting_input':
+                    self.waiting_input = True
+                    self.run.task_stage = 'waiting_input'
+                    self.waiting_decision = value.get('decision')
+                    self.waiting_task = value.get('task')
+                    self.waiting_event.set()
+                elif name == 'update_plan' and isinstance(value, dict):
+                    self.waiting_task = value.get('task')
                 error = None
                 if isinstance(value, dict):
                     if value.get('status') == 'rejected':
@@ -117,17 +181,24 @@ class ToolGateway:
                     path = '.'.join(str(part) for part in location)
                     messages.append(f"{path or 'command'}: {issue['msg']}")
                 error = '; '.join(messages)
-                return ToolResult(value={'error': error}, error=error)
+                return ToolResult(value={'error': error}, error=error, release_id=True)
             except (ProjectError, ValueError, KeyError, OSError, UnicodeError) as failure:
                 details = {'error': str(failure)}
                 if isinstance(failure, ProjectError):
                     details['code'] = failure.code
-                return ToolResult(value=details, error=str(failure))
+                return ToolResult(
+                    value=details,
+                    error=str(failure),
+                    retryable=bool(getattr(failure, '_retryable_pre_write', False)),
+                    release_id=bool(getattr(failure, '_invalid_tool_input', False)),
+                )
 
     async def close(self) -> None:
         self.closed = True
         for identity, task in self.calls.values():
+            if task is None:
+                continue
             name, arguments = json.loads(identity)
             if name == 'query' and isinstance(arguments, dict) and arguments.get('type') in WAITING_QUERIES:
                 task.cancel()
-        await asyncio.gather(*(task for _, task in self.calls.values()), return_exceptions=True)
+        await asyncio.gather(*(task for _, task in self.calls.values() if task is not None), return_exceptions=True)

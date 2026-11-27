@@ -1,5 +1,4 @@
 """Project directory scan, catalog listing, and unreadable-folder cleanup."""
-import time
 from pathlib import Path
 
 from opendirector.domain.projects import ProjectError, identifier, project_name
@@ -128,10 +127,9 @@ class ProjectCatalog:
             self._recover()
             return self._catalog(db)
 
-    @staticmethod
-    def _cleanup_blocker(db, project_id, path):
+    def _cleanup_blocker(self, db, project_id, path):
         active = db.execute('SELECT 1 FROM sessions WHERE expires>? AND (path=? OR project_id=?)',
-                            (time.time(), str(path), project_id or '')).fetchone()
+                            (self.local.now(), str(path), project_id or '')).fetchone()
         if active:
             return '工程仍在其他窗口中打开，请关闭后再清理。'
         tools = path / 'tool-tasks'

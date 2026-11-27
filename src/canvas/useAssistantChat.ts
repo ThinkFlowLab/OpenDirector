@@ -20,7 +20,15 @@ import {
   type Conversation,
   type ModelSelections,
   conversationIsEmpty,
+  type InteractionMode,
+  type LogicalTaskRecord,
+  type DecisionAnswerSubmissionItem,
+  submitDecisionAnswer,
+  streamDecisionContinuation,
+  streamPlanConfirmation,
+  adjustTaskPlan,
 } from "../backend/chat";
+import { clearQuestionDraft } from "./questionAnswerDrafts.ts";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation";
@@ -71,6 +79,27 @@ function restoreConversation(
   };
 }
 
+function isAskPlanning(task: LogicalTaskRecord): boolean {
+  return task.mode === "ask" &&
+    ["planning", "waiting_input", "answer_saved", "resuming", "waiting_confirmation"].includes(task.stage);
+}
+
+function restoredTaskMode(conversation: Conversation): InteractionMode {
+  return conversation.tasks?.some(isAskPlanning) ? "ask" : "auto";
+}
+
+function mergeRecord<T>(records: T[] | undefined, key: keyof T, record: T): T[] {
+  const next = [...(records ?? [])];
+  const index = next.findIndex((item) => item[key] === record[key]);
+  if (index < 0) next.push(record);
+  else next[index] = record;
+  return next;
+}
+
+function composer({ draft, draftContent, assets, skills }: Conversation) {
+  return { draft, draftContent, assets, skills };
+}
+
 export function useAssistantChat(
   projectId: string,
   catalog: BackendModels,
@@ -97,6 +126,23 @@ export function useAssistantChat(
   const [changing, setChanging] = useState(false);
   const switching = useRef(false);
   const [error, setError] = useState("");
+  const [taskMode, setTaskMode] = useState<InteractionMode>("auto");
+  const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [confirmingTaskId, setConfirmingTaskId] = useState<string | null>(null);
+  const decisionSubmission = useRef<object | null>(null);
+  const [conflictDecisionIds, setConflictDecisionIds] = useState<string[]>([]);
+  const activeRuntimeId = value.runtime ?? "default";
+  const askModeSupported =
+    activeRuntimeId === "default" ||
+    activeRuntimeId === "opencode" ||
+    activeRuntimeId === "claude" ||
+    activeRuntimeId === "codex" ||
+    activeRuntimeId === "deepseek";
+  useEffect(() => {
+    if (!askModeSupported && taskMode !== "auto") {
+      setTaskMode("auto");
+    }
+  }, [askModeSupported, taskMode]);
   const displayError = (text: string) =>
     getActiveLocale() === "en-US" && /[\u3400-\u9fff]/.test(text)
       ? t("assistant.error.replyFailed")
@@ -106,11 +152,20 @@ export function useAssistantChat(
   const uploadController = useRef<AbortController | null>(null);
   const listController = useRef<AbortController | null>(null);
   const submitting = useRef(false);
+  const adjustingPlan = useRef(false);
   const uploading = useRef(false);
   const turnId = useRef<string | null>(null);
   const resume = useRef<(turn: string) => Promise<void>>(async () => {});
   const current = useRef(value);
   current.current = value;
+  const syncTaskMode = (task?: LogicalTaskRecord | null) => {
+    if (task?.mode !== "ask") return;
+    if (isAskPlanning(task)) setTaskMode("ask");
+    else if (task.stage === "executing") setTaskMode("auto");
+  };
+  const syncTurnMode = (saved: Conversation, id: string | null) => {
+    if (id) syncTaskMode(saved.tasks?.find((task) => task.segmentTurnIds.includes(id)));
+  };
   // Retain metadata for editor undo after a reference is removed from the draft.
   const knownAssets = useRef(new Map<string, ReferenceAsset>());
   value.assets.forEach((asset) =>
@@ -173,6 +228,9 @@ export function useAssistantChat(
     alive.current = true;
     let cancelled = false;
     setLoadedMode(null);
+    decisionSubmission.current = null;
+    setSubmittingDecision(false);
+    setConfirmingTaskId(null);
     setRuntimes([]);
     setRuntimesLoading(true);
     setError("");
@@ -194,7 +252,9 @@ export function useAssistantChat(
     void conversation(projectId)
       .then(({ conversation: saved, activeTurnId }) => {
         if (cancelled) return;
-        setValue(restoreConversation(projectId, saved, Boolean(activeTurnId)));
+        const restored = restoreConversation(projectId, saved, Boolean(activeTurnId));
+        setValue(restored);
+        setTaskMode(restoredTaskMode(restored));
         setLoadedMode(mode);
         // Navigation only detached the previous view; pick the run back up.
         if (activeTurnId) void resume.current(activeTurnId);
@@ -214,6 +274,7 @@ export function useAssistantChat(
       controller.current?.abort();
       controller.current = null;
       submitting.current = false;
+      adjustingPlan.current = false;
       turnId.current = null;
       setSending(false);
       setStarted(false);
@@ -223,6 +284,41 @@ export function useAssistantChat(
       listController.current?.abort();
     };
   }, [projectId, loadAttempt, refreshConversations, mode]);
+
+  const waitingForJobs = value.tasks?.some((task) => task.stage === "waiting_jobs") ?? false;
+  useEffect(() => {
+    if (!open || !loaded || !waitingForJobs) return;
+    const conversationId = value.conversationId;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const { conversation: saved } = await conversation(projectId);
+        if (!cancelled && !switching.current && saved.conversationId === conversationId) {
+          setValue((previous) => {
+            if (previous.conversationId !== conversationId) return previous;
+            const updated = new Map(saved.tasks?.map((task) => [task.taskId, task]));
+            return {
+              ...previous,
+              tasks: previous.tasks?.map((task) => {
+                const latest = updated.get(task.taskId);
+                return task.stage === "waiting_jobs" && latest?.planRevision === task.planRevision ? latest : task;
+              }),
+            };
+          });
+        }
+      } catch {
+        // A later read can pick up the persisted job result.
+      } finally {
+        if (!cancelled) timer = setTimeout(refresh, 2000);
+      }
+    };
+    timer = setTimeout(refresh, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, loaded, waitingForJobs, projectId, value.conversationId]);
 
   useEffect(() => {
     if (loaded && !runtimesLoading && runtimes.length && value.runtime &&
@@ -470,6 +566,7 @@ export function useAssistantChat(
     )
       return;
     const input = current.current;
+    const modeToUse: InteractionMode = askModeSupported ? taskMode : "auto";
     await follow(crypto.randomUUID(), async (id, signal, onEvent) => {
       await flushChatDraft(projectId);
       await streamChat(
@@ -483,12 +580,131 @@ export function useAssistantChat(
           assets: input.assets.map((asset) => asset.id),
           modelSelections: input.modelSelections,
           skills: input.skills ?? [],
+          mode: modeToUse,
         },
         signal,
         onEvent,
         t,
       );
     });
+  };
+  const continueDecision = async (continuationId: string) => {
+    if (!canWrite.current || !loaded || switching.current || submitting.current || uploading.current)
+      return;
+    await follow(
+      continuationId,
+      async (id, signal, onEvent) => {
+        await streamDecisionContinuation(projectId, id, signal, onEvent, t);
+      },
+      { preserveComposer: true },
+    );
+  };
+  const answerDecision = async (
+    requestId: string,
+    answers: DecisionAnswerSubmissionItem[],
+  ) => {
+    if (!canWrite.current || !loaded || switching.current || decisionSubmission.current) return false;
+    const conversationId = current.current.conversationId;
+    const submission = {};
+    decisionSubmission.current = submission;
+    const stillViewing = () => alive.current && !switching.current &&
+      decisionSubmission.current === submission && current.current.conversationId === conversationId;
+    setSubmittingDecision(true);
+    setError("");
+    try {
+      const receipt = await submitDecisionAnswer(projectId, requestId, answers);
+      clearQuestionDraft(projectId, receipt.task.taskId, requestId);
+      if (!stillViewing() || receipt.task.conversationId !== conversationId)
+        return true;
+      setConflictDecisionIds((ids) => ids.filter((id) => id !== requestId));
+      syncTaskMode(receipt.task);
+      setValue((previous) => previous.conversationId !== conversationId ? previous : ({
+        ...previous,
+        decisions: mergeRecord(previous.decisions, "requestId", receipt.decision),
+        tasks: mergeRecord(previous.tasks, "taskId", receipt.task),
+      }));
+      if (
+        !receipt.busy &&
+        !submitting.current &&
+        receipt.continuationId &&
+        receipt.status === "answer_saved"
+      ) {
+        setSubmittingDecision(false);
+        await continueDecision(receipt.continuationId);
+      }
+      return true;
+    } catch (reason) {
+      if (stillViewing()) {
+        const code =
+          reason && typeof reason === "object" && "code" in reason
+            ? String((reason as { code?: unknown }).code)
+            : "";
+        if (code === "decision_answer_conflict" || code === "decision_version_invalidated") {
+          if (code === "decision_answer_conflict") {
+            setConflictDecisionIds((ids) =>
+              ids.includes(requestId) ? ids : [...ids, requestId],
+            );
+          }
+          try {
+            const { conversation: latestConv } = await conversation(projectId);
+            if (stillViewing() && latestConv.conversationId === conversationId) {
+              setValue((previous) => ({
+                ...previous,
+                decisions: latestConv.decisions,
+                tasks: latestConv.tasks,
+              }));
+            }
+          } catch {
+            /* Keep existing view state when refresh fails. */
+          }
+        }
+        if (stillViewing()) setError(displayError(errorMessage(reason)));
+      }
+      return false;
+    } finally {
+      if (decisionSubmission.current === submission) {
+        decisionSubmission.current = null;
+        if (alive.current) setSubmittingDecision(false);
+      }
+    }
+  };
+  const confirmPlan = async (taskId: string, planRevision: number) => {
+    if (!canWrite.current || !loaded || switching.current || submitting.current || uploading.current)
+      return;
+    setConfirmingTaskId(taskId);
+    try {
+      await follow(
+        crypto.randomUUID(),
+        (_id, signal, onEvent) =>
+          streamPlanConfirmation(projectId, taskId, planRevision, signal, onEvent, t),
+        { preserveComposer: true },
+      );
+    } finally {
+      setConfirmingTaskId((currentId) => (currentId === taskId ? null : currentId));
+    }
+  };
+  const adjustPlan = async (taskId: string, planRevision: number) => {
+    if (!canWrite.current || !loaded || switching.current || adjustingPlan.current) return;
+    adjustingPlan.current = true;
+    const conversationId = current.current.conversationId;
+    const stillViewing = () => alive.current && !switching.current &&
+      current.current.conversationId === conversationId;
+    setError("");
+    try {
+      const { task } = await adjustTaskPlan(projectId, taskId, planRevision);
+      if (!stillViewing() || task.conversationId !== conversationId ||
+          current.current.tasks?.find((item) => item.taskId === taskId)?.planRevision !== planRevision) return;
+      syncTaskMode(task);
+      setValue((previous) => {
+        if (previous.conversationId !== conversationId ||
+            previous.tasks?.find((item) => item.taskId === taskId)?.planRevision !== planRevision) return previous;
+        return { ...previous, tasks: mergeRecord(previous.tasks, "taskId", task) };
+      });
+    } catch (reason) {
+      if (stillViewing()) setError(displayError(errorMessage(reason)));
+    } finally {
+      adjustingPlan.current = false;
+    }
   };
   /** Re-attach to a turn that kept running while this project was not shown. */
   resume.current = async (id: string) => {
@@ -500,10 +716,15 @@ export function useAssistantChat(
         if (!(reason instanceof ChatTurnEnded)) throw reason;
         // It finished in between: the saved conversation has the final reply.
         const { conversation: saved } = await conversation(projectId);
-        if (alive.current && !signal.aborted)
-          setValue(restoreConversation(projectId, saved));
+        if (alive.current && !signal.aborted) {
+          syncTurnMode(saved, id);
+          setValue((previous) => ({
+            ...restoreConversation(projectId, saved),
+            ...composer(previous),
+          }));
+        }
       }
-    });
+    }, { preserveComposer: true });
   };
   const follow = async (
     id: string,
@@ -512,7 +733,9 @@ export function useAssistantChat(
       signal: AbortSignal,
       onEvent: (event: ChatEvent) => void,
     ) => Promise<void>,
+    options?: { preserveComposer?: boolean },
   ) => {
+    const preserveComposer = Boolean(options?.preserveComposer);
     submitting.current = true;
     setSending(true);
     setStarted(false);
@@ -527,11 +750,15 @@ export function useAssistantChat(
         id,
         abort.signal,
         (event) => {
-          if (!alive.current) return;
+          if (!alive.current || abort.signal.aborted || controller.current !== abort) return;
           if (event.type === "start") {
+            if (event.turnId) turnId.current = event.turnId;
+            syncTurnMode(event.conversation, turnId.current);
+            setConfirmingTaskId(null);
             setStarted(true);
-            setValue({
+            setValue((previous) => ({
               ...event.conversation,
+              ...(preserveComposer ? composer(previous) : {}),
               messages: event.conversation.messages.map((message) =>
                 message.status === "streaming"
                   ? {
@@ -540,7 +767,7 @@ export function useAssistantChat(
                     }
                   : message,
               ),
-            });
+            }));
           } else if (event.type === "delta") {
             setThinkingNow(false);
             setValue((previous) => ({
@@ -583,8 +810,40 @@ export function useAssistantChat(
               }),
             }));
             if (event.status !== "running") onEnd.current();
+          } else if (event.type === "decision") {
+            setThinkingNow(false);
+            syncTaskMode(event.task);
+            setValue((previous) => ({
+              ...previous,
+              decisions: mergeRecord(previous.decisions, "requestId", event.decision),
+              tasks: event.task ? mergeRecord(previous.tasks, "taskId", event.task) : previous.tasks,
+              messages: previous.messages.map((message) =>
+                message.id === assistantId
+                  ? {
+                      ...message,
+                      decisionRequestId: event.decision.requestId,
+                      taskId: event.decision.taskId,
+                    }
+                  : message,
+              ),
+            }));
+          } else if (event.type === "task") {
+            syncTaskMode(event.task);
+            setValue((previous) => ({
+              ...previous,
+              tasks: mergeRecord(previous.tasks, "taskId", event.task),
+            }));
           } else if (event.type === "end") {
-            if (event.conversation) setValue(event.conversation);
+            const saved = event.conversation;
+            if (saved) {
+              syncTurnMode(saved, turnId.current);
+              setValue((previous) => ({
+                ...saved,
+                ...(preserveComposer
+                  ? composer(previous)
+                  : { draft: saved.draft ?? previous.draft }),
+              }));
+            }
             if (event.error) setError(displayError(event.error));
           }
         },
@@ -630,9 +889,13 @@ export function useAssistantChat(
       const saved = restoreConversation(projectId, await activateConversation(projectId, id, create));
       if (!alive.current) return false;
       knownAssets.current.clear();
+      decisionSubmission.current = null;
+      setSubmittingDecision(false);
+      setConfirmingTaskId(null);
       current.current = saved;
       rememberChat(projectId, saved);
       setValue(saved);
+      setTaskMode(restoredTaskMode(saved));
       setThinkingNow(false);
       void refreshConversations();
       return true;
@@ -707,6 +970,16 @@ export function useAssistantChat(
     addAssets,
     send,
     stop,
+    taskMode,
+    setTaskMode,
+    askModeSupported,
+    submittingDecision,
+    confirmingTaskId,
+    conflictDecisionIds,
+    answerDecision,
+    continueDecision,
+    confirmPlan,
+    adjustPlan,
     reload: () => setLoadAttempt((n) => n + 1),
   };
 }

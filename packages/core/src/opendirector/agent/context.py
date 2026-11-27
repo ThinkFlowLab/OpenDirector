@@ -1,7 +1,9 @@
 """Shared input contract for SDK, CLI and service-backed runtimes."""
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -27,6 +29,12 @@ class RunContext:
     thinking: str = 'auto'
     runtime_model: str | None = None
     skills: list[dict[str, str]] = field(default_factory=list)
+    mode: Literal['auto', 'ask'] = 'auto'
+    task_id: UUID | None = None
+    task_stage: str = 'running'
+    current_plan: dict[str, JsonValue] | None = None
+    rebuild_native_context: bool = False
+    on_dispatched: Callable[[], Awaitable[None]] | None = field(default=None, repr=False, compare=False)
 
     def native_session_path(self) -> Path | None:
         if self.conversation_id is None:
@@ -34,6 +42,8 @@ class RunContext:
         return self.directory / 'agent-runs' / f'{self.runtime}-sessions' / str(self.conversation_id)
 
     def native_session(self, selection: dict) -> dict | None:
+        if self.rebuild_native_context:
+            return None
         directory = self.native_session_path()
         if directory is None or not (directory / 'session.json').is_file():
             return None

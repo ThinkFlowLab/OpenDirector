@@ -11,7 +11,6 @@ there so this module does not import application services.
 """
 import os
 import threading
-import time
 from collections import OrderedDict
 from uuid import UUID
 
@@ -86,7 +85,7 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
         identifier(session)
         agent_key = session if browser_only else self.local.agent_session_key(session)
         lease = db.execute('SELECT path FROM sessions WHERE id IN (?,?) AND project_id=? AND expires>?',
-                           (session, agent_key, str(project_id), time.time())).fetchone()
+                           (session, agent_key, str(project_id), self.local.now())).fetchone()
         if lease is None:
             # A stable code lets the page renew its lease and resend instead of failing every save.
             raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409, code='session_expired')
@@ -94,7 +93,7 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
             raise ProjectError('工程目录已在应用外改名或移动，请复制未保存内容并重新打开。', 409)
 
     def _closed(self, db, project_id, snapshot, verb='重命名'):
-        if db.execute('SELECT 1 FROM sessions WHERE project_id=? AND expires>?', (str(project_id), time.time())).fetchone():
+        if db.execute('SELECT 1 FROM sessions WHERE project_id=? AND expires>?', (str(project_id), self.local.now())).fetchone():
             raise ProjectError(f'请先保存并关闭工程后再{verb}。', 409)
         if any(job.status in {'queued', 'running'} for job in snapshot.jobs):
             raise ProjectError(f'工程仍在生成素材，请等待或取消任务后再{verb}。', 409)

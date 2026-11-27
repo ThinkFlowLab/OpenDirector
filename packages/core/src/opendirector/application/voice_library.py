@@ -278,7 +278,8 @@ class VoiceLibrary:
                     return record, locator
         return None, None
 
-    def create(self, model_config_id, data, *, filename, name, consent=None, ref_text=None, speaker_description=None, connection_id=_CURRENT_CONNECTION):
+    def create(self, model_config_id, data, *, filename, name, consent=None, ref_text=None, speaker_description=None,
+               connection_id=_CURRENT_CONNECTION, before_submit=None):
         config, capabilities = self._config(model_config_id)
         if connection_id is not _CURRENT_CONNECTION and connection_id != capabilities['connectionId']:
             raise voice_error('voice_connection_changed', 409)
@@ -311,6 +312,8 @@ class VoiceLibrary:
         seconds = media['durationSeconds']
         if (capabilities['minSeconds'] is not None and seconds < capabilities['minSeconds']) or (capabilities['maxSeconds'] is not None and seconds > capabilities['maxSeconds']): raise voice_error('voice_duration')
         fields = {'name': name}
+        if before_submit is not None:
+            before_submit()
         if capabilities['provider'] == 'zhipu':
             return self._zhipu_create(config, capabilities, data, extension, name, text)
         if capabilities['provider'] == 'vllm_omni':
@@ -386,7 +389,7 @@ class VoiceLibrary:
         except httpx.TimeoutException: raise voice_error('voice_provider_timeout', 504) from None
         except httpx.HTTPError: raise voice_error('voice_provider_error', 502) from None
 
-    def delete(self, model_config_id, voice_id, connection_id):
+    def delete(self, model_config_id, voice_id, connection_id, *, before_submit=None):
         _, capabilities = self._config(model_config_id)
         if connection_id != capabilities['connectionId']: raise voice_error('voice_connection_changed', 409)
         if not capabilities['canDelete']: raise voice_error('voice_delete_unsupported', 409)
@@ -396,6 +399,8 @@ class VoiceLibrary:
         if not record['canDelete']: raise voice_error('voice_delete_unsupported', 409)
         config, current = self._config(model_config_id)
         if current['connectionId'] != connection_id: raise voice_error('voice_connection_changed', 409)
+        if before_submit is not None:
+            before_submit()
         if current['provider'] == 'zhipu':
             value = self._request(config, 'POST', path='/voice/delete', json={'voice': voice_id})
             if value.get('voice') != voice_id: raise voice_error('voice_provider_protocol', 502)

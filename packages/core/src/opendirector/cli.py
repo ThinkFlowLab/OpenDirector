@@ -61,6 +61,7 @@ GROUP_HELP = {
     "group": "Save and publish segment run plans.",
     "history": "Undo or redo reversible project operations.",
     "creation": "Apply multiple project operations atomically.",
+    "plan": "Save or update a versioned plan snapshot for the active agent task.",
 }
 groups: dict[str, typer.Typer] = {}
 
@@ -129,7 +130,8 @@ def timeline_export(ctx: typer.Context, editor_id: Annotated[UUID, typer.Option(
     client = ctx.obj
     client.command = ctx.command_path
     if client.live:
-        emit(client.call("timeline_package_export", dict(editorId=str(editor_id), revision=revision, path=str(output))))
+        emit(client.call("timeline_package_export", dict(editorId=str(editor_id), revision=revision, path=str(output)),
+                         identity=client.operation_id))
         return
     with client.http.stream("GET", client.path(f"/timelines/{editor_id}/package"), params={"revision": revision}) as response:
         if not response.is_success:
@@ -228,7 +230,16 @@ class Client:
         with connection:
             connection.settimeout(SOCKET_TIMEOUT)
             if not endpoint:
-                connection.connect(self.gateway["OPENDIRECTOR_AGENT_SOCKET"])
+                address = self.gateway["OPENDIRECTOR_AGENT_SOCKET"]
+                if sys.platform == "linux" and len(os.fsencode(address)) >= 104:
+                    path = Path(address)
+                    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        connection.connect(f"/proc/self/fd/{descriptor}/{path.name}")
+                    finally:
+                        os.close(descriptor)
+                else:
+                    connection.connect(address)
             first = not _STARTUP_REPORTED
             _STARTUP_REPORTED = True
             connection.sendall((json.dumps({
@@ -241,12 +252,12 @@ class Client:
             raise ProjectError(response["error"], code=response.get('code'))
         return response["value"]
 
-    def models(self):
-        return (self.call("read_project", {})["models"] if self.live else
+    def models(self, *, identity=None):
+        return (self.call("read_project", {}, identity=identity)["models"] if self.live else
                 self.request("GET", "/api/model-configs"))
 
-    def snapshot(self):
-        return (self.call("read_project", {})["project"] if self.live else
+    def snapshot(self, *, identity=None):
+        return (self.call("read_project", {}, identity=identity)["project"] if self.live else
                 self.request("GET", self.path()))
 
     def open(self):
@@ -302,8 +313,8 @@ class Client:
                 value["geometryReadError"] = str(error)
         return value
 
-    def query(self, kind, **arguments):
-        result = (self.call("query", {"type": kind, **arguments}) if self.live else
+    def query(self, kind, *, identity=None, **arguments):
+        result = (self.call("query", {"type": kind, **arguments}, identity=identity) if self.live else
             self.request("POST", self.path("/queries"),
                 json={"type": kind, "queryId": str(uuid4()), "projectId": str(self.project), **arguments}))
         if kind == "job.get" and result.get("status") == "succeeded" and result.get("asset"):
@@ -328,7 +339,7 @@ def options(ctx: typer.Context,
             project: Annotated[UUID | None, typer.Option(envvar="OPENDIRECTOR_PROJECT_ID", help="Target project UUID.")] = None,
             url: Annotated[str, typer.Option(envvar="OPENDIRECTOR_API_URL", help="Running OpenDirector server.")] = "http://127.0.0.1:18000",
             session: Annotated[UUID | None, typer.Option(envvar="OPENDIRECTOR_SESSION", help="Existing authorized edit session.")] = None,
-            operation_id: Annotated[UUID | None, typer.Option(help="Stable write identity for safe replay.")] = None):
+            operation_id: Annotated[UUID | None, typer.Option(help="Stable identity for safe replay or a confirmed plan step.")] = None):
     client = Client(project, url, session, operation_id)
     ctx.obj = client
 
@@ -427,7 +438,8 @@ def summarize(snapshot):
 def project_show(ctx: typer.Context,
                  summary: Annotated[bool, typer.Option("--summary", help="Print identities, revisions and status without full records.")] = False):
     ctx.obj.command = ctx.command_path
-    snapshot = ctx.obj.snapshot()
+    operation_id = getattr(ctx.obj, "operation_id", None)
+    snapshot = ctx.obj.snapshot(identity=operation_id) if operation_id is not None else ctx.obj.snapshot()
     emit(summarize(snapshot) if summary else snapshot)
 
 
@@ -468,7 +480,7 @@ def model_availability(ctx: typer.Context,
     if model:
         arguments['configIds'] = [str(item) for item in model]
     if client.live:
-        emit(client.call('model_availability', {**arguments, 'refresh': refresh}))
+        emit(client.call('model_availability', {**arguments, 'refresh': refresh}, identity=client.operation_id))
     elif refresh:
         emit(client.request('POST', '/api/model-configs/availability', json=arguments))
     else:
@@ -481,7 +493,7 @@ def model_list(ctx: typer.Context,
                                typer.Option(help="Filter by model kind.")] = None,
                search: Annotated[str, typer.Option(help="Case-insensitive substring of model name or configuration UUID.")] = ""):
     ctx.obj.command = ctx.command_path
-    emit([model for model in ctx.obj.models()
+    emit([model for model in ctx.obj.models(identity=ctx.obj.operation_id)
           if (kind is None or model["kind"] == kind)
           and (search.casefold() in model["modelId"].casefold() or search.casefold() in model["id"].casefold())])
 
@@ -490,7 +502,7 @@ def model_list(ctx: typer.Context,
 def model_show(ctx: typer.Context,
                selector: Annotated[str, typer.Argument(help="Configuration UUID or unique exact model name.")]):
     ctx.obj.command = ctx.command_path
-    emit(select_model(ctx.obj.models(), selector))
+    emit(select_model(ctx.obj.models(identity=ctx.obj.operation_id), selector))
 
 
 @group("asset").command("import", help="Register a local file as a project asset.")
@@ -618,8 +630,8 @@ def text_content(client, asset_id):
     return content.decode("utf-8")
 
 
-def text_item(client, item_id, revision=None):
-    item = client.query("object.get", objectId=str(item_id), **({"revision": revision} if revision else {}))
+def text_item(client, item_id, revision=None, *, identity=None):
+    item = client.query("object.get", identity=identity, objectId=str(item_id), **({"revision": revision} if revision else {}))
     if item.get("kind") != "text" or "binding" not in item:
         raise ValueError("--id must identify a text canvas item.")
     return item
@@ -682,7 +694,7 @@ def text_create(ctx: typer.Context, file: MarkdownFile,
 def text_show(ctx: typer.Context, id: Annotated[UUID, typer.Option(help="Text canvas item ID.")]):
     client = ctx.obj
     client.command = ctx.command_path
-    item = text_item(client, id)
+    item = text_item(client, id, identity=client.operation_id)
     asset = text_asset(client, item)
     text = item["binding"].get("manualText") or ""
     if asset:
@@ -779,7 +791,7 @@ def video_create(ctx: typer.Context,
 @group("job").command("show", help="Read job status once. Use job wait to wait for completion.")
 def job_show(ctx: typer.Context, job_id: UUID):
     ctx.obj.command = ctx.command_path
-    emit(ctx.obj.query("job.get", objectId=str(job_id)))
+    emit(ctx.obj.query("job.get", identity=ctx.obj.operation_id, objectId=str(job_id)))
 
 
 TERMINAL_JOB_STATES = frozenset({"succeeded", "failed", "cancelled", "interrupted"})
@@ -794,7 +806,8 @@ def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Arg
                  help="Generation job IDs. Omit them with --all.")] = None,
              all_jobs: Annotated[bool, typer.Option("--all", help="Wait for every unfinished job in this project.")] = False,
              timeout: Annotated[float, typer.Option(min=0, help="Maximum wait in seconds.")] = 300):
-    ctx.obj.command = ctx.command_path
+    client = ctx.obj
+    client.command = ctx.command_path
     if not job_ids and not all_jobs:
         raise typer.BadParameter("Pass job IDs or --all.")
     ids = [str(identity) for identity in (job_ids or ())]
@@ -803,7 +816,7 @@ def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Arg
     # the same jobs, so a job that fails while we wait is still named below.
     while True:
         remaining = max(0.0, deadline - time.monotonic())
-        result = ctx.obj.query("job.status", objectIds=ids,
+        result = client.query("job.status", objectIds=ids,
             waitSeconds=min(WAIT_WINDOW, remaining), until="all")
         jobs = result.get("jobs", [])
         if not job_ids:
@@ -811,6 +824,10 @@ def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Arg
         failed = [job for job in jobs if job["status"] in TERMINAL_JOB_STATES and job["status"] != "succeeded"]
         settled = all(job["status"] in TERMINAL_JOB_STATES for job in jobs)
         if settled:
+            if jobs and not failed and getattr(client, "live", False) and getattr(client, "operation_id", None):
+                # The gateway replays calls with the same ID. Bind only the successful terminal read to the step.
+                client.call("query", {"type": "job.status", "objectIds": ids, "waitSeconds": 0, "until": "all"},
+                            identity=client.operation_id)
             report = {"jobs": jobs, "completed": len(jobs) - len(failed), "failed": len(failed)}
             if not jobs:
                 report["note"] = ("No job in this project is still running. "
@@ -874,7 +891,87 @@ def query(ctx: typer.Context, kind: str,
     arguments = read_file(file) if file else {}
     if object_id:
         arguments["objectId"] = str(object_id)
+    arguments["identity"] = ctx.obj.operation_id
     emit(ctx.obj.query(kind, **arguments))
+
+
+@app.command(
+    "ask-user",
+    help="Submit 1 to 4 structured decision questions for the user and pause the active task segment.",
+    epilog=(
+        'Example JSON for --file:\n'
+        '{\n'
+        '  "questions": [\n'
+        '    {\n'
+        '      "id": "duration",\n'
+        '      "question": "视频成片的目标时长是多少？",\n'
+        '      "multiSelect": false,\n'
+        '      "required": true,\n'
+        '      "options": [\n'
+        '        {"id": "8s", "label": "8 秒", "impact": "采用紧凑的三镜头叙事，适合快速展示核心画面。"},\n'
+        '        {"id": "5s", "label": "5 秒", "impact": "浓缩为单主镜头与结尾定格，节奏最快。"},\n'
+        '        {"id": "15s", "label": "15 秒", "impact": "展开完整起承转合，留出环境铺垫与呼吸感。"}\n'
+        '      ]\n'
+        '    }\n'
+        '  ]\n'
+        '}\n'
+        'Options are ordered from highest recommendation to lowest. Do not include (Recommended) or （推荐） in label.'
+    ),
+)
+def ask_user_command(
+    ctx: typer.Context,
+    file: Annotated[Path, typer.Option(help="UTF-8 JSON file with questions (1-4 items); use - for stdin.")],
+):
+    from opendirector.agent.decisions import AskUserInput
+    client = ctx.obj
+    client.command = ctx.command_path
+    body = AskUserInput.model_validate(read_file(file)).model_dump(mode="json")
+    emit(client.call("ask_user", body, identity=client.operation_id))
+
+
+@group("plan").command(
+    "save",
+    help="Save or update the versioned plan snapshot for the active task before user confirmation.",
+    epilog=(
+        'Example JSON for --file (plain strings default to kind "write"; use objects for "read" or "inspection"):\n'
+        '{\n'
+        '  "summary": "12 秒视频创作方案，最后留 3 秒空镜。",\n'
+        '  "steps": [{"content": "读取画布现状", "kind": "read"}, "前 9 秒展开主体叙事", "结尾 3 秒保留空镜画面"]\n'
+        '}'
+    ),
+)
+def plan_save_command(
+    ctx: typer.Context,
+    file: Annotated[Path | None, typer.Option(help="UTF-8 JSON file with summary and steps; use - for stdin.")] = None,
+    summary: Annotated[str | None, typer.Option(help="Complete updated plan summary or Markdown text.")] = None,
+    step: Annotated[list[str] | None, typer.Option(help="Repeat for each ordered plan step.")] = None,
+):
+    from opendirector.agent.decisions import UpdatePlanInput
+    client = ctx.obj
+    client.command = ctx.command_path
+    body = read_file(file) if file is not None else {}
+    if summary is not None:
+        body["summary"] = summary
+    if step:
+        body["steps"] = list(step)
+    payload = UpdatePlanInput.model_validate(body).model_dump(mode="json")
+    emit(client.call("update_plan", payload, identity=client.operation_id))
+
+
+@group("plan").command(
+    "complete-step",
+    help="Record the outcome of an inspection step in the confirmed execution plan.",
+)
+def plan_complete_step_command(
+    ctx: typer.Context,
+    step: Annotated[str, typer.Option(help="Plan step ID, e.g. step-1.")],
+    summary: Annotated[str, typer.Option(help="Concise result of the inspection.")],
+):
+    from opendirector.agent.decisions import CompleteStepInput
+    client = ctx.obj
+    client.command = ctx.command_path
+    payload = CompleteStepInput.model_validate({"stepId": step, "summary": summary}).model_dump(mode="json")
+    emit(client.call("complete_step", payload, identity=client.operation_id))
 
 
 def read_file(path):
@@ -898,6 +995,9 @@ def register_command(kind, model):
         inspect.Parameter("file", inspect.Parameter.KEYWORD_ONLY, default=None,
             annotation=Annotated[Path | None, typer.Option(help="Command JSON file with payload and expectedVersions; - reads stdin.")]),
     ]
+    if kind == "asset.writeText":
+        parameters.append(inspect.Parameter("text_file", inspect.Parameter.KEYWORD_ONLY, default=None,
+            annotation=Annotated[Path | None, typer.Option(help="Literal UTF-8 text or Markdown file; - reads stdin.")]))
     for name, definition in properties.items():
         description = definition.get("description", name)
         if name == "spec":
@@ -911,15 +1011,30 @@ def register_command(kind, model):
     parameters.append(inspect.Parameter("expected_version", inspect.Parameter.KEYWORD_ONLY, default=None,
         annotation=Annotated[list[str] | None, typer.Option(help="Repeat object_type:UUID:revision for each changed existing object.")]))
 
-    def execute(ctx, file=None, expected_version=None, help_field=None, **values):
+    def execute(ctx, file=None, text_file=None, expected_version=None, help_field=None, **values):
         ctx.obj.command = ctx.command_path
         if help_field is not None:
             emit(command_help(payload_schema, help_field, ctx.obj.project or UUID(int=0)))
             return
-        body = read_file(file) if file else {"payload": {}}
+        if text_file is not None:
+            if file is not None or values.get("text") is not None:
+                raise typer.BadParameter("Use one of --text-file, --file, or --text.")
+            default_name = "plan.md" if str(text_file) == "-" else text_file.name
+            body = {"payload": {"name": default_name, "text": markdown_file(text_file).removeprefix("\ufeff")}}
+        else:
+            body = read_file(file) if file else {"payload": {}}
         if body.get("type", kind) != kind:
             raise ValueError("Command file type does not match this subcommand.")
-        arguments = dict(body.get("payload", {}))
+        unexpected = sorted(set(body) - {"type", "payload", "expectedVersions", "expectedPreview"})
+        if unexpected:
+            raise ValueError(
+                "Unexpected top-level field(s) in --file: " + ", ".join(unexpected)
+                + '. Wrap command arguments in {"payload": {...}}.'
+            )
+        raw_payload = body.get("payload", {})
+        if not isinstance(raw_payload, dict):
+            raise ValueError('--file field "payload" must be a JSON object.')
+        arguments = dict(raw_payload)
         for name, value in values.items():
             if value is not None:
                 definition = properties[name]
@@ -998,7 +1113,8 @@ def voice_list(ctx: typer.Context,
     if page_size is not None: arguments['pageSize'] = page_size
     if after is not None: arguments['after'] = after
     if connection is not None: arguments['connectionId'] = connection
-    emit(client.call('voice_list', arguments) if client.live else client.request('GET', '/api/voices', params=arguments))
+    emit(client.call('voice_list', arguments, identity=client.operation_id) if client.live
+         else client.request('GET', '/api/voices', params=arguments))
 
 
 @group('voice').command('create', help='Upload an authorized recording to the speech model voice library.')
@@ -1017,7 +1133,8 @@ def voice_create(ctx: typer.Context,
     if ref_text is not None: fields['refText'] = ref_text
     if speaker_description is not None: fields['speakerDescription'] = speaker_description
     if client.live:
-        emit(client.call('voice_create', {**fields, 'modelConfigId': str(model), 'path': str(file.resolve())}))
+        emit(client.call('voice_create', {**fields, 'modelConfigId': str(model), 'path': str(file.resolve())},
+                         identity=client.operation_id))
     else:
         from opendirector.domain.voices import voice_error
         with file.open('rb') as stream: data = stream.read(10 * 1024 * 1024 + 1)
@@ -1034,7 +1151,8 @@ def voice_delete(ctx: typer.Context,
     client = ctx.obj
     client.command = ctx.command_path
     arguments = dict(modelConfigId=str(model), connectionId=connection, voiceId=voice_id)
-    if client.live: emit(client.call('voice_delete', arguments))
+    if client.live:
+        emit(client.call('voice_delete', arguments, identity=client.operation_id))
     else:
         response = client.http.delete('/api/voices/' + quote(voice_id, safe=''), params={'modelConfigId': str(model), 'connectionId': connection})
         if not response.is_success: raise ProjectError(response.text, response.status_code)

@@ -137,6 +137,21 @@ ENGLISH_BY_CODE = {
     "local_only": "Only this computer can access the project service.",
     "cross_origin": "File access from another site is not allowed.",
     "invalid_local_request": "This is not a valid local app request.",
+    "ask_mode_runtime_unsupported": "Ask mode is available for Default, OpenCode, Claude Code, Codex, and DeepSeek Harness only.",
+    "task_waiting_input": "This task is waiting for the user to answer the current question. Subsequent operations are paused.",
+    "plan_confirmation_required": "This task is in the interactive planning stage. Confirm the current plan before modifying the project or starting generation.",
+    "decision_answer_invalid": "Check the answers for each question and try again.",
+    "decision_answer_conflict": "A different answer was already submitted for this question in another tab. Showing the saved answer.",
+    "decision_version_invalidated": "Related assets or the plan version changed. This question is no longer valid and will not overwrite newer content.",
+    "decision_not_answered": "Save an answer to this question before continuing the task.",
+    "continuation_resume_failed": "Could not start the continuation. Check the Agent configuration and try again.",
+    "continuation_status_unknown": "The previous execution status needs verification. To avoid duplicate paid calls, it was not resent automatically.",
+    "plan_missing": "This task does not have a confirmable plan revision yet.",
+    "plan_revision_stale": "The plan version changed and the previous confirmation is no longer valid. Confirm the latest plan version.",
+    "plan_step_kind_mismatch": "Only inspection steps can record an inspection result.",
+    "task_conversation_changed": "Return to the task's original conversation to continue.",
+    "task_model_unavailable": "The original Agent model configuration could not be resolved.",
+    "project_assistant_busy": "Another reply is currently running in this project. Wait for it to finish and then continue.",
 }
 
 ENGLISH_BY_STATUS = {
