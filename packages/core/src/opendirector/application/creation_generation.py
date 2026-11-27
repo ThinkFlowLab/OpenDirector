@@ -222,6 +222,10 @@ class CreationGeneration(GenerationRuntime):
                 params['duration'] = seconds
             if intent.get('aspectRatio'):
                 params['ratio'] = intent['aspectRatio']
+            if rules['profile'] == 'seedance-2.5' and node.get('videoMode') == 'first_frame':
+                # 2.5 rejects an explicit ratio on first/last frames: the keyframe
+                # image decides the output ratio, so the request must say adaptive.
+                params['ratio'] = 'adaptive'
             output = dict(intent)
             if output.get('resolution') == 'auto' and output.get('aspectRatio') and rules['profile'] in {'standard-video', 'fasth3-omni', 'vllm-omni-h3'}:
                 if node.get('videoMode') == 'continuation':
