@@ -164,10 +164,26 @@ try {
       restore,
     };
   }, { projectId, itemId: first });
-  await page.mouse.move(1000, 800);
+  // The selected node's composer can cover fixed coordinates and consume the
+  // gesture. Find exposed canvas and verify the pan actually schedules a save.
+  const panStart = await page.evaluate(() => {
+    const pane = document.querySelector('.react-flow__pane');
+    const rect = pane.getBoundingClientRect();
+    for (let y = Math.max(80, rect.top + 40); y < Math.min(innerHeight, rect.bottom) - 60; y += 80) {
+      for (let x = Math.max(80, rect.left + 40); x < Math.min(innerWidth, rect.right) - 70; x += 80) {
+        if ([0, 0.5, 1].every((t) => document.elementFromPoint(x + 30 * t, y + 20 * t) === pane))
+          return { x, y };
+      }
+    }
+  });
+  assert.ok(panStart, 'expected exposed canvas for the autosave gesture');
+  const beforeAutosavePan = await transform();
+  await page.mouse.move(panStart.x, panStart.y);
   await page.mouse.down({ button: 'middle' });
-  await page.mouse.move(1030, 820, { steps: 5 });
+  await page.mouse.move(panStart.x + 30, panStart.y + 20, { steps: 5 });
   await page.mouse.up({ button: 'middle' });
+  await page.waitForFunction((before) =>
+    document.querySelector('.react-flow__viewport').getAttribute('style') !== before, beforeAutosavePan);
   await page.waitForFunction(() => window.__remoteAutosave.ready());
   await editor.fill('保留我的视图和输入焦点');
   const hidden = await send('canvas.hide', { itemId: first });
