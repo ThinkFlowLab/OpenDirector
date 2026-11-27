@@ -24,6 +24,7 @@ class RuntimeSpec:
     modelOverride: bool
     engine: RuntimeId
     supportsSkills: bool = True
+    supportsSteering: bool = False
 
 
 RUNTIMES = {
@@ -31,7 +32,8 @@ RUNTIMES = {
     'opencode': RuntimeSpec(id='opencode', label='OpenCode', group='harness', modelSource='cli', modelOverride=True, engine='opencode'),
     'jiuwenswarm': RuntimeSpec(id='jiuwenswarm', label='JiuwenSwarm', group='harness', modelSource='cli', modelOverride=True, engine='jiuwenswarm'),
     'deepseek': RuntimeSpec(id='deepseek', label='DeepSeek Harness', group='harness', modelSource='cli', modelOverride=True, engine='deepseek'),
-    'codex': RuntimeSpec(id='codex', label='Codex', group='harness', modelSource='cli', modelOverride=True, engine='codex'),
+    'codex': RuntimeSpec(id='codex', label='Codex', group='harness', modelSource='cli', modelOverride=True, engine='codex',
+                         supportsSteering=True),
     'claude': RuntimeSpec(id='claude', label='Claude Code', group='harness', modelSource='cli', modelOverride=True, engine='claude'),
 }
 
