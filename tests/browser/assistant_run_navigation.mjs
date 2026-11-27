@@ -186,12 +186,14 @@ try {
   await panel
     .getByText("已收到创作要求。这是隔离测试回复。", { exact: true })
     .waitFor();
-  const done = await until(
+  // The reply is persisted before the Agent releases the active turn.
+  await until(
     () => api(path),
-    (value) => value.messages.at(-1).status === "complete",
-    "Reply must complete",
+    (value) =>
+      value.messages.at(-1)?.status === "complete" &&
+      value.activeTurnId === undefined,
+    "Reply must complete and release the active turn",
   );
-  assert.equal(done.activeTurnId, undefined);
   assert.deepEqual(stops, [], "navigation must not call stop");
 
   // An explicit stop after leaving and returning still stops the run.
@@ -212,12 +214,13 @@ try {
   const stop = panel.getByRole("button", { name: "停止回复", exact: true });
   await until(() => stop.isEnabled(), Boolean, "Stop must be available");
   await stop.click();
-  const stopped = await until(
+  await until(
     () => api(path),
-    (value) => value.messages.at(-1).status === "stopped",
-    "Explicit stop must persist",
+    (value) =>
+      value.messages.at(-1)?.status === "stopped" &&
+      value.activeTurnId === undefined,
+    "Explicit stop must persist and release the active turn",
   );
-  assert.equal(stopped.activeTurnId, undefined);
   await panel.getByText("已停止回复").waitFor();
 
   // An explicit media preference supersedes an auto-filled model in another project.
