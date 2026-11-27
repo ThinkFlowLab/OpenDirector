@@ -1,0 +1,74 @@
+# Models offered by the OpenDirector video gateway. Copy this file to `.opendirector/video-gateway.yaml`
+# in the OpenDirector data directory (beside models.json), or pass it with
+# `opendirector serve --video-gateway <file>`, and adjust it.
+# See docs/guides/video-gateway.md.
+#
+# Each key under `models` is a model name a client may send. When a request's `model` is listed, the
+# gateway rewrites the request as described and forwards it to that entry's `backend`. A request for any
+# other model name goes to `default_backend` exactly as it arrived.
+# The model table is re-read whenever the file changes; a file that fails to load keeps the previous
+# version active. A changed `listen` address takes effect at the next start.
+#
+#   backend        base URL of the vLLM-Omni server that runs this model
+#   backend_model  the name that server was started with (--served-model-name); defaults to the key
+#   set            form fields forced to these values, replacing whatever the client sent
+#   defaults       form fields added only when the client did not send them
+#   extra_params   keys forced inside the request's extra_params JSON
+#   lora           {name, path, scale} sent as the request's `lora`; `lora: null` strips any client-sent one;
+#                  leaving the key out passes the client's own `lora` through
+#
+# `lora.path` is a path on the vLLM-Omni server, which may be another machine: the gateway sends it
+# without checking it. Keep the released filename: the server reads the adapter's schedule from it.
+#
+# OpenDirector's FastH3-Omni requests always carry num_inference_steps=8 and guidance_scale=1, so an
+# entry whose weights need another step count must force it under `set`.
+
+listen:
+  host: 127.0.0.1
+  port: 8101
+
+# Requests whose model is not listed below are forwarded here unchanged.
+default_backend: http://127.0.0.1:8091
+
+models:
+  # Pika Flex Turbo on base MiniMax-H3 Ref2VA, 8 steps.
+  Pika-Labs/Pika-H3-Flex-Turbo-8step-HD:
+    backend: http://127.0.0.1:8091
+    backend_model: MiniMaxAI/MiniMax-H3
+    set:
+      num_inference_steps: 8
+      guidance_scale: 1
+      flow_shift: 12
+    extra_params:
+      audio_flow_shift: 3
+    lora:
+      name: pika-h3-flex-turbo-8step-hd
+      path: /path/to/loras/pika_h3_flex_turbo_8step_hd_ref2va.safetensors
+      scale: 1.0
+
+  # The 4-step file of the same adapter on the same server: only the step count and the file differ.
+  Pika-Labs/Pika-H3-Flex-Turbo-4step:
+    backend: http://127.0.0.1:8091
+    backend_model: MiniMaxAI/MiniMax-H3
+    set:
+      num_inference_steps: 4
+      guidance_scale: 1
+      flow_shift: 12
+    extra_params:
+      audio_flow_shift: 3
+    lora:
+      name: pika-h3-flex-turbo-4step
+      path: /path/to/loras/pika_h3_flex_turbo_4step_ref2va.safetensors
+      scale: 1.0
+
+  # Base Ref2VA weights without an adapter, on their own longer schedule.
+  MiniMaxAI/MiniMax-H3-Ref2VA:
+    backend: http://127.0.0.1:8091
+    backend_model: MiniMaxAI/MiniMax-H3
+    set:
+      num_inference_steps: 20
+      guidance_scale: 1
+      flow_shift: 12
+    extra_params:
+      audio_flow_shift: 3
+    lora: null

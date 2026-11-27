@@ -59,6 +59,8 @@ HTTP 400。
 
 vLLM-Omni 视频连接支持直接输入小数秒，例如 `6.583333`。CLI 可使用 `opendirector video create --duration 6.583333` 并填写其余必需参数。先运行 `opendirector video create --help` 和 `opendirector model list`；`inputRules.fractionalDuration` 表示支持小数秒，各输出规格的时长列表定义允许范围。H3 可能按模型支持的帧数对齐，拼接分段前应核对结果的实际时长。
 
+使用 Pika Flex Turbo 等少步数 H3 适配器（每个请求都需要 LoRA 和对应的步数），或想用一个 vLLM-Omni 服务提供多个这样的变体时，参见随 OpenDirector 一起启动的[视频转发层](video-gateway.zh-CN.md)。
+
 ## 制作第一支短片
 
 建议先完成一个镜头的生成与导出，再扩展到多段素材。

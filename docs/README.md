@@ -28,6 +28,7 @@ This directory is the entry point for the repository's shared documentation. The
 | [Business CLI](guides/cli.md) | Querying, editing, and generating through a terminal or Agent Shell | Commands, authorization, or receipt semantics change |
 | [DeepSeek Harness plugin](../plugins/deepseek-harness/README.md) | Installing the DSH bundle and editing an OpenDirector project from DSH | Plugin setup, tools, or creation workflows change |
 | [Video model capabilities](guides/video-model-capabilities.md) ([中文](guides/video-model-capabilities.zh-CN.md)) | Declaring output specifications supported by a service | Configuration fields or capability integration changes |
+| [Video gateway](guides/video-gateway.md) ([中文](guides/video-gateway.zh-CN.md)) | Serving several H3 LoRA variants from one vLLM-Omni server through the gateway started with the application | Gateway configuration keys, startup, or rewrite behavior change |
 | [Model availability / 模型可用状态](guides/model-availability.md) | Optional runtime declarations, automatic checks, shared admission and API/CLI/Agent queries | Capability protocol, refresh, or acceptance rules change |
 | [OpenAI Images](guides/openai-images.md) | Wiring gpt-image as an optional image service, request shape and failures | Integration fields, capability scope, or the OpenAI interface change |
 | [Kling video](guides/kling-video.md) ([中文](guides/kling-video.zh-CN.md)) | Optional Kling 4.0 and Flash setup, model-specific inputs, and recovery limits | Kling inputs, model declarations, or recovery behavior change |

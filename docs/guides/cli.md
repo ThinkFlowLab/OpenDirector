@@ -11,6 +11,8 @@ opendirector canvas --help
 opendirector canvas create-generation --help
 ```
 
+`serve` 和 `dev` 在数据目录存在 `.opendirector/video-gateway.yaml` 时一并启动[视频转发层](video-gateway.zh-CN.md)，也可用 `--video-gateway FILE` 指定配置文件。 / `serve` and `dev` also start the [video gateway](video-gateway.md) when `.opendirector/video-gateway.yaml` exists in the data directory, or when `--video-gateway FILE` names a configuration.
+
 普通终端默认连接 `http://127.0.0.1:18000`。使用 `--url` 或 `OPENDIRECTOR_API_URL` 指定服务，使用 `--project` 或 `OPENDIRECTOR_PROJECT_ID` 选择工程。全局选项放在子命令前。
 
 ```bash
