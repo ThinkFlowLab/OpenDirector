@@ -717,12 +717,20 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             chain.conversation_id = UUID(saved['conversationId'])
             chain.events.put({'type': 'start', 'conversation': saved})
             renewal = asyncio.create_task(renew_session())
-            previous_sources = {source['id']: source for reply in saved['messages'][:-2]
+            # The history ends at this turn's own user message. Queued messages that
+            # arrived later sit after the streaming placeholder, so the end of the list
+            # is not the current turn.
+            current = next((index for index, item in enumerate(saved['messages'])
+                            if item['role'] == 'user' and item['id'] == message['id']), None)
+            if current is None:
+                raise RuntimeError(f'turn {turn_id} has no user message in its conversation')
+            history = saved['messages'][:current + 1]
+            previous_sources = {source['id']: source for reply in history[:-1]
                                 for source in reply.get('sources', [])}
             snapshot = await asyncio.to_thread(projects.snapshot, project_id)
             assets = {str(asset.id): asset for asset in snapshot.assets}
             context = []
-            for reply in saved['messages'][:-1]:
+            for reply in history:
                 content = reply['text'] or '(empty reply)'
                 references = []
                 for attachment in reply.get('assets', []):
