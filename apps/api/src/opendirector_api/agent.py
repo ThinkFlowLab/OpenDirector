@@ -264,8 +264,6 @@ class Conversations:
             directory, _, _ = self.projects._load(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session)
-            if agent_session is not None:
-                self.projects.local.start_agent_session(db, project_id, directory, agent_session)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)
             file = child(folder, 'conversation.json')
@@ -274,6 +272,10 @@ class Conversations:
             pending = next((item for item in value['messages'] if item.get('status') == 'queued'), None)
             if pending is None:
                 return None
+            # Only a message that will run gets a write session. It is inserted in
+            # this transaction, so a failed write below rolls it back with the rest.
+            if agent_session is not None:
+                self.projects.local.start_agent_session(db, project_id, directory, agent_session)
             index = value['messages'].index(pending)
             pending['status'] = 'complete'
             reply_id = str(uuid5(UUID(pending['id']), 'assistant'))
