@@ -27,6 +27,7 @@ from opendirector.domain.creation.generation import (DEFAULT_MUSIC_SECONDS, Inpu
 from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
+from opendirector.domain.image_presets import preset_prompt
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
@@ -93,6 +94,15 @@ def new_seed():
     return secrets.randbelow(2**31)
 
 
+def transmitted_assets(references):
+    """Keep the first transmitted binding for each asset, in request order."""
+    assets = {}
+    for reference in references:
+        if reference.transmission != 'context_only':
+            assets.setdefault(reference.asset.assetId, reference)
+    return assets
+
+
 class CreationGeneration(GenerationRuntime):
     def __init__(self, projects, configs, provider=None, *, availability=None):
         super().__init__()
@@ -118,7 +128,7 @@ class CreationGeneration(GenerationRuntime):
         # Project accepted jobs without revalidating the current speech catalog.
         profile = 'minimax-speech' if is_minimax_speech(config) else input_rules(config)['profile']
         assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
-        reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only'))
+        reference_ids = [str(asset_id) for asset_id in transmitted_assets(job.inputSnapshot.references)]
         content = None
         kling_content = None
         if spec.promptContent is not None:
@@ -138,13 +148,19 @@ class CreationGeneration(GenerationRuntime):
                             content.append(rendered)
                             if kling_content is not None:
                                 kling_content.append({**rendered, 'referenceId': str(ref.referenceId), 'subjectRole': ref.subjectRole})
+        prompt = spec.prompt
+        if job.inputSnapshot.presetPrompt:
+            prefix = job.inputSnapshot.presetPrompt
+            prompt = f'{prefix}\n\n{prompt}' if prompt.strip() else prefix
+            if content is not None:
+                content.insert(0, dict(type='text', text=prefix + ('\n\n' if content else '')))
         adapter_content = {} if model.protocol != 'kling_video' else dict(klingPromptContent=kling_content,
             klingReferences=[dict(assetId=str(r.asset.assetId), role=r.role, referenceId=str(r.referenceId), subjectRole=r.subjectRole)
                              for r in job.inputSnapshot.references if r.transmission != 'context_only'])
         return dict(schemaVersion=1, id=str(job.id), projectId=str(job.projectId), nodeId=str(job.originItemId or spec.id),
             kind=spec.kind, status=job.status, phase=job.phase, recovery=job.recovery, resumeAllowed=job.resumeAllowed,
             modelConfigId=str(model.modelConfigId), model=model.modelId, baseURL=model.url, protocol=model.protocol,
-            title=spec.prompt[:80] or spec.kind, prompt=spec.prompt, promptContent=content, referenceIds=reference_ids,
+            title=spec.prompt[:80] or spec.kind, prompt=prompt, promptContent=content, referenceIds=reference_ids,
             referenceRoles=[{'assetId': str(r.asset.assetId), 'role': r.role} for r in job.inputSnapshot.references if r.transmission != 'context_only'],
             referenceInputs={'profile': profile},
             videoMode=spec.parameters.videoMode if spec.kind == 'video' else 'first_frame', parameters=job.adapterParameters,
@@ -222,6 +238,10 @@ class CreationGeneration(GenerationRuntime):
                 params['duration'] = seconds
             if intent.get('aspectRatio'):
                 params['ratio'] = intent['aspectRatio']
+            if rules['profile'] == 'seedance-2.5' and node.get('videoMode') == 'first_frame':
+                # 2.5 rejects an explicit ratio on first/last frames: the keyframe
+                # image decides the output ratio, so the request must say adaptive.
+                params['ratio'] = 'adaptive'
             output = dict(intent)
             if output.get('resolution') == 'auto' and output.get('aspectRatio') and rules['profile'] in {'standard-video', 'fasth3-omni', 'vllm-omni-h3'}:
                 if node.get('videoMode') == 'continuation':
@@ -414,9 +434,15 @@ class CreationGeneration(GenerationRuntime):
                 if reference.transmission != 'context_only':
                     self.assets.reference_available(command.projectId, reference.asset.assetId)
             self.provider.validate(spec.kind, config)
+            preset = preset_prompt(
+                spec.parameters.preset, spec.parameters.faceEmphasis,
+                tuple(reference.sourceTitle or reference.name for reference in transmitted_assets(resolved).values()
+                      if reference.asset.kind == 'image'),
+            ) if spec.kind == 'image' else None
             snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
                 model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
-                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved)
+                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}),
+                references=resolved, presetPrompt=preset)
             # Use the same rendering, protocol validation and parameter resolver
             # as the established adapters, with immutable media from the facade.
             stub = Job(id=uuid5(command.commandId, 'job'), projectId=command.projectId, inputSnapshot=snapshot,
@@ -553,7 +579,8 @@ class CreationGeneration(GenerationRuntime):
                 projected_spec, references = current_generation_inputs(current, current_spec, current_job.inputSnapshot.model.inputRules)
                 effective = execution_spec(projected_spec, references, current_job.inputSnapshot.model.inputRules)
                 now = InputSnapshot(spec=effective.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
-                    model=current_job.inputSnapshot.model, references=references)
+                    model=current_job.inputSnapshot.model, references=references,
+                    presetPrompt=current_job.inputSnapshot.presetPrompt)
                 eligible = eligible and now.fingerprint() == current_job.inputFingerprint
             except (ValueError, ContractError):
                 eligible = False

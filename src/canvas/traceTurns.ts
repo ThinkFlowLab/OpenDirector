@@ -10,6 +10,9 @@ export type ConversationTurn = {
   runtime: string;
   model: string | null;
   status: "streaming" | "complete" | "stopped" | "interrupted";
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
 };
 
 const RUNTIME_NAMES: Record<string, string> = {

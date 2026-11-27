@@ -702,7 +702,14 @@ function VideoActionSession({
                   if (active.current && !operation.signal.aborted)
                     setCurrentPosition(seconds);
                 },
-                tool === "video-crop" ? cropRef.current! : undefined,
+                {
+                  crop: tool === "video-crop" ? cropRef.current! : undefined,
+                  mp4Source:
+                    tool === "video-trim" &&
+                    frozenTask.parameters.outputFormat === "mp4"
+                      ? node.data.src
+                      : undefined,
+                },
               );
       exported.current = { key: outputKey, output };
       if (
@@ -745,6 +752,7 @@ function VideoActionSession({
       <select
         aria-label={label}
         value={String(parameters[field] ?? "")}
+        disabled={busy}
         onChange={(event) => {
           const selected = values.find(
             ([value]) => String(value) === event.target.value,
@@ -1304,7 +1312,13 @@ function VideoActionSession({
         {tool === "extract-audio" && (
           <p className="cw-va-hint">{t("tools.videoEditor.extract.hint")}</p>
         )}
-        {(tool === "video-trim" || tool === "video-crop") && (
+        {tool === "video-trim" &&
+          choices(t("tools.videoEditor.outputFormat"), "outputFormat", [
+            ["webm", "WebM"],
+            ["mp4", "MP4"],
+          ])}
+        {(tool === "video-crop" ||
+          (tool === "video-trim" && parameters.outputFormat !== "mp4")) && (
           <p className="cw-va-hint">{t("tools.videoEditor.local.hint")}</p>
         )}
         {probing && (

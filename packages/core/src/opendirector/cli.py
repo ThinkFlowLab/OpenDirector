@@ -362,6 +362,11 @@ class LogLevel(str, Enum):
 
 PortOption = Annotated[int, typer.Option(min=1, max=65535, help="Local API port.")]
 WebPortOption = Annotated[int, typer.Option(min=1, max=65535, help="Vite development port.")]
+VideoGatewayOption = Annotated[Path | None, typer.Option(
+    "--video-gateway", exists=True, dir_okay=False, readable=True,
+    help="Video gateway configuration to start with the application; defaults to .opendirector/video-gateway.yaml in the "
+         "data directory when that file exists. / 随应用启动的视频转发层配置；默认使用数据目录中已存在的 "
+         ".opendirector/video-gateway.yaml。")]
 
 
 @app.command("desktop", help="Open the desktop application installed with this terminal command. / 打开此终端命令所属的桌面应用。")
@@ -373,15 +378,17 @@ def desktop():
 
 
 @app.command("serve", help="Start the API and serve the built application.")
-def serve(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info):
+def serve(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info,
+          video_gateway: VideoGatewayOption = None):
     from opendirector.launcher import start
-    raise typer.Exit(start("serve", port, web_port, log_level.value))
+    raise typer.Exit(start("serve", port, web_port, log_level.value, video_gateway))
 
 
 @app.command("dev", help="Start the API and Vite development server.")
-def dev(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info):
+def dev(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info,
+        video_gateway: VideoGatewayOption = None):
     from opendirector.launcher import start
-    raise typer.Exit(start("dev", port, web_port, log_level.value))
+    raise typer.Exit(start("dev", port, web_port, log_level.value, video_gateway))
 
 
 def emit(value):

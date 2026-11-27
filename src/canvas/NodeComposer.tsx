@@ -6,9 +6,21 @@ import { providerLabel } from "./providerPresets";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   normalizeContent,
+  presetOnlyContent,
   type ReferenceContent,
 } from "./chatReferenceContent.ts";
 import { generationContent } from "./generationReferenceContent.ts";
+import {
+  presetImageTitles,
+  presetPart,
+  presetSkillText,
+  promptWithPreset,
+  supportsFaceEmphasis,
+  withPresetPart,
+  type PromptSkillPreset,
+} from "./promptSkill.ts";
+import { translateToolText } from "./toolText.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { LOCAL_DEMO_MODEL } from "./model";
@@ -70,6 +82,8 @@ export interface NodeComposerProps {
   incomingNodes: CanvasNode[];
   /** Pinned assets included in run-before reference checks, not frame-slot limits. */
   pinnedPrecheck?: CanvasNode[];
+  /** Images available for the preset preview, including sources hidden on the canvas. */
+  presetSources?: readonly CanvasNode[];
   onUpdate: (data: Partial<CanvasNodeData>) => void;
   onRun: () => void;
   lastOptimizedText?: string;
@@ -83,6 +97,8 @@ export interface NodeComposerProps {
   /** Failures and warnings worth a canvas toast instead of an inline note. */
   onOptimizationNotice?: (message: string, error: boolean) => void;
   running?: boolean;
+  /** Image presets published by the tool catalog; applied as prompt skills. */
+  imagePresets?: readonly PromptSkillPreset[];
 
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
@@ -105,10 +121,21 @@ function clockTime(seconds: number) {
 /** Built-in demo voice id; the visible label is localized separately. */
 const DEMO_VOICE = "动漫海绵";
 
+/** Help shown beside a preset chip while the prompt is empty. */
+const PRESET_HELP: Record<string, { description: MessageKey; ratios: readonly string[] }> = {
+  "three-view": { description: "generation.preset.description.three-view", ratios: ["16:9", "3:2"] },
+  "four-view": { description: "generation.preset.description.four-view", ratios: ["21:9", "16:9", "3:2"] },
+  "face-three-view": { description: "generation.preset.description.face-three-view", ratios: ["21:9", "16:9", "3:2"] },
+  "product-three-view": { description: "generation.preset.description.product-three-view", ratios: ["16:9", "3:2"] },
+  storyboard: { description: "generation.preset.description.storyboard", ratios: ["16:9", "3:2"] },
+  "multi-camera": { description: "generation.preset.description.multi-camera", ratios: ["16:9", "3:2"] },
+};
+
 export function NodeComposer({
   selectedNode,
   incomingNodes,
   pinnedPrecheck,
+  presetSources,
   onUpdate,
   onRun,
   lastOptimizedText,
@@ -118,6 +145,7 @@ export function NodeComposer({
   onPickReference,
   onOptimizationNotice,
   running = false,
+  imagePresets = [],
   backendModels = [],
   onCheckModels,
   removeWatermark = false,
@@ -140,6 +168,16 @@ export function NodeComposer({
   const pendingOptimization = useRef<AbortController | null>(null);
   const restoreFocus = useRef(false);
   const [optimizing, setOptimizing] = useState(false);
+  /** Preset popovers hold their own anchor: they are not composer panels. */
+  const [presetPromptAnchor, setPresetPromptAnchor] =
+    useState<HTMLElement | null>(null);
+  const [presetTuneAnchor, setPresetTuneAnchor] = useState<HTMLElement | null>(
+    null,
+  );
+  const [presetCopied, setPresetCopied] = useState(false);
+  const presetValue = selectedNode?.type === "image"
+    ? selectedNode.data.settings?.imagePreset ?? "none"
+    : "none";
   const panel = running || optimizing ? null : openPanel;
   const [optimizedText, setOptimizedText] = useState(lastOptimizedText);
   const latestRunning = useRef(running);
@@ -160,6 +198,10 @@ export function NodeComposer({
   useEffect(() => {
     setPanel(null);
   }, [selectedNode?.id, running]);
+  useEffect(() => {
+    setPresetPromptAnchor(null);
+    setPresetTuneAnchor(null);
+  }, [selectedNode?.id, presetValue, running]);
 
   if (
     !selectedNode ||
@@ -247,7 +289,7 @@ export function NodeComposer({
           const reference = references[Number(index) - 1];
           return reference ? [reference] : [];
         });
-      const rewritten = normalizeContent(output);
+      const rewritten = normalizeContent(withPresetPart(output, presetPart(before) ?? null));
       if (!mentions.current?.replacePrompt(rewritten))
         throw new Error(t("generation.optimize.changed"));
       const text = promptText(rewritten);
@@ -290,11 +332,28 @@ export function NodeComposer({
       : config
         ? backendReferenceIssue(node, settings, config)
         : t("generation.model.unavailable");
+  // The chip mirrors the saved preset and supplies its own prompt.
+  const activePreset = mode === "image"
+    ? imagePresets.find((item) => item.value === presetValue)
+    : undefined;
+  const faceEmphasis =
+    settings.faceEmphasis === true && supportsFaceEmphasis(activePreset);
+  const presetPromptText = activePreset
+    ? presetSkillText(
+        activePreset,
+        presetImageTitles(settings, presetSources ?? [...incomingNodes, ...(pinnedPrecheck ?? [])], config),
+        faceEmphasis,
+      )
+    : "";
+  const checkedSettings = {
+    ...settings,
+    prompt: promptWithPreset(settings.prompt, presetPromptText),
+  };
   const blocker = unconfigured
     ? t("generation.model.unconfigured")
     : backend
-      ? backendBlocker(settings, incomingNodes, backendModels, pinnedPrecheck)
-      : generationBlocker(settings, incomingNodes, t);
+      ? backendBlocker(checkedSettings, incomingNodes, backendModels, pinnedPrecheck)
+      : generationBlocker(checkedSettings, incomingNodes, t);
   const canRun = !blocker;
   // A blank prompt falls back to connected text references.
   const implicitTextPrompt = Boolean(
@@ -354,7 +413,8 @@ export function NodeComposer({
   const serviceModes = config?.inputRules.videoModes ?? [];
   const supportsControl = mode === "video" && serviceModes.includes("control");
   // The adapter derives duration from the control clip and aligns to model frames.
-  const followsControl = backend && mode === "video" && settings.videoMode === "control";
+  const followsControl =
+    backend && mode === "video" && settings.videoMode === "control";
   const durationValues = followsControl
     ? []
     : backend && mode === "video"
@@ -401,7 +461,8 @@ export function NodeComposer({
       updateSettings({
         model: value,
         modelConfigId: undefined,
-        ...(settings.videoMode === "continuation" || settings.videoMode === "control"
+        ...(settings.videoMode === "continuation" ||
+        settings.videoMode === "control"
           ? { videoMode: "reference" as const }
           : {}),
       });
@@ -424,6 +485,32 @@ export function NodeComposer({
         ? serviceGenerationSettings(next, target, incomingNodes)
         : next,
     });
+  };
+  const presetHelp = activePreset ? PRESET_HELP[activePreset.value] : undefined;
+  const availableRatios = config ? backendAspectRatios(settings, config) : undefined;
+  const recommendedRatio = availableRatios
+    ? presetHelp?.ratios.find((ratio) => availableRatios.includes(ratio))
+    : presetHelp?.ratios[0];
+  const presetDescription = presetHelp
+    ? [
+        t(presetHelp.description),
+        ...(recommendedRatio
+          ? [t("generation.preset.description.recommendedRatio", { ratio: recommendedRatio })]
+          : []),
+        ...(faceEmphasis
+          ? [t("generation.preset.description.faceEmphasis")]
+          : []),
+      ].join(locale === "zh-CN" ? "" : " ")
+    : "";
+  const applyPreset = (value: string) => {
+    setPanel(null);
+    setPresetPromptAnchor(null);
+    setPresetTuneAnchor(null);
+    updateSettings({ imagePreset: value, faceEmphasis: false });
+  };
+  const toggleFaceEmphasis = () => {
+    if (!activePreset) return;
+    updateSettings({ faceEmphasis: !faceEmphasis });
   };
   const togglePanel = (next: Panel, anchor: HTMLElement) => {
     panelAnchor.current = anchor;
@@ -597,7 +684,9 @@ export function NodeComposer({
                 node={node}
                 onInsert={() => insertReference(node)}
                 onRemove={() => mentions.current?.remove(node)}
-                disabled={running || optimizing || Boolean(referenceIssue(node))}
+                disabled={
+                  running || optimizing || Boolean(referenceIssue(node))
+                }
                 removalDisabled={running || optimizing}
                 title={`${t("generation.reference.title", {
                   role: generationReferenceRole(node, t),
@@ -608,7 +697,10 @@ export function NodeComposer({
           </div>
         )}
         {referenceVisibility.showReadingContextNote && (
-          <p className="cw-reference-context-note" data-reference-role="reading-context">
+          <p
+            className="cw-reference-context-note"
+            data-reference-role="reading-context"
+          >
             {t("generation.reference.readingContext")}
           </p>
         )}
@@ -627,6 +719,35 @@ export function NodeComposer({
           }}
           onUpdate={onUpdate}
           running={running || optimizing}
+          presetNote={
+            activePreset && presetOnlyContent(draft) ? presetDescription : undefined
+          }
+          preset={activePreset ? {
+            type: "skill", name: activePreset.label, preset: activePreset.value,
+            ...(faceEmphasis ? { faceEmphasis: true } : {}),
+          } : undefined}
+          presetLabel={
+            activePreset
+              ? faceEmphasis
+                ? t("generation.preset.labelWithEmphasis", {
+                    preset: translateToolText(locale, activePreset.label),
+                    emphasis: t("generation.preset.faceEmphasis"),
+                  })
+                : translateToolText(locale, activePreset.label)
+              : undefined
+          }
+          presetTunable={supportsFaceEmphasis(activePreset)}
+          presetTuneOpen={Boolean(presetTuneAnchor)}
+          onPresetAction={(action, element) => {
+            setPresetCopied(false);
+            if (action === "tune") {
+              setPresetPromptAnchor(null);
+              setPresetTuneAnchor((anchor) => anchor === element ? null : element);
+            } else {
+              setPresetTuneAnchor(null);
+              setPresetPromptAnchor(element);
+            }
+          }}
           onRun={() => {
             if (canRun && !running && !pendingOptimization.current) onRun();
           }}
@@ -638,21 +759,99 @@ export function NodeComposer({
                 : t("generation.prompt.image")
           }
           placeholder={
-            implicitTextPrompt
-              ? t("generation.prompt.implicitTextPlaceholder")
-              : mode === "image"
-                ? t("generation.prompt.imagePlaceholder")
-                : mode === "video"
-                  ? firstLast
-                    ? t("generation.prompt.videoPlaceholder")
-                    : t("generation.prompt.videoReferencePlaceholder")
-                  : reading
-                    ? t("generation.prompt.readingPlaceholder")
-                    : music
-                      ? t("generation.prompt.musicPlaceholder")
-                      : t("generation.prompt.audioPlaceholder")
+            // The preset summary stands in for the hint while the prompt is empty.
+            activePreset && presetOnlyContent(draft)
+              ? ""
+              : implicitTextPrompt
+                ? t("generation.prompt.implicitTextPlaceholder")
+                : mode === "image"
+                  ? t("generation.prompt.imagePlaceholder")
+                  : mode === "video"
+                    ? firstLast
+                      ? t("generation.prompt.videoPlaceholder")
+                      : t("generation.prompt.videoReferencePlaceholder")
+                    : reading
+                      ? t("generation.prompt.readingPlaceholder")
+                      : music
+                        ? t("generation.prompt.musicPlaceholder")
+                        : t("generation.prompt.audioPlaceholder")
           }
         />
+        {presetPromptAnchor && activePreset && (
+          <ComposerPopover
+            anchor={presetPromptAnchor}
+            composer={rootRef.current}
+            className="cw-preset-popover"
+            label={translateToolText(locale, activePreset.label)}
+            onClose={() => setPresetPromptAnchor(null)}
+          >
+            <div className="cw-preset-popover-head">
+              <strong>
+                {t("generation.preset.promptTitle", {
+                  preset: translateToolText(locale, activePreset.label),
+                })}
+              </strong>
+              <TooltipButton
+                type="button"
+                className="cw-preset-popover-copy"
+                label={
+                  presetCopied
+                    ? t("generation.preset.copied")
+                    : t("generation.preset.copy")
+                }
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(presetPromptText)
+                    .then(() => setPresetCopied(true))
+                    .catch(() => setPresetCopied(false));
+                }}
+              >
+                <CanvasIcon name={presetCopied ? "check" : "copy"} size={14} />
+              </TooltipButton>
+              <TooltipButton
+                type="button"
+                className="cw-preset-popover-close"
+                label={t("generation.preset.close")}
+                onClick={() => setPresetPromptAnchor(null)}
+              >
+                <CanvasIcon name="close" size={14} />
+              </TooltipButton>
+            </div>
+            <div className="cw-preset-popover-body">{presetPromptText}</div>
+          </ComposerPopover>
+        )}
+        {!running && !optimizing && presetTuneAnchor?.isConnected &&
+          activePreset &&
+          supportsFaceEmphasis(activePreset) && (
+            <ComposerPopover
+              anchor={presetTuneAnchor}
+              composer={rootRef.current}
+              className="cw-preset-popover cw-preset-tune"
+              label={t("generation.preset.tune")}
+              placement="above-anchor"
+              onClose={() => setPresetTuneAnchor(null)}
+            >
+              <div className="cw-preset-tune-row">
+                <span>{t("generation.preset.faceEmphasis")}</span>
+                <TooltipButton
+                  type="button"
+                  className="cw-preset-tune-switch"
+                  role="switch"
+                  aria-checked={faceEmphasis}
+                  label={t("generation.preset.faceEmphasis")}
+                  // The switch belongs to the popover: clicking it must not
+                  // take focus, which would pull the caret into the prompt.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={toggleFaceEmphasis}
+                >
+                  <span />
+                </TooltipButton>
+              </div>
+            </ComposerPopover>
+          )}
         {optimizing && (
           <p className="cw-composer-provider-note" role="status">
             <span className="cw-optimizing-blink">
@@ -740,7 +939,13 @@ export function NodeComposer({
                   id: `config:${item.id}`,
                   name: modelLabel(item),
                   modelId: item.modelId,
-                  description: [modelDescription(item), availabilitySummary(item.availability)].filter(Boolean).join(" · ") || undefined,
+                  description:
+                    [
+                      modelDescription(item),
+                      availabilitySummary(item.availability),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined,
                   group: providerLabel(item),
                 })),
               ]}
@@ -779,22 +984,23 @@ export function NodeComposer({
             {mode === "image" && (
               <select
                 aria-label={t("generation.imagePreset")}
-                value={settings.imagePreset ?? "none"}
-                disabled={running}
-                onChange={(event) =>
-                  updateSettings({
-                    imagePreset: event.target
-                      .value as ComposerSettings["imagePreset"],
-                  })
-                }
+                value={presetValue}
+                disabled={running || optimizing}
+                onChange={(event) => applyPreset(event.target.value)}
               >
                 <option value="none">{t("generation.preset.none")}</option>
-                <option
-                  value="product-views"
-                  disabled={backend || settings.model !== "Seedream 5.0 Pro"}
-                >
-                  {t("generation.preset.productViews")}
-                </option>
+                {imagePresets.map((preset) => (
+                  <option key={preset.value} value={preset.value}>
+                    {translateToolText(locale, preset.label)}
+                  </option>
+                ))}
+                {/* A draft saved before presets became prompt skills still
+                    selects the legacy generation preset. */}
+                {presetValue !== "none" && !activePreset && (
+                  <option value={presetValue}>
+                    {presetValue === "product-views" ? t("generation.preset.productViews") : presetValue}
+                  </option>
+                )}
               </select>
             )}
             {mode === "video" && (
@@ -942,8 +1148,16 @@ export function NodeComposer({
             <TooltipButton
               type="button"
               className="cw-reference-trigger"
-              aria-label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
-              label={musicReferences ? t("generation.reference.addMusic") : t("generation.reference.add")}
+              aria-label={
+                musicReferences
+                  ? t("generation.reference.addMusic")
+                  : t("generation.reference.add")
+              }
+              label={
+                musicReferences
+                  ? t("generation.reference.addMusic")
+                  : t("generation.reference.add")
+              }
               disabled={running || optimizing}
               onClick={() => mentions.current?.openUpload()}
             >
@@ -1078,12 +1292,18 @@ export function NodeComposer({
           {durationValues.length > 0 && (
             <DurationControl
               fractional={!!config?.inputRules.fractionalDuration}
-              outputFrames={config?.inputRules.profile === "vllm-omni-h3" ? h3FrameCount(settings.durationSeconds) : undefined}
+              outputFrames={
+                config?.inputRules.profile === "vllm-omni-h3"
+                  ? h3FrameCount(settings.durationSeconds)
+                  : undefined
+              }
               values={durationValues}
               value={settings.durationSeconds}
               disabled={running || optimizing}
               scale={{ min: 0, max: 30, step: 5 }}
-              onChange={(durationSeconds) => updateSettings({ durationSeconds })}
+              onChange={(durationSeconds) =>
+                updateSettings({ durationSeconds })
+              }
             />
           )}
         </ComposerPopover>
@@ -1280,7 +1500,9 @@ export function NodeComposer({
             </div>
           </div>
           {mode === "video" &&
-            (!backend || config?.protocol === "volcengine" || config?.protocol === "higgsfield_open") && (
+            (!backend ||
+              config?.protocol === "volcengine" ||
+              config?.protocol === "higgsfield_open") && (
               <label className="cw-audio-toggle">
                 <span>
                   <CanvasIcon name="volume" size={16} />

@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue, model_validator
 
 from opendirector.domain.minimax_models import MINIMAX_MODELS
+from opendirector.domain.image_presets import PRESETS
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationFailure, ResultCheck
 from opendirector.domain.projects import ProjectError
@@ -32,7 +33,10 @@ class ImageParameters(Contract):
         description='Image rendering quality; auto leaves the provider request unchanged.')
     size: str = Field(default='auto', pattern=r'^(?:auto|2K|[1-9]\d{2,3}x[1-9]\d{2,3})$', description='Requested image dimensions or size preset.')
     aspectRatio: str | None = Field(default=None, pattern=r'^[1-9]\d?:[1-9]\d?$', description='Output width-to-height ratio.')
-    preset: Literal['none', 'product-views'] = Field(default='none', description='Selected generation or motion preset.')
+    preset: str = Field(default='none', pattern=r'^(?:none|product-views|[a-z0-9-]{1,40})$',
+        description='Selected generation or prompt-skill preset.')
+    faceEmphasis: bool = Field(default=False, exclude_if=lambda value: not value,
+        description='Preset alternate framing that emphasises the face.')
     responseFormat: Literal['url'] = Field(default='url', description='Provider response representation.')
     outputFormat: Literal['png'] = Field(default='png', description='Generated image encoding.')
 
@@ -198,6 +202,8 @@ class InputSnapshot(Contract):
     spec: GenerationSpec = Field(description='Generation configuration for this operation.')
     model: ModelSnapshot = Field(description='Fixed model configuration for this execution.')
     references: tuple[ResolvedReference, ...] = Field(default=(), description='Ordered generation reference bindings.')
+    presetPrompt: str | None = Field(default=None, exclude_if=lambda value: value is None,
+                                    description='Image preset instructions frozen when the job is accepted.')
 
     @model_validator(mode='after')
     def identity(self):
@@ -393,7 +399,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         'profile': model.inputRules.profile,
         'hasMedia': any(ref.transmission != 'context_only' and ref.asset.kind in {'image', 'video', 'audio'} for ref in references),
     })
-    if not written and not implicit_text_prompt(spec, references) and not optional_prompt:
+    has_preset = spec.kind == 'image' and spec.parameters.preset in PRESETS
+    if not written and not has_preset and not implicit_text_prompt(spec, references) and not optional_prompt:
         raise ValueError('请填写生成提示词。')
     rules = model.inputRules
     if rules.referencesAllowed is False and references:
@@ -445,7 +452,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         from opendirector.domain.image_output import resolve_image_output
         if spec.parameters.quality != 'auto' and spec.parameters.quality not in (rules.imageQualities or ()):
             raise ProjectError('当前模型不支持所选图片质量，请选择自动或切换模型。', 422, code='image_quality_unsupported')
-        if spec.parameters.preset != 'none':
+        # Only the legacy service-side preset is unsupported here.
+        if spec.parameters.preset == 'product-views':
             raise ValueError('当前服务不支持产品三视图预设，请使用自由创作。')
         resolve_image_output(model.model_dump(), rules.model_dump(), spec.parameters.model_dump())
     if spec.kind == 'audio' and rules.profile == 'vllm-omni-music':

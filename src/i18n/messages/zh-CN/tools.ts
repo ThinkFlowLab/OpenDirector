@@ -274,6 +274,7 @@ export const tools = {
   "tools.videoEditor.separation.description": "按描述",
   "tools.videoEditor.extract.hint": "提取所选范围的原音轨，保存为 WAV。",
   "tools.videoEditor.local.hint": "本地处理后生成 WebM。处理需要播放所选片段。",
+  "tools.videoEditor.outputFormat": "保存格式",
   "tools.videoEditor.probing": "正在读取实际视频时长…",
   "tools.videoEditor.unavailableFallback": "当前未连接此操作的 AI 服务。",
   "tools.videoEditor.unavailableHint": "可保存设置或导入处理结果。",
@@ -364,6 +365,7 @@ export const tools = {
   "tools.localMedia.subtitle.audio": "解码本地音轨并按采样范围导出 WAV。",
   "tools.localMedia.subtitle.video":
     "以正常速度在浏览器内重编码为 WebM；范围精度受浏览器帧调度影响。",
+  "tools.localMedia.subtitle.mp4": "在浏览器内将所选片段保存为 MP4。",
   "tools.localMedia.apply.busy": "处理中…",
   "tools.localMedia.apply.frame": "把当前帧加入画布",
   "tools.localMedia.apply.default": "处理并加入画布",

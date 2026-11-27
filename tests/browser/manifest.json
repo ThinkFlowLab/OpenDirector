@@ -95,6 +95,16 @@
       "note": "Needs --assistant-fixture services; holds the fixture gate."
     },
     {
+      "file": "assistant_turn_timing.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": [
+        "extendedFixture",
+        "production"
+      ],
+      "note": "Needs --assistant-fixture services."
+    },
+    {
       "file": "assistant_sessions.mjs",
       "fixture": true,
       "previewSafe": true,

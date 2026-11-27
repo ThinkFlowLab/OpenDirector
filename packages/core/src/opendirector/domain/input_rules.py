@@ -2,7 +2,7 @@
 from urllib.parse import urlsplit
 from typing import Literal
 from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTES, MAX_REFERENCES
-from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
+from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant, seedance_25_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
 from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTERS, is_minimax_speech
@@ -125,8 +125,21 @@ def _adapter_rules(config):
             rules['profile'] = 'deepseek-flash'
     elif host == 'ark.cn-beijing.volces.com' and path == '/api/plan/v3':
         seedance = seedance_20_variant(model) if kind == 'video' else None
-        if kind == 'image' and model in {'doubao-seedream-5.0-pro', 'doubao-seedream-5-0-pro'}:
+        seedance25 = seedance_25_variant(model) if kind == 'video' else None
+        if kind == 'image' and model in {'doubao-seedream-5.5', 'doubao-seedream-5.0-pro', 'doubao-seedream-5-0-pro',
+                                         'doubao-seedream-5.0-flash', 'doubao-seedream-5-5'}:
+            # The 5.x family shares one contract: up to ten reference images and
+            # 1K / 1.5K / 2K output tiers.
             rules.update(profile='seedream-5.0-pro', maxImages=10, imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
+        elif seedance25:
+            # 2.5 reaches 30 s and takes many more references than 2.0: the full
+            # model 30 images + 10 videos + 10 audios, flash 10 + 5 + 5.
+            flash = seedance25 == 'flash'
+            rules.update(profile='seedance-2.5', allowedKinds=['text', 'image', 'video', 'audio'],
+                         maxImages=10 if flash else 30, maxVideos=5 if flash else 10, maxAudios=5 if flash else 10,
+                         imageBytes=30 * 1024 * 1024, videoBytes=200 * 1024 * 1024,
+                         requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
+                         frameRoles=['first_frame', 'last_frame'])
         elif seedance:
             # The 2.0 family shares one adapter: mini and fast serve 480P/720P,
             # the full model adds 1080P and 4K. All accept 4–15 seconds.

@@ -1,6 +1,7 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
-  "generation.duration.fractionalHint": "H3 支持小数秒，输出帧数向上对齐至 17k+5，帧率为 24 fps。",
+  "generation.duration.fractionalHint":
+    "H3 支持小数秒，输出帧数向上对齐至 17k+5，帧率为 24 fps。",
   "generation.duration.aligned": "实际输出：{frames} 帧 · {seconds} 秒",
   "generation.bigmodel.watermarkWaiver":
     "BigModel 去水印需先签署免责声明，请前往个人中心 → 安全管理 → 去水印管理完成签署，否则生成结果仍可能带有水印。",
@@ -31,6 +32,37 @@ export const generation = {
   "generation.preset.audioWorkflow": "本地音频工作流",
   "generation.preset.musicIdea": "配乐创意",
   "generation.preset.ambienceIdea": "环境音创意",
+  "generation.preset.skill.heading": "预设：{preset}",
+  "generation.preset.skill.references":
+    "本次共 {count} 张参考图：{list}。请按编号区分主体、场景与其他参考，不要把不同参考的角色混用。",
+  "generation.preset.skill.referenceItem": "参考{index}（{title}）",
+  "generation.preset.skill.separator": "、",
+  "generation.preset.skill.sequence": "按以下顺序逐张生成：",
+  "generation.preset.description.three-view":
+    "生成同一人物的正面、侧面和背面全身图。可上传参考图，也可用文字描述人物。",
+  "generation.preset.description.four-view":
+    "生成横版人物四视图，最后一格为正脸特写。可上传参考图，也可用文字描述人物。",
+  "generation.preset.description.face-three-view":
+    "生成同一张脸的正面、左侧面和右侧面。可上传参考图，也可用文字描述五官和发型。",
+  "generation.preset.description.product-three-view":
+    "生成同一产品的正视图、侧视图和后视图。可上传参考图，也可用文字描述产品。",
+  "generation.preset.description.storyboard":
+    "为同一场景设计远景、中景、近景和特写。可上传参考图，也可用文字描述场景与动作。",
+  "generation.preset.description.multi-camera":
+    "以正面、左前方、右前方和俯视四个机位呈现同一场景。可上传参考图，也可用文字描述主体与环境。",
+  "generation.preset.description.recommendedRatio": "推荐画面比例 {ratio}。",
+  "generation.preset.description.faceEmphasis": "人物正视图和侧视图的五官会留在画面外，以强调正脸特写。",
+  "generation.preset.faceEmphasis": "脸部强调",
+  "generation.preset.labelWithEmphasis": "{preset}（{emphasis}）",
+  "generation.preset.faceEmphasisHint":
+    "开启后，正面和侧面从肩颈向下取景，正脸集中在第四格。",
+  "generation.preset.tune": "调节",
+  "generation.preset.remove": "移除预设",
+  "generation.preset.view": "查看{preset}的提示词",
+  "generation.preset.promptTitle": "{preset} - 提示词",
+  "generation.preset.copy": "复制",
+  "generation.preset.copied": "已复制",
+  "generation.preset.close": "关闭",
   "generation.referenceMode": "参照方式",
   "generation.referenceMode.melody": "跟随参照旋律",
   "generation.referenceMode.full": "跟随旋律与和弦",
@@ -74,7 +106,8 @@ export const generation = {
   "generation.field.defaultVoice": "默认音色",
   "generation.field.requiredVoiceId": "音色 ID（必填）",
   "generation.field.voiceIdPlaceholder": "请输入音色 ID",
-  "generation.field.mossVoiceHelp": "在 MOSS 音色库选择音色，打开该音色的菜单，复制音色 ID，再粘贴到音色 ID 输入框。",
+  "generation.field.mossVoiceHelp":
+    "在 MOSS 音色库选择音色，打开该音色的菜单，复制音色 ID，再粘贴到音色 ID 输入框。",
   "generation.field.mossVoiceLibrary": "MOSS 音色库",
   "generation.field.voiceLibrary": "音色库",
   "generation.field.signature": "生成参数",
@@ -104,7 +137,6 @@ export const generation = {
   "generation.optimize.changed": "提示词或节点已变化，未覆盖当前输入。",
   "generation.optimize.failed": "优化失败，原提示词已保留。",
   "generation.optimize.saveFailed": "画布尚未保存，无法读取最新参考素材。",
-
 
   "generation.prompt.image": "生成提示词",
   "generation.prompt.textLabel": "文本生成提示词",
@@ -152,7 +184,8 @@ export const generation = {
   "generation.reference.connected": "引用已连接节点",
   "generation.reference.upload": "上传节点参考",
   "generation.reference.title": "{role}：{title}",
-  "generation.reference.readingContext": "文本朗读不把这些参考作为模型输入，仍可查看或移除。",
+  "generation.reference.readingContext":
+    "文本朗读不把这些参考作为模型输入，仍可查看或移除。",
 
   "generation.action.cancel": "取消生成",
   "generation.action.submit": "提交生成",
@@ -255,7 +288,8 @@ export const generation = {
     "固定参考素材已缺失或内容已改变，整批未插入。",
   "generation.error.referenceUnavailable": "参考来源已不可用，整批未插入。",
   "generation.error.contentChanged": "参考内容已变化，请重新复制。",
-  "generation.issue.audioModeReference": "此模式使用提示词或朗读文本，不使用该参考",
+  "generation.issue.audioModeReference":
+    "此模式使用提示词或朗读文本，不使用该参考",
   "generation.issue.firstLastImage": "首尾帧模式请使用图片节点选择帧素材",
   "generation.issue.cameraMotionVideo": "运镜工具只用于视频创作",
   "generation.issue.toolParams": "工具尚未配置参数",
@@ -265,11 +299,14 @@ export const generation = {
   "generation.issue.textEmpty": "文本节点为空",
   "generation.issue.assetMissing": "素材尚未导入或已丢失",
   "generation.issue.unknownModel": "此模型不在已观察目录中，请重新选择模型。",
-  "generation.issue.audioTypeMismatch": "创作类型与模型不匹配，请重新选择创作类型。",
+  "generation.issue.audioTypeMismatch":
+    "创作类型与模型不匹配，请重新选择创作类型。",
   "generation.issue.unverified":
     "仅确认了模型菜单入口；参数范围待核实，暂不能提交本地任务。",
-  "generation.issue.productViews": "产品三视图仅支持 Seedream 5.0 Pro、16:9、2K、1 张。",
-  "generation.issue.resolution": "当前清晰度尚未核实，请选择面板中已核实的参数。",
+  "generation.issue.productViews":
+    "产品三视图仅支持 Seedream 5.0 Pro、16:9、2K、1 张。",
+  "generation.issue.resolution":
+    "当前清晰度尚未核实，请选择面板中已核实的参数。",
   "generation.issue.duration": "时长超出当前模型已核实范围。",
   "generation.issue.videoMode": "当前模型不支持所选视频模式。",
   "generation.issue.lastNeedsFirst": "使用尾帧前，请先选择首帧。",

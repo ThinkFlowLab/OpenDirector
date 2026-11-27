@@ -187,7 +187,13 @@ export function changeGenerationSettings(
       !model.videoModes.includes(next.videoMode ?? "reference")
     )
       next.videoMode = model.videoModes[0];
-    if (next.model !== "Seedream 5.0 Pro") next.imagePreset = "none";
+    // Only the legacy generation preset depends on that model; a prompt skill
+    // keeps working after a model switch.
+    if (
+      next.model !== "Seedream 5.0 Pro" &&
+      next.imagePreset === "product-views"
+    )
+      next.imagePreset = "none";
   }
   if (next.mode === "image" && next.imagePreset === "product-views") {
     next.model = "Seedream 5.0 Pro";
@@ -478,6 +484,7 @@ export function observedGenerationPrice(
 export function h3FrameCount(seconds: number): number {
   const frames = seconds * 24;
   const nearest = Math.round(frames);
-  const rounded = frames % 1 === 0.5 && nearest % 2 !== 0 ? nearest - 1 : nearest;
-  return rounded + ((5 - rounded) % 17 + 17) % 17;
+  const rounded =
+    frames % 1 === 0.5 && nearest % 2 !== 0 ? nearest - 1 : nearest;
+  return rounded + ((((5 - rounded) % 17) + 17) % 17);
 }

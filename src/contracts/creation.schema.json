@@ -7461,13 +7461,16 @@
           },
           "preset": {
             "default": "none",
-            "description": "Selected generation or motion preset.",
-            "enum": [
-              "none",
-              "product-views"
-            ],
+            "description": "Selected generation or prompt-skill preset.",
+            "pattern": "^(?:none|product-views|[a-z0-9-]{1,40})$",
             "title": "Preset",
             "type": "string"
+          },
+          "faceEmphasis": {
+            "default": false,
+            "description": "Preset alternate framing that emphasises the face.",
+            "title": "Faceemphasis",
+            "type": "boolean"
           },
           "responseFormat": {
             "const": "url",
@@ -7868,6 +7871,19 @@
             },
             "title": "References",
             "type": "array"
+          },
+          "presetPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Image preset instructions frozen when the job is accepted.",
+            "title": "Presetprompt"
           }
         },
         "required": [
@@ -24604,13 +24620,16 @@
           },
           "preset": {
             "default": "none",
-            "description": "Selected generation or motion preset.",
-            "enum": [
-              "none",
-              "product-views"
-            ],
+            "description": "Selected generation or prompt-skill preset.",
+            "pattern": "^(?:none|product-views|[a-z0-9-]{1,40})$",
             "title": "Preset",
             "type": "string"
+          },
+          "faceEmphasis": {
+            "default": false,
+            "description": "Preset alternate framing that emphasises the face.",
+            "title": "Faceemphasis",
+            "type": "boolean"
           },
           "responseFormat": {
             "const": "url",
@@ -25022,6 +25041,19 @@
             },
             "title": "References",
             "type": "array"
+          },
+          "presetPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Image preset instructions frozen when the job is accepted.",
+            "title": "Presetprompt"
           }
         },
         "required": [

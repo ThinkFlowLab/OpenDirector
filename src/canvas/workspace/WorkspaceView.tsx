@@ -75,7 +75,8 @@ import { LocalMediaEditor } from "../LocalMediaEditor";
 import { canAddReference, MAX_ZOOM, MIN_ZOOM } from "../model";
 import { gridSplitImage } from "../nodeActionWorkflow";
 import { NodeComposer } from "../NodeComposer";
-import { pinnedPrecheckNodes } from "../workspaceInteraction.ts";
+import { incomingReferenceNodes } from "../generationReferenceContent.ts";
+import { pinnedPrecheckNodes, presetReferenceSources } from "../workspaceInteraction.ts";
 
 import { NodeInfoButton } from "../NodeInfoButton";
 import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
@@ -101,6 +102,7 @@ import "../themes.css";
 import { TimelineEditor } from "../TimelineEditor";
 import { TimelineOutputShortcut, useTimelineOutput } from "../TimelineOutput";
 import { CANVAS_TOOLS, createCanvasToolTask, initialToolParameters } from "../toolCatalog";
+import { imagePresetsFromFields } from "../promptSkill.ts";
 
 import { translateToolText } from "../toolText.ts";
 import { ToolEditor } from "../ToolEditor";
@@ -2039,11 +2041,22 @@ export function WorkspaceView({ rt, editingState, editSession }: {
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}
+                imagePresets={imagePresetsFromFields(
+                  toolCatalog.capabilities["image-presets"]?.fields,
+                )}
                 pinnedPrecheck={pinnedPrecheckNodes({
                   node: composerNode,
                   incoming: composerIncoming,
                   assets: typeof submissionAssets === "function" ? submissionAssets() : [],
                 })}
+                presetSources={composerNode.type === "image" &&
+                  (composerNode.data.settings?.imagePreset ?? "none") !== "none"
+                  ? presetReferenceSources({
+                      node: composerNode,
+                      incoming: incomingReferenceNodes(doc, composerNode.id, true),
+                      assets: typeof submissionAssets === "function" ? submissionAssets() : [],
+                    })
+                  : undefined}
                 referenceControls={generationReferenceControls(composerNode)}
                 onUpdate={(patch) =>
                   command({

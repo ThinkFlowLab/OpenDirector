@@ -964,12 +964,149 @@
   padding: 0;
   font-size: 16px;
 }
+.cw-chat-preset {
+  cursor: pointer;
+}
+.cw-chat-preset-label,
+.cw-chat-preset-tune {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.cw-chat-preset-icon {
+  color: var(--cw-control-accent, #a78bd4);
+}
+.cw-chat-preset-tune {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px;
+  border-radius: 4px;
+  color: var(--chat-muted, #929298);
+}
+.cw-chat-preset-tune:hover,
+.cw-chat-preset-tune[aria-expanded="true"] {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: var(--chat-text, inherit);
+}
+.cw-chat-preset-tune > svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+/* Draw the hint after the editable caret anchor so it has no text positions. */
+.cw-chat-reference-editor:not([data-composing]) .cw-chat-preset-note[data-preset-note]::after {
+  content: attr(data-preset-note);
+  margin-inline-start: 0.35em;
+  color: var(--cw-prompt-hint, #7f828d);
+  user-select: none;
+  pointer-events: none;
+}
+.cw-preset-popover {
+  width: min(420px, calc(100vw - 32px));
+  padding: 10px 12px 12px;
+}
+.cw-preset-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cw-preset-popover-head strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-preset-popover-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #a9aab4;
+}
+.cw-preset-popover-copy:hover {
+  background: #ffffff12;
+  color: #e6e6ec;
+}
+.cw-preset-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8f909a;
+}
+.cw-preset-popover-close:hover {
+  background: #ffffff12;
+  color: #e6e6ec;
+}
+.cw-preset-popover-body {
+  max-height: 240px;
+  overflow: auto;
+  color: #c6c7d0;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cw-preset-popover.cw-preset-tune {
+  width: max-content;
+  min-width: 118px;
+  padding: 8px 10px;
+}
+.cw-preset-tune-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cw-preset-tune-switch {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  padding: 2px;
+  border: 0;
+  border-radius: 9px;
+  background: #4a4b55;
+}
+.cw-preset-tune-switch span {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px #0003;
+  transition: transform 0.15s;
+}
+.cw-preset-tune-switch[aria-checked="true"] {
+  background: var(--cw-control-accent, #a78bd4);
+}
+.cw-preset-tune-switch[aria-checked="true"] span {
+  transform: translateX(12px);
+}
 .cw-composer-options .cw-prompt-optimization[aria-disabled="true"] {
   opacity: 0.4;
   /* Nothing to do: the text is already optimized, empty, or a run is active. */
   cursor: not-allowed;
   background: transparent;
-}.cw-generation-mode-controls {
+}
+.cw-generation-mode-controls {
   display: contents;
 }
 .cw-composer-options .cw-generation-mode-controls select,

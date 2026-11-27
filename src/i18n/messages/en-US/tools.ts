@@ -294,6 +294,7 @@ export const tools = {
     "Extract the original audio track from the selected range and save it as WAV.",
   "tools.videoEditor.local.hint":
     "Processed locally into WebM. Processing plays back the selected clip.",
+  "tools.videoEditor.outputFormat": "Output format",
   "tools.videoEditor.probing": "Locating the end of the media to read its real duration…",
   "tools.videoEditor.unavailableFallback":
     "No AI service is connected for this action yet.",
@@ -394,6 +395,7 @@ export const tools = {
     "Decode the local audio track and export WAV for the sampled range.",
   "tools.localMedia.subtitle.video":
     "Re-encodes to WebM in the browser at normal speed; range precision depends on browser frame scheduling.",
+  "tools.localMedia.subtitle.mp4": "Save the selected clip as MP4 in the browser.",
   "tools.localMedia.apply.busy": "Processing…",
   "tools.localMedia.apply.frame": "Add current frame to canvas",
   "tools.localMedia.apply.default": "Process and add to canvas",

@@ -56,11 +56,18 @@ class VideoCapabilities(BaseModel):
 
 
 SEEDANCE_20 = re.compile(r'doubao-seedance-2[.-]0(?:[.-](mini|fast))?(?:[.-]\d{6})?')
+SEEDANCE_25 = re.compile(r'doubao-seedance-2[.-]5(?:[.-](flash))?(?:[.-]\d{6})?')
 
 
 def seedance_20_variant(model):
     """Ark's Seedance 2.0 ids: the full model, mini and fast, with an optional date suffix."""
     match = SEEDANCE_20.fullmatch(model.rsplit('/', 1)[-1].lower())
+    return None if match is None else (match.group(1) or 'full')
+
+
+def seedance_25_variant(model):
+    """Ark's Seedance 2.5 ids: the full model and flash, with an optional date suffix."""
+    match = SEEDANCE_25.fullmatch(model.rsplit('/', 1)[-1].lower())
     return None if match is None else (match.group(1) or 'full')
 
 
@@ -82,6 +89,11 @@ def preset_capabilities(profile, model=''):
         # mini and fast stop at 720P; the full model adds 1080P and 4K.
         labels = ['480P', '720P'] if seedance_20_variant(model) in {'mini', 'fast'} else ['480P', '720P', '1080P', '4K']
         return {'outputs': [{'resolution': label, 'durations': list(range(4, 16))} for label in labels],
+                'defaultResolution': 'auto', 'defaultDuration': 5, 'dimensionStep': 2}
+    if profile == 'seedance-2.5':
+        # flash stops at 720P; the full model adds 1080P and 4K. Both reach 30 s.
+        labels = ['480P', '720P'] if seedance_25_variant(model) == 'flash' else ['480P', '720P', '1080P', '4K']
+        return {'outputs': [{'resolution': label, 'durations': list(range(4, 31))} for label in labels],
                 'defaultResolution': 'auto', 'defaultDuration': 5, 'dimensionStep': 2}
     return None
 

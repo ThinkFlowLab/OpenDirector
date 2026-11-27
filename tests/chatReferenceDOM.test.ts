@@ -55,3 +55,58 @@ test("skill tokens retain their document position and occupy one editing unit", 
   assert.deepEqual(editContent(inserted, {start: 2, end: 3}, []), [reference, {type: "text", text: "  trailing"}]);
   assert.equal(validContent([{type: "skill", name: "first"}, {type: "skill", name: "second"}]), false);
 });
+
+test("the caret after a preset chip lands before the summary note", async () => {
+  const { select } = await import("../src/canvas/chatReferenceDOM.ts");
+  class Element {
+    dataset: Record<string, string> = {};
+    nodeType = 1;
+    nodeName: string;
+    childNodes: object[];
+    constructor(nodeName: string, childNodes: object[] = []) {
+      this.nodeName = nodeName;
+      this.childNodes = childNodes;
+    }
+  }
+  const text = (textContent: string) => ({ nodeType: 3, nodeName: "#text", textContent });
+  const previous = {
+    HTMLElement: globalThis.HTMLElement,
+    Node: globalThis.Node,
+    document: globalThis.document,
+    window: globalThis.window,
+  };
+  globalThis.HTMLElement = Element as unknown as typeof HTMLElement;
+  globalThis.Node = { TEXT_NODE: 3 } as typeof Node;
+  const chip = new Element("SPAN", [new Element("BUTTON", [text("人物四视图")])]);
+  chip.dataset.preset = "four-view";
+  const anchor = text("\u200b");
+  const note = new Element("SPAN", [anchor]);
+  note.dataset.presetNote = "直接基于当前图像生成";
+  const root = new Element("DIV", [chip, note, text("\u200b")]) as unknown as HTMLElement;
+  const range = {
+    start: null as null | [object, number],
+    setStart(node: object, offset: number) {
+      this.start = [node, offset];
+    },
+    setEnd() {},
+  };
+  globalThis.document = { createRange: () => range } as unknown as Document;
+  globalThis.window = {
+    getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
+  } as unknown as Window & typeof globalThis;
+  try {
+    select(root, { start: 1, end: 1 });
+    assert.equal(range.start?.[0], anchor);
+    assert.equal(range.start?.[1], 1);
+    anchor.textContent += "正文";
+    assert.deepEqual(readDOM(root), [
+      { type: "skill", name: "", preset: "four-view" },
+      { type: "text", text: "正文" },
+    ]);
+  } finally {
+    globalThis.HTMLElement = previous.HTMLElement;
+    globalThis.Node = previous.Node;
+    globalThis.document = previous.document;
+    globalThis.window = previous.window;
+  }
+});

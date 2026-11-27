@@ -333,10 +333,11 @@ def test_face_emphasis_only_affects_the_four_view_preset(project, preset, crops_
                 'parameters': {'preset': preset, 'faceEmphasis': True}})
     assert task['status'] == 'succeeded', task.get('error')
     assert len(task['outputs']) == len(calls) == 1
-    assert ('下巴以上完全在画框外'.encode() in calls[0]) == crops_front_and_side
+    assert ('眼睛、鼻子和嘴留在画外'.encode() in calls[0]) == crops_front_and_side
     if crops_front_and_side:
-        assert '第三格拍完整的背面全身'.encode() in calls[0]
-        assert '第四格拍清晰的正脸头肩特写'.encode() in calls[0]
+        assert '第3格：从头顶到鞋底的背面全身'.encode() in calls[0]
+        assert '第4格：唯一可见五官的正脸头肩特写'.encode() in calls[0]
+        assert '保持上传参考图的原始成像方式与画风'.encode() in calls[0]
 
 
 def test_submission_rejects_tools_without_a_capable_model(project):

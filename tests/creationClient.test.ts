@@ -597,6 +597,7 @@ function presentationFixture() {
       size: "auto",
       aspectRatio: null,
       preset: "none",
+      faceEmphasis: false,
       responseFormat: "url",
       outputFormat: "png",
     },

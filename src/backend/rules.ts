@@ -465,7 +465,7 @@ export function serviceGenerationSettings(
   }
   next = serviceImageSettings(serviceAudioSettings(next, config), config);
   if (modelChanged) {
-    next.imagePreset = "none";
+    if (next.imagePreset === "product-views") next.imagePreset = "none";
     if (next.voiceSelection) {
       if (voiceIssue(next.voiceSelection, config.inputRules.voiceLibrary)) {
         next.voiceName = undefined;
@@ -632,7 +632,7 @@ export function backendBlocker(
       limit: rules.maxPromptCharacters,
     });
   if (settings.mode === "image") {
-    if (settings.imagePreset && settings.imagePreset !== "none")
+    if (settings.imagePreset === "product-views")
       return tNow("errors.rules.productViews");
     if (
       !backendAspectRatios(settings, config).includes(settings.aspectRatio) ||

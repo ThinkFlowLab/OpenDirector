@@ -47,6 +47,8 @@ example vLLM's 4096 default) rejects every request with HTTP 400.
 
 For vLLM-Omni video connections, enter fractional seconds directly, for example `6.583333`. The CLI accepts `opendirector video create --duration 6.583333` together with the other required options. Read `opendirector video create --help` and `opendirector model list` first; `inputRules.fractionalDuration` identifies support, and each output's duration list defines the allowed range. H3 can align output to its supported frame count, so inspect the actual result duration before assembling segments.
 
+To use few-step H3 adapters such as Pika Flex Turbo, which need a LoRA and their own step count on every request, or to offer several such variants from one vLLM-Omni server, see the [video gateway](video-gateway.md) that starts with OpenDirector.
+
 For detailed video settings, see [Video model capability configuration](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.
 
 Automatic region selection in images and video matting require a model with segmentation capabilities. Image generation and editing still require the corresponding generation or editing model.
@@ -178,6 +180,7 @@ Select a node, then choose an action from its toolbar.
 
 - **Images**: Crop, rotate, flip, adjust colors, work with layers, add text, shapes, or annotations, and edit selections.
 - **Video and audio**: Extract frames, trim, extract audio tracks, and process clips.
+  When trimming a video, choose WebM (the default) or MP4 under **Output format**. Choose MP4 if your model requires MP4 reference video.
 - **AI tools**: Extend images, erase content, remove backgrounds, edit images with AI, upscale, and more. Availability depends on the connected models.
 
 For a local edit, mark an area or create a selection first, then enter your instructions and confirm the action. If a required model capability is missing, follow the tool's instructions to configure it. Hover over a disabled control for an explanation.

@@ -184,6 +184,9 @@ export interface ChatMessage {
   segmentKind?: "continuation" | "execution";
   parentRequestId?: string;
   decisionRequestId?: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
 }
 
 export type Thinking = "auto" | "low" | "medium" | "high";

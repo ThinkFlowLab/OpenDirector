@@ -388,6 +388,19 @@ test("provider inputs follow first inline occurrence rather than source placemen
     incomingReferenceNodes(linked, target.id).map((node) => node.id),
     [other.id, source.id],
   );
+  const withHiddenSource = {
+    ...linked,
+    nodes: linked.nodes.filter((node) => node.id !== other.id),
+    hiddenNodes: [other],
+  };
+  assert.deepEqual(
+    incomingReferenceNodes(withHiddenSource, target.id).map((node) => node.id),
+    [source.id],
+  );
+  assert.deepEqual(
+    incomingReferenceNodes(withHiddenSource, target.id, true).map((node) => node.id),
+    [other.id, source.id],
+  );
 });
 
 test("first/last frame editing fills explicit slots and rejects the third source atomically", () => {

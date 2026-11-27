@@ -273,6 +273,32 @@ try {
         .getAttribute("data-reference"),
     );
     assert.ok(part.nodeId);
+    await page
+      .getByRole("combobox", { name: "图片创作预设", exact: true })
+      .selectOption("four-view");
+    await page.locator('.cw-composer [data-preset="four-view"]').waitFor();
+    const copied = await page
+      .getByRole("textbox", { name: "生成提示词", exact: true })
+      .evaluate((editor) => {
+        editor.focus();
+        const selection = window.getSelection();
+        selection.selectAllChildren(editor);
+        const clipboard = new DataTransfer();
+        editor.dispatchEvent(new ClipboardEvent("copy", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: clipboard,
+        }));
+        selection.collapseToEnd();
+        return {
+          plain: clipboard.getData("text/plain"),
+          content: JSON.parse(
+            clipboard.getData("application/x-opendirector-references"),
+          ).content,
+        };
+      });
+    assert.deepEqual(copied.content.filter((part) => part.type !== "text"), [part]);
+    assert.doesNotMatch(copied.plain, /人物四视图/);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const fixed = await page.evaluate(
       async ({ projectId, nodeId }) => {

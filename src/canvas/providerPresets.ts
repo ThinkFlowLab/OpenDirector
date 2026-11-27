@@ -266,6 +266,26 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     protocol: "volcengine",
     connectionType: "api",
     authMode: "bearer",
+    // Agent Plan documents these per modality; picking the provider selects
+    // them so the composer has a working model without a discovery round.
+    // https://ark.volcengine.com/region:cn-beijing/docs/agent-plan-personal-visual-models
+    // https://ark.volcengine.com/region:cn-beijing/docs/agent-plan-personal-voice-model
+    modelsByKind: {
+      image: [
+        "doubao-seedream-5.5",
+        "doubao-seedream-5.0-pro",
+        "doubao-seedream-5.0-flash",
+      ],
+      video: [
+        "doubao-seedance-2.5",
+        "doubao-seedance-2.5-flash",
+        "doubao-seedance-2.0",
+        "doubao-seedance-2.0-fast",
+        "doubao-seedance-2.0-mini",
+      ],
+      // The voice API keys the model by X-Api-Resource-Id, not a model path.
+      audio: ["seed-tts-2.0"],
+    },
   },
   ...(
     [

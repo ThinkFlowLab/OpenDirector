@@ -59,5 +59,6 @@ export const trace = {
   "trace.loading": "加载中…",
   "trace.waiting": "等待首条轨迹…",
   "trace.notFound": "该轮没有此类轨迹。",
-  "trace.loadFailed": "轨迹加载失败。"
+  "trace.loadFailed": "轨迹加载失败。",
+  "trace.turn.duration.unavailable": "不可用"
 } as const;
