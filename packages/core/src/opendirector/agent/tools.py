@@ -114,6 +114,7 @@ def build_ask_mode_guidance(current_plan: dict | None = None) -> str:
         'Order `options` from highest recommendation to lowest. Do NOT include "(Recommended)" or "（推荐）" in `label` (the UI adds the badge automatically). '
         'Every option MUST include `id`, `label`, and a one-sentence `impact` explaining what changes if selected.\n'
         'Once `opendirector ask-user` returns `status: "waiting_input"`, output 1 brief sentence introducing the question and END THIS TURN IMMEDIATELY without calling any more tools and without outputting `[opendirector-replies]: #`.\n'
+        'Whenever you save a plan via `opendirector plan save`, keep your prose reply to 1 to 3 brief sentences on key choices or trade-offs and do NOT repeat the numbered step list in Markdown (the UI renders the saved plan card directly below your reply).\n'
     )
     if current_plan and isinstance(current_plan, dict):
         plan_view = {

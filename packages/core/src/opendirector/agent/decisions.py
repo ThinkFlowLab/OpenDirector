@@ -395,7 +395,8 @@ def build_continuation_prompt_block(task: dict, decision: dict) -> str:
         'or use `opendirector plan save --file updated_plan.json` for steps with explicit kinds. '
         'In JSON, each step can be {"content": "...", "kind": "write|read|inspection"}. '
         'Use write for project changes or generation, read for OpenDirector queries, and inspection for native file/media checks. '
-        'A plain string denotes a write step. Present the complete revised plan clearly in your reply, '
+        'A plain string denotes a write step. Because the UI renders the saved plan card (summary and steps) directly below your reply, '
+        'reply with only 1 to 3 brief sentences on key creative choices or trade-offs without repeating the numbered step list in Markdown, '
         'and END THIS TURN IMMEDIATELY to wait for the user to confirm execution. '
         'Do NOT execute project mutation commands (`canvas`, `asset`, `video`, `generation`) in this segment.'
     )
