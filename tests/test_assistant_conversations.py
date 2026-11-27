@@ -681,3 +681,369 @@ def test_background_turn_keeps_write_session_and_checks_revisions(assistant, mon
     with store.transaction() as db:
         assert db.execute('SELECT 1 FROM sessions WHERE id=?',
                           (store.agent_session_key(run_session),)).fetchone() is None
+
+
+# --- #502: a failed final write must still end the stream with an accurate result -------------------------------
+
+class FinishProbe:
+    """Records what the producer queued and which writes the turn attempted."""
+
+    def __init__(self):
+        self.ends = []        # `end` frames the producer put into the event queue (not what a client received)
+        self.begins = 0
+        self.finishes = 0
+        self.runs = 0
+        self.sessions = []    # agent sessions opened for a turn, in order
+
+
+@pytest.fixture
+def finish_probe(assistant, monkeypatch):
+    probe = FinishProbe()
+    put = agent.RunEvents.put
+    def recording_put(self, event):
+        if event['type'] == 'end':
+            probe.ends.append(event)
+        return put(self, event)
+    monkeypatch.setattr(agent.RunEvents, 'put', recording_put)
+    update = agent.Conversations.update
+    def counting_update(self, *args, **kwargs):
+        probe.begins += kwargs.get('begin') is not None
+        if kwargs.get('finish') is not None:
+            probe.finishes += 1
+            if probe.finish_failure is not None:
+                raise probe.finish_failure
+        return update(self, *args, **kwargs)
+    probe.finish_failure = None
+    monkeypatch.setattr(agent.Conversations, 'update', counting_update)
+    start = LocalProjects.start_agent_session
+    def recording_start(self, db, project_id, path, session):
+        probe.sessions.append(session)
+        return start(self, db, project_id, path, session)
+    monkeypatch.setattr(LocalProjects, 'start_agent_session', recording_start)
+    return probe
+
+
+def fail_finish_write(monkeypatch):
+    """OSError from the real durable write of the final reply; the begin write goes through."""
+    durable = agent.durable_json
+    def fail(file, value, *args, **kwargs):
+        if value['messages'][-1]['status'] != 'streaming':
+            raise OSError(28, 'No space left on device')
+        return durable(file, value, *args, **kwargs)
+    monkeypatch.setattr(agent, 'durable_json', fail)
+
+
+def run_turn(client, path, text='写入', timeout=10):
+    """POST a turn; a stream that never ends fails the test instead of hanging it."""
+    with ThreadPoolExecutor() as pool:
+        return pool.submit(send, client, path, client.get(path).json()['conversationId'], text).result(timeout)
+
+
+def streaming_stream(probe):
+    async def stream(self, run):
+        probe.runs += 1
+        yield {'type': 'delta', 'text': '已输出的部分回复'}
+    return stream
+
+
+def assert_one_failed_end(events, probe, *needles):
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0], [event['type'] for event in events]
+    assert len(probe.ends) == 1
+    assert ends[0]['error'], ends[0]
+    for needle in needles:
+        assert needle in ends[0]['error'], ends[0]['error']
+    saved = (ends[0]['conversation'] or {'messages': []})['messages']
+    assert not saved or saved[-1]['status'] != 'complete', 'an unsaved reply must not be reported as complete'
+    assert probe.finishes == 1, 'the final write is not retried'
+    return ends[0]
+
+
+def assert_project_released(client, path, tmp_path, probe):
+    """The turn's own write lease is gone and the project accepts no stale active turn."""
+    assert 'activeTurnId' not in client.get(path).json()
+    store = LocalProjects(tmp_path)
+    with store.transaction() as db:
+        row = db.execute('SELECT 1 FROM sessions WHERE id=?', (store.agent_session_key(probe.sessions[0]),)).fetchone()
+    assert row is None, 'the turn left its project write lease behind'
+
+
+def test_finish_success_ends_once_with_the_saved_reply(finish_probe, assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    events = frames(run_turn(client, path))
+    assert [event['type'] for event in events] == ['start', 'delta', 'end']
+    assert events[-1]['error'] is None and events[-1]['conversation']['messages'][-1]['status'] == 'complete'
+    assert (finish_probe.begins, finish_probe.finishes, finish_probe.runs, len(finish_probe.ends)) == (1, 1, 1, 1)
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_finish_oserror_ends_with_an_error_and_keeps_the_partial_text(finish_probe, assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    fail_finish_write(monkeypatch)
+    events = frames(run_turn(client, path))
+    assert_one_failed_end(events, finish_probe)
+    assert [event['text'] for event in events if event['type'] == 'delta'] == ['已输出的部分回复']
+    assert finish_probe.runs == 1
+    assert_project_released(client, path, tmp_path, finish_probe)
+    # The unsaved reply stays 'streaming' on disk; it was never reported as complete.
+    assert client.get(path).json()['messages'][-1]['status'] == 'streaming'
+
+
+@pytest.mark.parametrize('failure', [
+    agent.ProjectError('该项目正在其他窗口中打开，请先关闭后再试。', 409, code='project_open_elsewhere'),
+    __import__('sqlite3').OperationalError('database is locked'),
+    __import__('filelock').Timeout('catalog.lock'),
+], ids=['project-authorization', 'sqlite-lock', 'catalog-lock'])
+def test_finish_lock_or_authorization_failure_ends_with_an_error(finish_probe, assistant, monkeypatch, tmp_path, failure):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    finish_probe.finish_failure = failure
+    events = frames(run_turn(client, path))
+    assert_one_failed_end(events, finish_probe)
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_runtime_error_followed_by_finish_failure_reports_both(finish_probe, assistant, monkeypatch, tmp_path, caplog):
+    client, path, _ = assistant
+    async def broken(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'delta', 'text': '部分'}
+        raise agent.ProjectError('模型额度已用尽', 429)
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', broken)
+    finish_probe.finish_failure = OSError(28, 'No space left on device')
+    events = frames(run_turn(client, path))
+    assert_one_failed_end(events, finish_probe, '模型额度已用尽')
+    assert events[-1]['error'].count('\n') or len(events[-1]['error']) > len('模型额度已用尽'), 'the save failure is reported too'
+    logged = caplog.text
+    assert 'agent.turn.failed' in logged and 'agent.turn.unfinished' in logged and 'No space left' in logged
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+@pytest.mark.parametrize('broken', ['write', 'release'])
+def test_ledger_or_lease_release_failure_does_not_block_the_end(finish_probe, assistant, monkeypatch, tmp_path, broken):
+    client, path, _ = assistant
+    async def stream(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'tool', 'id': 'a', 'name': 'x', 'status': 'complete', 'timing': {'spawn': 1.0}}
+        yield {'type': 'delta', 'text': '完成'}
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    released = []
+    real_release = LocalProjects.release_agent_session
+    if broken == 'write':
+        def explode(*args, **kwargs):
+            raise RuntimeError('ledger exploded')   # not an OSError, so timing.write does not absorb it
+        monkeypatch.setattr(agent.agent_timing, 'write', explode)
+    else:
+        def explode(self, session):
+            released.append(session)
+            raise RuntimeError('release exploded')
+        monkeypatch.setattr(LocalProjects, 'release_agent_session', explode)
+    events = frames(run_turn(client, path))
+    assert events[-1]['type'] == 'end' and events[-1]['error'] is None
+    assert events[-1]['conversation']['messages'][-1]['status'] == 'complete'
+    assert len(finish_probe.ends) == 1 and finish_probe.finishes == 1
+    assert 'activeTurnId' not in client.get(path).json()
+    if broken == 'write':
+        # The ledger failure must not cost the project its write lease.
+        monkeypatch.setattr(agent.agent_timing, 'write', lambda *a: None)
+        assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_disconnected_client_does_not_stop_the_run_and_a_later_stream_sees_the_failure(
+        finish_probe, assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    release = threading.Event()
+    async def stream(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'delta', 'text': '断线前'}
+        await asyncio.to_thread(release.wait, 10)
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    finish_probe.finish_failure = OSError(28, 'No space left on device')
+    turn_id = str(uuid4())
+    disconnect_turn(client, path, turn_id)
+    assert client.get(path).json()['activeTurnId'] == turn_id
+    assert finish_probe.ends == [] and finish_probe.finishes == 0   # nothing was delivered to the closed stream
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.get, path + f'/turns/{turn_id}/events')
+        time.sleep(0.2)
+        release.set()
+        events = frames(pending.result(timeout=10))
+    # The producer queued exactly one end and a re-attached viewer received it; a viewer that
+    # never re-attaches would receive nothing (the queue is not a delivery guarantee).
+    assert_one_failed_end(events, finish_probe)
+    assert finish_probe.runs == 1
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_stop_during_the_run_then_a_failed_final_write_ends_once(finish_probe, assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    started = threading.Event()
+    async def stream(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'delta', 'text': '被停止前'}
+        started.set()
+        await asyncio.Event().wait()
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    finish_probe.finish_failure = OSError(28, 'No space left on device')
+    turn_id = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+        assert started.wait(5)
+        assert client.post(path + f'/turns/{turn_id}/stop').status_code == 200
+        events = frames(pending.result(timeout=10))
+    assert_one_failed_end(events, finish_probe)
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+@pytest.fixture
+def cancel_landed(monkeypatch):
+    """Wait until a chain task is cancelling, so a test never stops 'late' by guessing."""
+    chains = []
+    class RecordedChain(agent.Chain):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            chains.append(self)
+    monkeypatch.setattr(agent, 'Chain', RecordedChain)
+    def wait(timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if any(chain.task is not None and chain.task.cancelling() for chain in chains):
+                return True
+            time.sleep(0.005)
+        return False
+    return wait
+
+
+@pytest.mark.parametrize('write_fails', [True, False], ids=['write-fails', 'write-succeeds'])
+def test_stop_during_the_final_write_waits_for_its_outcome(
+        finish_probe, assistant, cancel_landed, monkeypatch, tmp_path, write_fails):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    writing, proceed = threading.Event(), threading.Event()
+    update = agent.Conversations.update
+    def blocking_update(self, *args, **kwargs):
+        if kwargs.get('finish') is not None:
+            writing.set()
+            assert proceed.wait(10)
+            if write_fails:
+                finish_probe.finishes += 1
+                raise OSError(28, 'No space left on device')
+        return update(self, *args, **kwargs)
+    monkeypatch.setattr(agent.Conversations, 'update', blocking_update)
+    turn_id = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+        assert writing.wait(5)
+        stopping = pool.submit(client.post, path + f'/turns/{turn_id}/stop')
+        assert cancel_landed()   # the cancel lands while the write is still in flight
+        proceed.set()
+        assert stopping.result(timeout=10).status_code == 200
+        events = frames(pending.result(timeout=10))
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0] and len(finish_probe.ends) == 1
+    if write_fails:
+        assert '回复未能保存' in ends[0]['error'] and ends[0]['conversation'] is None, ends[0]
+        assert client.get(path).json()['messages'][-1]['status'] == 'streaming'
+    else:
+        assert ends[0]['error'] is None and ends[0]['conversation']['messages'][-1]['status'] != 'streaming', ends[0]
+        assert client.get(path).json()['messages'][-1]['status'] != 'streaming'
+    assert finish_probe.finishes == 1, "the final write is not retried"
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_stop_during_a_successful_final_write_keeps_the_runtime_error(
+        finish_probe, assistant, cancel_landed, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    async def stream(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'delta', 'text': '已输出的部分回复'}
+        raise agent.ProjectError('模型额度已用尽', 429)
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    writing, proceed = threading.Event(), threading.Event()
+    update = agent.Conversations.update
+    def blocking_update(self, *args, **kwargs):
+        if kwargs.get('finish') is not None:
+            writing.set()
+            assert proceed.wait(10)
+        return update(self, *args, **kwargs)
+    monkeypatch.setattr(agent.Conversations, 'update', blocking_update)
+    turn_id = str(uuid4())
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+        assert writing.wait(5)
+        stopping = pool.submit(client.post, path + f'/turns/{turn_id}/stop')
+        assert cancel_landed()
+        proceed.set()
+        assert stopping.result(timeout=10).status_code == 200
+        events = frames(pending.result(timeout=10))
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0] and len(finish_probe.ends) == 1
+    assert '模型额度已用尽' in ends[0]['error'], ends[0]
+    assert ends[0]['conversation']['messages'][-1]['status'] != 'streaming'
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_stop_during_the_timing_write_still_releases_the_lease(
+        finish_probe, assistant, cancel_landed, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', streaming_stream(finish_probe))
+    timing, proceed = threading.Event(), threading.Event()
+    def blocking_write(*args):
+        timing.set()
+        proceed.wait(10)
+    monkeypatch.setattr(agent.agent_timing, 'write', blocking_write)
+    turn_id = str(uuid4())
+    try:
+        with ThreadPoolExecutor() as pool:
+            pending = pool.submit(client.post, path + '/turns', json={'id': turn_id, 'runtime': 'default', 'text': '停止'})
+            assert timing.wait(5)
+            stopping = pool.submit(client.post, path + f'/turns/{turn_id}/stop')
+            assert cancel_landed()
+            assert stopping.result(timeout=10).status_code == 200
+            events = frames(pending.result(timeout=10))
+            # The ledger is still blocked: the lease must not wait for it.
+            assert_project_released(client, path, tmp_path, finish_probe)
+    finally:
+        proceed.set()
+    ends = [event for event in events if event['type'] == 'end']
+    assert len(ends) == 1 and events[-1] is ends[0] and len(finish_probe.ends) == 1
+
+
+def test_failed_final_write_does_not_start_a_queued_message(finish_probe, assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    started, release = threading.Event(), threading.Event()
+    async def stream(self, run):
+        finish_probe.runs += 1
+        yield {'type': 'delta', 'text': '第一轮'}
+        started.set()
+        await asyncio.to_thread(release.wait, 10)
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', stream)
+    finish_probe.finish_failure = OSError(28, 'No space left on device')
+    conversation = client.get(path).json()['conversationId']
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(send, client, path, conversation, '第一条')
+        assert started.wait(5)
+        queued = client.post(path + '/messages', json={'id': str(uuid4()), 'runtime': 'default',
+                                                       'conversationId': conversation, 'text': '第二条'})
+        assert queued.status_code == 202, queued.text
+        release.set()
+        events = frames(pending.result(timeout=10))
+    assert finish_probe.runs == 1, 'the queued message must not run behind a reply that was not saved'
+    assert events[-1]['type'] == 'end' and events[-1]['error']
+    assert_project_released(client, path, tmp_path, finish_probe)
+
+
+def test_english_client_gets_both_the_run_error_and_the_unsaved_notice(finish_probe, assistant, monkeypatch, tmp_path):
+    client, path, _ = assistant
+    async def broken(self, run):
+        yield {'type': 'delta', 'text': 'partial'}
+        raise agent.ProjectError('Model quota exhausted', 429)
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', broken)
+    finish_probe.finish_failure = OSError(28, 'No space left on device')
+    response = client.post(path + '/turns', headers={'Accept-Language': 'en-US'}, json={
+        'id': str(uuid4()), 'runtime': 'default', 'text': 'go', 'conversationId': client.get(path).json()['conversationId']})
+    end = assert_one_failed_end(frames(response), finish_probe)
+    run_error, unsaved = end['error'].split('\n')
+    assert unsaved == 'The reply could not be saved. Check the backend log.' and run_error != unsaved

@@ -585,6 +585,19 @@ export function useAssistantChat(
             if (event.status !== "running") onEnd.current();
           } else if (event.type === "end") {
             if (event.conversation) setValue(event.conversation);
+            else {
+              // The turn ended without a durable conversation snapshot. Keep
+              // the streamed text visible, but do not leave the reply streaming.
+              setValue((previous) => ({
+                ...previous,
+                messages: previous.messages.map((message) =>
+                  message.id === assistantId && message.status === "streaming"
+                    ? { ...message, status: "interrupted" }
+                    : message,
+                ),
+              }));
+            }
+            setThinkingNow(false);
             if (event.error) setError(displayError(event.error));
           }
         },

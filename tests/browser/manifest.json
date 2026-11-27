@@ -76,6 +76,15 @@
       "note": "Controls the model-stub gate; runs on its own fixture services."
     },
     {
+      "file": "assistant_finish_failure.mjs",
+      "fixture": true,
+      "previewSafe": true,
+      "lanes": [
+        "gate"
+      ],
+      "note": "Bilingual finish-write failure: preserve partial text and error while clearing the message-level streaming indicator for a terminal end with no saved conversation."
+    },
+    {
       "file": "trace_original_export.mjs",
       "fixture": true,
       "previewSafe": true,
