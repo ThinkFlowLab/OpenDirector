@@ -9,6 +9,7 @@ from opendirector.domain.rule_facts import (
 )
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_image import validate_minimax_image_reference
+from opendirector.domain.reference_windows import reference_video_windows, windows_reference_videos
 from opendirector.domain.references import project_content
 from opendirector.media import heif_type
 
@@ -102,7 +103,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     rules = input_rules({**config, 'kind': 'agent' if kind == 'text' else kind})
     mode = task.get('videoMode', 'first_frame')
     prompt = project_content(task['promptContent'], speech=kind == 'audio')[0] if task.get('promptContent') is not None else task['prompt']
-    result = {'prompt': prompt, 'images': [], 'imageRoles': [], 'audios': [], 'videos': [], 'manifest': [], 'rules': rules, 'continueFrom': None, 'continueSize': None, 'control': None}
+    result = {'prompt': prompt, 'images': [], 'imageRoles': [], 'audios': [], 'videos': [], 'manifest': [], 'rules': rules, 'continueFrom': None, 'continueSize': None, 'control': None, 'windows': {}, 'guides': []}
     if kind == 'text':
         result['content'] = reference_content(store, task['projectId'], {'text': task['prompt'], 'content': task.get('promptContent'), 'assets': [{'id': asset_id} for asset_id in task['referenceIds']]}, manifest=result['manifest'], overrides=overrides)
         request_size(result['content'], rules['requestBytes'])
@@ -129,7 +130,17 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     for value in task.get('referenceRoles') or []:
         roles_by_asset.setdefault(str(value['assetId']), []).append(value['role'])
     slot_roles = set()
-    for index, (data, meta, source_kind) in enumerate(references(store, task['projectId'], task['referenceIds'], overrides), 1):
+    sources = list(references(store, task['projectId'], task['referenceIds'], overrides))
+    # Reference videos beyond the model's budget travel as their final window. The plan
+    # depends only on asset durations, so admission and execution agree; the sender cuts
+    # the planned range when the job runs, and the source stays the size-checked input here.
+    windows = {}
+    if kind == 'video' and mode == 'reference' and windows_reference_videos(rules['profile']):
+        clips = [(position, meta.get('durationMs')) for position, (_, meta, source_kind) in enumerate(sources, 1) if source_kind == 'video']
+        if clips and all(duration and duration > 0 for _, duration in clips):
+            planned = reference_video_windows([duration for _, duration in clips])
+            windows = {position: window for (position, _), window in zip(clips, planned) if window}
+    for index, (data, meta, source_kind) in enumerate(sources, 1):
         entry = {'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'content'}
         if source_kind == 'video' and kind == 'video' and mode == 'continuation':
             if result['continueFrom']:
@@ -174,6 +185,23 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             text_context.append(context)
             entry['role'] = 'text'
         elif source_kind == 'image':
+            # A keyframe is a timeline guide: pinned to one output frame, uploaded apart from the reference
+            # pictures and never given a <Picture N> label. The same asset may also be an ordinary reference.
+            asset_roles = [value for value in task.get('referenceRoles') or [] if str(value['assetId']) == str(meta['id'])]
+            pinned = [value['frameTimeMs'] for value in asset_roles if value['role'] == 'keyframe']
+            if pinned:
+                if not (kind == 'video' and mode == 'reference' and rules.get('maxKeyframes')):
+                    raise ProjectError('当前模型或生成模式不支持指定帧生成，请移除关键帧。', 422, code='keyframe_unsupported')
+                guide_mime = image_type(data)
+                if guide_mime not in {'image/png', 'image/jpeg', 'image/webp'} or len(data) > rules['imageBytes']:
+                    raise ProjectError(f'“{meta["name"]}”不能作为关键帧：需为不超过大小限制的 PNG、JPEG 或 WEBP 图片。')
+                for milliseconds in pinned:
+                    result['guides'].append({'assetId': str(meta['id']), 'name': meta['name'], 'data': data, 'mime': guide_mime,
+                                             'frame': round(milliseconds * 24 / 1000)})
+                    result['manifest'].append({**entry, 'role': 'keyframe', 'frameTimeMs': milliseconds})
+                if all(value['role'] == 'keyframe' for value in asset_roles):
+                    source_metadata.pop()
+                    continue
             mime = image_type(data)
             if rules['profile'] == 'minimax-h3-image':
                 mime = mime or heif_type(data)
@@ -217,8 +245,14 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             duration = meta.get('durationMs')
             if meta['type'] not in {'video/mp4', 'video/quicktime'} or len(data) > rules['videoBytes']:
                 raise ProjectError(f'参考视频需为不超过 {rules["videoBytes"] // (1024 * 1024)} MB 的 MP4 或 MOV。')
-            if duration is None or not 0 < duration <= REFERENCE_MEDIA_SECONDS * 1000:
+            window = windows.get(index)
+            if duration is None or duration <= 0 or (window is None and duration > REFERENCE_MEDIA_SECONDS * 1000):
                 raise ProjectError(f'参考视频需为不超过 {REFERENCE_MEDIA_SECONDS} 秒的有效视频。')
+            if window is not None:
+                start, end = window
+                entry['window'] = {'startMs': start, 'endMs': end}
+                result['windows'][str(meta['id'])] = window
+                duration = end - start
             total_video_ms += duration
             result['videos'].append(data_uri(data, meta['type']))
             number = len(result['videos'])
@@ -260,6 +294,9 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         raise ProjectError('结构控制需要连接一个控制视频（例如人物深度视频）。')
     if complete and mode == 'continuation' and not result['continueFrom']:
         raise ProjectError('接续生成需要引用上一段由 vLLM-Omni H3 生成的视频。')
+    result['guides'].sort(key=lambda guide: guide['frame'])
+    if len(result['guides']) > rules.get('maxKeyframes', 0):
+        raise ProjectError(f'最多指定 {rules.get("maxKeyframes", 0)} 个关键帧。', 422, code='keyframe_count')
     if len(result['videos']) > rules.get('maxVideos', 0) or total_video_ms > REFERENCE_MEDIA_SECONDS * 1000:
         raise ProjectError(f'视频参考最多 3 段，总时长不超过 {REFERENCE_MEDIA_SECONDS} 秒。')
     if rules['profile'] == 'fasth3-omni' and len(result['images']) + len(result['videos']) + len(result['audios']) > FASTH3_MEDIA_REFERENCE_LIMIT:

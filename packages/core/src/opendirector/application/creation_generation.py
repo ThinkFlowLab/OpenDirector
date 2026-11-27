@@ -145,7 +145,8 @@ class CreationGeneration(GenerationRuntime):
             kind=spec.kind, status=job.status, phase=job.phase, recovery=job.recovery, resumeAllowed=job.resumeAllowed,
             modelConfigId=str(model.modelConfigId), model=model.modelId, baseURL=model.url, protocol=model.protocol,
             title=spec.prompt[:80] or spec.kind, prompt=spec.prompt, promptContent=content, referenceIds=reference_ids,
-            referenceRoles=[{'assetId': str(r.asset.assetId), 'role': r.role} for r in job.inputSnapshot.references if r.transmission != 'context_only'],
+            referenceRoles=[{'assetId': str(r.asset.assetId), 'role': r.role} | ({'frameTimeMs': r.frameTimeMs} if r.frameTimeMs is not None else {})
+                            for r in job.inputSnapshot.references if r.transmission != 'context_only'],
             referenceInputs={'profile': profile},
             videoMode=spec.parameters.videoMode if spec.kind == 'video' else 'first_frame', parameters=job.adapterParameters,
             externalTaskId=job.externalTaskId, assetId=str(job.asset.assetId) if job.asset else None,

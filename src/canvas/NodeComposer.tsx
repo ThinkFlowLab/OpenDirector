@@ -342,6 +342,13 @@ export function NodeComposer({
   const frameCandidates = incomingNodes.filter(
     (node) => node.data.kind === "image",
   );
+  // H3 reference mode: any connected image can also be pinned at a moment of the output.
+  const pinnableFrames =
+    mode === "video" &&
+    backend &&
+    (settings.videoMode ?? "reference") === "reference" &&
+    (config?.inputRules.maxKeyframes ?? 0) > 0 &&
+    frameCandidates.length > 0;
   const serviceSeconds = backendDurations(config);
   const duration =
     backend && mode === "video"
@@ -577,6 +584,53 @@ export function NodeComposer({
             >
               <CanvasIcon name="swapHorizontal" size={16} />
             </TooltipButton>
+          </div>
+        )}
+        {pinnableFrames && (
+          <div className="cw-keyframes" aria-label={t("generation.keyframes.title")}>
+            <span className="cw-keyframes-title">{t("generation.keyframes.title")}</span>
+            {frameCandidates.map((node) => {
+              const pinned = settings.pinnedFrames?.find((frame) => frame.nodeId === node.id);
+              const usable = node.data.src && node.data.assetState !== "missing";
+              const name = node.data.title || t("generation.keyframes.untitled");
+              return (
+                <label
+                  key={node.id}
+                  className={`cw-keyframe${pinned ? " is-pinned" : ""}`}
+                  title={name}
+                >
+                  <span className="cw-frame-thumbnail">
+                    {usable ? (
+                      <AssetMedia as="img" src={node.data.src!} alt={name} draggable={false} />
+                    ) : (
+                      <CanvasIcon name="plus" size={20} />
+                    )}
+                  </span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={settings.durationSeconds}
+                    step={0.1}
+                    value={pinned?.seconds ?? ""}
+                    placeholder={t("generation.keyframes.placeholder")}
+                    aria-label={t("generation.keyframes.time", { title: name })}
+                    disabled={running || !usable}
+                    onChange={(event) => {
+                      const text = event.target.value.trim();
+                      const seconds = Number(text);
+                      const others = (settings.pinnedFrames ?? []).filter((frame) => frame.nodeId !== node.id);
+                      const next =
+                        text === "" || !Number.isFinite(seconds) || seconds < 0
+                          ? others
+                          : [...others, { nodeId: node.id, seconds }];
+                      updateSettings({ pinnedFrames: next.length ? next : undefined });
+                    }}
+                  />
+                  <span className="cw-keyframe-unit">{t("generation.keyframes.unit")}</span>
+                </label>
+              );
+            })}
           </div>
         )}
         {referenceVisibility.showStrip && (

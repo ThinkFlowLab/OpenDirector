@@ -197,6 +197,17 @@ def trim(source: Path, seconds: float, out: Path) -> Path:
     return out
 
 
+def clip(data: bytes, start: float, end: float) -> bytes:
+    """Seconds [start, end) of a video as H.264/AAC MP4, keeping its size, frame rate and soundtrack."""
+    with Workspace() as workspace:
+        source, out = workspace.write('source', data), workspace.path / 'clip.mp4'
+        # Decoding from an input-side seek and limiting the output length is frame-exact when re-encoding.
+        _run(['ffmpeg', '-v', 'error', '-y', '-ss', f'{max(start, 0):.3f}', '-i', str(source), '-t', f'{end - start:.3f}',
+              '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+              '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', str(out)])
+        return out.read_bytes()
+
+
 def upscale(source: Path, long_edge: int, out: Path) -> bytes:
     info = video_info(source)
     if max(info['width'], info['height']) >= long_edge:

@@ -115,6 +115,11 @@ export const errors = {
   "errors.rules.controlDuration": "控制视频需要 {low}–{high} 秒",
   "errors.rules.continuationSource":
     "接续需要连接一段由当前 H3 服务生成的视频作为上一段。",
+  "errors.rules.keyframeUnsupported": "当前模型不支持指定帧，请清除图片上的时间或更换模型。",
+  "errors.rules.keyframeCount": "最多指定 {limit} 个关键帧。",
+  "errors.rules.keyframeTime": "关键帧的时间必须早于视频结束（{seconds} 秒）。",
+  "errors.rules.keyframeDuplicate": "两个关键帧不能指定同一个时间。",
+  "errors.rules.keyframeReference": "指定帧生成还需要至少一张不指定时间的参考图片或一段参考视频。",
   "errors.rules.referenceLimit": "参考{kind}超过当前模型上限（{limit} 个）。",
   "errors.rules.serviceInputLimit": "最多支持 {limit} 个{kind}，当前为 {current} 个。",
   "errors.rules.referenceFileSize": "参考文件超过当前模型的大小限制",

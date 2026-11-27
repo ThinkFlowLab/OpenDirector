@@ -5543,10 +5543,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "order": {
             "default": 0,
@@ -7599,6 +7614,13 @@
             "description": "Maximum reference audio count.",
             "minimum": 0,
             "title": "Maxaudios",
+            "type": "integer"
+          },
+          "maxKeyframes": {
+            "default": 0,
+            "description": "Maximum pictures that can be pinned at chosen moments of a generated video; omitted when unsupported.",
+            "minimum": 0,
+            "title": "Maxkeyframes",
             "type": "integer"
           },
           "imageBytes": {
@@ -10372,10 +10394,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "order": {
             "default": 0,
@@ -11431,10 +11468,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "order": {
             "default": 0,
@@ -11762,10 +11814,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "asset": {
             "$ref": "#/$defs/AssetRef",
@@ -22597,10 +22664,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "order": {
             "default": 0,
@@ -24749,6 +24831,13 @@
             "description": "Maximum reference audio count.",
             "minimum": 0,
             "title": "Maxaudios",
+            "type": "integer"
+          },
+          "maxKeyframes": {
+            "default": 0,
+            "description": "Maximum pictures that can be pinned at chosen moments of a generated video; omitted when unsupported.",
+            "minimum": 0,
+            "title": "Maxkeyframes",
             "type": "integer"
           },
           "imageBytes": {
@@ -27601,10 +27690,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "order": {
             "default": 0,
@@ -28697,10 +28801,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "order": {
             "default": 0,
@@ -29038,10 +29157,25 @@
               "first_frame",
               "last_frame",
               "continuation",
-              "control"
+              "control",
+              "keyframe"
             ],
             "title": "Role",
             "type": "string"
+          },
+          "frameTimeMs": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.",
+            "title": "Frametimems"
           },
           "asset": {
             "$ref": "#/$defs/AssetRef",

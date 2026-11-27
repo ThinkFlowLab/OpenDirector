@@ -64,6 +64,8 @@ export interface GenerationSettings {
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
   frameSlotsInitialized?: boolean;
+  /** Reference mode on H3: connected images pinned at a moment of the output (seconds from its start). */
+  pinnedFrames?: { nodeId: string; seconds: number }[];
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
   voiceName?: string;

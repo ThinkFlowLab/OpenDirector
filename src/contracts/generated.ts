@@ -757,6 +757,7 @@ export interface InputRulesInput extends ContractInput {
   readonly maxImages: number;
   readonly maxVideos: number;
   readonly maxAudios: number;
+  readonly maxKeyframes?: number;
   readonly imageBytes: number;
   readonly videoBytes: number;
   readonly audioBytes?: number | null;
@@ -1151,7 +1152,8 @@ export interface ReferenceAddCommandOperationInput {
 
 export interface ReferenceBaseInput extends ProjectEntityInput {
   readonly targetSpecId: string;
-  readonly role?: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
+  readonly role?: "reference" | "first_frame" | "last_frame" | "continuation" | "control" | "keyframe";
+  readonly frameTimeMs?: number | null;
   readonly order?: number;
   readonly active?: boolean;
 }
@@ -1196,7 +1198,8 @@ export interface ReferenceWriteInput extends ContractInput {
 
 export interface ResolvedReferenceInput extends ContractInput {
   readonly referenceId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control" | "keyframe";
+  readonly frameTimeMs?: number | null;
   readonly asset: AssetRefInput;
   readonly metadata: MediaMetadataInput;
   readonly sourceVersion?: ObjectVersionInput | null;
@@ -2502,6 +2505,7 @@ export interface InputRules extends Contract {
   readonly maxImages: number;
   readonly maxVideos: number;
   readonly maxAudios: number;
+  readonly maxKeyframes?: number;
   readonly imageBytes: number;
   readonly videoBytes: number;
   readonly audioBytes?: number | null;
@@ -2895,7 +2899,8 @@ export interface ReferenceAddCommandOperation {
 
 export interface ReferenceBase extends ProjectEntity {
   readonly targetSpecId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control" | "keyframe";
+  readonly frameTimeMs?: number | null;
   readonly order: number;
   readonly active: boolean;
 }
@@ -2940,7 +2945,8 @@ export interface ReferenceWrite extends Contract {
 
 export interface ResolvedReference extends Contract {
   readonly referenceId: string;
-  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control";
+  readonly role: "reference" | "first_frame" | "last_frame" | "continuation" | "control" | "keyframe";
+  readonly frameTimeMs?: number | null;
   readonly asset: AssetRef;
   readonly metadata: MediaMetadata;
   readonly sourceVersion: ObjectVersion | null;

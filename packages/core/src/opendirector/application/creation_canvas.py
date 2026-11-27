@@ -125,7 +125,7 @@ def resolve_reference(snapshot, reference):
         asset = assets.get(ref.assetId)
         if asset is None or asset.fingerprint != ref.fingerprint:
             raise ContractError('reference_invalid', '参考素材不存在或内容已变化。', reference.id)
-        resolved.append(ResolvedReference(referenceId=reference.id, role=reference.role, asset=asset_ref(asset),
+        resolved.append(ResolvedReference(referenceId=reference.id, role=reference.role, frameTimeMs=reference.frameTimeMs, asset=asset_ref(asset),
             metadata=asset.metadata, sourceVersion=source_version, documentVersion=document_version, subjectRole=subject_role,
             name=asset.name, sourceTitle=source_title))
     return resolved
@@ -668,6 +668,9 @@ class CreationCanvas:
                 if any(other['id'] != old['id'] and other['active'] and (other['targetSpecId'], other['binding'], other['source']) == (ref['targetSpecId'], ref['binding'], ref['source']) for other in data['references']):
                     raise ContractError('reference_invalid', '该参考来源已连接到目标配置。', payload.reference.id)
                 old.update(ref)
+                if 'frameTimeMs' not in ref:
+                    # An unset pin is omitted from the dump, so merging alone would keep the previous time.
+                    old.pop('frameTimeMs', None)
             if ref['binding'] == 'follow_current':
                 source = self._get(data, 'canvas_item', ref['source']['id'])
                 source_kind = source['kind']

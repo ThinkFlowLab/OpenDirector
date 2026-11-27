@@ -734,16 +734,28 @@ def video_create(ctx: typer.Context,
                  x: Annotated[float, typer.Option(help="Canvas X coordinate. Choose using the current item positions and sizes.")],
                  y: Annotated[float, typer.Option(help="Canvas Y coordinate. Choose using the current item positions and sizes.")],
                  first_frame: Annotated[UUID | None, typer.Option(help="Source image canvas item for first-frame mode.")] = None,
-                 reference_item: Annotated[list[UUID] | None, typer.Option(help="Source canvas items for reference mode. Repeat for multiple inputs.")] = None):
+                 reference_item: Annotated[list[UUID] | None, typer.Option(help="Source canvas items for reference mode. Repeat for multiple inputs.")] = None,
+                 keyframe: Annotated[list[str] | None, typer.Option(help="Pin an image canvas item at a moment of the output, as ITEM_UUID@SECONDS (e.g. 3f2a...@1.25). Repeat for several keyframes. Needs reference mode, at least one --reference-item, and a model whose inputRules.maxKeyframes is set.")] = None):
     client = ctx.obj
     client.command = ctx.command_path
     config = select_model([value for value in client.models() if value["kind"] == "video"], model)
-    if first_frame and reference_item:
-        raise ProjectError("Choose --first-frame or --reference-item for the selected video mode.")
+    if first_frame and (reference_item or keyframe):
+        raise ProjectError("Choose --first-frame, or --reference-item with optional --keyframe, for the selected video mode.")
+    pinned = []
+    for value in keyframe or []:
+        item, _, seconds = value.partition("@")
+        try:
+            pinned.append((UUID(item), round(float(seconds) * 1000)))
+        except ValueError:
+            raise ProjectError(f"--keyframe expects ITEM_UUID@SECONDS, got {value!r}.") from None
+        if pinned[-1][1] < 0:
+            raise ProjectError("--keyframe time must not be negative.")
+    if pinned and not config["inputRules"].get("maxKeyframes"):
+        raise ProjectError("Selected model does not support keyframes (inputRules.maxKeyframes is not set).")
     allowed = config["inputRules"]["videoModes"]
     if first_frame:
         mode = "first_frame"
-    elif reference_item:
+    elif reference_item or pinned:
         mode = "reference"
     else:
         mode = allowed[0]
@@ -760,6 +772,13 @@ def video_create(ctx: typer.Context,
             raise ProjectError(f"Source canvas item {source_id} is not in this project.")
         references.append({"id": str(uuid5(operation, f"reference-{index}")), "projectId": project_id,
             "targetSpecId": spec_id, "role": "first_frame" if first_frame else "reference",
+            "order": index, "binding": "follow_current", "source": {"id": str(source_id)}})
+    for source_id, milliseconds in pinned:
+        if not any(item["id"] == str(source_id) and item["kind"] == "image" for item in snapshot["canvasItems"]):
+            raise ProjectError(f"Keyframe canvas item {source_id} is not an image in this project.")
+        index = len(references)
+        references.append({"id": str(uuid5(operation, f"reference-{index}")), "projectId": project_id,
+            "targetSpecId": spec_id, "role": "keyframe", "frameTimeMs": milliseconds,
             "order": index, "binding": "follow_current", "source": {"id": str(source_id)}})
     receipt = client.execute("canvas.createGeneration", {
         "spec": {"id": spec_id, "projectId": project_id, "kind": "video", "purpose": "generation",

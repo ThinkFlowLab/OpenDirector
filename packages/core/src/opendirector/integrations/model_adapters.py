@@ -762,6 +762,40 @@ class VllmOmniVideo(ModelAdapter):
         return await _call('poll', work)
 
 
+class FastH3VideoEdit(VllmOmniVideo):
+    """Latent-mask editing on a Ref2VA-only H3 service: FastH3 Omni and the few-step adapters served the same way.
+
+    These weights run Ref2VA on a fixed eight-step schedule and need a reference picture, so the edit
+    names the source clip's own first frame: the redrawn part stays in the look of the clip around it.
+    """
+
+    capabilities = frozenset({'video.edit'})
+
+    @classmethod
+    def edit_parameters(cls, seconds, width, height):
+        values, _ = super().edit_parameters(seconds, width, height)
+        return {**values, 'num_inference_steps': 8, 'guidance_scale': 1}, {'task': 'ref2va', 'audio_flow_shift': 3}
+
+    @classmethod
+    def _first_frame(cls, data):
+        with media.Workspace() as work:
+            return media.frame_at(work.write('in.mp4', data), 0, work.path / 'first.png')
+
+    async def edit_video(self, config, request: VideoEditRequest, *, submitted=None) -> MediaResult:
+        values, extra = self.edit_parameters(request.seconds, request.width, request.height)
+        frames = values['num_frames']
+        width, height = map(int, values['size'].split('x'))
+        source = await blocking(self._conformed, request.source, width, height)
+        still = await blocking(self._first_frame, source)
+        # Guidance is fixed at 1 on these weights, so there is no negative prompt to send.
+        fields = self._fields(config, '<Picture 1> ' + request.prompt, values, extra)
+        files = [('input_references', ('first_frame.png', still, 'image/png')),
+                 ('source_video', ('source.mp4', source, 'video/mp4')),
+                 ('video_noise_mask', ('video-mask.json', json.dumps(self.picture_mask(request.picture, frames)).encode(), 'application/json')),
+                 ('audio_noise_mask', ('audio-mask.json', json.dumps(self.sound_mask(request.sound, frames)).encode(), 'application/json'))]
+        return await self._job(config, fields, files, submitted)
+
+
 class OpenAISpeech(ModelAdapter):
     """OpenAI-compatible /audio/speech (also served by vLLM-Omni TTS)."""
 
@@ -983,6 +1017,8 @@ def adapter_for(config, transport=None, poll_interval=3, *, image_policy=None, l
         return OpenAIImages(transport, poll_interval, **image_options)
     if kind == 'video' and profile == 'vllm-omni-h3':
         return VllmOmniVideo(transport, poll_interval)
+    if kind == 'video' and profile == 'fasth3-omni':
+        return FastH3VideoEdit(transport, poll_interval)
     if kind == 'audio' and profile == 'vllm-omni-music':
         return VllmOmniMusic(transport, poll_interval)
     if kind == 'audio' and protocol in {'openai', 'vllm_omni'}:

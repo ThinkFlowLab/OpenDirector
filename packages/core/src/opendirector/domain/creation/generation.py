@@ -11,6 +11,7 @@ from opendirector.domain.minimax_models import MINIMAX_MODELS
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.generation import GenerationFailure, ResultCheck
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.reference_windows import windows_reference_videos
 from opendirector.domain.rule_facts import (
     CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
     MUSIC_SECONDS_INITIAL, MUSIC_SECONDS_MAX, MUSIC_SECONDS_MIN, PROMPT_MAX_LENGTH,
@@ -154,7 +155,9 @@ class FollowingSource(Contract):
 
 class ReferenceBase(ProjectEntity):
     targetSpecId: UUID = Field(description='Target generation configuration ID.')
-    role: Literal['reference', 'first_frame', 'last_frame', 'continuation', 'control'] = Field(default='reference', description='Business role of this binding or reference.')
+    role: Literal['reference', 'first_frame', 'last_frame', 'continuation', 'control', 'keyframe'] = Field(default='reference', description='Business role of this binding or reference.')
+    frameTimeMs: int | None = Field(default=None, ge=0, strict=True, exclude_if=lambda value: value is None,
+        description='For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.')
     order: int = Field(default=0, ge=0, strict=True, description='Reference ordering within the target configuration.')
     active: bool = Field(default=True, description='Whether this reference participates in generation.')  # Retained tombstone prevents revision ABA on undo.
 
@@ -182,7 +185,9 @@ Reference = Annotated[PinnedReference | FollowingReference, Field(discriminator=
 
 class ResolvedReference(Contract):
     referenceId: UUID = Field(description='Generation reference ID.')
-    role: Literal['reference', 'first_frame', 'last_frame', 'continuation', 'control'] = Field(description='Business role of this binding or reference.')
+    role: Literal['reference', 'first_frame', 'last_frame', 'continuation', 'control', 'keyframe'] = Field(description='Business role of this binding or reference.')
+    frameTimeMs: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None,
+        description='For role keyframe: where in the generated video this picture is pinned, in milliseconds from its start.')
     asset: AssetRef = Field(description='Immutable asset version.')
     metadata: MediaMetadata = Field(description='Verified media properties.')
     sourceVersion: ObjectVersion | None = Field(default=None, description='Captured source object version.')
@@ -376,6 +381,28 @@ def implicit_text_prompt(spec: GenerationSpec, references: tuple[ResolvedReferen
         ref.asset.kind == 'text' and ref.transmission == 'content' for ref in references)
 
 
+def validate_keyframes(spec, rules, keyframes, *, has_reference):
+    """Pictures pinned at chosen moments of the output (H3 timeline guides)."""
+    if not rules.maxKeyframes:
+        raise ProjectError('当前模型不支持指定帧生成，请移除关键帧或更换模型。', 422, code='keyframe_unsupported')
+    if spec.parameters.videoMode != 'reference':
+        raise ProjectError('关键帧只能用于素材参考模式，不能与首尾帧、接续或结构控制同时使用。', 422, code='keyframe_mode')
+    if any(ref.asset.kind != 'image' for ref in keyframes):
+        raise ProjectError('关键帧必须是图片。', 422, code='keyframe_kind')
+    if len(keyframes) > rules.maxKeyframes:
+        raise ProjectError(f'最多指定 {rules.maxKeyframes} 个关键帧，当前为 {len(keyframes)} 个。', 422, code='keyframe_count')
+    if not has_reference:
+        raise ProjectError('指定帧生成还需要至少一张普通参考图片或一段参考视频。', 422, code='keyframe_needs_reference')
+    seconds = spec.parameters.durationSeconds
+    times = [ref.frameTimeMs for ref in keyframes]
+    if any(value is None for value in times):
+        raise ProjectError('每个关键帧都需要指定时间点。', 422, code='keyframe_time')
+    if seconds is not None and any(value >= seconds * 1000 for value in times):
+        raise ProjectError(f'关键帧的时间点必须早于视频结束（{seconds:g} 秒）。', 422, code='keyframe_time')
+    if len(set(times)) != len(times):
+        raise ProjectError('两个关键帧不能指定同一个时间点。', 422, code='keyframe_time')
+
+
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = (),
                         *, submitting: bool = False):
     """Pure shared validation; it never submits, uploads or changes a project."""
@@ -415,6 +442,9 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')
     if spec.promptContent and any(isinstance(part, PromptReference) and part.referenceId not in {ref.referenceId for ref in references} for part in spec.promptContent):
         raise ValueError('提示词引用了未解析的参考素材。')
+    keyframes = [ref for ref in references if ref.role == 'keyframe' and ref.transmission != 'context_only']
+    # A keyframe is pinned to the output's timeline as a guide; it is not one of the model's reference pictures.
+    references = tuple(ref for ref in references if ref not in keyframes)
     transmitted = [ref for ref in references if ref.role != 'continuation' and ref.transmission != 'context_only']
     if sum(ref.metadata.size for ref in transmitted) > rules.requestBytes:
         raise ValueError('参考素材总大小超过模型请求上限。')
@@ -456,9 +486,11 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if spec.kind == 'audio' and spec.promptContent is not None and not any(part.type == 'text' and part.text.strip() for part in spec.promptContent):
         raise ValueError('语音生成需要实际文本，不能只使用参考标签。')
     if spec.kind != 'video':
-        if any(ref.role != 'reference' for ref in references):
+        if keyframes or any(ref.role != 'reference' for ref in references):
             raise ValueError('首尾帧和续写参考只能用于视频生成。')
         return
+    if keyframes:
+        validate_keyframes(spec, rules, keyframes, has_reference=any(ref.asset.kind in {'image', 'video'} for ref in transmitted))
     params = spec.parameters
     if rules.profile == 'minimax-h3-official':
         if model.modelId not in MINIMAX_MODELS:
@@ -523,7 +555,9 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         minimum = 2 if kind == 'audio' or rules.profile == 'minimax-h3-official' else 0
         minimum = rules.referenceMediaMinSeconds if rules.referenceMediaMinSeconds is not None else minimum
         maximum = rules.referenceMediaSeconds if rules.referenceMediaSeconds is not None else REFERENCE_MEDIA_SECONDS
-        if any(value is None or value < minimum or value <= 0 for value in seconds) or sum(seconds) > maximum:
+        # Over-long videos are sent as their final window on these profiles, so only a known length is required.
+        windowed = kind == 'video' and windows_reference_videos(rules.profile)
+        if any(value is None or value < minimum or value <= 0 for value in seconds) or (not windowed and sum(seconds) > maximum):
             label = '视频' if kind == 'video' else '音频'
             if rules.referenceMediaSeconds is not None:
                 raise ProjectError('参考视频和音频每段须为 2–30 秒，同类素材总时长不能超过 30 秒。', 422, code='higgsfield_duration')

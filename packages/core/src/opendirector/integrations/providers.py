@@ -20,13 +20,14 @@ from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.higgsfield_open import HiggsfieldOpenGeneration
 from opendirector.integrations.bigmodel_video import BigModelVideoGeneration
-from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, _continuation_failure, _missing_latents, _upload, timeline_guide_parts
 from opendirector.integrations.fasth3 import generation_fields as fasth3_generation_fields
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
 from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech,
                                                     VllmOmniMusic, VllmOmniScore, ZhipuSpeech, image_parts)
 from opendirector.domain.capabilities import ImageRequest, MusicRequest, ScoreRequest, SpeechRequest
 from opendirector.media.probe import require_ffprobe
+from opendirector.media.processing import clip
 
 
 class GenerationProviders(VolcengineGeneration):
@@ -94,6 +95,17 @@ class GenerationProviders(VolcengineGeneration):
                 if len(data) > 1024 * 1024:
                     raise protocol_failure('poll' if method == 'GET' else 'submit')
             return json.loads(data)
+
+    async def _submit_continuation(self, client, url, config, form, files):
+        """Submit a continue_from request; a 400 for a clip the service no longer holds gets its own explanation."""
+        secrets = (config.get('apiKey', ''),)
+        async with client.stream('POST', url, headers=auth_headers(config), data=form, files=files,
+                                 extensions={'model_parameters': {'fields': form, 'file_count': len(files)}}) as response:
+            if response.status_code == 400:
+                value = json.loads(await response.aread())
+                raise _continuation_failure('submit') if _missing_latents(value) else provider_failure(
+                    value, stage='submit', headers=response.headers, http_status=400, secrets=secrets)
+            return json.loads(await bounded(response, stage='submit', secrets=secrets))
 
     async def resume_result(self, config, suffix, url):
         # Accepted results remain downloadable after a model leaves the catalog.
@@ -186,10 +198,25 @@ class GenerationProviders(VolcengineGeneration):
                             files = [('input_references', _upload(image, 'first_frame' if index == 0 else 'last_frame'))
                                      for index, image in zip(frame_indices, prepared['images'], strict=True)]
                         else:
+                            continuing = task.get('videoMode') == 'continuation'
+                            roles = {}
+                            for value in task.get('referenceRoles') or []:
+                                roles.setdefault(str(value['assetId']), set()).add(value['role'])
                             for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
+                                if continuing and source_kind == 'video':
+                                    continue  # Continued from the service's cached latents by job ID; never uploaded.
+                                if roles.get(str(meta['id'])) == {'keyframe'}:
+                                    continue  # A keyframe travels as a timeline guide below, not as a reference picture.
                                 if fast and str(meta['id']) == str(prepared.get('control')):
                                     # FastH3 + ControlNet: the structure video conditions every frame, not as a reference clip.
                                     files.append(('control_reference', (meta['name'], data, meta['type'])))
+                                elif source_kind == 'video' and str(meta['id']) in (prepared.get('windows') or {}):
+                                    # An over-long reference video travels as its planned final window, cut once as the job runs.
+                                    start, end = prepared['windows'][str(meta['id'])]
+                                    window = await asyncio.to_thread(clip, data, start / 1000, end / 1000)
+                                    if len(window) > input_rules(config)['videoBytes']:
+                                        raise ProjectError(f'“{meta["name"]}”截取后的参考片段仍超过当前接口参考视频大小限制。', 413)
+                                    files.append(('input_references' if fast else 'input_reference', (meta['name'], window, 'video/mp4')))
                                 elif source_kind in {'image', 'video', 'audio'}:
                                     files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
                         parameters = task['parameters']
@@ -201,11 +228,17 @@ class GenerationProviders(VolcengineGeneration):
                             form['seconds'] = str(int(seconds)) if float(seconds).is_integer() else str(seconds)
                         if 'size' in parameters: form['size'] = parameters['size']
                         if fast:
-                            values, extra = fasth3_generation_fields(parameters, frame_indices=frame_indices)
+                            values, extra = fasth3_generation_fields(parameters, frame_indices=frame_indices,
+                                continue_from=prepared.get('continueFrom'), continue_size=prepared.get('continueSize'))
                             form.update({key: str(value) for key, value in values.items()})
                             form['extra_params'] = json.dumps(extra)
+                        guide_fields, guide_files = timeline_guide_parts(prepared)
+                        form.update(guide_fields)
+                        files.extend(guide_files)
                         # Force multipart even for an empty reference list.
-                        value = await self._json(client, 'POST', url, config, data=form, files=files or {'_multipart': (None, '1')})
+                        files = files or {'_multipart': (None, '1')}
+                        value = (await self._submit_continuation(client, url, config, form, files) if prepared.get('continueFrom')
+                                 else await self._json(client, 'POST', url, config, data=form, files=files))
                         external_id = value['id']
                         if not isinstance(external_id, str) or not external_id or len(external_id) > 200:
                             raise protocol_failure(stage)
@@ -221,6 +254,8 @@ class GenerationProviders(VolcengineGeneration):
                                 await result_ready('mp4', content_url)
                             return await self.resume_result(config, 'mp4', content_url)
                         if value.get('status') in {'failed', 'cancelled', 'expired'}:
+                            if value.get('status') == 'failed' and task.get('videoMode') == 'continuation' and _missing_latents(value):
+                                raise _continuation_failure('poll')
                             raise provider_failure(value, stage='poll', http_status=200, secrets=secrets)
                         if value.get('status') not in {'queued', 'in_progress', 'running'}:
                             raise protocol_failure('poll')

@@ -138,6 +138,12 @@ export const generation = {
   "generation.lyricsReferencePlaceholder":
     "Lyrics (optional; leave blank for instrumental music). Follow the sections and phrases of the reference, with each section tag on its own line, for example:\n[verse]\nRain falls by the window\n[chorus]\nLet the melody answer what I cannot say",
 
+  "generation.keyframes.title":
+    "Keyframes: give an image a time and the video shows that picture at that moment",
+  "generation.keyframes.placeholder": "Unpinned",
+  "generation.keyframes.unit": "s",
+  "generation.keyframes.untitled": "Untitled image",
+  "generation.keyframes.time": "Second at which to pin “{title}”",
   "generation.frame.title": "First and last frame references",
   "generation.frame.first": "First frame",
   "generation.frame.last": "Last frame",
