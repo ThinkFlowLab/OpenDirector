@@ -248,6 +248,15 @@ class Conversations:
             durable_json(file, value)
         return cancelled
 
+    def has_queued(self, project_id: UUID) -> bool:
+        """Whether a message is still waiting after the project became idle."""
+        directory = self.path(project_id)
+        file = child(child(directory, 'agent-runs'), 'conversation.json')
+        if not file.exists():
+            return False
+        value = read_json(file)
+        return any(item.get('status') == 'queued' for item in value.get('messages', []))
+
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
         file = child(child(directory, 'agent-runs'), 'conversation.json')
@@ -864,6 +873,13 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             if project_id in active:
                 raise ProjectError('当前工程已有回复正在执行。', 409)
             plan = await prepare(project_id, value, session, accept_language)
+            if await asyncio.to_thread(conversations.has_queued, project_id):
+                # Keep submission order: accept the message behind work that is
+                # already waiting, and leave the queue paused for an explicit retry.
+                await asyncio.to_thread(conversations.queue, project_id, session,
+                                        plan['message'], value.conversationId)
+                raise ProjectError(
+                    '还有更早提交、尚未执行的排队消息。新消息已排入队列，请先继续这些消息后再执行。', 409)
             run_session = str(uuid4())
             try:
                 plan['start'] = await asyncio.to_thread(conversations.update, project_id, session,
@@ -902,7 +918,12 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             check = revalidate(plan)
             if check is not None:
                 await asyncio.to_thread(check)
-            await asyncio.to_thread(conversations.queue, project_id, session, plan['message'], value.conversationId)
+            pending = await asyncio.to_thread(conversations.has_queued, project_id)
+            queued = await asyncio.to_thread(conversations.queue, project_id, session, plan['message'], value.conversationId)
+            if pending:
+                # A leftover queue after a failure or restart must not start just
+                # because a later message arrived; keep FIFO until explicit retry.
+                return JSONResponse({'queued': queued, 'chainId': None, 'turnId': None}, status_code=202)
             start_session = str(uuid4())
             dispatched = await asyncio.to_thread(conversations.dispatch, project_id, session, start_session)
             if dispatched is None:
@@ -910,6 +931,29 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             started = await plan_for(project_id, dispatched['message'], session, accept_language)
             started['start'] = dispatched['conversation']
             started['run_session'] = start_session
+            return launch(project_id, started, UUID(dispatched['conversation']['conversationId']))
+
+    @router.post('/queue/dispatch')
+    async def dispatch_queue(project_id: UUID, x_opendirector_session: UUID = Header(),
+                             accept_language: str | None = Header(default=None, alias='Accept-Language')):
+        """Start the oldest queued message when nothing is running.
+
+        A failed or interrupted turn, or a process restart, leaves later
+        messages waiting. This continues them in submission order, and only
+        when the user asks.
+        """
+        session = str(x_opendirector_session)
+        async with admission.setdefault(project_id, asyncio.Lock()):
+            if project_id in active:
+                raise ProjectError('当前工程已有回复正在执行。', 409)
+            run_session = str(uuid4())
+            dispatched = await asyncio.to_thread(
+                conversations.dispatch, project_id, session, run_session)
+            if dispatched is None:
+                raise ProjectError('没有等待执行的排队消息。', 409)
+            started = await plan_for(project_id, dispatched['message'], session, accept_language)
+            started['start'] = dispatched['conversation']
+            started['run_session'] = run_session
             return launch(project_id, started, UUID(dispatched['conversation']['conversationId']))
 
     return router
