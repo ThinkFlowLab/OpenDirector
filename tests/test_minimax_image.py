@@ -2,6 +2,8 @@ import asyncio
 import base64
 import io
 import json
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -9,6 +11,7 @@ import httpx
 import pytest
 from PIL import Image
 
+from generation_helpers import command as generation_command
 from opendirector.domain.capabilities import ImageRequest
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError
@@ -35,6 +38,61 @@ def png(color):
     buffer = io.BytesIO()
     Image.new('RGB', (128, 128), color).save(buffer, format='PNG')
     return buffer.getvalue()
+
+
+def test_self_hosted_h3_aspect_ratios_are_frozen_and_sent(project):
+    projects, pid, session = project
+    configs = ModelConfigs(projects.local.repository)
+    url = 'http://gpu-box:18152/v1'
+    saved = configs.save('image', url, MODELS[0], 'fixture-key', protocol='openai',
+                         connection_type='self_hosted', auth_mode='bearer')
+    sizes = {
+        '1:1': '1024x1024', '3:2': '1536x1024', '2:3': '1024x1536',
+        '4:3': '1600x1200', '3:4': '1200x1600', '16:9': '1920x1080',
+        '9:16': '1080x1920', '21:9': '2240x960',
+    }
+    rules = saved['inputRules']
+    assert {output['aspectRatio']: output['size'] for output in rules['imageOutputs']} == sizes
+    image = png('blue')
+    asset, _, _ = import_asset(project, 'source.png', image)
+    calls = []
+
+    def respond(request):
+        assert request.headers['authorization'] == 'Bearer fixture-key'
+        if request.url.path == '/v1/images/edits':
+            message = BytesParser(policy=policy.default).parsebytes(
+                b'Content-Type: ' + request.headers['content-type'].encode() + b'\r\n\r\n' + request.content)
+            fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True)
+                      for part in message.iter_parts()}
+            assert fields['image'] == image
+            calls.append((request.url.path, fields['size'].decode()))
+        else:
+            calls.append((request.url.path, json.loads(request.content)['size']))
+        return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(image).decode()}]})
+
+    async def run():
+        runner = CreationGeneration(projects, configs)
+        runner.provider = GenerationProviders(runner.store, httpx.MockTransport(respond))
+        try:
+            for ratio, size in sizes.items():
+                edit = ratio == '9:16'
+                command = generation_command(project, saved, parameters={'aspectRatio': ratio},
+                                             references=[asset.id] if edit else [])
+                source = 'agent' if edit else 'ui'
+                receipt = await runner.execute(command, session=session, source=source)
+                assert receipt.status == 'accepted', receipt
+                await asyncio.gather(*(worker.future for worker in list(runner.jobs.values())))
+                job = runner.get_job(pid, receipt.jobIds[0])
+                assert job.status == 'succeeded', (ratio, calls, job.errorDetails)
+                assert job.execution.size == size
+                assert calls[-1] == ('/v1/images/' + ('edits' if edit else 'generations'), size)
+        finally:
+            await runner.close()
+
+    asyncio.run(run())
+    assert len(calls) == len(sizes)
+    hosted = configs.save('image', url, MODELS[0], 'fixture-key', protocol='openai')
+    assert hosted['inputRules']['profile'] == 'compatible'
 
 
 @pytest.mark.parametrize('model', MODELS)

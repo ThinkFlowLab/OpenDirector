@@ -405,7 +405,7 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
     monkeypatch.setattr(gateway(), 'read_json', reading)
     service = CreationHistory(store)
     listing = service.asset_list(pid)
-    assert len(history_reads) == 1 and len(loads) == 1
+    assert len(history_reads) == 1 and loads == []
     assert ledger_reads == [ledger]
     assert listing['eventCursor'] == snapshot.eventCursor
     assert [row['asset'].id for row in listing['items']] == [unused.id, tool_input.id, material.id]

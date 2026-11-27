@@ -17,6 +17,12 @@ def image_outputs(config, profile):
             ('16:9', '2720x1536'), ('9:16', '1536x2720'), ('3:2', '2496x1664'),
             ('2:3', '1664x2496'), ('21:9', '3136x1344'), ('9:21', '1344x3136'),
         ]]
+    if profile == 'vllm-omni-minimax-h3-image':
+        return [dict(aspectRatio=ratio, size=size) for ratio, size in [
+            ('1:1', '1024x1024'), ('3:2', '1536x1024'), ('2:3', '1024x1536'),
+            ('4:3', '1600x1200'), ('3:4', '1200x1600'),
+            ('16:9', '1920x1080'), ('9:16', '1080x1920'), ('21:9', '2240x960'),
+        ]]
     if config.get('protocol') == 'volcengine':
         # This adapter only declares the existing automatic 2K request. Do not
         # promise a ratio without an explicit output contract for that service.

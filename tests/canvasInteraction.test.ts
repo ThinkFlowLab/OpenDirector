@@ -20,6 +20,7 @@ import {
   createNode,
 } from "../src/canvas/model.ts";
 import type { ModelConfig } from "../src/backend/rules.ts";
+import { presetImageTitles } from "../src/canvas/promptSkill.ts";
 import {
   authorFlowChanges,
   canvasKeyAction,
@@ -28,7 +29,7 @@ import {
   droppedConnectionTarget,
   mergeFlowSelection,
   placeCreatedNode,
-  precheckReferenceSources,
+  presetReferenceSources,
   serviceGenerationPlan,
   textGenerationPlan,
 } from "../src/canvas/workspaceInteraction.ts";
@@ -300,6 +301,33 @@ test("canvas shortcuts map to history, selection, import, and nudges", () => {
   assert.deepEqual(undo(history).present.nodes[0]!.position, { x: 5, y: 6 });
 });
 
+test("image generation can submit with just a preset and keeps its draft prompt empty", () => {
+  const image = model("image");
+  const node = createNode("image", undefined, {
+    settings: {
+      ...generationDefaults("image"),
+      modelConfigId: image.id,
+      imagePreset: "four-view",
+      resolution: "auto",
+      aspectRatio: "auto",
+    },
+  });
+  const input = {
+    document: createDocument(),
+    node,
+    incoming: [],
+    models: [image],
+    assets: [],
+  };
+  assert.equal(serviceGenerationPlan(input).status, "blocked");
+  const plan = serviceGenerationPlan({
+    ...input,
+    promptPrefix: "Generate a character four-view sheet.",
+  });
+  assert.equal(plan.status, "ready", plan.status === "blocked" ? (plan.message ?? "") : "");
+  if (plan.status === "ready") assert.equal(plan.request.prompt, "");
+});
+
 test("generation submission marks unused inputs context-only and keeps one audio run", () => {
   const video = model("video");
   const first = ready("image");
@@ -477,12 +505,13 @@ test("run-before precheck counts pinned images that have no follow node", () => 
     assets: pins.slice(0, 8),
   });
   assert.equal(mixed.status, "ready");
-  const sources = precheckReferenceSources({
+  const sources = presetReferenceSources({
     node: mixedNode,
     incoming: [follow],
     assets: pins.slice(0, 8),
   });
-  assert.equal(sources.filter((item) => item.data.kind === "image").length, 8);
+  assert.ok(mixedNode.data.settings);
+  assert.equal(presetImageTitles(mixedNode.data.settings, sources, image).length, 8);
 
   const distinctFollow = ready("image", { backendAssetId: "follow-extra" });
   const overflow = serviceGenerationPlan({

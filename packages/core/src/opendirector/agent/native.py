@@ -45,8 +45,13 @@ def executable(runtime: str) -> str | None:
 _CODEX_ISOLATION: dict[tuple[str, ...], tuple[str, ...]] = {}
 
 
-def codex_environment() -> dict[str, str]:
-    env = dict(os.environ)
+def codex_environment(base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if base is None else base)
+    if sys.platform == 'win32':
+        # This is an independent CLI launch, not a registered Desktop Core child.
+        # Inheriting the registration selects a runner that cannot start this CLI's shell.
+        env.pop('CODEX_WINDOWS_REGISTERED_CORE', None)
+        env.pop('CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY', None)
     if sys.platform == 'win32' and not (env.get('HTTPS_PROXY') or env.get('ALL_PROXY')):
         # A Windows system proxy need not be exported to the CLI process.
         if proxy := getproxies().get('https'):
@@ -94,8 +99,8 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     if bundled:
         runtime = 'opencode'
     env = cli_transport.environment(work, socket, bridge_env)
-    if runtime == 'codex' and (proxy := codex_environment().get('HTTPS_PROXY')):
-        env['HTTPS_PROXY'] = proxy
+    if runtime == 'codex':
+        env = codex_environment(env)
     if runtime == 'opencode':
         config = {'autoupdate': False, 'default_agent': 'opendirector',
             'agent': {'opendirector': {'mode': 'primary', 'prompt': SYSTEM}},

@@ -100,6 +100,10 @@ English summary: a Job created by an Agent `generation.submit` records `agentRun
 
 Windows 上的 Codex 启动显式设置 `windows.sandbox="elevated"`，避免隔离启动忽略用户配置后，`workspace-write` 降为只读并拦截 Shell。保留沙箱约束，不绕过审批或沙箱。PowerShell 使用 `Get-Command opendirector` 发现 CLI，POSIX Shell 使用 `command -v opendirector`。
 
+OpenDirector 独立启动 Codex CLI 时不继承 Codex 桌面版的注册运行时标记。否则，即使模型能回复，独立 CLI 启动 PowerShell 时仍可能被注册运行时拒绝。此处理只作用于 Codex 子进程，仍使用 Windows 沙箱。
+
+When launching the standalone Codex CLI, OpenDirector drops Desktop's registered-runtime markers from that child process. A model reply can succeed even when the inherited markers prevent PowerShell from starting. The Windows sandbox remains in use.
+
 On Windows, Codex explicitly sets `windows.sandbox="elevated"` so ignoring user configuration does not downgrade `workspace-write` to read-only and block Shell execution. Sandbox restrictions remain enabled. Discover the CLI with `Get-Command opendirector` in PowerShell or `command -v opendirector` in POSIX shells.
 
 CLI 通过环境变量中的本轮本地 Socket 地址连接业务网关，不使用连接令牌或凭据文件。网关继续校验工程范围、轮次生命周期及业务输入。

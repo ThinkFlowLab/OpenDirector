@@ -15,7 +15,7 @@ import {
 } from "./ChatReferenceEditor";
 import {
   generationContent,
-  generationContentPatch,
+  generationEditorPatch,
   nodeReferenceAsset,
 } from "./generationReferenceContent.ts";
 import { type MentionOption } from "./referenceMentions.ts";
@@ -27,6 +27,7 @@ import type {
 } from "./chatReferenceContent.ts";
 import { normalizeContent, referencePart } from "./chatReferenceContent.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
+import { presetPart, withPresetPart, type PresetPart } from "./promptSkill.ts";
 
 export interface GenerationReferenceControls {
   projectId: string;
@@ -36,7 +37,7 @@ export interface GenerationReferenceControls {
   visibleNodes: CanvasNode[];
   assets: ReferenceAsset[];
   pinned?: ReferenceAsset[];
-  onChange: (content: ReferenceContent, sources: CanvasNode[]) => void;
+  onChange: (content: ReferenceContent, sources: CanvasNode[], presetEdited?: boolean) => void;
   /** Removes the connection itself; the strip owns relationships, not the text. */
   removeReference?: (source: CanvasNode) => void;
   prepareAsset: (
@@ -65,6 +66,12 @@ export function GenerationReferenceEditor({
   pickerRef,
   placeholder,
   label,
+  presetNote,
+  preset,
+  presetTunable,
+  presetLabel,
+  presetTuneOpen,
+  onPresetAction,
   onRun,
   validate,
 }: {
@@ -77,6 +84,17 @@ export function GenerationReferenceEditor({
   pickerRef: Ref<GenerationReferenceHandle>;
   placeholder: string;
   label: string;
+  /** Summary drawn after the preset chip while the prompt has no words yet. */
+  presetNote?: string;
+  preset?: PresetPart;
+  presetTunable?: boolean;
+  presetLabel?: string;
+  presetTuneOpen?: boolean;
+  onPresetAction?: (
+    action: "prompt" | "tune",
+    element: HTMLElement,
+    preset: string,
+  ) => void;
   onRun: () => void;
   validate?: (sources: CanvasNode[]) => string | null;
 }) {
@@ -128,6 +146,7 @@ export function GenerationReferenceEditor({
         ? [{ type: "text" as const, text: "\n" }, ...value]
         : []),
     ]);
+  if (node.type === "image") value = withPresetPart(value, preset ?? null);
   latestContent.current = value;
   const assets: ReferenceAsset[] = nodes
     .filter(canSourceReference)
@@ -557,9 +576,12 @@ export function GenerationReferenceEditor({
             const reason = validate?.([...sources, ...pinnedSources(content)]);
             if (reason) throw new Error(reason);
           }
+          const editedPreset = presetPart(content);
+          const presetEdited = node.type === "image" &&
+            (preset?.preset !== editedPreset?.preset || preset?.faceEmphasis !== editedPreset?.faceEmphasis);
           if (controls)
-            controls.onChange(content, [...prepared.current.values()]);
-          else onUpdate(generationContentPatch(content));
+            controls.onChange(content, [...prepared.current.values()], presetEdited);
+          else onUpdate(generationEditorPatch(node, content, presetEdited));
         }}
         onSubmit={onRun}
         onPasteFiles={(files) => void uploadFiles(files)}
@@ -657,6 +679,11 @@ export function GenerationReferenceEditor({
         label={label}
         placeholder={placeholder}
         className="cw-prompt-input"
+        presetNote={presetNote}
+        presetTunable={presetTunable}
+        presetLabel={presetLabel}
+        presetTuneOpen={presetTuneOpen}
+        onPresetAction={onPresetAction}
         autoGrow
         submitOnEnter={false}
         metadataOnlyKinds={node.type === "text" ? ["video", "audio"] : []}

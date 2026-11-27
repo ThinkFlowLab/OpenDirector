@@ -78,7 +78,7 @@ def image_execution(tool, parameters, source, *, has_mask, has_annotation, polic
         edge = {'4K': 4096, '2K': 2048}.get(parameters.get('resolution'), 2048)
         candidate = (width, height) != original and (width, height) == (edge, edge // 2)
     elif tool == 'image-presets':
-        from opendirector.application.tool_image_edits import PRESETS
+        from opendirector.domain.image_presets import PRESETS
         preset = PRESETS.get(parameters.get('preset'))
         if preset is not None:
             width, height = preset.size

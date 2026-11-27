@@ -383,7 +383,8 @@ class CreationHistory:
         # Read independent tool ledgers once, retaining their deletion protection.
         asset_keys = {str(key): key for key in statuses}
         with self.projects.local.transaction() as db:
-            path, _, _ = self.projects._load(db, snapshot.project.id)
+            self.projects._recover()
+            path, _ = self.projects._find(db, snapshot.project.id)
             folder = gateway().child(path, 'tool-tasks')
             if folder.exists():
                 for entry in folder.glob('*.json'):

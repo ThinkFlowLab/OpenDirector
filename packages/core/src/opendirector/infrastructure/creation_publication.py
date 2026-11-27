@@ -37,19 +37,14 @@ class CommitPublication:
     def replay(self, command):
         """Resolve an already committed command before reading upload handles."""
         self._await_current_warm(command.projectId)
-        with self.local.transaction() as db:
-            self._recover()
-            return self._replay(self._load(db, command.projectId)[2], command)
+        return self._replay(self.records(command.projectId), command)
 
     def commit(self, command: Command,
                apply: Callable[[ProjectSnapshot], ProjectSnapshot] | Callable[[ProjectSnapshot, tuple[CommitRecord, ...]], ProjectSnapshot], *,
                session=None, source='ui', files=(), deletes=(), with_history=False):
         if source not in {'ui', 'agent', 'background', 'external'}:
             raise ProjectError('无效的命令来源。')
-        self._await_current_warm(command.projectId)
-        with self.local.transaction() as db:
-            self._recover()
-            path, manifest, records = self._load(db, command.projectId)
+        with self._write_basis(command.projectId) as (db, path, manifest, records):
             replay = self._replay(records, command)
             if replay:
                 return replay

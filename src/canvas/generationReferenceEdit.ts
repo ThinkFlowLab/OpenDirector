@@ -5,7 +5,7 @@ import {
   type CanvasNode,
 } from "./model.ts";
 import { referenceIssue, referenceIssueText } from "./connectionPolicy.ts";
-import { generationContentPatch } from "./generationReferenceContent.ts";
+import { generationEditorPatch } from "./generationReferenceContent.ts";
 import type { ReferenceContent } from "./chatReferenceContent.ts";
 import { tNow } from "../i18n/messages.ts";
 
@@ -15,6 +15,7 @@ export function referenceContentCommand(
   targetId: string,
   content: ReferenceContent,
   added: CanvasNode[] = [],
+  presetEdited = false,
 ): CanvasCommand {
   const target = document.nodes.find((node) => node.id === targetId);
   if (!target) throw new Error(tNow("errors.generation.targetMissing"));
@@ -61,20 +62,11 @@ export function referenceContentCommand(
     working = applyCommand(working, add);
     return { ...part, referenceId: add.edge.id };
   });
-  const patch = generationContentPatch(next);
-  const settings = working.nodes.find((node) => node.id === targetId)?.data
-    .settings;
+  const edited = working.nodes.find((node) => node.id === targetId) ?? target;
   commands.push({
     type: "update-node",
     id: targetId,
-    patch: {
-      data: {
-        ...patch,
-        ...(settings
-          ? { settings: { ...settings, prompt: patch.prompt } }
-          : {}),
-      },
-    },
+    patch: { data: generationEditorPatch(edited, next, presetEdited) },
   });
   return { type: "batch", commands };
 }

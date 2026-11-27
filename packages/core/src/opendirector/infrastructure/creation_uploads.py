@@ -119,10 +119,10 @@ class CreationUploads:
 
     def _scope(self, db, project_id, session, trusted=False):
         self.projects._recover()
-        path, _, records = self.projects._load(db, project_id)
+        path, manifest = self.projects._find(db, project_id)
         if not trusted:
             self.projects._lease(db, project_id, path, session)
-        return records[0].snapshot
+        return self.projects._current(db, project_id, path, manifest).snapshot
 
     def _owner(self, folder, project_id, handle, session):
         try:

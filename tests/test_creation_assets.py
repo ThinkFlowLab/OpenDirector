@@ -164,6 +164,17 @@ def test_install_failure_leaves_no_partial_asset_and_can_retry_from_journal(stor
     assert len(projects.snapshot(project_id).assets) == 1
 
 
+def test_media_reads_use_the_committed_head_without_replaying_history(storage, monkeypatch):
+    projects, project_id, session = storage
+    info = upload(storage)
+    projects.execute(import_command(project_id, info), session=session)
+    monkeypatch.setattr(projects, '_history', lambda *args: pytest.fail('media read replayed history'))
+    stream, asset = CreationAssets(projects).open_media(project_id, upload_asset_id(project_id, info.id))
+    with stream:
+        assert stream.read() == png()
+    assert asset.fingerprint == info.fingerprint
+
+
 def test_pending_or_corrupt_files_cannot_be_exposed_as_a_committed_asset(storage):
     projects, project_id, session = storage
     info = upload(storage)

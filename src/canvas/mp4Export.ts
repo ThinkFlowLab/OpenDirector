@@ -1,6 +1,11 @@
 /** A bounded frame/audio-chunk encoder shared by local composition tools. */
 import { prepareSoftwareAac } from "./softwareAac.ts";
 import { tNow } from "../i18n/messages.ts";
+
+// Summed times can sit just to either side of an exact frame boundary.
+export const frameAtOrAfter = (time: number, fps: number) =>
+  Math.ceil(time * fps - 1e-8);
+
 export interface Mp4Options {
   canvas: HTMLCanvasElement;
   duration: number;
@@ -72,7 +77,7 @@ export async function encodeMp4(options: Mp4Options): Promise<Blob> {
   signal.addEventListener("abort", cancel, { once: true });
   try {
     await output.start();
-    const frames = Math.ceil(duration * fps);
+    const frames = Math.max(1, frameAtOrAfter(duration, fps));
     let audioEnd = 0;
     for (let frame = 0; frame < frames; frame++) {
       signal.throwIfAborted();

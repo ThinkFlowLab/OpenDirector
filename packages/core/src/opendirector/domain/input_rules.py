@@ -44,6 +44,11 @@ def _adapter_rules(config):
         rules.update(profile='minimax-h3-image', maxImages=16,
                      imageBytes=64 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
         return rules
+    if (kind == 'image' and config.get('protocol') == 'openai'
+            and config.get('connectionType') == 'self_hosted'
+            and model.rsplit('/', 1)[-1].lower() == 'minimax-h3-image'):
+        rules.update(profile='vllm-omni-minimax-h3-image')
+        return rules
     if is_moss_image(config):
         rules.update(profile='moss-image', allowedKinds=['text'], maxImages=0,
                      maxPromptCharacters=MOSS_IMAGE_PROMPT_CHARACTERS)

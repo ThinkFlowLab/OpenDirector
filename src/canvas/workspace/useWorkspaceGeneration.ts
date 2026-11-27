@@ -3,34 +3,54 @@ import { useEffect, useRef } from "react";
 import { errorMessage } from "../../backend/api.ts";
 import { creationClient } from "../../backend/creationClient.ts";
 import { type GenerationRequest } from "../../backend/generation.ts";
-import { modelLabel } from "../../backend/rules.ts";
+import { backendModel, modelLabel } from "../../backend/rules.ts";
 import { workspaceProjection } from "../../backend/workspace.ts";
 
 import { deliverTool, pendingToolDelivery } from "../../backend/toolDeliveries";
-import { acknowledgeToolPlacement, cancelToolTask, submitToolTask, ToolSubmissionError } from "../../backend/tools.ts";
+import {
+  acknowledgeToolPlacement,
+  cancelToolTask,
+  submitToolTask,
+  ToolSubmissionError,
+} from "../../backend/tools.ts";
 
 import { expectedDuration, recordDuration } from "../generationDurations";
 import { type GenerationJob as Job } from "../generationHistory";
 
 import { lockedNodeIds } from "../hierarchy";
 import { imageAnnotationPayload } from "../imageActionPayload";
-import { appendPendingResult, removePendingResult, validateNodeActionSource, type GenerationResultMode, type LinkedMediaResult, type ResultSource } from "../linkedResults";
+import {
+  appendPendingResult,
+  removePendingResult,
+  validateNodeActionSource,
+  type GenerationResultMode,
+  type LinkedMediaResult,
+  type ResultSource,
+} from "../linkedResults";
 import { type CanvasNode } from "../model";
 import { groupDescendants } from "../operations";
 import { runWorkflowSteps } from "../groupWorkflow";
+import { incomingReferenceNodes } from "../generationReferenceContent.ts";
 import { getNodeGenerationSettings } from "../NodeComposer";
-import { serviceGenerationPlan, textGenerationPlan } from "../workspaceInteraction.ts";
+import {
+  presetReferenceSources,
+  serviceGenerationPlan,
+  textGenerationPlan,
+} from "../workspaceInteraction.ts";
 import { generationPrepareBlock } from "./entryPoints.ts";
 import { JobFailureNotifications } from "./jobFailureNotifications.ts";
 import { CANVAS_TOOLS, type CanvasToolTask } from "../toolCatalog";
 
 import { translateToolText } from "../toolText.ts";
+import { imagePresetsFromFields, presetImageTitles, presetSkillText } from "../promptSkill.ts";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { toolOutputKind, jobTime, incomingNodes } from "./workspaceChrome.tsx";
 import type { ServiceRun } from "./workspaceChrome.tsx";
 
-
-export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolean) {
+export function useWorkspaceGeneration(
+  rt: WorkspaceRuntime,
+  writePaused: boolean,
+) {
   const {
     actionSessionRef,
     addLinkedOutputs,
@@ -258,9 +278,8 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       task.tool === "image-presets"
         ? toolCatalog.capabilities["image-presets"]?.fields
             ?.find((field) => field.key === "preset")
-            ?.options?.find(
-              (option) => option.value === task.parameters.preset,
-            )?.label
+            ?.options?.find((option) => option.value === task.parameters.preset)
+            ?.label
         : undefined;
     const title = translateToolText(
       locale,
@@ -388,7 +407,8 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       const uncertain = error instanceof ToolSubmissionError && error.uncertain;
       // Admission errors remain visible even if a project switch removes this
       // local job. Claim first so its failed projection cannot also notify.
-      const report = !run.controller.signal.aborted &&
+      const report =
+        !run.controller.signal.aborted &&
         (uncertain || failureNotifications.claim(id));
       updateJob(id, {
         status: uncertain
@@ -414,8 +434,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
         change(() => cleaned);
         await persist(cleaned);
       }
-      if (report)
-        notify(`「${title}」：${errorMessage(error)}`);
+      if (report) notify(`「${title}」：${errorMessage(error)}`);
     } finally {
       serviceRuns.current.delete(id);
       refreshRunning();
@@ -456,7 +475,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       const name = node?.data.title ?? job.targetTitle ?? job.title;
       // Tool jobs keep their reason in `message`; generation jobs have a phase
       // there, so only the explicit failure text may be shown.
-      const detail = (job.failure ?? (job.tool ? job.message : undefined))?.trim();
+      const detail = (
+        job.failure ?? (job.tool ? job.message : undefined)
+      )?.trim();
       notify(
         detail
           ? t("generation.error.jobFailedDetail", { name, detail })
@@ -506,8 +527,13 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       const place = async () => {
         const origin = job.resultSource!;
         const current = () => historyRef.current.present;
-        if (!mounted.current || current().id !== origin.documentId ||
-            rt.switchPending.current || getEditingState(origin.documentId)?.mode === "preview") return;
+        if (
+          !mounted.current ||
+          current().id !== origin.documentId ||
+          rt.switchPending.current ||
+          getEditingState(origin.documentId)?.mode === "preview"
+        )
+          return;
         {
           // The service validates frozen sources/locks and publishes the owned
           // outputs atomically. React Flow only observes the resulting snapshot.
@@ -533,19 +559,46 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
           placingTools.current.delete(placementKey);
         });
     }
-  }, [jobs, ready, backendCatalog.connected, doc.id, change, persist, notify, writePaused, rt]);
+  }, [
+    jobs,
+    ready,
+    backendCatalog.connected,
+    doc.id,
+    change,
+    persist,
+    notify,
+    writePaused,
+    rt,
+  ]);
   const submissionAssets = () => [
     ...(creationClient(doc.id).snapshot?.assets ?? []),
     ...referenceAssets.assets,
   ];
+  const imagePresetSkill = (node: CanvasNode, sources: readonly CanvasNode[] = []) => {
+    if (node.type !== "image") return undefined;
+    // The persisted choice leads the prompt; the chip only mirrors it.
+    const settings = getNodeGenerationSettings(node, backendCatalog.models);
+    const value = settings.imagePreset ?? "none";
+    if (value === "none") return undefined;
+    const preset = imagePresetsFromFields(
+      toolCatalog.capabilities["image-presets"]?.fields,
+    ).find((item) => item.value === value);
+    if (!preset) return undefined;
+    const config = backendModel(settings, backendCatalog.models);
+    return presetSkillText(preset, presetImageTitles(settings, sources, config), settings.faceEmphasis === true);
+  };
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const document = historyRef.current.present;
+    const assets = submissionAssets();
     const plan = serviceGenerationPlan({
       document,
       node,
       incoming,
       models: backendCatalog.models,
-      assets: submissionAssets(),
+      assets,
+      promptPrefix: imagePresetSkill(node, node.type === "image"
+        ? presetReferenceSources({ node, incoming: incomingReferenceNodes(document, node.id, true), assets })
+        : []),
     });
     if (plan.status === "blocked") {
       notify(plan.message ?? t("canvas.workspace.error.modelUnavailable"));
@@ -612,7 +665,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
           [...serviceRuns.current.values()].some(
             (run) => run.documentId === current.id && run.nodeId === nodeId,
           ),
-      }    )
+      })
     )
       return none;
     if (!node) return none;
@@ -641,9 +694,7 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       }
       return none;
     }
-    notify(
-      t("canvas.workspace.error.noGenerationModel"),
-    );
+    notify(t("canvas.workspace.error.noGenerationModel"));
     return none;
   };
   /** Latest render's generation entry point; a workflow outlives the render that started it. */
@@ -667,7 +718,8 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
         const states = jobIds.map(
           (id) => client.snapshot.jobs.find((job) => job.id === id)?.status,
         );
-        if (!states.every((status) => status && terminal.includes(status))) return;
+        if (!states.every((status) => status && terminal.includes(status)))
+          return;
         finish();
         resolve(states.includes("succeeded"));
       };
@@ -686,11 +738,17 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
    * candidate-only result, or inputs edited while running), after three
    * minutes, or when the canvas switched project.
    */
-  const awaitDisplayed = (documentId: string, nodeId: string, jobIds: readonly string[]) =>
+  const awaitDisplayed = (
+    documentId: string,
+    nodeId: string,
+    jobIds: readonly string[],
+  ) =>
     new Promise<boolean>((resolve) => {
       const snapshot = creationClient(documentId).snapshot;
       const adopted = new Set(
-        snapshot.jobs.filter((job) => jobIds.includes(job.id) && job.adopted).map((job) => job.id),
+        snapshot.jobs
+          .filter((job) => jobIds.includes(job.id) && job.adopted)
+          .map((job) => job.id),
       );
       const assets = new Set(
         snapshot.results
@@ -706,9 +764,14 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
         const present = historyRef.current.present;
         const node = present.nodes.find((candidate) => candidate.id === nodeId);
         const done =
-          present.id === documentId && node && assets.has(node.data.backendAssetId ?? "")
+          present.id === documentId &&
+          node &&
+          assets.has(node.data.backendAssetId ?? "")
             ? true
-            : !mounted.current || present.id !== documentId || !node || Date.now() - started > 180_000
+            : !mounted.current ||
+                present.id !== documentId ||
+                !node ||
+                Date.now() - started > 180_000
               ? false
               : undefined;
         if (done === undefined) return;
@@ -730,8 +793,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
     const steps = groupDescendants(document.nodes, groupId).filter((node) =>
       isWorkflowStep(
         node,
-        document.edges.some(
-          (edge) => edge.target === node.id && edge.intent !== "post_edit_result",
+        Boolean(imagePresetSkill(node)) || document.edges.some(
+          (edge) =>
+            edge.target === node.id && edge.intent !== "post_edit_result",
         ),
       ),
     );
@@ -739,7 +803,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       notify(t("canvas.workspace.group.noRunnableNodes"));
       return;
     }
-    notify(t("canvas.workspace.group.workflowStarted", { count: steps.length }));
+    notify(
+      t("canvas.workspace.group.workflowStarted", { count: steps.length }),
+    );
     let submissions: Promise<unknown> = Promise.resolve();
     const result = await runWorkflowSteps(
       steps.map((node) => node.id),
@@ -752,7 +818,8 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
         );
         submissions = submitted.catch(() => undefined);
         const jobIds = await submitted;
-        if (!jobIds.length || !(await awaitJobs(document.id, jobIds))) return false;
+        if (!jobIds.length || !(await awaitJobs(document.id, jobIds)))
+          return false;
         return awaitDisplayed(document.id, id, jobIds);
       },
     );
@@ -785,7 +852,9 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
     try {
       const outputs: LinkedMediaResult[] = [];
       for (const file of files) {
-        const resource = await workspaceProjection(origin.documentId).importFile(file, controller.signal);
+        const resource = await workspaceProjection(
+          origin.documentId,
+        ).importFile(file, controller.signal);
         if (resource.kind === "file" || resource.kind === "text")
           throw new Error(t("canvas.workspace.error.resultNotMedia"));
         outputs.push({
@@ -811,7 +880,11 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
       }
     } catch (error) {
       if (!controller.signal.aborted)
-        notify(error instanceof Error ? error.message : t("canvas.workspace.error.resultImportFailed"));
+        notify(
+          error instanceof Error
+            ? error.message
+            : t("canvas.workspace.error.resultImportFailed"),
+        );
     } finally {
       if (importAbort.current === controller) {
         importAbort.current = null;
@@ -848,9 +921,12 @@ export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolea
  * Group members a workflow run generates: nodes with a configured model and a
  * prompt (media may instead take their prompt from connected references).
  */
-function isWorkflowStep(node: CanvasNode, referenced: boolean): boolean {
-  const prompt = Boolean(node.data.prompt?.trim() || node.data.promptContent?.length);
-  if (node.type === "text") return Boolean(node.data.agentSettings?.modelConfigId && prompt);
+function isWorkflowStep(node: CanvasNode, hasMediaInstruction: boolean): boolean {
+  const prompt = Boolean(
+    node.data.prompt?.trim() || node.data.promptContent?.length,
+  );
+  if (node.type === "text")
+    return Boolean(node.data.agentSettings?.modelConfigId && prompt);
   if (!["image", "video", "audio"].includes(node.type)) return false;
-  return Boolean(node.data.settings?.modelConfigId && (prompt || referenced));
+  return Boolean(node.data.settings?.modelConfigId && (prompt || hasMediaInstruction));
 }

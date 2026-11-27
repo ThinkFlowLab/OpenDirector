@@ -206,7 +206,7 @@ export function TimelineEditor({
   const [snapping, setSnapping] = useState(true);
   const [libraryShown, setLibraryShown] = useState(true),
     [libraryWidth, setLibraryWidth] = useState(210),
-    [trackHeight, setTrackHeight] = useState(260);
+    [trackHeight, setTrackHeight] = useState(180);
   const [packageProgress, setPackageProgress] = useState<number | null>(null);
   const panelDrag = useRef<{
     pointerId: number;
@@ -1504,7 +1504,6 @@ export function TimelineEditor({
           style={
             {
               "--cw-library-width": `${libraryWidth}px`,
-              "--cw-track-height": `${trackHeight}px`,
             } as CSSProperties
           }
         >
@@ -2029,9 +2028,9 @@ export function TimelineEditor({
           >
             {t("timeline.toolbar.fit")}
           </button>
-        </div>
-        <div className="cw-timeline-drag-status" role="status">
-          {dragMessage}
+          <div className="cw-timeline-drag-status" role="status">
+            {dragMessage}
+          </div>
         </div>
         <div
           className="cw-timeline-height-resizer"
@@ -2258,9 +2257,10 @@ export function TimelineEditor({
             ))}
           </div>
         </div>
-        <p className="cw-domain-note cw-timeline-footnote">
-          {t("timeline.track.dragHint")}
-        </p>
+        <details className="cw-timeline-help">
+          <summary>{t("timeline.track.help")}</summary>
+          <p className="cw-domain-note">{t("timeline.track.dragHint")}</p>
+        </details>
         <input
           className="cw-domain-file-input"
           ref={nativePackageInput}

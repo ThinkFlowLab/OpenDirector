@@ -209,15 +209,13 @@ class CreationAssets:
         """
         with self.projects.local.transaction() as db:
             self.projects._recover()
+            if snapshot is not None and snapshot.project.id != UUID(str(project_id)):
+                raise ProjectError('素材读取快照不属于当前工程。', 409)
+            path, manifest = self.projects._find(db, project_id)
             if snapshot is None:
                 # A head whose chain was already proven needs no replay per read.
-                path, manifest = self.projects._find(db, project_id)
                 record, validated = self.projects._current_record(db, project_id, path, manifest)
                 snapshot = (record if validated else self.projects._load(db, project_id)[2][0]).snapshot
-            else:
-                if snapshot.project.id != UUID(str(project_id)):
-                    raise ProjectError('素材读取快照不属于当前工程。', 409)
-                path, _ = self.projects._find(db, project_id)
             try:
                 asset = self._asset(snapshot, asset_id)
             except ContractError:

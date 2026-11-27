@@ -119,6 +119,7 @@ export const timeline = {
   "timeline.track.delete": "Delete {title}",
   "timeline.track.muted": "Muted",
   "timeline.track.audible": "Audible",
+  "timeline.track.help": "Editing and export help",
   "timeline.track.dragHint":
     "Drag visual clips to reorder them; drag audio to change its start or move it to another audio track. Press Esc to cancel and ⌘/Ctrl + Z to undo. MP4 renders in the browser and preserves order, trims, speed, volume, and multi-track mixing; the picture is scaled to fit with black bars. Speed changes also change pitch. ⌘/Ctrl + wheel zooms the timeline at the pointer; snapping aligns clip edges and the playhead. FCPXML is a standard editing interchange format, and the ZIP contains the original media; after extraction, keep the media directory's relative path. This is not a native CapCut project and compatibility with every editor version is not promised. The JSON remains editable in this project.",
 

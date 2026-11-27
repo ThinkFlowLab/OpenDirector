@@ -150,7 +150,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime, readOnly: boolean) {
           : { src: await client.mediaUrl(record.id, { signal }) };
       }
     },
-    onChange: (content, sources) => {
+    onChange: (content, sources, presetEdited) => {
       const current = historyRef.current.present;
       if (current.id !== doc.id || lockedNodeIds(current.nodes).has(target.id))
         throw new Error(t("canvas.workspace.error.referenceBatchStale"));
@@ -159,6 +159,7 @@ export function useWorkspaceDocument(rt: WorkspaceRuntime, readOnly: boolean) {
         target.id,
         content,
         sources,
+        presetEdited,
       );
       command(edit);
     },

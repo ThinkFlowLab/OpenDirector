@@ -265,6 +265,27 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
                 assert 'title' not in config['agent']
 
 
+def test_codex_windows_launch_uses_standalone_sandbox_and_keeps_project_bridge(tmp_path, monkeypatch):
+    monkeypatch.setattr(native.sys, 'platform', 'win32')
+    monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
+    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ())
+    monkeypatch.setenv('CODEX_WINDOWS_REGISTERED_CORE', '1')
+    monkeypatch.setenv('CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY', 'DesktopRegistration')
+    monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:1080')
+    bridge = {'OPENDIRECTOR_AGENT_HOST': '127.0.0.1', 'OPENDIRECTOR_AGENT_PORT': '8001'}
+
+    args, env = native.command('codex', tmp_path, '', 'token', None, '', [], bridge_env=bridge)
+
+    assert 'CODEX_WINDOWS_REGISTERED_CORE' not in env
+    assert 'CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY' not in env
+    assert os.environ['CODEX_WINDOWS_REGISTERED_CORE'] == '1'
+    assert env['HTTPS_PROXY'] == 'http://127.0.0.1:1080'
+    assert all(env[key] == value for key, value in bridge.items())
+    assert Path(env['PATH'].split(os.pathsep)[0]) == tmp_path / '.opendirector-bin'
+    assert args[args.index('--sandbox') + 1] == 'workspace-write'
+    assert 'windows.sandbox="elevated"' in args
+
+
 def test_codex_only_passes_supported_isolation_flags(tmp_path, monkeypatch):
     binary = str(tmp_path / 'codex')
     monkeypatch.setattr(native, 'executable', lambda _: binary)

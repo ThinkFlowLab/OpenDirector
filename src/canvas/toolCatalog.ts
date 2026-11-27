@@ -52,7 +52,17 @@ export interface ToolField {
   min?: number;
   max?: number;
   step?: number;
-  options?: readonly { value: string | number; label: string }[];
+  options?: readonly {
+    value: string | number;
+    label: string;
+    /** Preset instructions, applied as a prompt skill; never a second copy. */
+    prompts?: readonly string[];
+    textPrompts?: readonly string[];
+    textPrompt?: string;
+    faceEmphasisPrompt?: string;
+    faceEmphasisTextPrompt?: string;
+    size?: readonly [number, number];
+  }[];
   capabilityOptions?: boolean;
   hint?: string;
 }
@@ -485,13 +495,11 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     ],
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
-  tool(
-    "video-translation",
-    "视频翻译",
-    "需要连接提供此功能的服务。",
-    [],
-    { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
-  ),
+  tool("video-translation", "视频翻译", "需要连接提供此功能的服务。", [], {
+    category: "video",
+    sources: ["video"],
+    parameterCoverage: "entry-only",
+  }),
   tool(
     "video-upscale",
     "视频超清",
@@ -528,18 +536,12 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       },
     ),
   ),
-  tool(
-    "extract-audio",
-    "提取音频",
-    "将视频音轨另存为音频素材。",
-    [],
-    {
-      category: "audio",
-      sources: ["video"],
-      execution: "local-editor",
-      parameterCoverage: "entry-only",
-    },
-  ),
+  tool("extract-audio", "提取音频", "将视频音轨另存为音频素材。", [], {
+    category: "audio",
+    sources: ["video"],
+    execution: "local-editor",
+    parameterCoverage: "entry-only",
+  }),
   tool(
     "audio-separation",
     "音频分离",
@@ -593,9 +595,7 @@ export function toolFields(
   const display = (field: ToolField): ToolField => ({
     ...field,
     label: translateToolText(locale, field.label),
-    ...(field.hint
-      ? { hint: translateToolText(locale, field.hint) }
-      : {}),
+    ...(field.hint ? { hint: translateToolText(locale, field.hint) } : {}),
     ...(field.options
       ? {
           options: field.options.map((option) => ({
@@ -759,7 +759,9 @@ export function validateToolTask(
           tNow("errors.tool.fieldNumber", {
             label: field.label,
             type:
-              field.step === 1 ? tNow("errors.tool.integer") : tNow("errors.tool.number"),
+              field.step === 1
+                ? tNow("errors.tool.integer")
+                : tNow("errors.tool.number"),
           }),
         );
     } else if (field.type === "boolean") {

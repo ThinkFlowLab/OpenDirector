@@ -151,7 +151,7 @@ class Conversations:
     def path(self, project_id: UUID, session: str | None = None) -> Path:
         with self.projects.local.transaction() as db:
             self.projects._recover()
-            directory, _, _ = self.projects._load(db, project_id)
+            directory, _ = self.projects._find(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session, browser_only=True)
             return directory
@@ -162,7 +162,7 @@ class Conversations:
         finish_mono, finish_at = (_monotonic(), _utc_now()) if finish is not None else (None, None)
         with self.projects.local.transaction() as db:
             self.projects._recover()
-            directory, _, _ = self.projects._load(db, project_id)
+            directory, _ = self.projects._find(db, project_id)
             if session:
                 self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
@@ -383,7 +383,7 @@ class Conversations:
     def activate(self, project_id: UUID, conversation_id: UUID, session: str, *, create=False) -> dict:
         with self.projects.local.transaction() as db:
             self.projects._recover()
-            directory, _, _ = self.projects._load(db, project_id)
+            directory, _ = self.projects._find(db, project_id)
             self.projects._lease(db, project_id, directory, session, browser_only=True)
             folder = child(directory, 'agent-runs')
             folder.mkdir(exist_ok=True)

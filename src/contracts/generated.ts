@@ -740,7 +740,8 @@ export interface ImageParametersInput extends ContractInput {
   readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size?: string;
   readonly aspectRatio?: string | null;
-  readonly preset?: "none" | "product-views";
+  readonly preset?: string;
+  readonly faceEmphasis?: boolean;
   readonly responseFormat?: "url";
   readonly outputFormat?: "png";
 }
@@ -780,6 +781,7 @@ export interface InputSnapshotInput extends ContractInput {
   readonly spec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly model: ModelSnapshotInput;
   readonly references?: ReadonlyArray<ResolvedReferenceInput>;
+  readonly presetPrompt?: string | null;
 }
 
 export interface JobInput extends ProjectEntityInput {
@@ -2488,7 +2490,8 @@ export interface ImageParameters extends Contract {
   readonly quality?: "auto" | "low" | "medium" | "high";
   readonly size: string;
   readonly aspectRatio: string | null;
-  readonly preset: "none" | "product-views";
+  readonly preset: string;
+  readonly faceEmphasis?: boolean;
   readonly responseFormat: "url";
   readonly outputFormat: "png";
 }
@@ -2528,6 +2531,7 @@ export interface InputSnapshot extends Contract {
   readonly spec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly model: ModelSnapshot;
   readonly references: ReadonlyArray<ResolvedReference>;
+  readonly presetPrompt?: string | null;
 }
 
 export interface Job extends ProjectEntity {

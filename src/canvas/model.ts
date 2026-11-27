@@ -76,7 +76,12 @@ export interface GenerationSettings {
   scoreMode?: "melody" | "full";
   /** Music with a reference recording: cap the length at the recording's own (unset follows it). */
   durationFromReference?: boolean;
-  imagePreset?: "none" | "product-views";
+  /** Free creation (
+one), a catalog preset used as a prompt skill, or the
+   * legacy product-views generation preset. */
+  imagePreset?: string;
+  /** The preset's alternate framing; only meaningful for presets offering it. */
+  faceEmphasis?: boolean;
   imageQuality?: ImageParameters["quality"];
   /** A model configured in the local API; catalog models leave it unset. */
   modelConfigId?: string;

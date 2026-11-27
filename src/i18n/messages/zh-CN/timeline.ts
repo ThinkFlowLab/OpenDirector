@@ -111,6 +111,7 @@ export const timeline = {
   "timeline.track.delete": "删除{title}",
   "timeline.track.muted": "静音",
   "timeline.track.audible": "有声",
+  "timeline.track.help": "操作与导出说明",
   "timeline.track.dragHint":
     "拖动画面片段调整顺序；拖动音频调整起点或移至其他音轨。按 Esc 取消，⌘/Ctrl + Z 撤销。 MP4 在浏览器内合成，保留顺序、裁剪、倍速、音量和多轨混音；画面等比适配并补黑边。倍速会同时改变音调。⌘/Ctrl + 滚轮以指针位置缩放时间轴；自动吸附对齐片段边缘与播放头。 FCPXML 为标准剪辑交换格式，ZIP 含原媒体；解压后保持 media 目录相对位置。并非原生剪映工程，也不承诺所有剪辑软件版本兼容。JSON 可在本工程继续编辑。",
 

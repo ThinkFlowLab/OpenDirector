@@ -5,7 +5,9 @@ import {
 
 // An atomic reference occupies one editing position, regardless of its label.
 export function units(node: Node): number {
-  if (node instanceof HTMLElement && (node.dataset.reference || node.dataset.skill)) return 1;
+  if (node instanceof HTMLElement) {
+    if (node.dataset.reference || node.dataset.skill || node.dataset.preset) return 1;
+  }
   if (node.nodeType === Node.TEXT_NODE)
     return (node.textContent ?? "").replaceAll("\u200b", "").length;
   if (node.nodeName === "BR") return 1;
@@ -48,9 +50,25 @@ export function select(root: HTMLElement, caret: Caret) {
           remaining -= size;
           continue;
         }
-        if (node.nodeType === Node.TEXT_NODE) return [node, remaining];
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent ?? "";
+          if (!text.includes("\u200b")) return [node, remaining];
+          // Zero-width anchors have DOM offsets but take no editing positions.
+          let offset = 0;
+          while (remaining > 0 && offset < text.length) {
+            if (text[offset] !== "\u200b") remaining--;
+            offset++;
+          }
+          while (text[offset] === "\u200b") offset++;
+          return [node, offset];
+        }
+        if (node instanceof HTMLElement && node.dataset.preset && remaining === size) {
+          // Use the editable anchor after the chip instead of its DOM boundary.
+          remaining = 0;
+          continue;
+        }
         if (
-          (node instanceof HTMLElement && (node.dataset.reference || node.dataset.skill)) ||
+          (node instanceof HTMLElement && (node.dataset.reference || node.dataset.skill || node.dataset.preset)) ||
           node.nodeName === "BR"
         )
           return [parent, index + (remaining ? 1 : 0)];
@@ -74,7 +92,14 @@ export function readDOM(root: HTMLElement): ReferenceContent {
   if (root.childNodes.length === 1 && root.firstChild?.nodeName === "BR") return [];
   const parts: ReferenceContent = [];
   function read(node: Node) {
-    if (node instanceof HTMLElement && node.dataset.skill) {
+    if (node instanceof HTMLElement && node.dataset.preset) {
+      parts.push({
+        type: "skill",
+        name: node.dataset.label ?? "",
+        preset: node.dataset.preset,
+        ...(node.dataset.faceEmphasis ? { faceEmphasis: true } : {}),
+      });
+    } else if (node instanceof HTMLElement && node.dataset.skill) {
       parts.push({type: "skill", name: node.dataset.skill});
     } else if (node instanceof HTMLElement && node.dataset.reference) {
       try {

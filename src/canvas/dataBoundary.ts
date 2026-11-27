@@ -56,6 +56,7 @@ const SETTINGS_KEYS = [
   "scoreMode",
   "durationFromReference",
   "imagePreset",
+  "faceEmphasis",
   "imageQuality",
   "modelConfigId",
 ] as const;
@@ -152,8 +153,10 @@ export function isGenerationSettings(
     (value.durationFromReference === undefined ||
       typeof value.durationFromReference === "boolean") &&
     (value.imagePreset === undefined ||
-      value.imagePreset === "none" ||
-      value.imagePreset === "product-views") &&
+      (typeof value.imagePreset === "string" &&
+        /^[a-z0-9-]{1,40}$/.test(value.imagePreset))) &&
+    (value.faceEmphasis === undefined ||
+      typeof value.faceEmphasis === "boolean") &&
     (value.imageQuality === undefined ||
       value.imageQuality === "auto" ||
       value.imageQuality === "low" ||
@@ -639,7 +642,14 @@ export function parseNodeData(
           record(part) &&
           (part.type === "text"
             ? typeof part.text === "string"
-            : part.type === "reference" &&
+            : part.type === "skill"
+              ? nonempty(part.name) &&
+                part.name.length <= 255 &&
+                (part.preset === undefined ||
+                  (nonempty(part.preset) && part.preset.length <= 40)) &&
+                (part.faceEmphasis === undefined ||
+                  typeof part.faceEmphasis === "boolean")
+              : part.type === "reference" &&
               nonempty(part.assetId) &&
               nonempty(part.name) &&
               part.name.length <= 255 &&
