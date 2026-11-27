@@ -60,5 +60,10 @@ export const trace = {
   "trace.waiting": "Waiting for trace events…",
   "trace.notFound": "No trace of this type for this turn.",
   "trace.loadFailed": "Could not load trace.",
-  "trace.turn.duration.unavailable": "Unavailable"
+  "trace.turn.duration.unavailable": "Unavailable",
+  "trace.overview.title": "Timing overview",
+  "trace.overview.select": "Select turn {number}",
+  "trace.overview.noData": "No timing data",
+  "trace.overview.slowest": "Slowest turn",
+  "trace.overview.zero": "Zero duration"
 } as const;

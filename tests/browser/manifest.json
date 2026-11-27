@@ -95,6 +95,14 @@
       "note": "Needs --assistant-fixture services; holds the fixture gate."
     },
     {
+      "file": "trace_timing_overview.mjs",
+      "fixture": true,
+      "lanes": [
+        "extendedFixture"
+      ],
+      "note": "Needs --assistant-fixture services. Builds a 100-turn session, so it is not preview-safe."
+    },
+    {
       "file": "assistant_turn_timing.mjs",
       "fixture": true,
       "previewSafe": true,

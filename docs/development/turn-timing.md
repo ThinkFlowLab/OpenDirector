@@ -103,3 +103,16 @@ PR #469 (issue #449) records where a turn's time goes. The two features measure 
 | Read by | `scripts/bench_turn_timing.py` | Trace API, Chat and Trace UI |
 
 The two windows share nearly the same end. The start differs by the pre-accept work in `produce()` (validation, model availability, the `begin` write), usually milliseconds, so the numbers are not expected to match. Neither is derived from the other. Each keeps its own monotonic clock: #469's clock lives in `produce()` and a ledger of tool events, ours lives in `Conversations.update`, which is the only place that sees both the accept and the finish write. Persistence does not conflict: #469 writes a separate file, this work writes the message. Do not show `turnSeconds` in the UI and do not read `durationMs` in the ledger.
+
+### Trace timing overview
+
+The Conversation Trace page shows a compact overview above the turn list. Each turn is one button row with its number, status, a bar and the duration. Bar length is linear against the longest finished turn. It reads only the persisted `durationMs` of each turn, never `startedAt`/`finishedAt`, and it does not load any trace logs.
+
+- A running turn shows "Running" and no bar. A missing or invalid `durationMs` shows "Unavailable" and no bar.
+- Stopped and interrupted turns show their status and bar when `durationMs` is valid.
+- A zero duration gets a thin marker instead of a bar. Any other bar has a minimum visible width.
+- With two or more timed turns, the slowest one is marked with an accent colour, a symbol and an accessible label.
+- Selecting a row (click, Enter, Space) reuses the existing reveal: it opens the turn, lazy-loads its trace and scrolls to it.
+- If no turn has valid timing, the overview shows "No timing data" and the turn list works as before.
+
+Logic lives in `src/canvas/traceTimingOverview.ts`. The overview adds none of the #449 metrics.
