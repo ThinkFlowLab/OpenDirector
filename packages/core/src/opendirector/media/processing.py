@@ -152,6 +152,16 @@ def frame_at(path: Path, seconds: float, out: Path) -> bytes:
     return out.read_bytes()
 
 
+def last_frame_time(path: Path) -> float:
+    """When a clip shows its final picture. Its sound may run longer, so the file's length does not say."""
+    value = json.loads(_run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-count_packets',
+                             '-show_entries', 'stream=nb_read_packets,r_frame_rate', '-of', 'json', str(path)], timeout=60))
+    picture = (value.get('streams') or [{}])[0]
+    numerator, _, denominator = (picture.get('r_frame_rate') or '24/1').partition('/')
+    fps = float(numerator) / float(denominator or 1) if float(denominator or 1) else 24.0
+    return max(int(picture.get('nb_read_packets') or 1) - 1, 0) / (fps or 24.0)
+
+
 def _normalized(source: Path, out: Path, info: dict, *, start=None, end=None):
     """One segment re-encoded to the reference size, rate and stereo AAC (silence when missing)."""
     width, height, fps = info['width'] - info['width'] % 2, info['height'] - info['height'] % 2, info['fps']

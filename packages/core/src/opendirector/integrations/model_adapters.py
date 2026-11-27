@@ -765,8 +765,11 @@ class VllmOmniVideo(ModelAdapter):
 class FastH3VideoEdit(VllmOmniVideo):
     """Latent-mask editing on a Ref2VA-only H3 service: FastH3 Omni and the few-step adapters served the same way.
 
-    These weights run Ref2VA on a fixed eight-step schedule and need a reference picture, so the edit
-    names the source clip's own first frame: the redrawn part stays in the look of the clip around it.
+    These weights run Ref2VA on a fixed eight-step schedule and need a reference picture. A Ref2VA model
+    opens a clip close to that picture: whatever the picture shows where the edit redraws is what the first
+    frames show there, and the prompt only takes over as the clip runs. No frame of the source shows the
+    edited look, so a boxed redraw runs twice. The first pass takes the source's first frame and arrives at
+    the edit by its end; the second takes that pass's last edited frame, so the edit is there from the start.
     """
 
     capabilities = frozenset({'video.edit'})
@@ -777,23 +780,52 @@ class FastH3VideoEdit(VllmOmniVideo):
         return {**values, 'num_inference_steps': 8, 'guidance_scale': 1}, {'task': 'ref2va', 'audio_flow_shift': 3}
 
     @classmethod
-    def _first_frame(cls, data):
+    def _frame(cls, data, seconds):
         with media.Workspace() as work:
-            return media.frame_at(work.write('in.mp4', data), 0, work.path / 'first.png')
+            return media.frame_at(work.write('in.mp4', data), seconds, work.path / 'frame.png')
+
+    @classmethod
+    def _last_edited_frame(cls, data, end: float | None):
+        """The last frame a redraw covers: the clip's final picture, or the one before `end` when the edit stops earlier."""
+        with media.Workspace() as work:
+            path = work.write('in.mp4', data)
+            moment = media.last_frame_time(path)
+            if end is not None:
+                moment = min(end - 1 / cls.FPS, moment)
+            # Half a frame early: a seek lands on the first picture at or after it, and must not overshoot the last one.
+            return media.frame_at(path, max(moment - 0.5 / cls.FPS, 0.0), work.path / 'frame.png')
+
+    @classmethod
+    def _source_reference(cls, mask: EditMask | None, seconds: float) -> float:
+        """When in the source clip to take the look to keep: its first frame, unless that frame is redrawn whole.
+
+        A redraw of a whole-frame time span that opens the clip takes the first frame after the span, which
+        shows the look the kept part has, rather than a frame the edit replaces.
+        """
+        opens_clip = mask is not None and mask.region is None and not mask.start and mask.end is not None and mask.end < seconds
+        return mask.end if opens_clip else 0.0
 
     async def edit_video(self, config, request: VideoEditRequest, *, submitted=None) -> MediaResult:
         values, extra = self.edit_parameters(request.seconds, request.width, request.height)
         frames = values['num_frames']
+        seconds = frames / self.FPS
         width, height = map(int, values['size'].split('x'))
         source = await blocking(self._conformed, request.source, width, height)
-        still = await blocking(self._first_frame, source)
         # Guidance is fixed at 1 on these weights, so there is no negative prompt to send.
         fields = self._fields(config, '<Picture 1> ' + request.prompt, values, extra)
-        files = [('input_references', ('first_frame.png', still, 'image/png')),
-                 ('source_video', ('source.mp4', source, 'video/mp4')),
-                 ('video_noise_mask', ('video-mask.json', json.dumps(self.picture_mask(request.picture, frames)).encode(), 'application/json')),
+        masks = [('video_noise_mask', ('video-mask.json', json.dumps(self.picture_mask(request.picture, frames)).encode(), 'application/json')),
                  ('audio_noise_mask', ('audio-mask.json', json.dumps(self.sound_mask(request.sound, frames)).encode(), 'application/json'))]
-        return await self._job(config, fields, files, submitted)
+
+        async def redraw(still):
+            files = [('input_references', ('reference.png', still, 'image/png')), ('source_video', ('source.mp4', source, 'video/mp4')), *masks]
+            return await self._job(config, fields, files, submitted)
+
+        still = await blocking(self._frame, source, self._source_reference(request.picture, seconds))
+        mask = request.picture
+        if mask is not None and mask.region is not None:
+            draft = await redraw(still)
+            still = await blocking(self._last_edited_frame, draft.data, mask.end)
+        return await redraw(still)
 
 
 class OpenAISpeech(ModelAdapter):
