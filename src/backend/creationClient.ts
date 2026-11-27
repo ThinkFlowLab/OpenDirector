@@ -297,6 +297,10 @@ export class CreationClient {
     };
     this.deliveries.set(intent, body);
     this.saveDeliveries();
+    const clearDelivery = () => {
+      if (this.deliveries.get(intent) === body) this.deliveries.delete(intent);
+      this.saveDeliveries();
+    };
     const perform = async () => {
       let receipt: CommandReceipt;
       try {
@@ -315,18 +319,20 @@ export class CreationClient {
             error instanceof ApiError &&
             [400, 401, 403, 413, 422].includes(error.status ?? 0)
           ) {
-            if (this.deliveries.get(intent) === body)
-              this.deliveries.delete(intent);
-            this.saveDeliveries();
+            clearDelivery();
           }
           throw error;
         }
       }
-      await this.refresh();
-      if (this.deliveries.get(intent) === body) this.deliveries.delete(intent);
-      this.saveDeliveries();
-      if (receipt.status === "rejected")
+      if (receipt.status === "rejected") {
+        // A definitive rejection created no job. Retire it before a
+        // failed refresh or reload can replay it as the next submission.
+        clearDelivery();
+        await this.refresh().catch(() => {});
         throw new CreationCommandError(receipt);
+      }
+      await this.refresh();
+      clearDelivery();
       return receipt;
     };
     return perform;

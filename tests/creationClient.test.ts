@@ -439,6 +439,58 @@ test("an accepted command whose snapshot refresh fails retains its original deli
   }
 });
 
+test("a confirmed generation rejection is not replayed after reload when refresh fails", async () => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  const saved = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    },
+  });
+  const previousFetch = globalThis.fetch;
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const commandIds: string[] = [];
+  globalThis.fetch = async (url, options) => {
+    assert.ok(String(url).endsWith("/commands"));
+    const { commandId } = JSON.parse(options!.body as string);
+    commandIds.push(commandId);
+    // The server returns the same rejection when the original ID is replayed.
+    const rejected = commandId === commandIds[0];
+    return Response.json({
+      commandId,
+      projectId: snapshot.project.id,
+      status: rejected ? "rejected" : "accepted",
+      inputFingerprint: "a".repeat(64),
+      changed: [],
+      jobIds: rejected ? [] : [crypto.randomUUID()],
+      issues: rejected ? [{ code: "capability_unavailable", message: "First frame unsupported" }] : [],
+      eventCursor: 1,
+    });
+  };
+  client.refresh = async () => { throw new TypeError("connection lost after rejection"); };
+  const payload = { specId: crypto.randomUUID(), expectedSpecRevision: 1 };
+  try {
+    const first = await client.command("generation.submit", payload).catch((error) => error);
+    const reopened = new CreationClient(snapshot.project.id);
+    reopened.install(snapshot);
+    reopened.refresh = async () => snapshot;
+    assert.equal((await reopened.command("generation.submit", payload)).status, "accepted");
+    assert.notEqual(commandIds[0], commandIds[1]);
+    assert.ok(first instanceof CreationCommandError);
+    assert.equal(first.receipt.issues[0]?.code, "capability_unavailable");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousStorage)
+      Object.defineProperty(globalThis, "sessionStorage", previousStorage);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  }
+});
+
 class CommandCapture extends CreationClient {
   override async textContent() {
     return "Actual source";
