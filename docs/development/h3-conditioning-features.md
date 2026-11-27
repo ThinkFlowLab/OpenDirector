@@ -147,13 +147,23 @@ Pika、LightX2V Turbo、PAI Acc 都要求每个请求带 `lora` 字段，并使�
 | [`keyframe-a.jpg`](assets/h3-conditioning/keyframe-a.jpg)、[`keyframe-b.jpg`](assets/h3-conditioning/keyframe-b.jpg) | 两张指定帧图片，取自结构控制成片 |
 | [`result-keyframes.mp4`](assets/h3-conditioning/result-keyframes.mp4) | 指定帧：两张图片分别钉在 1.25 秒和 4.583 秒，480×832、124 帧 |
 
-从左到右：原始视频、人物深度控制视频、结构控制成片的同一时刻（第 10 秒）、成片第 21 秒、接续片段第 4 秒。
+结构控制：原始视频、人物深度控制视频、成片，同一时间段（第 8–14 秒）。
 
-![结构控制与接续](images/h3-conditioning/dunhuang-structure-control.jpg)
+![结构控制](images/h3-conditioning/dunhuang-structure-control.gif)
 
-从左到右：重绘前（接续片段）、重绘后；指定帧图片 A、成片 1.25 秒处；指定帧图片 B、成片 4.583 秒处。
+潜空间接续：前 2 秒是上一段成片的结尾，之后是接续出的片段。
 
-![局部重绘与指定帧](images/h3-conditioning/dunhuang-edit-keyframes.jpg)
+![潜空间接续](images/h3-conditioning/dunhuang-continuation.gif)
+
+局部重绘：左为重绘前（接续片段），右为重绘后。
+
+![局部重绘](images/h3-conditioning/dunhuang-video-edit.gif)
+
+指定帧：左为钉在 1.25 秒的图片，右为钉在 4.583 秒的图片，中间是成片。
+
+![指定帧](images/h3-conditioning/dunhuang-keyframes.gif)
+
+动图为 8 帧/秒的缩小版，完整画质见上表中的视频文件。
 
 | 能力 | 入口 | 测量 | 耗时 |
 | --- | --- | --- | ---: |
