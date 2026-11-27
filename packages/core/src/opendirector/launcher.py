@@ -48,8 +48,11 @@ def video_gateway_config(explicit: Path | None, workspace: Path) -> Path | None:
     return default if default.is_file() else None
 
 
-def video_gateway_listen(config: Path, api_port: int) -> tuple[str, int]:
-    """Check the configuration and its port before anything is spawned; returns where to reach the gateway."""
+def video_gateway_listen(config: Path, taken: set[int]) -> tuple[str, int]:
+    """Check the configuration and its port before anything is spawned; returns where to reach the gateway.
+
+    `taken` holds the ports this start is about to bind itself, which are still free when this runs.
+    """
     from opendirector.video_gateway import ConfigError, load
     try:
         settings = load(config)
@@ -58,7 +61,7 @@ def video_gateway_listen(config: Path, api_port: int) -> tuple[str, int]:
     # A wildcard address is reached through the matching loopback one.
     host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(settings["host"], settings["host"])
     port = settings["port"]
-    if port == api_port or port_in_use(port, host):
+    if port in taken or port_in_use(port, host):
         raise RuntimeError(
             f"Video gateway port {port} is already in use; close the program that holds it or change listen.port in {config}. / "
             f"视频转发层端口 {port} 已被占用：请关闭占用该端口的程序，或修改 {config} 中的 listen.port。")
@@ -91,7 +94,7 @@ def start(mode: str = "serve", port: int = 8000, web_port: int = 5173, log_level
         gateway_config = video_gateway_config(video_gateway, workspace)
         gateway = None
         if gateway_config:
-            gateway_host, gateway_port = video_gateway_listen(gateway_config, port)
+            gateway_host, gateway_port = video_gateway_listen(gateway_config, {port, web_port} if mode == "dev" else {port})
             gateway = subprocess.Popen([sys.executable, "-m", "opendirector.video_gateway", str(gateway_config), "--log-level", log_level],
                                        cwd=workspace, env=environment)
             processes.append(gateway)

@@ -14,6 +14,7 @@ import logging
 import re
 import sys
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 import uvicorn
@@ -25,6 +26,7 @@ from starlette.routing import Route
 
 log = logging.getLogger("opendirector.video_gateway")  # not __name__: the module runs as __main__
 MAX_BODY = 768 * 1024 * 1024
+PROBE_TIMEOUT = 10  # seconds a backend gets to say whether it knows a job
 HOP = {"host", "connection", "transfer-encoding", "keep-alive", "content-length"}
 CREATE = {"/v1/videos", "/v1/videos/sync"}
 JOB = re.compile(r"^/v1/videos/(?!sync$)([^/]+)(/content)?$")
@@ -32,6 +34,10 @@ JOB = re.compile(r"^/v1/videos/(?!sync$)([^/]+)(/content)?$")
 
 class ConfigError(ValueError):
     pass
+
+
+def is_url(value) -> bool:
+    return isinstance(value, str) and value.startswith(("http://", "https://"))
 
 
 def load(path: Path) -> dict:
@@ -46,24 +52,31 @@ def load(path: Path) -> dict:
     if not isinstance(models, dict):
         raise ConfigError("`models` must be a mapping of model names")
     default = raw.get("default_backend")
-    if not isinstance(default, str) or not default.startswith(("http://", "https://")):
+    if not is_url(default):
         raise ConfigError("`default_backend` must be the URL that unlisted models are forwarded to")
     table = {}
     for name, entry in models.items():
-        if not isinstance(entry, dict) or not isinstance(entry.get("backend"), str):
-            raise ConfigError(f"model {name!r} needs a `backend` URL")
+        if not isinstance(entry, dict) or not is_url(entry.get("backend")):
+            raise ConfigError(f"model {name!r} needs a `backend` URL that starts with http:// or https://")
         unknown = set(entry) - {"backend", "backend_model", "set", "defaults", "extra_params", "lora"}
         if unknown:
-            raise ConfigError(f"model {name!r} has unknown keys: {', '.join(sorted(unknown))}")
+            raise ConfigError(f"model {name!r} has unknown keys: {', '.join(sorted(map(str, unknown)))}")
         for key in ("set", "defaults", "extra_params"):
             if not isinstance(entry.get(key, {}), dict):
                 raise ConfigError(f"model {name!r}: `{key}` must be a mapping")
+        for key in ("set", "defaults"):
+            empty = [str(field) for field, value in entry.get(key, {}).items() if value is None]
+            if empty:
+                raise ConfigError(f"model {name!r}: `{key}.{empty[0]}` has no value")
         lora = entry.get("lora")
         if lora is not None:
             if not isinstance(lora, dict) or not {"name", "path"} <= set(lora):
                 raise ConfigError(f"model {name!r}: `lora` needs `name` and `path`")
+            scale = lora.get("scale", 1.0)
+            if not isinstance(scale, (int, float)) or isinstance(scale, bool):
+                raise ConfigError(f"model {name!r}: `lora.scale` must be a number")
             # The path belongs to the vLLM-Omni server, which may be another machine: it is sent, not checked.
-            lora = {"name": str(lora["name"]), "path": str(lora["path"]), "scale": float(lora.get("scale", 1.0))}
+            lora = {"name": str(lora["name"]), "path": str(lora["path"]), "scale": float(scale)}
         table[str(name)] = {
             "backend": entry["backend"].rstrip("/"), "backend_model": str(entry.get("backend_model", name)),
             "set": {str(k): v for k, v in entry.get("set", {}).items()},
@@ -80,8 +93,8 @@ def load(path: Path) -> dict:
 
 
 def scalar(value) -> str:
-    """Form fields are text; keep booleans and numbers in the spelling the API reads."""
-    return ("true" if value else "false") if isinstance(value, bool) else str(value)
+    """Form fields are text; booleans, lists and mappings travel in the JSON spelling the API reads."""
+    return json.dumps(value) if isinstance(value, (bool, dict, list)) else str(value)
 
 
 def rewrite(entry: dict, fields: dict) -> tuple[dict, list[str]]:
@@ -154,10 +167,12 @@ def text_part(name: str, value: str):
 
 
 class Gateway:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, transport: httpx.AsyncBaseTransport | None = None):
         self.path, self.stamp, self.config = path, None, None
         self.jobs: dict[str, str] = {}  # job id -> backend that owns it
-        self.client = httpx.AsyncClient(timeout=None)
+        # Backends are the user's own servers: like OpenDirector's self-hosted connections, reach them
+        # directly and never through a proxy named in the environment.
+        self.client = httpx.AsyncClient(timeout=None, trust_env=False, transport=transport)
         self.reload(required=True)
 
     def reload(self, required=False):
@@ -220,35 +235,57 @@ class Gateway:
                 return self.error(413, "request body is too large for the gateway")
         body = bytes(body)
         multipart = "multipart/form-data" in content_type and "boundary=" in content_type
+        urlencoded = "application/x-www-form-urlencoded" in content_type
         try:
             if multipart:
                 boundary = content_type.split("boundary=", 1)[1].split(";", 1)[0].strip().strip('"').encode()
                 parts = split_multipart(body, boundary)
                 fields = {name: content.decode() for name, filename, _, content in parts if filename is None}
+            elif urlencoded:
+                pairs = parse_qsl(body.decode(), keep_blank_values=True, strict_parsing=bool(body))
+                fields = dict(pairs)
             else:
                 document = json.loads(body or b"{}")
                 fields = {key: value if isinstance(value, str) else json.dumps(value) for key, value in document.items()}
         except (ValueError, UnicodeDecodeError, AttributeError):
             # Not a body the gateway understands, so it cannot name a listed model: forward it as it is.
-            fields = {}
-        name = fields.get("model")
+            fields = None
+        name = (fields or {}).get("model")
         entry = self.config["models"].get(name)
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
         remember = request.url.path.rstrip("/") == "/v1/videos"
         if entry is None:
             # Not a listed model: the default backend gets the request byte for byte.
-            log.info("%s %s -> %s: passed through unchanged", request.url.path, name, self.config["default_backend"])
+            log.info("%s %s -> %s: passed through unchanged", request.url.path,
+                     "unreadable body" if fields is None else name, self.config["default_backend"])
             return await self.relay(request, self.config["default_backend"], content=body, headers=headers, remember=remember)
         try:
             new, changes = rewrite(entry, fields)
         except ValueError as error:
             return self.error(400, str(error))
         log.info("%s %s -> %s: %s", request.url.path, name, entry["backend"], "; ".join(changes) or "unchanged")
+        changed = {key for key in new if key in fields and new[key] != fields[key]}
         if multipart:
-            kept = [part for part in parts if part[1] is not None or part[0] in new]
-            rebuilt = [text_part(part[0], new[part[0]]) if part[1] is None else part for part in kept]
+            # Files and untouched text parts keep their own bytes; a changed field is written once.
+            rebuilt, written = [], set()
+            for part in parts:
+                key = part[0]
+                if part[1] is not None or key in new and key not in changed:
+                    rebuilt.append(part)
+                elif key in changed and key not in written:
+                    rebuilt.append(text_part(key, new[key]))
+                    written.add(key)
             rebuilt += [text_part(key, value) for key, value in new.items() if key not in fields]
             body = join_multipart(rebuilt, boundary)
+        elif urlencoded:
+            kept, written = [], set()
+            for key, value in pairs:
+                if key in new and key not in changed:
+                    kept.append((key, value))
+                elif key in changed and key not in written:
+                    kept.append((key, new[key]))
+                    written.add(key)
+            body = urlencode(kept + [(key, value) for key, value in new.items() if key not in fields]).encode()
         else:
             def typed(key):
                 # Untouched keys keep their original JSON type; rewritten ones are parsed back from text.
@@ -276,15 +313,24 @@ class Gateway:
             names = set(self.config["models"])
             return JSONResponse({"object": "list", "data": listed + [item for item in native if item.get("id") not in names]})
         job = JOB.match(path)
+        return await self.relay(request, await self.owner(job.group(1), request) if job else self.config["default_backend"])
+
+    async def owner(self, job: str, request) -> str:
+        """The backend that runs a job. One the gateway did not see created, as after a restart, is looked up."""
         backends = self.backends()
-        if job and job.group(1) not in self.jobs and len(backends) > 1 and request.method == "GET":
-            # A job from before a restart: ask each backend until one knows it.
+        if job not in self.jobs and len(backends) > 1:
+            # Ask with the caller's own credentials. Only a backend that answers for the job owns it: an
+            # error or a refusal says nothing about where the job lives, and a backend that is down is skipped.
+            headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP | {"content-type"}}
             for backend in backends:
-                probe = await self.client.get(f"{backend}/v1/videos/{job.group(1)}")
-                if probe.status_code != 404:
-                    self.jobs[job.group(1)] = backend
+                try:
+                    probe = await self.client.get(f"{backend}/v1/videos/{job}", headers=headers, timeout=PROBE_TIMEOUT)
+                except httpx.HTTPError:
+                    continue
+                if probe.is_success:
+                    self.jobs[job] = backend
                     break
-        return await self.relay(request, self.jobs.get(job.group(1), backends[0]) if job else backends[0])
+        return self.jobs.get(job, backends[0])
 
 
 def application(gateway: Gateway) -> Starlette:

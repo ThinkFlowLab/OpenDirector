@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import time
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
@@ -43,6 +44,11 @@ def test_rewrite_forces_set_fills_defaults_and_merges_extra_params():
     assert any(change.startswith("num_inference_steps=4 (was 8)") for change in changes)
 
 
+def test_structured_values_are_sent_as_json_text():
+    new, _ = gateway.rewrite(entry(set={"enabled": True, "frame_indices": [0, 80], "options": {"tiled": False}}), {"model": "alias"})
+    assert (new["enabled"], new["frame_indices"], new["options"]) == ("true", "[0, 80]", '{"tiled": false}')
+
+
 def test_lora_is_stripped_only_when_the_entry_says_null():
     fields = {"model": "alias", "lora": '{"name": "client"}'}
     assert "lora" not in gateway.rewrite(entry(strip_lora=True), fields)[0]
@@ -71,7 +77,13 @@ def test_multipart_round_trip_keeps_files_byte_for_byte():
     ("default_backend: http://d\nmodels:\n  a: {set: {}}", "'a' needs a `backend`"),
     ("default_backend: http://d\nmodels:\n  a: {backend: http://b, stepz: 4}", "unknown keys: stepz"),
     ("default_backend: http://d\nmodels:\n  a: {backend: http://b, lora: {name: n}}", "`lora` needs `name` and `path`"),
-], ids=["not-a-mapping", "no-default-backend", "text-port", "no-backend", "unknown-key", "lora-without-path"])
+    ("default_backend: http://d\nmodels:\n  a: {backend: '127.0.0.1:8091'}", "'a' needs a `backend` URL that starts with http"),
+    ("default_backend: http://d\nmodels:\n  a: {backend: http://b, 7: x}", "unknown keys: 7"),
+    ("default_backend: http://d\nmodels:\n  a: {backend: http://b, lora: {name: n, path: p, scale: strong}}", "`lora.scale` must be a number"),
+    ("default_backend: http://d\nmodels:\n  a: {backend: http://b, lora: {name: n, path: p, scale: }}", "`lora.scale` must be a number"),
+    ("default_backend: http://d\nmodels:\n  a: {backend: http://b, set: {negative_prompt: }}", "`set.negative_prompt` has no value"),
+], ids=["not-a-mapping", "no-default-backend", "text-port", "no-backend", "unknown-key", "lora-without-path",
+        "backend-without-scheme", "non-text-key", "text-scale", "empty-scale", "empty-set-value"])
 def test_config_errors_name_the_problem(tmp_path, text, message):
     path = tmp_path / "video-gateway.yaml"
     path.write_text(text)
@@ -103,9 +115,15 @@ def served(tmp_path):
         # Real backends answer as streams, which is what the gateway relays.
         return httpx.Response(200, headers={"content-type": "application/json"}, stream=httpx.ByteStream(json.dumps(document).encode()))
 
-    app = gateway.Gateway(config)
-    app.client = httpx.AsyncClient(transport=httpx.MockTransport(backend))
-    return TestClient(gateway.application(app)), seen, config
+    return TestClient(gateway.application(gateway.Gateway(config, httpx.MockTransport(backend)))), seen, config
+
+
+def test_backends_are_reached_directly_whatever_proxy_the_environment_names(tmp_path, monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:7890")
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.invalid:7890")
+    config = tmp_path / "video-gateway.yaml"
+    config.write_text("default_backend: http://127.0.0.1:8091\n")
+    assert gateway.Gateway(config).client.trust_env is False
 
 
 def test_an_unlisted_model_reaches_the_default_backend_byte_for_byte(tmp_path):
@@ -136,6 +154,82 @@ def test_a_listed_model_is_rewritten_and_sent_to_its_own_backend(tmp_path):
     assert seen[-1][:2] == ("special", "/v1/videos/job-special")
 
 
+def test_repeated_and_typed_text_parts_survive_a_rewrite(tmp_path):
+    client, seen, _ = served(tmp_path)
+    boundary = b"edge"
+    typed = b'Content-Disposition: form-data; name="extra_params"\r\nContent-Type: application/json'
+    parts = [gateway.text_part("model", "listed"), gateway.text_part("tag", "one"), gateway.text_part("tag", "two"),
+             ("extra_params", None, typed, b'{"task": "ref2va"}'), gateway.text_part("num_inference_steps", "8"),
+             gateway.text_part("num_inference_steps", "8")]
+    client.post("/v1/videos", content=gateway.join_multipart(parts, boundary), headers={"content-type": "multipart/form-data; boundary=edge"})
+    sent = gateway.split_multipart(seen[-1][3], boundary)
+    assert [(name, content) for name, _, _, content in sent if name == "tag"] == [("tag", b"one"), ("tag", b"two")]
+    assert [content for name, _, _, content in sent if name == "num_inference_steps"] == [b"4"]     # a forced field is written once
+    assert next(head for name, _, head, _ in sent if name == "extra_params") == typed
+
+
+def test_a_urlencoded_request_for_a_listed_model_is_rewritten(tmp_path):
+    client, seen, _ = served(tmp_path)
+    client.post("/v1/videos", content=b"model=listed&num_inference_steps=8&prompt=a+b%26c&tag=1&tag=2",
+                headers={"content-type": "application/x-www-form-urlencoded"})
+    host, _, _, content = seen[-1]
+    sent = parse_qsl(content.decode())
+    assert host == "special" and sent[:5] == [("model", "served"), ("num_inference_steps", "4"), ("prompt", "a b&c"), ("tag", "1"), ("tag", "2")]
+    assert json.loads(dict(sent)["lora"])["name"] == "n"
+
+
+def test_a_body_the_gateway_cannot_read_goes_to_the_default_backend_untouched(tmp_path):
+    client, seen, _ = served(tmp_path)
+    body = b"\xff\xfe not a form"
+    client.post("/v1/videos", content=body, headers={"content-type": "application/octet-stream"})
+    assert seen[-1][0] == "default" and seen[-1][3] == body
+
+
+def restarted(tmp_path, default):
+    """A gateway that never saw `job-special` created; `default` answers for the default backend."""
+    config = tmp_path / "video-gateway.yaml"
+    config.write_text("default_backend: http://default\nmodels:\n  listed: {backend: http://special}\n")
+    seen = []
+
+    def backend(request):
+        seen.append((request.method, request.url.host, request.headers.get("authorization")))
+        if request.url.host == "default":
+            return default(request)
+        if request.headers.get("authorization") != "Bearer key":
+            return httpx.Response(401, stream=httpx.ByteStream(b"{}"))
+        return httpx.Response(200, headers={"content-type": "application/json"}, stream=httpx.ByteStream(b'{"id": "job-special"}'))
+
+    return TestClient(gateway.application(gateway.Gateway(config, httpx.MockTransport(backend)))), seen
+
+
+def unreachable(request):
+    raise httpx.ConnectError("refused", request=request)
+
+
+@pytest.mark.parametrize("default", [
+    lambda request: httpx.Response(404, stream=httpx.ByteStream(b"{}")),
+    lambda request: httpx.Response(401, stream=httpx.ByteStream(b"{}")),
+    lambda request: httpx.Response(503, stream=httpx.ByteStream(b"{}")),
+    unreachable,
+], ids=["unknown-there", "refused-there", "failing-there", "down"])
+@pytest.mark.parametrize("method", ["GET", "DELETE"])
+def test_after_a_restart_a_job_is_found_on_the_backend_that_answers_for_it(tmp_path, default, method):
+    client, seen = restarted(tmp_path, default)
+    response = client.request(method, "/v1/videos/job-special", headers={"authorization": "Bearer key"})
+    assert response.status_code == 200
+    # The lookup carries the caller's key, and the request itself lands on the owner.
+    assert seen[-1] == (method, "special", "Bearer key") and ("GET", "special", "Bearer key") in seen
+    seen.clear()
+    client.get("/v1/videos/job-special/content", headers={"authorization": "Bearer key"})
+    assert seen == [("GET", "special", "Bearer key")]              # remembered: no second lookup
+
+
+def test_a_job_no_backend_knows_is_not_pinned_to_one(tmp_path):
+    client, seen = restarted(tmp_path, lambda request: httpx.Response(404, stream=httpx.ByteStream(b"{}")))
+    assert client.get("/v1/videos/job-special").status_code == 404   # no key: the owner refuses the lookup
+    assert client.get("/v1/videos/job-special", headers={"authorization": "Bearer key"}).status_code == 200
+
+
 def test_model_list_shows_listed_names_and_the_default_backends_own(tmp_path):
     client, _, _ = served(tmp_path)
     assert [item["id"] for item in client.get("/v1/models").json()["data"]] == ["listed", "native-model"]
@@ -153,8 +247,9 @@ def test_an_edited_file_is_picked_up_and_a_broken_edit_keeps_the_last_table(tmp_
 
     rewrite(good.replace("listed:", "renamed:"))
     assert [item["id"] for item in client.get("/v1/models").json()["data"]] == ["renamed", "native-model"]
-    rewrite("models: [broken")
-    assert [item["id"] for item in client.get("/v1/models").json()["data"]] == ["renamed", "native-model"]
+    for broken in ("models: [broken", good.replace("path: /server/adapter.safetensors", "path: p, scale: strong")):
+        rewrite(broken)
+        assert [item["id"] for item in client.get("/v1/models").json()["data"]] == ["renamed", "native-model"]
 
 
 # --- started with OpenDirector -----------------------------------------------------------------------------
@@ -213,6 +308,15 @@ def test_the_gateway_port_cannot_be_the_application_port(unspawned, capsys):
     config.write_text(f"default_backend: http://d\nlisten: {{port: {port}}}\n")
     assert launcher.start("serve", port, video_gateway=config) == 1
     assert "listen.port" in capsys.readouterr().err
+
+
+def test_in_development_the_gateway_port_cannot_be_the_web_port(tmp_path):
+    web_port = free_port()
+    config = tmp_path / "gateway.yaml"
+    config.write_text(f"default_backend: http://d\nlisten: {{port: {web_port}}}\n")
+    with pytest.raises(RuntimeError, match="listen.port"):
+        launcher.video_gateway_listen(config, {free_port(), web_port})
+    assert launcher.video_gateway_listen(config, {free_port()}) == ("127.0.0.1", web_port)
 
 
 def test_the_module_entry_point_serves_the_configured_models(tmp_path):

@@ -78,7 +78,8 @@ Add one model for each configured name. A model name that is not in the file sti
 
 - A video creation request (`POST /v1/videos` or `POST /v1/videos/sync`) whose `model` is listed is rewritten as configured and sent to that entry's backend. Uploaded files are carried through unchanged.
 - A request for any other model name goes to `default_backend` exactly as it arrived.
-- Status queries, downloads and cancellation are relayed to the backend that created the job.
+- Status queries, downloads and cancellation are relayed to the backend that created the job. After a gateway restart, the backend that answers for a job is looked up again with the caller's credentials.
+- Backends are reached directly. Proxy settings in the environment, such as `HTTP_PROXY`, are not applied to them.
 - `GET /v1/models` lists the configured names, then the default backend's own.
 - Each rewrite is logged with the fields it changed, in the same terminal as the application.
 
