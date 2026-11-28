@@ -322,6 +322,8 @@ def test_cancel_interrupted_task_rejects_changed_service(context):
 
 @pytest.mark.parametrize('status, object_type, returned_id, terminal', [
     (200, 'video', 'original-remote', True),
+    (400, 'video', 'original-remote', True),
+    (400, 'video', 'another-job', False),
     (500, 'video', 'original-remote', True),
     (500, 'video', 'another-job', False),
     (500, 'error', 'original-remote', False),

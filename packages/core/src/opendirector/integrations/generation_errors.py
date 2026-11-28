@@ -11,6 +11,9 @@ from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 
 logger = logging.getLogger(__name__)
 
+# HTTP statuses under which a polled vLLM video job may still carry its own failed status.
+_VIDEO_FAILURE_STATUSES = {400, 500}
+
 _REASONS = {
     'input': ('生成服务拒绝了输入内容或参数。', '请检查生成要求、参数和模型支持范围。'),
     'reference': ('生成服务拒绝了参考素材。', '请更换符合服务要求的参考素材，再决定是否重新生成。'),
@@ -132,9 +135,9 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         suggestion = '请核对原任务和结果链接，恢复下载前不要直接重新生成。'
     terminal_status = None
     if stage == 'poll' and value.get('status') in {'failed', 'cancelled', 'expired'}:
-        # vLLM can return a failed Video object with HTTP 500. A gateway error
+        # vLLM can return a failed Video object with HTTP 400 or 500. A gateway error
         # is not terminal evidence: require the queried job's exact identity.
-        if http_status == 200 or (http_status == 500 and expected_task_id
+        if http_status == 200 or (http_status in _VIDEO_FAILURE_STATUSES and expected_task_id
                 and value.get('object') == 'video' and value.get('id') == expected_task_id):
             terminal_status = value['status']
     if terminal_status == 'failed' and (category == 'temporary' or provider == 'kling' and category == 'provider'):
@@ -162,7 +165,7 @@ async def checked(response, *, stage, secrets=()):
     except (ValueError, UnicodeError):
         value = None
     expected_task_id = None
-    if stage == 'poll' and response.status_code == 500:
+    if stage == 'poll' and response.status_code in _VIDEO_FAILURE_STATUSES:
         try:
             match = re.search(r'/videos/([^/]+)$', response.request.url.path)
         except RuntimeError:  # Detached responses cannot prove task identity.
