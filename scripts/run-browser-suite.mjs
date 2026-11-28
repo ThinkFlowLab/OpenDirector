@@ -66,6 +66,10 @@ const workflows = [
     script: "tests/browser/canvas_progressive_load.mjs",
   },
   {
+    name: "canvas toolbar top bar",
+    script: "tests/browser/canvas_toolbar_topbar.mjs",
+  },
+  {
     name: "structured editors",
     script: "tests/browser/structured_editors.mjs",
     args: ["--publish"],
