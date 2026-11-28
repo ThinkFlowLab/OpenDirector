@@ -1,7 +1,11 @@
 import Schema from '@deepseek-ai/schemastery'
+import packageInfo from './package.json' with { type: 'json' }
+import { connectionStatus } from './src/connection.js'
+import { Readable } from 'node:stream'
+import { zipEntries } from './src/archive.js'
 import { OpenDirectorClient } from './src/client.js'
-import { resolveConfig } from './src/config.js'
-import { ConfigError, HttpError, InputError } from './src/errors.js'
+import { DEFAULT_BASE_URL, resolveConfig } from './src/config.js'
+import { ConfigError, HttpError, InputError, NetworkError, RequestTimeoutError, UnknownOperationError } from './src/errors.js'
 import { createMessages } from './src/i18n.js'
 import { createOpenDirectorTools } from './src/tools.js'
 
@@ -9,11 +13,27 @@ export const name = 'opendirector'
 export const inject = ['tools']
 
 export const Config = Schema.object({
-  baseUrl: Schema.string().default('http://127.0.0.1:8000'),
+  baseUrl: Schema.string().default(DEFAULT_BASE_URL),
   canvasBaseUrl: Schema.string().default(''),
   locale: Schema.union(['en-US', 'zh-CN']).default('en-US'),
   requestTimeoutMs: Schema.number().default(30000),
 })
+
+function isBrowserAction(request) {
+  const site = request.headers.get('sec-fetch-site')
+  return request.headers.get('x-opendirector-action') === '1' && (!site || site === 'same-origin')
+}
+
+async function actionInput(request) {
+  const input = await request.json()
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Invalid action')
+  return input
+}
+
+function errorCode(error) {
+  if (error instanceof HttpError) return error.code
+  return error instanceof InputError ? error.key : 'unavailable'
+}
 
 export function apply(ctx, config) {
   const requestedLocale = config?.locale === 'zh-CN' ? 'zh-CN' : 'en-US'
@@ -31,6 +51,8 @@ export function apply(ctx, config) {
     ctx.tools.register(tool)
   }
   ctx.inject(['connection'], (scope) => {
+    const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
+
     scope.effect(() => scope.connection.fetch.register({
       path: '/api/opendirector/media',
       methods: ['GET'],
@@ -40,27 +62,218 @@ export function apply(ctx, config) {
         try {
           ({ searchParams } = new URL(request.url, 'http://localhost'))
         } catch {
-          return new Response(null, { status: 400 })
+          return new Response(null, { status: 400, headers })
         }
         try {
           const media = await client.media(
             searchParams.get('project'), searchParams.get('asset'), {
-              kind: searchParams.get('kind'), range: request.headers.get('range'), signal: request.signal,
+              kind: searchParams.get('kind'), original: searchParams.get('original') === '1',
+              range: request.headers.get('range'), signal: request.signal,
             },
           )
-          const headers = new Headers({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' })
+          const mediaHeaders = new Headers(headers)
           for (const name of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']) {
             const value = media.headers.get(name)
-            if (value !== null) headers.set(name, value)
+            if (value !== null) mediaHeaders.set(name, value)
           }
-          return new Response(media.body, { status: media.status, headers })
+          return new Response(media.body, { status: media.status, headers: mediaHeaders })
         } catch (error) {
           const status = error instanceof InputError ? 400
             : error instanceof HttpError && error.status === 404 ? 404
               : 502
-          return new Response(null, { status })
+          return new Response(null, { status, headers })
         }
       },
     }), 'OpenDirector media previews')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/connection',
+      methods: ['GET'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        const diagnosticClient = new OpenDirectorClient({
+          ...resolved, requestTimeoutMs: Math.min(resolved.requestTimeoutMs, 5000),
+        })
+        return Response.json(await connectionStatus(diagnosticClient, resolved, packageInfo.version,
+          { signal: request.signal }), { headers })
+      },
+    }), 'OpenDirector connection check')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/library',
+      methods: ['GET'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        try {
+          const params = new URL(request.url, 'http://localhost').searchParams
+          const projectId = params.get('project')
+          if (params.has('show')) {
+            const value = await client.showResults(projectId, params.get('show').split(','), { signal: request.signal })
+            return Response.json(value, { headers })
+          }
+          if (params.has('compare')) {
+            const value = await client.compareImages(projectId, params.get('compare').split(','), { signal: request.signal })
+            return Response.json(value, { headers })
+          }
+          if (projectId !== null) {
+            const options = {
+              kind: params.get('kind') ?? undefined, selection: params.get('selection') ?? undefined,
+              order: params.get('order') ?? undefined, after: params.get('after'), signal: request.signal,
+              query: params.get('q') ?? '', status: params.get('status') ?? undefined,
+            }
+            const library = params.get('view') === 'jobs'
+              ? await client.libraryJobs(projectId, options)
+              : await client.libraryResults(projectId, options)
+            return Response.json(library, { headers })
+          }
+          const value = await client.listProjects({ signal: request.signal })
+          const projects = value.projects.map(({ id, name }) => ({ id, name }))
+          return Response.json({ projects, scope: resolved.baseUrl }, { headers })
+        } catch (error) {
+          const status = error instanceof InputError ? (error.key === 'library.cursor_expired' ? 409 : 400)
+            : error instanceof HttpError && error.status === 404 ? 404
+              : 502
+          return new Response(null, { status, headers })
+        }
+      },
+    }), 'OpenDirector project library')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/adopt',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        // The DSH connection authenticates the request. Require a same-origin
+        // browser action as well, so a cross-origin form cannot adopt a result.
+        if (!isBrowserAction(request)) {
+          return new Response(null, { status: 403, headers })
+        }
+        let input
+        try {
+          input = await actionInput(request)
+        } catch {
+          return new Response(null, { status: 400, headers })
+        }
+        const { projectId, resultId, operationId } = input
+        const check = input.check === true
+        try {
+          const receipt = await client.adoptCandidate({
+            projectId, resultId, operationId, check, signal: request.signal,
+          })
+          return Response.json({
+            status: receipt?.status ?? 'unknown',
+            code: receipt?.issues?.[0]?.code,
+            canvasUrl: client.canvasUrl(projectId),
+          }, { headers })
+        } catch (error) {
+          if (error instanceof UnknownOperationError || (check && !(error instanceof InputError))) {
+            return Response.json({ status: 'unknown' }, { headers })
+          }
+          return Response.json({ status: 'rejected', code: errorCode(error) }, { headers })
+        }
+      },
+    }), 'OpenDirector result adoption')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/cancel',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        if (!isBrowserAction(request)) return new Response(null, { status: 403, headers })
+        let input
+        try {
+          input = await actionInput(request)
+        } catch {
+          return new Response(null, { status: 400, headers })
+        }
+        try {
+          const receipt = await client.cancelCreation({ ...input, signal: request.signal })
+          return Response.json({ status: receipt?.status ?? 'unknown', code: receipt?.issues?.[0]?.code }, { headers })
+        } catch (error) {
+          if (error instanceof UnknownOperationError || (input.check === true && !(error instanceof InputError))) {
+            return Response.json({ status: 'unknown' }, { headers })
+          }
+          return Response.json({ status: 'rejected', code: errorCode(error) }, { headers })
+        }
+      },
+    }), 'OpenDirector job cancellation')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/action-packs',
+      methods: ['GET', 'POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        if (request.method === 'GET') {
+          try {
+            const params = new URL(request.url, 'http://localhost').searchParams
+            const input = { projectId: params.get('project'), packId: params.get('pack'),
+              action: params.has('pack') ? 'get' : 'list' }
+            if (params.get('download') === '1') {
+              const archive = await client.actionPackArchive(input, { signal: request.signal })
+              return new Response(Readable.toWeb(Readable.from(zipEntries(archive.entries,
+                { signal: request.signal, maxBytes: archive.maxBytes }))), {
+                headers: { ...headers, 'Content-Type': 'application/zip',
+                  'Content-Disposition': 'attachment; filename="' + archive.filename + '"' },
+              })
+            }
+            return Response.json({ ...await client.actionPack(input, { signal: request.signal }),
+              canvasUrl: client.canvasUrl(input.projectId) }, { headers })
+          } catch (error) {
+            return Response.json({ code: errorCode(error) }, { status: error instanceof InputError ? 400 : 502, headers })
+          }
+        }
+        if (!isBrowserAction(request)) return new Response(null, { status: 403, headers })
+        let input
+        try { input = await actionInput(request) } catch { return new Response(null, { status: 400, headers }) }
+        try {
+          const value = await client.actionPack(input, { signal: request.signal })
+          return Response.json({ ...value, projectId: input.projectId, canvasUrl: client.canvasUrl(input.projectId) }, { headers })
+        } catch (error) {
+          return Response.json(error instanceof UnknownOperationError || input.action === 'check'
+            ? { status: 'unknown' } : { status: 'rejected', code: errorCode(error) }, { headers })
+        }
+      },
+    }), 'OpenDirector action packs')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: '/api/opendirector/creation',
+      methods: ['GET', 'POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        if (request.method === 'GET') {
+          try {
+            const params = new URL(request.url, 'http://localhost').searchParams
+            const { signal } = request
+            const value = params.has('group')
+              ? await client.creationGroupStatus(params.get('project'), params.get('group'), { signal })
+              : params.has('job')
+              ? await client.creationStatus(params.get('project'), params.get('job'), { signal })
+              : params.has('reuse')
+                ? await client.creationTemplate(params.get('project'), params.get('reuse'), { signal })
+                : { models: await client.creationModels({ signal }), scope: resolved.baseUrl }
+            return Response.json(value, { headers })
+          } catch (error) {
+            return new Response(null, { status: error instanceof InputError ? 400 : 502, headers })
+          }
+        }
+        if (!isBrowserAction(request)) return new Response(null, { status: 403, headers })
+        let input
+        try {
+          input = await actionInput(request)
+        } catch {
+          return new Response(null, { status: 400, headers })
+        }
+        try {
+          const value = await client.startCreation(input, { signal: request.signal })
+          return Response.json({ ...value, canvasUrl: client.canvasUrl(input.projectId) }, { headers })
+        } catch (error) {
+          const unknown = error instanceof UnknownOperationError || (input.check === true && !(error instanceof InputError))
+          const code = error instanceof NetworkError || error instanceof RequestTimeoutError
+            ? 'creation.unavailable' : errorCode(error)
+          return Response.json(unknown ? { status: 'unknown' }
+            : { status: 'rejected', code }, { headers })
+        }
+      },
+    }), 'OpenDirector creation controls')
   })
 }

@@ -7,6 +7,13 @@ export const MEDIA_KINDS = ['text', 'image', 'video', 'audio', 'file']
 export const SUBJECT_ROLES = ['main', 'auxiliary', 'voice']
 export const REFERENCE_BINDINGS = ['follow_current', 'pinned']
 
+export function imageOutputParameters(outputs, requested) {
+  const output = requested == null ? outputs[0] : outputs.find(item =>
+    item.size === requested.size && item.aspectRatio === requested.aspectRatio)
+  if (requested != null && !output) throw new InputError('creation.output')
+  return output ? { size: output.size, aspectRatio: output.aspectRatio } : { size: 'auto' }
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function fail(key, params) {
@@ -42,7 +49,7 @@ function requireArray(value, field) {
   return value
 }
 
-function requireEnum(value, field, values) {
+export function requireEnum(value, field, values) {
   if (value == null) fail('input.required', { field })
   if (!values.includes(value)) fail('input.enum', { field, values: values.join('|') })
   return value
@@ -228,6 +235,8 @@ export function buildSubmitCommand({
   expectedSpecRevision,
   originItemId,
   expectedItemRevision,
+  previousJobId,
+  batchId,
 } = {}) {
   const id = requireUuid(projectId, 'projectId')
   const commandId = requireUuid(operationId, 'operationId')
@@ -252,6 +261,8 @@ export function buildSubmitCommand({
       specId: spec,
       expectedSpecRevision: revision,
       ...(origin == null ? {} : { originItemId: origin }),
+      ...(previousJobId == null ? {} : { previousJobId: requireUuid(previousJobId, 'previousJobId') }),
+      ...(batchId == null ? {} : { batchId: requireUuid(batchId, 'batchId') }),
       adoptionPolicy: 'candidate_only',
       showAdditionalResult: false,
     },

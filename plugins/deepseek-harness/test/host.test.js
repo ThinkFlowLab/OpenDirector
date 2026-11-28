@@ -17,10 +17,11 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
   const specId = randomUUID()
   const asset = { assetId: randomUUID(), revision: 1, fingerprint: `sha256:${'a'.repeat(64)}`, kind: 'image' }
   const snapshot = {
-    project: { id: projectId, revision: 1, name: 'Studio' },
+    project: { id: projectId, revision: 1, name: 'Studio' }, canvasItems: [], references: [],
     generationSpecs: [{ id: specId, currentResultId: null }],
+    assets: [{ id: asset.assetId, metadata: { width: 512, height: 512 } }],
     jobs: [{ id: jobId, revision: 3, status: 'succeeded', originItemId: null, errorDetails: null,
-      cancelRequested: false, remoteCancellation: 'not_requested' }],
+      cancelRequested: false, remoteCancellation: 'not_requested', execution: { kind: 'image' } }],
     results: [{ id: resultId, specId, jobId, asset }],
   }
   const server = createServer((request, response) => {
@@ -45,7 +46,10 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     const entry = [...ctx.loader.entries()].find(value => value.options.id === 'opendirector')
     assert.ok(entry)
     const names = () => ctx.tools.schemas().filter(tool => tool.name.startsWith('opendirector_'))
-    assert.equal(names().length, 8)
+    assert.equal(names().length, 10)
+    const actionPack = names().find(tool => tool.name === 'opendirector_action_pack').parameters
+    assert.deepEqual(actionPack.required, ['projectId', 'action'])
+    assert.deepEqual(actionPack.properties.actions.items.required, ['name', 'prompt'])
     const generation = names().find(tool => tool.name === 'opendirector_create_generation').parameters
     assert.deepEqual(generation.required, ['projectId', 'operationId', 'kind', 'modelConfigId', 'prompt', 'parameters', 'position'])
     assert.deepEqual(generation.properties.position.required, ['x', 'y'])
@@ -55,18 +59,40 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     const definition = ctx.tools.definitions().find(tool => tool.name === 'opendirector_create_generation')
     assert.deepEqual(definition.output.schema.required,
       ['projectId', 'canvasUrl', 'operationId', 'receipt', 'specId', 'itemId', 'referenceIds'])
-    async function readJob() {
+    async function runTool(name, args) {
       const batch = await ctx.tools.execute({
-        calls: [{ type: 'tool-call', id: randomUUID(), name: 'opendirector_job', arguments: JSON.stringify({ projectId, jobId }) }],
+        calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }],
         signal: new AbortController().signal,
       })
       const result = batch.results[0].result
       assert.equal(result.isError, false, JSON.stringify(result))
       return result
     }
+    const readJob = () => runTool('opendirector_job', { projectId, jobId })
+    const packRead = await ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: randomUUID(), name: 'opendirector_action_pack',
+        arguments: JSON.stringify({ projectId, action: 'list' }) }], signal: new AbortController().signal,
+    })
+    assert.equal(packRead.results[0].result.isError, false)
+    assert.deepEqual(packRead.results[0].result.value.packs, [])
+    const savedSchema = names().find(tool => tool.name === 'opendirector_results').parameters
+    assert.deepEqual(savedSchema.required, ['projectId', 'action'])
+    const lookup = (action, fields = {}) => runTool('opendirector_results', { projectId, action, ...fields })
+    const found = await lookup('find', { kind: 'image' })
+    assert.equal(found.value.results[0].resultId, resultId)
+    assert.equal(found.meta.savedResults, undefined)
+    assert.doesNotMatch(found.content[0].text, /"generationSpecs"|"jobs"/)
+    const shown = await lookup('show', { resultIds: [resultId] })
+    assert.equal(shown.meta.savedResults.results[0].assetId, asset.assetId)
+    assert.equal(shown.meta.savedResults.results[0].selected, false)
+    const draft = await lookup('draft', { resultIds: [resultId], editPrompt: 'Keep the coast. Add a red scarf.' })
+    assert.equal(draft.meta.editDraft.source.resultId, resultId)
+    assert.equal(draft.meta.editDraft.prompt, 'Keep the coast. Add a red scarf.')
+    assert.equal(draft.meta.savedResults, undefined)
     const english = await readJob()
     assert.equal(english.value.job.originItemId, null)
     assert.equal(english.value.job.errorDetails, null)
+    assert.deepEqual(english.meta.mediaPreview.candidates[0].details, { width: 512, height: 512 })
     assert.match(english.content[0].text, /Candidate saved in this project/)
     assert.match(english.content[0].text, /^revision: 3$/m)
     assert.match(english.content[0].text, /cancelRequested: false/)
@@ -79,7 +105,7 @@ test('real DSH Loader and Native executor preserve nullable backend facts, local
     assert.equal(names().length, 0)
     await entry.update({ config: { baseUrl, locale: 'zh-CN' }, disabled: false })
     await ctx.loader.await()
-    assert.equal(names().length, 8)
+    assert.equal(names().length, 10)
     const chinese = await readJob()
     assert.match(chinese.content[0].text, /候选已保存到此工程/)
     assert.doesNotMatch(chinese.content[0].text, /Candidate saved|Status:|Project:/)

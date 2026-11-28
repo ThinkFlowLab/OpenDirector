@@ -1,3 +1,27 @@
+export function mediaDetails(metadata) {
+  const { width, height, durationSeconds } = metadata ?? {}
+  const hasDimensions = Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0
+  const hasDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+  if (!hasDimensions && !hasDuration) return undefined
+  return {
+    ...(hasDimensions && { width, height }),
+    ...(hasDuration && { durationSeconds }),
+  }
+}
+
+// A repeat can share a spec with earlier jobs. Read the size each job actually submitted.
+export function resultMediaDetails(snapshot, jobs = new Map(snapshot.jobs.map(job => [job.id, job]))) {
+  const assets = new Map((snapshot.assets ?? []).map(asset => [asset.id, asset.metadata]))
+  return ({ asset, jobId }) => {
+    const details = mediaDetails(assets.get(asset.assetId))
+    const size = jobs.get(jobId)?.inputSnapshot?.spec?.parameters?.size
+    if (asset.kind === 'image' && details?.width && /^\d+x\d+$/.test(size) && size !== `${details.width}x${details.height}`) {
+      return { ...details, requestedSize: size }
+    }
+    return details
+  }
+}
+
 /** Model-facing summaries. The canonical value remains available to programs. */
 export function renderToolResult(key, value, t, { webPreview = false } = {}) {
   const lines = [t(`render.${key}`)]
@@ -6,6 +30,20 @@ export function renderToolResult(key, value, t, { webPreview = false } = {}) {
   if (status) lines.push(`${t('summary.status')}: ${t(`status.${status}`)}`)
   if (value.receipt?.status === 'rejected') {
     lines.push(...value.receipt.issues.map(issue => `${issue.code}: ${issue.message}`))
+  } else if (key === 'results') {
+    // The user sees media cards. The chat model needs identities, the saved prompt and exact source links.
+    for (const [index, result] of value.results.entries()) {
+      const { resultId, kind, title, prompt, selected, sourceResultId, firstFrameFor } = result
+      lines.push(JSON.stringify({ position: index + 1, resultId, kind, title, prompt, selected, sourceResultId, firstFrameFor }))
+    }
+    if (value.action === 'find') {
+      lines.push(value.results.length ? t('summary.foundResults') : t('summary.noResults'))
+      if (value.nextCursor) lines.push(`after: ${value.nextCursor}`)
+    } else if (value.action === 'draft') {
+      lines.push(value.editPrompt, t(webPreview ? 'summary.editDraftWeb' : 'summary.editDraft'))
+    } else {
+      lines.push(t(webPreview ? 'summary.savedCards' : 'summary.canvasPreview'))
+    }
   } else if (key === 'submit') {
     lines.push(t('summary.submitted'), ...value.jobIds.map(id => `jobId: ${id}`))
   } else if (key === 'job') {
@@ -20,7 +58,7 @@ export function renderToolResult(key, value, t, { webPreview = false } = {}) {
         if (result.asset) lines.push(`${t('summary.referenceAsset')}: ${JSON.stringify(result.asset)}`)
       }
       const hasPreview = webPreview && value.results.some(({ asset }) =>
-        asset?.kind === 'image' || asset?.kind === 'video')
+        asset?.kind === 'image' || asset?.kind === 'video' || asset?.kind === 'audio')
       lines.push(t(hasPreview ? 'summary.webPreview' : 'summary.canvasPreview'))
     }
     if (value.job.errorDetails?.message) lines.push(value.job.errorDetails.message)

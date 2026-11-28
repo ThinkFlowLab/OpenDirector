@@ -39,6 +39,12 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 
 - **Windows CLI follow-up:** In PR #323 validation, the Agent saved Unicode successfully, but PowerShell 5.1 shell readback failed when Python used the Windows code page. A saved-object comparison bypasses CLI stdout. Test write and readback in the actual Agent shell with Python UTF-8 mode disabled in the parent environment, and cover BOM-prefixed JSON files produced by PowerShell 5.1. / **Windows CLI 补充：** PR #323 验收中，Agent 正确保存了 Unicode，但 Python 使用 Windows 代码页时，PowerShell 5.1 中的读回失败。应在父进程关闭 Python UTF-8 模式，用真实 Agent Shell 验证写入和读回，并覆盖 PowerShell 5.1 生成的带 BOM JSON 文件。
 
+## Cancellation can race with a worker checkpoint
+
+- **Trigger:** A worker reads a running job, then cancellation advances its revision before the worker saves the next phase.
+- **Lesson:** Commit 3635393 reconciles only the checkpoint on revision conflict. The old path converted this race into a provider failure even though cancellation was saved. A stale checkpoint could also lose a saved remote task identity.
+- **Check:** Inject cancellation between the snapshot read and commit. Preserve stop intent, terminal cancellation and the accepted remote identity; do not repeat provider submission. Keep unrelated rejections as errors. The deterministic regressions in [test_creation_generation_service.py](../../tests/test_creation_generation_service.py) cover the interleaving, no provider call, terminal states and remote identity preservation.
+
 ## Baseline failures still need tracking
 
 - **Trigger:** A relevant test fails and comparison shows that it also fails on the baseline.

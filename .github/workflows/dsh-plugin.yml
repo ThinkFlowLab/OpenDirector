@@ -17,7 +17,12 @@ concurrency:
 
 jobs:
   tests:
-    runs-on: ubuntu-22.04
+    name: Plugin checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -45,3 +50,77 @@ jobs:
         if: steps.scope.outputs.run-dsh != 'false'
         working-directory: plugins/deepseek-harness
         run: npm test
+      - name: Check the installable DSH bundle
+        shell: bash
+        working-directory: plugins/deepseek-harness
+        run: |
+          npm pack --json > package-check.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { execFileSync } from 'node:child_process'
+          import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+          import { createHash } from 'node:crypto'
+
+          const run = (command, args) => execFileSync(command, args, { encoding: 'utf8' })
+          const [{ filename }] = JSON.parse(readFileSync('package-check.json', 'utf8'))
+          try {
+            const entries = new Set(run('tar', ['-tzf', filename]).trim().split(/\r?\n/))
+            const manifest = JSON.parse(run('tar', ['-xOzf', filename, 'package/package.json']))
+            for (const entry of [manifest.dsh?.bundle?.patch, manifest.exports?.['./client'], manifest.icon,
+              ...['en', 'zh'].map(language => manifest.exports?.['./locale/*.json']?.replace('*', language))]) {
+              assert.ok(entry?.startsWith('./') && entries.has('package/' + entry.slice(2)), entry)
+            }
+            assert.ok(manifest.version && manifest.engines?.dsh)
+            const sha256 = createHash('sha256').update(readFileSync(filename)).digest('hex')
+            writeFileSync(filename + '.sha256', sha256 + '  ' + filename + '\n')
+            if (process.env.RUNNER_OS === 'Linux') {
+              execFileSync(process.execPath, ['scripts/prepare-release.mjs', '--tarball', filename,
+                '--output', process.env.RUNNER_TEMP + '/opendirector-dsh-release'], { stdio: 'inherit' })
+            }
+          } finally {
+            unlinkSync('package-check.json')
+          }
+          NODE
+      - name: Save the installable plugin
+        if: matrix.os == 'ubuntu-22.04'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opendirector-dsh-plugin-${{ github.sha }}
+          path: ${{ runner.temp }}/opendirector-dsh-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  latest-tools:
+    name: Plugin compatibility
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      DSH_VERSION: 0.2.2-rc.5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: plugins/deepseek-harness/package-lock.json
+      - name: Install plugin dependencies
+        working-directory: plugins/deepseek-harness
+        run: npm ci
+      - name: Install the DSH compatibility checker and tool runtime
+        working-directory: plugins/deepseek-harness
+        run: >-
+          npm install --ignore-scripts --no-save --package-lock=false
+          "@deepseek-ai/dsh-app-boot@$DSH_VERSION"
+          "@deepseek-ai/dsh-tools@$DSH_VERSION"
+          "@deepseek-ai/dsh-tool-executor-native@$DSH_VERSION"
+          "@deepseek-ai/dsh-system-prompt@$DSH_VERSION"
+      - name: Check plugin loading and execution
+        working-directory: plugins/deepseek-harness
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot'
+          import manifest from './package.json' with { type: 'json' }
+          assert.equal(evaluatePluginCompatibility(manifest, {}, process.env.DSH_VERSION), undefined)
+          JS
+          npm test
