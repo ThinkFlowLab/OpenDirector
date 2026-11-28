@@ -197,7 +197,7 @@ def test_publication_is_a_command_not_a_separate_tool():
     schema = COMMANDS['artifact.publish'].model_json_schema()
     assert 'commandId' in schema['properties']
     payload = schema['$defs']['ArtifactPublish']['properties']
-    assert set(payload) == {'path', 'name', 'expectedKind', 'sources'}
+    assert set(payload) == {'path', 'name', 'expectedKind', 'sources', 'sourceItemId', 'sourceAssetId'}
 
 
 def test_publication_replay_does_not_require_original_output_file(publication):

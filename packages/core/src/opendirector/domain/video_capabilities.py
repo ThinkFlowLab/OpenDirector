@@ -40,6 +40,9 @@ class VideoCapabilities(BaseModel):
     defaultDuration: Second = Field(default=5, description='Default output duration in seconds.')
     dimensionStep: Literal[1, 2, 8, 16, 32, 64] = Field(default=2, description='Required pixel alignment of output dimensions.')
 
+    timelineGuides: bool = Field(default=False, strict=True, exclude_if=lambda value: not value,
+        description='Whether this deployed FastH3 endpoint accepts native timeline guide uploads.')
+
     @model_validator(mode='after')
     def defaults_exist(self):
         labels = [item.resolution for item in self.outputs]
@@ -98,8 +101,22 @@ def preset_capabilities(profile, model=''):
     return None
 
 
+def supports_h3_segments(profile, timeline_guides=False):
+    return profile == 'vllm-omni-h3' or (profile == 'fasth3-omni' and timeline_guides is True)
+
+
+def unsupported_h3_segment():
+    return ProjectError('当前部署不支持 H3 分段导帧，或未选择参考模式。', 422, code='h3_timeline_guides_unsupported')
+
+
+def timeline_guides_deployment_error():
+    return ProjectError('导帧能力配置仅适用于已适配的自部署 FastH3 视频接口。', 422, code='h3_timeline_guides_deployment')
+
+
 def capability_fields(config, rules):
     capabilities = config.get('videoCapabilities') or preset_capabilities(rules['profile'], config['modelId'])
+    if capabilities and capabilities.get('timelineGuides') and rules['profile'] != 'fasth3-omni':
+        raise timeline_guides_deployment_error()
     if rules['profile'] == 'minimax-h3-official' and config['modelId'] in MINIMAX_MODELS:
         native = minimax_capabilities(config['modelId'])
         if config.get('videoCapabilities'):
@@ -146,6 +163,8 @@ def check_video_config(kind, protocol, adapter, capabilities):
             capabilities = VideoCapabilities.model_validate(capabilities).model_dump(exclude_none=True)
         except ValueError:
             raise ProjectError('视频输出规格无效，请检查分辨率、尺寸、时长和默认值。') from None
+        if capabilities.get('timelineGuides') and (protocol != 'vllm_omni' or adapter not in {'auto', 'fasth3', 'fasth3_dual'}):
+            raise timeline_guides_deployment_error()
         if protocol == 'bigmodel_video':
             validate_cogvideo_outputs(capabilities)
             return capabilities

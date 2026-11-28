@@ -4,6 +4,7 @@ The journal is written before any project file changes. ``project.json`` is the
 commit point. Recovery finishes that intent; it does not choose a new command.
 """
 from collections.abc import Callable
+from uuid import uuid5
 
 from pydantic import ValidationError
 
@@ -11,7 +12,7 @@ from opendirector.domain.creation.base import digest
 from opendirector.domain.creation.commands import Command, CommandReceipt, ProjectEvent, command_fingerprint
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.run_layout import reflow_runs
-from opendirector.domain.creation.validation import ContractError, validate_command, validate_published_plans
+from opendirector.domain.creation.validation import ContractError, validate_command, validate_segment_run_transition, validate_workflow_guide_transition
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.infrastructure.creation_files import cleanup_staging, delete_files, install_files
 from opendirector.infrastructure.creation_records import (
@@ -38,6 +39,13 @@ class CommitPublication:
         """Resolve an already committed command before reading upload handles."""
         self._await_current_warm(command.projectId)
         return self._replay(self.records(command.projectId), command)
+
+    def discard_uncommitted_files(self, project_id, writes):
+        """Release trusted staging after a definite failure before publication."""
+        try:
+            cleanup_staging(project_id, writes, self.state_dir)
+        except (OSError, ProjectError):
+            pass
 
     def commit(self, command: Command,
                apply: Callable[[ProjectSnapshot], ProjectSnapshot] | Callable[[ProjectSnapshot, tuple[CommitRecord, ...]], ProjectSnapshot], *,
@@ -68,7 +76,9 @@ class CommitPublication:
                     raise ContractError('invalid_input', 'Services cannot replace project identity or event cursors')
                 if snapshot.project.name != before.project.name and command.type != 'project.rename':
                     raise ContractError('invalid_input', 'Only the rename command can rename a project')
-                validate_published_plans(command, before, snapshot)
+                if before.canvasItems != snapshot.canvasItems or before.generationSpecs != snapshot.generationSpecs:
+                    validate_workflow_guide_transition(before, snapshot)
+                validate_segment_run_transition(before, snapshot, command, source)
                 changed = object_changes(before, snapshot, command)
                 operations = command.payload.operations if command.type == 'creation.batch' else (command,)
                 organize_runs = any(operation.type == 'canvas.layoutRuns' for operation in operations)
@@ -106,9 +116,13 @@ class CommitPublication:
                         and next(job for job in snapshot.jobs if job.id == item['version'].id).status == 'queued')
         event = ProjectEvent(projectId=command.projectId, cursor=snapshot.eventCursor, commandId=command.commandId,
                              source=source, changed=changed, jobIds=job_ids) if changed else None
+        plan_item_id = None
+        if changed and command.type == 'group.publishRun':
+            plan_item_id = next(item.runPlanItemId for item in snapshot.canvasItems if item.id == command.payload.groupId)
         receipt = CommandReceipt(commandId=command.commandId, projectId=command.projectId,
             inputFingerprint=command_fingerprint(command), status='rejected' if issue else 'accepted' if job_ids else 'applied' if changed else 'noop',
-            changed=[item['version'] for item in changed], jobIds=job_ids, issues=[issue] if issue else [], eventCursor=snapshot.eventCursor)
+            changed=[item['version'] for item in changed], jobIds=job_ids, issues=[issue] if issue else [],
+            eventCursor=snapshot.eventCursor, planItemId=plan_item_id)
         return CommitRecord(command=command, previousHead=head, snapshot=snapshot, receipt=receipt, event=event)
 
     def _journal(self, project_id):

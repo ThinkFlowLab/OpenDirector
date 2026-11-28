@@ -31,6 +31,12 @@ class GenerationFailure(BaseModel):
     providerStatus: Literal['failed', 'cancelled', 'expired'] | None = Field(default=None, description='Provider terminal task status.')
 
 
+def vllm_remote_task_missing(protocol, external_id, details):
+    """A known /videos task disappeared from its provider's status endpoint."""
+    return bool(protocol == 'vllm_omni' and external_id and details.get('stage') == 'poll'
+                and details.get('httpStatus') == 404 and details.get('category') == 'input')
+
+
 class GenerationError(ProjectError):
     def __init__(self, details: GenerationFailure, status=502, message=None):
         super().__init__(message or f'{details.message} {details.suggestion} 不会自动重新提交。', status)

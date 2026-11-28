@@ -25,6 +25,7 @@ import {
   type WorkspaceState,
 } from "./state.ts";
 import type { ServiceRun } from "./workspaceChrome.tsx";
+import type { PublishedRunAction, PublishedRunControl, PublishedRunGroup, RunExecution } from "./useWorkspaceGeneration.ts";
 
 export type WorkspaceFlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 
@@ -51,6 +52,10 @@ export interface WorkspaceRuntime extends WorkspaceState, WorkspaceSetters {
   setJobs: Dispatch<SetStateAction<GenerationJob[]>>;
   readJobs: (signal?: AbortSignal) => Promise<GenerationJob[]>;
   recoverServiceTask: (job: GenerationJob) => Promise<void>;
+  selectedPublishedRun?: PublishedRunGroup;
+  selectedRunExecution?: RunExecution | null;
+  selectedRunControl?: PublishedRunControl;
+  controlPublishedWorkflow: (groupId: string, action: PublishedRunAction, onFailure?: (message: string) => void) => Promise<boolean>;
   command: (value: CanvasCommand) => void;
   commitCanvasCommand: (value: CanvasCommand, failureMessage: string) => Promise<void>;
   change: (fn: (document: CanvasDocument) => CanvasDocument) => void;

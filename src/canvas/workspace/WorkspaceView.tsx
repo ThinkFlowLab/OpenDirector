@@ -13,7 +13,11 @@ import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
 import { request as apiRequest, errorMessage, json as apiJson } from "../../backend/api.ts";
+import { assetSource } from "../../backend/assetSource.ts";
 import { creationClient, objectVersion, visibleItems } from "../../backend/creationClient.ts";
+import type { GroupCanvasItem, GroupPublishRunInput, SegmentRunPlan, WorkflowClip } from "../../contracts/generated.ts";
+import { useT } from "../../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../../i18n/messages.ts";
 
 import { previewImageSelection } from "../../backend/imageSelections";
 import { MediaPublication } from "../../backend/mediaPublication";
@@ -113,6 +117,7 @@ import { captureVideoEndpoint, extractVideoAudio } from "../videoActionRuntime";
 import "../workspace.css";
 import "../desktop-chrome.css";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
+import { readPublishedRunHistory, type PublishedRunGroup, type RunExecution } from "./useWorkspaceGeneration.ts";
 import { DirectorStage, IconButton, helpShortcuts, nodeKindKeys, nodeTypes, edgeTypes, referenceSideKeys, incomingNodes } from "./workspaceChrome.tsx";
 import { AssetMedia } from "../useAssetMedia.tsx";
 
@@ -148,6 +153,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
     businessHistory,
     bypassSnapping,
     cancelServiceRuns,
+    controlPublishedWorkflow,
     center,
     change,
     changeTool,
@@ -175,6 +181,9 @@ export function WorkspaceView({ rt, editingState, editSession }: {
     downloadNode,
     downloadGroup,
     runGroupWorkflow,
+    selectedPublishedRun,
+    selectedRunControl,
+    selectedRunExecution,
     editProjectNameId,
     editing,
     editorMode,
@@ -459,6 +468,36 @@ export function WorkspaceView({ rt, editingState, editSession }: {
   }, [outputState?.output.id]);
 
   const [workflowGroups, setWorkflowGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const [publishingRun, setPublishingRun] = useState(false);
+  const [runDialog, setRunDialog] = useState<{
+    projectId: string; groupId: string; kind: "regenerate" | "review" | "publish"; itemId?: string; error?: string;
+  } | null>(null);
+  const publishedRun = selectedPublishedRun?.id === single?.id ? selectedPublishedRun : undefined;
+  const draftRun = single?.type === "group" ? creationClient(doc.id).snapshot.canvasItems.find(
+    (item): item is DraftRunGroup => item.id === single.id && item.kind === "group" && isDraftRunGroup(item),
+  ) : undefined;
+  const selectedRunStatus = selectedRunExecution?.status;
+  const canRestart = selectedRunStatus === "paused" || selectedRunStatus === "failed" || selectedRunStatus === "succeeded" || selectedRunStatus === "awaiting_selection";
+  const canRegenerate = Boolean(single?.type === "video" && selectedPublishedRun && canRestart);
+  const canReviewRun = Boolean(selectedPublishedRun && selectedRunStatus === "awaiting_selection" &&
+    selectedRunExecution?.candidates?.length && (publishedRun || single?.id === selectedRunExecution.reviewItemId));
+  const nextRunStep = selectedRunExecution?.nextStep;
+  const nextRunStepHint = nextRunStep?.kind === "assembly" ? t("canvas.workspace.group.executionNextAssembly")
+    : nextRunStep?.kind === "generation" ? t("canvas.workspace.group.executionNextSegment", {
+      segment: doc.nodes.find((node) => node.id === nextRunStep.itemId)?.data.title ?? nextRunStep.itemId,
+    }) : undefined;
+  const dialogGroup = selectedPublishedRun ?? draftRun;
+  const showRunDialog = (kind: "regenerate" | "review" | "publish") => {
+    if (dialogGroup) setRunDialog({ projectId: doc.id, groupId: dialogGroup.id, kind, itemId: single?.id });
+  };
+  const activeRunDialog = runDialog && runDialog.projectId === doc.id &&
+    runDialog.groupId === dialogGroup?.id && runDialog.itemId === single?.id ? runDialog : undefined;
+  const reportRunDialogError = (error: string) => setRunDialog((current) => current && current === runDialog ? { ...current, error } : current);
+  const issue = selectedRunStatus === "needs_review" || selectedRunStatus === "failed" ? selectedRunExecution?.issue : null;
+  const issueItem = issue?.itemId ? doc.nodes.find((node) => node.id === issue.itemId) : undefined;
+  const runIssueHint = issue?.message && (publishedRun || single?.id === issue.itemId)
+    ? issueItem ? t("canvas.workspace.group.workflowRunIssue", { segment: issueItem.data.title, reason: issue.message }) : issue.message
+    : undefined;
   const runWorkflow = (groupId: string) => {
     if (workflowGroups.has(groupId)) return;
     setWorkflowGroups((current) => new Set(current).add(groupId));
@@ -470,6 +509,36 @@ export function WorkspaceView({ rt, editingState, editSession }: {
       }),
     );
   };
+  const publishRunDraft = async (group: DraftRunGroup, edited: Pick<GroupPublishRunInput, "assembly" | "plan" | "planNotes">) => {
+    if (publishingRun || switchPending.current) return;
+    const client = creationClient(doc.id);
+    const stillOpen = () => rt.mounted.current && historyRef.current.present.id === doc.id;
+    setPublishingRun(true);
+    try {
+      const card = client.snapshot.canvasItems.find((item) => item.id === group.runPlanItemId);
+      const versions = [objectVersion("canvas_item", group), ...(card ? [objectVersion("canvas_item", card)] : [])];
+      const receipt = await client.command("group.publishRun", {
+        groupId: group.id, planLocale: group.runPlanLocale ?? locale, ...edited,
+      }, versions);
+      if (!stillOpen()) return;
+      if (!receipt.planItemId || !client.snapshot.canvasItems.some((item) => item.id === receipt.planItemId && item.visible)) {
+        reportRunDialogError(t("canvas.workspace.group.workflowRunControlUnconfirmed"));
+        return;
+      }
+      setRunDialog((current) => current === runDialog ? null : current);
+      notify(t("canvas.workspace.group.workflowRunPublished"));
+    } catch (error) {
+      if (stillOpen()) reportRunDialogError(t("canvas.workspace.group.workflowRunPublishFailed", { error: errorMessage(error) }));
+    } finally {
+      setPublishingRun(false);
+    }
+  };
+  const runPrimaryAction = !publishedRun
+    ? single?.type === "group" && !draftRun ? () => runWorkflow(single.id) : undefined
+    : selectedRunStatus === "paused"
+      ? () => void controlPublishedWorkflow(publishedRun.id, { kind: "resume" })
+      : selectedRunExecution === null || selectedRunStatus === "queued" || selectedRunStatus === "running" || selectedRunStatus === "pausing"
+        ? () => runWorkflow(publishedRun.id) : undefined;
 
   // Canvas locking is no longer offered. Locks saved while it was available are
   // released the first time this browser opens the project, parents first (a
@@ -598,7 +667,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
     ? doc.nodes.find((node) => node.type === "text" && node.id === selectedGroup.runPlanItemId)
     : undefined;
   const viewingPublishedPlan = Boolean(textWindowNode && canvasItems?.some(
-    (item) => item.kind === "group" && item.runPlanItemId === textWindowNode.id,
+    (item) => item.kind === "group" && item.runPlan && item.runPlanItemId === textWindowNode.id,
   ));
 
   const workspace = (
@@ -1602,6 +1671,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
         <div
           ref={toolbarElement}
           className="cw-node-toolbar-anchor"
+          data-published-run={Boolean(selectedPublishedRun || draftRun)}
           style={{
             ...selectionPresentation.placement?.toolbar,
             maxWidth: selectionPresentation.toolbarMaxWidth,
@@ -1692,10 +1762,26 @@ export function WorkspaceView({ rt, editingState, editSession }: {
             onDownload={() =>
               single.type === "group" ? void downloadGroup(single) : downloadNode(single)
             }
-            onRunWorkflow={single.type === "group" ? () => runWorkflow(single.id) : undefined}
+            onRunWorkflow={runPrimaryAction}
             workflowRunning={workflowGroups.has(single.id)}
             onViewGroupPlan={planNode ? () => setTextWindowId(planNode.id) : undefined}
-            onUngroup={single.type === "group" ? ungroup : undefined}
+            publishedRun={Boolean(publishedRun)}
+            publishedRunStatus={publishedRun ? selectedRunStatus : undefined}
+            publishedRunControl={selectedRunControl}
+            onPauseWorkflow={publishedRun && (selectedRunExecution === undefined || selectedRunStatus === "queued" || selectedRunStatus === "running")
+              ? () => void controlPublishedWorkflow(publishedRun.id, { kind: "pause" }) : undefined}
+            onRestartRun={publishedRun && selectedRunExecution && canRestart
+              ? () => void controlPublishedWorkflow(publishedRun.id, { kind: "restart", executionId: selectedRunExecution.executionId }) : undefined}
+            onStepRun={publishedRun && (selectedRunExecution === null || selectedRunStatus === "paused" || selectedRunStatus === "needs_review")
+              ? () => void controlPublishedWorkflow(publishedRun.id, { kind: "step", executionId: selectedRunExecution?.executionId }) : undefined}
+            nextRunStepHint={nextRunStepHint}
+            onRegenerateRunStep={canRegenerate ? () => showRunDialog("regenerate") : undefined}
+            onReviewRunCandidate={canReviewRun ? () => showRunDialog("review") : undefined}
+            onReconcileRun={publishedRun && selectedRunExecution && selectedRunStatus === "needs_review"
+              ? () => void controlPublishedWorkflow(publishedRun.id, { kind: "reconcile", executionId: selectedRunExecution.executionId }) : undefined}
+            onPublishRunDraft={draftRun ? () => showRunDialog("publish") : undefined}
+            runIssueHint={runIssueHint}
+            onUngroup={single.type === "group" && !publishedRun && !draftRun ? ungroup : undefined}
             onLayout={
               single.type === "group" && !single.autoLayout
                 ? (layout: GroupLayout) => {
@@ -1725,7 +1811,54 @@ export function WorkspaceView({ rt, editingState, editSession }: {
             }
             onDuplicate={() => { if (!readOnly) paste(true); }}
           />
+          {runIssueHint && <p className="cw-run-issue" role="status">{runIssueHint}</p>}
         </div>
+      )}
+      {activeRunDialog?.kind === "publish" && draftRun && (
+        <RunDraftPublishDialog
+          key={`${doc.id}/${draftRun.id}/${draftRun.revision}`}
+          draft={draftRun}
+          titleForItem={(id) => doc.nodes.find((node) => node.id === id)?.data.title ?? id}
+          busy={publishingRun}
+          commandError={activeRunDialog.error}
+          onClose={() => setRunDialog(null)}
+          onPublish={(edited) => void publishRunDraft(draftRun, edited)}
+        />
+      )}
+      {activeRunDialog?.kind === "regenerate" && selectedPublishedRun && selectedRunExecution && single?.type === "video" && (
+        <RunRegenerateDialog
+          key={`${doc.id}/${single.id}/${selectedRunExecution.executionId}`}
+          projectId={doc.id}
+          group={selectedPublishedRun}
+          itemId={single.id}
+          itemTitle={single.data.title}
+          titleForItem={(id) => doc.nodes.find((node) => node.id === id)?.data.title ?? id}
+          latest={selectedRunExecution}
+          busy={Boolean(selectedRunControl)}
+          commandError={activeRunDialog.error}
+          onClose={() => setRunDialog(null)}
+          onRegenerate={async (executionId) => {
+            if (await controlPublishedWorkflow(selectedPublishedRun.id, {
+              kind: "regenerate", executionId, itemId: single.id, expectedExecutionId: selectedRunExecution.executionId,
+            }, reportRunDialogError)) setRunDialog((current) => current === runDialog ? null : current);
+          }}
+        />
+      )}
+      {activeRunDialog?.kind === "review" && selectedPublishedRun && selectedRunExecution?.candidates && canReviewRun && (
+        <RunCandidateDialog
+          key={`${doc.id}/${selectedRunExecution.executionId}`}
+          projectId={doc.id}
+          candidates={selectedRunExecution.candidates}
+          itemTitle={doc.nodes.find((node) => node.id === selectedRunExecution.reviewItemId)?.data.title ?? selectedPublishedRun.title}
+          busy={Boolean(selectedRunControl)}
+          commandError={activeRunDialog.error}
+          onClose={() => setRunDialog(null)}
+          onAdopt={async (jobId) => {
+            if (await controlPublishedWorkflow(selectedPublishedRun.id, {
+              kind: "adopt", executionId: selectedRunExecution.executionId, jobId,
+            }, reportRunDialogError)) setRunDialog((current) => current === runDialog ? null : current);
+          }}
+        />
       )}
       {activeAction && actionNode && (
         <>
@@ -3282,3 +3415,235 @@ export function WorkspaceView({ rt, editingState, editSession }: {
 
     </>
   );}
+
+const publishedRunStatusMessages: Record<RunExecution["status"], MessageKey> = {
+  queued: "canvas.selection.group.running",
+  running: "canvas.selection.group.running",
+  pausing: "canvas.selection.group.pausingRun",
+  paused: "canvas.workspace.group.executionPaused",
+  succeeded: "canvas.workspace.group.executionSucceeded",
+  failed: "canvas.workspace.group.executionFailed",
+  needs_review: "canvas.selection.group.runNeedsReview",
+  awaiting_selection: "canvas.workspace.group.executionAwaitingSelection",
+  superseded: "canvas.workspace.group.executionSuperseded",
+};
+
+type DraftRunGroup = GroupCanvasItem & {
+  draftRunPlan: NonNullable<GroupCanvasItem["draftRunPlan"]>;
+  assembly: NonNullable<GroupCanvasItem["assembly"]>;
+};
+
+function isDraftRunGroup(group: GroupCanvasItem): group is DraftRunGroup {
+  return !group.runPlan && Boolean(group.draftRunPlan && group.assembly);
+}
+
+function RunFrameField({ label, value, onChange }: {
+  label: string;
+  value: number | null;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="cw-domain-field">
+      {label}
+      <input
+        type="number"
+        min={0}
+        step={1}
+        value={value !== null && Number.isFinite(value) ? value : ""}
+        onChange={(event) => onChange(event.currentTarget.valueAsNumber)}
+      />
+    </label>
+  );
+}
+
+function RunDraftPublishDialog({ draft, titleForItem, busy, commandError, onClose, onPublish }: {
+  draft: DraftRunGroup;
+  titleForItem: (itemId: string) => string;
+  busy: boolean;
+  commandError?: string;
+  onClose: () => void;
+  onPublish: (payload: Pick<GroupPublishRunInput, "plan" | "assembly" | "planNotes">) => void;
+}) {
+  const t = useT();
+  const [entries, setEntries] = useState(draft.draftRunPlan.entries);
+  const [clips, setClips] = useState(draft.assembly.clips);
+  const [notes, setNotes] = useState(draft.runPlanNotes ?? "");
+  let nextClipIndex = 0;
+  const clipIndices = entries.map((entry) => entry.kind === "generated" ? nextClipIndex++ : -1);
+  const updateEntry = (index: number, change: Partial<Pick<SegmentRunPlan["entries"][number], "sourceStart" | "sourceEnd">>) => {
+    setEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...change } : entry));
+  };
+  const updateClip = (index: number, change: Partial<Pick<WorkflowClip, "inFrame" | "outFrame" | "reverse" | "frameLimit">>) => {
+    setClips((current) => current.map((clip, clipIndex) => clipIndex === index ? { ...clip, ...change } : clip));
+  };
+  const framesValid = entries.every((entry, index) => {
+    if (!Number.isSafeInteger(entry.sourceStart) || !Number.isSafeInteger(entry.sourceEnd) ||
+      entry.sourceStart !== (entries[index - 1]?.sourceEnd ?? 0) || entry.sourceEnd <= entry.sourceStart) return false;
+    if (entry.kind === "source") return true;
+    const clip = clips[clipIndices[index]];
+    return clip?.itemId === entry.itemId && Number.isSafeInteger(clip.inFrame) && clip.inFrame >= 0 && Number.isSafeInteger(clip.outFrame)
+      && clip.outFrame - clip.inFrame === entry.sourceEnd - entry.sourceStart
+      && (clip.frameLimit === null || Number.isSafeInteger(clip.frameLimit) && clip.outFrame <= clip.frameLimit);
+  }) && entries.at(-1)?.sourceEnd === draft.draftRunPlan.frameCount;
+  return (
+    <EditorModal
+      title={t("canvas.selection.group.publishRunDraft")}
+      subtitle={draft.title}
+      className="cw-run-draft-dialog"
+      onClose={onClose}
+      onApply={() => onPublish({
+        plan: { ...draft.draftRunPlan, entries }, assembly: { ...draft.assembly, clips }, planNotes: notes,
+      })}
+      applyLabel={t("canvas.selection.group.publishRunDraft")}
+      disabled={busy || !framesValid}
+      error={!framesValid ? t("canvas.workspace.group.draftRunInvalidFrameRanges") : commandError}
+    >
+      {entries.map((entry, index) => {
+        const clipIndex = clipIndices[index];
+        const clip = clips[clipIndex];
+        const name = entry.kind === "generated" ? titleForItem(entry.itemId) : t("canvas.workspace.group.draftRunOriginalClip");
+        return (
+          <fieldset key={index} className="cw-run-draft-clip" disabled={busy}>
+            <legend>{name}</legend>
+            <div className="cw-run-draft-fields">
+              <RunFrameField label={t("canvas.workspace.group.draftRunSourceStart")} value={entry.sourceStart} onChange={(sourceStart) => updateEntry(index, { sourceStart })} />
+              <RunFrameField label={t("canvas.workspace.group.draftRunSourceEnd")} value={entry.sourceEnd} onChange={(sourceEnd) => updateEntry(index, { sourceEnd })} />
+              {clip && <>
+                <RunFrameField label={t("canvas.workspace.group.draftRunKeepStart")} value={clip.inFrame} onChange={(inFrame) => updateClip(clipIndex, { inFrame })} />
+                <RunFrameField label={t("canvas.workspace.group.draftRunKeepEnd")} value={clip.outFrame} onChange={(outFrame) => updateClip(clipIndex, { outFrame })} />
+                <RunFrameField label={t("canvas.workspace.group.draftRunFrameLimit")} value={clip.frameLimit}
+                  onChange={(frameLimit) => updateClip(clipIndex, { frameLimit: Number.isNaN(frameLimit) ? null : frameLimit })} />
+                <label className="cw-run-draft-reverse">
+                  <input type="checkbox" checked={clip.reverse} onChange={(event) => updateClip(clipIndex, { reverse: event.currentTarget.checked })} />
+                  {t("canvas.workspace.group.draftRunReverse")}
+                </label>
+              </>}
+            </div>
+          </fieldset>
+        );
+      })}
+      <label className="cw-domain-field">
+        {t("canvas.workspace.group.draftRunNotes")}
+        <textarea value={notes} maxLength={16000} onChange={(event) => setNotes(event.target.value)} disabled={busy} />
+      </label>
+    </EditorModal>
+  );
+}
+
+function RunRegenerateDialog({ projectId, group, itemId, itemTitle, titleForItem, latest, busy, commandError, onClose, onRegenerate }: {
+  projectId: string;
+  group: PublishedRunGroup;
+  itemId: string;
+  itemTitle: string;
+  titleForItem: (itemId: string) => string;
+  latest: RunExecution;
+  busy: boolean;
+  commandError?: string;
+  onClose: () => void;
+  onRegenerate: (executionId: string) => Promise<void>;
+}) {
+  const t = useT();
+  const [history, setHistory] = useState<readonly RunExecution[]>();
+  const [error, setError] = useState<string>();
+  const [selectedExecutionId, setSelectedExecutionId] = useState(latest.executionId);
+  useEffect(() => {
+    const controller = new AbortController();
+    void readPublishedRunHistory(projectId, group.id, controller.signal).then((executions) => {
+      if (!controller.signal.aborted) setHistory(executions);
+    }).catch((failure) => {
+      if (!controller.signal.aborted) setError(errorMessage(failure));
+    });
+    return () => controller.abort();
+  }, [projectId, group.id]);
+
+  const dependencies = new Map(group.runPlan.entries.flatMap((entry) =>
+    entry.kind === "generated" && entry.step.kind === "continuation"
+      ? [[entry.itemId, entry.step.upstreamItemId] as const] : []));
+  const upstream = new Set<string>();
+  for (let donor = dependencies.get(itemId); donor && !upstream.has(donor); donor = dependencies.get(donor)) upstream.add(donor);
+  const affected = new Set([itemId]);
+  for (const affectedId of affected) {
+    for (const [dependentId, donorId] of dependencies) if (donorId === affectedId) affected.add(dependentId);
+  }
+
+  const matchesDefinition = (run: RunExecution) => (run.runDefinitionId ?? null) === (group.runDefinitionId ?? null);
+  const bases = history?.filter((run) => matchesDefinition(run)
+    && run.status !== "queued" && run.status !== "running" && run.status !== "pausing" && run.status !== "needs_review"
+      && [...upstream].every((id) => run.steps?.some((step) => step.itemId === id && (step.assetId || step.status === "succeeded" && step.jobId))));
+  const base = bases?.find((run) => run.executionId === selectedExecutionId) ?? bases?.[0];
+  const baseIds = new Set(bases?.map((run) => run.executionId));
+  return (
+    <EditorModal
+      title={t("canvas.selection.group.regenerateRunStep")}
+      subtitle={itemTitle}
+      className="cw-run-step-dialog"
+      onClose={onClose}
+      onApply={base ? () => void onRegenerate(base.executionId) : undefined}
+      applyLabel={t("canvas.selection.group.regenerateRunStep")}
+      disabled={busy}
+      error={commandError ?? error}
+    >
+      {!history && !error && <p role="status">{t("canvas.workspace.group.executionHistoryLoading")}</p>}
+      {history && !history.length && <p>{t("canvas.workspace.group.executionHistoryEmpty")}</p>}
+      {history && history.length > 0 && (
+        <label className="cw-domain-field">
+          {t("canvas.workspace.group.executionBase")}
+          <select value={base?.executionId ?? ""} onChange={(event) => setSelectedExecutionId(event.target.value)} disabled={busy}>
+            {!base && <option value="" disabled>{t("canvas.workspace.group.executionHistoryEmpty")}</option>}
+            {history.map((run) => (
+              <option key={run.executionId} value={run.executionId} disabled={!baseIds.has(run.executionId)}>
+                {t(matchesDefinition(run) ? "canvas.workspace.group.executionBaseOption" : "canvas.workspace.group.executionBasePreviousPlanOption", {
+                  executionId: run.executionId.slice(0, 8), status: t(publishedRunStatusMessages[run.status]),
+                })}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {affected.size > 1 && (
+        <div className="cw-run-step-impact">
+          <p>{t("canvas.workspace.group.executionDependentSteps")}</p>
+          <ul>{[...affected].slice(1).map((id) => <li key={id}>{titleForItem(id)}</li>)}</ul>
+        </div>
+      )}
+    </EditorModal>
+  );
+}
+
+function RunCandidateDialog({ projectId, candidates, itemTitle, busy, commandError, onClose, onAdopt }: {
+  projectId: string;
+  candidates: NonNullable<RunExecution["candidates"]>;
+  itemTitle: string;
+  busy: boolean;
+  commandError?: string;
+  onClose: () => void;
+  onAdopt: (jobId: string) => Promise<void>;
+}) {
+  const t = useT();
+  const [selectedJobId, setSelectedJobId] = useState<string>();
+  const candidate = candidates.find((entry) => entry.jobId === selectedJobId) ?? candidates.at(-1);
+  return (
+    <EditorModal
+      title={t("canvas.selection.group.reviewRunCandidate")}
+      subtitle={itemTitle}
+      className="cw-run-step-dialog"
+      onClose={onClose}
+      onApply={candidate ? () => void onAdopt(candidate.jobId) : undefined}
+      applyLabel={t("canvas.selection.group.adoptRunCandidate")}
+      disabled={busy}
+      error={commandError}
+    >
+      {candidates.length > 1 && (
+        <label className="cw-domain-field">
+          {t("canvas.workspace.group.executionCandidate")}
+          <select value={candidate?.jobId} onChange={(event) => setSelectedJobId(event.target.value)} disabled={busy}>
+            {candidates.map((entry, index) => (
+              <option key={entry.jobId} value={entry.jobId}>{t("canvas.workspace.group.executionCandidateNumber", { count: index + 1 })}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {candidate && <AssetMedia as="video" key={candidate.assetId} src={assetSource(projectId, candidate.assetId)} controls preload="metadata" />}
+    </EditorModal>
+  );
+}

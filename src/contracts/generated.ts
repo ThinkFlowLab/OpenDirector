@@ -7,6 +7,8 @@ export interface ArtifactPublishInput extends ContractInput {
   readonly name: string;
   readonly expectedKind?: "text" | "image" | "video" | "audio" | "file" | null;
   readonly sources?: ReadonlyArray<AssetRefInput>;
+  readonly sourceItemId?: string | null;
+  readonly sourceAssetId?: string | null;
 }
 
 export interface ArtifactPublishCommandInput extends CommandBaseInput {
@@ -31,6 +33,18 @@ export interface AssetDeleteInput extends ContractInput {
 export interface AssetDeleteCommandInput extends CommandBaseInput {
   readonly type: "asset.delete";
   readonly payload: AssetDeleteInput;
+}
+
+export interface AssetDownloadFileInput extends ContractInput {
+  readonly assetId: string;
+  readonly revision: number;
+  readonly path: string;
+}
+
+export interface AssetDownloadReceiptInput extends AssetDownloadFileInput {
+  readonly fingerprint: string;
+  readonly mimeType: string;
+  readonly size: number;
 }
 
 export interface AssetImportInput extends ContractInput {
@@ -422,6 +436,8 @@ export interface CommandReceiptInput extends ContractInput {
   readonly jobIds?: ReadonlyArray<string>;
   readonly issues?: ReadonlyArray<ContractIssueInput>;
   readonly eventCursor?: number | null;
+  readonly planItemId?: string | null;
+  readonly runExecutionId?: string | null;
 }
 
 export interface ContainerBindingInput extends ContractInput {
@@ -432,7 +448,7 @@ export interface ContractInput {
 }
 
 export interface ContractIssueInput extends ContractInput {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "higgsfield_model" | "higgsfield_key" | "higgsfield_output" | "higgsfield_parameters" | "higgsfield_mode" | "higgsfield_image" | "higgsfield_format" | "higgsfield_media_size" | "higgsfield_duration" | "higgsfield_reference_count" | "higgsfield_reference_changed" | "higgsfield_frames" | "higgsfield_references" | "higgsfield_prompt" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "h3_timeline_guides_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "higgsfield_model" | "higgsfield_key" | "higgsfield_output" | "higgsfield_parameters" | "higgsfield_mode" | "higgsfield_image" | "higgsfield_format" | "higgsfield_media_size" | "higgsfield_duration" | "higgsfield_reference_count" | "higgsfield_reference_changed" | "higgsfield_frames" | "higgsfield_references" | "higgsfield_prompt" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId?: string | null;
   readonly field?: string | null;
@@ -445,9 +461,9 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | GroupSavePlanCommandInput | GroupPublishRunCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | GroupSavePlanCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | VideoTrimCommandInput | GroupConfigureAssemblyCommandInput | GroupPublishRunCommandInput | GroupStartRunCommandInput | GroupPauseRunCommandInput | GroupResumeRunCommandInput | GroupRestartRunCommandInput | GroupStepRunCommandInput | GroupRegenerateRunStepCommandInput | GroupAdoptRunCandidateCommandInput | GroupReconcileRunCommandInput | GroupAssembleCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
-  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | JobStatusQueryInput | AssetPreviewQueryInput;
+  readonly query: ProjectQueryInput | ObjectQueryInput | VersionsQueryInput | AssetSearchQueryInput | AssetUsageQueryInput | CanvasStatusQueryInput | JobStatusQueryInput | AssetPreviewQueryInput | RunExecutionQueryInput | RunGroupExecutionQueryInput | RunGroupExecutionsQueryInput;
   readonly event: ProjectEventInput;
   readonly job: JobInput;
   readonly result: ResultVersionInput;
@@ -609,6 +625,25 @@ export interface GenerationSubmitCommandInput extends CommandBaseInput {
   readonly payload: GenerationSubmitInput;
 }
 
+export interface GroupAdoptRunCandidateInput extends GroupRunExecutionInput {
+  readonly jobId: string;
+}
+
+export interface GroupAdoptRunCandidateCommandInput extends CommandBaseInput {
+  readonly type: "group.adoptRunCandidate";
+  readonly payload: GroupAdoptRunCandidateInput;
+}
+
+export interface GroupAssembleInput extends ContractInput {
+  readonly groupId: string;
+  readonly jobIds: ReadonlyArray<string>;
+}
+
+export interface GroupAssembleCommandInput extends CommandBaseInput {
+  readonly type: "group.assemble";
+  readonly payload: GroupAssembleInput;
+}
+
 export interface GroupAssemblyInput extends ContractInput {
   readonly timelineItemId: string;
   readonly outputItemId: string;
@@ -626,8 +661,28 @@ export interface GroupCanvasItemInput extends CanvasItemBaseInput {
   readonly runDefinitionId?: string | null;
   readonly runPlanLocale?: "zh-CN" | "en-US" | null;
   readonly runPlanNotes?: string | null;
+  readonly runModelFingerprints?: Readonly<Record<string, string>> | null;
   readonly assembly?: GroupAssemblyInput | null;
   readonly binding?: ContainerBindingInput;
+}
+
+export interface GroupConfigureAssemblyInput extends ContractInput {
+  readonly groupId: string;
+  readonly assembly: GroupAssemblyInput | null;
+}
+
+export interface GroupConfigureAssemblyCommandInput extends CommandBaseInput {
+  readonly type: "group.configureAssembly";
+  readonly payload: GroupConfigureAssemblyInput;
+}
+
+export interface GroupControlRunInput extends ContractInput {
+  readonly groupId: string;
+}
+
+export interface GroupPauseRunCommandInput extends CommandBaseInput {
+  readonly type: "group.pauseRun";
+  readonly payload: GroupControlRunInput;
 }
 
 export interface GroupPlanDraftInput extends ContractInput {
@@ -638,14 +693,75 @@ export interface GroupPlanDraftInput extends ContractInput {
   readonly planNotes?: string;
 }
 
+export interface GroupPublishRunInput extends ContractInput {
+  readonly groupId: string;
+  readonly assembly: GroupAssemblyInput;
+  readonly plan: SegmentRunPlanInput;
+  readonly planLocale?: "zh-CN" | "en-US";
+  readonly planNotes?: string;
+}
+
 export interface GroupPublishRunCommandInput extends CommandBaseInput {
   readonly type: "group.publishRun";
-  readonly payload: GroupPlanDraftInput;
+  readonly payload: GroupPublishRunInput;
+}
+
+export interface GroupReconcileRunCommandInput extends CommandBaseInput {
+  readonly type: "group.reconcileRun";
+  readonly payload: GroupRunExecutionInput;
+}
+
+export interface GroupRegenerateRunStepInput extends GroupRunExecutionInput {
+  readonly itemId: string;
+  readonly expectedExecutionId?: string | null;
+}
+
+export interface GroupRegenerateRunStepCommandInput extends CommandBaseInput {
+  readonly type: "group.regenerateRunStep";
+  readonly payload: GroupRegenerateRunStepInput;
+}
+
+export interface GroupRestartRunCommandInput extends CommandBaseInput {
+  readonly type: "group.restartRun";
+  readonly payload: GroupRunExecutionInput;
+}
+
+export interface GroupResumeRunCommandInput extends CommandBaseInput {
+  readonly type: "group.resumeRun";
+  readonly payload: GroupControlRunInput;
+}
+
+export interface GroupRunExecutionInput extends GroupControlRunInput {
+  readonly executionId: string;
 }
 
 export interface GroupSavePlanCommandInput extends CommandBaseInput {
   readonly type: "group.saveRunPlan";
   readonly payload: GroupPlanDraftInput;
+}
+
+export interface GroupStartRunInput extends ContractInput {
+  readonly groupId: string;
+}
+
+export interface GroupStartRunCommandInput extends CommandBaseInput {
+  readonly type: "group.startRun";
+  readonly payload: GroupStartRunInput;
+}
+
+export interface GroupStepRunInput extends GroupControlRunInput {
+  readonly executionId?: string | null;
+}
+
+export interface GroupStepRunCommandInput extends CommandBaseInput {
+  readonly type: "group.stepRun";
+  readonly payload: GroupStepRunInput;
+}
+
+export interface H3SegmentInput extends ContractInput {
+  readonly guideReferenceId?: string | null;
+  readonly sourceFrames?: ReadonlyArray<number> | null;
+  readonly outputFrame?: number | null;
 }
 
 export interface HistoryRedoCommandInput extends CommandBaseInput {
@@ -781,6 +897,7 @@ export interface InputSnapshotInput extends ContractInput {
   readonly model: ModelSnapshotInput;
   readonly references?: ReadonlyArray<ResolvedReferenceInput>;
   readonly presetPrompt?: string | null;
+  readonly workflowGuide?: WorkflowGuideInput | null;
 }
 
 export interface JobInput extends ProjectEntityInput {
@@ -1238,6 +1355,22 @@ export interface ResultVersionInput extends ProjectEntityInput {
   readonly inputFingerprint: string;
 }
 
+export interface RunExecutionQueryInput extends QueryBaseInput {
+  readonly type: "run.execution.get";
+  readonly objectId: string;
+  readonly waitSeconds?: number;
+}
+
+export interface RunGroupExecutionQueryInput extends QueryBaseInput {
+  readonly type: "run.groupExecution.get";
+  readonly objectId: string;
+}
+
+export interface RunGroupExecutionsQueryInput extends QueryBaseInput {
+  readonly type: "run.groupExecutions.list";
+  readonly objectId: string;
+}
+
 export interface SegmentRunAnchorInput {
   readonly kind: "anchor";
 }
@@ -1245,7 +1378,7 @@ export interface SegmentRunAnchorInput {
 export interface SegmentRunContinuationInput {
   readonly kind: "continuation";
   readonly upstreamItemId: string;
-  readonly sourceFrames: readonly [number, number];
+  readonly sourceFrames: ReadonlyArray<number>;
 }
 
 export interface SegmentRunGeneratedInput {
@@ -1253,6 +1386,7 @@ export interface SegmentRunGeneratedInput {
   readonly sourceEnd: number;
   readonly kind: "generated";
   readonly itemId: string;
+  readonly replacementPromptInputs?: Readonly<Record<string, JsonValueInput>> | null;
   readonly shot: string;
   readonly step: SegmentRunAnchorInput | SegmentRunContinuationInput;
 }
@@ -1644,6 +1778,7 @@ export interface VideoCapabilitiesInput {
   readonly defaultResolution?: string;
   readonly defaultDuration?: number;
   readonly dimensionStep?: 1 | 2 | 8 | 16 | 32 | 64;
+  readonly timelineGuides?: boolean;
 }
 
 export interface VideoExecutionInput extends ContractInput {
@@ -1673,11 +1808,26 @@ export interface VideoOutputInput {
 }
 
 export interface VideoParametersInput extends ContractInput {
+  readonly h3Segment?: H3SegmentInput | null;
+  readonly seed?: number | null;
   readonly generateAudio?: boolean;
   readonly videoMode?: "first_frame" | "reference" | "continuation" | "control";
   readonly durationSeconds?: number | null;
   readonly aspectRatio?: string | null;
   readonly resolution?: string;
+}
+
+export interface VideoTrimInput extends ContractInput {
+  readonly sourceItemId: string;
+  readonly source: AssetRefInput;
+  readonly startSeconds: number;
+  readonly endSeconds: number;
+  readonly name: string;
+}
+
+export interface VideoTrimCommandInput extends CommandBaseInput {
+  readonly type: "video.trim";
+  readonly payload: VideoTrimInput;
 }
 
 export interface ViewStateInput extends ContractInput {
@@ -1698,7 +1848,7 @@ export interface VoiceLibraryCapabilitiesInput extends ContractInput {
   readonly provider: "vllm_omni" | "moss" | "minimax" | "zhipu";
   readonly connectionId: string;
   readonly requiresTranscript: boolean;
-  readonly acceptsTranscript?: boolean;
+  readonly acceptsTranscript?: boolean | null;
   readonly requiresReferenceAudio: boolean;
   readonly supportsUploadedVoices?: boolean;
   readonly referenceEmbeddingDimension?: number | null;
@@ -1727,6 +1877,11 @@ export interface WorkflowClipInput extends ContractInput {
   readonly frameLimit?: number | null;
 }
 
+export interface WorkflowGuideInput extends ContractInput {
+  readonly groupId: string;
+  readonly required: boolean;
+}
+
 export type CanvasItemInput = TextCanvasItemInput | ImageCanvasItemInput | VideoCanvasItemInput | AudioCanvasItemInput | FileCanvasItemInput | SubjectCanvasItemInput | TimelineCanvasItemInput | StackCanvasItemInput | ToolCanvasItemInput | DirectorCanvasItemInput | GroupCanvasItemInput;
 
 export type GenerationSpecInput = TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
@@ -1735,7 +1890,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | GroupSavePlanCommandInput | GroupPublishRunCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | ArtifactPublishCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasCreateGenerationCommandInput | GroupSavePlanCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasLayoutRunsCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | VideoTrimCommandInput | GroupConfigureAssemblyCommandInput | GroupPublishRunCommandInput | GroupStartRunCommandInput | GroupPauseRunCommandInput | GroupResumeRunCommandInput | GroupRestartRunCommandInput | GroupStepRunCommandInput | GroupRegenerateRunStepCommandInput | GroupAdoptRunCandidateCommandInput | GroupReconcileRunCommandInput | GroupAssembleCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -1754,6 +1909,8 @@ export interface ArtifactPublish extends Contract {
   readonly name: string;
   readonly expectedKind: "text" | "image" | "video" | "audio" | "file" | null;
   readonly sources: ReadonlyArray<AssetRef>;
+  readonly sourceItemId?: string | null;
+  readonly sourceAssetId?: string | null;
 }
 
 export interface ArtifactPublishCommand extends CommandBase {
@@ -1778,6 +1935,18 @@ export interface AssetDelete extends Contract {
 export interface AssetDeleteCommand extends CommandBase {
   readonly type: "asset.delete";
   readonly payload: AssetDelete;
+}
+
+export interface AssetDownloadFile extends Contract {
+  readonly assetId: string;
+  readonly revision: number;
+  readonly path: string;
+}
+
+export interface AssetDownloadReceipt extends AssetDownloadFile {
+  readonly fingerprint: string;
+  readonly mimeType: string;
+  readonly size: number;
 }
 
 export interface AssetImport extends Contract {
@@ -2169,6 +2338,8 @@ export interface CommandReceipt extends Contract {
   readonly jobIds: ReadonlyArray<string>;
   readonly issues: ReadonlyArray<ContractIssue>;
   readonly eventCursor: number | null;
+  readonly planItemId?: string | null;
+  readonly runExecutionId?: string | null;
 }
 
 export interface ContainerBinding extends Contract {
@@ -2179,7 +2350,7 @@ export interface Contract {
 }
 
 export interface ContractIssue extends Contract {
-  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "higgsfield_model" | "higgsfield_key" | "higgsfield_output" | "higgsfield_parameters" | "higgsfield_mode" | "higgsfield_image" | "higgsfield_format" | "higgsfield_media_size" | "higgsfield_duration" | "higgsfield_reference_count" | "higgsfield_reference_changed" | "higgsfield_frames" | "higgsfield_references" | "higgsfield_prompt" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
+  readonly code: "timeline_package_invalid" | "timeline_package_too_large" | "timeline_revision_missing" | "timeline_import_missing" | "timeline_import_conflict" | "timeline_registration_rejected" | "timeline_font_too_large" | "timeline_font_unavailable" | "timeline_font_unsupported" | "timeline_font_invalid" | "timeline_font_fingerprint" | "timeline_font_coverage" | "timeline_font_total_bytes" | "timeline_font_unverified" | "timeline_font_mime" | "timeline_bundled_font_fingerprint" | "timeline_bundled_font_unavailable" | "invalid_input" | "revision_conflict" | "role_restricted" | "canvas_run_layout_group" | "canvas_run_layout_conflict" | "canvas_run_layout_extent" | "canvas_run_layout_shared_object" | "missing_object" | "reference_invalid" | "image_quality_unsupported" | "h3_timeline_guides_unsupported" | "bigmodel_video_model" | "bigmodel_video_output" | "bigmodel_video_image" | "bigmodel_video_frames" | "bigmodel_video_prompt" | "bigmodel_video_cancel" | "kling_model" | "kling_mode" | "kling_image" | "kling_frames" | "kling_prompt" | "kling_aspect" | "kling_output" | "kling_cancel" | "higgsfield_model" | "higgsfield_key" | "higgsfield_output" | "higgsfield_parameters" | "higgsfield_mode" | "higgsfield_image" | "higgsfield_format" | "higgsfield_media_size" | "higgsfield_duration" | "higgsfield_reference_count" | "higgsfield_reference_changed" | "higgsfield_frames" | "higgsfield_references" | "higgsfield_prompt" | "capability_unavailable" | "capability_paused" | "capability_connection_changed" | "capability_unsupported" | "preview_expired" | "storage_unavailable" | "submission_unknown" | "provider_error" | "moss_speech_text" | "moss_speech_voice" | "moss_speech_reference" | "moss_prompt_limit" | "moss_image_size" | "moss_image_reference" | "moss_layout_reference" | "bigmodel_image_size" | "bigmodel_image_reference" | "bigmodel_image_prompt" | "minimax_image_reference" | "minimax_image_count" | "minimax_image_bytes" | "minimax_speech_text" | "minimax_speech_voice" | "minimax_speech_reference" | "minimax_speech_model" | "zhipu_speech_text" | "zhipu_speech_voice" | "zhipu_speech_reference" | "voice_library_unsupported" | "voice_connection_changed" | "voice_reference_required" | "voice_transcript_required" | "voice_transcript_too_long" | "voice_description_too_long" | "voice_not_found" | "voice_delete_unsupported" | "voice_consent_required" | "voice_name_invalid" | "voice_audio_invalid" | "voice_format" | "voice_size" | "voice_duration" | "voice_provider_protocol" | "voice_provider_error" | "voice_provider_timeout" | "voice_model_unsupported" | "voice_name_taken" | "voice_provider_quota";
   readonly message: string;
   readonly objectId: string | null;
   readonly field: string | null;
@@ -2192,9 +2363,9 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | GroupSavePlanCommand | GroupPublishRunCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | GroupSavePlanCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | VideoTrimCommand | GroupConfigureAssemblyCommand | GroupPublishRunCommand | GroupStartRunCommand | GroupPauseRunCommand | GroupResumeRunCommand | GroupRestartRunCommand | GroupStepRunCommand | GroupRegenerateRunStepCommand | GroupAdoptRunCandidateCommand | GroupReconcileRunCommand | GroupAssembleCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
-  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery;
+  readonly query: ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery | CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery | RunExecutionQuery | RunGroupExecutionQuery | RunGroupExecutionsQuery;
   readonly event: ProjectEvent;
   readonly job: Job;
   readonly result: ResultVersion;
@@ -2356,6 +2527,25 @@ export interface GenerationSubmitCommand extends CommandBase {
   readonly payload: GenerationSubmit;
 }
 
+export interface GroupAdoptRunCandidate extends GroupRunExecution {
+  readonly jobId: string;
+}
+
+export interface GroupAdoptRunCandidateCommand extends CommandBase {
+  readonly type: "group.adoptRunCandidate";
+  readonly payload: GroupAdoptRunCandidate;
+}
+
+export interface GroupAssemble extends Contract {
+  readonly groupId: string;
+  readonly jobIds: ReadonlyArray<string>;
+}
+
+export interface GroupAssembleCommand extends CommandBase {
+  readonly type: "group.assemble";
+  readonly payload: GroupAssemble;
+}
+
 export interface GroupAssembly extends Contract {
   readonly timelineItemId: string;
   readonly outputItemId: string;
@@ -2373,8 +2563,28 @@ export interface GroupCanvasItem extends CanvasItemBase {
   readonly runDefinitionId?: string | null;
   readonly runPlanLocale?: "zh-CN" | "en-US" | null;
   readonly runPlanNotes?: string | null;
+  readonly runModelFingerprints?: Readonly<Record<string, string>> | null;
   readonly assembly?: GroupAssembly | null;
   readonly binding: ContainerBinding;
+}
+
+export interface GroupConfigureAssembly extends Contract {
+  readonly groupId: string;
+  readonly assembly: GroupAssembly | null;
+}
+
+export interface GroupConfigureAssemblyCommand extends CommandBase {
+  readonly type: "group.configureAssembly";
+  readonly payload: GroupConfigureAssembly;
+}
+
+export interface GroupControlRun extends Contract {
+  readonly groupId: string;
+}
+
+export interface GroupPauseRunCommand extends CommandBase {
+  readonly type: "group.pauseRun";
+  readonly payload: GroupControlRun;
 }
 
 export interface GroupPlanDraft extends Contract {
@@ -2385,14 +2595,75 @@ export interface GroupPlanDraft extends Contract {
   readonly planNotes: string;
 }
 
+export interface GroupPublishRun extends Contract {
+  readonly groupId: string;
+  readonly assembly: GroupAssembly;
+  readonly plan: SegmentRunPlan;
+  readonly planLocale: "zh-CN" | "en-US";
+  readonly planNotes: string;
+}
+
 export interface GroupPublishRunCommand extends CommandBase {
   readonly type: "group.publishRun";
-  readonly payload: GroupPlanDraft;
+  readonly payload: GroupPublishRun;
+}
+
+export interface GroupReconcileRunCommand extends CommandBase {
+  readonly type: "group.reconcileRun";
+  readonly payload: GroupRunExecution;
+}
+
+export interface GroupRegenerateRunStep extends GroupRunExecution {
+  readonly itemId: string;
+  readonly expectedExecutionId: string | null;
+}
+
+export interface GroupRegenerateRunStepCommand extends CommandBase {
+  readonly type: "group.regenerateRunStep";
+  readonly payload: GroupRegenerateRunStep;
+}
+
+export interface GroupRestartRunCommand extends CommandBase {
+  readonly type: "group.restartRun";
+  readonly payload: GroupRunExecution;
+}
+
+export interface GroupResumeRunCommand extends CommandBase {
+  readonly type: "group.resumeRun";
+  readonly payload: GroupControlRun;
+}
+
+export interface GroupRunExecution extends GroupControlRun {
+  readonly executionId: string;
 }
 
 export interface GroupSavePlanCommand extends CommandBase {
   readonly type: "group.saveRunPlan";
   readonly payload: GroupPlanDraft;
+}
+
+export interface GroupStartRun extends Contract {
+  readonly groupId: string;
+}
+
+export interface GroupStartRunCommand extends CommandBase {
+  readonly type: "group.startRun";
+  readonly payload: GroupStartRun;
+}
+
+export interface GroupStepRun extends GroupControlRun {
+  readonly executionId: string | null;
+}
+
+export interface GroupStepRunCommand extends CommandBase {
+  readonly type: "group.stepRun";
+  readonly payload: GroupStepRun;
+}
+
+export interface H3Segment extends Contract {
+  readonly guideReferenceId: string | null;
+  readonly sourceFrames: ReadonlyArray<number> | null;
+  readonly outputFrame?: number | null;
 }
 
 export interface HistoryRedoCommand extends CommandBase {
@@ -2528,6 +2799,7 @@ export interface InputSnapshot extends Contract {
   readonly model: ModelSnapshot;
   readonly references: ReadonlyArray<ResolvedReference>;
   readonly presetPrompt?: string | null;
+  readonly workflowGuide?: WorkflowGuide | null;
 }
 
 export interface Job extends ProjectEntity {
@@ -2984,6 +3256,22 @@ export interface ResultVersion extends ProjectEntity {
   readonly inputFingerprint: string;
 }
 
+export interface RunExecutionQuery extends QueryBase {
+  readonly type: "run.execution.get";
+  readonly objectId: string;
+  readonly waitSeconds: number;
+}
+
+export interface RunGroupExecutionQuery extends QueryBase {
+  readonly type: "run.groupExecution.get";
+  readonly objectId: string;
+}
+
+export interface RunGroupExecutionsQuery extends QueryBase {
+  readonly type: "run.groupExecutions.list";
+  readonly objectId: string;
+}
+
 export interface SegmentRunAnchor {
   readonly kind: "anchor";
 }
@@ -2991,7 +3279,7 @@ export interface SegmentRunAnchor {
 export interface SegmentRunContinuation {
   readonly kind: "continuation";
   readonly upstreamItemId: string;
-  readonly sourceFrames: readonly [number, number];
+  readonly sourceFrames: ReadonlyArray<number>;
 }
 
 export interface SegmentRunGenerated {
@@ -2999,6 +3287,7 @@ export interface SegmentRunGenerated {
   readonly sourceEnd: number;
   readonly kind: "generated";
   readonly itemId: string;
+  readonly replacementPromptInputs?: Readonly<Record<string, JsonValue>> | null;
   readonly shot: string;
   readonly step: SegmentRunAnchor | SegmentRunContinuation;
 }
@@ -3390,6 +3679,7 @@ export interface VideoCapabilities {
   readonly defaultResolution: string;
   readonly defaultDuration: number;
   readonly dimensionStep: 1 | 2 | 8 | 16 | 32 | 64;
+  readonly timelineGuides?: boolean;
 }
 
 export interface VideoExecution extends Contract {
@@ -3419,11 +3709,26 @@ export interface VideoOutput {
 }
 
 export interface VideoParameters extends Contract {
+  readonly h3Segment?: H3Segment | null;
+  readonly seed?: number | null;
   readonly generateAudio: boolean;
   readonly videoMode: "first_frame" | "reference" | "continuation" | "control";
   readonly durationSeconds: number | null;
   readonly aspectRatio: string | null;
   readonly resolution: string;
+}
+
+export interface VideoTrim extends Contract {
+  readonly sourceItemId: string;
+  readonly source: AssetRef;
+  readonly startSeconds: number;
+  readonly endSeconds: number;
+  readonly name: string;
+}
+
+export interface VideoTrimCommand extends CommandBase {
+  readonly type: "video.trim";
+  readonly payload: VideoTrim;
 }
 
 export interface ViewState extends Contract {
@@ -3444,7 +3749,7 @@ export interface VoiceLibraryCapabilities extends Contract {
   readonly provider: "vllm_omni" | "moss" | "minimax" | "zhipu";
   readonly connectionId: string;
   readonly requiresTranscript: boolean;
-  readonly acceptsTranscript: boolean;
+  readonly acceptsTranscript?: boolean | null;
   readonly requiresReferenceAudio: boolean;
   readonly supportsUploadedVoices: boolean;
   readonly referenceEmbeddingDimension: number | null;
@@ -3473,6 +3778,11 @@ export interface WorkflowClip extends Contract {
   readonly frameLimit: number | null;
 }
 
+export interface WorkflowGuide extends Contract {
+  readonly groupId: string;
+  readonly required: boolean;
+}
+
 export type CanvasItem = TextCanvasItem | ImageCanvasItem | VideoCanvasItem | AudioCanvasItem | FileCanvasItem | SubjectCanvasItem | TimelineCanvasItem | StackCanvasItem | ToolCanvasItem | DirectorCanvasItem | GroupCanvasItem;
 
 export type GenerationSpec = TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
@@ -3481,7 +3791,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | GroupSavePlanCommand | GroupPublishRunCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | ArtifactPublishCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasCreateGenerationCommand | GroupSavePlanCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasLayoutRunsCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | VideoTrimCommand | GroupConfigureAssemblyCommand | GroupPublishRunCommand | GroupStartRunCommand | GroupPauseRunCommand | GroupResumeRunCommand | GroupRestartRunCommand | GroupStepRunCommand | GroupRegenerateRunStepCommand | GroupAdoptRunCandidateCommand | GroupReconcileRunCommand | GroupAssembleCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 

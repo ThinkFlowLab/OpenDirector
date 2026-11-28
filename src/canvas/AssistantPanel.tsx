@@ -622,7 +622,8 @@ export function AssistantPanel({
             disabled={locked}
             onChoose={chooseMention}
             onPasteReference={async (part, signal) => {
-              if (part.binding === "asset") {
+              const pinned = part.binding === "asset";
+              if (pinned || !part.nodeId) {
                 const asset =
                   projectReferences.assets.find(
                     (asset) => asset.id === part.assetId,
@@ -632,14 +633,25 @@ export function AssistantPanel({
                   );
                 if (
                   !asset ||
-                  !part.fingerprint ||
-                  !fingerprintMatches(asset, part.fingerprint)
+                  (pinned && !part.fingerprint) ||
+                  (part.fingerprint && !fingerprintMatches(asset, part.fingerprint)) ||
+                  (!pinned && asset.available === false)
                 )
-                  throw new Error(t("assistant.error.fixedReferenceMissing"));
+                  throw new Error(t(pinned
+                    ? "assistant.error.fixedReferenceMissing"
+                    : "assistant.error.referenceVersionUnsupported"));
                 const blob = await creationClient(documentId).blob(asset.id);
                 if (!fingerprintMatches(asset, await fingerprint(blob)))
-                  throw new Error(t("assistant.error.fixedReferenceFileChanged"));
-                return [{ ...asset, binding: "asset" }];
+                  throw new Error(t(pinned
+                    ? "assistant.error.fixedReferenceFileChanged"
+                    : "assistant.error.referenceFileChanged"));
+                return [{
+                  ...asset,
+                  binding: part.binding,
+                  nodeId: undefined,
+                  sourceRole: undefined,
+                  nodeTitle: undefined,
+                }];
               }
               const source = nodes.find((node) => node.id === part.nodeId);
               if (
@@ -666,10 +678,8 @@ export function AssistantPanel({
                 const asset = inventory.find(
                   (asset) =>
                     asset.available &&
-                    (part.nodeId
-                      ? asset.nodeId === part.nodeId &&
-                        asset.sourceRole === part.sourceRole
-                      : asset.id === part.assetId),
+                    asset.nodeId === part.nodeId &&
+                    asset.sourceRole === part.sourceRole,
                 );
                 if (asset) {
                   const bytes = await creationClient(documentId).blob(asset.id);
@@ -683,7 +693,13 @@ export function AssistantPanel({
                   option?.disabledReason ||
                     t("assistant.error.referenceVersionUnsupported"),
                 );
-              return (await chooseMention(option, signal)) ?? [];
+              const resolved = (await chooseMention(option, signal)) ?? [];
+              const asset = resolved.find((asset) =>
+                asset.nodeId === part.nodeId && asset.sourceRole === part.sourceRole,
+              );
+              if (!asset)
+                throw new Error(t("assistant.error.referenceVersionUnsupported"));
+              return [asset];
             }}
             onOpen={projectReferences.load}
             loading={projectReferences.loading}

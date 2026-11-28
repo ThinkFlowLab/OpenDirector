@@ -14,6 +14,7 @@ import { GridSplitOptions, SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
 import type { GroupLayout } from "./operations";
 import type { CanvasToolId } from "./toolCatalog";
+import type { PublishedRunControl, PublishedRunStatus } from "./workspace/useWorkspaceGeneration.ts";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import "./node-selection-toolbar.css";
@@ -50,6 +51,18 @@ export interface NodeSelectionToolbarProps {
   /** Group actions: run the members' generation workflow, ungroup, arrange, recolor. */
   onRunWorkflow?: () => void;
   workflowRunning?: boolean;
+  onPauseWorkflow?: () => void;
+  onRestartRun?: () => void;
+  onStepRun?: () => void;
+  nextRunStepHint?: string;
+  onRegenerateRunStep?: () => void;
+  onReviewRunCandidate?: () => void;
+  onReconcileRun?: () => void;
+  onPublishRunDraft?: () => void;
+  runIssueHint?: string;
+  publishedRun?: boolean;
+  publishedRunStatus?: PublishedRunStatus;
+  publishedRunControl?: PublishedRunControl;
   onViewGroupPlan?: () => void;
   onUngroup?: () => void;
   onLayout?: (layout: GroupLayout) => void;
@@ -72,6 +85,7 @@ type Action = {
   id: string;
   label: string;
   icon: string;
+  tooltip?: string;
   /** Solid tool glyph; tool actions outweigh the line icons used for chrome. */
   glyph?: ToolGlyphName;
   run?: () => void;
@@ -148,6 +162,18 @@ export function NodeSelectionToolbar({
   onDelete,
   onRunWorkflow,
   workflowRunning = false,
+  onPauseWorkflow,
+  onRestartRun,
+  onStepRun,
+  nextRunStepHint,
+  onRegenerateRunStep,
+  onReviewRunCandidate,
+  onReconcileRun,
+  onPublishRunDraft,
+  runIssueHint,
+  publishedRun,
+  publishedRunStatus,
+  publishedRunControl,
   onViewGroupPlan,
   onUngroup,
   onLayout,
@@ -160,9 +186,17 @@ export function NodeSelectionToolbar({
   const hasMedia = Boolean(node.data.src) && node.data.assetState !== "missing";
   useEffect(() => setOpenMenu(null), [node.id, node.type, locked, hasMedia]);
   const mediaKind = ["image", "video", "audio", "file"].includes(node.type);
-  if (mediaKind && !hasMedia) return null;
+  const hasNodeActions = !mediaKind || hasMedia;
+  if (!hasNodeActions && !onRegenerateRunStep && !onReviewRunCandidate) return null;
 
   const editing: Action[] = [];
+  const addRunAction = (id: string, label: MessageKey, icon: string, run?: () => void, tooltip?: string) => {
+    if (run) editing.push({ id, label: t(label), icon, run, tooltip, disabled: Boolean(locked || publishedRunControl || workflowRunning) });
+  };
+  addRunAction("review-run-candidate", "canvas.selection.group.reviewRunCandidate", "video", onReviewRunCandidate);
+  addRunAction("regenerate-run-step", "canvas.selection.group.regenerateRunStep", "rotate", onRegenerateRunStep);
+  addRunAction("reconcile-run", publishedRunControl === "reconcile" ? "canvas.selection.group.reconcilingRun"
+    : "canvas.selection.group.reconcileRun", "history", onReconcileRun, runIssueHint);
   if (node.type === "timeline" && onOutput) {
     editing.push({ id: "output", label: t("timeline.output.title"), icon: "arrowUp", run: onOutput, disabled: locked || outputBusy });
   }
@@ -221,14 +255,37 @@ export function NodeSelectionToolbar({
       });
   };
   if (node.type === "group") {
-    if (onRunWorkflow)
+    const paused = publishedRunStatus === "paused";
+    const needsReview = publishedRunStatus === "needs_review";
+    const running = workflowRunning || publishedRunStatus === "queued" || publishedRunStatus === "running";
+    const pausing = publishedRunControl === "pause" || publishedRunStatus === "pausing";
+    const resuming = publishedRunControl === "resume";
+    if (onRunWorkflow) {
+      const label: MessageKey = resuming ? "canvas.selection.group.resumingRun"
+        : pausing ? "canvas.selection.group.pausingRun"
+        : running ? "canvas.selection.group.running"
+        : paused ? "canvas.selection.group.resumeRun"
+        : needsReview ? "canvas.selection.group.runNeedsReview"
+        : "canvas.selection.group.run";
       editing.push({
         id: "run-workflow",
-        label: workflowRunning ? t("canvas.selection.group.running") : t("canvas.selection.group.run"),
+        label: t(label),
         icon: "play",
         run: onRunWorkflow,
-        disabled: workflowRunning || locked,
+        disabled: Boolean(running || pausing || publishedRunControl || needsReview || locked),
       });
+    }
+    if (onPauseWorkflow && !paused && !pausing && !needsReview)
+      editing.push({
+        id: "pause-workflow",
+        label: t("canvas.selection.group.pauseRun"),
+        icon: "pause",
+        run: onPauseWorkflow,
+        disabled: Boolean(publishedRunControl),
+      });
+    addRunAction("restart-run", "canvas.selection.group.restartRun", "rotate", onRestartRun, runIssueHint);
+    addRunAction("step-run", "canvas.selection.group.stepRun", "arrowRight", onStepRun, nextRunStepHint);
+    addRunAction("publish-run-draft", "canvas.selection.group.publishRunDraft", "check", onPublishRunDraft);
     if (onViewGroupPlan)
       editing.push({ id: "view-group-plan", label: t("canvas.selection.group.viewPlan"), icon: "text", run: onViewGroupPlan });
     if (onUngroup)
@@ -331,7 +388,7 @@ export function NodeSelectionToolbar({
       ],
       "tools",
     );
-  } else if (node.type === "video") {
+  } else if (node.type === "video" && hasMedia) {
     for (const [tool, labelKey, icon] of videoTools)
       addTool(tool, t(labelKey), icon);
     addMenu(
@@ -418,7 +475,7 @@ export function NodeSelectionToolbar({
   } else if (editLabels[node.type]) {
     addEditor("edit", t(editLabels[node.type]!), node.type, "default");
   }
-  if (onAssistant && node.type !== "group")
+  if (onAssistant && node.type !== "group" && hasNodeActions)
     editing.push({
       id: "assistant",
       label: t("canvas.selection.assistant"),
@@ -450,7 +507,7 @@ export function NodeSelectionToolbar({
 
   const organization: Action[] = [];
   // A group's bar holds only its own actions; rename and delete stay in the context menu.
-  if (onRename && node.type !== "group")
+  if (onRename && node.type !== "group" && hasNodeActions)
     organization.push({
       id: "rename",
       label: t("common.rename"),
@@ -459,7 +516,7 @@ export function NodeSelectionToolbar({
       iconOnly: true,
       disabled: locked,
     });
-  if (onDuplicate && node.type !== "group")
+  if (onDuplicate && node.type !== "group" && hasNodeActions)
     organization.push({
       id: "duplicate",
       label: t("canvas.selection.duplicate"),
@@ -467,7 +524,7 @@ export function NodeSelectionToolbar({
       run: onDuplicate,
       iconOnly: true,
     });
-  if (onDelete && node.type !== "group")
+  if (onDelete && node.type !== "group" && hasNodeActions)
     organization.push({
       id: "delete",
       label: t("canvas.selection.deleteNode"),
@@ -566,11 +623,11 @@ export function NodeSelectionToolbar({
                 label={
                   action.disabled && locked
                     ? t("canvas.selection.locked", { label: action.label })
-                    : action.label
+                    : action.tooltip ?? action.label
                 }
                 tooltipSide="top"
                 // Labelled buttons already show their text; only icons and lock reasons need a tooltip.
-                showTooltip={Boolean(action.iconOnly || (action.disabled && locked))}
+                showTooltip={Boolean(action.tooltip || action.iconOnly || (action.disabled && locked))}
                 className={`${action.iconOnly ? "is-icon-only" : ""}${action.destructive ? " is-destructive" : ""}`}
                 disabled={action.disabled}
                 onClick={(event) => {

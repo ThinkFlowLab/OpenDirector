@@ -1,25 +1,22 @@
 ---
 name: character-replacement
-description: Plan MiniMax-H3 character replacement, write per-segment Ref2VA prompts and configure reusable H3-04 ComfyUI workflows for generation and review.
+description: Replace people in source footage with H3 in OpenDirector. Plan segments, write Ref2VA prompts, and publish guided Runs with a visible plan on the canvas.
 ---
 
-# Character Replacement
+Every generated entry in a published character replacement group must include `replacementPromptInputs`. Only `shotSubjects` drives `detailed_description`. Follow the [workflow](workflow.md) to save the rendered prompt and bindings.
 
-Make character replacement easy to use: the user supplies source media and a replacement request; the agent derives the segment plan, prompts and workflow parameters. Keep the input boundary as original images, source video and explicit prompts. Work only on the requested deliverable; planning or prompt edits do not start generation, restart services or introduce preprocessing.
+# Character replacement
 
-For a simple one-person edit without segmented continuation, reuse the [H3-04 Character Replacement workflow](assets/character-replacement.json). For planned multi-segment work, use the Agentic Continuation template linked below; its example-specific settings must be recalculated for new footage.
+> For Chinese requests, read [SKILL.zh.md](SKILL.zh.md) and its linked `.zh.md` guides.
 
-1. Create a 24-FPS constant-frame-rate working copy of the source video before visual inspection, segmentation and frame-index calculations, unless the user explicitly requests another FPS. Preserve the original file and playback timing. Read [video-segment.md](video-segment.md) first. Use a vision-capable model to inspect the source video, establish shot boundaries and track when each selected person appears, interacts, becomes occluded and leaves. Produce the segment plan before writing new segment prompts.
-2. Read [prompt-writing.md](prompt-writing.md), then write each segment's prompt from its inspected action and explicit source-person-to-picture mappings.
-3. For a single-person, single-segment edit, configure the simple workflow linked above. For segmented or multi-person work, configure a task-specific copy of the [H3-04 Agentic Continuation workflow](assets/character-replacement-continuation.json), reusing Global Control, existing nodes and one shared segment-subgraph definition. Follow [workflow.md](workflow.md) for configuration, execution and review.
-4. When generation is requested, submit the executable graph through ComfyUI, monitor results, inspect segment previews and deliver the assembled video with remaining quality defects.
+**[Governing prompt principle](prompt-writing.md#governing-principle)** — Specify which source person gets which portrait and which features to replace, let the source video determine the performance, camera and scene, and describe a critical existing occlusion in one sentence about what stays in front.
 
-Prompt-format dependency: read the official [MiniMax H3 prompt-writing skill](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing). It can be read directly from the repository; local installation is optional. Before execution, establish the ComfyUI URL, installed node availability, effective Omni deployment settings and task output directory as described in [workflow.md](workflow.md).
+## Choose the path
 
-Resolve repository-relative references from this skill directory after resolving any global skill symlink, not from the agent's current working directory.
+- **Reuse an example group.** Read back the example group. Carry over the prompts verbatim, ordered references and asset versions, model parameters, guides, trims, and audio policy. Bind equivalent material in the target project and compare the saved configuration before starting. Surface unsupported fields before execution.
+- **Retry a segment in a group.** Read the target group, the affected segment, and its dependent joins. Follow [review and retry](workflow.md#review-and-retry-a-take) to regenerate a candidate step and verify the requested change.
+- **Plan new footage.** [Check the project and model](workflow.md#1-select-the-project-and-model), [plan source ranges](video-segment.md), then [write Ref2VA prompts](prompt-writing.md). Keep source audio in generation references.
 
-Execution boundary: agent → ComfyUI execution API → existing vLLM-Omni nodes → vLLM-Omni video API. The nodes own model requests; the agent does not bypass ComfyUI with a separate generation client.
+For new footage, [run the replacement preflight](workflow.md#publish-and-verify-the-plan) with source inspection, exact clips and saved bindings. Proceed only when it passes.
 
-For a prompt-only correction to an existing segment, inspect its relevant footage and existing plan; revise the plan only if the observed defect exposes an incorrect boundary or mapping. Do not invent a new segmentation for every wording edit.
-
-Preserve the user's model, resolution, FPS and fixed seed unless asked to change them. Report written plans and prompts separately from generation and visual acceptance. Keep Markdown paragraphs on single source lines and usage notes brief.
+[Publish and verify the visible plan](workflow.md#publish-and-verify-the-plan) before generation. [Start the published group and review the output](workflow.md#3-start-the-group-and-review-outputs) when authorized. For a plan-only or prompt-only request, stop at that deliverable. Read [failure lessons](pitfall.md) when diagnosing a regression or deciding whether to retry.

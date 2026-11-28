@@ -93,7 +93,14 @@ export function ModelCapabilityCard({
             nextAdapter,
           )
         : null;
-      onChange({ videoCapabilities: capabilities, videoAdapter: nextAdapter });
+      const retainGuides = saved?.videoCapabilities?.timelineGuides === true &&
+        saved.url === connection.url.trim().replace(/\/+$/, "") &&
+        saved.modelId === modelId && saved.protocol === connection.protocol &&
+        (saved.videoAdapter ?? "auto") === nextAdapter;
+      onChange({
+        videoCapabilities: capabilities && retainGuides ? { ...capabilities, timelineGuides: true } : capabilities,
+        videoAdapter: nextAdapter,
+      });
       setError("");
       onValidity("");
     } catch (failure) {

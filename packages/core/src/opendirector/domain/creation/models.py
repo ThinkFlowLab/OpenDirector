@@ -34,7 +34,8 @@ class VoiceLibraryCapabilities(Contract):
     provider: Literal['vllm_omni', 'moss', 'minimax', 'zhipu'] = Field(description='Voice registry protocol.')
     connectionId: str = Field(min_length=1, max_length=200, description='Opaque service, endpoint and account identity.')
     requiresTranscript: bool = Field(description='Registered voice must have a reference transcript.')
-    acceptsTranscript: bool = Field(default=False, description='Registry stores an optional reference transcript when one is supplied.')
+    acceptsTranscript: bool | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Registry stores an optional reference transcript when supplied; older execution snapshots omit this capability.')
     requiresReferenceAudio: bool = Field(description='Registered voice must have actual reference audio.')
     supportsUploadedVoices: bool = Field(default=True, description='Selected model checkpoint accepts uploaded registry voices.')
     referenceEmbeddingDimension: int | None = Field(default=None, ge=1, le=65536,

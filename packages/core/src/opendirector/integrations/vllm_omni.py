@@ -15,9 +15,11 @@ import httpx
 
 from opendirector.domain.generation import GenerationError, GenerationFailure
 from opendirector.domain.projects import ProjectError
+from opendirector.integrations.fasth3 import generation_fields as fasth3_generation_fields
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
-from opendirector.integrations.reference_inputs import generation_references
+from opendirector.integrations.reference_inputs import generation_references, references
+from opendirector.media.processing import extract_video_frames
 from opendirector.integrations.volcengine import bounded, endpoint
 from opendirector.media.probe import require_ffprobe
 
@@ -65,7 +67,12 @@ def capability_parameters(fields, extra):
 def _upload(data_uri, name):
     header, payload = data_uri.split(',', 1)
     mime = header.removeprefix('data:').split(';', 1)[0]
-    return name + '.' + mime.split('/')[1].replace('mpeg', 'mp3').replace('x-wav', 'wav'), base64.b64decode(payload), mime
+    return reference_upload(base64.b64decode(payload), mime, name)
+
+
+def reference_upload(data, mime, name):
+    suffix = {'audio/mpeg': 'mp3', 'audio/x-wav': 'wav', 'video/quicktime': 'mov'}.get(mime, mime.split('/')[-1])
+    return name + '.' + suffix, data, mime
 
 
 def _missing_latents(value):
@@ -95,8 +102,11 @@ class VllmOmniGeneration:
 
     def form(self, config, task, prepared):
         mode = task.get('videoMode', 'first_frame')
-        values, extra = generation_fields(task['parameters'], mode, has_images=bool(prepared['images']),
-                                         has_audio=bool(prepared['audios']), continue_size=prepared['continueSize'])
+        if (prepared.get('rules') or {}).get('profile') == 'fasth3-omni':
+            values, extra = fasth3_generation_fields(task['parameters'])
+        else:
+            values, extra = generation_fields(task['parameters'], mode, has_images=bool(prepared['images']),
+                                             has_audio=bool(prepared['audios']), continue_size=prepared['continueSize'])
         fields = {'model': config['modelId'], 'prompt': prepared['prompt'],
                   **{key: str(value) for key, value in values.items()}}
         files = []
@@ -107,6 +117,26 @@ class VllmOmniGeneration:
             prepared = {**prepared, 'images': []}
         files.extend(('input_references', _upload(image, f'image_{index}')) for index, image in enumerate(prepared['images'], 1))
         files.extend(('input_references', _upload(audio, f'audio_{index}')) for index, audio in enumerate(prepared['audios'], 1))
+        files.extend(('input_references', _upload(video, f'video_{index}')) for index, video in enumerate(prepared.get('videos', ()), 1))
+        if guide := task.get('h3Guide'):
+            try:
+                (data, metadata, _), = references(self.store, task['projectId'], [guide['assetId']])
+                if 'outputFrame' in guide:
+                    positions = (guide['outputFrame'],)
+                    uploads = [reference_upload(data, metadata['type'], 'guide_0')]
+                else:
+                    positions = (0, 21)[:len(guide['frames'])]
+                    uploads = [(f'guide_{index}.png', frame, 'image/png')
+                               for index, frame in enumerate(extract_video_frames(data, guide['frames']))]
+            except ProjectError as error:
+                raise GenerationError(GenerationFailure(category='reference', stage='prepare',
+                    message=str(error)[:500], suggestion='请检查上游视频和帧号后重试。'), error.status) from error
+            fields['quality'] = 'lossless'
+            fields['timeline_guides'] = json.dumps([
+                {'frame_index': position, 'image': {'upload_index': index}}
+                for index, position in enumerate(positions)
+            ])
+            files.extend(('guide_files', upload) for upload in uploads)
         fields['extra_params'] = json.dumps(extra)
         return fields, files
 
@@ -121,12 +151,13 @@ class VllmOmniGeneration:
                 external_id = task.get('externalTaskId')
                 if not external_id:
                     prepared = await asyncio.to_thread(generation_references, self.store, task, config)
-                    fields, files = self.form(config, task, prepared)
+                    fields, files = await asyncio.to_thread(self.form, config, task, prepared)
                     # Always multipart, as the API documents, even without uploads.
                     parts = [(name, (None, value)) for name, value in fields.items()] + files
-                    async with client.stream('POST', base, headers=headers, files=parts, extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:
+                    async with client.stream('POST', base, headers=headers, files=parts) as response:
                         if response.status_code == 400 and task.get('videoMode') == 'continuation':
-                            value = json.loads(await response.aread())
+                            body = await response.aread()
+                            value = json.loads(body)
                             raise _continuation_failure(stage) if _missing_latents(value) else provider_failure(
                                 value, stage=stage, headers=response.headers, http_status=400, secrets=secrets)
                         external_id = json.loads(await bounded(response, stage=stage, secrets=secrets))['id']

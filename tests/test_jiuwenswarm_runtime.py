@@ -51,6 +51,8 @@ assert 'private-test-key' in (Path(os.environ['JIUWENSWARM_CONFIG_DIR'])/'config
 assert 'private-test-key' not in json.dumps(request)
 assert '*' not in request['agent']['tools']
 assert 'skill_tool' in request['agent']['tools']
+assert 'read_file' in request['agent']['tools']
+assert 'native read_file tool' in request['agent']['instructions']
 assert request['mcp'] == []
 assert request['skills'] == ['example']
 prompt = request['input']

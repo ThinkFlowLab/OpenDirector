@@ -75,6 +75,7 @@ for line in sys.stdin:
    assert 'Continue' in blocks[-1]
   else:
    assert blocks[0].startswith('You are OpenDirector') and str(Path.cwd()) in blocks[1]
+   assert 'native read_image tool' in blocks[0]
    assert 'Continue' not in blocks[-1]
   text=blocks[-1]
   if mode!='wait':

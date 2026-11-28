@@ -8,6 +8,7 @@ from opendirector.domain.rule_facts import (
     CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES,
 )
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.video_capabilities import supports_h3_segments, unsupported_h3_segment
 from opendirector.domain.minimax_image import validate_minimax_image_reference
 from opendirector.domain.references import project_content
 from opendirector.media import heif_type
@@ -121,6 +122,11 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     if kind == 'video' and mode not in rules['videoModes']:
         raise ProjectError('当前模型不支持接续生成，请选择 vLLM-Omni MiniMax-H3。' if mode == 'continuation'
                            else '当前模型接口尚未接通素材参考模式，请选择该模型支持的生成方式。')
+    segment = task.get('h3Segment') or task.get('h3Guide')
+    if segment and (kind != 'video' or mode != 'reference' or not supports_h3_segments(
+            rules['profile'], (rules.get('videoCapabilities') or {}).get('timelineGuides'))):
+        raise unsupported_h3_segment()
+    segment_video_limit = 1 if segment else rules.get('maxVideos', 0)
     dual_frames = kind == 'video' and mode == 'first_frame' and config.get('videoAdapter') == 'fasth3_dual'
     total_audio_ms, total_video_ms, media_bytes = 0, 0, 0
     source_metadata, text_context = [], []
@@ -156,7 +162,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             result['manifest'].append(entry)
             continue
         source_metadata.append((meta, source_kind))
-        if source_kind == 'video' and not (kind == 'video' and mode == 'reference' and rules.get('maxVideos')):
+        if source_kind == 'video' and not (kind == 'video' and mode == 'reference' and segment_video_limit):
             raise ProjectError(f'“{meta["name"]}”：当前模型不支持视频参考，请尝试使用其他模型的素材参考模式。')
         if source_kind == 'text':
             if rules['profile'] == 'moss-image':
@@ -182,6 +188,14 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
             if len(data) > rules['imageBytes']:
                 raise ProjectError(f'“{meta["name"]}”超过当前接口参考图片大小限制。', 413)
             width, height = meta.get('width'), meta.get('height')
+            if rules['profile'] == 'fasth3-omni' and mode == 'reference' and (
+                width is None or height is None or not 256 <= width <= 5760
+                or not 256 <= height <= 5760 or not 0.4 <= width / height <= 2.5
+            ):
+                raise ProjectError(
+                    f'FastH3 参考图“{meta["name"]}”的两边须为 256–5760 像素，宽高比须为 0.4–2.5。',
+                    code='reference_invalid',
+                )
             if rules['profile'] == 'seedance-2.0' and (width is None or height is None or not 300 <= width <= 6000 or not 300 <= height <= 6000 or not .4 <= width / height <= 2.5):
                 raise ProjectError(f'“{meta["name"]}”不符合视频参考图片尺寸要求：边长 300—6000 像素，宽高比 0.4—2.5。')
             if rules['profile'] == 'seedream-5.0-pro' and (width is None or height is None or min(width, height) <= 14 or not 196 <= width * height <= 36000000 or not 1 / 16 <= width / height <= 16):
@@ -260,7 +274,9 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         raise ProjectError('结构控制需要连接一个控制视频（例如人物深度视频）。')
     if complete and mode == 'continuation' and not result['continueFrom']:
         raise ProjectError('接续生成需要引用上一段由 vLLM-Omni H3 生成的视频。')
-    if len(result['videos']) > rules.get('maxVideos', 0) or total_video_ms > REFERENCE_MEDIA_SECONDS * 1000:
+    if segment and len(result['videos']) > segment_video_limit:
+        raise ProjectError('H3 分段生成只能引用一段源视频。', 422, code='h3_timeline_guides_source_limit')
+    if len(result['videos']) > segment_video_limit or total_video_ms > REFERENCE_MEDIA_SECONDS * 1000:
         raise ProjectError(f'视频参考最多 3 段，总时长不超过 {REFERENCE_MEDIA_SECONDS} 秒。')
     if rules['profile'] == 'fasth3-omni' and len(result['images']) + len(result['videos']) + len(result['audios']) > FASTH3_MEDIA_REFERENCE_LIMIT:
         raise ProjectError(f'FastH3-Omni 的图片、视频和音频参考合计最多 {FASTH3_MEDIA_REFERENCE_LIMIT} 项。')

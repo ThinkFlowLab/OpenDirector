@@ -21,7 +21,7 @@ from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.creation_history import CreationHistory
 from opendirector.application.creation_timeline_packages import CreationTimelinePackages
 from opendirector.domain.creation.timeline_packages import TimelinePackageImportRequest, TimelinePackageImportReceipt
-from opendirector.domain.creation.assets import Asset, UploadInfo
+from opendirector.domain.creation.assets import ASSET_REVISION_HEADER, Asset, UploadInfo
 from opendirector.domain.creation.base import MediaKind
 from opendirector.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
 from opendirector.domain.creation.project import ProjectSnapshot, ViewState
@@ -184,7 +184,9 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
         imported_from = x_canvas_import if x_canvas_import in {'generated', 'edited'} else None
         if x_canvas_import is not None and imported_from is None:
             raise ProjectError('归档来源必须是 generated 或 edited。', 400)
-        if value.type in {'generation.submit', 'job.cancel', 'job.recover'}:
+        if value.type in {'generation.submit', 'job.cancel', 'job.recover', 'group.publishRun', 'group.startRun',
+                          'group.pauseRun', 'group.resumeRun', 'group.restartRun', 'group.stepRun',
+                          'group.regenerateRunStep', 'group.adoptRunCandidate', 'group.reconcileRun'}:
             if generation is None:
                 raise ProjectError('任务服务不可用。', 503)
             receipt = await generation.execute(value, session=session)
@@ -225,9 +227,23 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
         return canvas.projection(project_id)
 
     @router.post('/projects/{project_id}/queries')
-    async def query(project_id: UUID, value: CreationQuery):
+    async def query(project_id: UUID, value: CreationQuery, request: Request):
         if value.projectId != project_id:
             raise ProjectError('查询不属于当前工程。')
+        if value.type in {'run.execution.get', 'run.groupExecution.get', 'run.groupExecutions.list'}:
+            executor = getattr(generation, 'segment_runs', None)
+            if executor is None:
+                raise ProjectError('Run 执行服务不可用。', 503, code='segment_run_unavailable')
+            def localize_execution(result):
+                if result is not None and (issue := result.get('issue')):
+                    return {**result, 'issue': {**issue, 'message': localized_error_for_language(
+                        request.headers.get('accept-language'), chinese=issue['message'], status=409, code=issue['code'])}}
+                return result
+            if value.type == 'run.groupExecutions.list':
+                return {'executions': [localize_execution(result) for result in await executor.history(project_id, value.objectId)]}
+            result = (await executor.latest(project_id, value.objectId) if value.type == 'run.groupExecution.get'
+                      else await executor.wait(project_id, value.objectId, value.waitSeconds))
+            return localize_execution(result)
         result = await canvas.query(value)
         if value.type == 'asset.preview' and 'preview' in result:
             result['preview'].pop('path')
@@ -372,12 +388,13 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
             'X-Content-Type-Options': 'nosniff'})
 
     @router.get('/projects/{project_id}/assets/{asset_id}/content')
-    def content(project_id: UUID, asset_id: UUID, range_header: str | None = Header(default=None, alias='Range'),
+    def content(project_id: UUID, asset_id: UUID, revision: int | None = Query(default=None, ge=1),
+                range_header: str | None = Header(default=None, alias='Range'),
                 if_none_match: str | None = Header(default=None, alias='If-None-Match')):
-        stream, asset = assets.open_media(project_id, asset_id)
+        stream, asset = assets.open_media(project_id, asset_id, revision=revision)
         size, etag = asset.metadata.size, '"' + asset.fingerprint + '"'
         headers = {'Accept-Ranges': 'bytes', 'ETag': etag, 'Cache-Control': 'private, no-cache',
-                   'X-Content-Type-Options': 'nosniff',
+                   'X-Content-Type-Options': 'nosniff', ASSET_REVISION_HEADER: str(asset.revision),
                    'Content-Disposition': ('attachment' if asset.kind == 'file' else 'inline')
                        + "; filename*=utf-8''" + quote(asset.name, safe='')}
         if range_header is None and if_none_match == etag:

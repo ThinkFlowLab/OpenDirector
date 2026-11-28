@@ -54,6 +54,7 @@ import {
   isMusicModel,
   hasMusicReference,
   hasImplicitTextPrompt,
+  supportsH3TimelineGuides,
   MUSIC_SECONDS,
   type ModelConfig,
 } from "../backend/rules.ts";
@@ -354,12 +355,6 @@ export function NodeComposer({
   );
   const resolution = resolveGenerationModel(settings, mode, backendModels);
   const unconfigured = resolution.status === "unconfigured";
-  const referenceIssue = (node: CanvasNode) =>
-    !backend
-      ? generationReferenceIssue(node, settings, t)
-      : config
-        ? backendReferenceIssue(node, settings, config)
-        : t("generation.model.unavailable");
   // The chip mirrors the saved preset and supplies its own prompt.
   const activePreset = mode === "image"
     ? imagePresets.find((item) => item.value === presetValue)
@@ -377,11 +372,33 @@ export function NodeComposer({
     ...settings,
     prompt: promptWithPreset(settings.prompt, presetPromptText),
   };
+  const segment = selectedNode.data.h3Segment;
+  const supportsSegment = settings.videoMode === "reference" && supportsH3TimelineGuides(config?.inputRules);
+  const segmentBlocker = segment && !supportsSegment
+    ? t("generation.reference.timelineGuideUnsupported")
+    : undefined;
+  const isGuide = (node: CanvasNode) => node.id === segment?.guideSourceNodeId;
+  const referenceConfig = segment && config && supportsSegment
+    ? { ...config, inputRules: { ...config.inputRules, maxVideos: 1 } }
+    : config;
+  const referenceIssue = (node: CanvasNode) => {
+    if (isGuide(node)) return t("generation.reference.timelineGuide");
+    if (!backend) return generationReferenceIssue(node, settings, t);
+    return referenceConfig
+      ? backendReferenceIssue(node, settings, referenceConfig)
+      : t("generation.model.unavailable");
+  };
   const blocker = unconfigured
     ? t("generation.model.unconfigured")
-    : backend
-      ? backendBlocker(checkedSettings, incomingNodes, backendModels, pinnedPrecheck)
-      : generationBlocker(checkedSettings, incomingNodes, t);
+    : segmentBlocker ??
+      (backend
+        ? backendBlocker(
+            checkedSettings,
+            segment ? incomingNodes.filter((node) => !isGuide(node)) : incomingNodes,
+            segment && referenceConfig ? [referenceConfig] : backendModels,
+            pinnedPrecheck,
+          )
+        : generationBlocker(checkedSettings, incomingNodes, t));
   const canRun = !blocker;
   // A blank prompt falls back to connected text references.
   const implicitTextPrompt = Boolean(
@@ -742,8 +759,8 @@ export function NodeComposer({
           validate={(sources) => {
             const frameIssue = frameImageLimitIssue(settings, sources);
             if (frameIssue) return frameIssue;
-            if (!config) return null;
-            return referenceBudgetIssue(sources, config, settings);
+            if (!referenceConfig) return null;
+            return referenceBudgetIssue(sources.filter((source) => !isGuide(source)), referenceConfig, settings);
           }}
           onUpdate={onUpdate}
           running={running || optimizing}
@@ -1279,11 +1296,8 @@ export function NodeComposer({
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
-          aria-label={
-            running
-              ? t("generation.action.cancel")
-              : t("generation.action.submit")
-          }
+          aria-label={running ? t("generation.action.cancel") : (segmentBlocker ?? t("generation.action.submit"))}
+          title={running ? undefined : segmentBlocker}
           label={
             running
               ? t("generation.action.cancel")
@@ -1337,11 +1351,7 @@ export function NodeComposer({
           {durationValues.length > 0 && (
             <DurationControl
               fractional={!!config?.inputRules.fractionalDuration}
-              outputFrames={
-                config?.inputRules.profile === "vllm-omni-h3"
-                  ? h3FrameCount(settings.durationSeconds)
-                  : undefined
-              }
+              outputFrames={supportsH3TimelineGuides(config?.inputRules) ? h3FrameCount(settings.durationSeconds) : undefined}
               values={durationValues}
               value={settings.durationSeconds}
               disabled={running || optimizing}

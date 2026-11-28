@@ -185,6 +185,91 @@ test("rapid undo gestures choose consecutive targets and fresh revisions in the 
   }
 });
 
+test("group assembly begins after queued writes and allows edits while rendering", { timeout: 3000 }, async () => {
+  const original = globalThis.fetch;
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const gate = () => {
+    let resolve = () => {};
+    const promise = new Promise<void>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
+  const priorWrite = gate();
+  const render = gate();
+  const started = gate();
+  const writes: string[] = [];
+  let assemblyCompleted = false;
+  globalThis.fetch = async (url, options) => {
+    if (!String(url).endsWith("/commands")) return Response.json({ snapshot, edges: [] });
+    assert.equal(typeof options?.body, "string");
+    if (typeof options?.body !== "string") throw new Error("Expected command body");
+    const body = JSON.parse(options.body);
+    writes.push(body.type);
+    if (body.type === "canvas.move") await priorWrite.promise;
+    if (body.type === "group.assemble") {
+      started.resolve();
+      await render.promise;
+      assemblyCompleted = true;
+    }
+    return Response.json({ commandId: body.commandId, status: "applied" });
+  };
+  try {
+    const itemId = crypto.randomUUID();
+    const pendingMove = client.command("canvas.move", { items: [{ itemId, position: { x: 9, y: 5 } }] });
+    const pendingAssembly = client.command("group.assemble", { groupId: crypto.randomUUID(), jobIds: [crypto.randomUUID()] });
+    await Promise.resolve();
+    assert.ok(!writes.includes("group.assemble"));
+    priorWrite.resolve();
+    await pendingMove;
+    await started.promise;
+    await client.command("canvas.hide", { itemId });
+    assert.deepEqual(writes, ["canvas.move", "group.assemble", "canvas.hide"]);
+    assert.equal(assemblyCompleted, false);
+    render.resolve();
+    await pendingAssembly;
+  } finally {
+    priorWrite.resolve();
+    render.resolve();
+    globalThis.fetch = original;
+  }
+});
+
+test("an in-progress assembly waits for the original command receipt", { timeout: 6000 }, async () => {
+  const original = globalThis.fetch;
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const commandId = crypto.randomUUID();
+  const receipt = { commandId, status: "applied" };
+  let submissions = 0;
+  let receiptReads = 0;
+  globalThis.fetch = async (url, options) => {
+    const path = String(url);
+    if (path.endsWith("/commands")) {
+      submissions++;
+      return Response.json({ code: "workflow_assembly_busy" }, { status: 409 });
+    }
+    if (path.endsWith(`/receipts/${commandId}`)) {
+      assert.ok(options?.signal);
+      receiptReads++;
+      if (receiptReads === 1) return Response.json({}, { status: 404 });
+      return Response.json(receipt);
+    }
+    return Response.json({ snapshot, edges: [] });
+  };
+  try {
+    const result = await client.command("group.assemble", {
+      groupId: crypto.randomUUID(), jobIds: [crypto.randomUUID()],
+    }, [], undefined, commandId);
+    assert.deepEqual(result, receipt);
+    assert.equal(submissions, 1);
+    assert.equal(receiptReads, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("visibility receipts reuse hydrated nodes but content and layout changes take a full projection read", async () => {
   const snapshot = empty();
   const node = createNode("text", { x: 10, y: 20 }, { text: "Saved text" });
@@ -1579,7 +1664,7 @@ test("cancelling a staged Blob upload deletes the handle before registering an a
   }
 });
 
-test("canvas video and audio import upload the original File and use Host media metadata", async () => {
+test("canvas video and audio import preview original File bytes without downloading them again", async () => {
   const snapshot = empty();
   const client = new CreationClient(snapshot.project.id);
   const projection = new CreationProjection(client);
@@ -1588,7 +1673,9 @@ test("canvas video and audio import upload the original File and use Host media 
     ["video", "Windows on SteamDeck！上手测试.mp4", "video/mp4"],
     ["audio", "voice.wav", "audio/wav"],
   ] as const) {
-    const file = new File(["original bytes"], name, { type: mimeType });
+    const file = new File(["original bytes"], name, {
+      type: kind === "audio" ? "application/octet-stream" : mimeType,
+    });
     const asset = {
       id: crypto.randomUUID(), kind, name, revision: 1, fingerprint: "original",
       metadata: { mimeType, size: file.size, durationSeconds: 2 },
@@ -1601,7 +1688,7 @@ test("canvas video and audio import upload the original File and use Host media 
       assert.equal(uploadSignal, signal);
       return assetReference(asset);
     };
-    client.mediaUrl = async () => "blob:registered-media";
+    client.blob = async () => assert.fail("Imported media was fetched again");
     const resource = await projection.importFile(file, signal);
     assert.equal(resource.assetId, asset.id);
     assert.equal(resource.durationSeconds, 2);
@@ -1827,4 +1914,5 @@ test("a failed display read is reported and recovers on retry", async () => {
     client.close();
     globalThis.fetch = original;
   }
+  client.close();
 });

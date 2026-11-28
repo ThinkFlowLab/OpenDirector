@@ -571,6 +571,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean)
     !activeAction &&
     single &&
     (!["image", "video", "audio", "file"].includes(single.type) ||
+      (single.type === "video" && rt.selectedPublishedRun && rt.selectedRunExecution) ||
       (single.data.src && single.data.assetState !== "missing")),
   );
   const mediaBounds = single

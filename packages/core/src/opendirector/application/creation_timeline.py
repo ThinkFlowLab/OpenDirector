@@ -22,11 +22,12 @@ def timeline_source_refs(data: TimelineData) -> tuple[AssetRef, ...]:
     return tuple(unique.values())
 
 
-def validate_timeline_resources(data: TimelineData, snapshot: ProjectSnapshot, assets: CreationAssets) -> None:
+def validate_timeline_resources(data: TimelineData, snapshot: ProjectSnapshot, assets: CreationAssets, *, staged=frozenset()) -> None:
     refs = timeline_source_refs(data)
     for ref in refs:
         asset = assets._reference(snapshot, ref)
-        assets.reference_available(snapshot.project.id, asset.id, snapshot=snapshot)
+        if asset.id not in staged:
+            assets.reference_available(snapshot.project.id, asset.id, snapshot=snapshot)
     for track in data.tracks:
         for clip in track.clips:
             asset = assets._reference(snapshot, clip.resource.asset)

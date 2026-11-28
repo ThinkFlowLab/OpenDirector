@@ -1,0 +1,46 @@
+subject_definitions:
+{% for track in tracks %}
+<Subject {{ loop.index }}>: {{ track }} in <Video 1>.
+{% endfor %}
+<Video 1>: The source performance, defining the original movements, expressions, interactions, visibility, camera, environment and timing.
+
+summary:
+{% for track in tracks %}
+Replace <Subject {{ loop.index }}>’s {{ appearance }} with the corresponding features from <Picture {{ loop.index }}>.
+{% endfor %}
+Preserve the performance in <Video 1>.
+
+retention_analysis:
+{% for detail in retained_details %}
+<Subject {{ loop.index }}>: attribute_transfer — {{ appearance }} from <Picture {{ loop.index }}>, source person's motion, expressions, pose{% if detail %}, visibility and {{ detail }}{% else %} and visibility{% endif %}.{% if eyewear and eyewear[loop.index0] %} <Subject {{ loop.index }}> wears the eyewear from <Picture {{ loop.index }}>{% elif eyewear %} <Subject {{ loop.index }}> appears without eyewear, as in <Picture {{ loop.index }}>{% endif %}{% if eyewear %}.{% endif %}{% if hair_subject == loop.index %} Match the complete hairstyle from <Picture {{ loop.index }}>, including the hair behind the ears and at the nape.{% elif hair_outline == loop.index %} Give <Subject {{ loop.index }}> the hair outline of <Picture {{ loop.index }}> and leave the ears and neck exposed as in the portrait.{% endif %}{{ "\n" -}}
+{% endfor %}
+<Video 1>: partially_preserved — retain all content outside the assigned appearance edits.{% if portrait_appearance_only %} Reference pictures supply only the assigned appearance. Keep the source background and framing throughout.{% endif %}{% if occluder %} {% if occluder_exit == "lowers" %}The {{ occluder }} lowers out of frame before the next pointing gesture in <Video 1>.{% elif occluder_exit %}The {{ occluder }} passes in front of the performers and leaves the frame when it does in <Video 1>.{% else %}Keep the {{ occluder }} in front of the replacement wherever it covers the edited area in <Video 1>.{% endif %}{% endif %}{% for person in preserved_people %} Keep the {{ person }} in their own appearance and visibility from <Video 1>.{% endfor %}{% if guides %} Timeline guides establish the opening pose and composition.{% endif +%}
+
+detailed_description:
+{% for shot in shots %}
+{% if shot %}
+[Shot {{ loop.index }}] {% for subject in shot %}<Subject {{ subject }}> -> <Picture {{ subject }}>{% if not loop.last %}, {% endif %}{% endfor %}.
+{% else %}
+[Shot {{ loop.index }}] No assigned person is visible.
+{% endif %}
+{% endfor %}
+{% if shots | length > 1 %}
+Preserve the original cut between these shots in <Video 1>.
+{% for shot in shots %}
+{% if not loop.first and shot | length == 1 and shots[0] | length > 1 and shot[0] in shots[0] %}
+Shot {{ loop.index }} stays on <Subject {{ shot[0] }}>, the same source performer as in the opening shot.
+{% endif %}
+{% endfor %}
+{% endif %}
+
+overall_soundscape:
+{% if dialogue %}
+Preserve each source performer's own mouth movements and dialogue timing from <Video 1>. {% if dialogue.mouthMotion is defined %}In Shot {{ dialogue.shot }}, <Subject {{ dialogue.subject }}> follows the same source performer's mouth opening and closing frame by frame in <Video 1>, with the original dialogue timing.{% else %}In Shot {{ dialogue.shot }}, keep the original dialogue and its matching mouth movements on <Subject {{ dialogue.subject }}>.{% endif +%}
+{% elif source_audio %}
+Use the synchronized source audio in <Video 1> for speech timing and action rhythm.
+{% else %}
+No additional dialogue or sound effects.
+{% endif %}
+
+non_diegetic_music:
+No additional music.

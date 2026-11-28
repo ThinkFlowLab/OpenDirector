@@ -4,6 +4,8 @@ import os
 import shutil
 import stat
 
+import yaml
+
 from opendirector.domain.projects import ProjectError
 
 
@@ -28,6 +30,30 @@ def copy_skill_tree(source: Path, destination: Path) -> None:
         raise ProjectError('技能入口不能是符号链接。')
     shutil.copytree(_copy_path(source), _copy_path(destination),
         ignore=lambda parent, names: [name for name in names if _is_link(Path(parent, name))])
+
+
+def selected_skill_catalog(catalog: list[dict], selected: list[str]) -> list[dict]:
+    """Resolve selected skills and their declared dependencies from the admitted catalog."""
+    entries = {item['name']: item for item in catalog}
+    resolved = {}
+    pending = list(selected)
+    while pending:
+        name = pending.pop(0)
+        if name in resolved:
+            continue
+        item = entries.get(name)
+        if item is None:
+            raise ProjectError(f'技能或其依赖不可用：{name}。', 409, code='reference_invalid')
+        resolved[name] = item
+        source = Path(item['filePath']).read_text(encoding='utf-8')
+        parts = source.split('---', 2) if source.startswith('---\n') else []
+        metadata = yaml.safe_load(parts[1]) if len(parts) == 3 else None
+        if isinstance(metadata, dict):
+            extra = metadata.get('metadata')
+            dependencies = extra.get('opendirector-dependencies', '') if isinstance(extra, dict) else ''
+            if isinstance(dependencies, str):
+                pending.extend(dependencies.split())
+    return list(resolved.values())
 
 
 def prepare_skills(directory: Path, catalog: list[dict]) -> list[Path]:

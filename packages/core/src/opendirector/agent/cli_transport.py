@@ -60,19 +60,26 @@ async def start_server(gateway, queue, endpoint, pending):
                     raise ProjectError('CLI project does not match the active agent project.', 403)
                 key, name, arguments = str(request['id']), request['name'], request.get('arguments', {})
                 display_name = request['cliCommand']
+                # The shell command reports its terminal output. Its internal reads
+                # would otherwise add two trace records per second for each waiting job.
+                wait_read = display_name == 'opendirector job wait' and (
+                    name == 'read_project' or (name == 'query' and isinstance(arguments, dict)
+                                               and arguments.get('type') == 'job.get'))
                 spawn = _spawn(request.get('timing'))
-                await queue.put({'type': 'tool', 'id': 'cli:' + key, 'name': display_name,
-                    'status': 'running', 'arguments': arguments,
-                    **({'timing': {'spawn': spawn}} if spawn is not None else {})})
+                if not wait_read:
+                    await queue.put({'type': 'tool', 'id': 'cli:' + key, 'name': display_name,
+                        'status': 'running', 'arguments': arguments,
+                        **({'timing': {'spawn': spawn}} if spawn is not None else {})})
                 outcome = await gateway.call('cli:' + key, name, arguments)
                 response = {'value': outcome.value, 'error': outcome.error}
                 if outcome.error and isinstance(outcome.value, dict) and isinstance(outcome.value.get('code'), str):
                     response['code'] = outcome.value['code']
-                detail = json.dumps(outcome.value, ensure_ascii=False, indent=2)
-                await queue.put({**outcome.event(display_name), 'id': 'cli:' + key,
-                    'arguments': arguments, 'result': detail[:65536],
-                    'resultTruncated': len(detail) > 65536,
-                    'timing': {'spawn': spawn, 'work': round(time.monotonic() - received, 3)}})
+                if not wait_read:
+                    detail = json.dumps(outcome.value, ensure_ascii=False, indent=2)
+                    await queue.put({**outcome.event(display_name), 'id': 'cli:' + key,
+                        'arguments': arguments, 'result': detail[:65536],
+                        'resultTruncated': len(detail) > 65536,
+                        'timing': {'spawn': spawn, 'work': round(time.monotonic() - received, 3)}})
             except (ProjectError, ValueError, KeyError, OSError, TimeoutError) as failure:
                 response = {'error': str(failure)}
             writer.write(json.dumps(response, ensure_ascii=False).encode() + b'\n')

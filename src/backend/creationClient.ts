@@ -25,7 +25,7 @@ import {
 import { tNow } from "../i18n/messages.ts";
 import { parseAssetSource } from "./assetSource.ts";
 import { PriorityLimiter } from "./priorityLimiter.ts";
-import { abortable, resilientRead, type ReadOptions } from "./resilientRead.ts";
+import { abortable, readDelay, resilientRead, type ReadOptions } from "./resilientRead.ts";
 
 export type CreationOperation = BatchPayloadInput["operations"][number];
 export const objectVersion = (
@@ -254,21 +254,35 @@ export class CreationClient {
     commandId?: string,
     importedFrom?: "generated" | "edited",
   ) {
-    return this.enqueue(
-      this.prepareCommand(
-        type,
-        payload,
-        versions,
-        expectedPreview,
-        commandId,
-        importedFrom,
-      ),
+    const perform = this.prepareCommand(
+      type,
+      payload,
+      versions,
+      expectedPreview,
+      commandId,
+      importedFrom,
     );
+    // Assembly can run for a while. Wait for earlier writes, then leave the
+    // queue free. The server rechecks the captured versions at publication.
+    return type === "group.assemble"
+      ? this.queue.then(perform, perform)
+      : this.enqueue(perform);
   }
   private enqueue<T>(perform: () => Promise<T>) {
     const pending = this.queue.then(perform, perform);
     this.queue = pending;
     return pending;
+  }
+  private async waitForAssemblyReceipt(path: string) {
+    const signal = AbortSignal.timeout(120_000);
+    for (;;) {
+      try {
+        return await storageRequest<CommandReceipt>(path, { signal });
+      } catch (error) {
+        if (!(error instanceof ApiError) || (error.status !== 404 && error.code !== "network_error")) throw error;
+        await readDelay(1500, signal);
+      }
+    }
   }
   private prepareCommand(
     type: CommandInput["type"],
@@ -310,10 +324,11 @@ export class CreationClient {
         );
       } catch (error) {
         // A lost HTTP response is not permission to mint another paid request.
+        const path = `${creationPath(this.id)}/receipts/${body.commandId}`;
         try {
-          receipt = await storageRequest<CommandReceipt>(
-            `${creationPath(this.id)}/receipts/${body.commandId}`,
-          );
+          receipt = type === "group.assemble" && error instanceof ApiError && error.code === "workflow_assembly_busy"
+            ? await this.waitForAssemblyReceipt(path)
+            : await storageRequest<CommandReceipt>(path);
         } catch {
           if (
             error instanceof ApiError &&

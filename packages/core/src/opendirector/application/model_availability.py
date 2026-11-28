@@ -74,7 +74,9 @@ def generation_request(config, spec, references, *, parameters=None):
     candidates = requests_for(config)
     if not candidates:
         return None
-    transmitted = [item for item in references if item.transmission == 'content']
+    segment = getattr(getattr(spec, 'parameters', None), 'h3Segment', None) if spec.kind == 'video' else None
+    guide_id = segment.guideReferenceId if segment else None
+    transmitted = [item for item in references if item.transmission == 'content' and (guide_id is None or item.referenceId != guide_id)]
     kinds = {item.asset.kind for item in transmitted}
     if spec.kind == 'image':
         profile = 'image_to_image' if 'image' in kinds else 'text_to_image'

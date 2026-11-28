@@ -204,6 +204,9 @@ export const generation = {
   "generation.reference.addMusic": "Add reference music",
   "generation.reference.connected": "Reference connected node",
   "generation.reference.upload": "Upload node reference",
+  "generation.reference.timelineGuide": "Timeline guide",
+  "generation.reference.timelineGuideUnsupported":
+    "Choose a deployment with timeline-guide support and select Reference mode.",
   "generation.reference.title": "{role}: {title}",
   "generation.reference.readingContext":
     "Text-to-speech does not send these references to the model. You can still inspect or remove them.",

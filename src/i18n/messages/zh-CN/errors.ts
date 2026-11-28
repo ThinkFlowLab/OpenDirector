@@ -143,6 +143,7 @@ export const errors = {
   "errors.storage.edge": "连线格式无效或引用了不存在的节点。",
   "errors.storage.duplicateEdge": "连线 ID 重复：{id}",
   "errors.storage.frameReference": "视频首尾帧必须引用已连接的节点。",
+  "errors.storage.guideReference": "H3 导帧需要两个有效的帧号和对应的视频引用连线。",
   "errors.storage.toolDraft": "工具草稿引用了不存在的节点。",
   "errors.storage.projectFrames": "项目设置引用了不存在的首尾帧。",
   "errors.storage.transientBlob":
@@ -454,6 +455,7 @@ export const errors = {
   "errors.archive.notCanvas":
     "这不是 OpenDirector 画布压缩包，未导入任何内容。",
   "errors.archive.versionInvalid": "画布压缩包的格式版本无效。",
+  "errors.archive.guidedCapability": "画布压缩包的版本或能力声明与导帧工作流配置不匹配。",
   "errors.archive.versionNewer":
     "该画布由更新版本的 OpenDirector 导出（格式 v{version}），当前版本无法读取。",
   "errors.archive.missingDocument": "压缩包缺少画布文件：{path}",

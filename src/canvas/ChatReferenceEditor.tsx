@@ -18,6 +18,7 @@ import {
   currentReferences,
   referencePart,
   referenceIds,
+  referenceKey,
   referenceIsOffCanvas,
   fingerprintMatches,
   validContent,
@@ -229,14 +230,19 @@ export function ChatReferenceEditor({
     root.current
       ?.querySelectorAll<HTMLElement>("[data-reference]")
       .forEach((chip) => {
-        const part = JSON.parse(chip.dataset.reference!);
+        const encoded = chip.dataset.reference;
+        if (!encoded) return;
+        const part: ReturnType<typeof referencePart> = JSON.parse(encoded);
+        const key = referenceKey(part);
+        const source = latest.current.assets.find(
+          (asset) =>
+            asset.id === part.assetId &&
+            asset.referenceId === part.referenceId &&
+            referenceKey(referencePart(asset)) === key,
+        );
         const asset =
-          latest.current.assets.find(
-            (asset) =>
-              asset.id === part.assetId &&
-              asset.referenceId === part.referenceId,
-          ) ?? latest.current.assets.find((asset) => asset.id === part.assetId);
-        const displayName = assetDisplayName(asset?.nodeTitle || part.name);
+          source ?? latest.current.assets.find((asset) => asset.id === part.assetId);
+        const displayName = assetDisplayName(source?.nodeTitle || part.name);
         const label = chip.querySelector<HTMLElement>(
           ".cw-chat-reference-label",
         );

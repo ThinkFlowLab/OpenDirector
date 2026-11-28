@@ -5,10 +5,10 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, TypeAdapter, create_model, model_validator
 
 from .assets import AssetRef, MediaMetadata
-from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
-from .segment_run import SegmentRunPlan
-from .canvas import GroupAssembly, CanvasItem
+from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, NonNegative, ObjectVersion, Point, Positive, Revision, digest, unique
+from .canvas import CanvasItem, GroupAssembly
 from .editors import EditorDocument
+from .segment_run import SegmentRunPlan
 from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
 from .generation import GenerationSpec, Job, PromptPart, Reference
 
@@ -41,6 +41,16 @@ class ArtifactPublish(Contract):
     name: str = Field(min_length=1, max_length=255, description='User-visible name.')
     expectedKind: MediaKind | None = Field(default=None, description='Required media kind, when specified.')
     sources: tuple[AssetRef, ...] = Field(default=(), max_length=100, description='Ordered source asset versions.')
+    sourceItemId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Canvas node holding the source asset, when the derivation should appear on the canvas.')
+    sourceAssetId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Asset read from the source canvas node when preparing the artifact.')
+
+    @model_validator(mode='after')
+    def canvas_source(self):
+        if (self.sourceItemId is None) != (self.sourceAssetId is None):
+            raise ValueError('Artifact canvas provenance requires both sourceItemId and sourceAssetId.')
+        return self
 
 
 class AssetWriteText(Contract):
@@ -167,6 +177,69 @@ class CanvasApplyEdit(Contract):
     editorId: UUID = Field(description='Editable document ID.')
 
 
+class GroupConfigureAssembly(Contract):
+    groupId: UUID = Field(description='Canvas group receiving the assembly configuration.')
+    assembly: GroupAssembly | None = Field(description='Saved assembly recipe, or null to remove it.', examples=[{
+        'timelineItemId': '00000000-0000-0000-0000-000000000001',
+        'outputItemId': '00000000-0000-0000-0000-000000000002',
+        'clips': [{'itemId': '00000000-0000-0000-0000-000000000003', 'inFrame': 18, 'outFrame': 118,
+                   'reverse': True, 'frameLimit': 118}],
+    }])
+
+
+class GroupPublishRun(Contract):
+    groupId: UUID = Field(description='Draft canvas group that becomes immutable when published.')
+    assembly: GroupAssembly = Field(description='Timeline, output and generated retained ranges.', examples=[{
+        'timelineItemId': '00000000-0000-0000-0000-000000000001',
+        'outputItemId': '00000000-0000-0000-0000-000000000002',
+        'clips': [{'itemId': '00000000-0000-0000-0000-000000000003', 'inFrame': 0, 'outFrame': 24}],
+    }])
+    plan: SegmentRunPlan = Field(description='Full-source segment template input.', examples=[{
+        'source': {'assetId': '00000000-0000-0000-0000-000000000004', 'revision': 1,
+                   'fingerprint': 'sha256:' + '0' * 64, 'kind': 'video'},
+        'fps': 24, 'frameCount': 24,
+        'entries': [{'kind': 'generated', 'sourceStart': 0, 'sourceEnd': 24,
+                     'itemId': '00000000-0000-0000-0000-000000000003', 'shot': 'shot-1', 'step': {'kind': 'anchor'}}],
+    }])
+    planLocale: Literal['zh-CN', 'en-US'] = Field(default='en-US', description='Language of the visible plan. Follow the user’s request language unless they specify another language.')
+    planNotes: str = Field(default='', max_length=16000, description='Optional shot analysis and planning rationale shown below the executable plan.')
+
+
+class GroupStartRun(Contract):
+    groupId: UUID = Field(description='Published Run to execute with its frozen definition.')
+
+
+class GroupControlRun(Contract):
+    groupId: UUID = Field(description='Published Run whose current execution will be controlled.')
+
+
+class GroupRunExecution(GroupControlRun):
+    executionId: UUID = Field(description='Target Run execution ID.')
+
+
+class GroupStepRun(GroupControlRun):
+    executionId: UUID | None = Field(default=None, description='Paused execution to advance. Omit to start a new execution in single-step mode.')
+
+
+class GroupRegenerateRunStep(GroupRunExecution):
+    itemId: UUID = Field(description='Generation segment whose result will be regenerated.')
+    expectedExecutionId: UUID | None = Field(default=None, description='Latest execution ID observed by the caller. Required when executionId selects an earlier execution.')
+
+
+class GroupAdoptRunCandidate(GroupRunExecution):
+    jobId: UUID = Field(description='Completed candidate job to adopt in the selected execution.')
+
+
+class GroupAssemble(Contract):
+    groupId: UUID = Field(description='Canvas group with a saved assembly recipe. Include the timeline node, its editor document, and any existing output node in expectedVersions.')
+    jobIds: tuple[UUID, ...] = Field(min_length=1, max_length=50, description='Completed jobs selected for this run.')
+
+    @model_validator(mode='after')
+    def unique_jobs(self):
+        unique(self.jobIds, 'workflow job IDs')
+        return self
+
+
 class TimelinePublishRender(Contract):
     itemId: UUID = Field(description='Canvas item ID.')
     editorId: UUID = Field(description='Editable document ID.')
@@ -199,6 +272,24 @@ class CanvasPublishMedia(Contract):
         unique([output.asset.assetId for output in self.outputs], 'output asset IDs')
         if self.document.kind not in {'media_edit', 'director'}:
             raise ValueError('Local publication requires a media edit or director snapshot')
+        return self
+
+
+class VideoTrim(Contract):
+    sourceItemId: UUID = Field(description='Stable canvas video node ID from the plan or project snapshot.')
+    source: AssetRef = Field(description='Exact video asset version observed on the source node when planning the trim.',
+        examples=[{'assetId': '00000000-0000-0000-0000-000000000000', 'revision': 1,
+                   'fingerprint': 'sha256:' + '0' * 64, 'kind': 'video'}])
+    startSeconds: NonNegative = Field(description='Start of the retained range in the source video, in seconds.')
+    endSeconds: Positive = Field(description='End of the retained range in the source video, in seconds.')
+    name: str = Field(min_length=1, max_length=255, pattern=r'\S', description='User-visible name of the new video asset and node.')
+
+    @model_validator(mode='after')
+    def source_range(self):
+        if self.source.kind != 'video':
+            raise ValueError('Video trim requires a video source')
+        if self.startSeconds >= self.endSeconds:
+            raise ValueError('endSeconds must be greater than startSeconds')
         return self
 
 
@@ -249,7 +340,7 @@ class GenerationSubmit(Contract):
         json_schema_extra={'x-version-object-type': 'generation_spec'})
     expectedSpecRevision: Revision = Field(description='Must match the specId revision in expectedVersions.')
     originItemId: UUID | None = Field(default=None,
-        description='When set, include its current canvas_item revision in expectedVersions.',
+        description='Required for clips in a group assembly recipe. When set, include its current canvas_item revision in expectedVersions.',
         json_schema_extra={'x-version-object-type': 'canvas_item'})
     previousJobId: UUID | None = Field(default=None, description='Previous generation attempt ID.')
     adoptionPolicy: Literal['if_current', 'candidate_only'] = Field(default='if_current', description='Policy for adopting the completed result.')
@@ -326,7 +417,7 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
-        elif self.type in {'group.saveRunPlan', 'group.publishRun'}:
+        elif self.type in {'group.saveRunPlan'}:
             required = [('canvas_item', payload.groupId)]
         elif self.type == 'canvas.publishMedia':
             required = [('canvas_item', payload.itemId), *[('asset', o.asset.assetId) for o in payload.outputs]]
@@ -338,6 +429,8 @@ class CommandBase(Contract):
                 required.append(('canvas_item', payload.outputId))
         elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit', 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
+        elif self.type in {'group.configureAssembly', 'group.assemble', 'group.publishRun'}:
+            required = [('canvas_item', payload.groupId)]
         elif self.type == 'canvas.move':
             required = [('canvas_item', item.itemId) for item in payload.items]
         elif self.type == 'asset.updateMetadata':
@@ -374,7 +467,6 @@ _COMMANDS = (
     ('AssetDeleteCommand', 'asset.delete', AssetDelete, 'Delete assets after an impact preview.'),
     ('CanvasCreateGenerationCommand', 'canvas.createGeneration', CanvasCreateGeneration, 'Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones.'),
     ('GroupSavePlanCommand', 'group.saveRunPlan', GroupPlanDraft, 'Save a draft segment plan.'),
-    ('GroupPublishRunCommand', 'group.publishRun', GroupPlanDraft, 'Publish the segment plan as a Markdown canvas node.'),
     ('CanvasShowCommand', 'canvas.show', CanvasShow, 'Create or restore a canvas display item.'),
     ('CanvasMoveCommand', 'canvas.move', CanvasMove, 'Move one or more canvas items.'),
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate, 'Update canvas presentation, grouping or lock state.'),
@@ -383,6 +475,18 @@ _COMMANDS = (
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize, 'Bind an asset to an empty or material canvas item.'),
     ('CanvasApplyEditCommand', 'canvas.applyEdit', CanvasApplyEdit, 'Apply an editor result to a canvas item.'),
     ('CanvasPublishMediaCommand', 'canvas.publishMedia', CanvasPublishMedia, 'Publish edited media outputs with their editor snapshot.'),
+    ('VideoTrimCommand', 'video.trim', VideoTrim, 'Trim a source canvas video using its exact asset version, then publish a new video node and its edit snapshot.'),
+    ('GroupConfigureAssemblyCommand', 'group.configureAssembly', GroupConfigureAssembly, 'Save a canvas assembly plan. H3 segmented plans require requireTimelineGuides and may name one guide-exempt generation anchor. Edits keep confirmed guide requirements and step identities.'),
+    ('GroupPublishRunCommand', 'group.publishRun', GroupPublishRun, 'Validate and freeze a full-source segmented video Run.'),
+    ('GroupStartRunCommand', 'group.startRun', GroupStartRun, 'Start the published Run in the background. The command ID identifies the execution.'),
+    ('GroupPauseRunCommand', 'group.pauseRun', GroupControlRun, 'Pause the current Run after its in-flight step. No subsequent steps start until resumed.'),
+    ('GroupResumeRunCommand', 'group.resumeRun', GroupControlRun, 'Resume the paused Run from its existing execution and completed steps.'),
+    ('GroupRestartRunCommand', 'group.restartRun', GroupRunExecution, 'Start a fresh execution of the published Run from its first stage.'),
+    ('GroupStepRunCommand', 'group.stepRun', GroupStepRun, 'Execute only the next stage of a published Run and pause before the following stage.'),
+    ('GroupRegenerateRunStepCommand', 'group.regenerateRunStep', GroupRegenerateRunStep, 'Regenerate one segment as a candidate using the frozen Run inputs.'),
+    ('GroupAdoptRunCandidateCommand', 'group.adoptRunCandidate', GroupAdoptRunCandidate, 'Adopt a completed candidate and continue with the remaining dependent stages.'),
+    ('GroupReconcileRunCommand', 'group.reconcileRun', GroupRunExecution, 'Check the status of an unresolved Run job using its existing provider task ID, without resubmitting it.'),
+    ('GroupAssembleCommand', 'group.assemble', GroupAssemble, 'Assemble and publish the completed jobs from a canvas group.'),
     ('TimelinePublishRenderCommand', 'timeline.publishRender', TimelinePublishRender, 'Publish a rendered timeline result.'),
     ('NodeVersionApplyCommand', 'canvas.applyVersion', NodeVersionApply, 'Apply a historical asset version and its reference policy to a canvas item.'),
     ('CanvasConfigureCommand', 'canvas.configure', CanvasConfigure, 'Bind a generation configuration to a canvas item.'),
@@ -447,7 +551,7 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'canvas_run_layout_group', 'canvas_run_layout_conflict', 'canvas_run_layout_extent', 'canvas_run_layout_shared_object', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'canvas_run_layout_group', 'canvas_run_layout_conflict', 'canvas_run_layout_extent', 'canvas_run_layout_shared_object', 'missing_object', 'reference_invalid', 'image_quality_unsupported', 'h3_timeline_guides_unsupported',
                     'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
                     'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
@@ -488,6 +592,10 @@ class CommandReceipt(Contract):
     jobIds: tuple[UUID, ...] = Field(default=(), description='Generation jobs associated with this operation.')
     issues: tuple[ContractIssue, ...] = Field(default=(), description='Validation or execution issues.')
     eventCursor: int | None = Field(default=None, strict=True, ge=0, description='Latest committed project event cursor.')
+    planItemId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Visible plan canvas node created by Run publication.')
+    runExecutionId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Durable execution created by Run start.')
 
     @model_validator(mode='after')
     def outcome(self):
@@ -514,6 +622,22 @@ class ObjectQuery(QueryBase):
     type: Literal['object.get', 'job.get'] = Field(description='Read an object or generation job.')
     objectId: UUID = Field(description='Target business object ID.')
     revision: Revision | None = Field(default=None, description='Historical object revision, or current when omitted.')
+
+
+class RunExecutionQuery(QueryBase):
+    type: Literal['run.execution.get'] = Field(description='Read a background Run execution.')
+    objectId: UUID = Field(description='Execution ID returned by group.startRun.')
+    waitSeconds: float = Field(default=0, ge=0, le=60, description='Wait while this execution is queued or running.')
+
+
+class RunGroupExecutionQuery(QueryBase):
+    type: Literal['run.groupExecution.get'] = Field(description='Read the latest execution of a published Run, or null if it has never started.')
+    objectId: UUID = Field(description='Published Run canvas group ID.')
+
+
+class RunGroupExecutionsQuery(QueryBase):
+    type: Literal['run.groupExecutions.list'] = Field(description='Read execution history for a published Run.')
+    objectId: UUID = Field(description='Published Run canvas group ID.')
 
 
 class VersionsQuery(QueryBase):
@@ -554,7 +678,8 @@ class AssetPreviewQuery(QueryBase):
 
 
 Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
-                  CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
+                  CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery | RunExecutionQuery |
+                  RunGroupExecutionQuery | RunGroupExecutionsQuery, Field(discriminator='type')]
 
 
 class ChangedObject(Contract):

@@ -23,7 +23,11 @@ def prepare_resources():
     if bundled.exists():
         shutil.rmtree(bundled)
     shutil.copytree(ROOT / 'dist', bundled / 'web')
-    shutil.copytree(ROOT / 'packages/agent/skills', bundled / 'skills')
+    skill_ignore = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo')
+    shutil.copytree(ROOT / 'packages/agent/skills', bundled / 'skills', ignore=skill_ignore)
+    h3_skill = ROOT / '.agents/upstream/minimax-h3/skills/h3-prompt-writing'
+    if (h3_skill / 'SKILL.md').is_file():
+        shutil.copytree(h3_skill, bundled / 'skills/h3-prompt-writing', ignore=skill_ignore)
     npm_package = ROOT / 'node_modules/opencode-ai'
     metadata = json.loads((npm_package / 'package.json').read_text())
     if os.name == 'nt':

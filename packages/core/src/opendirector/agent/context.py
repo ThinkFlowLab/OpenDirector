@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from opendirector.domain.agent_runtime import RuntimeId
+from opendirector.agent.references import TurnReference
 from opendirector.infrastructure.local_projects import write_json
 
 AgentEvent = dict[str, JsonValue]
@@ -23,6 +24,8 @@ class RunContext:
     messages: list[dict[str, JsonValue]]
     selected_skills: list[str]
     model_selections: dict[str, str | None] = field(default_factory=dict)
+    turn_references: tuple[TurnReference, ...] = ()
+    earlier_references: tuple[TurnReference, ...] = ()
     conversation_id: UUID | None = None
     thinking: str = 'auto'
     runtime_model: str | None = None

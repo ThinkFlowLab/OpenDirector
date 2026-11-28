@@ -18,6 +18,7 @@ from opendirector.domain.rule_facts import (
     REFERENCE_MEDIA_SECONDS, STORED_VOICE_PATTERN, TEXT_DEFAULT_MAX_TOKENS, TEXT_MAX_TOKENS,
     duration_matches, effective_video_mode, generate_audio_options, prompt_optional_with_media,
 )
+from opendirector.domain.video_capabilities import supports_h3_segments, unsupported_h3_segment
 from .assets import AssetRef, MediaMetadata
 from .base import CanvasItemVersion, Contract, Digest, GenerationKind, NonNegative, ObjectVersion, PositiveInt, ProjectEntity, Revision, digest, unique
 from .models import ImageQuality, ModelConfigPublic, ModelSnapshot, VideoMode
@@ -41,7 +42,29 @@ class ImageParameters(Contract):
     outputFormat: Literal['png'] = Field(default='png', description='Generated image encoding.')
 
 
+class H3Segment(Contract):
+    guideReferenceId: UUID | None = Field(default=None, description='Reference to a pinned guide image or the preceding raw generated video.')
+    sourceFrames: Annotated[tuple[Annotated[int, Field(strict=True, ge=0, le=359)], ...],
+                            Field(min_length=1, max_length=2)] | None = Field(
+        default=None, description='Zero-based source frames placed at output frame 0, or at 0 and 21 in order.')
+
+    outputFrame: Annotated[int, Field(strict=True, ge=0, le=359)] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+        description='Output frame for a pinned still-image guide.')
+
+    @model_validator(mode='after')
+    def guide_pair(self):
+        selectors = sum(value is not None for value in (self.sourceFrames, self.outputFrame))
+        if selectors != int(self.guideReferenceId is not None):
+            raise ValueError('H3 guide requires a reference and exactly one frame selector. / H3 导帧须指定素材，并且只能选一种帧参数。')
+        return self
+
+
 class VideoParameters(Contract):
+    h3Segment: H3Segment | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Native H3 source-video segment and optional timeline guides.')
+    seed: int | None = Field(default=None, strict=True, ge=0, le=2**31 - 1, exclude_if=lambda value: value is None,
+        description='Fixed sampling seed for FastH3. Ordinary FastH3 jobs draw a seed when omitted.')
     generateAudio: bool = Field(default=True, description='Include audio; value must be allowed by model inputRules.generateAudioOptions.')
     videoMode: VideoMode = Field(default='first_frame', description='Video generation input mode.')
     durationSeconds: Annotated[float, Field(strict=True, ge=1, le=60)] | None = Field(default=None, description='Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.')
@@ -197,6 +220,26 @@ class ResolvedReference(Contract):
     transmission: Literal['content', 'metadata', 'context_only', 'latent'] = Field(default='content', description='How reference content is sent to the provider.')
 
 
+def resolve_h3_timeline_guide(spec: GenerationSpec, references: tuple[ResolvedReference, ...], *, required=False):
+    segment = spec.parameters.h3Segment if spec.kind == 'video' else None
+    reference_id = segment.guideReferenceId if segment is not None else None
+    if reference_id is None and not required:
+        return None
+    if reference_id is not None and spec.parameters.videoMode == 'reference':
+        guides = [reference for reference in references if reference.referenceId == reference_id]
+        if len(guides) == 1:
+            guide = guides[0]
+            if (guide.asset.kind == ('image' if segment.outputFrame is not None else 'video') and guide.role == 'reference' and guide.transmission == 'content'
+                    and (guide.sourceVersion is None or guide.sourceVersion.objectType == 'canvas_item')):
+                return guide
+    raise ValueError('H3 导帧来源必须是有效的固定图片或原始视频。')
+
+
+class WorkflowGuide(Contract):
+    groupId: UUID = Field(description='Stable identity of the guide-required workflow that accepted this segment.')
+    required: bool = Field(strict=True, description='Whether this step must use a guide. False denotes the workflow’s explicit generation anchor.')
+
+
 class InputSnapshot(Contract):
     """Only creative inputs; layout, selection and credentials are excluded."""
     spec: GenerationSpec = Field(description='Generation configuration for this operation.')
@@ -204,6 +247,8 @@ class InputSnapshot(Contract):
     references: tuple[ResolvedReference, ...] = Field(default=(), description='Ordered generation reference bindings.')
     presetPrompt: str | None = Field(default=None, exclude_if=lambda value: value is None,
                                     description='Image preset instructions frozen when the job is accepted.')
+    workflowGuide: WorkflowGuide | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Guide policy captured when the workflow segment was accepted.')
 
     @model_validator(mode='after')
     def identity(self):
@@ -214,6 +259,10 @@ class InputSnapshot(Contract):
             raise ValueError('Accepted execution requires a committed generation purpose')
         if self.spec.currentResultId is not None:
             raise ValueError('Current display selection is not a generation input')
+        if self.workflowGuide is not None:
+            if self.spec.kind != 'video':
+                raise ValueError('A workflow guide policy requires a video snapshot')
+            self.timeline_guide()
         unique([(ref.referenceId, ref.asset.assetId) for ref in self.references], 'resolved reference assets')
         for reference_id in {ref.referenceId for ref in self.references}:
             expanded = [ref for ref in self.references if ref.referenceId == reference_id]
@@ -227,6 +276,10 @@ class InputSnapshot(Contract):
                                            for part in self.spec.promptContent):
             raise ValueError('Prompt points to an unresolved reference')
         return self
+
+    def timeline_guide(self, *, required=False) -> ResolvedReference | None:
+        return resolve_h3_timeline_guide(self.spec, self.references,
+            required=required or (self.workflowGuide is not None and self.workflowGuide.required))
 
     def fingerprint(self):
         # Retain exact source revisions for audit, but a display-selection edit
@@ -324,6 +377,8 @@ class Job(ProjectEntity):
             raise ValueError('Additional result display requires an origin and candidate-only adoption')
         if self.inputSnapshot.spec.projectId != self.projectId:
             raise ValueError('Job and generation snapshot belong to different projects')
+        if self.inputSnapshot.workflowGuide is not None and self.originItemId is None:
+            raise ValueError('Workflow guide policy requires a planned origin item')
         if self.inputFingerprint != self.inputSnapshot.fingerprint():
             raise ValueError('Job input fingerprint differs from its snapshot')
         if self.execution.kind != self.inputSnapshot.spec.kind or self.asset and self.asset.kind != self.execution.kind:
@@ -422,7 +477,24 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')
     if spec.promptContent and any(isinstance(part, PromptReference) and part.referenceId not in {ref.referenceId for ref in references} for part in spec.promptContent):
         raise ValueError('提示词引用了未解析的参考素材。')
-    transmitted = [ref for ref in references if ref.role != 'continuation' and ref.transmission != 'context_only']
+    h3_segment = spec.parameters.h3Segment if spec.kind == 'video' else None
+    guide_id = h3_segment.guideReferenceId if h3_segment else None
+    if h3_segment is not None:
+        timeline_guides = rules.videoCapabilities is not None and rules.videoCapabilities.timelineGuides
+        if not supports_h3_segments(rules.profile, timeline_guides) or spec.parameters.videoMode != 'reference':
+            raise unsupported_h3_segment()
+        guide = resolve_h3_timeline_guide(spec, references)
+        if guide is not None and any(r.asset.assetId == guide.asset.assetId for r in references if r.referenceId != guide_id):
+            raise ValueError('H3 导帧素材和普通参考必须使用不同的素材。')
+        if guide is not None and h3_segment.outputFrame is not None:
+            if guide.metadata.size > rules.imageBytes:
+                raise ValueError('H3 导帧图片超过模型图片大小限制。')
+            if h3_segment.outputFrame >= round((spec.parameters.durationSeconds or 5) * 24):
+                raise ValueError('H3 导帧帧号超出生成窗口。')
+        if guide_id and any(isinstance(part, PromptReference) and part.referenceId == guide_id for part in spec.promptContent or ()):
+            raise ValueError('导帧素材不能作为提示词中的普通素材引用。')
+    transmitted = [ref for ref in references if ref.role != 'continuation' and ref.transmission != 'context_only'
+                   and ref.referenceId != guide_id]
     if sum(ref.metadata.size for ref in transmitted) > rules.requestBytes:
         raise ValueError('参考素材总大小超过模型请求上限。')
     for ref in transmitted:
@@ -441,7 +513,7 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             raise ValueError('参照音乐最多连接 1 个音频节点。')
     if any(kind not in rules.allowedKinds for kind in kinds):
         raise ValueError('当前模型不支持这种参考素材类型。')
-    for kind, limit in [('image', rules.maxImages), ('video', rules.maxVideos), ('audio', rules.maxAudios)] if spec.kind != 'text' else []:
+    for kind, limit in [('image', rules.maxImages), ('video', 1 if h3_segment is not None else rules.maxVideos), ('audio', rules.maxAudios)] if spec.kind != 'text' else []:
         count = sum(ref.asset.kind == kind for ref in transmitted)
         if count > limit:
             label = {'image': '图片', 'video': '视频', 'audio': '音频'}[kind]
@@ -536,7 +608,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             if rules.referenceMediaSeconds is not None:
                 raise ProjectError('参考视频和音频每段须为 2–30 秒，同类素材总时长不能超过 30 秒。', 422, code='higgsfield_duration')
             raise ValueError(f'{label}参考的时长必须已知，且总时长不能超过 {REFERENCE_MEDIA_SECONDS} 秒。')
-    if rules.profile == 'fasth3-omni' and sum(kind in {'image', 'video', 'audio'} for kind in kinds) > FASTH3_MEDIA_REFERENCE_LIMIT:
+    if rules.profile == 'fasth3-omni' and sum(ref.asset.kind in {'image', 'video', 'audio'} and ref.referenceId != guide_id
+            for ref in references if ref.transmission != 'context_only') > FASTH3_MEDIA_REFERENCE_LIMIT:
         raise ValueError(f'FastH3 最多支持 {FASTH3_MEDIA_REFERENCE_LIMIT} 个媒体参考。')
     if params.resolution != 'auto':
         choices = rules.referenceImageResolutions if params.videoMode == 'reference' and 'image' in kinds and rules.referenceImageResolutions is not None else rules.outputResolutions

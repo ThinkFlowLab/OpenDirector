@@ -226,6 +226,24 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
         probe.close()
 
 
+@pytest.mark.parametrize('size,valid', [((250, 450), False), ((256, 450), True), ((256, 800), False)])
+def test_fasth3_preflight_checks_imported_reference_image_geometry(project, size, valid):
+    store, value, session, canvas = project
+    image = io.BytesIO()
+    Image.new('RGB', size).save(image, format='PNG')
+    asset = canvas.import_file(value['id'], str(uuid4()), 'portrait.png', image.getvalue(), session)
+    manager = CreationGeneration(store, ModelConfigs(store.local.repository))
+    adapter = VllmOmniGeneration(manager.store)
+    config = {**H3, 'modelId': 'FastH3-Omni'}
+    spec = dict(kind='video', prompt='Replace the assigned person.', promptContent=None,
+                referenceIds=[asset['id']], videoMode='reference')
+    if valid:
+        assert len(adapter.prepare_inputs(value['id'], spec, config)['references']) == 1
+    else:
+        with pytest.raises(ProjectError, match='portrait.png.*256'):
+            adapter.prepare_inputs(value['id'], spec, config)
+
+
 def test_other_models_keep_rejecting_video_references(project):
     store, value, _, _ = project
     seedance = {'kind': 'video', 'url': 'https://ark.cn-beijing.volces.com/api/plan/v3', 'modelId': 'doubao-seedance-2.0', 'apiKey': 'k'}
@@ -259,3 +277,118 @@ def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
         assert fields['size'] == '480x832' and json.loads(fields['extra_params']) == {'task': 't2va'}
         await manager.close()
     asyncio.run(run())
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
+def test_h3_guide_upload_preserves_reversed_source_frame_order(tmp_path):
+    clip = tmp_path / 'raw.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x48:r=24',
+                    '-frames:v', '24', '-pix_fmt', 'yuv420p', str(clip)], check=True)
+    raw = clip.read_bytes()
+
+    class Store:
+        def asset(self, owner, asset_id):
+            assert (owner, asset_id) == ('project', 'upstream')
+            return raw, {'id': asset_id, 'name': 'raw.mp4', 'type': 'video/mp4'}
+
+    task = {'projectId': 'project', 'videoMode': 'reference', 'parameters': {'duration': 5},
+            'h3Guide': {'assetId': 'upstream', 'frames': (21, 0)}}
+    adapter = VllmOmniGeneration(Store())
+    inputs = {**prepared(), 'videos': [data_uri(raw, 'video/mp4')]}
+    fields, files = adapter.form(H3, task, inputs)
+    assert fields['quality'] == 'lossless'
+    assert json.loads(fields['timeline_guides']) == [
+        {'frame_index': 0, 'image': {'upload_index': 0}},
+        {'frame_index': 21, 'image': {'upload_index': 1}},
+    ]
+    assert [(key, file[0]) for key, file in files] == [
+        ('input_references', 'video_1.mp4'), ('guide_files', 'guide_0.png'), ('guide_files', 'guide_1.png')]
+    for index, frame in enumerate((21, 0), 1):
+        expected = tmp_path / f'expected-{frame}.png'
+        subprocess.run(['ffmpeg', '-v', 'error', '-i', str(clip), '-vf', f'select=eq(n\\,{frame})',
+                        '-frames:v', '1', str(expected)], check=True)
+        assert files[index][1][1] == expected.read_bytes()
+    task['h3Guide']['frames'] = (0, 24)
+    with pytest.raises(ProjectError, match='导帧超出') as failure:
+        adapter.form(H3, task, inputs)
+    assert (failure.value.details.category, failure.value.details.stage) == ('reference', 'prepare')
+
+
+def test_fasth3_guide_opt_in_is_scoped_to_a_model_deployment(project):
+    store, _, _, _ = project
+    configs = ModelConfigs(store.local.repository)
+    fast = {**H3, 'modelId': 'FastH3-Omni'}
+    legacy = input_rules(fast)['videoCapabilities']
+    from opendirector.domain.video_capabilities import VideoCapabilities
+
+    assert VideoCapabilities.model_validate(legacy).model_dump(mode='json', exclude_none=True) == legacy
+    assert 'timelineGuides' not in VideoCapabilities.model_validate({**legacy, 'timelineGuides': False}).model_dump()
+    caps = {**legacy, 'timelineGuides': True}
+    options = {'connection_type': 'self_hosted', 'protocol': 'vllm_omni'}
+    saved = configs.save('video', fast['url'], fast['modelId'], 'token', video_capabilities=caps, **options)
+    other = configs.save('video', 'http://other-gpu:8000/v1', fast['modelId'], 'token', **options)
+    assert saved['inputRules']['videoCapabilities']['timelineGuides'] is True
+    assert 'timelineGuides' not in other['inputRules']['videoCapabilities']
+    retained = configs.save('video', fast['url'], fast['modelId'], 'new-token', saved['id'], **options)
+    assert retained['videoCapabilities']['timelineGuides'] is True
+    moved = configs.save('video', 'http://new-gpu:8000/v1', fast['modelId'], 'token', saved['id'], video_capabilities=caps, **options)
+    assert 'timelineGuides' not in moved['inputRules']['videoCapabilities']
+    with pytest.raises(ProjectError) as failure:
+        configs.save_many('video', fast['url'], [fast['modelId'], 'FastH3-Omni-Other'], 'token', video_capabilities=caps, **options)
+    assert failure.value.code == 'h3_timeline_guides_single_model'
+    first, second = configs.save_many('video', fast['url'], [fast['modelId'], 'FastH3-Omni-Other'], 'token',
+                                     model_options={fast['modelId']: {'videoCapabilities': caps}}, **options)
+    assert first['inputRules']['videoCapabilities']['timelineGuides'] is True
+    assert 'timelineGuides' not in second['inputRules']['videoCapabilities']
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
+def test_fasth3_guided_job_uses_native_multipart_only_with_deployment_opt_in(tmp_path):
+    clip = tmp_path / 'sample.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x48:r=24',
+                    '-frames:v', '24', '-pix_fmt', 'yuv420p', str(clip)], check=True)
+    raw = clip.read_bytes()
+
+    class Store:
+        def asset(self, owner, asset_id):
+            assert owner == 'project' and asset_id in {'upstream', 'source'}
+            return raw, {'id': asset_id, 'name': f'{asset_id} 768P 0.25-4.29', 'type': 'video/mp4',
+                         'fingerprint': '', 'durationMs': 1000}
+
+    server = FakeOmni(raw)
+    providers = GenerationProviders(Store(), transport=httpx.MockTransport(server), poll_interval=0)
+    fast = {**H3, 'modelId': 'FastH3-Omni'}
+    config = {**fast, 'videoCapabilities': {**input_rules(fast)['videoCapabilities'], 'timelineGuides': True}}
+    task = {'projectId': 'project', 'kind': 'video', 'videoMode': 'reference', 'referenceIds': ['source'],
+            'prompt': 'Replace the subject.', 'parameters': {'duration': 5, 'num_frames': 124, 'seed': 812},
+            'h3Guide': {'assetId': 'upstream', 'frames': (21, 0)}}
+    accepted = []
+
+    async def submitted(external_id):
+        accepted.append(external_id)
+
+    with pytest.raises(ProjectError) as failure:
+        asyncio.run(providers.generate(fast, task, submitted))
+    assert failure.value.code == 'h3_timeline_guides_unsupported'
+    assert not server.posts
+    anchor = {key: value for key, value in task.items() if key != 'h3Guide'}
+    assert asyncio.run(providers.generate(fast, anchor, submitted)) == ('mp4', raw)
+    anchor_fields, anchor_files = server.posts.pop()
+    assert 'timeline_guides' not in anchor_fields
+    assert anchor_files == [('input_references', 'video_1.mp4', 'video/mp4')]
+    accepted.clear()
+    assert asyncio.run(providers.generate(config, task, submitted)) == ('mp4', raw)
+    assert accepted == ['video_gen_1']
+    [(fields, files)] = server.posts
+    assert {name: fields[name] for name in ('model', 'fps', 'num_frames', 'seed', 'size', 'guidance_scale',
+                                            'num_inference_steps', 'quality')} == {
+        'model': 'FastH3-Omni', 'fps': '24', 'num_frames': '124', 'seed': '812', 'size': '832x480',
+        'guidance_scale': '1', 'num_inference_steps': '8', 'quality': 'lossless',
+    }
+    assert json.loads(fields['extra_params']) == {'task': 'ref2va', 'audio_flow_shift': 3}
+    assert json.loads(fields['timeline_guides']) == [
+        {'frame_index': 0, 'image': {'upload_index': 0}},
+        {'frame_index': 21, 'image': {'upload_index': 1}},
+    ]
+    assert files == [('input_references', 'video_1.mp4', 'video/mp4'), ('guide_files', 'guide_0.png', 'image/png'),
+                     ('guide_files', 'guide_1.png', 'image/png')]

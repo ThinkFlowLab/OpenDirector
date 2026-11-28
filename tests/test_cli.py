@@ -120,6 +120,22 @@ def test_agent_voice_create_forwards_recording_path(tmp_path, monkeypatch):
     client.request.assert_not_called()
 
 
+def test_asset_import_passes_original_canvas_and_asset_ids(tmp_path, monkeypatch):
+    file = tmp_path / 'segment.mp4'
+    file.touch()
+    source_item, source_asset = str(uuid4()), str(uuid4())
+    client = Mock(live=True, opened=False)
+    client.execute.return_value = {'status': 'applied'}
+    monkeypatch.setattr(cli, 'Client', lambda *args: client)
+    result = CliRunner().invoke(cli.app, ['asset', 'import', str(file), '--kind', 'video',
+        '--source-item-id', source_item, '--source-asset-id', source_asset])
+    assert result.exit_code == 0, result.output
+    client.execute.assert_called_once_with('artifact.publish', {
+        'path': str(file), 'name': file.name, 'expectedKind': 'video',
+        'sourceItemId': source_item, 'sourceAssetId': source_asset,
+    })
+
+
 def test_cli_project_write_replay_and_lock(tmp_path, monkeypatch):
     api = TestClient(create_app(LocalProjects(tmp_path)), headers={"X-OpenDirector-Request": "1"})
     original_client = httpx.Client
@@ -578,7 +594,7 @@ def test_project_show_summary_keeps_every_identity_without_record_bodies(monkeyp
                 "jobs": [{"id": str(uuid4()), "revision": 2, "status": "succeeded", "phase": "complete"}],
                 "results": [{"id": str(uuid4()), "jobId": str(uuid4()), "asset": {"assetId": str(uuid4())}}],
                 "references": [], "editorDocuments": []}
-    context = SimpleNamespace(command_path="project show", obj=SimpleNamespace(command="", snapshot=lambda: snapshot))
+    context = SimpleNamespace(command_path="project show", obj=SimpleNamespace(command="", live=False, snapshot=lambda: snapshot))
     cli.project_show(context, True)
     summary = json.loads(capsys.readouterr().out)
     assert len(summary["assets"]) == 40 and summary["assets"][0]["width"] == 2048
@@ -598,13 +614,20 @@ def test_project_show_summary_keeps_reference_and_editor_identities(monkeypatch,
                                  "source": {"assetId": str(uuid4()), "fingerprint": "sha256:" + "b" * 64}}],
                 "editorDocuments": [{"id": document, "revision": 9, "kind": "timeline", "title": "Main",
                                       "data": {"tracks": [1, 2, 3]}}]}
-    context = SimpleNamespace(command_path="project show", obj=SimpleNamespace(command="", snapshot=lambda: snapshot))
+    turn_references = [{"referenceId": str(uuid4())}]
+
+    def read_project(name, arguments):
+        assert (name, arguments) == ("read_project", {})
+        return {"project": snapshot, "turnReferences": turn_references}
+
+    context = SimpleNamespace(command_path="project show", obj=SimpleNamespace(command="", live=True, call=read_project))
     cli.project_show(context, True)
     summary = json.loads(capsys.readouterr().out)
     assert summary["references"] == [{"id": reference, "revision": 4, "targetSpecId": snapshot["references"][0]["targetSpecId"],
                                       "binding": "pinned", "role": "first_frame", "order": 2, "active": True}]
     assert summary["editorDocuments"] == [{"id": document, "revision": 9, "kind": "timeline", "title": "Main"}]
     assert summary["counts"]["references"] == 1 and summary["counts"]["editorDocuments"] == 1
+    assert summary["turnReferences"] == turn_references
 
 
 def test_capabilities_lists_commands_and_query_types_once(help_color):
@@ -637,3 +660,27 @@ def test_capabilities_names_commands_that_have_no_command_model(help_color):
     detailed = json.loads(CliRunner().invoke(cli.app, ["capabilities"]).output)["commands"]
     assert "--asset-id" not in [option.split()[-1] for entry in detailed for option in entry.get("options", ())]
     assert "--object-id" in [option for entry in detailed for option in entry.get("options", ())]
+
+
+@pytest.mark.parametrize("status", ["awaiting_selection", "paused", "needs_review", "succeeded"])
+def test_group_wait_pins_the_execution_and_stops_for_decisions(monkeypatch, status):
+    group_id, execution_id, job_id = (str(uuid4()) for _ in range(3))
+    calls = []
+
+    def query(self, kind, **fields):
+        calls.append((kind, fields))
+        if kind == "run.groupExecution.get":
+            return {"executionId": execution_id}
+        state = "running" if len(calls) == 2 else status
+        return {"groupId": group_id, "executionId": execution_id, "status": state,
+                "candidates": [{"jobId": job_id}] if state == "awaiting_selection" else []}
+
+    monkeypatch.setattr(cli.Client, "query", query)
+    result = CliRunner().invoke(cli.app, ["group", "wait", "--group-id", group_id])
+    assert result.exit_code == 0, result.output
+    assert [kind for kind, _ in calls] == ["run.groupExecution.get", "run.execution.get", "run.execution.get"]
+    assert [fields["objectId"] for _, fields in calls] == [group_id, execution_id, execution_id]
+    response = json.loads(result.output)
+    assert response["status"] == status
+    if status == "awaiting_selection":
+        assert response["adoptCommands"][0].endswith(f"--job-id {job_id}")

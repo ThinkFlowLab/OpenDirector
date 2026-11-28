@@ -125,10 +125,18 @@ def resolve_reference(snapshot, reference):
         asset = assets.get(ref.assetId)
         if asset is None or asset.fingerprint != ref.fingerprint:
             raise ContractError('reference_invalid', '参考素材不存在或内容已变化。', reference.id)
-        resolved.append(ResolvedReference(referenceId=reference.id, role=reference.role, asset=asset_ref(asset),
+        resolved.append(ResolvedReference(referenceId=reference.id, role=reference.role,
+            asset=ref if reference.binding == 'pinned' else asset_ref(asset),
             metadata=asset.metadata, sourceVersion=source_version, documentVersion=document_version, subjectRole=subject_role,
             name=asset.name, sourceTitle=source_title))
     return resolved
+
+
+def reference_source_key(reference):
+    if reference['binding'] == 'follow_current':
+        return ('follow_current', reference['source']['id'])
+    version = reference.get('sourceVersion') or {}
+    return ('pinned', reference['source'], version.get('id'), reference.get('subjectRole'))
 
 
 def reference_policy(spec, values, rules=None, *, selected_frame=False):
@@ -440,11 +448,20 @@ class CreationCanvas:
             current = cls._get(data, 'canvas_item', current['parentId']) if current['parentId'] else None
         return item
 
-    def _validate_timeline(self, document, snapshot):
-        from .creation_timeline import validate_timeline_resources
-        validate_timeline_resources(document.data, snapshot, self.assets)
+    @classmethod
+    def require_editable_owner(cls, data, object_id):
+        for item in data['canvasItems']:
+            binding = item['binding']
+            ref = binding.get('objectRef') or binding.get('draftSpec')
+            attached = any(str(editor['id']) == str(object_id) for editor in item.get('editors', []))
+            if (ref and str(ref.get('id')) == str(object_id)) or attached:
+                cls._editable(data, item['id'])
 
-    def _publish_render(self, data, payload):
+    def _validate_timeline(self, document, snapshot, *, staged=frozenset()):
+        from .creation_timeline import validate_timeline_resources
+        validate_timeline_resources(document.data, snapshot, self.assets, staged=staged)
+
+    def publish_render(self, data, payload, *, staged=frozenset()):
         from .creation_timeline import timeline_source_refs
         from opendirector.domain.creation.editors import timeline_duration
         item = self._editable(data, payload.itemId)
@@ -452,11 +469,11 @@ class CreationCanvas:
             raise ContractError('reference_invalid', '合成来源不是当前时间线。', payload.itemId)
         snapshot = ProjectSnapshot.model_validate(data)
         doc = next(d for d in snapshot.editorDocuments if d.id == payload.editorId)
-        self._validate_timeline(doc, snapshot)
+        self._validate_timeline(doc, snapshot, staged=staged)
         output = self.assets._reference(snapshot, payload.asset)
         if output.kind != 'video' or output.provenance.source != 'upload' or any(r.assetId == output.id for r in asset_references(snapshot)):
             raise ContractError('role_restricted', '合成输出必须是尚未发布的视频素材。', output.id)
-        if any(r.assetId == output.id for record in self.projects.history(snapshot.project.id) for r in asset_references(record.snapshot)):
+        if output.id not in staged and any(r.assetId == output.id for record in self.projects.history(snapshot.project.id) for r in asset_references(record.snapshot)):
             raise ContractError('role_restricted', '合成输出已有历史用途，不能改写来源。', output.id)
         duration = timeline_duration(doc.data)
         meta = output.metadata
@@ -464,7 +481,9 @@ class CreationCanvas:
             raise ContractError('invalid_input', '合成视频的实际尺寸或时长与时间线不一致。', output.id)
         sources = timeline_source_refs(doc.data)
         for ref in (*sources, payload.asset):
-            self._available(self.assets._reference(snapshot, ref))
+            resolved = self.assets._reference(snapshot, ref)
+            if resolved.id not in staged:
+                self._available(resolved)
         asset = self._get(data, 'asset', output.id)
         existing = next((i for i in snapshot.canvasItems if i.id == payload.outputId), None)
         if existing is not None:
@@ -493,7 +512,15 @@ class CreationCanvas:
             from .creation_media_publication import publish_media
             publish_media(self, data, payload)
         elif kind == 'timeline.publishRender':
-            self._publish_render(data, payload)
+            self.publish_render(data, payload)
+        elif kind == 'group.configureAssembly':
+            group = self._editable(data, payload.groupId)
+            if group['kind'] != 'group':
+                raise ContractError('role_restricted', '仅分组可以配置成片组装。', payload.groupId)
+            if payload.assembly is None:
+                group.pop('assembly', None)
+            else:
+                group['assembly'] = value['assembly']
         elif kind == 'canvas.createGeneration':
             self._mutate(data, 'generationSpec.create', SpecWrite(spec=payload.spec))
             self._mutate(data, 'canvas.show', CanvasShow(item=payload.item))
@@ -516,12 +543,7 @@ class CreationCanvas:
             immutable = ('kind', 'purpose', 'currentResultId') if key == 'spec' else ('kind',)
             if any(obj[field] != old[field] for field in (*immutable, 'projectId')):
                 raise ContractError('role_restricted', '配置编辑不能修改对象角色或结果选择。', UUID(obj['id']))
-            for item in data['canvasItems']:
-                binding = item['binding']
-                ref = binding.get('objectRef') or binding.get('draftSpec')
-                attached = any(str(editor['id']) == str(obj['id']) for editor in item.get('editors', []))
-                if (ref and str(ref.get('id')) == str(obj['id'])) or attached:
-                    self._editable(data, item['id'])
+            self.require_editable_owner(data, obj['id'])
             old.update(obj)
         elif kind == 'canvas.layoutRuns':
             pass  # The commit arranges the authoritative canvas after validating edits.
@@ -629,6 +651,9 @@ class CreationCanvas:
             item['editors'] = [ref for ref in item['editors'] if ref['id'] != str(payload.editorId)]
         elif kind in {'reference.add', 'reference.update', 'reference.restore'}:
             ref = payload.reference.model_dump(mode='json')
+            source_key = reference_source_key(ref)
+            connected = [r for r in data['references'] if r['active'] and r['targetSpecId'] == ref['targetSpecId']
+                         and reference_source_key(r) == source_key]
             changed_source = False
             if str(ref['projectId']) != str(data['project']['id']):
                 raise ContractError('invalid_input', '参考不属于当前工程。')
@@ -640,8 +665,7 @@ class CreationCanvas:
             if kind == 'reference.add':
                 if not payload.reference.active:
                     raise ContractError('invalid_input', '新增参考必须为有效关系。', payload.reference.id)
-                duplicate = next((r for r in data['references'] if r['active'] and (r['targetSpecId'], r['binding'], r['source']) == (ref['targetSpecId'], ref['binding'], ref['source'])), None)
-                if duplicate:
+                if connected:
                     return
                 if any(r['id'] == ref['id'] for r in data['references']):
                     raise ContractError('invalid_input', '参考标识已使用。', payload.reference.id)
@@ -653,20 +677,21 @@ class CreationCanvas:
                 data['references'].append(ref)
             else:
                 old = self._get(data, 'reference', payload.reference.id)
-                changed_source = (old['binding'], old['source']) != (ref['binding'], ref['source'])
+                changed_source = reference_source_key(old) != source_key
                 if kind == 'reference.restore':
                     if old['revision'] != ref['revision']:
                         raise ContractError('revision_conflict', '参考已发生变化，请重新读取后恢复。', payload.reference.id)
                     if old['active'] or not ref['active']:
                         raise ContractError('invalid_input', '仅能恢复已移除的参考关系。', payload.reference.id)
-                    if (old['targetSpecId'], old['binding'], old['source']) != (ref['targetSpecId'], ref['binding'], ref['source']):
+                    if old['targetSpecId'] != ref['targetSpecId'] or changed_source:
                         raise ContractError('invalid_input', '恢复参考不能改变原有来源和目标。', payload.reference.id)
                 elif old['active'] != ref['active']:
                     raise ContractError('role_restricted', '参考的移除与恢复需使用对应生命周期命令。', payload.reference.id)
                 if old['targetSpecId'] != ref['targetSpecId']:
                     raise ContractError('invalid_input', '不能转移参考的目标配置。', payload.reference.id)
-                if any(other['id'] != old['id'] and other['active'] and (other['targetSpecId'], other['binding'], other['source']) == (ref['targetSpecId'], ref['binding'], ref['source']) for other in data['references']):
+                if any(other['id'] != old['id'] for other in connected):
                     raise ContractError('reference_invalid', '该参考来源已连接到目标配置。', payload.reference.id)
+                old.clear()
                 old.update(ref)
             if ref['binding'] == 'follow_current':
                 source = self._get(data, 'canvas_item', ref['source']['id'])
@@ -680,8 +705,14 @@ class CreationCanvas:
             allowed = downstream_kinds(snapshot, source_item) if source_item else DOWNSTREAM.get(source_kind, set())
             if spec['kind'] not in allowed:
                 raise ContractError('reference_invalid', '该节点类型不能作为目标节点的参考。', payload.reference.id)
-            for value in resolve_reference(snapshot, payload.reference):
-                self._available(next(asset for asset in snapshot.assets if asset.id == value.asset.assetId))
+            target = next(value for value in snapshot.generationSpecs if value.id == payload.reference.targetSpecId)
+            segment = target.parameters.h3Segment if target.kind == 'video' else None
+            pending_guide = (segment and segment.guideReferenceId == payload.reference.id and source_item
+                             and source_item.kind == 'video' and source_item.binding.role == 'generation'
+                             and current_asset(snapshot, source_item) is None)
+            if not pending_guide:
+                for value in resolve_reference(snapshot, payload.reference):
+                    self._available(next(asset for asset in snapshot.assets if asset.id == value.asset.assetId))
         elif kind == 'reference.remove':
             ref = self._get(data, 'reference', payload.referenceId)
             spec = self._get(data, 'generation_spec', ref['targetSpecId'])

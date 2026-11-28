@@ -56,11 +56,90 @@ CLI 输出 JSON。修改回执附带对应的 assetId、itemId、specId 及其�
 
 Agent 的 Shell 通过 PATH 使用同一个 `opendirector`。宿主提供受令牌保护的本轮连接、工程范围、编辑会话和执行目录，文件登记限制在本轮执行目录。每次调用产生业务活动及回执，供聊天与轨迹页展示。
 
+## 在 Agent 命令中使用聊天引用
+
+在 Agent 会话中，`project show` 按消息中的顺序返回 `turnReferences`。选择画布节点时，每项记录节点 ID 和提交时选中的 `AssetRef`。直接上传到聊天的文件只携带 `AssetRef`。创建生成节点时，可重复传入 `--turn-reference` 来固定引用版本。视频裁切需要画布视频节点，会发布一个新节点并在编辑快照中保存来源和裁切时间。
+
+```bash
+opendirector canvas create-generation --file plan.json --turn-reference IMAGE_REFERENCE_ID
+opendirector video trim --turn-reference VIDEO_REFERENCE_ID --start 1.2 --end 1.7 --name clip.mp4
+```
+
+### Using chat references in Agent commands
+
+Inside an Agent turn, `project show` returns `turnReferences` in message order. A selection from the canvas carries its source node ID and the `AssetRef` captured at submission. A file uploaded directly to chat carries only an `AssetRef`. Repeat `--turn-reference` on `canvas create-generation` to pin selected versions. `video trim` requires a video canvas node and publishes a new node with an edit snapshot recording its source and time range.
+
+## 分段续接的导帧约束
+
+用 `group configure-assembly` 保存 H3 分段计划，设置 `requireTimelineGuides: true`。只有 `guideExemptItemId` 指定的起跑节点可以省略导帧。其余片段在 `generation submit` 时指定计划中的 `originItemId`，并提供导帧引用与两个源帧号。修改裁切范围、调整成片顺序或移动节点时，已确认的导帧规则继续生效。恢复使用提交时保存的素材版本，组装也会核对本次采用的上游版本。
+
+### Timeline guides for segment continuation
+
+Save an H3 segment plan with `group configure-assembly` and set `requireTimelineGuides: true`. Only the starting node named by `guideExemptItemId` may omit the guide. Each other step submits with its planned `originItemId`, a guide reference and two source frame indices. Trimming, reordering and moving nodes preserve the confirmed guide policy. Recovery uses the submitted source version, and assembly checks it against the adopted upstream result.
+
+## 发布与执行分段 Run / Publish and execute a segmented Run
+
+在顶层分组中准备视频生成节点和时间线。生成节点使用 FastH3 的参考模式，设置随机种子，固定源片和参考图版本。时间线使用工作源片帧率，包含画面轨和一条覆盖整个交付区间的原声音轨。`plan.entries` 按成片顺序覆盖每个源帧，可保留原片，也可引用生成段。每个声明的镜头有一个锚点，续接段指定上游节点和两个取帧索引。`assembly.clips` 保存各生成段反转后的保留区间。计划可以用 `planLocale` 指定中文或英文并用 `planNotes` 补充说明。
+
+Prepare the video generation nodes and timeline in a top-level group. Use FastH3 in Reference mode with a sampling seed and pinned source and image versions. Match the timeline to the working source frame rate with a visual track and one original soundtrack covering the delivery range. In playback order, `plan.entries` covers every source frame with retained footage or a generated segment. Each declared shot has one anchor. Continuations name their upstream node and two frame indices. `assembly.clips` supplies the retained ranges after any reversal. Set `planLocale` for the display language and `planNotes` for review notes.
+
+```bash
+opendirector group publish-run --help-field payload
+opendirector group publish-run --file run.json --expected-version canvas_item:RUN_ID:REV
+opendirector group start-run --group-id RUN_ID
+opendirector query run.execution.get --object-id EXECUTION_ID
+opendirector group pause-run --group-id RUN_ID
+opendirector group resume-run --group-id RUN_ID
+```
+
+发布回执中的 `planItemId` 指向画布计划。启动回执的 `runExecutionId` 可用来查询每段任务和成片素材。关闭画布或结束 Agent 会话后，后端仍会继续执行。
+
+The publication receipt points to the visible plan via `planItemId`. Query `runExecutionId` from the start receipt for segment jobs and the finished asset. The service continues after the canvas or Agent session closes.
+
+暂停请求会阻止下一段生成或组装。已受理的步骤会先完成，状态从 `pausing` 转为 `paused`。继续时沿用原执行 ID 和已完成步骤。重新打开画布后，也可以用 `opendirector query run.groupExecution.get --object-id RUN_ID` 找到当前执行。
+
+Pause stops the Run from starting its next generation or assembly step. An admitted step can finish before the status changes from `pausing` to `paused`. Resume keeps the execution ID and completed steps. Use `opendirector query run.groupExecution.get --object-id RUN_ID` to find the latest execution after reopening the canvas.
+
+### 单步运行和重新生成 / Step and regenerate
+
+`group step-run` 放行下一段生成或最后的组装。首次单步可以省略 `--execution-id`。`group restart-run` 从发布的计划创建新一轮运行。`group regenerate-run-step` 基于已保存的执行，只为所选片段生成新版本并等待采用。`group adopt-run-candidate` 选择该版本，沿导帧依赖继续执行。旧成片可从运行历史打开，新成片组装成功后才更新画布上的成片。
+
+`group step-run` admits one segment or the final assembly. Omit `--execution-id` for the first step of a new Run. `group restart-run` starts a new execution from the published plan. `group regenerate-run-step` generates one new version of the selected segment and waits for adoption. `group adopt-run-candidate` adopts the selected version and continues through its guide dependencies. Earlier films remain accessible in the execution history. The canvas switches to the new film after assembly succeeds.
+
+```bash
+opendirector group step-run --group-id RUN_ID --execution-id EXECUTION_ID
+opendirector group restart-run --group-id RUN_ID --execution-id EXECUTION_ID
+opendirector query run.groupExecutions.list --object-id RUN_ID
+opendirector group regenerate-run-step --group-id RUN_ID --execution-id BASE_ID --item-id SEGMENT_ID --expected-execution-id CURRENT_ID
+opendirector group adopt-run-candidate --group-id RUN_ID --execution-id NEW_ID --job-id CANDIDATE_JOB_ID
+```
+
+### 核对任务 / Reconcile jobs
+
+Run 显示待核对时，可用 `group reconcile-run` 读取已保存的原任务结果。供应商已确认任务结束或不存在时，会开放重新生成。
+
+When a Run needs review, `group reconcile-run` checks the original job receipt. Regeneration becomes available after the provider confirms that the job has ended or no longer exists.
+
+```bash
+opendirector group reconcile-run --group-id RUN_ID --execution-id EXECUTION_ID
+```
+
 
 ## 检查已有生成结果
 
 `job show` / `job wait` 在任务成功后返回 `delivery`：已登记的 AssetRef、当前采用状态及展示该素材的画布项。生成成功不等于质量验收；Agent 应检查现有素材。复制到执行目录做媒体探测、抽帧和审看不需要重新发布，也不应为同一次交付新增画布项。编辑产生的新交付文件才需要登记；独立副本展示应有用户要求。
 
+## 下载原始素材
+
+从 `project show` 获取素材 ID 和版本，用 `asset download` 将指定版本的原始字节写入新文件。下载无需编辑租约，与项目登记分开。Agent Shell 使用当前项目，输出路径须位于本轮执行目录内。
+
+```bash
+opendirector --project PROJECT_UUID asset download --id ASSET_UUID --revision 1 --output ./source.mp4
+```
+
+### Download original assets
+
+Use `project show` to get the asset ID and revision. `asset download` copies the original bytes of that revision to a new file. This read requires no editing lease or asset registration. In Agent Shell the active project is already selected, and the output path must stay inside the current execution directory.
 
 ## 更新生成配置
 

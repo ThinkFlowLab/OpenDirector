@@ -16,6 +16,7 @@ from opendirector.domain.capability_messages import MissingToolModelError
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
 from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.creation_segment_run import SegmentRunExecutor
 from opendirector.application.model_catalog import ModelCatalog
 from opendirector.application.model_availability import ModelAvailability
 from opendirector.application.preferences import Preferences
@@ -61,6 +62,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     creation_projects = CreationProjects(store)
     availability = ModelAvailability(model_configs, capability_probe)
     creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider, availability=availability)
+    segment_runs = SegmentRunExecutor(creation_projects, creation_generation)
+    creation_generation.segment_runs = segment_runs
     creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects, availability=availability)
     catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions(), availability)
 
@@ -71,6 +74,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         await creation_generation.start()
         try:
             await creation_tools.start()
+            await segment_runs.start()
             yield
         finally:
             agents = [entry.task for entry in list(active_agents.values()) if entry.task is not None]
@@ -78,6 +82,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                 agent.cancel()
             await asyncio.gather(*agents, return_exceptions=True)
             try:
+                await segment_runs.close()
                 await creation_tools.close()
             finally:
                 await creation_generation.close()

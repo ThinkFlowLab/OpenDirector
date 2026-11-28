@@ -83,6 +83,39 @@ const ready = (
     ...data,
   });
 
+test("canvas submits H3 segments on FastH3 only when its configuration enables guides", () => {
+  const fast = model("video", { profile: "fasth3-omni", videoModes: ["reference"] });
+  const node = createNode("video", undefined, {
+    settings: {
+      ...generationDefaults("video"),
+      modelConfigId: fast.id,
+      prompt: "Keep the transition continuous",
+      videoMode: "reference",
+    },
+  });
+  const input = {
+    document: { ...createDocument("Guided segment"), nodes: [node] },
+    node,
+    incoming: [],
+    assets: [],
+    nativeH3Segment: true,
+  };
+  assert.equal(serviceGenerationPlan({ ...input, models: [fast] }).status, "blocked");
+  const enabled = model("video", {
+    ...fast.inputRules,
+    videoCapabilities: {
+      outputs: [{ resolution: "480P", durations: [5], width: 832, height: 480 }],
+      defaultResolution: "auto",
+      defaultDuration: 5,
+      dimensionStep: 32,
+      timelineGuides: true,
+    },
+  });
+  const plan = serviceGenerationPlan({ ...input, models: [enabled] });
+  assert.equal(plan.status, "ready");
+  if (plan.status === "ready") assert.equal(plan.request.videoMode, "reference");
+});
+
 test("selection merges flow changes in place and select-all skips folded stack members", () => {
   assert.deepEqual(
     mergeFlowSelection(

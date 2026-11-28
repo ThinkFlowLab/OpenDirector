@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   blankContent,
   contentText,
+  currentReferences,
   referenceContent,
   referenceIds,
   type ReferenceAsset,
@@ -74,6 +75,40 @@ test("unique assets retain first-mention order, repeated mentions remain individ
       true,
     ).content,
     positioned,
+  );
+});
+
+test("grouped chat references retain each selected node and slot sharing one image", () => {
+  const left: ReferenceAsset = { ...a, nodeId: "left", nodeTitle: "Left" };
+  const right: ReferenceAsset = { ...a, nodeId: "right", nodeTitle: "Right" };
+  const auxiliary: ReferenceAsset = { ...right, sourceRole: "auxiliary:0" };
+  const body = referenceInsertion(
+    [],
+    { start: 0, end: 0 },
+    [left, right, auxiliary, a, left],
+    [],
+    { ...rules, maxImages: 1 },
+    true,
+  ).content;
+  assert.deepEqual(
+    body.map((part) =>
+      part.type === "reference" && [part.nodeId, part.sourceRole, part.fingerprint],
+    ),
+    [
+      ["left", undefined, "fp-a"],
+      ["right", undefined, "fp-a"],
+      ["right", "auxiliary:0", "fp-a"],
+      [undefined, undefined, "fp-a"],
+    ],
+  );
+  assert.deepEqual(referenceIds(body), ["a"]);
+  assert.equal(
+    contentText(body),
+    "［参考1：Left］［参考2：Right］［参考3：Right］［参考4：Same.png］",
+  );
+  assert.deepEqual(
+    currentReferences(body, [left, right, auxiliary]),
+    body,
   );
 });
 

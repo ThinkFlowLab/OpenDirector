@@ -11,9 +11,9 @@ from uuid import uuid4
 
 from opendirector.agent.context import RunContext
 from opendirector.agent.gateway import ToolGateway
-from opendirector.agent.skill_snapshot import prepare_skills, copy_skill_tree
+from opendirector.agent.skill_snapshot import prepare_skills, copy_skill_tree, selected_skill_catalog
 from opendirector.agent.directory_links import link_directory, unlink_directory
-from opendirector.agent.tools import SUGGESTED_REPLIES, SYSTEM
+from opendirector.agent.tools import SUGGESTED_REPLIES, runtime_instructions
 from opendirector.agent import cli_transport
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.process import terminate
@@ -152,7 +152,7 @@ class JiuwenSwarmRuntime:
         work = (runs / str(work_turn_id) / 'work').resolve()
         work.mkdir(parents=True, exist_ok=session_id is not None)
         gateway.execution_directory = work
-        gateway.roots = prepare_skills(work, run.skills)
+        gateway.roots = prepare_skills(work, selected_skill_catalog(run.skills, run.selected_skills))
         queue = asyncio.Queue(maxsize=128)
         cancel = asyncio.Event()
         stopping = False
@@ -196,7 +196,7 @@ class JiuwenSwarmRuntime:
                         'Use opendirector --help to discover project commands and use opendirector for project changes.\n'
                         + SUGGESTED_REPLIES + '\n'
                         + json.dumps(run.messages[-1:] if session_id else run.messages, ensure_ascii=False)),
-                    'agent': {'name': 'opendirector', 'instructions': SYSTEM,
+                    'agent': {'name': 'opendirector', 'instructions': runtime_instructions(run.runtime),
                         'tools': ['skill_tool', 'list_skill', 'read_file', 'bash']},
                     'skills': run.selected_skills, 'mcp': [], 'host_tools': [],
                     'workspace': {'cwd': str(work), 'project_dir': str(work)}}

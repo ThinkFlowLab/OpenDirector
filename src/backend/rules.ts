@@ -35,6 +35,7 @@ export interface VideoCapabilities {
   defaultResolution: string;
   defaultDuration: number;
   dimensionStep: 1 | 2 | 8 | 16 | 32 | 64;
+  timelineGuides?: boolean;
 }
 
 export interface InputRules {
@@ -100,6 +101,11 @@ export interface ModelConfig {
 export interface BackendReference {
   node: CanvasNode;
   role: "reference" | "firstFrame" | "lastFrame" | "continuation" | "control";
+}
+
+export function supportsH3TimelineGuides(rules: InputRules | undefined): boolean {
+  return rules?.profile === "vllm-omni-h3" ||
+    (rules?.profile === "fasth3-omni" && rules.videoCapabilities?.timelineGuides === true);
 }
 
 /** SAM configurations serve editing tools, including legacy vision entries. */

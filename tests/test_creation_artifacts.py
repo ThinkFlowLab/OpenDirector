@@ -40,11 +40,11 @@ def publication(tmp_path):
     return CreationAssets(projects), project_id, session, work, provenance
 
 
-def command(publication, path, *, command_id=None, name=None, sources=()):
+def command(publication, path, *, command_id=None, name=None, sources=(), **canvas_source):
     _, project_id, _, _, _ = publication
     return parse_command({'type': 'artifact.publish', 'projectId': project_id,
         'commandId': command_id or uuid4(), 'payload': {'path': path,
-            'name': name or Path(path).name, 'sources': list(sources)}})
+            'name': name or Path(path).name, 'sources': list(sources), **canvas_source}})
 
 
 def publish(publication, value):
@@ -163,20 +163,65 @@ def test_five_video_outputs_can_be_separate_canvas_items(publication):
     source = work / 'source.mp4'
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=32x32:r=24',
         '-frames:v', '12', '-pix_fmt', 'yuv420p', str(source)], check=True)
+    source_receipt = publish(publication, command(publication, source.name))
+    source_asset = assets.get(project_id, source_receipt.changed[0].id)
+
+    def show(asset, x):
+        item_id = uuid4()
+        show_command = parse_command({'type': 'canvas.show', 'projectId': project_id, 'commandId': uuid4(),
+            'payload': {'item': {'id': item_id, 'projectId': project_id, 'kind': 'video', 'title': asset.name,
+                'position': {'x': x, 'y': 0}, 'binding': {'role': 'material', 'objectRef': asset_ref(asset)}}}})
+        assert assets.projects.execute(show_command, session=session).status == 'applied'
+        return item_id
+
+    source_item = show(source_asset, 0)
     for index in range(5):
         name = f'segment-{index}.mp4'
         shutil.copyfile(source, work / name)
-        published = publish(publication, command(publication, name))
+        published = publish(publication, command(publication, name,
+            sourceItemId=source_item, sourceAssetId=source_asset.id))
         asset = assets.get(project_id, published.changed[0].id)
         assert asset.metadata.frameRate == 24
-        show = parse_command({'type': 'canvas.show', 'projectId': project_id, 'commandId': uuid4(),
-            'payload': {'item': {'id': uuid4(), 'projectId': project_id, 'kind': 'video', 'title': name,
-                'position': {'x': index * 360, 'y': 0},
-                'binding': {'role': 'material', 'objectRef': asset_ref(asset)}}}})
-        assert assets.projects.execute(show, session=session).status == 'applied'
+        assert asset.provenance.sources == (asset_ref(source_asset),)
+        assert asset.provenance.sourceItemId == source_item
+        show(asset, (index + 1) * 360)
     snapshot = assets.projects.snapshot(project_id)
-    assert len(snapshot.assets) == len(snapshot.canvasItems) == 5
-    assert len({asset.id for asset in snapshot.assets}) == 5
+    assert len(snapshot.assets) == len(snapshot.canvasItems) == 6
+    assert len({asset.id for asset in snapshot.assets}) == 6
+
+
+def test_artifact_rejects_source_replaced_during_publication(publication, monkeypatch):
+    assets, project_id, session, work, _ = publication
+    source_assets = []
+    for name in ('original.png', 'replacement.png'):
+        Image.new('RGB', (13, 7), name == 'original.png').save(work / name)
+        receipt = publish(publication, command(publication, name))
+        source_assets.append(assets.get(project_id, receipt.changed[0].id))
+    original, replacement = source_assets
+    item_id = uuid4()
+    show = parse_command({'type': 'canvas.show', 'projectId': project_id, 'commandId': uuid4(),
+        'payload': {'item': {'id': item_id, 'projectId': project_id, 'kind': 'image', 'title': original.name,
+            'position': {'x': 0, 'y': 0}, 'binding': {'role': 'material', 'objectRef': asset_ref(original)}}}})
+    assert assets.projects.execute(show, session=session).status == 'applied'
+
+    materialize = parse_command({'type': 'canvas.materialize', 'projectId': project_id, 'commandId': uuid4(),
+        'expectedVersions': [{'objectType': 'canvas_item', 'id': item_id, 'revision': 1}],
+        'payload': {'itemId': item_id, 'asset': asset_ref(replacement)}})
+    register = assets.register
+
+    def replace_then_register(*args, **kwargs):
+        assert assets.projects.execute(materialize, session=session).status == 'applied'
+        return register(*args, **kwargs)
+
+    monkeypatch.setattr(assets, 'register', replace_then_register)
+    (work / 'derived.md').write_text('Derived from the original image')
+    artifact = command(publication, 'derived.md', sourceItemId=item_id, sourceAssetId=original.id)
+    rejected = publish(publication, artifact)
+    assert rejected.status == 'rejected'
+    assert rejected.issues[0].code == 'reference_invalid'
+    assert rejected.issues[0].objectId == item_id
+    assert publish(publication, artifact) == rejected
+    assert len(assets.projects.snapshot(project_id).assets) == 2
 
 
 def test_untrusted_http_cannot_choose_execution_context(publication):

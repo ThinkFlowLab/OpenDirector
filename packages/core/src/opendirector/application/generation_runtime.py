@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import anyio
 from opendirector.domain.projects import ProjectError
-from opendirector.domain.generation import GenerationError, GenerationFailure
+from opendirector.domain.generation import GenerationError, GenerationFailure, vllm_remote_task_missing
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.generation_errors import transport_failure
@@ -82,6 +82,8 @@ class GenerationRuntime(ABC):
         details = task.get('errorDetails') or {}
         if details.get('providerStatus') in {'failed', 'cancelled', 'expired'}:
             return 'retry'  # The original remote task is confirmed terminal.
+        if task['kind'] == 'video' and vllm_remote_task_missing(task.get('protocol'), task.get('externalTaskId'), details):
+            return 'retry'
         # Requery video tasks to refresh possibly expired result locators.
         if task['kind'] == 'video' and task.get('externalTaskId'):
             return 'remote'
@@ -89,6 +91,8 @@ class GenerationRuntime(ABC):
             return 'download'
         if task.get('phase') == 'queued':
             return 'submit'  # Proven durable checkpoint before any provider call.
+        if details.get('stage') == 'prepare' and details.get('category') == 'reference':
+            return 'retry'  # Reference preparation failed before any provider request.
         if (details.get('stage') == 'submit' and details.get('httpStatus') in {400, 401, 402, 403, 404, 413, 422, 429}
                 and details.get('category') not in {'submission_unknown', 'local', 'protocol'}):
             return 'retry'  # An explicit continuation may create a new attempt.

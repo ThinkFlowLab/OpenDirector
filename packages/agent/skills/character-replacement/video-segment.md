@@ -1,70 +1,106 @@
-# Video Segment
+# Video segments
 
-Use this guide when dividing source video into character-replacement clips or revising a continuation workflow. Derive the plan from the actual video and current backend; the existing Case03 is a scene-specific example, not a general-purpose five-segment recipe.
+For a hard cut from a group shot into a solo speaking close-up, plan separate generated results at the source cut. Start the solo result from the first identifiable frame of the close-up, retaining the original delivery cut. Extend either model input with real adjacent footage as needed for frame alignment, and trim that context during assembly.
+
+When a reviewed candidate repeatedly loses a verified hard cut, anchor the delivery join at that exact source frame and use separate generated results on either side. Input windows can still overlap on real source footage to meet frame alignment. Two trims of the same generated result do not restore a cut that the model omitted. Record the observed failure as `splitReason`.
 
 ## Visual inspection comes first
 
-First probe the source and create a 24-FPS constant-frame-rate working copy unless the user explicitly requests another FPS. Use frame-rate conversion (for example, FFmpeg `fps=24`), not playback-speed changes. Preserve the original media and soundtrack; verify duration and audio alignment. Inspect this working copy and use its frame timeline consistently for source cuts, segment boundaries and guide/trim arithmetic. If already confirmed 24-FPS CFR, reuse it without another conversion.
+Probe duration, frame rate and frame count. Use a constant 24 FPS working copy unless the user requests another rate. If conversion is needed, use a frame-rate filter such as FFmpeg `fps=24` at the original playback speed. Keep the original media and soundtrack. Check audio alignment and count decoded video frames with `ffprobe -count_frames`. Use the working copy once its FPS and decoded frames cover the plan. The assembler validates exact duration on its rendered clips. A difference in the input container duration alone needs no re-encoding.
 
-Use a vision-capable model to examine the source footage before choosing segments. Inspect the reference images too, then distinguish their target appearances from the source people. If direct video viewing is unavailable, extract timestamped frames or contact sheets with a local media tool and inspect the images visually. Metadata and scene-change scores help navigation; they do not establish person identity or action continuity.
+Inspect the full source video and the portraits. If direct playback is unavailable, start with a timestamped contact sheet. For a set of known frame numbers, extract them in one decode pass with FFmpeg’s `select` filter. View consecutive frames at proposed boundaries, cuts, entrances, exits, crossings and occlusions. If you cannot inspect the images, report which part of planning is blocked.
 
-Survey the full video, not only the first frame. Inspect more densely around shot changes, entrances, exits, crossings, heavy occlusion and interactions involving multiple people. Play or inspect consecutive frames around a proposed boundary; sparse thumbnails alone can miss a person entering briefly or exchanging positions. Record uncertain observations and inspect additional frames instead of guessing. If visual inspection is unavailable, report the blocked planning step rather than presenting a visually verified plan.
+For each candidate cut, inspect the frame immediately before and after it. Record the first frame of the new shot as the cut, including a blurred opening frame. If the face first becomes visible later, preserve the intervening frames from the source. If the pair is ambiguous, decode one more frame on each side before saving the boundary. Give every confirmed shot its own row in the shot inspection, including brief inserts and close-ups. Use the visible target tracks within that row. Record changes in framing and visible tracks in separate inspection rows. Adjacent shots may share a generation window. If the framing or visible cast changes abruptly, verify the adjacent frames before classifying it as camera movement. For scene detection candidates inside a proposed shot, record why each is a cut or continuous motion. Check the first and last decoded frames on both sides of every boundary for short inserts or transitions with no visible feature in scope. Preserve those frames directly from the source. Treat a separate shot whose visible features are outside the replacement scope as its own source-only interval, even when the adjoining shot is in the same scene.
 
-Create two linked records before selecting boundaries:
+- The shot timeline records source ranges, cuts, framing changes and action.
+- The person visibility timeline records each source person's track ID, visible cues, appearances, occlusions, departures and interactions. For each solo close-up, put a frame from it beside a shared view showing the candidate tracks at readable size. Assign the track from matching visible features and record the cue and frame numbers. Leave ambiguous assignments unresolved until there is enough evidence.
 
-- Shot timeline: source time ranges, actual cuts, camera/composition changes and the action within each shot.
-- Person visibility timeline: stable source-track IDs, distinguishing visual cues, first appearance, visible intervals, occlusion, re-entry, departure and interactions with other tracks. Track IDs remain stable across position changes and across cuts only when identity is supported by the footage; record ambiguity explicitly.
+Record an inspection row for each shot in the exact model input, including reversed playback and extra source context. List shots in input playback order with their source frame range, visible assigned track IDs, and confirming frames. Record an empty set for shots with no assigned person. Keep the same track through position changes, brief occlusion, and re-entry. Record a foreground object, affected track, and evidence frame only when the object actually covers an area being replaced. Use these rows to build the prompt inputs.
 
-Inspect duration, FPS and frame count. For variable-frame-rate media, use timestamps or explicitly normalize the working clip; do not assume frame index equals time multiplied by nominal FPS. Reference numbering follows actual input order; source-track IDs are independent of reference numbering and screen position.
+## Use prior results to choose a plan
+
+Check whether the current project already has a usable plan, or whether the user specified one for this edit. Match asset fingerprints when available, then check cuts, frame coordinates and person assignments. Reuse a validated plan if the replacement scope and guide behavior also match. Bind the current project assets and nodes. For a fresh project without a supplied plan, start from the observed footage.
+
+If an earlier take with the same inputs repeated actions, lost an identity or shifted a cut, correct that window or join in the first plan. Record the observed defect, the proposed change and how to test it. Keep any guide needed at that join. For new footage, plan from the observed cuts and tracks.
 
 ## Choose segments for multiple replacements
 
-Plan character-replacement segments around 5 seconds by default. A continuous source shot is not a reason to keep an 8–12-second generation intact: divide it at a stable action boundary and use continuation where needed. Small boundary adjustments and model-alignment padding are acceptable; record source/retained duration separately from generated duration and guide overlap. If preserving an interaction requires a materially longer segment, explain the reason and verify the entire action sequence against the source before accepting it. Identity stability alone cannot justify the exception. This is a workflow quality constraint, not a claimed model duration limit.
-
-Choose boundaries using the shot timeline and the changing set of selected people. Keep coherent actions and distinguishable identities while meeting the short-segment target; do not minimize segment count at the expense of motion fidelity. Equal-duration slicing and splitting at every entrance or exit are not defaults.
-
-### Bad case: stable faces, repeated action
-
-In the goodnight two-person replacement, the second segment retained source range `[8.500, 20.125)` (11.625 seconds) from a single continuous shot and generated 12.25 seconds. The agent reused it despite the 5-second guidance and accepted it because sampled faces stayed consistent. Around 14 seconds in the assembled video, hand gestures repeated or diverged from the source action progression. That position was inside the segment, not an assembly join. The observed failure does not prove duration was its sole cause, but it invalidates “one continuous shot + stable identities” as sufficient acceptance for a long segment.
-
-Instead, plan this interval as roughly two 5–6-second parts at an inspected action boundary, handle continuity explicitly, and compare action order and timing throughout both parts and their join. Shorter segments still require visual acceptance; successful generation or consistent faces are not enough.
+Group adjacent shots with reliable track bindings within the frame budget. If generation must split, inspect both sides of the join and the actual first model input frame, including after reversal. If a visible assigned face is obscured by a hand, prop, hair or another person, move the split to a nearby stable frame where faces are clear or keep the occlusion in one generation window. Preserve source cuts and assembly trims within the window. Aim for about five seconds per generation window, measured in actual model input frames including context and guide overlap. At 24 fps, 120 frames align upward to 124 frames. Cap each generation at six seconds including real context and overlap. Split continuous shots that exceed the cap at stable poses, plan overlap and guides as needed, and preserve the full source action and timing. Place splits where the edited features are fully visible, the source tracks are identifiable, and poses are stable. Move splits away from entrances, exits, clipped faces, and critical occlusion. When neighboring short shots share a window, preserve their original cuts and changes in visibility.
 
 | Observed source event | Planning decision |
 |---|---|
 | Several selected people remain identifiable during one continuous action | Keep them in one segment when supported; give each a separate mapping. |
-| A selected person enters later | Include enough source context to identify the entrant. Use an entry-focused segment or a later anchor if needed; do not require every target in the first frame. |
-| Selected people leave and the scene continues with fewer people | Consider a boundary after the departure stabilizes. The next segment maps the people visible anywhere within that segment; departed identities do not migrate to the remaining person. |
-| People cross, overlap or exchange props | Keep the interaction and identity cues together where possible. Avoid a boundary at maximal occlusion or during contact; if a split is unavoidable, carry context on both sides and inspect the join. |
-| A cut changes composition within the same scene | Check person identity on both sides. Split if the new composition needs a different mapping or the backend cannot retain it reliably; otherwise preserve the existing cut in the segment. |
-| A cut introduces a new scene or a discontinuous cast | Prefer an independent segment and anchor; avoid imposing the previous scene through continuation guides. |
-| A person is temporarily occluded and later reappears | Keep the same track if supported by the footage. Occlusion alone does not define a new person or require a split. |
+| A selected person enters later | Include enough context to identify them. Use an entry-focused segment or a later anchor if needed. |
+| Selected people leave and the scene continues | Consider a boundary once the departure stabilizes. The remaining people keep their assignments. |
+| People cross, overlap or exchange props | Keep the interaction and identity cues in one segment. If a split is unavoidable, carry context on both sides and inspect the join. |
+| Adjacent short shots in one scene | Prefer one generation window. Record `shotSubjects` in input playback order and preserve the original cuts in assembly. |
+| A boundary needs a separate window | Record `splitReason` with the concrete evidence. Examples include a frame budget overflow, ambiguous track binding, no reliable join, or a comparable take showing that merging breaks the action or cut. |
+| A person is temporarily occluded and reappears | Keep the same track if the footage supports it. |
 
-For each candidate segment, list every selected person visible at any point in the range, their local appearance/exit times and the reason for the chosen boundary. A later entrant still needs a reference and mapping. Keep unselected people unchanged. If the selected cast exceeds the running service's reference limit, revise the plan or report the limitation; do not silently omit a target or assume separate edits can be composited without affecting other people.
+List all selected people visible anywhere in the segment, with their local entrance and exit times. Keep unselected people unchanged. If the cast exceeds the model's reference limit, revise the plan or report the limitation.
 
-An identity anchor should make the assigned people identifiable. A later multi-person view may be a better anchor than an opening where people have not entered. Generate outward from the chosen anchor when the workflow supports it. Backward continuation is an optional strategy: deliberately reverse the source, choose guides in that direction and reverse the generated frames back for assembly. Keep generation dependency order separate from chronological assembly order. A later anchor is not proof that reversal will improve quality.
+### Choose an identity anchor and playback direction
+
+Compare feasible generation joins and the actual first model input frame in both playback directions. Within the frame budget and guide constraints, prefer stable frames with the greatest number of the window’s assigned people visible together and their faces clear. Record candidate frame numbers, visible track IDs, and the choice. If no feasible frame shows them together, choose the clearest feasible frame and record the limiting constraint. Keep source cuts in assembly.
+
+Adjacent generation windows may overlap. Choose the actual input start where the assigned people are clearest and most complete, then extend the window with consecutive source picture and audio to cover the delivery range. Reverse the entire input window if needed. Each model input still follows the frame grid (`17k+5`, minimum 107 frames) and the six-second cap. Trim context and overlap during assembly so each source frame is delivered once.
+
+For continuation, map both raw donor indices back to source frames and align them with input slots 0 and 21 in playback order. Inspect which assigned people are identifiable in each guide. If neither guide shows the same assigned person clearly in a multi-person window, replan the windows and joins or use an independent anchor where everyone is visible. If no feasible plan exists, report the constraint and wait for the user.
+
+Before cutting a guided anchor, inspect both ends of each candidate window. Record the source frame numbers and which assigned people you can distinguish. Check nearby frames if an endpoint is blurred, occluded or on a cut. Consider a later window when people enter gradually.
+
+Choose the endpoint that establishes the clearest person-to-portrait mapping and supports the joins. If the early endpoint wins, generate forward. If the later endpoint wins, reverse the full input window, including context. If both are equally clear, choose for the joins. If neither works, inspect another window.
+
+Declare one unguided anchor per inspected continuous shot. All other generated segments in that shot need guides. Earlier footage can continue in reverse and later footage forward. Record the chosen endpoint, visible tracks and rationale. The group uses the raw upstream result from the same execution for the dependent guides.
 
 ## Produce a concrete plan
 
-Record one row per segment:
+Save `segment-plan.md` in the execution directory before cutting clips or creating generation nodes. State the normalized source asset, delivery frame count, frame rate and soundtrack policy at the top, using `frame-plan.json`. Record the model settings and source audio ranges used for generation. For each retained interval, record the source range, shot, reason for the boundary and assembly range.
 
-| Segment | Source range / shot | Visible selected tracks → pictures | Boundary reason | Direction / dependency | Guide source/range | Generated duration/frames | Keep range | Assembly order |
-|---|---|---|---|---|---|---|---|---|
+Place a monospaced ASCII diagram near the top of the plan using the final frame plan values. Show half-open source ranges in playback order, source passthrough, reused generation windows, actual model inputs, anchors, continuation direction, and guide sources. Wrap wide diagrams by scene. This example illustrates the format.
 
-Use half-open ranges `[start, end)` in the plan; translate them to each node/API's actual inclusive or length-based convention. Distinguish source frames, generated frames, previous-output guide indices and retained assembly frames. Identify the coordinate system for every frame number.
+```text
+Source order:    [0,6) [6,48) [48,96) [96,102) [102,144)
+Delivery:        SRC   W1     W1      SRC      W2
+Model inputs:    W1 [6,113)    W2 [80,187)
+Generation:      W1 (anchor) --[guide 74,95]--> W2 (forward)
+```
 
-- Compute source duration from the selected source timestamps. For confirmed constant FPS, frame count divided by FPS also gives duration.
-- Calculate required output frames from duration and output FPS, then apply the running model's frame-alignment and minimum-duration constraints. The current `_align_frame_count` helper aligns positive counts to `5 + 17n`; it does not impose a 107-frame minimum or choose FPS. Treat the example's 107-frame minimum and 22-frame guide window (positions 0 and 21) as configuration to verify, not universal model constraints.
-- Mark overlap frames as guidance and retain the intended source action once. Derive trim/keep ranges from output FPS and the chosen overlap; do not copy frame constants from another clip.
-- Select guide indices from the actual preceding frame batch, distinguishing raw generated frames from already trimmed assembly frames. Verify indices stay in bounds and correspond to the intended poses.
-- Account for generated alignment tails explicitly. FPS changes require recalculating frame-based durations, overlaps, guide indices and trims; exposing a shared FPS widget alone does not perform that conversion.
-- Keep the plan's user controls in seconds or source ranges where possible. Derive internal frame arithmetic rather than asking users to guess it.
 
-Case03's B/A/C/D/E order, reverse generation, five-person mappings and 24-FPS frame settings belong to its supplied 27-second scene. New footage needs a new plan; do not reuse its cigarette-lighting, pointing or departure actions as defaults.
+- `Keep source` marks an untouched shot, including a one-frame insert. Use the actual source on the final timeline at its original cuts. A generation window can still include that shot as context.
+- `Generate` adds person-to-portrait assignments and replacement scope, direction and dependencies, guide source and raw indices, context and overlap, requested duration and raw frame count, and any reverse prefix and output keep range.
 
-## Write and connect segments
+Use half-open ranges `[start, end)` and name the frame coordinates for source, raw output and assembly. For a full edit, the retained ranges cover frame 0 to the last frame once.
 
-Only after the visual timelines and segment plan are complete, write each segment's prompt using [prompt-writing.md](prompt-writing.md). Include segment-local entrance/exit timing only when supported by inspection; map it from global source time and account for reversed generation where applicable. Define only references connected for that segment and maintain the same real-person assignment across segments even if local reference indices change. Preserve the same reference appearance through continuation; guide frames supply inherited pose and composition.
+Record the model input range and assembly keep range separately. When the input is too short, extend it later on the source timeline with consecutive original picture and audio until it meets the model frame requirement. Near the end of the source, move the window start to an earlier stable frame or merge with the preceding segment and validate again. Never add repeated, frozen, or looped frames or insert silence to reach the required duration. Trim context-only footage in assembly. After moving or reversing the window, recompute keep ranges and guide indices from source coordinates. Verify the first and last kept frames, original cuts, and source-only intervals.
 
-## Handoff to execution
+- Budget raw frames for the retained edit, context and overlap. For MiniMax-H3 and FastH3 reference generation, use the smallest supported `17k + 5` count that fits the budget and the model's minimum duration. At 24 FPS and a 4-second minimum, the first aligned count is 107 frames, or 4.458333 s. Five seconds is 120 frames and rounds up to 124. If the count exceeds the six-second cap (141 frames at 24 FPS), choose another action boundary.
+- When reviewing group results, verify each adopted output's actual frame count and FPS. Use raw output indices for guides. Check the planned keep range against the observed action and cuts. A corrected range should remove verified overlap and context-only footage once.
+- Standalone vLLM-Omni cached-latent `continuation` (outside `group.publishRun`) uses hidden overlap on the `17k + 5` grid and returns new frames in groups of 17.
 
-The plan is ready when source ranges cover the requested edit, each selected person has a supported reference mapping, guide indices are in bounds, and trim/keep ranges remove overlap exactly once. Record frame coordinate systems and separate generation dependencies from assembly order. Follow [workflow.md](workflow.md) to prepare inputs, configure/export the ComfyUI graph, execute and review results.
+For a long shot with several distinct gestures or changes in who is visible, choose shorter guided windows at stable poses before generation. When a prior result shows a late or repeated action, compare the source and output frames to locate where timing first diverges. Prefer shorter windows with a guided overlap before that action. Put the join where pose and framing match and verify that the assembled action happens once at the source time.
+
+## Keep source audio in reference clips
+
+Trim video by frame range and audio to the same source time range. Reset timestamps after trimming and probe frame count and audio/video duration after encoding.
+
+Keep synchronized embedded source audio in each reference clip when present, including real context and guide overlap. Reverse the trimmed audio and video together for reverse generation. Before import, probe audio and confirm that it matches the picture duration within one frame and satisfies the deployment limits. If the durations differ, trim both again to the same source interval and probe. Set delivery audio separately on the timeline.
+
+## Prepare the plan for execution
+
+Once the frame plan passes, [write prompts](prompt-writing.md) for the generation intervals. For a multi-segment request, [build the canvas](workflow.md#2-build-the-canvas), then [publish the group with its readable plan node](workflow.md#publish-and-verify-the-plan) before starting it. For a plan-only request, deliver the Markdown.
+
+### Validate frame ownership
+
+Save `frame-plan.json` alongside `segment-plan.md`.
+
+- `totalFrames` is the normalized source frame count. `sourceOnly` lists the untouched intervals.
+- `delivery.fps` is the integer timeline frame rate. Record the exact delivery soundtrack version in `delivery.audio.asset` once bound to the group timeline.
+- Each `segments` entry records `id`, input `source` range, requested `rawFrames` and `reverseLimit` if used. Record the planned anchor or guide and each generation node's `itemId` once the canvas is built.
+- Each `timeline` entry records the `source` range and `owner` as `source` or `generated`. Generated entries also record `segment` and the `keep` range after any reversal. Before validating the saved timeline, add the exact `asset` for each clip from the approved source, job result or trim receipt. Record `assetInFrame` when a trim or reversal rebases the clip's first retained frame. The default is the first `source` frame for source clips and the first `keep` frame for generated clips. An `AssetRef` contains `assetId`, `revision`, `fingerprint` and `kind`.
+
+For a new plan, save `shot-inspection.json` before choosing generation windows or an assembly method. Record `totalFrames` and `shots`, covering the full source in order. Each row has `source: [start, end]` and `selectedTracks`, the IDs of people with visible features in the requested scope. Use `selectedTracks: []` for untouched intervals. They stay source-owned on the final timeline even when a generated clip includes them as context. The validator requires an assembly boundary whenever adjacent inspected shots have different `selectedTracks` sets. Set `requiredTimelineCut: true` for other verified cuts that must also remain separate in assembly. Change the inspection only when the source frames support the correction. For the replacement preflight, add `sourceFingerprint` (`sha256:` plus the SHA-256 of the normalized source), and `identityMap` keyed by stable track ID. Each value has `cue` (verified English source-person cues) and `portrait` (the pinned image `AssetRef`). Add `trackFrames` to each shot, mapping each selected track to a confirming source frame inside that shot. Record only the identities visible in scope. Independently inspect the very first and last decoded frames and the two frames around each cut, including one-frame inserts. Record out-of-scope frames as their own source-only ranges. Add `frameTracks`, keyed by the exact source frame number, for every actual model input first frame and the two slot frames of each continuation. Use `[]` for a frame with no identifiable assigned track. An anchor must start with an identifiable subject. Prefer a clear all-subject frame and compare both playback directions. A guided segment must show every assigned subject across its two guides. In each `segments` entry, record `portraits` as the ordered track IDs matching the pinned image slots, `clip` as the local path of the prepared input, and `video` as its exact video `AssetRef` after import.
+
+Assembly intervals on either side of a cut can reference the same generation node with separate keep ranges. Passthrough intervals use the original source. Reuse generation for identical source range, frame count, direction, portraits and guides. When several windows each deliver less than half their raw frames, record why each short window needs to remain separate before publication. Record verified face occlusion as `occludedFaceRanges`, a list of objects with a half-open `source: [start, end]` range and the assigned `track` ID. Write `[]` only after checking. Before cutting clips, run the preflight below. It rejects covered faces at generation joins and at the first frame actually sent to the model. It also checks whether neighboring forward anchors with the same ordered portraits can share a real input window after shifting it, including across source-only inserts. For a short guided tail, check whether moving the join can distribute retained frames while preserving guide overlap. Recompute guides and trims after changing a join.
+
+Run `python3 "$SKILL_DIR/scripts/validate_frame_plan.py" frame-plan.json --enforce-window-limit --inspection shot-inspection.json --normalized-source "$NORMALIZED_SOURCE"` before making clips or publishing the plan. Set `SKILL_DIR` to this skill's directory and `NORMALIZED_SOURCE` to the uncut working copy. Use its decoded frame count for `totalFrames`. The local frame plan records inspection and delivery checks. The published `runPlan` is the executable input and must match it. [Review the decoded take](workflow.md#review-and-retry-a-take) for identities, guides and timing.

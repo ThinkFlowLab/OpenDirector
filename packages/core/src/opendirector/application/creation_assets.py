@@ -9,13 +9,13 @@ from pathlib import Path
 from threading import Lock
 from uuid import UUID, uuid5
 
-from opendirector.domain.creation.assets import Asset, AssetProvenance
+from opendirector.domain.creation.assets import Asset, AssetDownloadFile, AssetDownloadReceipt, AssetProvenance
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.projects import ProjectError
 from opendirector.media.processing import open_image, png
 from opendirector.ports.files import (
-    AssetFileWrite, CHUNK_BYTES, MAX_CREATION_TEXT_BYTES, stream_identity,
+    AssetFileWrite, CHUNK_BYTES, MAX_CREATION_TEXT_BYTES, copy_verified_asset, stream_identity,
 )
 from opendirector.ports.gateway import gateway
 
@@ -200,13 +200,14 @@ class CreationAssets:
         except ContractError:
             raise ProjectError('素材不在当前工程中。', 404) from None
 
-    def open_media(self, project_id, asset_id, *, snapshot=None):
+    def open_media(self, project_id, asset_id, *, snapshot=None, revision=None):
         """Pin the descriptor under the catalog lock, then verify outside it.
 
         Trusted queries may reuse a snapshot verified earlier in the same read.
-        Resolve the current path under the lock even then: a project rename must
-        never retarget media. No HTTP parameter can supply this read basis.
+        A versioned read resolves an exact revision of a currently registered asset.
         """
+        if snapshot is not None and revision is not None:
+            raise ValueError('An exact revision and a trusted snapshot cannot be combined.')
         with self.projects.local.transaction() as db:
             self.projects._recover()
             if snapshot is not None and snapshot.project.id != UUID(str(project_id)):
@@ -220,6 +221,14 @@ class CreationAssets:
                 asset = self._asset(snapshot, asset_id)
             except ContractError:
                 raise ProjectError('素材不在当前工程中。', 404) from None
+            if revision is not None and asset.revision != revision:
+                historic = next((item for record in self.projects._history(path, manifest)
+                                 for item in record.snapshot.assets
+                                 if item.id == asset.id and item.revision == revision), None)
+                if historic is None:
+                    raise ProjectError(f'找不到素材 {asset.id} 的版本 {revision}。', 404,
+                                       code='asset_revision_unavailable')
+                asset = historic
             file = gateway().child(gateway().directory(gateway().child(path, 'assets')), str(asset.id))
             try:
                 stream = os.fdopen(os.open(file, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)), 'rb')
@@ -245,6 +254,19 @@ class CreationAssets:
         except BaseException:
             stream.close()
             raise
+
+    def download_execution_file(self, project_id, request: AssetDownloadFile, *, execution_directory):
+        stream, asset = self.open_media(project_id, request.assetId, revision=request.revision)
+        try:
+            with stream, gateway().execution_file(execution_directory, request.path, create=True) as output:
+                copy_verified_asset(iter(lambda: stream.read(CHUNK_BYTES), b''), output,
+                                    size=asset.metadata.size, fingerprint=asset.fingerprint)
+        except FileExistsError:
+            raise ProjectError(f'输出文件已存在，请选择新路径：{request.path}', 409,
+                               code='asset_download_destination_exists') from None
+        return AssetDownloadReceipt(assetId=asset.id, revision=asset.revision, fingerprint=asset.fingerprint,
+                                    mimeType=asset.metadata.mimeType, size=asset.metadata.size,
+                                    path=request.path).model_dump(mode='json')
 
     def preview(self, project_id: UUID, asset_id: UUID, target: Path) -> dict:
         stream, asset = self.open_media(project_id, asset_id)

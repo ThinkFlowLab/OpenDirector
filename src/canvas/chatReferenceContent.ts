@@ -23,6 +23,7 @@ export type ContentPart =
       name: string;
       fingerprint?: string | null;
     };
+type ReferencePart = Extract<ContentPart, { type: "reference" }>;
 export type ReferenceContent = ContentPart[];
 export type ReferenceAsset = ChatAsset & {
   referenceId?: string;
@@ -131,24 +132,34 @@ export function referenceIds(content: ReferenceContent) {
     ),
   ];
 }
+export function referenceKey(part: ReferencePart) {
+  return part.binding !== "asset" && part.nodeId
+    ? JSON.stringify(["node", part.nodeId, part.sourceRole ?? null])
+    : JSON.stringify(["asset", part.assetId]);
+}
+export function referenceKeys(content: ReferenceContent) {
+  return new Set(
+    content.flatMap((part) =>
+      part.type === "reference" ? [referenceKey(part)] : [],
+    ),
+  );
+}
 export function contentText(
   content: ReferenceContent,
   speech = false,
   t: Translate = defaultTranslate,
 ) {
-  const ids = referenceIds(content);
+  const ordinals = new Map<string, number>();
   let text = content
-    .map((part) =>
-      part.type === "text"
-        ? part.text
-        : part.type === "skill" ? (speech ? "" : `/${part.name}`)
-        : speech
-          ? ""
-          : t("assistant.reference.token", {
-              index: ids.indexOf(part.assetId) + 1,
-              name: part.name,
-            }),
-    )
+    .map((part) => {
+      if (part.type === "text") return part.text;
+      if (speech) return "";
+      if (part.type === "skill") return `/${part.name}`;
+      const key = referenceKey(part);
+      const index = ordinals.get(key) ?? ordinals.size + 1;
+      ordinals.set(key, index);
+      return t("assistant.reference.token", { index, name: part.name });
+    })
     .join("");
   if (speech) {
     // A reference-only first line is context, including its separating newline.
@@ -198,7 +209,7 @@ export function referenceContent(
     ? [...header, { type: "text", text: "\n" }, ...body]
     : header;
 }
-export function referencePart(asset: ReferenceAsset): ContentPart {
+export function referencePart(asset: ReferenceAsset): ReferencePart {
   return {
     type: "reference",
     assetId: asset.id,
@@ -219,18 +230,12 @@ export function currentReferences(
   assets: readonly ReferenceAsset[],
 ): ReferenceContent {
   return content.map((part) => {
-    if (part.type !== "reference" || part.binding === "asset") return part;
-    const asset = part.nodeId
-      ? (assets.find(
-          (asset) =>
-            asset.nodeId === part.nodeId &&
-            asset.sourceRole === part.sourceRole,
-        ) ??
-        (!part.sourceRole &&
-        assets.filter((asset) => asset.nodeId === part.nodeId).length === 1
-          ? assets.find((asset) => asset.nodeId === part.nodeId)
-          : undefined))
-      : assets.find((asset) => asset.id === part.assetId);
+    if (part.type !== "reference" || part.binding === "asset" || !part.nodeId)
+      return part;
+    const nodeAssets = assets.filter((asset) => asset.nodeId === part.nodeId);
+    const asset =
+      nodeAssets.find((asset) => asset.sourceRole === part.sourceRole) ??
+      (!part.sourceRole && nodeAssets.length === 1 ? nodeAssets[0] : undefined);
     return asset
       ? {
           ...referencePart(asset),
@@ -245,6 +250,6 @@ export function validContent(content: ReferenceContent) {
     content.length <= 2000 &&
     content.filter(part => part.type === "skill").length <= 1 &&
     contentText(content).length <= CONTENT_LIMIT &&
-    referenceIds(content).length <= REFERENCE_LIMIT
+    referenceKeys(content).size <= REFERENCE_LIMIT
   );
 }

@@ -11,6 +11,7 @@ from fastapi import Request
 
 from opendirector.domain.timeline_errors import timeline_error_message
 
+from opendirector.domain.creation.assets import ASSET_DOWNLOAD_ENGLISH
 from opendirector.domain.creation.commands import CommandReceipt
 from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
@@ -42,6 +43,12 @@ ENGLISH_BY_CODE = {
     'prompt_optimization_too_large': 'The references are too large for prompt optimization. Reduce their size or number and try again.',
     'prompt_optimization_result': 'The model did not return a usable prompt. Your original text was kept.',
     'prompt_optimization_provider': 'The text model could not optimize the prompt. Check its settings and try again. Your original text was kept.',
+    **ASSET_DOWNLOAD_ENGLISH,
+    "desktop_auth_required": "The desktop connection has expired. Reopen the application.",
+    'h3_timeline_guides_single_model': 'Configure timeline guides for an individual FastH3 model.',
+    'h3_timeline_guides_source_limit': 'An H3 segment accepts one source video reference.',
+    'h3_timeline_guides_deployment': 'Enable timeline guides only for a compatible self-hosted FastH3 video endpoint.',
+    'h3_timeline_guides_unsupported': 'H3 source video segments require a self-hosted H3 endpoint with timeline guides and Reference mode.',
     'image_quality_unsupported': 'This model does not support the selected image quality. Choose Auto or select another model.',
     'bigmodel_video_model': 'The BigModel video protocol supports CogVideoX-3 only.',
     'bigmodel_video_output': 'Choose a supported CogVideoX-3 pixel size and a 5- or 10-second duration. The size determines the aspect ratio.',
@@ -49,6 +56,24 @@ ENGLISH_BY_CODE = {
     'bigmodel_video_frames': 'Use text, one first-frame image, or an explicit first/last pair. Each frame slot accepts one image; a last frame requires a first frame. Reference and continuation modes are not supported.',
     'bigmodel_video_prompt': 'CogVideoX-3 prompts allow up to 512 characters. Provide a prompt or frame image.',
     'bigmodel_video_cancel': 'Remote BigModel video cancellation is not connected. The task may continue running and incur charges.',
+    'workflow_assembly_busy': 'This assembly run is already processing. Wait for its result.',
+    'workflow_media_invalid': 'The source frame range, dimensions, frame rate, or soundtrack does not match the assembly.',
+    'workflow_media_failed': 'Media processing failed. Check FFmpeg and the source videos.',
+    'segment_run_busy': 'This Run has an unresolved execution. Check its execution status before starting again.',
+    'segment_run_unavailable': 'The Run execution service is unavailable.',
+    'segment_run_no_execution': 'This Run has no execution available to pause or resume.',
+    'segment_run_not_paused': 'This Run has no paused execution to resume.',
+    'segment_run_invalid_state': 'This action is unavailable in the execution’s current state.',
+    'segment_run_stale_execution': 'This Run’s execution changed. Refresh its status and select the execution again.',
+    'segment_run_incompatible_result': 'The selected result is incompatible with this Run’s frozen inputs or selected guides.',
+    'agent_run_candidate_review_required': 'A group segment is awaiting candidate adoption. Review the candidate and end the turn with a report if it fails.',
+    'segment_run_candidate_missing': 'The selected candidate is unavailable in this execution.',
+    'segment_run_guide_mismatch': 'The continuation guide does not match the result produced by its upstream step in this execution.',
+    'segment_run_job_missing': 'The segment execution did not return a matching job.',
+    'segment_run_job_unsettled': 'The original segment job can still be recovered. Check that job before starting again.',
+    'segment_run_reconciliation_pending': 'The original provider task is still unresolved.',
+    'segment_run_remote_missing': 'The provider could not find the original task. Regenerate this segment to continue.',
+    'submission_unknown': 'The provider may have received the request. Check that submission before retrying.',
     'execution_file_link': 'Execution files must not have hard links.',
     'kling_model': 'This Kling protocol does not support the selected model.',
     'kling_mode': 'Kling currently supports first/last frames and image-reference generation.',
@@ -181,6 +206,103 @@ def localized_error_for_language(
         return specific
     if not wants_english_language(language):
         return chinese
+    run_messages = {
+        '只能通过发布命令创建 Run。': 'Use the Run publication command to create a published Run.',
+        '请使用分段计划保存命令创建草稿。': 'Use the segment plan save command to create a draft.',
+        '请先发布 Run 草稿。': 'Publish the Run draft before starting it.',
+        '计划已发布，无法直接修改。': 'This published Run cannot be edited directly.',
+        '请选择可见且未锁定的已发布 Run。': 'Select a visible, unlocked published Run.',
+        '请先解锁 Run 计划节点。': 'Unlock the Run plan node first.',
+        '已发布片段须通过 Run 执行。': 'Start the published Run to execute its segments.',
+        '部署配置已变化，请发布新的 Run。': 'The model deployment configuration changed. Publish a new Run.',
+        '请选择未发布且未锁定的 Run 草稿。': 'Select an unlocked, visible top-level Run draft.',
+        '发布 Run 需要可见时间线和未使用的成片节点。': 'A Run needs a visible timeline and an unused output slot.',
+        '此时间线或成片节点已属于其他 Run。': 'The timeline or output slot belongs to another Run.',
+        'Run 时间线须匹配帧率，并配置画面轨与原声音轨。': 'Use a timeline with the source frame rate, a video track, and an original soundtrack track.',
+        'Run 原声须覆盖完整交付区间。': 'The original soundtrack must cover the full delivery range.',
+        '发布前须固定随机种子、清除素材覆盖并等待已有任务结束。': 'Set a sampling seed, clear asset overrides, and wait for existing jobs before publishing.',
+        '发布 Run 前须固定素材和肖像的引用版本。': 'Pin asset and portrait reference versions before publishing.',
+        '每个分段须固定一个源视频引用。': 'Pin one source video reference for each segment.',
+        'Run 需要可见的片段节点。': 'Make all segment nodes visible before publishing this Run.',
+        '分段 Run 需要 FastH3 或 vLLM-Omni MiniMax-H3 部署。': 'Segmented Runs require a FastH3 or vLLM-Omni MiniMax-H3 deployment.',
+        'Run 续接片段需要支持时间线导帧的部署。': 'Continuations require a deployment that supports timeline guides.',
+        'Run 导帧需要支持时间线导帧的部署。': 'Run guides require a deployment that supports timeline guides.',
+        'H3 导帧来源必须是有效的固定图片或原始视频。': 'An H3 guide must reference a valid pinned image or original video.',
+        'H3 导帧素材和普通参考必须使用不同的素材。': 'The H3 guide and ordinary references must use different assets.',
+        'H3 导帧帧号超出生成窗口。': 'The H3 guide frame lies outside the generation window.',
+        'H3 导帧图片超过模型图片大小限制。': 'The H3 guide image exceeds the model image size limit.',
+        '导帧素材不能作为提示词中的普通素材引用。': 'The prompt cannot cite a guide asset as an ordinary reference.',
+        'Run 帧数或帧率与实际源片不一致。': 'The frame count or frame rate does not match the source video.',
+        '工程在核对期间已更新，请重新发布 Run。': 'The project changed during validation. Review and publish the Run again.',
+        '模型配置在核对期间已更新，请重新发布 Run。': 'The model configuration changed during validation. Review and publish the Run again.',
+    }
+    if chinese in run_messages:
+        return run_messages[chinese]
+    if code == 'invalid_input':
+        measured = re.fullmatch(r'片段「(.*)」实测输入 (\d+) 帧，请求 (\d+) 帧。.*', chinese, re.DOTALL)
+        if measured:
+            name, actual, requested = measured.groups()
+            return (f'{name}: input {actual} frames, requested {requested} frames. '
+                    'Both must match 17k+5 with k >= 6 (at least 107 frames).')
+        if re.fullmatch(r'片段「.*」无法按 24 FPS 解码数帧。', chinese, re.DOTALL):
+            return 'The segment input could not be decoded and counted at 24 FPS.'
+    if code == 'invalid_input' and chinese == '分组片段提交时必须指定来源画布节点（originItemId）。':
+        return 'Submitting a grouped segment requires its source canvas node (originItemId).'
+    if code == 'invalid_input' and chinese == '聊天引用超过数量上限，请移除部分引用。':
+        return 'The chat reference limit was exceeded. Remove some references and retry.'
+    if code == 'invalid_input' and chinese == '视频裁切需要视频来源节点。':
+        return 'Select a video canvas node as the source for this trim.'
+    if code == 'invalid_input' and chinese == '裁切结束时间超出来源视频时长。':
+        return 'The trim ends after the source video. Choose an end time within the source duration.'
+    if status == 409 and chinese == '此视频裁切正在进行，请等待结果。':
+        return 'This trim is already running. Wait for its result.'
+    if code == 'reference_invalid':
+        fasth3_image = re.fullmatch(r'FastH3 参考图“(.+)”的两边须为 256–5760 像素，宽高比须为 0.4–2.5。', chinese, re.DOTALL)
+        if fasth3_image:
+            return f'Each side of the FastH3 reference image “{fasth3_image[1]}” must be 256–5760 pixels and its aspect ratio must be 0.4–2.5.'
+        guide_plan_messages = {
+            '已确认的导帧计划不能取消约束、改换锚点或移除原有片段。': 'A confirmed guide plan must retain its guide requirement, anchor and existing steps.',
+            'H3 分段计划必须启用时间线导帧约束。': 'Enable the timeline guide requirement for this H3 segment plan.',
+            '导帧计划的每个片段都必须绑定视频生成配置。': 'Bind each guide plan step to a video generation configuration.',
+            '导帧计划中的片段必须使用各自的生成配置。': 'Each guide plan step needs its own generation configuration.',
+            '已接受任务的导帧部署已变化或不再支持导帧。': 'The deployment captured by this job changed or no longer supports timeline guides.',
+        }
+        if chinese in guide_plan_messages:
+            return guide_plan_messages[chinese]
+        wrong_step = re.fullmatch(r'必须从计划中的片段节点 ([0-9a-f-]{36}) 提交。', chinese)
+        if wrong_step:
+            return f'Submit from the planned segment node {wrong_step[1]}.'
+        wrong_plan = re.fullmatch(r'片段「(.+)」的导帧计划与冻结任务不一致。', chinese, re.DOTALL)
+        if wrong_plan:
+            return f'The guide plan for segment “{wrong_plan[1]}” differs from the frozen job.'
+        wrong_anchor_guide = re.fullmatch(r'锚点「(.+)」的冻结图片导帧与发布配置不一致。', chinese, re.DOTALL)
+        if wrong_anchor_guide:
+            return f'The frozen guide image for anchor “{wrong_anchor_guide[1]}” differs from the published configuration.'
+        wrong_source = re.fullmatch(r'片段「(.+)」的冻结导帧来源与本次采用的上游结果不一致。', chinese, re.DOTALL)
+        if wrong_source:
+            return f'The frozen guide source for segment “{wrong_source[1]}” differs from the adopted upstream result.'
+        unavailable_guide = re.fullmatch(r'片段「(.+)」的冻结导帧素材无法读取。', chinese, re.DOTALL)
+        if unavailable_guide:
+            return f'The frozen guide asset for segment “{unavailable_guide[1]}” could not be read.'
+        chat_reference = re.fullmatch(r'聊天引用 ([0-9a-f-]+) 的来源或素材版本已失效，请重新选择此引用。', chinese)
+        if chat_reference:
+            return f'Chat reference {chat_reference[1]} has a stale source or asset version. Select it again and retry.'
+        unknown_chat_reference = re.fullmatch(r'聊天引用 ([0-9a-f-]+) 不属于当前对话。', chinese)
+        if unknown_chat_reference:
+            return f'Chat reference {unknown_chat_reference[1]} does not belong to the current conversation.'
+        guide_segment = re.fullmatch(r'片段「(.+)」必须使用有效的 H3 时间线导帧。', chinese, re.DOTALL)
+        if guide_segment:
+            return f'Segment “{guide_segment[1]}” requires a valid H3 timeline guide.'
+        segment = re.fullmatch(r'组装片段「(.+)」的生成任务缺少来源画布节点（originItemId）。', chinese, re.DOTALL)
+        if segment:
+            return f'The generation job for assembly segment “{segment[1]}” is missing its source canvas node (originItemId).'
+        job = re.fullmatch(
+            r'生成任务「([0-9a-f-]{36})」（规格 ([0-9a-f-]{36})）缺少来源画布节点（originItemId），无法确定对应的组装片段。',
+            chinese,
+        )
+        if job:
+            return (f'Generation job {job[1]} (spec {job[2]}) is missing its source canvas node (originItemId). '
+                    'The assembly segment could not be identified.')
     if code == 'tool_model_missing':
         return missing_tool_model_message(required_capability, english=True)
     if code == 'model_list_http_error':

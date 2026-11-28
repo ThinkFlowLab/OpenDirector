@@ -15,23 +15,28 @@ from filelock import FileLock, Timeout
 
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
+from opendirector.application.creation_segment_run_inputs import segment_inputs_with_guide
 from opendirector.application.voice_library import VoiceLibrary
+from opendirector.application.creation_segment_run_publication import publish_segment_run, run_model_fingerprint
 from opendirector.application.model_availability import ModelAvailability, generation_request
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
-from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.creation.commands import CommandReceipt, command_fingerprint, parse_command
 from opendirector.domain.creation.generation import (DEFAULT_MUSIC_SECONDS, InputSnapshot, Job, ResultVersion, execution_spec,
-                                                     reference_music_seconds, validate_generation)
+                                                     WorkflowGuide, reference_music_seconds, validate_generation)
 from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
-from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.image_presets import preset_prompt
+from opendirector.domain.creation.validation import (ContractError, require_workflow_timeline_guide,
+                                                     segment_run_owner, workflow_guide_policy)
+from opendirector.domain.generation import GenerationFailure
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.minimax_speech import is_minimax_speech
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.rule_facts import duration_matches
+from opendirector.domain.video_capabilities import supports_h3_segments
 from opendirector.domain.video_output import apply_video_resolution
 from opendirector.ports.gateway import gateway
 from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
@@ -122,13 +127,46 @@ class CreationGeneration(GenerationRuntime):
         return next(
             (j for j in self.projects.snapshot(project_id).jobs if str(j.id) == str(job_id)), None)
 
-    def task(self, job):
-        spec, model = job.inputSnapshot.spec, job.inputSnapshot.model
+    @staticmethod
+    def _legacy_guide_required(snapshot, job):
+        frozen = job.inputSnapshot
+        if frozen.workflowGuide is not None or frozen.spec.kind != 'video':
+            return False
+        # A historical job with no captured policy must still prove a guide if
+        # a strict plan now owns it, or if it explicitly opts into H3 segments.
+        policy = workflow_guide_policy(snapshot, frozen.spec.id, job.originItemId)
+        return policy[1] if policy is not None else frozen.spec.parameters.h3Segment is not None
+
+    def task(self, job, *, snapshot=None, validate_guide=True):
+        frozen = job.inputSnapshot
+        spec, model = frozen.spec, frozen.model
         config = model.model_dump()
         # Project accepted jobs without revalidating the current speech catalog.
         profile = 'minimax-speech' if is_minimax_speech(config) else input_rules(config)['profile']
-        assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
-        reference_ids = [str(asset_id) for asset_id in transmitted_assets(job.inputSnapshot.references)]
+        snapshot = self.projects.snapshot(job.projectId) if snapshot is None else snapshot
+        assets = {a.id: a for a in snapshot.assets}
+        segment = spec.parameters.h3Segment if spec.kind == 'video' else None
+        guide_id = segment.guideReferenceId if segment else None
+        guide_inputs = {} if segment is None else dict(h3Segment=True)
+        if validate_guide:
+            required = self._legacy_guide_required(snapshot, job)
+            try:
+                guide = frozen.timeline_guide(required=required)
+                if guide is not None:
+                    if guide.sourceVersion is not None and guide.sourceVersion.id == job.originItemId:
+                        raise ValueError('A segment cannot use itself as its guide source')
+                    self.assets._reference(snapshot, guide.asset)
+                    guide_inputs['h3Guide'] = {'assetId': str(guide.asset.assetId)}
+                    if segment.outputFrame is None:
+                        guide_inputs['h3Guide']['frames'] = segment.sourceFrames
+                    else:
+                        guide_inputs['h3Guide']['outputFrame'] = segment.outputFrame
+            except ValueError as error:
+                item = next((item for item in snapshot.canvasItems if item.id == job.originItemId), None)
+                name = (item.title.strip() if item else '') or str(job.originItemId or spec.id)
+                raise ContractError('reference_invalid', f'片段「{name}」必须使用有效的 H3 时间线导帧。',
+                                    job.originItemId or spec.id) from error
+        reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only' and r.referenceId != guide_id))
         content = None
         kling_content = None
         if spec.promptContent is not None:
@@ -167,7 +205,7 @@ class CreationGeneration(GenerationRuntime):
             externalTaskId=job.externalTaskId, assetId=str(job.asset.assetId) if job.asset else None,
             adopted=job.adopted, error=None, errorDetails=job.errorDetails.model_dump(mode='json') if job.errorDetails else None,
             inputSnapshot={'references': {str(r.asset.assetId): r.asset.fingerprint for r in job.inputSnapshot.references}},
-            technicalCheck=job.technicalCheck.model_dump(mode='json') if job.technicalCheck else None, **adapter_content)
+            technicalCheck=job.technicalCheck.model_dump(mode='json') if job.technicalCheck else None, **adapter_content, **guide_inputs)
 
     def _parameters(self, spec, config, node, records):
         params = {'text': {'thinking': 'auto', 'max_tokens': 8192},
@@ -223,13 +261,13 @@ class CreationGeneration(GenerationRuntime):
             control = rules['profile'] == 'fasth3-omni' and node.get('videoMode') == 'control'
             if control:
                 params = control_parameters(node, records, resolution=str(intent.get('resolution', 'auto')).upper())
-                params['seed'] = new_seed()
+                params['seed'] = spec.parameters.seed if spec.parameters.seed is not None else new_seed()
                 seconds = None  # The control video sets the length.
             elif rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
                 if config.get('videoAdapter') == 'fasth3_dual' and node.get('videoMode') == 'first_frame':
                     params['num_inference_steps'] = 20
-                params['seed'] = new_seed()
+                params['seed'] = spec.parameters.seed if spec.parameters.seed is not None else new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
             if seconds is None and config.get('videoCapabilities') and not control:
@@ -264,7 +302,8 @@ class CreationGeneration(GenerationRuntime):
             else:
                 apply_video_resolution(params, node, records, config, output)
             if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'} and 'duration' in params:
-                params.update(video_frame_parameters(params['duration'], params.get('fps', FPS)))
+                segment_frames = params.get('num_frames') if rules['profile'] == 'fasth3-omni' and spec.parameters.h3Segment is not None else None
+                params.update(video_frame_parameters(params['duration'], params.get('fps', FPS), segment_frames))
         if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
         if spec.kind == 'image' and input_rules(config)['profile'] == 'moss-image':
@@ -340,12 +379,29 @@ class CreationGeneration(GenerationRuntime):
             latest = self.get_job(task['projectId'], task['id'])
             if latest is None or latest.status == 'succeeded':
                 return
-            task = self.task(latest)
+            task = await self._guarded_recovery_task(latest, pinned)
+            if task is None:
+                return
             mode = self.recovery(task, pinned)
             if mode not in {'submit', 'remote', 'download', 'local'} or latest.cancelRequested and (latest.remoteCancellation == 'confirmed' or mode == 'submit'):
                 return
             if mode in {'submit', 'remote'} and config is None:
                 config = self.configs.resolve(task['modelConfigId'], 'agent' if task['kind'] == 'text' else task['kind'])
+            batched_video = latest.batchId is not None and latest.inputSnapshot.spec.kind == 'video'
+            if mode == 'submit' and (task.get('h3Guide') or batched_video):
+                try:
+                    if task.get('h3Guide'):
+                        config = self._live_guide_service(latest, task)
+                    if batched_video:
+                        project = await asyncio.to_thread(self.projects.snapshot, latest.projectId)
+                        run = segment_run_owner(project, latest.inputSnapshot.spec.id)
+                        if run is not None:
+                            config = self.configs.resolve(task['modelConfigId'], 'video')
+                            if (run.runModelFingerprints or {}).get(latest.originItemId) != run_model_fingerprint(config):
+                                raise ProjectError('部署配置已变化，请发布新的 Run。', 409, code='revision_conflict')
+                except ProjectError as error:
+                    await self._stop_guide_recovery(latest, pinned, error)
+                    return
             token = _INPUTS.set(latest)
             await super()._run(task, pinned, config, mode)
         finally:
@@ -355,7 +411,8 @@ class CreationGeneration(GenerationRuntime):
                 remote.release()
             claim.release()
 
-    def prepare(self, command, *, session=None, source='ui', agent_origin=None):
+    def prepare(self, command, *, session=None, source='ui', agent_origin=None, run_execution_id=None,
+                run_guide_job_id=None, run_seed=None):
         replay = self.projects.replay(command)
         if replay is not None:
             return replay
@@ -414,9 +471,31 @@ class CreationGeneration(GenerationRuntime):
             intermediate = ProjectSnapshot.model_validate(data)
             spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
             config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
+            run = segment_run_owner(intermediate, spec.id) if spec.kind == 'video' else None
+            candidate_only = command.payload.adoptionPolicy == 'candidate_only'
+            if (run_guide_job_id is not None or run_seed is not None) and (run is None or not candidate_only):
+                raise ContractError('role_restricted', '只有 Run 才能固定候选版本的导帧和种子。', origin or spec.id)
+            if run is not None:
+                if source != 'background' or run_execution_id is None or command.payload.batchId != run_execution_id:
+                    raise ContractError('role_restricted', '已发布片段须通过 Run 执行。', origin or spec.id)
+                if (run.runModelFingerprints or {}).get(origin) != run_model_fingerprint(config):
+                    raise ContractError('revision_conflict', '部署配置已变化，请发布新的 Run。', origin or spec.id)
             public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': self.availability.effective_input_rules(config)})
-            spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
+            policy = workflow_guide_policy(intermediate, spec.id, origin) if spec.kind == 'video' else None
+            if run is not None and candidate_only and policy is not None and policy[1] and run_guide_job_id is None:
+                raise ContractError('reference_invalid', '候选版本需要指定本次执行选用的导帧任务。', origin)
+            if run_guide_job_id is None:
+                spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
+            else:
+                resolved = segment_inputs_with_guide(intermediate, run, origin, spec, public.inputRules, run_guide_job_id)
+            if run_seed is not None:
+                if type(run_seed) is not int or not 0 <= run_seed < 2**31:
+                    raise ContractError('invalid_input', '候选版本种子超出可用范围。', origin)
+                spec = spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'seed': run_seed})})
             spec = execution_spec(spec, resolved, public.inputRules)
+            if policy is not None and policy[1]:
+                origin_item = next(item for item in intermediate.canvasItems if item.id == origin)
+                require_workflow_timeline_guide(origin_item, spec, resolved)
             try:
                 validate_generation(spec, public, resolved, submitting=True)
                 if spec.kind == 'audio' and spec.parameters.creationType == 'audio':
@@ -441,8 +520,8 @@ class CreationGeneration(GenerationRuntime):
             ) if spec.kind == 'image' else None
             snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
                 model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
-                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}),
-                references=resolved, presetPrompt=preset)
+                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved, presetPrompt=preset,
+                workflowGuide=WorkflowGuide(groupId=policy[0], required=policy[1]) if policy is not None else None)
             # Use the same rendering, protocol validation and parameter resolver
             # as the established adapters, with immutable media from the facade.
             stub = Job(id=uuid5(command.commandId, 'job'), projectId=command.projectId, inputSnapshot=snapshot,
@@ -452,7 +531,7 @@ class CreationGeneration(GenerationRuntime):
                 **({'agentRunId': agent_origin[0], 'agentCallId': agent_origin[1]} if agent_origin else {}),
                 adoptionPolicy=command.payload.adoptionPolicy, adoptionResultId=old.currentResultId, adoptionMaterial=material,
                 batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
-            task = self.task(stub)
+            task = self.task(stub, snapshot=intermediate)
             records = {str(a.id): media_record(a) for a in before.assets}
             try:
                 if hasattr(self.provider, 'prepare_inputs'):
@@ -467,9 +546,50 @@ class CreationGeneration(GenerationRuntime):
             return ProjectSnapshot.model_validate(data)
         return self.projects.commit(command, accept, session=session, source=source)
 
-    async def execute(self, command, *, session=None, source='ui', agent_origin=None):
+    async def execute(self, command, *, session=None, source='ui', agent_origin=None, run_execution_id=None,
+                      run_guide_job_id=None, run_seed=None):
+        if command.type == 'group.publishRun':
+            try:
+                return await asyncio.to_thread(publish_segment_run, self.projects, self.configs, command,
+                                               session=session, source=source)
+            except ContractError as error:
+                def reject(_):
+                    raise error
+                return await asyncio.to_thread(self.projects.commit, command, reject, session=session, source=source)
+        if command.type in {'group.startRun', 'group.pauseRun', 'group.resumeRun', 'group.restartRun',
+                            'group.stepRun', 'group.regenerateRunStep', 'group.adoptRunCandidate',
+                            'group.reconcileRun'}:
+            executor = getattr(self, 'segment_runs', None)
+            if executor is None:
+                raise ProjectError('Run 执行服务不可用。', 503, code='segment_run_unavailable')
+            fingerprint = command_fingerprint(command)
+            if command.type == 'group.startRun':
+                await executor.submit(command.projectId, command.payload.groupId, command.commandId, session,
+                                      input_fingerprint=fingerprint)
+                execution_id = command.commandId
+            elif command.type in {'group.pauseRun', 'group.resumeRun'}:
+                control = executor.pause if command.type == 'group.pauseRun' else executor.resume
+                execution = await control(command.projectId, command.payload.groupId, session,
+                                          operation_id=command.commandId, input_fingerprint=fingerprint)
+                execution_id = execution['executionId']
+            else:
+                method = {
+                    'group.restartRun': 'restart',
+                    'group.stepRun': 'step',
+                    'group.regenerateRunStep': 'regenerate',
+                    'group.adoptRunCandidate': 'adopt',
+                    'group.reconcileRun': 'reconcile',
+                }[command.type]
+                control = getattr(executor, method)
+                execution = await control(command.projectId, command.payload, session,
+                                          operation_id=command.commandId, input_fingerprint=fingerprint)
+                execution_id = execution['executionId']
+            return CommandReceipt(commandId=command.commandId, projectId=command.projectId,
+                                  inputFingerprint=fingerprint, status='applied', runExecutionId=execution_id)
         if command.type == 'generation.submit':
-            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source, agent_origin=agent_origin))
+            pending = asyncio.create_task(asyncio.to_thread(self.prepare, command, session=session, source=source,
+                                                            agent_origin=agent_origin, run_execution_id=run_execution_id,
+                                                            run_guide_job_id=run_guide_job_id, run_seed=run_seed))
             async def finish():
                 try:
                     receipt = await pending
@@ -488,9 +608,11 @@ class CreationGeneration(GenerationRuntime):
         # Persist control intent/receipt before any remote action. Replays do not
         # reissue cancellation or start a new paid attempt.
         def control(before):
-            job = self.get_job(command.projectId, command.payload.jobId)
+            job = next((job for job in before.jobs if job.id == command.payload.jobId), None)
             if job is None:
                 raise ContractError('missing_object', '任务不存在。', command.payload.jobId)
+            if command.type == 'job.recover' and job.status != 'succeeded':
+                self._recovery_task(job, snapshot=before)
             if command.type == 'job.cancel' and job.status not in {'succeeded', 'cancelled'}:
                 job = job.model_copy(update={'cancelRequested': True, 'revision': job.revision + 1})
                 return before.model_copy(update={'jobs': tuple(job if j.id == job.id else j for j in before.jobs)})
@@ -576,11 +698,17 @@ class CreationGeneration(GenerationRuntime):
             eligible = not current_job.cancelRequested
             same_selection = current_spec.currentResultId == current_job.adoptionResultId
             try:
+                frozen = current_job.inputSnapshot
+                if current_spec.kind == 'video':
+                    if frozen.workflowGuide is None:
+                        frozen.timeline_guide(required=self._legacy_guide_required(current, current_job))
+                    else:
+                        policy = workflow_guide_policy(current, current_spec.id, current_job.originItemId)
+                        eligible = eligible and policy == (frozen.workflowGuide.groupId, frozen.workflowGuide.required)
                 projected_spec, references = current_generation_inputs(current, current_spec, current_job.inputSnapshot.model.inputRules)
                 effective = execution_spec(projected_spec, references, current_job.inputSnapshot.model.inputRules)
                 now = InputSnapshot(spec=effective.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
-                    model=current_job.inputSnapshot.model, references=references,
-                    presetPrompt=current_job.inputSnapshot.presetPrompt)
+                    model=current_job.inputSnapshot.model, references=references, presetPrompt=current_job.inputSnapshot.presetPrompt, workflowGuide=current_job.inputSnapshot.workflowGuide)
                 eligible = eligible and now.fingerprint() == current_job.inputFingerprint
             except (ValueError, ContractError):
                 eligible = False
@@ -659,6 +787,43 @@ class CreationGeneration(GenerationRuntime):
             position={'x': x, 'y': y}, width=width, height=height, parentId=origin.parentId,
             binding={'role': 'material', 'objectRef': asset_ref(asset)})
 
+    def _recovery_task(self, job, *, snapshot=None):
+        snapshot = self.projects.snapshot(job.projectId) if snapshot is None else snapshot
+        task = self.task(job, snapshot=snapshot)
+        if guide := task.get('h3Guide'):
+            try:
+                self.assets.reference_available(job.projectId, guide['assetId'], snapshot=snapshot)
+            except (ProjectError, OSError) as error:
+                item = next((item for item in snapshot.canvasItems if item.id == job.originItemId), None)
+                name = (item.title.strip() if item else '') or str(job.originItemId or job.inputSnapshot.spec.id)
+                raise ContractError('reference_invalid', f'片段「{name}」的冻结导帧素材无法读取。',
+                                    job.originItemId or job.inputSnapshot.spec.id) from error
+        return task
+
+    async def _stop_guide_recovery(self, job, pinned, error):
+        failure = GenerationFailure(category='reference', stage='prepare', message=str(error)[:500],
+            suggestion='请检查已冻结的上游版本、导帧和当前模型部署。')
+        await asyncio.to_thread(self.checkpoint, job.projectId,
+            dict(id=str(job.id), status='interrupted', recovery='review', resumeAllowed=False,
+                 errorDetails=failure.model_dump(mode='json')), pinned)
+
+    async def _guarded_recovery_task(self, job, pinned):
+        try:
+            return await asyncio.to_thread(self._recovery_task, job)
+        except ContractError as error:
+            await self._stop_guide_recovery(job, pinned, error)
+            return None
+
+    def _live_guide_service(self, job, task):
+        config = self.configs.resolve(task['modelConfigId'], 'video')
+        rules = self.availability.effective_input_rules(config)
+        frozen = job.inputSnapshot.model
+        if ((config['url'], config['modelId'], config['protocol'], config.get('videoAdapter', 'auto'))
+                != (frozen.url, frozen.modelId, frozen.protocol, frozen.videoAdapter)
+                or not supports_h3_segments(rules['profile'], (rules.get('videoCapabilities') or {}).get('timelineGuides'))):
+            raise ProjectError('已接受任务的导帧部署已变化或不再支持导帧。', 409)
+        return {**config, 'proxyMode': frozen.proxyMode}
+
     async def recover(self, project_id, job_id, session=None, *, explicit=False):
         job = self.get_job(project_id, job_id)
         if job is None or job.status == 'succeeded':
@@ -668,13 +833,16 @@ class CreationGeneration(GenerationRuntime):
             return job
         if job.cancelRequested and not explicit:
             return job
-        task = self.task(job)
         pinned = str(self.directory(project_id))
+        task = await self._guarded_recovery_task(job, pinned)
+        if task is None:
+            return job
         mode = self.recovery(task, pinned)
         if job.cancelRequested and (job.remoteCancellation == 'confirmed' or mode not in {'remote', 'download', 'local'}):
             return job  # Stop intent can be reconciled, never turned into a fresh submission.
         if mode not in {'submit', 'remote', 'download', 'local'}:
-            task.update(status='interrupted', recovery=mode, resumeAllowed=False)
+            status = job.status if mode == 'retry' and job.status in {'failed', 'cancelled', 'interrupted'} else 'interrupted'
+            task.update(status=status, recovery=mode, resumeAllowed=False)
             await asyncio.to_thread(self.checkpoint, project_id, task, pinned)
             return job
         config = None
@@ -709,7 +877,7 @@ class CreationGeneration(GenerationRuntime):
             await asyncio.gather(worker.future, return_exceptions=True)
         job = self.get_job(project_id, job_id)
         if job and job.externalTaskId and (worker is None or worker.future.cancelled()) and job.status not in {'succeeded', 'cancelled'}:
-            task = self.task(job)
+            task = self.task(job, validate_guide=False)
             try:
                 config = self.configs.resolve(task['modelConfigId'], 'agent' if task['kind'] == 'text' else task['kind'])
                 if (config['url'], config['modelId'], config['protocol']) != (task['baseURL'], task['model'], task['protocol']):
@@ -727,7 +895,7 @@ class CreationGeneration(GenerationRuntime):
             self.checkpoint(project_id, task, str(self.directory(project_id)))
             job = self.get_job(project_id, job_id)
         if job and job.status in {'queued', 'running'} and job_id not in self.committing:
-            task = self.task(job)
+            task = self.task(job, validate_guide=False)
             task.update(status='cancelled', recovery=self.recovery(task, str(self.directory(project_id))), resumeAllowed=False)
             self.checkpoint(project_id, task, str(self.directory(project_id)))
         self.cancelled.discard(job_id)

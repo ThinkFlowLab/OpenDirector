@@ -6,7 +6,7 @@ infrastructure does not import application modules.
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas
 from opendirector.application.creation_history import CreationHistory
-from opendirector.application.creation_segment_run_publication import publish_segment_plan, save_segment_plan
+from opendirector.application.creation_segment_run_publication import save_segment_plan
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.projects import ProjectError, project_name
 from opendirector.ports.dispatch import register_command_dispatcher
@@ -30,12 +30,16 @@ class CreationCommands:
             raise ProjectError('只有素材导入可以声明归档来源。', 400, code='invalid_input')
         if command.type == 'group.saveRunPlan':
             return save_segment_plan(projects, command, session=session, source=source)
-        if command.type == 'group.publishRun':
-            return publish_segment_plan(projects, command, session=session, source=source)
         if command.type == 'project.create':
             return projects._create(command, source)
         if command.type in _HISTORY_COMMANDS:
             return CreationHistory(projects).execute(command, session=session, source=source)
+        if command.type == 'group.assemble':
+            from opendirector.application.creation_workflow_assembly import CreationWorkflowAssembly
+            return CreationWorkflowAssembly(projects).execute(command, session=session, source=source)
+        if command.type == 'video.trim':
+            from opendirector.application.creation_video_trim import CreationVideoTrim
+            return CreationVideoTrim(projects).execute(command, session=session, source=source)
         if command.type != 'project.rename':
             return CreationCanvas(projects).execute(command, session=session, source=source)
 

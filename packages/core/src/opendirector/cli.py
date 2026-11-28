@@ -21,6 +21,7 @@ import socket
 import shlex
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from typing import Annotated, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4, uuid5
@@ -32,9 +33,14 @@ from typer._click.exceptions import UsageError
 
 from opendirector.agent.tools import COMMANDS, command_help
 from opendirector.application.creation_canvas import DELIVERY_GUIDANCE
+from opendirector.domain.creation.assets import (
+    ASSET_DOWNLOAD_ENGLISH, ASSET_REVISION_HEADER, AssetDownloadFile, AssetDownloadReceipt,
+)
 from opendirector.domain.creation.commands import COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
+from opendirector.infrastructure.rename import rename_path
+from opendirector.ports.files import CHUNK_BYTES, copy_verified_asset
 
 # Set once this process has told the transport how it started, so later requests
 # from the same process are not charged that start-up again.
@@ -47,9 +53,9 @@ GROUP_HELP = {
     "project": "List, inspect, create, rename, trash or restore projects.",
     "model": "Inspect available model configurations and input capabilities.",
     "voice": "List, create or delete voices on a configured speech service.",
-    "asset": "Import files, write text and manage registered project assets.",
+    "asset": "Import or download files and manage registered project assets.",
     "canvas": "Display, arrange, hide and configure canvas items.",
-    "video": "Create video generation nodes with model settings and references.",
+    "video": "Create video generation nodes or trim a source video.",
     "job": "Inspect, wait for, cancel or recover generation jobs.",
     "artifact": "Register files from the active agent execution directory.",
     "generation-spec": "Create, edit and restore generation settings and prompts.",
@@ -249,6 +255,10 @@ class Client:
         return (self.call("read_project", {})["project"] if self.live else
                 self.request("GET", self.path()))
 
+    def turn_references(self, identities):
+        context = self.call("read_project", {"referenceIds": list(dict.fromkeys(str(value) for value in identities))})
+        return context["turnReferences"]
+
     def open(self):
         if not self.live and not self.opened:
             self.request("POST", self.path("/open"))
@@ -366,6 +376,23 @@ def desktop():
     subprocess.Popen([executable], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+@app.command(
+    "skill-script",
+    help="Run an installed skill's Python script with the OpenDirector runtime. / 用 OpenDirector 运行时执行内置技能脚本。",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def skill_script(ctx: typer.Context, script: str):
+    from opendirector.installation import builtin_skills
+
+    skills = builtin_skills().resolve()
+    path = (skills / script).resolve()
+    if not path.is_relative_to(skills) or path.suffix != ".py" or not path.is_file():
+        raise typer.BadParameter(
+            "Use a Python script path relative to the installed skills directory. / 请使用相对于内置技能目录的 Python 脚本路径。"
+        )
+    raise typer.Exit(subprocess.run([sys.executable, "-X", "utf8", str(path), *ctx.args], check=False).returncode)
+
+
 @app.command("serve", help="Start the API and serve the built application.")
 def serve(port: PortOption = 8000, web_port: WebPortOption = 5173, log_level: LogLevel = LogLevel.info,
           video_gateway: VideoGatewayOption = None):
@@ -433,9 +460,16 @@ def summarize(snapshot):
 @group("project").command("show", help="Read the current authoritative project snapshot, or only identities and status with --summary.")
 def project_show(ctx: typer.Context,
                  summary: Annotated[bool, typer.Option("--summary", help="Print identities, revisions and status without full records.")] = False):
-    ctx.obj.command = ctx.command_path
-    snapshot = ctx.obj.snapshot()
-    emit(summarize(snapshot) if summary else snapshot)
+    client = ctx.obj
+    client.command = ctx.command_path
+    if client.live:
+        context = client.call("read_project", {})
+        snapshot = context["project"]
+        value = summarize(snapshot) if summary else snapshot
+        emit({**value, "turnReferences": context.get("turnReferences", [])})
+    else:
+        snapshot = client.snapshot()
+        emit(summarize(snapshot) if summary else snapshot)
 
 
 @group("project").command("list", help="List available projects.")
@@ -504,12 +538,21 @@ def model_show(ctx: typer.Context,
 def asset_import(ctx: typer.Context,
                  file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True, help="Path of a downloaded local file in the execution directory.")],
                  kind: Annotated[str, typer.Option(help="Expected media kind, e.g. image or video.")],
-                 name: Annotated[str | None, typer.Option(help="Asset display name.")] = None):
+                 name: Annotated[str | None, typer.Option(help="Asset display name.")] = None,
+                 source_item_id: Annotated[UUID | None, typer.Option(help="Source canvas node of a derived Agent artifact.")] = None,
+                 source_asset_id: Annotated[UUID | None, typer.Option(help="Asset read from the source canvas node before preparing the artifact.")] = None):
     client = ctx.obj
     client.command = ctx.command_path
+    if (source_item_id is None) != (source_asset_id is None):
+        raise ProjectError("Specify both --source-item-id and --source-asset-id for canvas provenance.")
+    if source_item_id is not None and not client.live:
+        raise ProjectError("Recording canvas provenance with asset import requires an active agent execution context.")
     if client.live:
         # Server resolves and confines this path to the turn's execution directory.
-        emit(client.execute("artifact.publish", {"path": str(file), "name": name or file.name, "expectedKind": kind}))
+        artifact_payload = {"path": str(file), "name": name or file.name, "expectedKind": kind}
+        if source_item_id is not None:
+            artifact_payload.update(sourceItemId=str(source_item_id), sourceAssetId=str(source_asset_id))
+        emit(client.execute("artifact.publish", artifact_payload))
         return
     operation = client.operation_id or uuid4()
     handle = operation
@@ -555,6 +598,43 @@ def optimize_prompt(ctx: typer.Context,
         emit(client.call("prompt_optimize", {"itemId": str(item), **data}))
     else:
         emit(client.request("POST", client.path(f"/items/{item}/optimize-prompt"), json=data))
+
+@group("asset").command("download", help="Download the original bytes of an exact project asset revision to a new file.")
+def asset_download(ctx: typer.Context,
+                   id: Annotated[UUID, typer.Option(help="Registered project asset ID.")],
+                   revision: Annotated[int, typer.Option(min=1, help="Exact saved asset revision from a project query.")],
+                   output: Annotated[Path, typer.Option(help="New output file. In Agent Shell it must be inside the execution directory.")]) -> None:
+    client = ctx.obj
+    client.command = ctx.command_path
+    request = AssetDownloadFile(assetId=id, revision=revision, path=str(output))
+    if client.live:
+        emit(client.call("asset_download", request.model_dump(mode="json")))
+        return
+
+    with client.http.stream("GET", client.path(f"/assets/{id}/content"), params={"revision": revision}) as response:
+        if not response.is_success:
+            response.read()
+            raise client.response_error(response)
+        if response.headers.get(ASSET_REVISION_HEADER) != str(revision):
+            raise ProjectError("服务未确认请求的素材版本，请更新 OpenDirector 服务后重试。", 502,
+                               code="asset_download_version_unconfirmed")
+        receipt = AssetDownloadReceipt(assetId=id, revision=revision, path=request.path,
+            fingerprint=response.headers.get("ETag", "").strip('"'),
+            mimeType=response.headers.get("Content-Type", "").partition(";")[0].strip(),
+            size=int(response.headers.get("Content-Length", "-1")))
+        with TemporaryDirectory(prefix=".opendirector-asset-", dir=output.parent) as staging:
+            staged = Path(staging) / "download"
+            with staged.open("wb") as stream:
+                copy_verified_asset(response.iter_bytes(chunk_size=CHUNK_BYTES), stream,
+                                    size=receipt.size, fingerprint=receipt.fingerprint)
+            try:
+                rename_path(staged, output)
+            except ProjectError as error:
+                if error.status == 409 and os.path.lexists(output):
+                    raise ProjectError(f"输出文件已存在，请选择新路径：{output}", 409,
+                                       code="asset_download_destination_exists") from None
+                raise
+    emit(receipt.model_dump(mode="json"))
 
 
 @group("canvas").command("add-material", help="Display a registered asset as a new canvas item.")
@@ -834,6 +914,37 @@ def job_wait(ctx: typer.Context, job_ids: Annotated[list[UUID] | None, typer.Arg
             raise typer.Exit(2)
 
 
+@group("group").command("wait", help="Wait for a group execution to finish or need a decision.")
+def group_wait(ctx: typer.Context, group_id: Annotated[UUID, typer.Option(help="Published canvas group ID.")],
+               execution_id: Annotated[UUID | None, typer.Option(help="Execution ID from the command receipt.")] = None,
+               timeout: Annotated[float, typer.Option(min=0, help="Maximum wait in seconds.")] = 300):
+    ctx.obj.command = ctx.command_path
+    if execution_id is None:
+        current = ctx.obj.query("run.groupExecution.get", objectId=str(group_id))
+        if current is None:
+            raise typer.BadParameter("This group has no published execution.")
+        execution_id = current["executionId"]
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = max(0.0, deadline - time.monotonic())
+        result = ctx.obj.query("run.execution.get", objectId=str(execution_id),
+            waitSeconds=min(WAIT_WINDOW, remaining))
+        if result["groupId"] != str(group_id):
+            raise typer.BadParameter("The execution does not belong to this group.")
+        if result["status"] not in {"queued", "running", "pausing"}:
+            if result["status"] == "awaiting_selection":
+                result["adoptCommands"] = [
+                    f"opendirector group adopt-run-candidate --group-id {group_id} "
+                    f"--execution-id {execution_id} --job-id {candidate['jobId']}"
+                    for candidate in result["candidates"]
+                ]
+            emit(result)
+            return
+        if time.monotonic() >= deadline:
+            emit({**result, "timeout": True})
+            raise typer.Exit(2)
+
+
 @app.command("capabilities", help="List every business command with its required fields; one call replaces per-command --help discovery.")
 def capabilities(compact: Annotated[bool, typer.Option("--compact", help="Only names, summaries and required fields.")] = False):
     from typing import get_args
@@ -907,18 +1018,27 @@ def register_command(kind, model):
     ]
     for name, definition in properties.items():
         description = definition.get("description", name)
+        flags = ["--" + kebab(name)]
+        if kind == "video.trim" and name in {"startSeconds", "endSeconds"}:
+            flags.append("--" + name.removesuffix("Seconds"))
         if name == "spec":
             description += " JSON object, not a spec ID. Overrides the entire payload.spec from --file."
         if kind == "generationSpec.update" and name == "spec":
             description += " Full replacement: copy the current spec, change intended fields, and keep all other fields."
         parameters.append(inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=None,
-            annotation=Annotated[str | None, typer.Option("--" + kebab(name), help=description)]))
+            annotation=Annotated[str | None, typer.Option(*flags, help=description)]))
     parameters.append(inspect.Parameter("help_field", inspect.Parameter.KEYWORD_ONLY, default=None,
         annotation=Annotated[str | None, typer.Option(help="Expand a structured field path from this command's help.")]))
     parameters.append(inspect.Parameter("expected_version", inspect.Parameter.KEYWORD_ONLY, default=None,
         annotation=Annotated[list[str] | None, typer.Option(help="Repeat object_type:UUID:revision for each changed existing object.")]))
+    if kind == "canvas.createGeneration":
+        parameters.append(inspect.Parameter("turn_reference", inspect.Parameter.KEYWORD_ONLY, default=None,
+            annotation=Annotated[list[UUID] | None, typer.Option(help="Append a pinned reference by chat reference ID. Repeat in input order.")]))
+    if kind == "video.trim":
+        parameters.append(inspect.Parameter("turn_reference", inspect.Parameter.KEYWORD_ONLY, default=None,
+            annotation=Annotated[UUID | None, typer.Option(help="Chat reference ID of the video source. Use this or supply the source item ID and AssetRef.")]))
 
-    def execute(ctx, file=None, expected_version=None, help_field=None, **values):
+    def execute(ctx, file=None, expected_version=None, help_field=None, turn_reference=None, **values):
         ctx.obj.command = ctx.command_path
         if help_field is not None:
             emit(command_help(payload_schema, help_field, ctx.obj.project or UUID(int=0)))
@@ -954,7 +1074,36 @@ def register_command(kind, model):
         for value in expected_version or []:
             object_type, identity, revision = value.split(":")
             versions.append({"objectType": object_type, "id": str(UUID(identity)), "revision": int(revision)})
-        emit(ctx.obj.execute(kind, arguments, versions, body.get("expectedPreview")))
+        operation = ctx.obj.operation_id or uuid4()
+        if kind == "canvas.createGeneration" and turn_reference:
+            spec = arguments.get("spec")
+            if not isinstance(spec, dict) or not {"id", "projectId"} <= spec.keys():
+                raise ValueError("Chat references require payload.spec.id and payload.spec.projectId.")
+            references = arguments.get("references", [])
+            if not isinstance(references, list) or any(not isinstance(value, dict) for value in references):
+                raise ValueError("payload.references must be an array of reference objects.")
+            order = max((reference.get("order", 0) for reference in references), default=-1) + 1
+            arguments["references"] = [*references, *(
+                {**ref["pinned"], "id": str(uuid5(operation, f"chat:{ref['id']}")),
+                 "projectId": spec["projectId"], "targetSpecId": spec["id"], "order": index}
+                for index, ref in enumerate(ctx.obj.turn_references(turn_reference), start=order))]
+        if kind == "video.trim" and turn_reference is not None:
+            if {"sourceItemId", "source"} & arguments.keys():
+                raise typer.BadParameter("Use --turn-reference or supply the source item ID and AssetRef.")
+            reference, = ctx.obj.turn_references([turn_reference])
+            if "sourceItemId" not in reference:
+                raise typer.BadParameter("This chat reference has no canvas node. Select a source video node.")
+            arguments.update(sourceItemId=reference["sourceItemId"], source=reference["asset"])
+        receipt = ctx.obj.execute(kind, arguments, versions, body.get("expectedPreview"), identity=operation)
+        if kind.startswith("group.") and receipt.get("runExecutionId"):
+            receipt["next"] = {
+                "description": "Wait for this execution to finish or request a decision.",
+                "commands": [shlex.join(["opendirector", "--url", str(ctx.obj.http.base_url).rstrip("/"),
+                    "--project", receipt["projectId"], "group", "wait",
+                    "--group-id", str(arguments["groupId"]),
+                    "--execution-id", receipt["runExecutionId"], "--timeout", "60"])],
+            }
+        emit(receipt)
     execute.__signature__ = inspect.Signature(parameters)
     help = command_help(payload_schema, "", UUID(int=0)) if kind in COMMANDS else None
     description = model.__doc__
@@ -988,7 +1137,11 @@ def main():
         value = {"error": str(error)}
         if isinstance(error, ProjectError):
             value['code'] = error.code
-            value['error'] = timeline_error_message(error.code, os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US')) or str(error)
+            language = os.environ.get('OPENDIRECTOR_LANGUAGE', 'en-US')
+            translated = timeline_error_message(error.code, language)
+            if not language.lower().startswith('zh'):
+                translated = translated or ASSET_DOWNLOAD_ENGLISH.get(error.code)
+            value['error'] = translated or str(error)
         emit(value)
         raise SystemExit(1)
 

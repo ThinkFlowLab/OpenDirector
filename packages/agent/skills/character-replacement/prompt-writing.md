@@ -1,64 +1,95 @@
-# Prompt Writing
+# Prompt writing
 
-Produce an explicit appearance-to-source-person mapping. Keep the user's images, source video and prompt as the input boundary. Prompt-only work ends with the prompt or requested workflow edit; it does not start generation or restart a service.
+## Governing principle
 
-Prompt-format dependency: read the official [MiniMax H3 prompt-writing skill](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing) and follow its Ref2VA instructions and referenced files. Local installation is optional; read the repository files directly when the skill is not installed. The upstream reference is currently `references/ref-en.txt`; `ref-format.md` belongs to the local adaptation, not the upstream skill. Use English for the rendering prompt and the user's language for the explanation.
+**Specify which source person gets which portrait and which features to replace, let the source video determine the performance, camera and scene, and describe a critical existing occlusion in one sentence about what stays in front.**
+
+Apply this principle first when writing or revising a prompt. It governs how to use the template, examples and upstream guidance.
+
+Use English for the generation prompt and the user's language for the explanation. In the Agent snapshot (or `.agents/upstream/minimax-h3/skills/h3-prompt-writing` in a source checkout), use the sibling `../h3-prompt-writing/SKILL.md` and `../h3-prompt-writing/references/ref-en.txt` for field names and tag syntax only. Follow this skill's rules for what goes into the character-replacement prompt.
 
 ## Planning prerequisite
 
-For new footage or a new multi-segment workflow, complete the vision-based shot/person timelines and segment plan in [video-segment.md](video-segment.md) before writing prompts. Use each planned range's actual visible people and actions, including later entrants. For an existing segment correction, inspect its footage and preserve the plan unless a boundary or mapping needs revision.
+For new footage or a new multi-segment workflow, complete the [shot timeline, person visibility timeline and segment plan](video-segment.md) before writing prompts. For an existing segment correction, inspect the affected footage. Change the plan only if its boundary or person mapping needs correction.
 
 ## Establish the mapping
 
-Inspect the supplied images, source video and actual reference connections before assigning people. If the media cannot be inspected, state that limitation and use only the user's explicit mapping; ask when the selected source person is ambiguous.
+Inspect the source video and the references in request order. If you cannot inspect the media, state the limitation and use the user's explicit mapping. Ask if the mapping is ambiguous.
 
-- Number `<Picture N>` by actual request input order, not canvas position or filename.
-- Give each target appearance and each selected source-person track separate `<Subject N>` definitions. For two replacements, targets 1/2 and source tracks 3/4 are sufficient. Define only supplied references and selected source people.
-- Identify source people with visible features, roles and actions. Use initial position as an aid, then preserve the same person's track as they move. Avoid celebrity or fictional-character names as identity cues.
-- Write an explicit one-to-one mapping. A replacement count means selected source people, not the total people visible in the scene. Preserve unselected people.
-- Replace example-specific descriptions when the source changes. “Central performer wearing a pale suit” and “right foreground person” describe one example, not a universal person-selection rule. First-appearance order alone is often ambiguous.
+- Use one `<Subject N>:` row per bound portrait. Name the assigned picture and the verified source performer in the same row. State the replacement scope and source performance to retain in the summary.
+- Record a frame that identifies each source person. Ground left and right in a verified shared shot and use cues such as hair or eyewear. A source feature can identify a person even when the corresponding portrait feature replaces it. Keep the assignment through cuts, single-person shots and re-entry. For a solo shot, identify the visible person by their verified source features. Use left or right from a shared shot only in the plan's identity map.
+- If several people in one picture make the target ambiguous, use a crop that isolates the target, preserves the requested features and fits the model's input dimensions. Probe the final crop before binding it. FastH3 reference images require both sides to be 256–5760 pixels and a width-to-height ratio of 0.4–2.5. Use a clearer reference if needed. Multiple views of one person define one target identity.
+
+## Resolve the replacement scope
+
+Use the supplied prompt or the user's feature-by-feature request. For an unqualified face swap, use the portrait's face, hairstyle and eyewear, including whether the person wears glasses. Keep the source clothing, body, performance and scene. "Face only" keeps the source hair and eyewear. If a retained garment or accessory defines a visible action, pass its verified source description in `retainedDetails` for that track and keep the gesture itself in the video. "Keep the original hairstyle" overrides hair only.
+
+For a general character replacement with no feature list, use the assigned picture's appearance. Record the scope in the plan and apply it throughout the prompt.
+
+For face or head replacement, make a rectangular crop from the original portrait around the complete target head. Leave room for the crown, both sides, ears, chin and visible long hair. Keep the crop boundary clear of the head silhouette. Background, collar or some shoulder pixels may remain at the edges. Avoid cutouts, circular masks and gray fills. If the original is missing a required feature, use a more complete reference. When replacing clothing or full appearance, keep all features needed for that scope.
+
+Inspect the actual crop before binding it. Confirm that the required features are intact and the image meets the model input requirements. Register the crop as a derivative of the original, record its source in the segment plan, and verify the ordered portrait asset IDs and versions before publishing.
 
 ## Compile the prompt
 
-Keep the six sections in order:
+For new footage, [run the replacement preflight](workflow.md#publish-and-verify-the-plan) to build prompts. It derives `tracks`, `shotSubjects` and `timelineGuides` from the inspected source and the actual input window, including extra context and reversed playback. Put only scope, audio and other optional settings in `prompt-options.json`. Include an occluder only with an `object` and an in-window `evidenceFrames` entry in `occludedFaceRanges`. The builder below describes the rendered template. Set delivery audio on the timeline.
 
-1. `subject_definitions`: targets from pictures, source-person tracks from video, and the source video's role.
-2. `summary`: edit the source video, state the replacement count and each mapping.
-3. `retention_analysis`: target identity/appearance `fully_preserved`; source tracks `attribute_transfer` for motion, pose, expression and visibility; video `partially_preserved` for scene, camera, interactions and timing.
-4. `detailed_description`: `[Shot 1]` followed by playback-ordered actions and identity constraints. Describe real source cuts only when known.
-5. `overall_soundscape`: retain or reference the requested source sound properties.
-6. `non_diegetic_music`: follow the user's music policy.
+**Do not write storyboard directions in the generation prompt, with or without timecodes.** Directions that stage an opening, call for a cut, reorder shots, or choreograph action, camera movement, framing, lighting, or background can cause H3 to redraw the scene. Keep timecodes and frame indices in the segment plan, guide settings, and trim settings.
 
-Use a compact shared constraint paragraph rather than repeating the same rule in all sections:
+In `detailed_description`, let `<Video 1>` supply the performance, camera and scene. Inspect the first and last frames of the exact clip supplied to the model and both sides of each relevant cut. Use `[Shot N]` only to identify an existing shot and state the source-track-to-picture mapping for that shot. Once a source track is defined, use its subject tag in the edit instructions. Keep source traits that will be replaced, such as the original hairstyle, in the track definition. For out-of-scope wardrobe and props, refer to the source video collectively. For a head-only edit, leave individual wardrobe and prop names out of retention and edit instructions unless the user asks to control one or it directly explains a verified occlusion in the kept frames. If an inspected foreground object covers the edited area, name it once via `foregroundOccluder` so it stays in front of the replacement wherever it covers the source person. Let the video control its motion and visibility. Keep inventories of wardrobe and props in the plan.
 
-> Each target appearance belongs to exactly one assigned source-person track. Keep each person's own face, hair, clothing, materials and worn accessories throughout turns, crossings and occlusion. Preserve both the presence and absence of these features in the assigned picture. When a person leaves the view, their replacement leaves with them; on re-entry, restore the same assigned identity. Every unassigned person retains their original appearance. Render only people visible in the source at each moment. Pictures supply appearance; the source video supplies actions, handheld props, scene, camera, lighting and timing.
+When a cut changes which selected people are visible, state each visible source track and its assigned picture in that `[Shot N]` line. In a close-up with one selected person, name only that track and picture. When a person leaves within a shot, tie the departure to that person's assigned appearance.
 
-Adapt this paragraph to the observed issue. Avoid accumulating redundant negative instructions or naming an unwanted accessory that is absent from the inputs. Preserve source interactions and natural movement rather than freezing a reference pose. Exact soundtrack copying requires actual audio handling, not prompt wording.
+### Build the node prompt
 
-## Single and multiple people
+`build_head_prompts.py` validates the structured input and renders the fixed six-section [Jinja template](scripts/head_prompt.jinja). Jinja2 is installed with OpenDirector.
 
-Single-person mapping skeleton (replace the bracketed description before delivery):
+Run `opendirector skill-script character-replacement/scripts/build_head_prompts.py prompt-inputs.json > prompts.json` (or pass `-` to read the same JSON from stdin). It writes a JSON map from segment IDs to complete prompts on stdout:
 
-```text
-<Subject 1>: The target person in <Picture 1>, defining their appearance.
-<Subject 2>: [Unambiguous visible description of the selected source person] in <Video 1>.
-Mapping: replace <Subject 2> with <Subject 1>; preserve all other people.
+```json
+{"S1":{"tracks":["left performer in a green jacket","right performer in a red jacket"],"sourceAudio":true,"shotSubjects":[[],[1,2]],"timelineGuides":false}}
 ```
 
-For two people, define two target appearances and two source tracks, then state `<Subject 3> → <Subject 1>` and `<Subject 4> → <Subject 2>`. Scale to the actual reference count and backend limit, not a fixed eight- or ten-subject template. Keep faces, outfits and accessories separate even during close interaction. Multi-view images depict one target person; they do not add people to the scene.
+- `tracks`: In portrait binding order, give each source person a short, distinctive noun phrase. Use a verified visible feature plus their position or depth relative to the other people in a shared shot when available. Anchor the spatial cue to that shot (such as the opening two-shot) so crossings and close-ups do not relabel people. Subject definitions identify the source person. The summary specifies the replacement mapping and scope.
+- `scope`: `face_only`, `head` (default: face, hairstyle and eyewear), or `appearance` (also clothing and worn accessories).
+- `sourceAudio`: describes whether `<Video 1>` carries synchronized source audio. `timelineGuides`: `true` only when the segment has configured guides.
+- `dialogueBinding` (optional): one-based integer `shot` and `subject`. Set it only when synchronized source audio is present and the speaker is verified in that shot. The subject must be assigned in the corresponding `shotSubjects` entry.
+- `portraitAppearanceOnly` (optional boolean): after a take reproduces a reference photograph as a shot, set this on the affected segment to explicitly restrict portraits to appearance and preserve source framing and background.
+- `completeHairReplacement` (optional): set the one-based subject number for a controlled retry when source hair remains behind the ears or at the nape. Requires a scope that replaces hair.
+- `targetHairOutline` (optional): use the one-based subject number when testing an exposed-ear and exposed-neck hairstyle verified in its portrait. This replaces the `completeHairReplacement` trial wording.
+- `shotSubjects`: derived from the inspected shots in actual input order, mapping each visible track ID to its 1-based index in the segment's ordered portrait bindings. List only the confirmed track in a solo close-up and use `[]` when nobody is assigned. Omit only after verifying the input is one shot containing all bound tracks.
+- `eyewear` (optional): one boolean per bound picture when replacing eyewear (`scope` is `head` or `appearance`).
+- `foregroundOccluder` (optional): short object name only when an inspected source frame shows it covering the edited area. Omit if it passes without covering that area.
+- `preservedPeople` (optional): list of short verified source cues for unselected people whose own appearance and visibility must stay tied to `<Video 1>` during crossings or occlusions.
+- `retainedDetails` (optional): list aligned with `tracks` (`string | null`) naming a retained garment or accessory that directly defines a visible action for that track.
+
+The tool owns all six section headers, numbering, and sentence patterns. Save the generated strings verbatim. To revise a prompt, update the structured input and rebuild. Before publishing, run `python3 "$SKILL_DIR/scripts/check_prompt.py" prompts.json` for the structure check. Where an independently approved prompt baseline exists for the same segments and inputs, export the saved node prompts under the same segment IDs and run `python3 "$SKILL_DIR/scripts/check_prompt.py" saved-prompts.json --expected approved-prompts.json`. A mismatch reports the segment and first changed line.
+
+The template emits these fixed forms in `detailed_description` in input playback order:
+
+For this section, supply only `shotSubjects`. The template renders the shot mappings, preserves the existing cuts, and links a later solo shot to the same opening source track. Occlusion, eyewear and guides use their structured fields in retention analysis.
+
+```text
+[Shot 1] <Subject 1> -> <Picture 1>, <Subject 2> -> <Picture 2>.
+[Shot 2] <Subject 2> -> <Picture 2>.
+Preserve the original cut between these shots in <Video 1>.
+Shot 2 stays on <Subject 2>, the same source performer as in the opening shot.
+```
 
 ## Segment prompts
 
-For segmented work, use the plan from [video-segment.md](video-segment.md). Inspect each segment's actual inputs independently: define only its supplied references and selected source tracks. Appearance references define identity; continuation guides establish inherited composition and pose. State what remains visible and what exits when that affects identity.
+Carry the same person assignments across segments. Update portrait numbers to match each request's input order. Reuse an approved, compliant prompt verbatim when source range, timing, direction, scope and ordered references match. If an input changes, revise the structured input, rebuild, and check it against the new input.
 
 ## Diagnose and verify
 
-- **Mixed or duplicated identity:** check image order and effective request inputs first; clarify the two source tracks and exclusive mappings before adding prose.
-- **Accessory leakage:** distinguish target appearance from source motion and props; preserve the assigned reference's features, including their absence. A bad frame suggests leakage but does not by itself establish its cause.
-- **Late identity drift:** inspect departures, occlusion, cuts and continuation boundaries; bind identity to the person rather than their current screen position.
-- **Identity retained in occluded close-ups:** if generated close-ups retain the source identity under hair, hand or lighting occlusion, the segment-level mapping may need shot-specific appearance cues. In `detailed_description`, name the assigned target at that shot and state which picture features must be visible there (the target's own hair length and color, face, glasses or their absence), e.g. "the extreme close-up shows <Subject 1> with the short light-brown hair and face from <Picture 1>". Keep it a positive description of the assigned appearance; do not enumerate the source features being removed.
-- **Scope:** background removal, face anonymization and automatic appearance description are separate features. Do not introduce them to repair a prompt unless the user requests them.
+For a prompt-only comparison, start from the baseline verbatim and change one structured field or phrase to test a specific hypothesis. Freeze the segment, ordered asset versions, guides, seed and model settings. Compare the same track and frames with the source and baseline.
 
-Check all labels resolve, mappings are one-to-one, and no placeholders or unused references remain. When editing a workflow, keep positional and named prompt values consistent where both exist; preserve unrelated fields and user layout. Usage Guide notes should only say which media, mappings and controls to change.
+- If identities mix or drift, check the actual picture order and request inputs. Inspect the first affected cut, occlusion, departure or join. Correct the mapping if it follows screen position instead of the source person.
+- If clothing or an accessory changes, check feature ownership in the plan and `retainedDetails` before editing the prompt.
+- If an unselected person changes during a crossing, locate the first affected frames in the source and output, then add that person's verified cue to `preservedPeople` and rebuild.
 
-For an authorized comparison, keep inputs, model, seed, LoRA and sampling fixed while changing the prompt. Inspect both identities together, occlusion and the reported failure interval; inspect frame-by-frame around the defect when needed. Report prompt edits separately from observed generation results. Health checks, valid JSON and successful decoding do not establish character-replacement quality.
+## Check the saved prompt
+
+Before submitting, read the saved generation spec and ordered references with `opendirector project show` or an equivalent project query. Check that the saved prompt contains no storyboard directions and that every `[Shot N]` marker matches the exact referenced clip, including its first frame. Resolve plain tags by input order within their media type and structured tags by saved reference ID. Check the six sections, one-to-one assignments, feature ownership, and configured guides against the plan. Fix mismatches, rebuild or update, and read the saved spec again.
+
+For a prompt comparison, hold the inputs, model and effective deployment settings fixed. Review the take against the source at the reported defect and follow the [take review and retry rules](workflow.md#review-and-retry-a-take).

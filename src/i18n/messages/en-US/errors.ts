@@ -198,6 +198,8 @@ export const errors = {
   "errors.storage.duplicateEdge": "Duplicate edge id: {id}",
   "errors.storage.frameReference":
     "First and last frames must reference connected nodes.",
+  "errors.storage.guideReference":
+    "An H3 guide needs two valid frame indices and a matching video reference.",
   "errors.storage.toolDraft": "The tool draft references a missing node.",
   "errors.storage.projectFrames":
     "Project settings reference a missing first or last frame.",
@@ -594,6 +596,8 @@ export const errors = {
     "This is not an OpenDirector canvas archive; nothing was imported.",
   "errors.archive.versionInvalid":
     "The canvas archive format version is invalid.",
+  "errors.archive.guidedCapability":
+    "The canvas archive version or capability does not match its guided workflow settings.",
   "errors.archive.versionNewer":
     "This canvas was exported by a newer OpenDirector version (format v{version}) and cannot be read by this version.",
   "errors.archive.missingDocument":

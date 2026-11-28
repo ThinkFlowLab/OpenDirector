@@ -203,7 +203,7 @@ print(json.dumps({'type':'assistant','session_id':'fixture-session',
     directory = tmp_path / 'project'; directory.mkdir()
     entry = tmp_path / '.opendirector/skills/od-native-runtime-test-skill/SKILL.md'
     common = dict(runtime='claude', project_id=uuid4(), session=str(uuid4()),
-        conversation_id=uuid4(), directory=directory, config=None, selected_skills=[],
+        conversation_id=uuid4(), directory=directory, config=None, selected_skills=['od-native-runtime-test-skill'],
         skills=[{'name': 'od-native-runtime-test-skill', 'filePath': str(entry)}])
     async def closed(): pass
     async def exercise():
@@ -246,18 +246,21 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
         if runtime == 'codex':
             assert '--ignore-user-config' in args
             assert 'features.shell_tool=true' in args
+            assert any('native view_image tool' in item for item in args if item.startswith('developer_instructions='))
             assert args[args.index('--sandbox') + 1] == 'workspace-write'
             assert not any('mcp_servers.' in item for item in args)
             assert '--dangerously-bypass-approvals-and-sandbox' not in args
         elif runtime == 'claude':
             assert '--max-turns' not in args
             assert args[args.index('--tools') + 1] == 'Skill,Bash,Read'
+            assert 'native Read tool' in args[args.index('--system-prompt') + 1]
             assert '--dangerously-skip-permissions' not in args
         else:
             config = json.loads(env['OPENCODE_CONFIG_CONTENT'])
             assert 'steps' not in config['agent']['opendirector']
             assert config['permission']['*'] == 'deny'
             assert config['permission']['read'] == 'allow'
+            assert 'native read tool' in config['agent']['opendirector']['prompt']
             assert config['skills']['paths'] == [str(work / '.agents/skills')]
             if runtime == 'default':
                 assert config['agent']['title'] == {'disable': True}

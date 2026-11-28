@@ -20,7 +20,7 @@ from opendirector.integrations.minimax_video import MinimaxVideoGeneration
 from opendirector.integrations.kling_video import KlingVideoGeneration
 from opendirector.integrations.higgsfield_open import HiggsfieldOpenGeneration
 from opendirector.integrations.bigmodel_video import BigModelVideoGeneration
-from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, _upload, reference_upload
 from opendirector.integrations.fasth3 import generation_fields as fasth3_generation_fields
 from opendirector.integrations.vllm_omni_image import VllmOmniImageGeneration
 from opendirector.integrations.model_adapters import (BigModelImages, MinimaxH3Images, MinimaxSpeech, MossImages, MossSpeech, OpenAISpeech,
@@ -140,6 +140,8 @@ class GenerationProviders(VolcengineGeneration):
                 result_ready=result_ready, watermark=task['parameters'].get('watermark_enabled', True))
             return result.suffix, result.data
         adapter = self._profile_adapter(config)
+        if task['kind'] == 'video' and (task.get('h3Segment') or task.get('h3Guide')) and input_rules(config)['profile'] == 'fasth3-omni':
+            adapter = self.vllm_omni
         if adapter and task['kind'] != 'text':
             return await adapter.generate(config, task, submitted, result_ready=result_ready)
         if input_rules(config)['profile'] == 'minimax-h3-image':
@@ -186,12 +188,15 @@ class GenerationProviders(VolcengineGeneration):
                             files = [('input_references', _upload(image, 'first_frame' if index == 0 else 'last_frame'))
                                      for index, image in zip(frame_indices, prepared['images'], strict=True)]
                         else:
-                            for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
+                            sources = references(self.store, task['projectId'], task['referenceIds'])
+                            for index, (data, meta, source_kind) in enumerate(sources, 1):
                                 if fast and str(meta['id']) == str(prepared.get('control')):
-                                    # FastH3 + ControlNet: the structure video conditions every frame, not as a reference clip.
-                                    files.append(('control_reference', (meta['name'], data, meta['type'])))
+                                    # Structure input conditions every frame and uses its own slot.
+                                    files.append(('control_reference', reference_upload(data, meta['type'], 'control')))
                                 elif source_kind in {'image', 'video', 'audio'}:
-                                    files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
+                                    mime = (image_type(data) or meta['type']) if source_kind == 'image' else meta['type']
+                                    upload = reference_upload(data, mime, f'{source_kind}_{index}')
+                                    files.append(('input_references' if fast else 'input_reference', upload))
                         parameters = task['parameters']
                         form = {'model': config['modelId'], 'prompt': prepared['prompt']}
                         if not fast and 'duration' in parameters:

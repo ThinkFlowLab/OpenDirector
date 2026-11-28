@@ -2,6 +2,8 @@ import {
   assetKind,
   fingerprintMatches,
   referenceIds,
+  referenceKey,
+  referenceKeys,
   referencePart,
   validContent,
   type ReferenceAsset,
@@ -62,15 +64,16 @@ export function referenceInsertion(
         t("assistant.error.versionMismatch", { name: asset.name }),
       );
   }
-  const ids = new Set(referenceIds(content));
-  const chosen = deduplicate
-    ? added.filter((asset) => {
-        if (ids.has(asset.id)) return false;
-        ids.add(asset.id);
+  const keys = referenceKeys(content);
+  const candidates = added.map(referencePart);
+  const parts = deduplicate
+    ? candidates.filter((part) => {
+        const key = referenceKey(part);
+        if (keys.has(key)) return false;
+        keys.add(key);
         return true;
       })
-    : added;
-  const parts = chosen.map(referencePart);
+    : candidates;
   const next = parts.length ? editContent(content, caret, parts) : content;
   const images = referenceIds(next).filter((id) =>
     [...catalog, ...added].some(

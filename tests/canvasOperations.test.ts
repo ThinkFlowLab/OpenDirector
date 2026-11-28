@@ -24,6 +24,41 @@ function positions(document: CanvasDocument) {
   );
 }
 
+test("pasting a guided workflow remaps its guide, timeline, and reserved output", () => {
+  const source = createDocument("Workflow");
+  const group = createNode("group");
+  const anchor = { ...createNode("video", undefined, { h3Segment: {} }), parentId: group.id };
+  const segment = { ...createNode("video"), parentId: group.id };
+  const timeline = createNode("timeline");
+  const guide = { id: crypto.randomUUID(), source: anchor.id, target: segment.id };
+  const outputItemId = crypto.randomUUID();
+  segment.data.h3Segment = { guideSourceNodeId: anchor.id, guideReferenceId: guide.id, sourceFrames: [21, 0] };
+  group.data.workflowAssembly = {
+    timelineItemId: timeline.id,
+    outputItemId,
+    clips: [{ itemId: segment.id, inFrame: 22, outFrame: 100 }],
+  };
+  source.nodes = [group, anchor, segment, timeline];
+  source.edges = [guide];
+
+  const fragment = copySelection(source, [group.id, timeline.id]);
+  const pasted = pasteFragment(createDocument("Target"), fragment).document;
+  const copiedGroup = pasted.nodes.find((node) => node.type === "group")!;
+  const copiedTimeline = pasted.nodes.find((node) => node.type === "timeline")!;
+  const copiedGuide = pasted.edges[0]!;
+  const copiedSegment = pasted.nodes.find((node) => node.id === copiedGuide.target)!;
+  assert.deepEqual(copiedSegment.data.h3Segment, {
+    guideSourceNodeId: copiedGuide.source, guideReferenceId: copiedGuide.id, sourceFrames: [21, 0],
+  });
+  assert.equal(copiedGroup.data.workflowAssembly?.timelineItemId, copiedTimeline.id);
+  assert.deepEqual(copiedGroup.data.workflowAssembly?.clips, [{ itemId: copiedSegment.id, inFrame: 22, outFrame: 100 }]);
+  assert.ok(copiedGroup.data.workflowAssembly?.outputItemId);
+  assert.notEqual(copiedGroup.data.workflowAssembly?.outputItemId, outputItemId);
+
+  const partial = pasteFragment(createDocument("Target"), copySelection(source, [group.id])).document;
+  assert.equal(partial.nodes.find((node) => node.type === "group")?.data.workflowAssembly, undefined);
+});
+
 function assertPositionsRetained(
   before: CanvasDocument,
   after: CanvasDocument,

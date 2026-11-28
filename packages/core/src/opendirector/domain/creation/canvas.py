@@ -214,11 +214,14 @@ class GroupAssembly(Contract):
     guideExemptItemId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
         description='The only generation anchor that may omit a timeline guide. Omit this to require a guide on every clip.')
 
+    def requires_timeline_guide(self, item_id: UUID) -> bool:
+        return self.requireTimelineGuides and self.guideExemptItemId != item_id
+
     @model_validator(mode='after')
     def distinct_items(self):
         clip_ids = {clip.itemId for clip in self.clips}
         ids = {self.timelineItemId, self.outputItemId, *clip_ids}
-        if len(ids) != len(self.clips) + 2:
+        if len(ids) != len(clip_ids) + 2:
             raise ValueError('Assembly nodes must have distinct identities')
         if self.guideExemptItemId is not None and (not self.requireTimelineGuides or self.guideExemptItemId not in clip_ids):
             raise ValueError('The guide-exempt anchor must be a clip in a guide-required assembly')
@@ -241,19 +244,11 @@ class GroupCanvasItem(CanvasItemBase):
         description='Language of the visible Run plan.')
     runPlanNotes: str | None = Field(default=None, exclude_if=lambda value: value is None, max_length=16000,
         description='Editable notes accompanying the Run plan.')
+    runModelFingerprints: dict[UUID, str] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Frozen deployment configuration fingerprints per generation step.')
     assembly: GroupAssembly | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Optional frame-accurate assembly after the group generation run.')
     binding: ContainerBinding = Field(default_factory=lambda: ContainerBinding(role='container'), description='Business object displayed by this canvas item.')
-
-    @model_validator(mode='after')
-    def published_plan(self) -> 'GroupCanvasItem':
-        if self.runPlan is not None and (
-                self.runPlanItemId is None or self.runDefinitionId is None or self.assembly is None
-                or self.draftRunPlan is not None):
-            raise ValueError('Published plans require a plan card, a definition ID and an assembly.')
-        if self.runPlan is None and (self.runPlanItemId is not None or self.runDefinitionId is not None):
-            raise ValueError('Only published plans can reference a plan card or definition ID.')
-        return self
 
 
 CanvasItem = Annotated[TextCanvasItem | ImageCanvasItem | VideoCanvasItem | AudioCanvasItem | FileCanvasItem |

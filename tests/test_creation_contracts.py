@@ -1,5 +1,6 @@
 """C02 boundary tests: roles, detached execution, retained editors and shared schemas."""
 import json
+from hashlib import sha256
 from pathlib import Path
 import subprocess
 import sys
@@ -13,7 +14,7 @@ from opendirector.domain.creation import (
     validate_command, validate_generation,
 )
 from opendirector.domain.creation.assets import Asset, AssetRef
-from opendirector.domain.creation.canvas import CanvasItemBase, VideoCanvasItem
+from opendirector.domain.creation.canvas import CanvasItemBase, GroupAssembly, VideoCanvasItem
 from opendirector.domain.creation.commands import CommandReceipt, command_fingerprint
 from opendirector.domain.creation.generation import InputSnapshot, Job, ResultVersion
 from opendirector.domain.creation.models import ModelConfigPublic, ModelConfigWrite, ModelSnapshot
@@ -33,6 +34,13 @@ def uid(number):
 
 def entity(number, **fields):
     return dict(id=uid(number), projectId=PROJECT, **fields)
+
+
+@pytest.mark.parametrize(('require_guides', 'exempt_id'), [(False, uid(4)), (True, uid(2)), (True, uid(8))])
+def test_guide_exemption_requires_a_member_of_a_guide_required_recipe(require_guides, exempt_id):
+    with pytest.raises(ValidationError, match='guide-exempt anchor must be a clip'):
+        GroupAssembly(timelineItemId=uid(2), outputItemId=uid(3), requireTimelineGuides=require_guides,
+            guideExemptItemId=exempt_id, clips=[dict(itemId=uid(4), inFrame=0, outFrame=24)])
 
 
 def model(kind='image', **fields):
@@ -501,6 +509,30 @@ def test_music_fields_leave_speech_fingerprints_unchanged():
     assert AudioParameters(creationType='music', durationFromReference=False).model_dump()['durationFromReference'] is False
     from opendirector.domain.creation.generation import reference_music_seconds
     assert [reference_music_seconds(value) for value in (3, 239, 400)] == [8, 263, 360]
+
+
+@pytest.mark.parametrize('accepts_transcript', [None, False, True])
+def test_speech_job_keeps_the_saved_voice_transcript_capability_in_its_fingerprint(accepts_transcript):
+    config = model('audio', modelId='Qwen3-TTS-12Hz-0.6B-Base', connectionType='self_hosted')
+    snapshot = InputSnapshot(
+        spec=entity(30, kind='audio', purpose='generation', modelConfigId=config.id, prompt='Hello'),
+        model=model_snapshot(config).model_copy(update={'inputRules': config.inputRules}),
+    ).model_dump(mode='json')
+    voice_rules = snapshot['model']['inputRules']['voiceLibrary']
+    if accepts_transcript is None:
+        del voice_rules['acceptsTranscript']
+    else:
+        voice_rules['acceptsTranscript'] = accepts_transcript
+    identity = {**snapshot, 'spec': {k: v for k, v in snapshot['spec'].items() if k not in {'revision', 'currentResultId'}}}
+    fingerprint = sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    record = entity(70, inputSnapshot=snapshot, inputFingerprint=fingerprint, execution=dict(kind='audio', format='mp3'))
+
+    restored = Job.model_validate(record)
+    assert restored.inputSnapshot.model_dump(mode='json') == snapshot
+    assert Job.model_validate_json(restored.model_dump_json()).inputFingerprint == fingerprint
+    voice_rules['requiresTranscript'] = not voice_rules['requiresTranscript']
+    with pytest.raises(ValidationError, match='Job input fingerprint differs'):
+        Job.model_validate(record)
 
 
 def test_generation_version_requirements_generate_schema_without_rejecting_saved_commands():

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
 from opendirector.agent.context import RunContext, RuntimeId
+from opendirector.agent.references import TurnReference, resolve_turn_references
 from opendirector.agent.citations import referenced_sources, with_trace_sources
 from opendirector.agent.runtime import AgentRuntimes, runtime_available, configured_runtimes, runtime_spec, runtime_catalog, runtime_status
 from opendirector.agent.skills import skills
@@ -639,9 +640,8 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
             raise ProjectError('技能已失效，请重新选择。', 409)
         snapshot = await asyncio.to_thread(projects.snapshot, project_id)
         assets = {str(asset.id): asset for asset in snapshot.assets}
-        for asset_id in value.assets:
-            if str(asset_id) not in assets:
-                raise ProjectError('引用素材不属于当前工程。', 409)
+        turn_references = resolve_turn_references(snapshot, value.id, value.content or (), value.assets)
+        attachment_ids = dict.fromkeys(str(ref.asset.assetId) for ref in turn_references)
         model = config['modelId'] if config else value.runtimeModel
         model_is_cli_default = spec.modelSource == 'cli' and not model
         model_selections = dict(value.modelSelections)
@@ -655,7 +655,8 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 'message': {'id': str(value.id), 'role': 'user', 'text': value.text, 'content': value.content,
                     'assets': [{'id': str(asset.id), 'name': asset.name, 'type': asset.metadata.mimeType,
                         'size': asset.metadata.size, 'fingerprint': asset.fingerprint}
-                        for asset in (assets[str(key)] for key in value.assets)],
+                        for asset in (assets[key] for key in attachment_ids)],
+                    'turnReferences': [ref.model_dump(mode='json', exclude_none=True) for ref in turn_references],
                     'skills': value.skills, 'runtime': value.runtime, 'runtimeModel': value.runtimeModel,
                     'modelSelections': dict(value.modelSelections), 'model': model,
                     'modelIsCliDefault': model_is_cli_default,
@@ -742,7 +743,10 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
                 session=run_session, directory=plan['directory'], config=plan['config'], messages=context,
                 selected_skills=message.get('skills') or [], thinking=plan['thinking'],
                 model_selections=plan['model_selections'], runtime_model=message.get('runtimeModel'),
-                skills=plan['available'], conversation_id=chain.conversation_id)
+                skills=plan['available'], conversation_id=chain.conversation_id,
+                turn_references=tuple(TurnReference.model_validate(ref) for ref in message.get('turnReferences', [])),
+                earlier_references=tuple(TurnReference.model_validate(ref) for reply in saved['messages'][:-2]
+                    for ref in reply.get('turnReferences', [])))
             async with aclosing(runtimes.stream(run)) as stream:
                 async for event in stream:
                     if event['type'] == 'delta':

@@ -147,6 +147,21 @@ def video_info(path: Path) -> dict:
             'hasAudio': any(item.get('codec_type') == 'audio' for item in streams)}
 
 
+def extract_video_frames(data: bytes, frames: tuple[int, ...]) -> tuple[bytes, ...]:
+    """Decode exact frame ordinals without timestamp seeking or rate conversion."""
+    with Workspace() as workspace:
+        source = workspace.write('source.mp4', data)
+        selection = '+'.join(f'eq(n\\,{index})' for index in sorted(set(frames)))
+        _run(['ffmpeg', '-nostdin', '-v', 'error', '-i', str(source), '-map', '0:v:0',
+              '-vf', f'select={selection}', '-vsync', '0', '-frames:v', str(len(set(frames))),
+              str(workspace.path / 'guide-%d.png')], timeout=90)
+        decoded = sorted(workspace.path.glob('guide-*.png'))
+        if len(decoded) != len(set(frames)):
+            raise ProjectError('导帧超出源视频帧范围，请检查上游的原始输出。', 422)
+        indexed = dict(zip(sorted(set(frames)), decoded, strict=True))
+        return tuple(indexed[index].read_bytes() for index in frames)
+
+
 def frame_at(path: Path, seconds: float, out: Path) -> bytes:
     _run(['ffmpeg', '-v', 'error', '-y', '-ss', f'{max(seconds, 0):.3f}', '-i', str(path), '-frames:v', '1', str(out)], timeout=120)
     return out.read_bytes()
@@ -191,9 +206,11 @@ def splice(workspace: Workspace, source: Path, start: float, end: float, insert:
     return out.read_bytes()
 
 
-def trim(source: Path, seconds: float, out: Path) -> Path:
-    _run(['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-t', f'{seconds:.3f}', '-c:v', 'libx264', '-preset', 'veryfast',
-          '-crf', '18', '-c:a', 'aac', str(out)])
+def trim(source: Path, seconds: float, out: Path, *, start: float = 0) -> Path:
+    _run(['ffmpeg', '-nostdin', '-v', 'error', '-n', '-protocol_whitelist', 'file,pipe',
+          '-ss', f'{start:.9f}', '-i', str(source), '-t', f'{seconds:.9f}', '-map', '0:v:0', '-map', '0:a:0?',
+          '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast',
+          '-crf', '18', '-c:a', 'aac', '-movflags', '+faststart', str(out)])
     return out
 
 

@@ -1406,6 +1406,57 @@
   width: max-content;
   z-index: 16;
 }
+/* Keep Pause and Resume reachable while a Run notification is visible. */
+.cw-node-toolbar-anchor[data-published-run="true"] {
+  z-index: 81;
+}
+.cw-run-step-dialog video {
+  display: block;
+  width: 100%;
+  max-height: min(48vh, 440px);
+  margin-top: 12px;
+  background: #000;
+}
+.cw-run-step-impact ul {
+  margin-block: 8px 0;
+}
+.cw-run-issue {
+  box-sizing: border-box;
+  max-width: min(440px, 100%);
+  margin: 4px 0 0;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--cw-panel, #2b2b2f);
+  color: var(--cw-text, #e5e5eb);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.cw-run-draft-clip {
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid #9e87af55;
+  border-radius: 8px;
+}
+.cw-run-draft-clip legend {
+  max-width: 100%;
+  padding: 0 5px;
+  overflow-wrap: anywhere;
+}
+.cw-run-draft-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  gap: 8px 12px;
+}
+.cw-run-draft-fields .cw-domain-field {
+  margin: 0;
+}
+.cw-run-draft-reverse {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .cw-composer-dock[data-interacting="true"],
 .cw-node-toolbar-anchor[data-interacting="true"] {
   visibility: hidden;

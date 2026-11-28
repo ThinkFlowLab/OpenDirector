@@ -254,7 +254,31 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     });
     edgeIds.add(raw.id);
   }
+  const edgesById = new Map(edges.map((edge) => [edge.id, edge]));
   for (const node of nodes) {
+    const guide = node.data.h3Segment;
+    if (guide?.guideReferenceId) {
+      const edge = edgesById.get(guide.guideReferenceId);
+      if (!edge || (edge.intent && edge.intent !== "generation_input") ||
+          edge.referenceBinding === "pinned" || edge.source !== guide.guideSourceNodeId ||
+          byId.get(edge.source)?.type !== "video" || edge.target !== node.id)
+        return failure("invalid-document", tNow("errors.storage.guideReference"));
+    }
+    const assembly = node.data.workflowAssembly;
+    if (assembly) {
+      const timeline = byId.get(assembly.timelineItemId);
+      const output = byId.get(assembly.outputItemId);
+      const member = (itemId: string) => {
+        const item = byId.get(itemId);
+        if (item?.type !== "video") return false;
+        let parent = item.parentId;
+        while (parent && parent !== node.id) parent = byId.get(parent)?.parentId;
+        return parent === node.id;
+      };
+      if (timeline?.type !== "timeline" || !timeline.data.timeline ||
+          (output && output.type !== "video") || assembly.clips.some((clip) => !member(clip.itemId)))
+        return failure("invalid-document", tNow("canvas.workspace.group.workflowAssemblyConfigInvalid"));
+    }
     for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
       const id = node.data.settings?.[key];
       if (

@@ -5,6 +5,7 @@ import {
   backendReferences,
   backendVideoMode,
   serviceVoice,
+  supportsH3TimelineGuides,
   type ModelConfig,
 } from "../backend/rules.ts";
 import { tNow } from "../i18n/messages.ts";
@@ -387,12 +388,18 @@ export function serviceGenerationPlan(input: {
   assets: readonly SubmissionAsset[];
   /** Preset instructions used to preflight the effective prompt. */
   promptPrefix?: string;
+  nativeH3Segment?: boolean;
 }): ServiceGenerationPlan {
   const settings = getNodeGenerationSettings(input.node, input.models);
   const config = backendModel(settings, input.models);
+  if (input.nativeH3Segment &&
+      (settings.videoMode !== "reference" || !supportsH3TimelineGuides(config?.inputRules)))
+    return { status: "blocked", message: tNow("generation.reference.timelineGuideUnsupported") };
   const pinned = pinnedPrecheckNodes(input);
   const checkedSettings = { ...settings, prompt: promptWithPreset(settings.prompt, input.promptPrefix) };
-  const blocked = backendBlocker(checkedSettings, input.incoming, input.models, pinned);
+  const blocked = input.nativeH3Segment
+    ? null
+    : backendBlocker(checkedSettings, input.incoming, input.models, pinned);
   if (blocked || !config)
     return { status: "blocked", message: blocked };
   const references = backendReferences(settings, input.incoming, config);

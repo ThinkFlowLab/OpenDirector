@@ -19,9 +19,9 @@ from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
-from opendirector.agent.tools import ROOT, SUGGESTED_REPLIES, SYSTEM
+from opendirector.agent.tools import ROOT, SUGGESTED_REPLIES, runtime_instructions
 from opendirector.installation import BUNDLED
-from opendirector.agent.skill_snapshot import prepare_skills
+from opendirector.agent.skill_snapshot import prepare_skills, selected_skill_catalog
 from opendirector.agent.directory_links import link_directory, unlink_directory
 from opendirector.agent.owner_rights import native_owner_access
 from opendirector.domain.projects import ProjectError
@@ -95,6 +95,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     binary = executable(runtime)
     if binary is None:
         raise ProjectError(BUNDLED_INSTALL_ERROR if runtime == 'default' else f'{runtime} CLI 未安装，请先安装。', 503)
+    instructions = runtime_instructions(runtime)
     bundled = runtime == 'default'
     if bundled:
         runtime = 'opencode'
@@ -103,7 +104,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         env = codex_environment(env)
     if runtime == 'opencode':
         config = {'autoupdate': False, 'default_agent': 'opendirector',
-            'agent': {'opendirector': {'mode': 'primary', 'prompt': SYSTEM}},
+            'agent': {'opendirector': {'mode': 'primary', 'prompt': instructions}},
             'skills': {'paths': [str(work / '.agents/skills')]},
             'permission': {'*': 'deny', 'bash': 'allow', 'read': 'allow',
                 'external_directory': 'allow',
@@ -127,7 +128,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     if runtime == 'codex':
         settings = ['features.shell_tool=true', 'features.apply_patch_freeform=false', 'web_search="disabled"',
             'sandbox_workspace_write.network_access=true',
-            'skills.bundled.enabled=false', f'developer_instructions={json.dumps(SYSTEM)}']
+            'skills.bundled.enabled=false', f'developer_instructions={json.dumps(instructions)}']
         if sys.platform == 'win32':
             # --ignore-user-config also removes windows.sandbox. Without a
             # Windows backend Codex downgrades workspace-write to read-only.
@@ -143,7 +144,7 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         skill_root.mkdir(parents=True, exist_ok=True)
         unlink_directory(plugin / 'skills')
         link_directory(plugin / 'skills', skill_root)
-        args = [binary, '-p', '--verbose', '--system-prompt', SYSTEM,
+        args = [binary, '-p', '--verbose', '--system-prompt', instructions,
             '--output-format', 'stream-json', '--plugin-dir', str(plugin), '--tools', 'Skill,Bash,Read',
             '--strict-mcp-config', '--mcp-config', json.dumps({'mcpServers': {}}),
             '--allowedTools', 'Skill(opendirector:*)', 'Bash', 'Read',
@@ -180,7 +181,8 @@ class NativeRuntime:
         project_id, turn_id = run.project_id, run.turn_id
         directory, config, context = run.directory, run.config, run.messages
         selected, thinking = run.selected_skills, run.thinking
-        runtime, runtime_model, catalog = ('opencode' if run.runtime == 'default' else run.runtime), run.runtime_model, run.skills
+        runtime, runtime_model = ('opencode' if run.runtime == 'default' else run.runtime), run.runtime_model
+        catalog = selected_skill_catalog(run.skills, selected)
         selection = {'model': runtime_model, 'thinking': thinking}
         if config:
             selection.update(config=config.get('id'), modelId=config['modelId'])
@@ -225,7 +227,6 @@ class NativeRuntime:
                     if git.returncode:
                         raise ProjectError(f'无法初始化画布执行目录：{error.decode(errors="replace").strip()}', 503)
                 roots = prepare_skills(work, catalog)
-                roots += [Path(item['filePath']).resolve().parent for item in catalog]
                 gateway.roots = roots
                 endpoint = str(Path(temporary) / 'cli.sock')
                 server, bridge_env = await cli_transport.start_server(gateway, queue, endpoint, pending)
@@ -307,7 +308,7 @@ class NativeRuntime:
                         if runtime == 'deepseek':
                             async def observe(raw):
                                 await queue.put({'native': raw})
-                            blocks = [execution_context] if session_id else [SYSTEM, execution_context]
+                            blocks = [execution_context] if session_id else [runtime_instructions(runtime), execution_context]
                             if skill_instruction:
                                 blocks.append(skill_instruction)
                             if not session_id and context[:-1]:

@@ -1,10 +1,13 @@
 import { getEditingState } from "../../backend/editSession.ts";
-import { useEffect, useRef } from "react";
-import { errorMessage } from "../../backend/api.ts";
-import { creationClient } from "../../backend/creationClient.ts";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, errorMessage, json, storageRequest } from "../../backend/api.ts";
+import { itemSpec, creationClient, creationPath, objectVersion } from "../../backend/creationClient.ts";
 import { type GenerationRequest } from "../../backend/generation.ts";
+import { readDelay, resilientRead, transientReadFailure } from "../../backend/resilientRead.ts";
+import { sameJsonValue } from "../../backend/sameJsonValue.ts";
 import { backendModel, modelLabel } from "../../backend/rules.ts";
 import { workspaceProjection } from "../../backend/workspace.ts";
+import type { GroupCanvasItem, ObjectVersion, RunExecutionQueryInput, RunGroupExecutionQuery, RunGroupExecutionsQuery } from "../../contracts/generated.ts";
 
 import { deliverTool, pendingToolDelivery } from "../../backend/toolDeliveries";
 import {
@@ -47,10 +50,56 @@ import type { WorkspaceRuntime } from "./runtimeTypes.ts";
 import { toolOutputKind, jobTime, incomingNodes } from "./workspaceChrome.tsx";
 import type { ServiceRun } from "./workspaceChrome.tsx";
 
-export function useWorkspaceGeneration(
-  rt: WorkspaceRuntime,
-  writePaused: boolean,
-) {
+export type RunExecution = {
+  executionId: string;
+  status: "queued" | "running" | "pausing" | "paused" | "succeeded" | "failed" | "needs_review" | "awaiting_selection" | "superseded";
+  issue: { code: string; itemId: string | null; message?: string } | null;
+  reviewItemId?: string | null;
+  baseExecutionId?: string | null;
+  runDefinitionId?: string | null;
+  nextStep?: { kind: "generation"; itemId: string } | { kind: "assembly" } | null;
+  candidates?: readonly { jobId: string; assetId: string }[];
+  steps?: readonly { itemId: string; status: string; jobId: string | null; assetId?: string | null }[];
+};
+
+export type PublishedRunStatus = RunExecution["status"];
+export type PublishedRunAction =
+  | { kind: "pause" | "resume" }
+  | { kind: "restart"; executionId: string }
+  | { kind: "step"; executionId?: string }
+  | { kind: "regenerate"; executionId: string; itemId: string; expectedExecutionId: string }
+  | { kind: "adopt"; executionId: string; jobId: string }
+  | { kind: "reconcile"; executionId: string };
+export type PublishedRunControl = PublishedRunAction["kind"];
+export type PublishedRunGroup = GroupCanvasItem & { runPlan: NonNullable<GroupCanvasItem["runPlan"]> };
+
+function isRunActive(status: PublishedRunStatus) {
+  return status === "queued" || status === "running" || status === "pausing";
+}
+
+function isPublishedRun(item: GroupCanvasItem): item is PublishedRunGroup {
+  return Boolean(item.runPlan);
+}
+
+function readRunExecution(query: RunExecutionQueryInput, signal?: AbortSignal): Promise<RunExecution>;
+function readRunExecution(query: RunGroupExecutionQuery, signal?: AbortSignal): Promise<RunExecution | null>;
+function readRunExecution(query: RunExecutionQueryInput | RunGroupExecutionQuery, signal?: AbortSignal) {
+  return resilientRead((attemptSignal) => storageRequest<RunExecution | null>(
+    `${creationPath(query.projectId)}/queries`, { ...json("POST", query), signal: attemptSignal },
+  ), { signal });
+}
+
+export async function readPublishedRunHistory(projectId: string, groupId: string, signal: AbortSignal) {
+  const query: RunGroupExecutionsQuery = {
+    type: "run.groupExecutions.list", queryId: crypto.randomUUID(), projectId, objectId: groupId,
+  };
+  const result = await resilientRead((attemptSignal) => storageRequest<{ executions: readonly RunExecution[] }>(
+    `${creationPath(projectId)}/queries`, { ...json("POST", query), signal: attemptSignal },
+  ), { signal });
+  return result.executions;
+}
+
+export function useWorkspaceGeneration(rt: WorkspaceRuntime, writePaused: boolean) {
   const {
     actionSessionRef,
     addLinkedOutputs,
@@ -590,7 +639,11 @@ export function useWorkspaceGeneration(
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const document = historyRef.current.present;
     const assets = submissionAssets();
+    const snapshot = creationClient(document.id).snapshot;
+    const item = snapshot.canvasItems.find((value) => value.id === node.id);
+    const spec = item ? itemSpec(snapshot, item) : undefined;
     const plan = serviceGenerationPlan({
+      nativeH3Segment: spec?.kind === "video" && Boolean(spec.parameters.h3Segment),
       document,
       node,
       incoming,
@@ -734,53 +787,237 @@ export function useWorkspaceGeneration(
   /**
    * Waits until the canvas shows the result the service adopted for the node,
    * so a downstream step reads the new content (for example generated text
-   * used as its prompt). Resolves false when no result was adopted (a
-   * candidate-only result, or inputs edited while running), after three
-   * minutes, or when the canvas switched project.
+   * used as its prompt). Resolves with the displayed result's job ID. Resolves
+   * without an ID when adoption did not happen, when three minutes have
+   * passed, or when the canvas switched projects.
    */
-  const awaitDisplayed = (
-    documentId: string,
-    nodeId: string,
-    jobIds: readonly string[],
-  ) =>
-    new Promise<boolean>((resolve) => {
+  const awaitDisplayed = (documentId: string, nodeId: string, jobIds: readonly string[]) =>
+    new Promise<string | undefined>((resolve) => {
       const snapshot = creationClient(documentId).snapshot;
       const adopted = new Set(
         snapshot.jobs
           .filter((job) => jobIds.includes(job.id) && job.adopted)
           .map((job) => job.id),
       );
-      const assets = new Set(
+      const jobsByAsset = new Map(
         snapshot.results
           .filter((result) => adopted.has(result.jobId))
-          .map((result) => result.asset.assetId),
+          .map((result) => [result.asset.assetId, result.jobId]),
       );
-      if (!assets.size) {
-        resolve(false);
+      if (!jobsByAsset.size) {
+        resolve(undefined);
         return;
       }
       const started = Date.now();
       const check = () => {
         const present = historyRef.current.present;
         const node = present.nodes.find((candidate) => candidate.id === nodeId);
-        const done =
-          present.id === documentId &&
-          node &&
-          assets.has(node.data.backendAssetId ?? "")
-            ? true
-            : !mounted.current ||
-                present.id !== documentId ||
-                !node ||
-                Date.now() - started > 180_000
-              ? false
-              : undefined;
-        if (done === undefined) return;
+        const active = mounted.current && present.id === documentId && node;
+        const displayed = active ? jobsByAsset.get(active.data.backendAssetId ?? "") : undefined;
+        if (!displayed && active && Date.now() - started <= 180_000) return;
         clearInterval(poll);
-        resolve(done);
+        resolve(displayed);
       };
       const poll = setInterval(check, 200);
       check();
     });
+  const runObservers = useRef(new Map<string, { executionId: string; controller: AbortController; pending: Promise<void> }>());
+  const runRequests = useRef(new Map<string, { pending: boolean; startId?: string }>());
+  const [runState, setRunState] = useState<ReadonlyMap<string, {
+    run?: RunExecution | null;
+    control?: PublishedRunControl;
+  }>>(new Map());
+  const onRunCanvas = (projectId: string) => mounted.current && historyRef.current.present.id === projectId;
+  const rememberRun = (key: string, run: RunExecution | null | undefined) => {
+    setRunState((previous) => sameJsonValue(previous.get(key)?.run, run)
+      ? previous : new Map(previous).set(key, { ...previous.get(key), run }));
+  };
+  const showRunControl = (key: string, control?: PublishedRunControl) => {
+    setRunState((previous) => new Map(previous).set(key, { ...previous.get(key), control }));
+  };
+
+  const observePublishedWorkflow = (projectId: string, groupId: string, executionId: string) => {
+    const key = `${projectId}/${groupId}`;
+    const active = runObservers.current.get(key);
+    if (active?.executionId === executionId) return active.pending;
+    active?.controller.abort();
+    const controller = new AbortController();
+    const pending = (async () => {
+      while (onRunCanvas(projectId) && !controller.signal.aborted) {
+        const run = await readRunExecution({
+          type: "run.execution.get", queryId: crypto.randomUUID(), projectId, objectId: executionId,
+        }, controller.signal);
+        if (!onRunCanvas(projectId) || controller.signal.aborted) return;
+        rememberRun(key, run);
+        if (isRunActive(run.status)) {
+          await readDelay(2000, controller.signal);
+          continue;
+        }
+        if (run.status === "succeeded") {
+          notify(t("canvas.workspace.group.workflowAssemblyDone"));
+        } else if (run.status === "paused") {
+          notify(t("canvas.workspace.group.workflowRunPaused", { executionId }));
+        } else if (run.status === "awaiting_selection") {
+          notify(t("canvas.workspace.group.workflowRunCandidateReady"));
+        } else if (run.status === "needs_review") {
+          notify(t("canvas.workspace.group.workflowRunNeedsReview", { executionId }));
+        } else if (run.status === "failed") {
+          const segment = historyRef.current.present.nodes.find((node) => node.id === run.issue?.itemId);
+          notify(segment
+            ? t("canvas.workspace.group.workflowRunSegmentFailed", { segment: segment.data.title, executionId })
+            : t("canvas.workspace.group.workflowRunFailed", { executionId }));
+        }
+        return;
+      }
+    })().catch(() => {
+      if (onRunCanvas(projectId) && !controller.signal.aborted) {
+        rememberRun(key, undefined);
+        notify(t("canvas.workspace.group.workflowRunStatusUnknown", { executionId }));
+      }
+    }).finally(() => {
+      if (runObservers.current.get(key)?.controller === controller) runObservers.current.delete(key);
+    });
+    runObservers.current.set(key, { executionId, controller, pending });
+    return pending;
+  };
+
+  useEffect(() => {
+    const projectId = doc.id;
+    return () => {
+      for (const [key, observer] of runObservers.current) {
+        if (!key.startsWith(`${projectId}/`)) continue;
+        observer.controller.abort();
+        runObservers.current.delete(key);
+      }
+    };
+  }, [doc.id]);
+
+  const selectedItemId = rt.single?.id;
+  const selectedPublishedRun = selectedItemId && (rt.single?.type === "group" || rt.single?.type === "video")
+    ? creationClient(doc.id).snapshot?.canvasItems.find((item): item is PublishedRunGroup => item.kind === "group"
+      && isPublishedRun(item) && (item.id === selectedItemId || item.runPlan.entries.some((entry) =>
+        entry.kind === "generated" && entry.itemId === selectedItemId)))
+    : undefined;
+  const selectedRunId = selectedPublishedRun?.id;
+  useEffect(() => {
+    if (!selectedRunId) return;
+    const projectId = doc.id;
+    const key = `${projectId}/${selectedRunId}`;
+    const controller = new AbortController();
+    const request = runRequests.current.get(key);
+    const observer = runObservers.current.get(key);
+    if (request?.pending || observer) return;
+    void readRunExecution({
+      type: "run.groupExecution.get", queryId: crypto.randomUUID(), projectId, objectId: selectedRunId,
+    }, controller.signal).then((run) => {
+      if (controller.signal.aborted || !onRunCanvas(projectId) || runRequests.current.get(key) !== request
+          || runObservers.current.has(key)) return;
+      rememberRun(key, run);
+      if (!run) return;
+      if (request?.startId === run.executionId) runRequests.current.set(key, { pending: false });
+      if (isRunActive(run.status)) void observePublishedWorkflow(projectId, selectedRunId, run.executionId);
+    }).catch(() => {
+      // Pause resolves the current execution on the server even without a status read.
+    });
+    return () => controller.abort();
+  }, [doc.id, selectedRunId, selectedPublishedRun?.runDefinitionId]);
+
+  const controlPublishedWorkflow = async (groupId: string, action: PublishedRunAction, onFailure = notify): Promise<boolean> => {
+    const projectId = historyRef.current.present.id;
+    const key = `${projectId}/${groupId}`;
+    const control = action.kind;
+    const previous = runRequests.current.get(key);
+    if (previous?.pending) return false;
+    runRequests.current.set(key, { pending: true, startId: previous?.startId });
+    showRunControl(key, control);
+    try {
+      const client = creationClient(projectId);
+      const receipt = await (() => {
+        switch (action.kind) {
+          case "pause": return client.command("group.pauseRun", { groupId });
+          case "resume": return client.command("group.resumeRun", { groupId });
+          case "restart": return client.command("group.restartRun", { groupId, executionId: action.executionId });
+          case "step": return client.command("group.stepRun", { groupId, executionId: action.executionId });
+          case "regenerate": return client.command("group.regenerateRunStep", {
+            groupId, executionId: action.executionId, itemId: action.itemId, expectedExecutionId: action.expectedExecutionId,
+          });
+          case "adopt": return client.command("group.adoptRunCandidate", { groupId, executionId: action.executionId, jobId: action.jobId });
+          case "reconcile": return client.command("group.reconcileRun", { groupId, executionId: action.executionId });
+        }
+      })();
+      if (!onRunCanvas(projectId)) return false;
+      const executionId = receipt.runExecutionId;
+      if (!executionId) {
+        onFailure(t("canvas.workspace.group.workflowRunControlUnconfirmed"));
+        return false;
+      }
+      if (control === "reconcile") {
+        const run = await readRunExecution({ type: "run.execution.get", queryId: crypto.randomUUID(), projectId, objectId: executionId });
+        if (!onRunCanvas(projectId)) return false;
+        rememberRun(key, run);
+        if (run.status === "needs_review") {
+          notify(run.issue?.message
+            ? t("canvas.workspace.group.workflowRunReconcilePendingReason", { reason: run.issue.message })
+            : t("canvas.workspace.group.workflowRunReconcilePending"));
+        } else if (run.status === "failed" && run.issue?.message) {
+          notify(t("canvas.workspace.group.workflowRunReconciledFailure", { reason: run.issue.message }));
+        } else {
+          notify(t("canvas.workspace.group.workflowRunReconciled"));
+        }
+        return true;
+      }
+      if (control === "pause") notify(t("canvas.workspace.group.workflowRunPauseAccepted"));
+      if (control === "resume") notify(t("canvas.workspace.group.workflowRunResumed"));
+      void observePublishedWorkflow(projectId, groupId, executionId);
+      return true;
+    } catch (error) {
+      if (onRunCanvas(projectId)) {
+        onFailure(t(control === "pause" ? "canvas.workspace.group.workflowRunPauseFailed"
+          : control === "resume" ? "canvas.workspace.group.workflowRunResumeFailed" : "canvas.workspace.group.workflowRunActionFailed", {
+          error: errorMessage(error),
+        }));
+      }
+      return false;
+    } finally {
+      runRequests.current.set(key, { pending: false, startId: previous?.startId });
+      if (mounted.current) showRunControl(key);
+    }
+  };
+
+  const runPublishedWorkflow = async (projectId: string, groupId: string) => {
+    const onSameCanvas = () => onRunCanvas(projectId);
+    const key = `${projectId}/${groupId}`;
+    const request = runRequests.current.get(key);
+    if (request?.pending) return;
+    const executionId = request?.startId ?? crypto.randomUUID();
+    runRequests.current.set(key, { pending: true, startId: executionId });
+    const start = () => creationClient(projectId).command(
+      "group.startRun", { groupId }, [], undefined, executionId,
+    );
+    try {
+      const receipt = await start().catch((error: unknown) => {
+        if (!transientReadFailure(error) || !onSameCanvas()) throw error;
+        return start();
+      });
+      if (receipt.runExecutionId !== executionId) {
+        if (onSameCanvas()) notify(t("canvas.workspace.group.workflowRunStatusUnknown", { executionId }));
+        return;
+      }
+      runRequests.current.set(key, { pending: false });
+      if (!onSameCanvas()) return;
+      notify(t("canvas.workspace.group.workflowRunAccepted"));
+      return observePublishedWorkflow(projectId, groupId, executionId);
+    } catch (error) {
+      if (!transientReadFailure(error)) runRequests.current.set(key, { pending: false });
+      if (!onSameCanvas()) return;
+      notify(transientReadFailure(error)
+        ? t("canvas.workspace.group.workflowRunStatusUnknown", { executionId })
+        : t("canvas.workspace.group.workflowRunStartFailed", { error: errorMessage(error) }));
+    } finally {
+      if (runRequests.current.get(key)?.startId === executionId)
+        runRequests.current.set(key, { pending: false, startId: executionId });
+    }
+  };
   /**
    * Runs a group's generation nodes. A node waits for the members it
    * references, directly or through non-generating nodes, and is skipped when
@@ -790,7 +1027,20 @@ export function useWorkspaceGeneration(
    */
   const runGroupWorkflow = async (groupId: string) => {
     const document = historyRef.current.present;
-    const steps = groupDescendants(document.nodes, groupId).filter((node) =>
+    const client = creationClient(document.id);
+    const snapshot = client.snapshot;
+    const group = snapshot?.canvasItems.find((item) => item.id === groupId);
+    if (group?.kind === "group" && group.runPlan) return runPublishedWorkflow(document.id, groupId);
+    if (group?.kind === "group" && group.draftRunPlan) {
+      notify(t("canvas.workspace.group.workflowRunDraftNeedsPublication"));
+      return;
+    }
+    const assembly = group?.kind === "group" ? group.assembly : undefined;
+    const descendants = groupDescendants(document.nodes, groupId);
+    const descendantIds = new Set(descendants.map((node) => node.id));
+    const plannedClips = new Set(assembly?.requireTimelineGuides ? assembly.clips.map((clip) => clip.itemId) : []);
+    const members = [...descendants, ...document.nodes.filter((node) => plannedClips.has(node.id) && !descendantIds.has(node.id))];
+    const steps = members.filter((node) =>
       isWorkflowStep(
         node,
         Boolean(imagePresetSkill(node)) || document.edges.some(
@@ -803,12 +1053,51 @@ export function useWorkspaceGeneration(
       notify(t("canvas.workspace.group.noRunnableNodes"));
       return;
     }
-    notify(
-      t("canvas.workspace.group.workflowStarted", { count: steps.length }),
-    );
+    const stepIds = steps.map((node) => node.id);
+    const assemblyVersions: ObjectVersion[] = [];
+    if (group && assembly) {
+      const timeline = snapshot.canvasItems.find((item) => item.id === assembly.timelineItemId);
+      const editor = timeline?.kind === "timeline"
+        ? snapshot.editorDocuments.find((item) => item.id === timeline.binding.objectRef.id)
+        : undefined;
+      if (!timeline || editor?.kind !== "timeline" || assembly.clips.some((clip) => !stepIds.includes(clip.itemId))) {
+        notify(t("canvas.workspace.group.workflowAssemblyConfigInvalid"));
+        return;
+      }
+      if (assembly.requireTimelineGuides) {
+        const clipIds = new Set(
+          assembly.clips
+            .filter((clip) => clip.itemId !== assembly.guideExemptItemId)
+            .map((clip) => clip.itemId),
+        );
+        const missing = steps.filter((step) => clipIds.has(step.id)).find((step) => {
+          const item = snapshot.canvasItems.find((candidate) => candidate.id === step.id);
+          const spec = item && itemSpec(snapshot, item);
+          const guide = spec?.kind === "video" ? spec.parameters.h3Segment : undefined;
+          return !guide?.guideReferenceId || !guide.sourceFrames ||
+            !snapshot.references.some((reference) =>
+              reference.active && reference.role === "reference" &&
+              reference.id === guide.guideReferenceId && reference.targetSpecId === spec?.id
+            );
+        });
+        if (missing) {
+          notify(t("canvas.workspace.group.timelineGuideRequired", { segment: missing.data.title }));
+          return;
+        }
+      }
+      assemblyVersions.push(
+        objectVersion("canvas_item", group),
+        objectVersion("canvas_item", timeline),
+        objectVersion("editor_document", editor),
+      );
+      const output = snapshot.canvasItems.find((item) => item.id === assembly.outputItemId);
+      if (output) assemblyVersions.push(objectVersion("canvas_item", output));
+    }
+    notify(t("canvas.workspace.group.workflowStarted", { count: steps.length }));
     let submissions: Promise<unknown> = Promise.resolve();
+    const adoptedJobs = new Map<string, string>();
     const result = await runWorkflowSteps(
-      steps.map((node) => node.id),
+      stepIds,
       document.edges,
       async (id) => {
         const submitted = submissions.then(() =>
@@ -818,21 +1107,53 @@ export function useWorkspaceGeneration(
         );
         submissions = submitted.catch(() => undefined);
         const jobIds = await submitted;
-        if (!jobIds.length || !(await awaitJobs(document.id, jobIds)))
-          return false;
-        return awaitDisplayed(document.id, id, jobIds);
+        if (!jobIds.length || !(await awaitJobs(document.id, jobIds))) return false;
+        const displayed = await awaitDisplayed(document.id, id, jobIds);
+        if (!displayed) return false;
+        adoptedJobs.set(id, displayed);
+        return true;
       },
     );
-    if (historyRef.current.present.id !== document.id) return;
-    notify(
-      result.failed.length || result.skipped.length
-        ? t("canvas.workspace.group.workflowIncomplete", {
-            succeeded: result.succeeded.length,
-            failed: result.failed.length,
-            skipped: result.skipped.length,
-          })
-        : t("canvas.workspace.group.workflowDone", { count: steps.length }),
-    );
+    const onSameCanvas = () => mounted.current && historyRef.current.present.id === document.id;
+    if (!onSameCanvas()) return;
+    if (result.failed.length || result.skipped.length) {
+      notify(t("canvas.workspace.group.workflowIncomplete", {
+        succeeded: result.succeeded.length,
+        failed: result.failed.length,
+        skipped: result.skipped.length,
+      }));
+      return;
+    }
+    if (!assembly) {
+      notify(t("canvas.workspace.group.workflowDone", { count: steps.length }));
+      return;
+    }
+    const assemblyItems = [...new Set(assembly.clips.map((clip) => clip.itemId))];
+    const jobIds = assemblyItems.flatMap((itemId) => {
+      const jobId = adoptedJobs.get(itemId);
+      return jobId ? [jobId] : [];
+    });
+    if (jobIds.length !== assemblyItems.length) {
+      notify(t("canvas.workspace.group.workflowAssemblyConfigInvalid"));
+      return;
+    }
+    notify(t("canvas.workspace.group.workflowAssemblyStarted"));
+    const commandId = crypto.randomUUID();
+    const assemble = () => client.command("group.assemble", { groupId, jobIds }, assemblyVersions, undefined, commandId);
+    try {
+      const receipt = await assemble().catch(async (error: unknown) => {
+        // Recheck delivery with the same command and jobs. Generation is already complete.
+        if (!(error instanceof ApiError) || error.code !== "network_error" || !onSameCanvas()) throw error;
+        return assemble();
+      });
+      if (onSameCanvas()) {
+        notify(receipt.status === "applied" || receipt.status === "noop"
+          ? t("canvas.workspace.group.workflowAssemblyDone")
+          : t("canvas.workspace.group.workflowAssemblyFailed", { error: "" }));
+      }
+    } catch (error) {
+      if (onSameCanvas()) notify(t("canvas.workspace.group.workflowAssemblyFailed", { error: errorMessage(error) }));
+    }
   };
   const importActionResultFiles = async (files: File[]) => {
     const binding = resultBinding.current;
@@ -913,6 +1234,10 @@ export function useWorkspaceGeneration(
   rt.cancelServiceRuns = cancelServiceRuns;
   rt.prepareGeneration = prepareGeneration;
   rt.runGroupWorkflow = runGroupWorkflow;
+  rt.controlPublishedWorkflow = controlPublishedWorkflow;
+  rt.selectedPublishedRun = selectedPublishedRun;
+  rt.selectedRunExecution = selectedRunId ? runState.get(`${doc.id}/${selectedRunId}`)?.run : undefined;
+  rt.selectedRunControl = selectedRunId ? runState.get(`${doc.id}/${selectedRunId}`)?.control : undefined;
   rt.importActionResultFiles = importActionResultFiles;
   rt.cancelResultImport = cancelResultImport;
 }

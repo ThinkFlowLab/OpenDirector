@@ -1,10 +1,14 @@
 
 import pytest
 from types import SimpleNamespace
+from uuid import UUID
+
+from opendirector.domain.creation.commands import CommandReceipt
 
 from opendirector_api.localization import (
     localized_error,
     localized_error_for_language,
+    localized_receipt,
     wants_english,
 )
 
@@ -60,6 +64,31 @@ def test_chinese_and_english_messages_do_not_mix() -> None:
         )
         == "Project storage is busy. Try again shortly."
     )
+
+
+def test_workflow_issues_preserve_the_affected_segment_or_job_in_both_languages():
+    segment_id = UUID(int=1)
+    job_id = UUID(int=2)
+    spec_id = UUID(int=3)
+    segment_title = 'Segment B · Anchor'
+    cases = [
+        ('invalid_input', spec_id, '分组片段提交时必须指定来源画布节点（originItemId）。',
+         'Submitting a grouped segment requires its source canvas node (originItemId).'),
+        ('reference_invalid', segment_id, f'组装片段「{segment_title}」的生成任务缺少来源画布节点（originItemId）。',
+         f'The generation job for assembly segment “{segment_title}” is missing its source canvas node (originItemId).'),
+        ('reference_invalid', segment_id, f'片段「{segment_title}」必须使用有效的 H3 时间线导帧。',
+         f'Segment “{segment_title}” requires a valid H3 timeline guide.'),
+        ('reference_invalid', job_id,
+         f'生成任务「{job_id}」（规格 {spec_id}）缺少来源画布节点（originItemId），无法确定对应的组装片段。',
+         f'Generation job {job_id} (spec {spec_id}) is missing its source canvas node (originItemId). '
+         'The assembly segment could not be identified.'),
+    ]
+    for code, object_id, chinese, english in cases:
+        receipt = CommandReceipt(commandId=UUID(int=4), projectId=UUID(int=5), inputFingerprint='0' * 64, status='rejected',
+                                 issues=[dict(code=code, objectId=object_id, message=chinese)])
+        assert localized_receipt(request('zh-CN'), receipt) == receipt
+        issue, = localized_receipt(request('en-US'), receipt).issues
+        assert (issue.code, issue.objectId, issue.message) == (code, object_id, english)
 
 
 def test_specific_code_wins_and_generic_code_falls_back_to_status() -> None:

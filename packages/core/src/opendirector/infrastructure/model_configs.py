@@ -18,6 +18,15 @@ from opendirector.infrastructure.local_projects import child, read_json, write_j
 MODEL_KINDS = ("agent", "image", "video", "audio", "vision")
 
 
+def _deployment_capabilities(previous, updated, capabilities):
+    if (isinstance(capabilities, dict) and capabilities.get('timelineGuides') and previous
+            and (previous.get('videoCapabilities') or {}).get('timelineGuides')
+            and any(previous[key] != updated[key] for key in (
+                'url', 'kind', 'modelId', 'protocol', 'videoAdapter', 'connectionType', 'authMode', 'proxyMode'))):
+        return {key: value for key, value in capabilities.items() if key != 'timelineGuides'}
+    return capabilities
+
+
 class ModelConfigs:
     def __init__(self, repository: Path):
         self.directory = repository.resolve() / ".opendirector"
@@ -133,7 +142,8 @@ class ModelConfigs:
             item['inputModalities'] = agent_input_modalities(kind, input_modalities if input_modalities is not None else (existing or {}).get('inputModalities'))
             item['videoAdapter'] = video_adapter if video_adapter is not None else (existing or {}).get('videoAdapter', 'auto')
             raw = video_capabilities if capabilities_supplied or video_capabilities is not None else (existing or {}).get('videoCapabilities')
-            item['videoCapabilities'] = check_video_config(kind, connection['protocol'], item['videoAdapter'], raw)
+            caps = _deployment_capabilities(existing, item, raw)
+            item['videoCapabilities'] = check_video_config(kind, connection['protocol'], item['videoAdapter'], caps)
             profile = input_rules(item)['profile']
             if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:
                 check_video_config(kind, 'vllm_omni', 'fasth3' if profile == 'fasth3-omni' else 'minimax_h3', item['videoCapabilities'])
@@ -144,8 +154,10 @@ class ModelConfigs:
             if existing and 'providerId' in existing:
                 item['providerId'] = existing['providerId']
                 for peer in models:
-                    if peer.get('providerId') == item['providerId']:
-                        peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode', 'proxyMode')})
+                    if peer is not item and peer.get('providerId') == item['providerId']:
+                        updated = {**peer, **{key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode', 'proxyMode')}}
+                        updated['videoCapabilities'] = _deployment_capabilities(peer, updated, peer['videoCapabilities'])
+                        peer.update(updated)
                         if auto_check is not None:
                             peer['capabilityAutoCheck'] = auto_check
             self._write(models)
@@ -178,6 +190,8 @@ class ModelConfigs:
             raise ProjectError('自动能力检查设置必须为布尔值。')
         if kind not in MODEL_KINDS or not 1 <= len(model_ids) <= 200:
             raise ProjectError('请选择 1—200 个模型。')
+        if len(model_ids) > 1 and isinstance(video_capabilities, dict) and video_capabilities.get('timelineGuides'):
+            raise ProjectError('请为单个 FastH3 模型配置导帧能力。', 422, code='h3_timeline_guides_single_model')
         model_options = model_options or {}
         if set(model_options) - set(model_ids):
             raise ProjectError('模型能力配置必须属于本次选择的模型。')
@@ -220,6 +234,7 @@ class ModelConfigs:
                 modalities = options.get('inputModalities', input_modalities if input_modalities is not None else (old or {}).get('inputModalities'))
                 item['inputModalities'] = agent_input_modalities(kind, modalities)
                 caps = options.get('videoCapabilities', video_capabilities if capabilities_supplied or video_capabilities is not None else (old or {}).get('videoCapabilities'))
+                caps = _deployment_capabilities(old, item, caps)
                 item['videoCapabilities'] = check_video_config(kind, connection['protocol'], item['videoAdapter'], caps)
                 profile = input_rules(item)['profile']
                 if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:

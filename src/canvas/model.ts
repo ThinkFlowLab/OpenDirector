@@ -1,4 +1,4 @@
-import type { AssetRef, GroupCanvasItem, TimelineTextOverlay } from "../contracts/generated.ts";
+import type { AssetRef, GroupAssemblyInput, GroupCanvasItem, TimelineTextOverlay } from "../contracts/generated.ts";
 
 import type { VoiceSelection } from "../backend/voices.ts";
 import type { ImageParameters } from "../contracts/generated.ts";
@@ -205,6 +205,13 @@ export interface AgentNodeSettings {
 
 export interface CanvasNodeData extends Record<string, unknown> {
   backendAssetId?: string;
+  h3Segment?: {
+    guideSourceNodeId?: string;
+    guideReferenceId?: string;
+    sourceFrames?: readonly number[];
+    outputFrame?: number;
+  };
+  workflowAssembly?: GroupAssemblyInput;
   /** Temporary clipboard origin, consumed by the unified save adapter. */
   copiedSourceId?: string;
   kind: CanvasNodeKind;

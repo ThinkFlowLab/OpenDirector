@@ -14,6 +14,7 @@ from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.creation.generation import PromptText
 from opendirector.domain.image_presets import FOUR_VIEW_FACE_EMPHASIS, FOUR_VIEW_FACE_TEXT, FOUR_VIEW_TEXT, PRESETS
 from opendirector.infrastructure.model_configs import ModelConfigs
+from test_creation_assembly import upload_source
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
@@ -55,6 +56,108 @@ def configure(project, config):
     changed = spec.model_copy(update={'prompt': 'Use the source', 'modelConfigId': UUID(config['id'])})
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=changed).status == 'applied'
     return target, store.snapshot(pid).generationSpecs[-1]
+
+
+@pytest.mark.parametrize('purpose', ['generation', 'draft'])
+@pytest.mark.parametrize('guide_policy', ['legacy', 'all-guided', 'anchor-exempt'])
+def test_assembly_segments_require_their_origin_and_configured_guide_at_generation_admission(project, tmp_path, purpose, guide_policy):
+    store, pid, session = project
+    require_guides = guide_policy != 'legacy'
+    permit_unguided_anchor = guide_policy == 'anchor-exempt'
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('video', 'http://127.0.0.1:12345/v1', 'MiniMaxAI/MiniMax-H3', '',
+        connection_type='self_hosted', protocol='vllm_omni', video_adapter='minimax_h3', capability_auto_check=False)
+    runner = CreationGeneration(store, configs, Provider())
+    clip, clip_spec = media(project, 'video', title='Segment B', purpose=purpose)
+    other, other_spec = media(project, 'video', title='Opening anchor' if permit_unguided_anchor else 'Unlisted segment',
+        purpose='generation')
+    group_id, subgroup_id, timeline_id, document_id = uuid4(), uuid4(), uuid4(), uuid4()
+    assembly = dict(timelineItemId=timeline_id, outputItemId=uuid4(), requireTimelineGuides=require_guides,
+        clips=[dict(itemId=clip.id, inFrame=0, outFrame=24)])
+    if permit_unguided_anchor:
+        assembly['clips'].append(dict(itemId=other.id, inFrame=0, outFrame=24))
+        assembly['guideExemptItemId'] = other.id
+    receipt = send(store, pid, 'creation.batch', session=session, versions=[ver('canvas_item', clip), ver('canvas_item', other),
+        ver('generation_spec', clip_spec), ver('generation_spec', other_spec)], operations=[
+        dict(type='editor.create', payload=dict(document=dict(id=document_id, projectId=pid,
+            kind='timeline', data=dict(width=960, height=544, fps=24,
+                tracks=[dict(id='visual', kind='visual', title='Visual')])))),
+        dict(type='canvas.show', payload=dict(item=dict(id=timeline_id, projectId=pid, kind='timeline',
+            binding=dict(role='editor', objectRef=dict(id=document_id, kind='timeline'))))),
+        dict(type='canvas.show', payload=dict(item=dict(id=group_id, projectId=pid, kind='group', assembly=assembly))),
+        dict(type='canvas.show', payload=dict(item=dict(id=subgroup_id, projectId=pid, kind='group', parentId=group_id))),
+        dict(type='canvas.update', payload=dict(itemId=clip.id, parentId=subgroup_id)),
+        dict(type='canvas.update', payload=dict(itemId=other.id, parentId=group_id)),
+        *[dict(type='generationSpec.update', payload=dict(spec=spec.model_copy(update={
+            'prompt': 'A performer in a studio', 'modelConfigId': UUID(config['id']),
+        }))) for spec in (clip_spec, other_spec)],
+    ])
+    assert receipt.status == 'applied', receipt
+    group = next(item for item in store.snapshot(pid).canvasItems if item.id == group_id)
+    assert ('requireTimelineGuides' in group.assembly.model_dump()) is require_guides
+    assert ('guideExemptItemId' in group.assembly.model_dump()) is permit_unguided_anchor
+    def request(spec_id, expected_item, origin=None):
+        snapshot = store.snapshot(pid)
+        spec = next(spec for spec in snapshot.generationSpecs if spec.id == spec_id)
+        item = next(item for item in snapshot.canvasItems if item.id == expected_item)
+        return parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+            expectedVersions=[ver('generation_spec', spec), ver('canvas_item', item)],
+            payload=dict(specId=spec_id, expectedSpecRevision=spec.revision, originItemId=origin)))
+
+    missing = runner.prepare(request(clip_spec.id, clip.id), session=session)
+    assert missing.status == 'rejected'
+    issue, = missing.issues
+    assert (issue.code, issue.objectId, issue.message) == (
+        'invalid_input', clip_spec.id, '分组片段提交时必须指定来源画布节点（originItemId）。')
+    wrong = runner.prepare(request(clip_spec.id, other.id, other.id), session=session)
+    assert wrong.status == 'rejected'
+    assert wrong.issues[0].objectId == other.id
+    assert store.snapshot(pid).jobs == ()
+
+    if require_guides:
+        blocked = runner.prepare(request(clip_spec.id, clip.id, clip.id), session=session)
+        assert blocked.status == 'rejected'
+        issue, = blocked.issues
+        assert (issue.code, issue.objectId, issue.message) == (
+            'reference_invalid', clip.id, '片段「Segment B」必须使用有效的 H3 时间线导帧。')
+        assert store.snapshot(pid).jobs == ()
+        _, guide = upload_source(project, tmp_path, 'video', seconds=3)
+        guide_id = uuid4()
+        snapshot = store.snapshot(pid)
+        spec = next(spec for spec in snapshot.generationSpecs if spec.id == clip_spec.id)
+        item = next(item for item in snapshot.canvasItems if item.id == clip.id)
+        assert send(store, pid, 'creation.batch', session=session,
+            versions=[ver('canvas_item', item), ver('generation_spec', spec)], operations=[
+                dict(type='generationSpec.update', payload=dict(spec={
+                    **spec.model_dump(), 'parameters': {'videoMode': 'reference',
+                                                        'h3Segment': {'guideReferenceId': guide_id, 'sourceFrames': [0, 2]}},
+                })),
+                dict(type='reference.add', payload=dict(reference=dict(
+                    id=guide_id, projectId=pid, targetSpecId=spec.id, binding='pinned', source=asset_ref(guide)))),
+            ]).status == 'applied'
+    command = request(clip_spec.id, clip.id, clip.id)
+    accepted = runner.prepare(command, session=session)
+    assert accepted.status == 'accepted', accepted
+    assert runner.prepare(command, session=session) == accepted
+    other_origin = other.id if permit_unguided_anchor else None
+    standalone = runner.prepare(request(other_spec.id, other.id, other_origin), session=session)
+    assert standalone.status == 'accepted', standalone
+    jobs = store.snapshot(pid).jobs
+    assert [(job.inputSnapshot.spec.id, job.originItemId) for job in jobs] == [
+        (clip_spec.id, clip.id), (other_spec.id, other_origin),
+    ]
+    assert 'h3Guide' not in runner.task(jobs[1])
+    if require_guides:
+        assert runner.task(jobs[0])['h3Guide'] == {'assetId': str(guide.id), 'frames': (0, 2)}
+        assert jobs[0].inputSnapshot.references[0].sourceVersion is None
+    current_clip = next(item for item in store.snapshot(pid).canvasItems if item.id == clip.id)
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', current_clip)],
+        itemId=clip.id, parentId=None).status == 'applied'
+    detached = runner.prepare(request(clip_spec.id, clip.id), session=session)
+    assert detached.status == ('rejected' if require_guides else 'accepted'), detached
+    if require_guides:
+        assert store.snapshot(pid).jobs == jobs
+        assert runner.prepare(request(clip_spec.id, clip.id, clip.id), session=session).status == 'accepted'
 
 
 @pytest.mark.anyio

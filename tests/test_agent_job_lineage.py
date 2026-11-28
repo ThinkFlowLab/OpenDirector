@@ -279,6 +279,25 @@ async def test_job_is_still_traced_after_the_agent_trace_file_is_deleted(project
     assert store.receipt(pid, agent_command_id(turn, 'call-1')).jobIds == (job.id,)
 
 
+def test_saved_native_trace_masks_credentials_when_served(project):
+    store, pid, _ = project
+    turn = uuid4()
+    trace = Conversations(store).path(pid) / 'agent-runs' / f'{turn}.deepseek.jsonl'
+    trace.parent.mkdir(parents=True, exist_ok=True)
+    fake_secret = 'sk-' + 'a' * 32
+    fake_auth = 'Bearer ' + 'b' * 28
+    trace.write_text(json.dumps({'text': f'value: {fake_secret}\nheader: {fake_auth}'}) + '\n'
+                     + json.dumps({'text': 'normal tool receipt'}) + '\n', encoding='utf-8')
+
+    response = lineage_client(store).get(f'/api/creation/projects/{pid}/assistant/traces/{turn}/deepseek')
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    assert [json.loads(line)['text'] for line in response.text.splitlines()] == [
+        'value: [redacted]\nheader: [redacted]', 'normal tool receipt',
+    ]
+    assert fake_secret in trace.read_text(encoding='utf-8')
+
+
 @pytest.mark.anyio
 async def test_turn_jobs_route_order_does_not_depend_on_stored_order(project, monkeypatch):
     store, pid, session = project

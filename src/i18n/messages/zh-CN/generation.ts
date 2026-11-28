@@ -184,6 +184,8 @@ export const generation = {
   "generation.reference.addMusic": "添加参照音乐",
   "generation.reference.connected": "引用已连接节点",
   "generation.reference.upload": "上传节点参考",
+  "generation.reference.timelineGuide": "时间线导帧",
+  "generation.reference.timelineGuideUnsupported": "请选择支持时间线导帧的模型部署，并切换到参考素材模式。",
   "generation.reference.title": "{role}：{title}",
   "generation.reference.readingContext":
     "文本朗读不把这些参考作为模型输入，仍可查看或移除。",

@@ -21,5 +21,14 @@ def builtin_skills() -> Path:
     return SOURCE_ROOT / 'packages/agent/skills' if SOURCE_ROOT else BUNDLED / 'skills'
 
 
+def builtin_skill_roots() -> tuple[Path, ...]:
+    roots = (builtin_skills(),)
+    if SOURCE_ROOT is not None:
+        h3_skill = SOURCE_ROOT / '.agents/upstream/minimax-h3/skills/h3-prompt-writing'
+        if (h3_skill / 'SKILL.md').is_file():
+            return (*roots, h3_skill)
+    return roots
+
+
 def default_timeline_font() -> Path:
     return (SOURCE_ROOT / 'public/fonts' if SOURCE_ROOT else web_root() / 'fonts') / 'NotoSansCJKsc-Regular.otf'

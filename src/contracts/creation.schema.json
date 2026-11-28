@@ -57,6 +57,34 @@
             "maxItems": 100,
             "title": "Sources",
             "type": "array"
+          },
+          "sourceItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas node holding the source asset, when the derivation should appear on the canvas.",
+            "title": "Sourceitemid"
+          },
+          "sourceAssetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Asset read from the source canvas node when preparing the artifact.",
+            "title": "Sourceassetid"
           }
         },
         "required": [
@@ -283,6 +311,90 @@
           "payload"
         ],
         "title": "AssetDeleteCommand",
+        "type": "object"
+      },
+      "AssetDownloadFile": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "description": "Registered asset ID in the active project.",
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Exact saved asset revision to read.",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "path": {
+            "description": "New output file under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "revision",
+          "path"
+        ],
+        "title": "AssetDownloadFile",
+        "type": "object"
+      },
+      "AssetDownloadReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "description": "Registered asset ID in the active project.",
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Exact saved asset revision to read.",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "path": {
+            "description": "New output file under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "Verified SHA-256 of the downloaded original.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "mimeType": {
+            "description": "MIME type of the original asset.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "size": {
+            "description": "Verified size in bytes.",
+            "minimum": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "revision",
+          "path",
+          "fingerprint",
+          "mimeType",
+          "size"
+        ],
+        "title": "AssetDownloadReceipt",
         "type": "object"
       },
       "AssetImport": {
@@ -3829,6 +3941,34 @@
             "default": null,
             "description": "Latest committed project event cursor.",
             "title": "Eventcursor"
+          },
+          "planItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Visible plan canvas node created by Run publication.",
+            "title": "Planitemid"
+          },
+          "runExecutionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Durable execution created by Run start.",
+            "title": "Runexecutionid"
           }
         },
         "required": [
@@ -3895,6 +4035,7 @@
               "missing_object",
               "reference_invalid",
               "image_quality_unsupported",
+              "h3_timeline_guides_unsupported",
               "bigmodel_video_model",
               "bigmodel_video_output",
               "bigmodel_video_image",
@@ -4213,8 +4354,18 @@
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
                 "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
+                "group.adoptRunCandidate": "#/$defs/GroupAdoptRunCandidateCommand",
+                "group.assemble": "#/$defs/GroupAssembleCommand",
+                "group.configureAssembly": "#/$defs/GroupConfigureAssemblyCommand",
+                "group.pauseRun": "#/$defs/GroupPauseRunCommand",
                 "group.publishRun": "#/$defs/GroupPublishRunCommand",
+                "group.reconcileRun": "#/$defs/GroupReconcileRunCommand",
+                "group.regenerateRunStep": "#/$defs/GroupRegenerateRunStepCommand",
+                "group.restartRun": "#/$defs/GroupRestartRunCommand",
+                "group.resumeRun": "#/$defs/GroupResumeRunCommand",
                 "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
+                "group.startRun": "#/$defs/GroupStartRunCommand",
+                "group.stepRun": "#/$defs/GroupStepRunCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
@@ -4229,7 +4380,8 @@
                 "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
                 "result.select": "#/$defs/ResultSelectCommand",
-                "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
+                "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand",
+                "video.trim": "#/$defs/VideoTrimCommand"
               },
               "propertyName": "type"
             },
@@ -4268,9 +4420,6 @@
                 "$ref": "#/$defs/GroupSavePlanCommand"
               },
               {
-                "$ref": "#/$defs/GroupPublishRunCommand"
-              },
-              {
                 "$ref": "#/$defs/CanvasShowCommand"
               },
               {
@@ -4293,6 +4442,42 @@
               },
               {
                 "$ref": "#/$defs/CanvasPublishMediaCommand"
+              },
+              {
+                "$ref": "#/$defs/VideoTrimCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupConfigureAssemblyCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPublishRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupStartRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPauseRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupResumeRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupRestartRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupStepRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupRegenerateRunStepCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupAdoptRunCandidateCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupReconcileRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupAssembleCommand"
               },
               {
                 "$ref": "#/$defs/TimelinePublishRenderCommand"
@@ -4383,7 +4568,10 @@
                 "job.get": "#/$defs/ObjectQuery",
                 "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
-                "project.get": "#/$defs/ProjectQuery"
+                "project.get": "#/$defs/ProjectQuery",
+                "run.execution.get": "#/$defs/RunExecutionQuery",
+                "run.groupExecution.get": "#/$defs/RunGroupExecutionQuery",
+                "run.groupExecutions.list": "#/$defs/RunGroupExecutionsQuery"
               },
               "propertyName": "type"
             },
@@ -4411,6 +4599,15 @@
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
+              },
+              {
+                "$ref": "#/$defs/RunExecutionQuery"
+              },
+              {
+                "$ref": "#/$defs/RunGroupExecutionQuery"
+              },
+              {
+                "$ref": "#/$defs/RunGroupExecutionsQuery"
               }
             ],
             "title": "Query"
@@ -5934,7 +6131,7 @@
               }
             ],
             "default": null,
-            "description": "When set, include its current canvas_item revision in expectedVersions.",
+            "description": "Required for clips in a group assembly recipe. When set, include its current canvas_item revision in expectedVersions.",
             "title": "Originitemid",
             "x-version-object-type": "canvas_item"
           },
@@ -6047,6 +6244,182 @@
           "payload"
         ],
         "title": "GenerationSubmitCommand",
+        "type": "object"
+      },
+      "GroupAdoptRunCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "description": "Target Run execution ID.",
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          },
+          "jobId": {
+            "description": "Completed candidate job to adopt in the selected execution.",
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId",
+          "jobId"
+        ],
+        "title": "GroupAdoptRunCandidate",
+        "type": "object"
+      },
+      "GroupAdoptRunCandidateCommand": {
+        "additionalProperties": false,
+        "description": "Adopt a completed candidate and continue with the remaining dependent stages.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.adoptRunCandidate",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupAdoptRunCandidate",
+            "description": "Adopt a completed candidate and continue with the remaining dependent stages."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupAdoptRunCandidateCommand",
+        "type": "object"
+      },
+      "GroupAssemble": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Canvas group with a saved assembly recipe. Include the timeline node, its editor document, and any existing output node in expectedVersions.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "jobIds": {
+            "description": "Completed jobs selected for this run.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Jobids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groupId",
+          "jobIds"
+        ],
+        "title": "GroupAssemble",
+        "type": "object"
+      },
+      "GroupAssembleCommand": {
+        "additionalProperties": false,
+        "description": "Assemble and publish the completed jobs from a canvas group.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.assemble",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupAssemble",
+            "description": "Assemble and publish the completed jobs from a canvas group."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupAssembleCommand",
         "type": "object"
       },
       "GroupAssembly": {
@@ -6311,6 +6684,25 @@
             "description": "Editable notes accompanying the Run plan.",
             "title": "Runplannotes"
           },
+          "runModelFingerprints": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "format": "uuid"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen deployment configuration fingerprints per generation step.",
+            "title": "Runmodelfingerprints"
+          },
           "assembly": {
             "anyOf": [
               {
@@ -6334,6 +6726,183 @@
           "kind"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupConfigureAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Canvas group receiving the assembly configuration.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "assembly": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GroupAssembly"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved assembly recipe, or null to remove it.",
+            "examples": [
+              {
+                "clips": [
+                  {
+                    "frameLimit": 118,
+                    "inFrame": 18,
+                    "itemId": "00000000-0000-0000-0000-000000000003",
+                    "outFrame": 118,
+                    "reverse": true
+                  }
+                ],
+                "outputItemId": "00000000-0000-0000-0000-000000000002",
+                "timelineItemId": "00000000-0000-0000-0000-000000000001"
+              }
+            ]
+          }
+        },
+        "required": [
+          "groupId",
+          "assembly"
+        ],
+        "title": "GroupConfigureAssembly",
+        "type": "object"
+      },
+      "GroupConfigureAssemblyCommand": {
+        "additionalProperties": false,
+        "description": "Save a canvas assembly plan. H3 segmented plans require requireTimelineGuides and may name one guide-exempt generation anchor. Edits keep confirmed guide requirements and step identities.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.configureAssembly",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupConfigureAssembly",
+            "description": "Save a canvas assembly plan. H3 segmented plans require requireTimelineGuides and may name one guide-exempt generation anchor. Edits keep confirmed guide requirements and step identities."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupConfigureAssemblyCommand",
+        "type": "object"
+      },
+      "GroupControlRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId"
+        ],
+        "title": "GroupControlRun",
+        "type": "object"
+      },
+      "GroupPauseRunCommand": {
+        "additionalProperties": false,
+        "description": "Pause the current Run after its in-flight step. No subsequent steps start until resumed.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.pauseRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupControlRun",
+            "description": "Pause the current Run after its in-flight step. No subsequent steps start until resumed."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupPauseRunCommand",
         "type": "object"
       },
       "GroupPlanDraft": {
@@ -6417,9 +6986,89 @@
         "title": "GroupPlanDraft",
         "type": "object"
       },
+      "GroupPublishRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Draft canvas group that becomes immutable when published.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "assembly": {
+            "$ref": "#/$defs/GroupAssembly",
+            "description": "Timeline, output and generated retained ranges.",
+            "examples": [
+              {
+                "clips": [
+                  {
+                    "inFrame": 0,
+                    "itemId": "00000000-0000-0000-0000-000000000003",
+                    "outFrame": 24
+                  }
+                ],
+                "outputItemId": "00000000-0000-0000-0000-000000000002",
+                "timelineItemId": "00000000-0000-0000-0000-000000000001"
+              }
+            ]
+          },
+          "plan": {
+            "$ref": "#/$defs/SegmentRunPlan",
+            "description": "Full-source segment template input.",
+            "examples": [
+              {
+                "entries": [
+                  {
+                    "itemId": "00000000-0000-0000-0000-000000000003",
+                    "kind": "generated",
+                    "shot": "shot-1",
+                    "sourceEnd": 24,
+                    "sourceStart": 0,
+                    "step": {
+                      "kind": "anchor"
+                    }
+                  }
+                ],
+                "fps": 24,
+                "frameCount": 24,
+                "source": {
+                  "assetId": "00000000-0000-0000-0000-000000000004",
+                  "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                  "kind": "video",
+                  "revision": 1
+                }
+              }
+            ]
+          },
+          "planLocale": {
+            "default": "en-US",
+            "description": "Language of the visible plan. Follow the user’s request language unless they specify another language.",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Planlocale",
+            "type": "string"
+          },
+          "planNotes": {
+            "default": "",
+            "description": "Optional shot analysis and planning rationale shown below the executable plan.",
+            "maxLength": 16000,
+            "title": "Plannotes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "assembly",
+          "plan"
+        ],
+        "title": "GroupPublishRun",
+        "type": "object"
+      },
       "GroupPublishRunCommand": {
         "additionalProperties": false,
-        "description": "Publish the segment plan as a Markdown canvas node.",
+        "description": "Validate and freeze a full-source segmented video Run.",
         "properties": {
           "commandId": {
             "description": "Stable command ID for idempotent replay.",
@@ -6463,8 +7112,8 @@
             "title": "Expectedpreview"
           },
           "payload": {
-            "$ref": "#/$defs/GroupPlanDraft",
-            "description": "Publish the segment plan as a Markdown canvas node."
+            "$ref": "#/$defs/GroupPublishRun",
+            "description": "Validate and freeze a full-source segmented video Run."
           }
         },
         "required": [
@@ -6474,6 +7123,309 @@
           "payload"
         ],
         "title": "GroupPublishRunCommand",
+        "type": "object"
+      },
+      "GroupReconcileRunCommand": {
+        "additionalProperties": false,
+        "description": "Check the status of an unresolved Run job using its existing provider task ID, without resubmitting it.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.reconcileRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupRunExecution",
+            "description": "Check the status of an unresolved Run job using its existing provider task ID, without resubmitting it."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupReconcileRunCommand",
+        "type": "object"
+      },
+      "GroupRegenerateRunStep": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "description": "Target Run execution ID.",
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Generation segment whose result will be regenerated.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "expectedExecutionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Latest execution ID observed by the caller. Required when executionId selects an earlier execution.",
+            "title": "Expectedexecutionid"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId",
+          "itemId"
+        ],
+        "title": "GroupRegenerateRunStep",
+        "type": "object"
+      },
+      "GroupRegenerateRunStepCommand": {
+        "additionalProperties": false,
+        "description": "Regenerate one segment as a candidate using the frozen Run inputs.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.regenerateRunStep",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupRegenerateRunStep",
+            "description": "Regenerate one segment as a candidate using the frozen Run inputs."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupRegenerateRunStepCommand",
+        "type": "object"
+      },
+      "GroupRestartRunCommand": {
+        "additionalProperties": false,
+        "description": "Start a fresh execution of the published Run from its first stage.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.restartRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupRunExecution",
+            "description": "Start a fresh execution of the published Run from its first stage."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupRestartRunCommand",
+        "type": "object"
+      },
+      "GroupResumeRunCommand": {
+        "additionalProperties": false,
+        "description": "Resume the paused Run from its existing execution and completed steps.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.resumeRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupControlRun",
+            "description": "Resume the paused Run from its existing execution and completed steps."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupResumeRunCommand",
+        "type": "object"
+      },
+      "GroupRunExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "description": "Target Run execution ID.",
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId"
+        ],
+        "title": "GroupRunExecution",
         "type": "object"
       },
       "GroupSavePlanCommand": {
@@ -6533,6 +7485,226 @@
           "payload"
         ],
         "title": "GroupSavePlanCommand",
+        "type": "object"
+      },
+      "GroupStartRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run to execute with its frozen definition.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId"
+        ],
+        "title": "GroupStartRun",
+        "type": "object"
+      },
+      "GroupStartRunCommand": {
+        "additionalProperties": false,
+        "description": "Start the published Run in the background. The command ID identifies the execution.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.startRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupStartRun",
+            "description": "Start the published Run in the background. The command ID identifies the execution."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupStartRunCommand",
+        "type": "object"
+      },
+      "GroupStepRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Paused execution to advance. Omit to start a new execution in single-step mode.",
+            "title": "Executionid"
+          }
+        },
+        "required": [
+          "groupId"
+        ],
+        "title": "GroupStepRun",
+        "type": "object"
+      },
+      "GroupStepRunCommand": {
+        "additionalProperties": false,
+        "description": "Execute only the next stage of a published Run and pause before the following stage.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.stepRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupStepRun",
+            "description": "Execute only the next stage of a published Run and pause before the following stage."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupStepRunCommand",
+        "type": "object"
+      },
+      "H3Segment": {
+        "additionalProperties": false,
+        "properties": {
+          "guideReferenceId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Reference to a pinned guide image or the preceding raw generated video.",
+            "title": "Guidereferenceid"
+          },
+          "sourceFrames": {
+            "anyOf": [
+              {
+                "items": {
+                  "maximum": 359,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Zero-based source frames placed at output frame 0, or at 0 and 21 in order.",
+            "title": "Sourceframes"
+          },
+          "outputFrame": {
+            "anyOf": [
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Output frame for a pinned still-image guide.",
+            "title": "Outputframe"
+          }
+        },
+        "title": "H3Segment",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -7884,6 +9056,18 @@
             "default": null,
             "description": "Image preset instructions frozen when the job is accepted.",
             "title": "Presetprompt"
+          },
+          "workflowGuide": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorkflowGuide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Guide policy captured when the workflow segment was accepted."
           }
         },
         "required": [
@@ -12066,6 +13250,125 @@
         "title": "ResultVersion",
         "type": "object"
       },
+      "RunExecutionQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.execution.get",
+            "description": "Read a background Run execution.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "Execution ID returned by group.startRun.",
+            "format": "uuid",
+            "title": "Objectid",
+            "type": "string"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait while this execution is queued or running.",
+            "maximum": 60,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectId"
+        ],
+        "title": "RunExecutionQuery",
+        "type": "object"
+      },
+      "RunGroupExecutionQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.groupExecution.get",
+            "description": "Read the latest execution of a published Run, or null if it has never started.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "Published Run canvas group ID.",
+            "format": "uuid",
+            "title": "Objectid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectId"
+        ],
+        "title": "RunGroupExecutionQuery",
+        "type": "object"
+      },
+      "RunGroupExecutionsQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.groupExecutions.list",
+            "description": "Read execution history for a published Run.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "Published Run canvas group ID.",
+            "format": "uuid",
+            "title": "Objectid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectId"
+        ],
+        "title": "RunGroupExecutionsQuery",
+        "type": "object"
+      },
       "SegmentRunAnchor": {
         "additionalProperties": false,
         "properties": {
@@ -12098,21 +13401,14 @@
             "type": "string"
           },
           "sourceFrames": {
-            "description": "Two distinct indices into the raw upstream result for destination frames 0 and 21, in that order.",
+            "description": "Raw upstream frame indices for output frame 0, or frames 0 and 21 in order.",
+            "items": {
+              "maximum": 359,
+              "minimum": 0,
+              "type": "integer"
+            },
             "maxItems": 2,
-            "minItems": 2,
-            "prefixItems": [
-              {
-                "maximum": 359,
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "maximum": 359,
-                "minimum": 0,
-                "type": "integer"
-              }
-            ],
+            "minItems": 1,
             "title": "Sourceframes",
             "type": "array"
           }
@@ -12151,6 +13447,22 @@
             "format": "uuid",
             "title": "Itemid",
             "type": "string"
+          },
+          "replacementPromptInputs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Structured character-replacement prompt inputs rendered and checked by the server.",
+            "title": "Replacementpromptinputs"
           },
           "shot": {
             "description": "Identity of the inspected continuous shot used to determine guide dependencies.",
@@ -15649,6 +16961,12 @@
             ],
             "title": "Dimensionstep",
             "type": "integer"
+          },
+          "timelineGuides": {
+            "default": false,
+            "description": "Whether this deployed FastH3 endpoint accepts native timeline guide uploads.",
+            "title": "Timelineguides",
+            "type": "boolean"
           }
         },
         "required": [
@@ -15989,6 +17307,33 @@
       "VideoParameters": {
         "additionalProperties": false,
         "properties": {
+          "h3Segment": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/H3Segment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Native H3 source-video segment and optional timeline guides."
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fixed sampling seed for FastH3. Ordinary FastH3 jobs draw a seed when omitted.",
+            "title": "Seed"
+          },
           "generateAudio": {
             "default": true,
             "description": "Include audio; value must be allowed by model inputRules.generateAudioOptions.",
@@ -16045,6 +17390,117 @@
           }
         },
         "title": "VideoParameters",
+        "type": "object"
+      },
+      "VideoTrim": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceItemId": {
+            "description": "Stable canvas video node ID from the plan or project snapshot.",
+            "format": "uuid",
+            "title": "Sourceitemid",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Exact video asset version observed on the source node when planning the trim.",
+            "examples": [
+              {
+                "assetId": "00000000-0000-0000-0000-000000000000",
+                "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "video",
+                "revision": 1
+              }
+            ]
+          },
+          "startSeconds": {
+            "description": "Start of the retained range in the source video, in seconds.",
+            "minimum": 0,
+            "title": "Startseconds",
+            "type": "number"
+          },
+          "endSeconds": {
+            "description": "End of the retained range in the source video, in seconds.",
+            "exclusiveMinimum": 0,
+            "title": "Endseconds",
+            "type": "number"
+          },
+          "name": {
+            "description": "User-visible name of the new video asset and node.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceItemId",
+          "source",
+          "startSeconds",
+          "endSeconds",
+          "name"
+        ],
+        "title": "VideoTrim",
+        "type": "object"
+      },
+      "VideoTrimCommand": {
+        "additionalProperties": false,
+        "description": "Trim a source canvas video using its exact asset version, then publish a new video node and its edit snapshot.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "video.trim",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/VideoTrim",
+            "description": "Trim a source canvas video using its exact asset version, then publish a new video node and its edit snapshot."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "VideoTrimCommand",
         "type": "object"
       },
       "ViewState": {
@@ -16174,10 +17630,17 @@
             "type": "boolean"
           },
           "acceptsTranscript": {
-            "default": false,
-            "description": "Registry stores an optional reference transcript when one is supplied.",
-            "title": "Acceptstranscript",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Registry stores an optional reference transcript when supplied; older execution snapshots omit this capability.",
+            "title": "Acceptstranscript"
           },
           "requiresReferenceAudio": {
             "description": "Registered voice must have actual reference audio.",
@@ -16394,6 +17857,28 @@
         ],
         "title": "WorkflowClip",
         "type": "object"
+      },
+      "WorkflowGuide": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Stable identity of the guide-required workflow that accepted this segment.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether this step must use a guide. False denotes the workflow’s explicit generation anchor.",
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "groupId",
+          "required"
+        ],
+        "title": "WorkflowGuide",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -16576,8 +18061,18 @@
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
             "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
+            "group.adoptRunCandidate": "#/$defs/GroupAdoptRunCandidateCommand",
+            "group.assemble": "#/$defs/GroupAssembleCommand",
+            "group.configureAssembly": "#/$defs/GroupConfigureAssemblyCommand",
+            "group.pauseRun": "#/$defs/GroupPauseRunCommand",
             "group.publishRun": "#/$defs/GroupPublishRunCommand",
+            "group.reconcileRun": "#/$defs/GroupReconcileRunCommand",
+            "group.regenerateRunStep": "#/$defs/GroupRegenerateRunStepCommand",
+            "group.restartRun": "#/$defs/GroupRestartRunCommand",
+            "group.resumeRun": "#/$defs/GroupResumeRunCommand",
             "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
+            "group.startRun": "#/$defs/GroupStartRunCommand",
+            "group.stepRun": "#/$defs/GroupStepRunCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
@@ -16592,7 +18087,8 @@
             "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
             "result.select": "#/$defs/ResultSelectCommand",
-            "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
+            "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand",
+            "video.trim": "#/$defs/VideoTrimCommand"
           },
           "propertyName": "type"
         },
@@ -16631,9 +18127,6 @@
             "$ref": "#/$defs/GroupSavePlanCommand"
           },
           {
-            "$ref": "#/$defs/GroupPublishRunCommand"
-          },
-          {
             "$ref": "#/$defs/CanvasShowCommand"
           },
           {
@@ -16656,6 +18149,42 @@
           },
           {
             "$ref": "#/$defs/CanvasPublishMediaCommand"
+          },
+          {
+            "$ref": "#/$defs/VideoTrimCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupConfigureAssemblyCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPublishRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupStartRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPauseRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupResumeRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupRestartRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupStepRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupRegenerateRunStepCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupAdoptRunCandidateCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupReconcileRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupAssembleCommand"
           },
           {
             "$ref": "#/$defs/TimelinePublishRenderCommand"
@@ -16746,7 +18275,10 @@
             "job.get": "#/$defs/ObjectQuery",
             "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
-            "project.get": "#/$defs/ProjectQuery"
+            "project.get": "#/$defs/ProjectQuery",
+            "run.execution.get": "#/$defs/RunExecutionQuery",
+            "run.groupExecution.get": "#/$defs/RunGroupExecutionQuery",
+            "run.groupExecutions.list": "#/$defs/RunGroupExecutionsQuery"
           },
           "propertyName": "type"
         },
@@ -16774,6 +18306,15 @@
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
+          },
+          {
+            "$ref": "#/$defs/RunExecutionQuery"
+          },
+          {
+            "$ref": "#/$defs/RunGroupExecutionQuery"
+          },
+          {
+            "$ref": "#/$defs/RunGroupExecutionsQuery"
           }
         ],
         "title": "Query"
@@ -16955,6 +18496,34 @@
             "maxItems": 100,
             "title": "Sources",
             "type": "array"
+          },
+          "sourceItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canvas node holding the source asset, when the derivation should appear on the canvas.",
+            "title": "Sourceitemid"
+          },
+          "sourceAssetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Asset read from the source canvas node when preparing the artifact.",
+            "title": "Sourceassetid"
           }
         },
         "required": [
@@ -17189,6 +18758,90 @@
           "payload"
         ],
         "title": "AssetDeleteCommand",
+        "type": "object"
+      },
+      "AssetDownloadFile": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "description": "Registered asset ID in the active project.",
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Exact saved asset revision to read.",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "path": {
+            "description": "New output file under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "revision",
+          "path"
+        ],
+        "title": "AssetDownloadFile",
+        "type": "object"
+      },
+      "AssetDownloadReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "description": "Registered asset ID in the active project.",
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Exact saved asset revision to read.",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "path": {
+            "description": "New output file under the active execution directory.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "Verified SHA-256 of the downloaded original.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "mimeType": {
+            "description": "MIME type of the original asset.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "size": {
+            "description": "Verified size in bytes.",
+            "minimum": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "revision",
+          "path",
+          "fingerprint",
+          "mimeType",
+          "size"
+        ],
+        "title": "AssetDownloadReceipt",
         "type": "object"
       },
       "AssetImport": {
@@ -20844,6 +22497,34 @@
             "default": null,
             "description": "Latest committed project event cursor.",
             "title": "Eventcursor"
+          },
+          "planItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Visible plan canvas node created by Run publication.",
+            "title": "Planitemid"
+          },
+          "runExecutionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Durable execution created by Run start.",
+            "title": "Runexecutionid"
           }
         },
         "required": [
@@ -20914,6 +22595,7 @@
               "missing_object",
               "reference_invalid",
               "image_quality_unsupported",
+              "h3_timeline_guides_unsupported",
               "bigmodel_video_model",
               "bigmodel_video_output",
               "bigmodel_video_image",
@@ -21234,8 +22916,18 @@
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
                 "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
+                "group.adoptRunCandidate": "#/$defs/GroupAdoptRunCandidateCommand",
+                "group.assemble": "#/$defs/GroupAssembleCommand",
+                "group.configureAssembly": "#/$defs/GroupConfigureAssemblyCommand",
+                "group.pauseRun": "#/$defs/GroupPauseRunCommand",
                 "group.publishRun": "#/$defs/GroupPublishRunCommand",
+                "group.reconcileRun": "#/$defs/GroupReconcileRunCommand",
+                "group.regenerateRunStep": "#/$defs/GroupRegenerateRunStepCommand",
+                "group.restartRun": "#/$defs/GroupRestartRunCommand",
+                "group.resumeRun": "#/$defs/GroupResumeRunCommand",
                 "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
+                "group.startRun": "#/$defs/GroupStartRunCommand",
+                "group.stepRun": "#/$defs/GroupStepRunCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
@@ -21250,7 +22942,8 @@
                 "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
                 "result.select": "#/$defs/ResultSelectCommand",
-                "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
+                "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand",
+                "video.trim": "#/$defs/VideoTrimCommand"
               },
               "propertyName": "type"
             },
@@ -21289,9 +22982,6 @@
                 "$ref": "#/$defs/GroupSavePlanCommand"
               },
               {
-                "$ref": "#/$defs/GroupPublishRunCommand"
-              },
-              {
                 "$ref": "#/$defs/CanvasShowCommand"
               },
               {
@@ -21314,6 +23004,42 @@
               },
               {
                 "$ref": "#/$defs/CanvasPublishMediaCommand"
+              },
+              {
+                "$ref": "#/$defs/VideoTrimCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupConfigureAssemblyCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPublishRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupStartRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPauseRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupResumeRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupRestartRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupStepRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupRegenerateRunStepCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupAdoptRunCandidateCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupReconcileRunCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupAssembleCommand"
               },
               {
                 "$ref": "#/$defs/TimelinePublishRenderCommand"
@@ -21404,7 +23130,10 @@
                 "job.get": "#/$defs/ObjectQuery",
                 "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
-                "project.get": "#/$defs/ProjectQuery"
+                "project.get": "#/$defs/ProjectQuery",
+                "run.execution.get": "#/$defs/RunExecutionQuery",
+                "run.groupExecution.get": "#/$defs/RunGroupExecutionQuery",
+                "run.groupExecutions.list": "#/$defs/RunGroupExecutionsQuery"
               },
               "propertyName": "type"
             },
@@ -21432,6 +23161,15 @@
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
+              },
+              {
+                "$ref": "#/$defs/RunExecutionQuery"
+              },
+              {
+                "$ref": "#/$defs/RunGroupExecutionQuery"
+              },
+              {
+                "$ref": "#/$defs/RunGroupExecutionsQuery"
               }
             ],
             "title": "Query"
@@ -23018,7 +24756,7 @@
               }
             ],
             "default": null,
-            "description": "When set, include its current canvas_item revision in expectedVersions.",
+            "description": "Required for clips in a group assembly recipe. When set, include its current canvas_item revision in expectedVersions.",
             "title": "Originitemid",
             "x-version-object-type": "canvas_item"
           },
@@ -23138,6 +24876,186 @@
           "payload"
         ],
         "title": "GenerationSubmitCommand",
+        "type": "object"
+      },
+      "GroupAdoptRunCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "description": "Target Run execution ID.",
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          },
+          "jobId": {
+            "description": "Completed candidate job to adopt in the selected execution.",
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId",
+          "jobId"
+        ],
+        "title": "GroupAdoptRunCandidate",
+        "type": "object"
+      },
+      "GroupAdoptRunCandidateCommand": {
+        "additionalProperties": false,
+        "description": "Adopt a completed candidate and continue with the remaining dependent stages.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.adoptRunCandidate",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupAdoptRunCandidate",
+            "description": "Adopt a completed candidate and continue with the remaining dependent stages."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupAdoptRunCandidateCommand",
+        "type": "object"
+      },
+      "GroupAssemble": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Canvas group with a saved assembly recipe. Include the timeline node, its editor document, and any existing output node in expectedVersions.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "jobIds": {
+            "description": "Completed jobs selected for this run.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Jobids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groupId",
+          "jobIds"
+        ],
+        "title": "GroupAssemble",
+        "type": "object"
+      },
+      "GroupAssembleCommand": {
+        "additionalProperties": false,
+        "description": "Assemble and publish the completed jobs from a canvas group.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.assemble",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupAssemble",
+            "description": "Assemble and publish the completed jobs from a canvas group."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupAssembleCommand",
         "type": "object"
       },
       "GroupAssembly": {
@@ -23402,6 +25320,25 @@
             "description": "Editable notes accompanying the Run plan.",
             "title": "Runplannotes"
           },
+          "runModelFingerprints": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "format": "uuid"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen deployment configuration fingerprints per generation step.",
+            "title": "Runmodelfingerprints"
+          },
           "assembly": {
             "anyOf": [
               {
@@ -23436,6 +25373,187 @@
           "binding"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupConfigureAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Canvas group receiving the assembly configuration.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "assembly": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GroupAssembly"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved assembly recipe, or null to remove it.",
+            "examples": [
+              {
+                "clips": [
+                  {
+                    "frameLimit": 118,
+                    "inFrame": 18,
+                    "itemId": "00000000-0000-0000-0000-000000000003",
+                    "outFrame": 118,
+                    "reverse": true
+                  }
+                ],
+                "outputItemId": "00000000-0000-0000-0000-000000000002",
+                "timelineItemId": "00000000-0000-0000-0000-000000000001"
+              }
+            ]
+          }
+        },
+        "required": [
+          "groupId",
+          "assembly"
+        ],
+        "title": "GroupConfigureAssembly",
+        "type": "object"
+      },
+      "GroupConfigureAssemblyCommand": {
+        "additionalProperties": false,
+        "description": "Save a canvas assembly plan. H3 segmented plans require requireTimelineGuides and may name one guide-exempt generation anchor. Edits keep confirmed guide requirements and step identities.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.configureAssembly",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupConfigureAssembly",
+            "description": "Save a canvas assembly plan. H3 segmented plans require requireTimelineGuides and may name one guide-exempt generation anchor. Edits keep confirmed guide requirements and step identities."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupConfigureAssemblyCommand",
+        "type": "object"
+      },
+      "GroupControlRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId"
+        ],
+        "title": "GroupControlRun",
+        "type": "object"
+      },
+      "GroupPauseRunCommand": {
+        "additionalProperties": false,
+        "description": "Pause the current Run after its in-flight step. No subsequent steps start until resumed.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.pauseRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupControlRun",
+            "description": "Pause the current Run after its in-flight step. No subsequent steps start until resumed."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupPauseRunCommand",
         "type": "object"
       },
       "GroupPlanDraft": {
@@ -23521,9 +25639,91 @@
         "title": "GroupPlanDraft",
         "type": "object"
       },
+      "GroupPublishRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Draft canvas group that becomes immutable when published.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "assembly": {
+            "$ref": "#/$defs/GroupAssembly",
+            "description": "Timeline, output and generated retained ranges.",
+            "examples": [
+              {
+                "clips": [
+                  {
+                    "inFrame": 0,
+                    "itemId": "00000000-0000-0000-0000-000000000003",
+                    "outFrame": 24
+                  }
+                ],
+                "outputItemId": "00000000-0000-0000-0000-000000000002",
+                "timelineItemId": "00000000-0000-0000-0000-000000000001"
+              }
+            ]
+          },
+          "plan": {
+            "$ref": "#/$defs/SegmentRunPlan",
+            "description": "Full-source segment template input.",
+            "examples": [
+              {
+                "entries": [
+                  {
+                    "itemId": "00000000-0000-0000-0000-000000000003",
+                    "kind": "generated",
+                    "shot": "shot-1",
+                    "sourceEnd": 24,
+                    "sourceStart": 0,
+                    "step": {
+                      "kind": "anchor"
+                    }
+                  }
+                ],
+                "fps": 24,
+                "frameCount": 24,
+                "source": {
+                  "assetId": "00000000-0000-0000-0000-000000000004",
+                  "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                  "kind": "video",
+                  "revision": 1
+                }
+              }
+            ]
+          },
+          "planLocale": {
+            "default": "en-US",
+            "description": "Language of the visible plan. Follow the user’s request language unless they specify another language.",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Planlocale",
+            "type": "string"
+          },
+          "planNotes": {
+            "default": "",
+            "description": "Optional shot analysis and planning rationale shown below the executable plan.",
+            "maxLength": 16000,
+            "title": "Plannotes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "assembly",
+          "plan",
+          "planLocale",
+          "planNotes"
+        ],
+        "title": "GroupPublishRun",
+        "type": "object"
+      },
       "GroupPublishRunCommand": {
         "additionalProperties": false,
-        "description": "Publish the segment plan as a Markdown canvas node.",
+        "description": "Validate and freeze a full-source segmented video Run.",
         "properties": {
           "commandId": {
             "description": "Stable command ID for idempotent replay.",
@@ -23567,8 +25767,8 @@
             "title": "Expectedpreview"
           },
           "payload": {
-            "$ref": "#/$defs/GroupPlanDraft",
-            "description": "Publish the segment plan as a Markdown canvas node."
+            "$ref": "#/$defs/GroupPublishRun",
+            "description": "Validate and freeze a full-source segmented video Run."
           }
         },
         "required": [
@@ -23580,6 +25780,318 @@
           "payload"
         ],
         "title": "GroupPublishRunCommand",
+        "type": "object"
+      },
+      "GroupReconcileRunCommand": {
+        "additionalProperties": false,
+        "description": "Check the status of an unresolved Run job using its existing provider task ID, without resubmitting it.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.reconcileRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupRunExecution",
+            "description": "Check the status of an unresolved Run job using its existing provider task ID, without resubmitting it."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupReconcileRunCommand",
+        "type": "object"
+      },
+      "GroupRegenerateRunStep": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "description": "Target Run execution ID.",
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Generation segment whose result will be regenerated.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "expectedExecutionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Latest execution ID observed by the caller. Required when executionId selects an earlier execution.",
+            "title": "Expectedexecutionid"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId",
+          "itemId",
+          "expectedExecutionId"
+        ],
+        "title": "GroupRegenerateRunStep",
+        "type": "object"
+      },
+      "GroupRegenerateRunStepCommand": {
+        "additionalProperties": false,
+        "description": "Regenerate one segment as a candidate using the frozen Run inputs.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.regenerateRunStep",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupRegenerateRunStep",
+            "description": "Regenerate one segment as a candidate using the frozen Run inputs."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupRegenerateRunStepCommand",
+        "type": "object"
+      },
+      "GroupRestartRunCommand": {
+        "additionalProperties": false,
+        "description": "Start a fresh execution of the published Run from its first stage.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.restartRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupRunExecution",
+            "description": "Start a fresh execution of the published Run from its first stage."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupRestartRunCommand",
+        "type": "object"
+      },
+      "GroupResumeRunCommand": {
+        "additionalProperties": false,
+        "description": "Resume the paused Run from its existing execution and completed steps.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.resumeRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupControlRun",
+            "description": "Resume the paused Run from its existing execution and completed steps."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupResumeRunCommand",
+        "type": "object"
+      },
+      "GroupRunExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "description": "Target Run execution ID.",
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId"
+        ],
+        "title": "GroupRunExecution",
         "type": "object"
       },
       "GroupSavePlanCommand": {
@@ -23641,6 +26153,235 @@
           "payload"
         ],
         "title": "GroupSavePlanCommand",
+        "type": "object"
+      },
+      "GroupStartRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run to execute with its frozen definition.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId"
+        ],
+        "title": "GroupStartRun",
+        "type": "object"
+      },
+      "GroupStartRunCommand": {
+        "additionalProperties": false,
+        "description": "Start the published Run in the background. The command ID identifies the execution.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.startRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupStartRun",
+            "description": "Start the published Run in the background. The command ID identifies the execution."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupStartRunCommand",
+        "type": "object"
+      },
+      "GroupStepRun": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Published Run whose current execution will be controlled.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "executionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Paused execution to advance. Omit to start a new execution in single-step mode.",
+            "title": "Executionid"
+          }
+        },
+        "required": [
+          "groupId",
+          "executionId"
+        ],
+        "title": "GroupStepRun",
+        "type": "object"
+      },
+      "GroupStepRunCommand": {
+        "additionalProperties": false,
+        "description": "Execute only the next stage of a published Run and pause before the following stage.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.stepRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupStepRun",
+            "description": "Execute only the next stage of a published Run and pause before the following stage."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupStepRunCommand",
+        "type": "object"
+      },
+      "H3Segment": {
+        "additionalProperties": false,
+        "properties": {
+          "guideReferenceId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Reference to a pinned guide image or the preceding raw generated video.",
+            "title": "Guidereferenceid"
+          },
+          "sourceFrames": {
+            "anyOf": [
+              {
+                "items": {
+                  "maximum": 359,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Zero-based source frames placed at output frame 0, or at 0 and 21 in order.",
+            "title": "Sourceframes"
+          },
+          "outputFrame": {
+            "anyOf": [
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Output frame for a pinned still-image guide.",
+            "title": "Outputframe"
+          }
+        },
+        "required": [
+          "guideReferenceId",
+          "sourceFrames"
+        ],
+        "title": "H3Segment",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -25054,6 +27795,18 @@
             "default": null,
             "description": "Image preset instructions frozen when the job is accepted.",
             "title": "Presetprompt"
+          },
+          "workflowGuide": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorkflowGuide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Guide policy captured when the workflow segment was accepted."
           }
         },
         "required": [
@@ -29367,6 +32120,126 @@
         "title": "ResultVersion",
         "type": "object"
       },
+      "RunExecutionQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.execution.get",
+            "description": "Read a background Run execution.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "Execution ID returned by group.startRun.",
+            "format": "uuid",
+            "title": "Objectid",
+            "type": "string"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait while this execution is queued or running.",
+            "maximum": 60,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectId",
+          "waitSeconds"
+        ],
+        "title": "RunExecutionQuery",
+        "type": "object"
+      },
+      "RunGroupExecutionQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.groupExecution.get",
+            "description": "Read the latest execution of a published Run, or null if it has never started.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "Published Run canvas group ID.",
+            "format": "uuid",
+            "title": "Objectid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectId"
+        ],
+        "title": "RunGroupExecutionQuery",
+        "type": "object"
+      },
+      "RunGroupExecutionsQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.groupExecutions.list",
+            "description": "Read execution history for a published Run.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "Published Run canvas group ID.",
+            "format": "uuid",
+            "title": "Objectid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectId"
+        ],
+        "title": "RunGroupExecutionsQuery",
+        "type": "object"
+      },
       "SegmentRunAnchor": {
         "additionalProperties": false,
         "properties": {
@@ -29399,21 +32272,14 @@
             "type": "string"
           },
           "sourceFrames": {
-            "description": "Two distinct indices into the raw upstream result for destination frames 0 and 21, in that order.",
+            "description": "Raw upstream frame indices for output frame 0, or frames 0 and 21 in order.",
+            "items": {
+              "maximum": 359,
+              "minimum": 0,
+              "type": "integer"
+            },
             "maxItems": 2,
-            "minItems": 2,
-            "prefixItems": [
-              {
-                "maximum": 359,
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "maximum": 359,
-                "minimum": 0,
-                "type": "integer"
-              }
-            ],
+            "minItems": 1,
             "title": "Sourceframes",
             "type": "array"
           }
@@ -29452,6 +32318,22 @@
             "format": "uuid",
             "title": "Itemid",
             "type": "string"
+          },
+          "replacementPromptInputs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Structured character-replacement prompt inputs rendered and checked by the server.",
+            "title": "Replacementpromptinputs"
           },
           "shot": {
             "description": "Identity of the inspected continuous shot used to determine guide dependencies.",
@@ -33095,6 +35977,12 @@
             ],
             "title": "Dimensionstep",
             "type": "integer"
+          },
+          "timelineGuides": {
+            "default": false,
+            "description": "Whether this deployed FastH3 endpoint accepts native timeline guide uploads.",
+            "title": "Timelineguides",
+            "type": "boolean"
           }
         },
         "required": [
@@ -33455,6 +36343,33 @@
       "VideoParameters": {
         "additionalProperties": false,
         "properties": {
+          "h3Segment": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/H3Segment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Native H3 source-video segment and optional timeline guides."
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fixed sampling seed for FastH3. Ordinary FastH3 jobs draw a seed when omitted.",
+            "title": "Seed"
+          },
           "generateAudio": {
             "default": true,
             "description": "Include audio; value must be allowed by model inputRules.generateAudioOptions.",
@@ -33518,6 +36433,119 @@
           "resolution"
         ],
         "title": "VideoParameters",
+        "type": "object"
+      },
+      "VideoTrim": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceItemId": {
+            "description": "Stable canvas video node ID from the plan or project snapshot.",
+            "format": "uuid",
+            "title": "Sourceitemid",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Exact video asset version observed on the source node when planning the trim.",
+            "examples": [
+              {
+                "assetId": "00000000-0000-0000-0000-000000000000",
+                "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "video",
+                "revision": 1
+              }
+            ]
+          },
+          "startSeconds": {
+            "description": "Start of the retained range in the source video, in seconds.",
+            "minimum": 0,
+            "title": "Startseconds",
+            "type": "number"
+          },
+          "endSeconds": {
+            "description": "End of the retained range in the source video, in seconds.",
+            "exclusiveMinimum": 0,
+            "title": "Endseconds",
+            "type": "number"
+          },
+          "name": {
+            "description": "User-visible name of the new video asset and node.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceItemId",
+          "source",
+          "startSeconds",
+          "endSeconds",
+          "name"
+        ],
+        "title": "VideoTrim",
+        "type": "object"
+      },
+      "VideoTrimCommand": {
+        "additionalProperties": false,
+        "description": "Trim a source canvas video using its exact asset version, then publish a new video node and its edit snapshot.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "video.trim",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/VideoTrim",
+            "description": "Trim a source canvas video using its exact asset version, then publish a new video node and its edit snapshot."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "VideoTrimCommand",
         "type": "object"
       },
       "ViewState": {
@@ -33657,10 +36685,17 @@
             "type": "boolean"
           },
           "acceptsTranscript": {
-            "default": false,
-            "description": "Registry stores an optional reference transcript when one is supplied.",
-            "title": "Acceptstranscript",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Registry stores an optional reference transcript when supplied; older execution snapshots omit this capability.",
+            "title": "Acceptstranscript"
           },
           "requiresReferenceAudio": {
             "description": "Registered voice must have actual reference audio.",
@@ -33736,7 +36771,6 @@
           "provider",
           "connectionId",
           "requiresTranscript",
-          "acceptsTranscript",
           "requiresReferenceAudio",
           "supportsUploadedVoices",
           "referenceEmbeddingDimension",
@@ -33883,6 +36917,28 @@
           "frameLimit"
         ],
         "title": "WorkflowClip",
+        "type": "object"
+      },
+      "WorkflowGuide": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "description": "Stable identity of the guide-required workflow that accepted this segment.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether this step must use a guide. False denotes the workflow’s explicit generation anchor.",
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "groupId",
+          "required"
+        ],
+        "title": "WorkflowGuide",
         "type": "object"
       }
     },
@@ -34066,8 +37122,18 @@
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
             "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
+            "group.adoptRunCandidate": "#/$defs/GroupAdoptRunCandidateCommand",
+            "group.assemble": "#/$defs/GroupAssembleCommand",
+            "group.configureAssembly": "#/$defs/GroupConfigureAssemblyCommand",
+            "group.pauseRun": "#/$defs/GroupPauseRunCommand",
             "group.publishRun": "#/$defs/GroupPublishRunCommand",
+            "group.reconcileRun": "#/$defs/GroupReconcileRunCommand",
+            "group.regenerateRunStep": "#/$defs/GroupRegenerateRunStepCommand",
+            "group.restartRun": "#/$defs/GroupRestartRunCommand",
+            "group.resumeRun": "#/$defs/GroupResumeRunCommand",
             "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
+            "group.startRun": "#/$defs/GroupStartRunCommand",
+            "group.stepRun": "#/$defs/GroupStepRunCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
@@ -34082,7 +37148,8 @@
             "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
             "result.select": "#/$defs/ResultSelectCommand",
-            "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
+            "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand",
+            "video.trim": "#/$defs/VideoTrimCommand"
           },
           "propertyName": "type"
         },
@@ -34121,9 +37188,6 @@
             "$ref": "#/$defs/GroupSavePlanCommand"
           },
           {
-            "$ref": "#/$defs/GroupPublishRunCommand"
-          },
-          {
             "$ref": "#/$defs/CanvasShowCommand"
           },
           {
@@ -34146,6 +37210,42 @@
           },
           {
             "$ref": "#/$defs/CanvasPublishMediaCommand"
+          },
+          {
+            "$ref": "#/$defs/VideoTrimCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupConfigureAssemblyCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPublishRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupStartRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPauseRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupResumeRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupRestartRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupStepRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupRegenerateRunStepCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupAdoptRunCandidateCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupReconcileRunCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupAssembleCommand"
           },
           {
             "$ref": "#/$defs/TimelinePublishRenderCommand"
@@ -34236,7 +37336,10 @@
             "job.get": "#/$defs/ObjectQuery",
             "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
-            "project.get": "#/$defs/ProjectQuery"
+            "project.get": "#/$defs/ProjectQuery",
+            "run.execution.get": "#/$defs/RunExecutionQuery",
+            "run.groupExecution.get": "#/$defs/RunGroupExecutionQuery",
+            "run.groupExecutions.list": "#/$defs/RunGroupExecutionsQuery"
           },
           "propertyName": "type"
         },
@@ -34264,6 +37367,15 @@
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
+          },
+          {
+            "$ref": "#/$defs/RunExecutionQuery"
+          },
+          {
+            "$ref": "#/$defs/RunGroupExecutionQuery"
+          },
+          {
+            "$ref": "#/$defs/RunGroupExecutionsQuery"
           }
         ],
         "title": "Query"

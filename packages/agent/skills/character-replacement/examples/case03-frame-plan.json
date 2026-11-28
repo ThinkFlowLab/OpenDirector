@@ -1,0 +1,18 @@
+{
+  "totalFrames": 648,
+  "sourceOnly": [],
+  "segments": [
+    {"id": "A", "source": [0, 84], "rawFrames": 124, "reverseLimit": 84, "title": "Reverse from B", "portraits": [1], "guide": {"segment": "B", "frames": [96, 117]}},
+    {"id": "B", "source": [62, 180], "rawFrames": 124, "reverseLimit": 118, "title": "Anchor", "portraits": [1, 2, 3, 4, 5]},
+    {"id": "C", "source": [158, 308], "rawFrames": 158, "title": "Forward from B", "portraits": [1, 2, 3, 4, 5], "guide": {"segment": "B", "frames": [21, 0]}},
+    {"id": "D", "source": [286, 444], "rawFrames": 158, "title": "Forward from C", "portraits": [1], "guide": {"segment": "C", "frames": [128, 149]}},
+    {"id": "E", "source": [422, 648], "rawFrames": 226, "title": "Forward from D", "portraits": [1], "guide": {"segment": "D", "frames": [136, 157]}}
+  ],
+  "timeline": [
+    {"source": [0, 80], "owner": "generated", "segment": "A", "keep": [0, 80]},
+    {"source": [80, 180], "owner": "generated", "segment": "B", "keep": [18, 118]},
+    {"source": [180, 308], "owner": "generated", "segment": "C", "keep": [22, 150]},
+    {"source": [308, 444], "owner": "generated", "segment": "D", "keep": [22, 158]},
+    {"source": [444, 648], "owner": "generated", "segment": "E", "keep": [22, 226]}
+  ]
+}

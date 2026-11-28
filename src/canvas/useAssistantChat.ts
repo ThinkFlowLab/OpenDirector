@@ -478,7 +478,9 @@ export function useAssistantChat(
           id,
           conversationId: input.conversationId,
           ...assistantModelSelection(input, agent?.id),
-          text: input.draft,
+          text: input.draftContent
+            ? contentText(input.draftContent, false, t)
+            : input.draft,
           content: input.draftContent,
           assets: input.assets.map((asset) => asset.id),
           modelSelections: input.modelSelections,

@@ -9,11 +9,33 @@ from .base import Contract, Fingerprint, MediaKind, NonNegative, Positive, Posit
 from .models import ModelSnapshot
 
 
+ASSET_REVISION_HEADER = 'X-OpenDirector-Asset-Revision'
+ASSET_DOWNLOAD_ENGLISH = {
+    'asset_revision_unavailable': 'The requested asset revision is unavailable. Check the saved asset ID and revision.',
+    'asset_download_destination_exists': 'The output file already exists. Choose a new path.',
+    'asset_download_integrity': 'The download differs from the recorded fingerprint or size. Check the source and retry with a new filename.',
+    'asset_download_version_unconfirmed': 'The server did not confirm the requested asset revision. Update the OpenDirector server and try again.',
+    'asset_download_workdir_required': 'Asset download requires the current turn’s execution directory.',
+}
+
+
 class AssetRef(Contract):
     assetId: UUID = Field(description='ID of a registered project asset from project.assets[].id or a successful asset command result.')
     revision: Revision = Field(description='Referenced immutable asset revision.')
     fingerprint: Fingerprint = Field(description='Immutable content fingerprint.')
     kind: MediaKind = Field(description='Business object or media type.')
+
+
+class AssetDownloadFile(Contract):
+    assetId: UUID = Field(description='Registered asset ID in the active project.')
+    revision: Revision = Field(description='Exact saved asset revision to read.')
+    path: str = Field(min_length=1, max_length=4096, description='New output file under the active execution directory.')
+
+
+class AssetDownloadReceipt(AssetDownloadFile):
+    fingerprint: Fingerprint = Field(description='Verified SHA-256 of the downloaded original.')
+    mimeType: str = Field(min_length=1, max_length=255, description='MIME type of the original asset.')
+    size: int = Field(ge=0, strict=True, description='Verified size in bytes.')
 
 
 class MediaMetadata(Contract):

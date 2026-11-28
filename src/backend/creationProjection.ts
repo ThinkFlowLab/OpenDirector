@@ -107,22 +107,30 @@ export class CreationProjection {
 
   async importFile(file: File, signal?: AbortSignal): Promise<CanvasResource> {
     const { kind, mimeType } = classifyImportFile(file);
-    if (kind !== "video" && kind !== "audio" &&
-        mimeType !== "image/heic" && mimeType !== "image/heif")
+    const nativeMedia = kind === "video" || kind === "audio";
+    if (!nativeMedia && mimeType !== "image/heic" && mimeType !== "image/heif")
       return readEditorResource(file, signal);
     signal?.throwIfAborted();
     const ref = await this.client.importBlob(file, file.name, kind, undefined, undefined, signal);
     signal?.throwIfAborted();
-    // The Host probes original bytes, so audio and video never need a data URL.
-    // Failed previews must not be saved as empty generation nodes.
+    if (nativeMedia) return this.resource(ref, undefined, file);
+    // HEIF needs the Host's browser-compatible preview before adding the node.
     await this.client.mediaUrl(ref.assetId, { signal });
     return this.resource(ref);
   }
 
-  async resource(ref: AssetRef, title?: string): Promise<CanvasResource> {
+  async resource(ref: AssetRef, title?: string, previewFile?: File): Promise<CanvasResource> {
     const asset = this.client.snapshot.assets.find(
       (a) => a.id === ref.assetId,
     )!;
+    if (previewFile) {
+      const { mimeType } = asset.metadata;
+      const preview = previewFile.type === mimeType
+        ? previewFile
+        : previewFile.slice(0, previewFile.size, mimeType);
+      // The Host accepted these bytes. Use them for this page's preview.
+      await this.client.adoptMedia(asset.id, preview);
+    }
     return {
       id: asset.id,
       assetId: asset.id,
@@ -640,6 +648,8 @@ export class CreationProjection {
           parentId: item.parentId ?? undefined,
         };
         node.data.title = item.title;
+        if (item.kind === "group" && item.assembly)
+          node.data.workflowAssembly = item.assembly;
         // Audio cards are a fixed control strip; older square cards are
         // compacted on read instead of waiting for a playback event.
         if (node.type === "audio") node.height = AUDIO_CARD_SIZE.height;
@@ -685,6 +695,17 @@ export class CreationProjection {
           node.data.text = item.binding.manualText ?? "";
         const spec = itemSpec(snapshot, item);
         if (spec) {
+          if (spec.kind === "video" && spec.parameters.h3Segment) {
+            const referenceId = spec.parameters.h3Segment.guideReferenceId;
+            const guide = referenceId ? currentReferenceById.get(referenceId) : undefined;
+            node.data.h3Segment = {
+              guideReferenceId: referenceId ?? undefined,
+              guideSourceNodeId:
+                guide?.binding === "follow_current" ? guide.source.id : guide?.sourceVersion?.id,
+              sourceFrames: spec.parameters.h3Segment.sourceFrames ?? undefined,
+              outputFrame: spec.parameters.h3Segment.outputFrame ?? undefined,
+            };
+          }
           node.data.prompt = spec.prompt;
           if (spec.promptContent) {
             node.data.promptContent = [];
@@ -746,6 +767,7 @@ export class CreationProjection {
             if (
               ref.targetSpecId !== spec.id ||
               ref.binding !== "pinned" ||
+              (spec.kind === "video" && ref.id === spec.parameters.h3Segment?.guideReferenceId) ||
               located.has(ref.id)
             )
               return [];
@@ -1081,10 +1103,18 @@ export class CreationProjection {
         };
       case "video": {
         const settings = node.data.settings;
+        const segment = current?.kind === "video" ? current.parameters.h3Segment : node.data.h3Segment;
         return {
           ...common,
           kind: "video",
           parameters: {
+            ...(segment
+              ? { h3Segment: {
+                  guideReferenceId: segment.guideReferenceId,
+                  sourceFrames: segment.sourceFrames,
+                  outputFrame: segment.outputFrame,
+                } }
+              : {}),
             videoMode:
               settings?.videoMode === "first-last"
                 ? "first_frame"
@@ -1552,6 +1582,8 @@ export class CreationProjection {
             // Only an archive that recorded where the picture came from may
             // rebuild the generation binding; a bare upload cannot be one.
             !!this.archiveSource(node);
+          const cloneH3Segment = !item && !binding && node.type === "video" && !!node.data.h3Segment;
+          const bindGeneration = cloneGeneration || cloneH3Segment;
           if (
             binding?.role !== "material" ||
             configureText ||
@@ -1559,7 +1591,7 @@ export class CreationProjection {
           ) {
             const spec = {
               ...this.specInput(node, current),
-              ...(cloneGeneration ? { purpose: "generation" as const } : {}),
+              ...(bindGeneration ? { purpose: "generation" as const } : {}),
             };
             specs.set(node.id, spec.id);
             if (!current)
@@ -1574,14 +1606,13 @@ export class CreationProjection {
                 payload: { spec },
               });
             }
-            if (cloneGeneration && binding?.role === "material")
-              // The node is shown with this binding, so it must already be the
-              // generation one: the backend refuses to convert a material item
-              // afterwards (material items cannot be converted directly to generation items).
+            if (bindGeneration)
+              // A guided node must be ready to supply a pending guide before
+              // the archive's references are added. Imported results keep their provenance.
               binding = {
                 role: "generation",
                 objectRef: { objectType: "generation_spec", id: spec.id },
-                materialOverride: binding.objectRef,
+                materialOverride: binding?.role === "material" ? binding.objectRef : null,
               };
             else if (!binding || binding.role === "empty")
               binding = {
@@ -1658,6 +1689,7 @@ export class CreationProjection {
           (op) =>
             op.type === "canvas.configure" && op.payload.itemId === node.id,
         );
+        const assembly = node.type === "group" ? node.data.workflowAssembly : undefined;
         const show: CreationOperation = {
           type: "canvas.show",
           payload: {
@@ -1675,6 +1707,15 @@ export class CreationProjection {
               ...(node.type === "group" && node.autoLayout ? { autoLayout: node.autoLayout } : {}),
               parentId: node.parentId ?? null,
               binding,
+              ...(assembly && {
+                assembly: {
+                  ...assembly,
+                  // The archived output remains material. Future assembly needs its own render target.
+                  outputItemId: writableNodes.some((entry) => entry.id === assembly.outputItemId)
+                    ? crypto.randomUUID()
+                    : assembly.outputItemId,
+                },
+              }),
             } as CanvasItem,
           },
         };
@@ -1936,6 +1977,7 @@ export class CreationProjection {
           ref.active &&
           ref.targetSpecId === specId &&
           node.data.promptContent !== undefined &&
+          ref.id !== node.data.h3Segment?.guideReferenceId &&
           (ref.binding === "pinned" || previousMentions.has(ref.id)) &&
           !nextMentions.has(ref.id),
       )) {

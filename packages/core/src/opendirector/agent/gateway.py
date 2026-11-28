@@ -5,13 +5,18 @@ from copy import deepcopy
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from typing import Annotated
+from uuid import UUID
 
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 from opendirector.agent.context import AgentEvent, RunContext
 from opendirector.agent.tools import AgentTools, tools
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.creation.commands import COMMAND_MODELS
+from opendirector.domain.rule_facts import MAX_REFERENCES
+
+REFERENCE_IDS = TypeAdapter(Annotated[list[UUID], Field(min_length=1, max_length=MAX_REFERENCES)])
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -38,7 +43,7 @@ class ToolResult:
 READ_ONLY_QUERIES = frozenset({'job.status', 'job.get', 'object.get', 'canvas.status'})
 # Queries that wait for a business state. Closing a turn cancels them; a read
 # that has not been answered is worth nothing once the turn is over.
-WAITING_QUERIES = frozenset({'job.status', 'canvas.status'})
+WAITING_QUERIES = frozenset({'job.status', 'canvas.status', 'run.execution.get'})
 
 
 def _read_only(name, arguments) -> bool:
@@ -59,6 +64,7 @@ class ToolGateway:
         self.business = business
         self.run = run
         self.model_selections = dict(run.model_selections)
+        self.review_executions: set[str] = set()
         self.execution_directory: Path | None = None
         self.roots: list[Path] = []
         self.closed = False
@@ -94,13 +100,44 @@ class ToolGateway:
                 schema = next(item['function']['parameters'] for item in tools() if item['function']['name'] == name)
                 if 'properties' in schema and (set(arguments) - set(schema['properties']) or set(schema.get('required', [])) - set(arguments)):
                     raise ProjectError('工具参数缺失或包含未定义字段。')
+                kind = arguments.get('type')
+                if self.review_executions and name in {'execute_command', 'timeline_package_export', 'timeline_package_import'}:
+                    executor = self.business.generation.segment_runs
+                    for execution_id in sorted(self.review_executions):
+                        review = await executor.status(self.run.project_id, execution_id)
+                        if review['status'] != 'awaiting_selection':
+                            continue
+                        payload = arguments.get('payload')
+                        if (kind == 'group.adoptRunCandidate' and isinstance(payload, dict)
+                                and payload.get('executionId') == execution_id
+                                and payload.get('groupId') == review['groupId']):
+                            continue
+                        raise ProjectError(
+                            f"分组 {review['groupId']} 的片段 {review['reviewItemId']} 等待采用候选。"
+                            "请检查候选。候选不合格时，报告问题并结束本轮。", 409,
+                            code='agent_run_candidate_review_required')
                 value = await self.business.execute(self.run.project_id, self.run.turn_id, self.run.session,
                     call_id, name, arguments, self.roots, self.run.config,
                     self.run.runtime if self.run.config is None else None,
                     self.execution_directory, **({'runtime_model': self.run.runtime_model, 'thinking': self.run.thinking}
                         if name == 'prompt_optimize' else {}))
+                if isinstance(value, dict):
+                    if kind == 'group.regenerateRunStep' and value.get('runExecutionId'):
+                        self.review_executions.add(value['runExecutionId'])
+                    if name == 'query' and value.get('status') == 'awaiting_selection' and value.get('executionId'):
+                        self.review_executions.add(value['executionId'])
                 if name == 'read_project':
                     value['modelSelections'] = dict(self.model_selections)
+                    references = self.run.turn_references
+                    if 'referenceIds' in arguments:
+                        ids = REFERENCE_IDS.validate_python(arguments['referenceIds'])
+                        known = {ref.id: ref for ref in (*self.run.earlier_references, *references)}
+                        unknown = next((identity for identity in ids if identity not in known), None)
+                        if unknown is not None:
+                            raise ProjectError(f'聊天引用 {unknown} 不属于当前对话。', 409, code='reference_invalid')
+                        references = tuple(known[identity] for identity in dict.fromkeys(ids))
+                    if references:
+                        value['turnReferences'] = [ref.observation() for ref in references]
                 error = None
                 if isinstance(value, dict):
                     if value.get('status') == 'rejected':

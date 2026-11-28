@@ -389,6 +389,7 @@ export function pasteFragment(
   const used = new Set([
     ...document.nodes.map((node) => node.id),
     ...document.edges.map((edge) => edge.id),
+    ...document.nodes.flatMap((node) => node.data.workflowAssembly ? [node.data.workflowAssembly.outputItemId] : []),
   ]);
   const newId = () => {
     let id: string;
@@ -398,6 +399,7 @@ export function pasteFragment(
     return id;
   };
   const remapped = new Map(fragment.nodes.map((node) => [node.id, newId()]));
+  const remappedEdges = new Map(fragment.edges.map((edge) => [edge.id, newId()]));
   // A copy is a different item, so it must not answer to the source's exact name.
   const titles = takenNodeTitles(document);
   const nodes = fragment.nodes.map((node) => {
@@ -406,6 +408,29 @@ export function pasteFragment(
     copy.data.title = derivedNodeTitle(node.data.title, titles);
     if (copy.type === "image") copy.data.copiedSourceId = node.id;
     copy.data = remapDataReferences(copy.data, remapped);
+    const h3 = copy.data.h3Segment;
+    if (h3?.guideReferenceId && h3.guideSourceNodeId && h3.sourceFrames) {
+      const guideReferenceId = remappedEdges.get(h3.guideReferenceId);
+      const guideSourceNodeId = remapped.get(h3.guideSourceNodeId);
+      copy.data.h3Segment = guideReferenceId && guideSourceNodeId
+        ? { ...h3, guideReferenceId, guideSourceNodeId }
+        : {};
+    }
+    const assembly = copy.data.workflowAssembly;
+    if (assembly) {
+      const timelineItemId = remapped.get(assembly.timelineItemId);
+      if (timelineItemId && assembly.clips.every((clip) => remapped.has(clip.itemId))) {
+        copy.data.workflowAssembly = {
+          ...assembly,
+          timelineItemId,
+          outputItemId: newId(),
+          clips: assembly.clips.map((clip) => ({ ...clip, itemId: remapped.get(clip.itemId)! })),
+          ...(assembly.guideExemptItemId && {
+            guideExemptItemId: remapped.get(assembly.guideExemptItemId),
+          }),
+        };
+      } else delete copy.data.workflowAssembly;
+    }
     if (copy.data.settings && node.data.settings) {
       for (const field of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
         const original = node.data.settings[field];
@@ -453,7 +478,7 @@ export function pasteFragment(
     : fragment.edges;
   const edges = incomingEdges.map((edge) => ({
     ...structuredClone(edge),
-    id: newId(),
+    id: remappedEdges.get(edge.id)!,
     source: remapped.get(edge.source) ?? edge.source,
     target: remapped.get(edge.target)!,
   }));

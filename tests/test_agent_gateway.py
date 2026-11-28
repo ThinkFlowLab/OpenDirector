@@ -1,5 +1,6 @@
 import asyncio
 import os
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -435,4 +436,46 @@ async def test_read_only_query_answers_while_a_write_holds_the_execution_slot(ga
     assert answer.value['terminal'] is True
     release.set()
     await asyncio.gather(write, queued)
+    await gateway.close()
+
+
+@pytest.mark.anyio
+async def test_pending_group_candidate_blocks_side_jobs_and_export(gateway, monkeypatch):
+    group_id, execution_id, item_id, job_id = (str(uuid4()) for _ in range(4))
+    calls = []
+    state = 'awaiting_selection'
+
+    async def status(project, execution):
+        assert (project, execution) == (gateway.run.project_id, execution_id)
+        return {'status': state, 'groupId': group_id, 'reviewItemId': item_id}
+
+    async def execute(*args):
+        calls.append((args[4], args[5].get('type')))
+        return {'status': 'applied', 'runExecutionId': execution_id}
+
+    monkeypatch.setattr(gateway.business, 'execute', execute)
+    monkeypatch.setattr(gateway.business, 'generation', SimpleNamespace(
+        segment_runs=SimpleNamespace(status=status)))
+
+    def command(kind, payload):
+        return {'type': kind, 'payload': payload, 'expectedVersions': []}
+
+    regenerated = await gateway.call('regen', 'execute_command', command(
+        'group.regenerateRunStep', {'groupId': group_id, 'itemId': item_id}))
+    assert regenerated.error is None
+    assert (await gateway.call('inspect', 'read_project', {})).error is None
+    for kind in ('generation.submit', 'group.regenerateRunStep', 'timeline.publishRender',
+                 'artifact.publish', 'creation.batch'):
+        result = await gateway.call(kind, 'execute_command', command(kind, {}))
+        assert result.value['code'] == 'agent_run_candidate_review_required'
+        assert item_id in result.error
+    adopted = await gateway.call('adopt', 'execute_command', command(
+        'group.adoptRunCandidate', {'groupId': group_id, 'executionId': execution_id, 'jobId': job_id}))
+    assert adopted.error is None
+    state = 'succeeded'
+    assert (await gateway.call('after-review', 'execute_command', command('generation.submit', {}))).error is None
+    assert calls == [
+        ('execute_command', 'group.regenerateRunStep'), ('read_project', None),
+        ('execute_command', 'group.adoptRunCandidate'), ('execute_command', 'generation.submit'),
+    ]
     await gateway.close()
