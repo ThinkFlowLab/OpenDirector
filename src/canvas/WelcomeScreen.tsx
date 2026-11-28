@@ -96,6 +96,8 @@ export function WelcomeScreen({ catalog, projectId, onCreate, onImport, exampleS
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [importReturns, setImportReturns] = useState(0);
   const [editing, setEditing] = useState<ModelEditor | null>(null);
+  const [addedModels, setAddedModels] = useState<string[]>([]);
+  const focusAddedModel = useRef(false);
   const [lockedEditor, setLockedEditor] = useState<FirstRunCapability | null>(null);
   const [assistant, setAssistant] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Partial<Record<FirstRunMedia, SelectedTask>>>({});
@@ -151,6 +153,13 @@ export function WelcomeScreen({ catalog, projectId, onCreate, onImport, exampleS
     heading.current?.focus();
     if (dialog.current) dialog.current.scrollTop = 0;
   }, [screen, editing]);
+  useLayoutEffect(() => {
+    if (!focusAddedModel.current || screen !== "language") return;
+    focusAddedModel.current = false;
+    const [first] = addedModels;
+    if (!first) return;
+    dialog.current?.querySelector<HTMLElement>(`[data-first-run-agent="${CSS.escape(first)}"]`)?.focus();
+  }, [screen, addedModels]);
   useLayoutEffect(() => {
     const pending = taskFocus.current;
     if (!pending || !isTaskStep) return;
@@ -221,32 +230,42 @@ export function WelcomeScreen({ catalog, projectId, onCreate, onImport, exampleS
     savingNow.current = true;
     setSaving(true);
     setAssistantError("");
+    setAddedModels([]);
     try {
-      const status = await chatRuntimeStatus(projectId, runtime);
-      if (status.status !== "ready" || !status.available || (status.modelSource === "settings" && !agent)) {
-        setAssistantError(t("firstRun.assistantUnavailable"));
-        return;
-      }
       const { conversation: stored, activeTurnId } = await conversation(projectId);
       if (activeTurnId) {
         setAssistantError(t("firstRun.assistantBusy"));
         return;
       }
+      // Saving a language model must not replace a harness the user already chose.
+      const previousRuntime = stored.runtime && stored.runtime !== "default" ? stored.runtime : null;
+      const keepHarness = previousRuntime !== null && previousRuntime !== runtime;
+      const effective = keepHarness ? previousRuntime : runtime;
+      const status = await chatRuntimeStatus(projectId, effective);
+      if (status.status !== "ready" || !status.available || (status.modelSource === "settings" && !agent)) {
+        setAssistantError(t("firstRun.assistantUnavailable"));
+        return;
+      }
       const selected = restoreAgentSelection(projectId, stored);
       const { messages, ...draft } = stored;
-      const runtimeModel = runtime !== "default" && status.modelSource === "cli"
-        ? selected.harnessModels?.[runtime] ?? (selected.runtime === runtime ? selected.runtimeModel : null) ?? null
+      const runtimeModel = effective !== "default" && status.modelSource === "cli"
+        ? selected.harnessModels?.[effective] ?? (selected.runtime === effective ? selected.runtimeModel : null) ?? null
         : null;
-      const next = {
-        ...draft,
-        runtime,
-        runtimeModel,
-        harnessModels: {
-          ...selected.harnessModels,
-          ...(runtime === "default" ? {} : { [runtime]: agent?.id ?? runtimeModel }),
-        },
-        modelSelections: { ...draft.modelSelections, agent: agent?.id ?? draft.modelSelections.agent },
-      };
+      const next = keepHarness
+        ? {
+            ...draft,
+            modelSelections: { ...draft.modelSelections, agent: agent?.id ?? draft.modelSelections.agent },
+          }
+        : {
+            ...draft,
+            runtime: effective,
+            runtimeModel,
+            harnessModels: {
+              ...selected.harnessModels,
+              ...(effective === "default" ? {} : { [effective]: agent?.id ?? runtimeModel }),
+            },
+            modelSelections: { ...draft.modelSelections, agent: agent?.id ?? draft.modelSelections.agent },
+          };
       await saveChatDraft(projectId, next);
       rememberAgentSelection(projectId, { ...next, messages });
       setAssistant(label);
@@ -321,7 +340,11 @@ export function WelcomeScreen({ catalog, projectId, onCreate, onImport, exampleS
       navigate("language");
       if (saved.length === 1 && firstRunModelIssue(item, "text_response") === null) {
         void connect(item.modelId, "default", item);
+        return;
       }
+      const usable = saved.filter((model) => firstRunModelIssue(model, "text_response") === null);
+      setAddedModels(usable.map((model) => model.id));
+      focusAddedModel.current = usable.length > 0;
     }
   }
 
@@ -479,11 +502,23 @@ export function WelcomeScreen({ catalog, projectId, onCreate, onImport, exampleS
             ) : screen === "language" || screen === "harness" ? (
               <>
                 <p className="cw-welcome-description">{t(screen === "language" ? "firstRun.languageListHint" : "firstRun.harnessHint")}</p>
+                {screen === "language" && addedModels.length > 0 && (
+                  <p className="cw-welcome-added-hint" role="status">
+                    {t("firstRun.pickAddedModel", { count: addedModels.length })}
+                  </p>
+                )}
                 <div className="cw-welcome-options">
                   {screen === "language" ? agents.map((agent) => (
-                    <button key={agent.id} className="cw-welcome-option" disabled={saving || !canUseCatalog} onClick={() => void connect(agent.modelId, "default", agent)}>
+                    <button key={agent.id} className="cw-welcome-option" data-first-run-agent={agent.id}
+                      disabled={saving || !canUseCatalog} onClick={() => void connect(agent.modelId, "default", agent)}>
                       <CanvasIcon name="model" size={20} />
-                      <span><strong>{agent.modelId}</strong><small>{t("firstRun.useSavedModel")}</small></span>
+                      <span>
+                        <strong>{agent.modelId}</strong>
+                        <small className={addedModels.includes(agent.id) ? "cw-welcome-new-model" : undefined}>
+                          {addedModels.includes(agent.id)
+                            ? t("firstRun.modelJustAdded")
+                            : t("firstRun.useSavedModel")}</small>
+                      </span>
                     </button>
                   )) : runtimes.map((item) => {
                     if (item.id === "default") return null;

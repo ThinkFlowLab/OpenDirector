@@ -42,6 +42,8 @@ try {
     route.fulfill({ json: route.request().url().includes("codex") ? codex : claude }));
   await page.route("**/assistant/runtimes/default/status", (route) => route.fulfill({ json: defaultAgent }));
   const languageModel = `first-run-agent-${projectId.slice(0, 8)}`;
+  const secondLanguageModel = `first-run-agent-kept-${projectId.slice(0, 8)}`;
+  const addedLanguageModels = ["first-run-added-a", "first-run-added-b"].map((name) => `${name}-${projectId.slice(0, 8)}`);
   const videoModels = ["alpha", "beta"].map((suffix) => `first-run-video-${projectId.slice(0, 8)}-${suffix}`);
   const imageModel = `first-run-image-${projectId.slice(0, 8)}`;
   let failCatalog = true;
@@ -55,6 +57,8 @@ try {
     const response = await route.fetch();
     const configs = await response.json();
     const models = configs.filter((item) => item.modelId === languageModel ||
+      item.modelId === secondLanguageModel ||
+      addedLanguageModels.includes(item.modelId) ||
       videoModels.includes(item.modelId) || (!showBlockedImage && item.modelId === imageModel));
     if (showBlockedImage) {
       const image = configs.find((item) => item.modelId === "fixture-image");
@@ -153,6 +157,26 @@ try {
   const assistant = await page.request.get(base + projectPath + "/assistant", { headers });
   assert.ok(assistant.ok(), await assistant.text());
   assert.equal((await assistant.json()).runtime, "codex");
+
+  // Saving a language model afterwards must not drop the harness the user chose.
+  await welcome.getByRole("button", { name: "Back", exact: true }).click();
+  await assistantTitle.waitFor();
+  await configureLanguage.click();
+  await welcome.getByRole("button", { name: "Add a language model", exact: true }).click();
+  await welcome.getByLabel("Service URL (Base URL)").fill("http://127.0.0.1:12345/v1");
+  await welcome.getByRole("button", { name: "Add manually" }).click();
+  await welcome.getByLabel(manualModelId, { exact: true }).fill(secondLanguageModel);
+  await welcome.getByRole("button", { name: "Add", exact: true }).click();
+  const savingSecond = page.waitForResponse((response) => response.url().endsWith("/api/model-configs/batch"));
+  await welcome.getByRole("button", { name: "Save and continue", exact: true }).click();
+  const secondReceipt = await savingSecond;
+  assert.ok(secondReceipt.ok(), await secondReceipt.text());
+  const [savedSecond] = await secondReceipt.json();
+  configuredIds.push(savedSecond.id);
+  await welcome.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
+  const keptHarness = await (await page.request.get(base + projectPath + "/assistant", { headers })).json();
+  assert.equal(keptHarness.runtime, "codex");
+  assert.equal(keptHarness.modelSelections.agent, savedSecond.id);
 
   assert.equal(await welcome.getByRole("checkbox", { checked: true }).count(), 0);
   const videoTask = welcome.getByRole("checkbox", { name: "Make a video" });
@@ -305,6 +329,34 @@ try {
   await blocked.getByRole("button", { name: "Retry", exact: true }).click();
   await recheck;
   await welcome.getByRole("combobox", { name: "Choose a text-to-image model" }).waitFor();
+
+  await page.route("**/api/model-configs/discover", (route) => route.fulfill({ json: { models: addedLanguageModels } }));
+  await welcome.getByRole("button", { name: "Back", exact: true }).click();
+  await assistantTitle.waitFor();
+  await configureLanguage.click();
+  await welcome.getByRole("button", { name: "Add a language model", exact: true }).click();
+  await welcome.getByLabel("Service URL (Base URL)").fill("http://127.0.0.1:12345/v1");
+  await welcome.getByRole("button", { name: "Fetch models", exact: true }).click();
+  for (const model of addedLanguageModels) await welcome.getByRole("checkbox", { name: model, exact: true }).check();
+  const addingLanguages = page.waitForResponse((response) => response.url().endsWith("/api/model-configs/batch"));
+  await welcome.getByRole("button", { name: "Save and continue", exact: true }).click();
+  const addingReceipt = await addingLanguages;
+  assert.ok(addingReceipt.ok(), await addingReceipt.text());
+  const addedLanguages = await addingReceipt.json();
+  assert.equal(addedLanguages.length, 2);
+  configuredIds.push(...addedLanguages.map((item) => item.id));
+  await welcome.getByRole("heading", { name: "Set up a language model" }).waitFor();
+  await welcome.getByText("Added 2 language models. Pick one to continue to step 2.").waitFor();
+  assert.equal(await welcome.getByText("New · pick to continue", { exact: true }).count(), 2);
+  const addedOption = welcome.getByRole("button").filter({ hasText: addedLanguages[0].modelId });
+  await addedOption.waitFor();
+  assert.equal(await welcome.getByRole("heading", { name: "What do you want to do first?" }).count(), 0);
+  const beforePick = await (await page.request.get(base + projectPath + "/assistant", { headers })).json();
+  assert.equal(beforePick.modelSelections.agent, savedSecond.id);
+  await addedOption.click();
+  await welcome.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
+  const afterPick = await (await page.request.get(base + projectPath + "/assistant", { headers })).json();
+  assert.equal(afterPick.modelSelections.agent, addedLanguages[0].id);
   assert.deepEqual(errors, []);
   console.log("Browser first-run setup, cancellation, retry, and model availability passed");
 } finally {

@@ -10,6 +10,8 @@ export const firstRun = {
   "firstRun.languageTitle": "配置语言模型",
   "firstRun.languageListHint": "选择一个已配置的对话模型，或添加一个新模型。",
   "firstRun.useSavedModel": "使用这个已保存的语言模型",
+  "firstRun.pickAddedModel": "已添加 {count} 个语言模型，点选其中一个继续到第 2 步。",
+  "firstRun.modelJustAdded": "新添加 · 点选继续",
   "firstRun.addLanguageModel": "添加语言模型",
   "firstRun.harnessAction": "使用已有Harness",
   "firstRun.harnessTitle": "选择已有 Harness",
