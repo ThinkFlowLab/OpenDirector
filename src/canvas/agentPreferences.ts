@@ -40,13 +40,13 @@ function parse(value: string | null): Selection | null {
   if (!value) return null;
   const data: unknown = JSON.parse(value);
   if (!data || typeof data !== "object" || !("runtime" in data) ||
-      !(data.runtime === "default" || data.runtime === "codex" || data.runtime === "claude" || data.runtime === "opencode" || data.runtime === "jiuwenswarm" || data.runtime === "deepseek") ||
+      !(data.runtime === "default" || data.runtime === "codex" || data.runtime === "claude" || data.runtime === "opencode" || data.runtime === "jiuwenswarm" || data.runtime === "deepseek" || data.runtime === "pi") ||
       !("runtimeModel" in data) || !(data.runtimeModel === null || typeof data.runtimeModel === "string") ||
       !("agent" in data) || !(data.agent === null || typeof data.agent === "string")) return null;
   const harnessModels: Selection["harnessModels"] = {};
   if ("harnessModels" in data && data.harnessModels && typeof data.harnessModels === "object") {
     for (const [key, model] of Object.entries(data.harnessModels)) {
-      if ((key === "codex" || key === "claude" || key === "opencode" || key === "jiuwenswarm" || key === "deepseek") && (model === null || typeof model === "string")) {
+      if ((key === "codex" || key === "claude" || key === "opencode" || key === "jiuwenswarm" || key === "deepseek" || key === "pi") && (model === null || typeof model === "string")) {
         harnessModels[key] = model;
       }
     }

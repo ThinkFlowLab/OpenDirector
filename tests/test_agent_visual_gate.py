@@ -223,7 +223,9 @@ def visual_steps(runtime, source_still, source_clip, work):
 @pytest.mark.merge
 @pytest.mark.skipif(os.getenv('OPENDIRECTOR_HARNESS_CI') != '1',
                     reason='run with the five pinned Harness CLIs installed')
-@pytest.mark.parametrize('runtime', [name for name in RUNTIMES if name != 'default'])
+# pi is left out until release CI provisions a provider for it; the five pinned
+# CLIs are installed without credentials of their own.
+@pytest.mark.parametrize('runtime', [name for name in RUNTIMES if name not in ('default', 'pi')])
 def test_harness_native_visual_input(runtime, tmp_path, monkeypatch, bounded_runtime):
     assert installation(runtime), f'Missing CLI for {runtime}'
     still, clip = make_media(tmp_path)

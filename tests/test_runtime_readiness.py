@@ -42,8 +42,8 @@ def test_catalog_probes_cli_and_bundled_separately(monkeypatch):
 
     monkeypatch.setattr(runtime, 'runtime_readiness', probe)
     result = asyncio.run(runtime.configured_runtimes())
-    assert calls == ['default', 'opencode', 'jiuwenswarm', 'deepseek', 'codex', 'claude']
-    assert [item['status'] for item in result] == ['ready', 'ready', 'ready', 'ready', 'ready', 'needs_login']
+    assert calls == ['default', 'opencode', 'jiuwenswarm', 'deepseek', 'codex', 'claude', 'pi']
+    assert [item['status'] for item in result] == ['ready', 'ready', 'ready', 'ready', 'ready', 'needs_login', 'ready']
 
 
 def test_opencode_binary_sources(monkeypatch, tmp_path):

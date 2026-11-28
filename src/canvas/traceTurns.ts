@@ -2,6 +2,7 @@
 import { normalizeClaudeTrace } from "./claudeTrace.ts";
 import { normalizeCodexTrace } from "./codexTrace.ts";
 import { normalizeDeepseekTrace } from "./deepseekTrace.ts";
+import { normalizePiTrace } from "./piTrace.ts";
 
 export type ConversationTurn = {
   id: string;
@@ -17,7 +18,7 @@ export type ConversationTurn = {
 
 const RUNTIME_NAMES: Record<string, string> = {
   default: "OpenCode", opencode: "OpenCode", codex: "Codex", claude: "Claude Code",
-  jiuwenswarm: "JiuwenSwarm", deepseek: "DeepSeek Harness",
+  jiuwenswarm: "JiuwenSwarm", deepseek: "DeepSeek Harness", pi: "Pi",
 };
 
 /** The Default runtime logs under the opencode source. */
@@ -33,6 +34,7 @@ export function normalizeTrace(source: string, body: string): string {
   return source === "deepseek" ? normalizeDeepseekTrace(body)
     : source === "codex" ? normalizeCodexTrace(body)
     : source === "claude" ? normalizeClaudeTrace(body)
+    : source === "pi" ? normalizePiTrace(body)
     : body;
 }
 

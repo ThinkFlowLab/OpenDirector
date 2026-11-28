@@ -56,6 +56,12 @@ async def model_choices(runtime: str) -> list[dict]:
     if runtime == 'jiuwenswarm':
         from opendirector.agent.jiuwenswarm import model_choices as swarm_models
         return await swarm_models()
+    if runtime == 'pi':
+        from opendirector.agent.pi import model_choices as pi_models
+        binary = executable('pi')
+        if binary is None:
+            raise ProjectError('CLI 尚未安装。', 503)
+        return await pi_models(binary)
     if runtime not in {'opencode', 'codex', 'claude'}:
         raise ProjectError('此引擎使用模型设置中的模型。')
     binary = executable(runtime)

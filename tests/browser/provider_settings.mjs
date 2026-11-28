@@ -197,7 +197,7 @@ try {
   await page.screenshot({ path: "/tmp/assistant-model-logos.png" });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /^Agent:/ }).click();
-  for (const name of ["OpenCode", "Codex", "Claude Code"]) {
+  for (const name of ["OpenCode", "Codex", "Claude Code", "Pi"]) {
     const row = page.getByRole("menuitemradio").filter({ has: page.locator("strong", { hasText: new RegExp(`^${name}$`) }) });
     const icon = row.locator("img.cw-brand-mono");
     await icon.waitFor();

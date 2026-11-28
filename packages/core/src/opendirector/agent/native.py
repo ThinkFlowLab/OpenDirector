@@ -13,7 +13,7 @@ from urllib.request import getproxies
 from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
-from opendirector.agent import cli_transport, deepseek, windows_powershell
+from opendirector.agent import cli_transport, deepseek, pi, windows_powershell
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
@@ -124,6 +124,10 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         if model:
             args += ['--model', f'opendirector/{model}' if bundled else model]
         return args, env
+    if runtime == 'pi':
+        args = pi.command(binary, session_dir=work.parent.parent / 'pi-sessions' / 'native',
+                          system=SYSTEM, model=model)
+        return args, env
     if runtime == 'codex':
         settings = ['features.shell_tool=true', 'features.apply_patch_freeform=false', 'web_search="disabled"',
             'sandbox_workspace_write.network_access=true',
@@ -199,7 +203,7 @@ class NativeRuntime:
         token = secrets.token_urlsafe(32)
         process = pump = stderr_task = None
         with TemporaryDirectory(prefix='od-agent-', dir=None if os.name == 'nt' else '/tmp') as temporary:
-            reuse_workspace = session_directory is not None and runtime in {'codex', 'claude', 'deepseek'}
+            reuse_workspace = session_directory is not None and runtime in {'codex', 'claude', 'deepseek', 'pi'}
             work = session_directory if reuse_workspace else (directory / 'agent-runs' / str(turn_id) / 'work').resolve()
             work.mkdir(parents=True, exist_ok=reuse_workspace)
             gateway.execution_directory = work
@@ -251,9 +255,13 @@ class NativeRuntime:
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':
                     args += ['--effort', thinking]
+                elif thinking != 'auto' and runtime == 'pi':
+                    args += ['--thinking', thinking]
                 if session_id and runtime != 'deepseek':
                     if runtime == 'codex':
                         args += ['resume', session_id, '-']
+                    elif runtime == 'pi':
+                        args += ['--session-id', session_id]
                     else:
                         args += ['--session' if runtime == 'opencode' else '--resume', session_id]
                 execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
@@ -273,6 +281,8 @@ class NativeRuntime:
                         prompt = f'/opendirector:{name}\n' + prompt
                     elif runtime == 'deepseek':
                         skill_instruction = f'Use the native skill tool to load {name} from {work / ".agents/skills"} before proceeding.'
+                    elif runtime == 'pi':
+                        prompt = f'Read and follow {work / ".agents/skills" / name / "SKILL.md"} before proceeding.\n' + prompt
                     else:
                         prompt = f'Use the native skill tool to load {name} before proceeding.\n' + prompt
                 env['OPENDIRECTOR_PROJECT_ID'] = str(run.project_id)
@@ -326,6 +336,8 @@ class NativeRuntime:
                                     reported_session = raw.get('sessionID') or reported_session
                                 elif runtime == 'claude':
                                     reported_session = raw.get('session_id') or reported_session
+                                elif runtime == 'pi' and raw['type'] == 'session':
+                                    reported_session = raw.get('id') or reported_session
                                 if (previous_session and reported_session != previous_session
                                         or session_id and reported_session and reported_session != session_id):
                                     raise ProjectError('Harness 返回了不同的会话 ID。', 502)
@@ -347,12 +359,15 @@ class NativeRuntime:
                 run_dir = directory / 'agent-runs'
                 run_dir.mkdir(exist_ok=True)
                 native_calls = {}
+                pi_state = {}
                 with (run_dir / f'{turn_id}.{runtime}.jsonl').open('a', encoding='utf-8') as trace:
                     while (event := await queue.get()) is not None:
                         trace.write(json.dumps(event, ensure_ascii=False) + '\n')
                         trace.flush()
                         if 'native' in event:
-                            for item in (deepseek.events(event['native'], native_calls) if runtime == 'deepseek' else text_events(runtime, event['native'])):
+                            for item in (deepseek.events(event['native'], native_calls) if runtime == 'deepseek'
+                                    else pi.events(event['native'], pi_state) if runtime == 'pi'
+                                    else text_events(runtime, event['native'])):
                                 yield item
                         else:
                             yield event

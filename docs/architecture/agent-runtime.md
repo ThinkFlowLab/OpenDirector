@@ -14,8 +14,11 @@ Harness 指承担模型调用、工具执行和上下文管理的 Agent 执行�
 | Claude Code | claude，优先 PATH，再查找常见 CLI 安装目录 | 原生认证、环境变量与初始化模型目录 |
 | JiuwenSwarm | jiuwenswarm-process，优先 PATH，再查找常见 CLI 安装目录，通过 stdin/stdout JSONL 直接调用 | 本机 Jiuwen 模型目录、配置与环境变量 |
 | DeepSeek Harness | dsh，优先 PATH，再查找常见 CLI 安装目录，以 acp profile 运行标准 JSON-RPC | CLI 原生 profile、模型目录与认证 |
+| Pi | pi，优先 PATH，再查找 `~/.pi/agent/bin`，每轮一个 `--mode json` 进程读取原生 JSONL 事件流 | 本机 `~/.pi` 的 provider 认证、设置与模型目录 |
 
 Default 与 OpenCode CLI 分别配置。外部 CLI 不读取 OpenDirector 保存的模型凭证。进程继承服务端环境，包括 PATH 和第三方 API 配置。
+
+Pi 沿用用户自己的 `~/.pi` 认证与设置，因此命令行里不传模型凭证。它以 `--mode json --print` 在一次运行中输出 JSONL 事件，适配层读取 `session`、`message_update`、`message_end` 和 `agent_end`：增量只用于显示，完成的助手消息是正文依据，被重试的失败尝试不结束本轮，只有 `agent_end` 最后一条助手消息的错误才作为失败原因返回。pi 在 print/json 模式下不询问信任，启动时显式传 `--approve`；否则本工程的 `.agents/skills`、`AGENTS.md` 与 `.pi` 设置会被静默跳过。会话写入工程内的 `agent-runs/pi-sessions/native/`，续聊用 `--session-id` 复用同一执行目录，不写入用户全局会话列表。
 
 会话保存 runtime、模型和推理强度，浏览器偏好用于辅助恢复选择。适配层不指定固定迭代轮数，沿用 harness 的预算和停止机制。
 
@@ -95,6 +98,7 @@ English summary: a Job created by an Agent `generation.submit` records `agentRun
 | Claude Code | 明确允许 Skill、Bash、Read 和业务 CLI |
 | JiuwenSwarm | 明确允许 skill_tool、list_skill、read_file、bash 和业务 CLI |
 | DeepSeek Harness | 沿用原生工具与权限；Skill 限于本轮快照，业务操作通过 Shell 调用 opendirector，未承接的审批不自动批准 |
+| Pi | `--approve --tools read,bash,write,edit`：只读、Shell 和文件编辑；Skill 与 `AGENTS.md` 由原生加载器从本轮目录读取，业务操作通过 Shell 调用 opendirector |
 
 工具允许列表与操作系统沙箱提供不同约束。业务工具独立校验工程范围和输入；原生文件访问权限不授予直接改写工程存储的业务权限。
 

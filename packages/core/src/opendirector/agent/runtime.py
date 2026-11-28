@@ -33,6 +33,7 @@ RUNTIMES = {
     'deepseek': RuntimeSpec(id='deepseek', label='DeepSeek Harness', group='harness', modelSource='cli', modelOverride=True, engine='deepseek'),
     'codex': RuntimeSpec(id='codex', label='Codex', group='harness', modelSource='cli', modelOverride=True, engine='codex'),
     'claude': RuntimeSpec(id='claude', label='Claude Code', group='harness', modelSource='cli', modelOverride=True, engine='claude'),
+    'pi': RuntimeSpec(id='pi', label='Pi', group='harness', modelSource='cli', modelOverride=True, engine='pi'),
 }
 
 
@@ -87,6 +88,9 @@ async def runtime_readiness(engine: str) -> str:
             return 'unknown'
     if engine == 'jiuwenswarm':
         return await jiuwenswarm.readiness(executable)
+    if engine == 'pi':
+        from opendirector.agent.pi import readiness
+        return await readiness(executable)
     if engine == 'opencode':
         return 'ready'
     args = ['--version'] if engine == 'default' else ['login', 'status'] if engine == 'codex' else ['auth', 'status', '--json']

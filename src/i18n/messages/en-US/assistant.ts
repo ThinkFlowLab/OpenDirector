@@ -195,6 +195,8 @@ export const assistant = {
   "assistant.agent.configureHint": "Finish the setup on the machine running OpenDirector, then check again.",
   "assistant.agent.jiuwenswarmHint":
     "Configure the JiuwenSwarm conversation model, then read the model catalog again.",
+  "assistant.agent.piHint":
+    "Pi uses the providers, sign-in, extensions and MCP servers of the local pi installation in ~/.pi/agent. Sign in with pi auth login, then check again.",
   "assistant.agent.configureModel": "Configure conversation model",
   "assistant.agent.installGuide": "Installation guide ↗",
   "assistant.agent.terminal": "Run in a terminal:",
