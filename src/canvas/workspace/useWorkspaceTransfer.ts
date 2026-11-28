@@ -38,6 +38,7 @@ import {
   transferClipboardMedia,
   type ClipboardMedia,
 } from "../clipboardMedia.ts";
+import { systemClipboardPayload, writeSystemClipboard } from "../systemClipboard.ts";
 import { resourceNodeData } from "../projectAssets";
 import { persistCurrentDocument } from "../projectManagement";
 import { measureSubjectNodeHeight } from "../subjectLayoutMeasurement.ts";
@@ -459,10 +460,35 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime, readOnly: boolean) {
     );
     clipboardMedia.current = captureMedia(clipboard.current);
     pasteCount.current = 0;
-    notify(
-      t("canvas.workspace.toast.copied", {
-        count: clipboard.current.nodes.length,
-      }),
+    const payload = systemClipboardPayload(
+      clipboard.current,
+      clipboardMedia.current,
+    );
+    if (!payload) {
+      notify(
+        t("canvas.workspace.toast.copied", {
+          count: clipboard.current.nodes.length,
+        }),
+      );
+      return;
+    }
+    // Start the write inside the shortcut's user activation and report success
+    // only once the platform clipboard accepted it.
+    writeSystemClipboard(payload).then(
+      () =>
+        notify(
+          t(
+            payload.kind === "image"
+              ? "canvas.workspace.toast.copiedImage"
+              : "canvas.workspace.toast.copiedText",
+          ),
+        ),
+      (error: unknown) =>
+        notify(
+          t("canvas.workspace.toast.copiedInAppOnly", {
+            error: errorMessage(error),
+          }),
+        ),
     );
   };
   const cut = () => {
