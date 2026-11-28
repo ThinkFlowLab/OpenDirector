@@ -114,11 +114,14 @@ try {
   const manualModelId = "Model ID (the service's served-model-name)";
   await configureLanguage.click();
   await serviceUrl.waitFor();
+  assert.equal(await serviceUrl.inputValue(), "https://api.openai.com/v1");
+  assert.equal(await welcome.getByRole("checkbox", { name: "No key required", exact: true }).isChecked(), false);
   assert.equal(await welcome.getByRole("button", { name: "Add a language model", exact: true }).count(), 0);
   await serviceUrl.press("Escape");
   await assistantTitle.waitFor();
   await configureLanguage.click();
   await serviceUrl.fill("http://127.0.0.1:12345/v1");
+  await welcome.getByLabel("API Key", { exact: true }).fill("fixture-only");
   await welcome.getByRole("button", { name: "Add manually" }).click();
   await welcome.getByLabel(manualModelId, { exact: true }).fill(languageModel);
   await welcome.getByRole("button", { name: "Add", exact: true }).click();
@@ -139,6 +142,8 @@ try {
   const languageReceipt = await languageSave;
   assert.ok(languageReceipt.ok(), await languageReceipt.text());
   const [savedLanguage] = await languageReceipt.json();
+  assert.equal(savedLanguage.connectionType, "api");
+  assert.equal(savedLanguage.authMode, "bearer");
   configuredIds.push(savedLanguage.id);
   await welcome.getByRole("heading", { name: "What do you want to do first?" }).waitFor();
   const languageAssistant = await page.request.get(base + projectPath + "/assistant", { headers });

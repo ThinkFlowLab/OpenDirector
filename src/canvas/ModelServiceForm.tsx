@@ -20,6 +20,7 @@ import {
   PROVIDER_PRESETS,
   matchingConnections,
   providerPresetFor,
+  servicePresetDefaults,
 } from "./providerPresets";
 import { CanvasIcon } from "./CanvasIcon";
 import { ModelPicker, type ModelTestResult } from "./ModelPicker";
@@ -79,34 +80,34 @@ export function ModelServiceForm({
   const connectionFieldId = useId();
   const audioPreset = capability === "lyrics_to_music" ? "vllm-omni-music" : "vllm-omni-speech";
   const initialProtocol = capability === "lyrics_to_music" ? "vllm_omni_music" : PROTOCOLS[kind][0][0];
+  const initialPresetId = existing
+    ? providerPresetFor(existing)
+    : kind === "video"
+      ? "vllm-omni-video"
+      : kind === "image"
+        ? "vllm-omni-image"
+        : kind === "audio"
+          ? audioPreset
+          : "custom";
+  const initialDefaults = servicePresetDefaults(initialPresetId, initialProtocol);
   const [connection, setConnection] = useState(existing);
-  const [presetId, setPresetId] = useState(
-    existing
-      ? providerPresetFor(existing)
-      : kind === "video"
-        ? "vllm-omni-video"
-        : kind === "image"
-          ? "vllm-omni-image"
-          : kind === "audio"
-            ? audioPreset
-            : "custom",
-  );
+  const [presetId, setPresetId] = useState(initialPresetId);
   const [modelOptions, setModelOptions] = useState<
     Record<string, ModelOptions>
   >({});
   const [modelErrors, setModelErrors] = useState<Record<string, string>>({});
   const [value, setValue] = useState<ModelConfigInput>({
     kind,
-    url: existing?.url ?? "",
+    url: existing?.url ?? initialDefaults.url,
     modelId: existing?.modelId ?? "",
     apiKey: "",
-    connectionType: existing?.connectionType ?? "self_hosted",
+    connectionType: existing?.connectionType ?? initialDefaults.connectionType,
     capabilityAutoCheck: existing?.capabilityAutoCheck,
     protocol:
       existing && isSegmentationModel(existing)
         ? "vllm_omni_segmentation"
-        : (existing?.protocol ?? initialProtocol),
-    authMode: existing?.authMode ?? "none",
+        : (existing?.protocol ?? initialDefaults.protocol),
+    authMode: existing?.authMode ?? initialDefaults.authMode,
     proxyMode: existing ? (existing.proxyMode ?? "system") : "direct",
     videoAdapter: existing?.videoAdapter ?? "auto",
     inputModalities:
@@ -189,6 +190,7 @@ export function ModelServiceForm({
       patch.proxyMode !== undefined ||
       patch.capabilityAutoCheck !== undefined
     ) setResults({});
+    if (patch.proxyMode !== undefined) setDiscoveryError("");
     if (patch.protocol !== undefined && patch.protocol !== value.protocol) {
       setModelOptions(
         Object.fromEntries(
@@ -278,7 +280,8 @@ export function ModelServiceForm({
     }
   };
   const chooseProvider = (id: string) => {
-    const preset = PROVIDER_PRESETS.find((item) => item.id === id);
+    const { preset, url, protocol, connectionType, authMode } =
+      servicePresetDefaults(id, PROTOCOLS[kind][0][0]);
     setPresetId(id);
     setConnection(undefined);
     const presetModels = [...(preset?.modelsByKind?.[kind] ?? [])];
@@ -296,10 +299,10 @@ export function ModelServiceForm({
       modelId: "",
       apiKey: "",
       videoAdapter: "auto",
-      url: preset?.url ?? "",
-      protocol: preset?.protocol ?? PROTOCOLS[kind][0][0],
-      connectionType: preset?.connectionType ?? "self_hosted",
-      authMode: preset?.authMode ?? "none",
+      url,
+      protocol,
+      connectionType,
+      authMode,
       proxyMode: "direct",
     });
   };
