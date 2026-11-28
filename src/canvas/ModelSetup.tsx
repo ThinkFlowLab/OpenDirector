@@ -25,16 +25,12 @@ export function ModelSetup({ catalog, onClose, onConfigure }: {
   onClose: () => void;
   onConfigure: (kind: SetupKind) => void;
 }) {
-  const { t, locale, setLocale } = useI18n();
+  // The interface language lives in Settings -> General and on the welcome
+  // screen; repeating the switch here duplicated one setting across two panels.
+  const { t } = useI18n();
   const missing = modelSetupMissing(catalog.models);
   const next = missing[0];
   return <div className="cw-model-setup">
-    <div className="cw-model-setup-language">
-      <label htmlFor="model-setup-language">{t("modelSetup.language")}</label>
-      <select id="model-setup-language" value={locale} onChange={event => setLocale(event.target.value as "zh-CN" | "en-US")}>
-        <option value="zh-CN">{t("common.chinese")}</option><option value="en-US">{t("common.english")}</option>
-      </select>
-    </div>
     <div className="cw-model-setup-intro">
       <p>{t("modelSetup.hint")}</p>
     </div>

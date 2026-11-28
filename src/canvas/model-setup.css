@@ -1,6 +1,4 @@
 .cw-model-setup { width: 100%; display: flex; flex-direction: column; position: relative; }
-.cw-model-setup-language { display: flex; justify-content: flex-end; align-items: center; gap: 8px; color: var(--settings-muted); font-size: 12px; }
-.cw-model-setup-language select { width: auto; min-height: 30px; }
 .cw-model-setup-intro { padding: 12px 0 16px; }
 .cw-model-setup-intro p { margin: 0; color: var(--settings-muted); line-height: 1.6; font-size: 13px; }
 .cw-model-setup-progress { font-size: 12px; color: var(--settings-muted); margin: 0 0 12px; }
