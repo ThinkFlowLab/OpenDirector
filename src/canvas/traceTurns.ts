@@ -1,8 +1,4 @@
 /** Turn index of a conversation on the Trace page, and the per-turn runtime choices. */
-import { normalizeClaudeTrace } from "./claudeTrace.ts";
-import { normalizeCodexTrace } from "./codexTrace.ts";
-import { normalizeDeepseekTrace } from "./deepseekTrace.ts";
-
 export type ConversationTurn = {
   id: string;
   number: number;
@@ -27,14 +23,6 @@ export const runtimeName = (runtime: string) => RUNTIME_NAMES[runtime] ?? runtim
 
 /** Log sources read for a runtime. Only opencode records raw model requests. */
 export const traceSources = (runtime: string) => runtime === "opencode" ? ["model", runtime] : [runtime];
-
-/** Each runtime keeps its own log format; the page never applies one runtime's parser to another turn. */
-export function normalizeTrace(source: string, body: string): string {
-  return source === "deepseek" ? normalizeDeepseekTrace(body)
-    : source === "codex" ? normalizeCodexTrace(body)
-    : source === "claude" ? normalizeClaudeTrace(body)
-    : body;
-}
 
 /** The linked turn if the conversation lists it, otherwise the latest turn. */
 export function initialTurn(turns: ConversationTurn[], target: string): string {

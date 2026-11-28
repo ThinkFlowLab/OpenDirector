@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeDeepseekTrace } from "../src/canvas/deepseekTrace.ts";
+import { createDeepseekTraceProjection } from "../src/canvas/deepseekTrace.ts";
 
 function update(value: object) {
   return { native: { jsonrpc: "2.0", method: "session/update", params: { update: value } } };
 }
 
-function normalize(records: object[]) {
-  return normalizeDeepseekTrace(records.map((value) => JSON.stringify(value)).join("\n"))
-    .split("\n").filter(Boolean).map((line) => JSON.parse(line));
+function project(records: object[]) {
+  const projection = createDeepseekTraceProjection();
+  for (const record of records) projection.append([JSON.stringify(record)]);
+  return projection.rows;
 }
 
 test("ACP chunks form separate assistant and thinking rows by message identity", () => {
@@ -18,7 +19,10 @@ test("ACP chunks form separate assistant and thinking rows by message identity",
     update({ sessionUpdate: "agent_message_chunk", messageId: "a", content: { type: "text", text: "Working." } }),
     update({ sessionUpdate: "agent_thought_chunk", messageId: "b", content: { type: "text", text: "Next step." } }),
   ];
-  const rows = normalize(records);
+  const rows = project(records).map((row) => {
+    assert.ok("raw" in row);
+    return row;
+  });
   assert.deepEqual(rows.map((row) => [row.native.type, row.native.part.text]), [
     ["reasoning", "Inspect the project."], ["text", "Working."], ["reasoning", "Next step."],
   ]);
@@ -28,22 +32,25 @@ test("ACP chunks form separate assistant and thinking rows by message identity",
 test("tool updates preserve arguments and update one row for each parallel call", () => {
   const start = (toolCallId: string) => update({ sessionUpdate: "tool_call", toolCallId,
     title: "bash", status: "in_progress", rawInput: { command: toolCallId } });
-  const running = normalize([start("a"), start("b")]);
-  assert.equal(running[0].native.part.state.status, "in_progress");
-  const rows = normalize([start("a"), start("b"), update({
+  const running = project([start("a"), start("b")]);
+  assert.partialDeepStrictEqual(running[0], { native: { part: { state: { status: "in_progress" } } } });
+  const rows = project([start("a"), start("b"), update({
     sessionUpdate: "tool_call_update", toolCallId: "a", status: "completed",
     content: [{ type: "content", content: { type: "text", text: "Done" } }],
   })]);
   assert.equal(rows.length, 2);
-  assert.equal(rows[0].native.part.state.status, "completed");
-  assert.deepEqual(rows[0].native.part.state.input, { command: "a" });
-  assert.equal(rows[0].raw.length, 2);
-  assert.equal(rows[1].native.part.state.status, "in_progress");
+  assert.partialDeepStrictEqual(rows, [
+    { native: { part: { state: { status: "completed", input: { command: "a" } } } } },
+    { native: { part: { state: { status: "in_progress" } } } },
+  ]);
+  const first = rows[0];
+  assert.ok("raw" in first);
+  assert.equal(first.raw.length, 2);
 });
 
 test("transport handshakes and usage stay out of the activity list while CLI receipts remain", () => {
   const receipt = { type: "tool", name: "opendirector project show", status: "complete" };
-  const rows = normalize([
+  const rows = project([
     { native: { jsonrpc: "2.0", id: 1, result: { protocolVersion: 1 } } },
     update({ sessionUpdate: "usage_update", used: 123, size: 1000 }),
     receipt,
@@ -51,5 +58,5 @@ test("transport handshakes and usage stay out of the activity list while CLI rec
   ]);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows[0], receipt);
-  assert.equal(rows[1].native.part.reason, "end_turn");
+  assert.partialDeepStrictEqual(rows[1], { native: { part: { reason: "end_turn" } } });
 });

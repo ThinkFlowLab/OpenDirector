@@ -4,6 +4,8 @@ from contextlib import aclosing, suppress
 from dataclasses import dataclass, replace
 import json
 import logging
+from os import fstat
+from os.path import join, normpath
 from pathlib import Path
 import threading
 import time
@@ -12,8 +14,8 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4, uuid5
 
 from anyio import CancelScope
-from fastapi import APIRouter, Header
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, Header, Query
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opendirector.agent.catalog import model_choices
@@ -35,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 Runtime = RuntimeId
+TRACE_CHUNK_BYTES = 512 * 1024
 
 def _assistant_request(config):
     """Admission uses the same output ceiling as the configured model gateway."""
@@ -486,11 +489,13 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
     conversations = Conversations(projects)
     runtimes = AgentRuntimes(projects, generation, configs, provider)
 
+    def running_turn(project_id: UUID) -> UUID | None:
+        running = active.get(project_id)
+        return running.turn if running is not None and running.task is not None and not running.task.done() else None
+
     @router.get('/conversations/{conversation_id}/trace')
     def conversation_trace(project_id: UUID, conversation_id: UUID):
-        running = active.get(project_id)
-        live = running.turn if running is not None and running.task is not None and not running.task.done() else None
-        return conversations.trace(project_id, conversation_id, live)
+        return conversations.trace(project_id, conversation_id, running_turn(project_id))
 
     @router.get('/traces/{turn_id}/conversation')
     def trace_conversation(project_id: UUID, turn_id: UUID):
@@ -509,12 +514,43 @@ def agent_routes(projects, generation, configs, provider=None, *, active=None) -
 
     @router.get('/traces/{turn_id}/{source}')
     def trace(project_id: UUID, turn_id: UUID,
-              source: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek', 'model']):
+              source: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek', 'model'],
+              cursor: Annotated[str | None, Query(pattern=r'^(?:[0-9]+:[0-9]+:[0-9]+)?$', max_length=64)] = None):
         folder = child(conversations.path(project_id), 'agent-runs')
-        file = child(folder, f'{turn_id}.{source}.jsonl')
-        if not file.is_file():
+        filename = normpath(join(folder, f'{turn_id}.{source}.jsonl'))
+        if not filename.startswith(join(folder, '')):
             raise ProjectError('轨迹文件不存在。', 404)
-        return FileResponse(file, media_type='text/plain', headers={'Cache-Control': 'no-store'})
+        file = Path(filename)
+        if file.is_symlink():
+            raise ProjectError('项目内部文件不能是符号链接。', 409)
+        headers = {'Cache-Control': 'no-store'}
+        if cursor is None:
+            if not file.is_file():
+                raise ProjectError('轨迹文件不存在。', 404)
+            return FileResponse(file, media_type='text/plain', headers=headers)
+
+        # Sample liveness before reading. If a turn finishes during this read,
+        # the client will still check again and receive every final byte.
+        headers['X-Trace-Running'] = '1' if running_turn(project_id) == turn_id else '0'
+        if not file.is_file():
+            return Response(status_code=404, headers=headers)
+        try:
+            with file.open('rb') as stream:
+                stat = fstat(stream.fileno())
+                identity = f'{stat.st_dev}:{stat.st_ino}'
+                previous, _, position = cursor.rpartition(':')
+                offset = int(position) if position else 0
+                if cursor and (previous != identity or offset > stat.st_size):
+                    headers['X-Trace-Reset'] = '1'
+                    offset = 0
+                stream.seek(offset)
+                data = stream.read(min(TRACE_CHUNK_BYTES, stat.st_size - offset))
+        except FileNotFoundError:
+            return Response(status_code=404, headers=headers)
+        next_offset = offset + len(data)
+        headers['X-Trace-Cursor'] = f'{identity}:{next_offset}'
+        headers['X-Trace-More'] = '1' if next_offset < stat.st_size else '0'
+        return Response(content=data, media_type='text/plain', headers=headers)
 
     @router.get('/turns/{turn_id}/jobs')
     def turn_jobs(project_id: UUID, turn_id: UUID):

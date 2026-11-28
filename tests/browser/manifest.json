@@ -82,7 +82,7 @@
       "lanes": [
         "gate"
       ],
-      "note": "Bilingual original Trace ZIP archive download on assistant fixture services; only linked Jobs are stubbed."
+      "note": "Bilingual original Trace ZIP export and 64 MiB live trace transfer gate on assistant fixture services."
     },
     {
       "file": "assistant_run_navigation.mjs",

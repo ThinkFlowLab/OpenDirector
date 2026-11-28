@@ -115,6 +115,55 @@ def test_turn_resolves_to_its_own_conversation_including_archived(assistant):
     assert client.get(path + '/conversations').json()['activeId'] == second
 
 
+def test_trace_cursor_reads_appended_bytes_and_preserves_original_export(assistant, tmp_path):
+    client, path, _ = assistant
+    conversation = client.get(path).json()['conversationId']
+    send(client, path, conversation, '轨迹')
+    turn = client.get(f'{path}/conversations/{conversation}/trace').json()['turns'][0]['id']
+    url = f'{path}/traces/{turn}/deepseek'
+    file = conversation_file(tmp_path).parent / f'{turn}.deepseek.jsonl'
+    first = '{"text":"第一条"}\n'.encode()
+    second = '{"text":"第二条"}\n'.encode()
+    file.write_bytes(first)
+
+    initial = client.get(url, params={'cursor': ''})
+    assert initial.content == first
+    assert initial.headers['X-Trace-Running'] == '0'
+    cursor = initial.headers['X-Trace-Cursor']
+    assert client.get(url, params={'cursor': cursor}).content == b''
+
+    with file.open('ab') as stream:
+        stream.write(second)
+    assert client.get(url, params={'cursor': cursor}).content == second
+    assert client.get(url).content == first + second
+
+    replacement = file.with_suffix('.new')
+    replacement.write_bytes(second + first)
+    replacement.replace(file)
+    reset = client.get(url, params={'cursor': cursor})
+    assert reset.headers['X-Trace-Reset'] == '1'
+    assert reset.content == second + first
+
+
+@pytest.mark.parametrize('params', [{}, {'cursor': ''}], ids=['export', 'cursor'])
+def test_trace_rejects_symlink(assistant, tmp_path, params):
+    client, path, _ = assistant
+    conversation = client.get(path).json()['conversationId']
+    send(client, path, conversation, '轨迹')
+    target = tmp_path / 'outside.jsonl'
+    target.write_text('{"text":"outside"}\n')
+    turn = uuid4()
+    folder = conversation_file(tmp_path).parent
+    try:
+        (folder / f'{turn}.deepseek.jsonl').symlink_to(target)
+    except OSError:
+        pytest.skip('Cannot create symbolic links on this host')
+
+    response = client.get(f'{path}/traces/{turn}/deepseek', params=params)
+    assert response.status_code == 409
+    assert target.read_text() == '{"text":"outside"}\n'
+
+
 class Clock:
     """Deterministic stand-in for the agent module's time source."""
     def __init__(self):
