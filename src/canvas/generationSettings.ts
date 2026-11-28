@@ -84,8 +84,11 @@ export function getNodeGenerationSettings(
 export function generationEditSettings(node: CanvasNode) {
   if (!["image", "video", "audio"].includes(node.type)) return node.data.settings;
   const settings = getNodeGenerationSettings(node);
-  // Image save receipts expand an omitted quality to the same effective default.
-  if (node.type === "image") settings.imageQuality ??= "auto";
+  // Image save receipts can fill defaults without changing the draft.
+  if (node.type === "image") {
+    settings.imageQuality ??= "auto";
+    settings.faceEmphasis ??= false;
+  }
   if (settings.videoMode !== "first-last") delete settings.frameSlotsInitialized;
   return { ...settings, model: settings.modelConfigId ? "" : settings.model };
 }

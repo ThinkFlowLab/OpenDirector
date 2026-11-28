@@ -23,17 +23,21 @@ import {
 
 setActiveLocale("zh-CN");
 
-test("image quality defaults from save receipts preserve upload and edit identity", () => {
+test("image defaults from save receipts preserve upload and edit identity", () => {
   for (const locale of ["zh-CN", "en-US"] as const) {
     setActiveLocale(locale);
     const draft = createNode("image", undefined, {
       settings: { ...generationDefaults("image"), modelConfigId: "image-model" },
     });
     const saved = { ...draft, data: { ...draft.data,
-      settings: { ...draft.data.settings!, imageQuality: "auto" as const } } };
+      settings: { ...draft.data.settings!, imageQuality: "auto" as const, faceEmphasis: false } } };
     assert.equal(uploadTargetUnchanged(saved, draft), true, locale);
     assert.equal(uploadTargetUnchanged(draft, saved), true, locale);
     assert.equal(generationEditIdentity(saved, []), generationEditIdentity(draft, []), locale);
+    const emphasized = { ...saved, data: { ...saved.data,
+      settings: { ...saved.data.settings, faceEmphasis: true } } };
+    assert.equal(uploadTargetUnchanged(emphasized, draft), false, locale);
+    assert.notEqual(generationEditIdentity(emphasized, []), generationEditIdentity(draft, []), locale);
     for (const imageQuality of ["low", "medium", "high"] as const) {
       const edited = { ...saved, data: { ...saved.data,
         settings: { ...saved.data.settings, imageQuality } } };
