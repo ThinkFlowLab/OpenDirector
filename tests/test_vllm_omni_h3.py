@@ -23,7 +23,7 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.capability_probe import CapabilityProbe
-from opendirector.integrations.vllm_omni import VllmOmniGeneration, video_frame_parameters
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, generation_fields, video_frame_parameters
 from opendirector.integrations.volcengine import VolcengineGeneration
 from test_model_availability import document
 from opendirector_api.main import create_app
@@ -235,7 +235,8 @@ def test_other_models_keep_rejecting_video_references(project):
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
-def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
+@pytest.mark.parametrize('aspect_ratio,expected_size', [('9:16', '480x832'), ('21:9', '1120x480')])
+def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path, aspect_ratio, expected_size):
     store, value, session, _ = project
     clip = tmp_path / 'clip.mp4'
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=64x48:d=0.5', '-pix_fmt', 'yuv420p', str(clip)], check=True)
@@ -246,16 +247,27 @@ def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
         manager = CreationGeneration(store, configs)
         manager.provider = GenerationProviders(manager.store, httpx.MockTransport(server), poll_interval=0)
         task, pinned, private = prepare_command(manager, (store, value['id'], session), config, prompt='雨夜街头',
-            parameters=dict(videoMode='first_frame', durationSeconds=10, aspectRatio='9:16'))
+            parameters=dict(videoMode='first_frame', durationSeconds=10, aspectRatio=aspect_ratio, resolution='auto'))
         manager._launch(task, pinned, private)
         await asyncio.gather(*(job.future for job in manager.jobs.values()))
         done = tasks(manager, value['id'])[-1]
         assert done['status'] == 'succeeded', done['errorDetails']
-        assert (done['parameters']['duration'], done['parameters']['ratio']) == (10, '9:16')
+        assert (done['parameters']['duration'], done['parameters']['ratio']) == (10, aspect_ratio)
         intent = store.snapshot(value['id']).generationSpecs[-1]
         assert intent.parameters.durationSeconds == 10 and intent.prompt == '雨夜街头'
         fields, _ = server.posts[0]
         assert fields['num_frames'] == '240'
-        assert fields['size'] == '480x832' and json.loads(fields['extra_params']) == {'task': 't2va'}
+        assert fields['size'] == expected_size
+        assert json.loads(fields['extra_params']) == {'task': 't2va', 'aspect_ratio': aspect_ratio}
         await manager.close()
     asyncio.run(run())
+
+
+def test_t2va_sends_aspect_ratio_with_and_without_size():
+    sized_parameters = {'duration': 5, 'ratio': '16:9', 'resolution': '480p', 'size': '832x480'}
+    fields, extra = generation_fields(sized_parameters, 'first_frame')
+    assert fields['size'] == '832x480' and extra == {'task': 't2va', 'aspect_ratio': '16:9'}
+    _, extra = generation_fields({}, 'first_frame')
+    assert extra == {'task': 't2va', 'aspect_ratio': '16:9'}
+    _, extra = generation_fields(sized_parameters, 'first_frame', has_images=True)
+    assert extra == {'task': 'fl2va'}

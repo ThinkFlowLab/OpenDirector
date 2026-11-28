@@ -22,7 +22,7 @@ from opendirector.integrations.volcengine import bounded, endpoint
 from opendirector.media.probe import require_ffprobe
 
 FPS = 24
-RATIOS = {'16:9', '9:16', '1:1', '4:3', '3:4'}
+RATIOS = {'21:9', '16:9', '9:16', '1:1', '4:3', '3:4'}
 
 
 def video_frame_parameters(seconds: float, fps: int = FPS, num_frames: int | None = None) -> dict[str, int]:
@@ -46,9 +46,9 @@ def generation_fields(parameters, mode, *, has_images=False, has_audio=False, co
         extra['task'] = 'fl2va'
     else:
         extra['task'] = 't2va'
-        if 'size' not in fields:
-            ratio = parameters.get('ratio')
-            extra['aspect_ratio'] = ratio if ratio in RATIOS else '16:9'
+        # H3 requires aspect_ratio for t2va without continue_from, even with an explicit size.
+        ratio = parameters.get('ratio')
+        extra['aspect_ratio'] = ratio if ratio in RATIOS else '16:9'
     return fields, extra
 
 
