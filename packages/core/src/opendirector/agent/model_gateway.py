@@ -21,16 +21,42 @@ from opendirector.integrations.http_settings import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MODEL_READ_TIMEOUT = 120.0
+UNANSWERED_MODEL_ERROR = "模型在限定时间内没有返回数据，本轮已结束。请稍后重试，或检查模型服务是否可用。"
+
+
+def model_read_timeout(raw: str | None = None) -> float:
+    """Seconds allowed for the whole upstream read. Default 120; mid-stream stalls count."""
+    value = os.environ.get("OPENDIRECTOR_MODEL_READ_TIMEOUT") if raw is None else raw
+    if value is None:
+        return DEFAULT_MODEL_READ_TIMEOUT
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_MODEL_READ_TIMEOUT
+    if seconds <= 0 or seconds != seconds or seconds == float("inf"):
+        return DEFAULT_MODEL_READ_TIMEOUT
+    return seconds
+
+
+def unanswered_model_failure(error_name: str) -> ProjectError:
+    logger.info("Ending the turn after an unanswered model request (%s)", error_name)
+    return ProjectError(UNANSWERED_MODEL_ERROR, 504, code="model_read_timeout")
+
 
 class ModelGateway:
     """Loopback-only OpenAI transport for the bundled runtime's configured model."""
 
     def __init__(self, config: dict, thinking: str, token: str, project_id: str,
                  turn_id: str, transport: httpx.AsyncBaseTransport | None = None,
-                 *, trace_path: Path | None = None):
+                 *, trace_path: Path | None = None,
+                 read_timeout: float | None = None,
+                 on_unanswered_failure: object | None = None):
         self.config, self.thinking, self.token = config, thinking, token
         self.project_id, self.turn_id, self.transport = project_id, turn_id, transport
         self.trace_path = trace_path
+        self.read_timeout = model_read_timeout() if read_timeout is None else read_timeout
+        self.on_unanswered_failure = on_unanswered_failure
         self.active: set[asyncio.Task] = set()
         self.closed = False
 
@@ -120,12 +146,12 @@ class ModelGateway:
                 url = self.config["url"].rstrip("/") + "/chat/completions"
                 request_id = secrets.token_hex(8)
                 self.trace("model.request", request_id, payload=payload)
-                async with httpx.AsyncClient(
-                    transport=self.transport,
-                    event_hooks=MODEL_HTTP_HOOKS,
-                    trust_env=trust_environment(url, config=self.config),
-                    timeout=httpx.Timeout(120, connect=15),
-                ) as client:
+            async with httpx.AsyncClient(
+                transport=self.transport,
+                event_hooks=MODEL_HTTP_HOOKS,
+                trust_env=trust_environment(url, config=self.config),
+                timeout=httpx.Timeout(self.read_timeout, connect=15),
+            ) as client:
                     async with client.stream(
                         "POST",
                         url,
@@ -168,12 +194,12 @@ class ModelGateway:
                                     event_lines.clear()
                                     if data != "[DONE]":
                                         self.trace_reasoning(request_id, data)
-                # Only successful exhaustion and cleanup may terminate this response.
-                # Sending this in finally would disguise a truncated body as complete.
-                writer.write(b"0\r\n\r\n")
-                await writer.drain()
-                self.trace("model.completed", request_id, forwardedBytes=forwarded_bytes,
-                           elapsedMs=round((monotonic() - started) * 1000))
+                    # Only successful exhaustion and cleanup may terminate this response.
+                    # Sending this in finally would disguise a truncated body as complete.
+                    writer.write(b"0\r\n\r\n")
+                    await writer.drain()
+                    self.trace("model.completed", request_id, forwardedBytes=forwarded_bytes,
+                               elapsedMs=round((monotonic() - started) * 1000))
         except asyncio.CancelledError:
             if request_id is not None:
                 self.trace("model.cancelled", request_id, forwardedBytes=forwarded_bytes)
@@ -192,6 +218,9 @@ class ModelGateway:
             if request_id is not None:
                 self.trace("model.error", request_id, error=type(failure).__name__,
                            forwardedBytes=forwarded_bytes)
+                if forwarded_bytes == 0 and self.on_unanswered_failure is not None:
+                    with suppress(Exception):
+                        self.on_unanswered_failure(type(failure).__name__)
             logger.error(
                 f"agent.model.error turn_id={self.turn_id} failure={type(failure).__name__}"
             )

@@ -857,3 +857,104 @@ def test_codex_resume_requires_a_persisted_rollout(tmp_path, monkeypatch):
     rollout.parent.mkdir(parents=True)
     rollout.write_text('{}\n')
     assert native.codex_session_available(session)
+
+RETRYING_CLI = r"""
+import json, os, sys, time, urllib.error, urllib.request
+from pathlib import Path
+sys.stdin.read()
+config = json.loads(os.environ['OPENCODE_CONFIG_CONTENT'])
+base = config['provider']['opendirector']['options']['baseURL']
+key = os.environ['OPENDIRECTOR_MODEL_KEY']
+count = Path(os.environ['REQUEST_COUNT'])
+payload = json.dumps({'messages': [{'role': 'user', 'content': 'hello'}], 'stream': True}).encode()
+for attempt in range(6):
+    count.write_text(str(attempt + 1))
+    request = urllib.request.Request(
+        base + '/chat/completions', data=payload,
+        headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+        method='POST')
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+        print(json.dumps({'type': 'text', 'sessionID': 'timeout-session', 'part': {'text': 'should not appear'}}))
+        raise SystemExit(0)
+    except Exception:
+        if attempt < 5:
+            time.sleep(2)
+time.sleep(300)
+"""
+
+
+def test_unanswered_model_timeout_ends_the_turn_without_silent_retries(tmp_path, monkeypatch):
+    """A first-byte timeout must end the live turn instead of letting the harness retry."""
+    monkeypatch.setenv('OPENDIRECTOR_MODEL_READ_TIMEOUT', '0.3')
+    count = tmp_path / 'requests.txt'
+    count.write_text('0')
+    monkeypatch.setenv('REQUEST_COUNT', str(count))
+    script = tmp_path / 'retrying_cli.py'
+    script.write_text(RETRYING_CLI)
+    real_command = native.command
+
+    def command(kind, work, socket, token, model, model_url, catalog, **kwargs):
+        _, env = real_command(kind, work, socket, token, model, model_url, catalog, **kwargs)
+        return [sys.executable, str(script)], env
+
+    monkeypatch.setattr(native, 'command', command)
+    monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
+    async def no_skills(*args):
+        return []
+    monkeypatch.setattr('opendirector_api.agent.skills', no_skills)
+
+    server = socket.socket(); server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('127.0.0.1', 0)); server.listen()
+    stop = threading.Event()
+    # Accept connections but never reply, so the gateway read timeout can fire.
+    def serve():
+        try:
+            while not stop.is_set():
+                try:
+                    server.settimeout(0.2)
+                    connection, _ = server.accept()
+                except TimeoutError:
+                    continue
+                except OSError:
+                    break
+                try:
+                    while not stop.is_set():
+                        time.sleep(0.05)
+                finally:
+                    connection.close()
+        except Exception:
+            pass
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        port = server.getsockname()[1]
+        local = LocalProjects(tmp_path)
+        config = ModelConfigs(tmp_path).save(
+            'agent', f'http://127.0.0.1:{port}', 'slow-model', 'server-only-key', auth_mode='none')
+        started = time.monotonic()
+        with TestClient(create_app(local), headers={
+                'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4()),
+                'Accept-Language': 'en-US'}) as client:
+            path = project(client)
+            turn = {'id': str(uuid4()), 'runtime': 'default', 'modelId': config['id'], 'text': 'hello'}
+            response = client.post(path + '/assistant/turns', json=turn)
+            elapsed = time.monotonic() - started
+            assert response.status_code == 200
+            events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
+            assert events, response.text
+            ending = events[-1]
+            assert ending['type'] == 'end', events
+            assert ending['error']
+            assert 'did not respond in time' in ending['error']
+            conversation = ending['conversation']
+            assert conversation['messages'][-1]['status'] == 'interrupted'
+            assert conversation['messages'][-1]['text'] == ''
+            saved = client.get(path + '/assistant').json()
+            assert saved['messages'][-1]['status'] == 'interrupted'
+        assert elapsed < 8
+        assert int(count.read_text() or '0') == 1
+    finally:
+        stop.set()
+        server.close()

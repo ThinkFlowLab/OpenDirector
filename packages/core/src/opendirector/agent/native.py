@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 from urllib.request import getproxies
 from uuid import UUID
 
-from opendirector.agent.model_gateway import ModelGateway
+from opendirector.agent.model_gateway import ModelGateway, unanswered_model_failure
 from opendirector.agent import cli_transport, deepseek, windows_powershell
 from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
@@ -229,10 +229,21 @@ class NativeRuntime:
                 gateway.roots = roots
                 endpoint = str(Path(temporary) / 'cli.sock')
                 server, bridge_env = await cli_transport.start_server(gateway, queue, endpoint, pending)
+                unanswered: list[str] = []
+                def report_unanswered(error_name: str) -> None:
+                    if unanswered:
+                        return
+                    unanswered.append(error_name)
+                    if model is not None:
+                        model.closed = True
+                    current = process
+                    if current is not None:
+                        pending.add(asyncio.create_task(terminate(current, group=True)))
                 if run.runtime == 'default':
                     model = ModelGateway(
                         config, thinking, token, str(project_id), str(turn_id), self.transport,
                         trace_path=work.parent.with_suffix('.model.jsonl'),
+                        on_unanswered_failure=report_unanswered,
                     )
                 model_server = await asyncio.start_server(model.connect, '127.0.0.1', 0) if model else None
                 model_url = f'http://127.0.0.1:{model_server.sockets[0].getsockname()[1]}' if model_server else ''
@@ -332,7 +343,11 @@ class NativeRuntime:
                                 await queue.put({'native': raw})
                         if await process.wait():
                             await record_exit()
+                            if unanswered:
+                                raise unanswered_model_failure(unanswered[0])
                             raise ProjectError(f'{runtime} 进程退出（{process.returncode}），请检查 CLI 登录和配置。', 502)
+                        if unanswered:
+                            raise unanswered_model_failure(unanswered[0])
                         if reported_session:
                             run.save_native_session(reported_session, selection,
                                 engine_directory=native_work,
