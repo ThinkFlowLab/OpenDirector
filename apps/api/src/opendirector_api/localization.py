@@ -168,6 +168,33 @@ def wants_english(request: Request) -> bool:
     return wants_english_language(request.headers.get("accept-language"))
 
 
+MODEL_LIST_HINTS = {
+    401: "the key is invalid, expired, or not allowed for this address",
+    403: "this key may not access the address, or the endpoint is closed for the account",
+    404: "the address has no /models endpoint; check the Base URL, which usually ends with /v1",
+    405: "the address does not accept GET /models; check the Base URL",
+    429: "the service is rate limiting or out of quota",
+}
+
+
+def model_list_message(chinese: str) -> str | None:
+    """Keep the upstream status, the queried URL and the likely cause."""
+    upstream_status = re.search(r'HTTP ([0-9]{3})', chinese)
+    if not upstream_status:
+        return None
+    status = int(upstream_status[1])
+    queried = re.search(r'GET (\S+?)[）)]', chinese)
+    where = f", GET {queried[1]}" if queried else ""
+    if status >= 500:
+        hint = "the service is temporarily unavailable"
+    else:
+        hint = MODEL_LIST_HINTS.get(status, "the service returned an unexpected status")
+    return (
+        f"Could not load the model list (HTTP {status}{where}): {hint}. "
+        "Nothing was changed."
+    )
+
+
 def localized_error_for_language(
     language: str | None,
     *,
@@ -184,9 +211,9 @@ def localized_error_for_language(
     if code == 'tool_model_missing':
         return missing_tool_model_message(required_capability, english=True)
     if code == 'model_list_http_error':
-        upstream_status = re.search(r'HTTP ([0-9]{3})', chinese)
-        if upstream_status:
-            return f'Could not load the model list (HTTP {upstream_status[1]}).'
+        translated = model_list_message(chinese)
+        if translated:
+            return translated
     if code.startswith(('capability_', 'image_input_', 'tool_source_')):
         translated = english_capability_message(chinese)
         if translated:

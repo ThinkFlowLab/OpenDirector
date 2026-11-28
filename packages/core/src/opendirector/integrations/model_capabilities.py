@@ -17,6 +17,23 @@ from opendirector.integrations.volcengine import endpoint
 logger = logging.getLogger(__name__)
 
 
+def _model_list_hint(status):
+    """Name the likely cause so a 401 is not read as a model-capability verdict."""
+    if status == 401:
+        return '密钥无效、已过期或无权访问该地址'
+    if status == 403:
+        return '该密钥无权访问此地址，或该接口未对当前账号开放'
+    if status == 404:
+        return '该地址没有 /models 接口，请检查 Base URL（通常以 /v1 结尾）'
+    if status == 405:
+        return '该地址不接受 GET /models，请检查 Base URL'
+    if status == 429:
+        return '请求过于频繁或额度不足'
+    if status >= 500:
+        return '服务端暂时不可用'
+    return '服务返回了未预期的状态'
+
+
 async def read_service_models(config, transport=None):
     if config.get('protocol') == 'higgsfield_open':
         return [{'id': MAGI2_MODEL, 'videoCapabilities': magi2_capabilities()}]
@@ -32,8 +49,11 @@ async def read_service_models(config, transport=None):
                                      timeout=15, follow_redirects=False) as client:
             async with client.stream('GET', endpoint(config['url'], '/models'), headers=auth_headers(config)) as response:
                 if response.status_code != 200:
-                    raise ProjectError(f'读取模型声明失败（HTTP {response.status_code}），未修改配置。',
-                                       code='model_list_http_error' if is_text_model else None)
+                    raise ProjectError(
+                        f'读取模型列表失败（HTTP {response.status_code}，'
+                        f'GET {endpoint(config["url"], "/models")}）：{_model_list_hint(response.status_code)}；'
+                        f'未修改配置。',
+                        code='model_list_http_error' if is_text_model else None)
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)

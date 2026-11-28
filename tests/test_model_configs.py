@@ -333,6 +333,8 @@ def test_read_service_models_protocol():
         asyncio.run(read_service_models(config, httpx.MockTransport(
             lambda request: httpx.Response(503))))
     assert failure.value.code == 'model_list_http_error'
+    assert 'GET https://models.example/v1/models' in str(failure.value)
+    assert '服务端暂时不可用' in str(failure.value)
     with pytest.raises(ProjectError):
         asyncio.run(read_service_models(config, httpx.MockTransport(
             lambda request: httpx.Response(200, json={'data': [{'id': 123}]}))))
