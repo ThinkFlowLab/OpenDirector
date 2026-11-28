@@ -1,5 +1,5 @@
 import { guardLargeVideoDataUrl, largeVideoState, verifyLargeVideoBytes } from './large-video.mjs';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, clipboard } from 'electron';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -82,6 +82,14 @@ export async function smokeWindow({ window, host, getLocale }) {
   window.focus();
   window.webContents.focus();
   await waitFor(() => window.isFocused(), 'Desktop window could not take focus before search');
+  // Chromium asks the embedder for a clipboard permission before an
+  // asynchronous write, and the name depends on the activation: a click asks for
+  // clipboard-sanitized-write, and a write without one asks for the read/write
+  // pair the application never needs. Both paths are checked, so a policy that
+  // grants the read/write name to satisfy a scripted write cannot pass either.
+  await waitFor(() => window.webContents.executeJavaScript('document.hasFocus()'), 'Renderer did not take document focus before the clipboard check');
+  await assertClipboardDenied(window);
+  await assertClipboardWrite(window, 'opendirector-smoke-click', true);
   await window.webContents.executeJavaScript("document.querySelector('.od-sidebar-search-toggle').click()");
   await waitFor(() => window.webContents.executeJavaScript("document.activeElement === document.querySelector('.od-sidebar-search')"), 'Project search did not take focus');
   const firstProject = await window.webContents.executeJavaScript("document.querySelector('.od-project-sidebar nav button span').textContent");
@@ -248,11 +256,70 @@ export async function smokeWindow({ window, host, getLocale }) {
     await window.webContents.executeJavaScript("document.querySelector('.od-caption-actions button').click()");
   }
   await waitFor(() => window.webContents.executeJavaScript(`localStorage.getItem('opendirector.desktop.sidebar.v1') === '${result.sidebarFinallyOpen ? 'open' : 'closed'}'`), 'Sidebar preference was not saved');
+  await assertFullscreen(window);
   await window.webContents.executeJavaScript('window.opendirectorDesktop.setExporting(true)');
   await delay(50);
   window.close();
   if (window.isVisible() || !(await host.inspect())) throw new Error('Closing a window stopped the Host');
   return result;
+}
+
+// A write without user activation asks Chromium for the read/write clipboard
+// pair, the name that also opens `navigator.clipboard.readText`. Every copy in
+// the shared UI starts from a click, so the shell denies this path, and the
+// denial is part of the contract: it must neither reach the system clipboard nor
+// stay pending.
+async function assertClipboardDenied(window) {
+  const before = await clipboard.readText();
+  const outcome = await window.webContents.executeJavaScript(
+    `navigator.clipboard.writeText('opendirector-smoke-denied').then(() => 'granted', error => error.name)`, false);
+  if (outcome !== 'NotAllowedError') throw new Error(`A clipboard write without user activation was not denied: ${outcome}`);
+  const after = await clipboard.readText();
+  if (after !== before) throw new Error(`A denied clipboard write changed the system clipboard: ${JSON.stringify(before)} became ${JSON.stringify(after)}`);
+  const read = await window.webContents.executeJavaScript(
+    `navigator.clipboard.readText().then(() => 'granted', error => error.name)`, false);
+  if (read !== 'NotAllowedError') throw new Error(`A clipboard read was not denied: ${read}`);
+}
+
+async function assertClipboardWrite(window, text, userGesture) {
+  const previous = await clipboard.readText();
+  try {
+    await window.webContents.executeJavaScript(
+      `navigator.clipboard.writeText(${JSON.stringify(text)}).then(() => true, error => { throw new Error('Clipboard write was rejected: ' + error.name); })`, userGesture);
+    // The renderer promise settles before the system clipboard holds the value:
+    // an immediate read still returns the previous contents, measured for the
+    // scripted write in the packaged application and intermittently for a click.
+    let actual = await clipboard.readText();
+    for (let attempt = 0; attempt < 20 && actual !== text; attempt++) {
+      await delay(100);
+      actual = await clipboard.readText();
+    }
+    if (actual !== text) throw new Error(`Clipboard write did not reach the system clipboard: expected ${text}, read ${JSON.stringify(actual)}`);
+  } finally {
+    // Give back the text this run found so a developer smoke does not replace the
+    // clipboard of the session that launched it. Non-text formats are not kept.
+    clipboard.writeText(previous);
+  }
+}
+
+// A denial here is invisible to the renderer: `requestFullscreen`'s promise stays
+// pending, so the player's button looks dead instead of reporting a refusal.
+// Assert the entry, the exit, and that a refusal surfaces at all.
+async function assertFullscreen(window) {
+  const state = await window.webContents.executeJavaScript(`(async () => {
+    const element = document.querySelector('.cw-workspace') ?? document.body;
+    const outcome = await Promise.race([
+      element.requestFullscreen().then(() => 'entered', error => error.name),
+      new Promise(resolve => setTimeout(() => resolve('pending'), 10000)),
+    ]);
+    if (outcome !== 'entered') return { outcome };
+    const entered = document.fullscreenElement === element;
+    document.exitFullscreen().catch(() => {});
+    return { outcome, entered };
+  })()`, true);
+  if (state.outcome !== 'entered') throw new Error(`Fullscreen request did not enter fullscreen: ${state.outcome}`);
+  if (!state.entered) throw new Error('Fullscreen request did not make the element fullscreen');
+  await waitFor(() => window.webContents.executeJavaScript('!document.fullscreenElement'), 'Fullscreen did not exit');
 }
 
 async function smokeLargeVideo(window, host, projectId, fixture, firstLaunch) {

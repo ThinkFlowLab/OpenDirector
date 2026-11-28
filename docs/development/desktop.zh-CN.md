@@ -18,7 +18,9 @@ node apps/desktop/scripts/smoke.mjs /absolute/path/to/packaged/OpenDirector
 
 运行时准备复用现有构建后端生成 Python wheel，包含前端、技能和实际 OpenCode 可执行文件；将 wheel 和依赖安装到私有独立 Python，验证 CLI 帮助及两个媒体程序，并将平台写入 `runtime/manifest.json`。不会修改系统 Python。提供对应平台可分发的媒体程序及许可证；依赖包管理器外部动态库的系统二进制不能直接作为便携运行时。
 
-冒烟检查使用临时数据目录启动实际打包程序，进入画布，拖入本地 MP4、PNG 和 WAV 文件并确认重启后素材和节点仍在，检查鉴权健康接口和工程查询，验证渲染隔离及中英文切换，隐藏窗口并确认 Host 保留，退出后重开同一工程，不调用模型服务。该检查不代表已完成 Agent 辅助创作、导出质量、签名或未测试平台的验收。
+冒烟检查使用临时数据目录启动实际打包程序，进入画布，拖入本地 MP4、PNG 和 WAV 文件并确认重启后素材和节点仍在，检查鉴权健康接口和工程查询，验证渲染隔离及中英文切换，断言点击激活的复制确实写入系统剪贴板、无用户激活的写入被拒绝，进入并退出全屏，隐藏窗口并确认 Host 保留，退出后重开同一工程，不调用模型服务。该检查不代表已完成 Agent 辅助创作、导出质量、签名或未测试平台的验收。
+
+界面中的复制操作使用 `navigator.clipboard.writeText`，媒体播放器使用 `requestFullscreen`，两者都受渲染进程权限约束。桌面壳因此只授予这些调用实际申请的名称，其余渲染进程权限继续默认拒绝（见 [`permissions.mjs`](../../apps/desktop/src/permissions.mjs)）。权限名称要在实际 Electron 构建里实测，不能从 Chromium 源码推导，并且要按用户激活方式分别实测：Electron 45 里脚本调用的写入申请 `clipboard-read`，也就是同时能打开 `navigator.clipboard.readText` 的读写名称，而同一段写入由点击触发时申请 `clipboard-sanitized-write`；桌面壳只授予点击路径的名称，冒烟断言脚本路径以 `NotAllowedError` 被拒且剪贴板内容不变。全屏是同一类问题的反面：拒绝 `automatic-fullscreen` 或 `fullscreen` 会让申请 Promise 一直不落地，按钮看起来毫无反应而不是报错，因此冒烟也断言全屏申请能落地、能进入、能退出。普通浏览器页面同样不能替代这些检查，因为 Chrome 自己会授予写入权限，只有实际安装包的冒烟运行能覆盖桌面壳的权限策略。写入申请的权限名称来自 Chromium 共用的权限代码，不随平台变化；各平台要各自跑一次安装包冒烟，才能确认该平台的系统剪贴板和窗口服务行为一致。
 
 ## 终端命令
 
