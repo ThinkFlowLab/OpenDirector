@@ -10,6 +10,8 @@ export const firstRun = {
   "firstRun.languageTitle": "Set up a language model",
   "firstRun.languageListHint": "Choose a saved chat model or add a new one.",
   "firstRun.useSavedModel": "Use this saved language model",
+  "firstRun.pickAddedModel": "Added {count} language models. Pick one to continue to step 2.",
+  "firstRun.modelJustAdded": "New · pick to continue",
   "firstRun.addLanguageModel": "Add a language model",
   "firstRun.harnessAction": "Use an existing harness",
   "firstRun.harnessTitle": "Choose an existing harness",

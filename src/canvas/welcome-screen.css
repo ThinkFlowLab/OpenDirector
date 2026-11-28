@@ -111,6 +111,17 @@ html[data-desktop-platform="win32"]:not([data-desktop-fullscreen]) .cw-welcome {
   .cw-welcome-intro-copy .cw-welcome-primary { margin-top: 22px; }
 }
 .cw-welcome-description { margin: 12px 0 20px; color: var(--settings-muted); font-size: 14px; line-height: 1.6; }
+.cw-welcome-added-hint {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--cw-control-accent, var(--settings-border));
+  border-radius: 8px;
+  color: var(--settings-text);
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--settings-hover);
+}
+.cw-welcome-option small.cw-welcome-new-model { color: var(--cw-control-accent, var(--settings-text)); font-weight: 600; }
 .cw-welcome-connected { color: var(--settings-text); font-size: 13px; margin: -4px 0 16px; overflow-wrap: anywhere; }
 .cw-welcome-options { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .cw-welcome-option {
