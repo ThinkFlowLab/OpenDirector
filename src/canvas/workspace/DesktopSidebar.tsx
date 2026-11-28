@@ -6,6 +6,7 @@ import { useT } from "../../i18n/I18nProvider";
 import { IconButton } from "./workspaceChrome";
 import { CanvasIcon } from "../CanvasIcon";
 import { ProjectDeleteDialog } from "../ProjectDeleteDialog";
+import { shortcutAriaKeys, shortcutKeys } from "../shortcuts";
 import logo from "../../assets/open_director_logo.png";
 
 export function DesktopSidebar({ open, currentId, switchingStatus, disabled, onToggle, onCreate, onSelect, onDelete, onSettings }: {
@@ -14,8 +15,6 @@ export function DesktopSidebar({ open, currentId, switchingStatus, disabled, onT
   onCreate: () => void; onSelect: (project: WorkspaceProject) => Promise<boolean>; onSettings: () => void;
 }) {
   const t = useT();
-  const mac = document.documentElement.dataset.desktopPlatform === "darwin";
-  const modifier = mac ? "⌘" : "Ctrl+";
   const [projects, setProjects] = useState<WorkspaceProject[]>(() => peekWorkspaceProjects()?.projects ?? []);
   const [actions, setActions] = useState<{ id: string; top: number; left: number } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceProject | null>(null);
@@ -52,25 +51,6 @@ export function DesktopSidebar({ open, currentId, switchingStatus, disabled, onT
     const timer = window.setTimeout(() => searchInput.current?.focus({ preventScroll: true }), 200);
     return () => window.clearTimeout(timer);
   }, [open, searching]);
-  useEffect(() => {
-    if (!document.documentElement.hasAttribute("data-desktop-chrome")) return;
-    const keydown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.isComposing || document.querySelector("dialog[open]")) return;
-      const key = event.key.toLowerCase();
-      if (key === "n") {
-        event.preventDefault();
-        if (!disabled && !event.repeat) createProject();
-        return;
-      }
-      if (key !== "k") return;
-      event.preventDefault();
-      if (!open) onToggle();
-      setSearching(true);
-      searchInput.current?.focus({ preventScroll: true });
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [open, onToggle, onCreate, disabled]);
   useEffect(() => {
     if (!searching || query.trim()) return;
     const dismiss = (event: PointerEvent) => {
@@ -114,9 +94,9 @@ export function DesktopSidebar({ open, currentId, switchingStatus, disabled, onT
   return <div className="od-desktop-navigation">
     <aside id="od-project-sidebar" className="od-project-sidebar" inert={!open} aria-hidden={!open}>
       <div className="od-sidebar-brand"><img src={logo} alt=""/>OpenDirector</div>
-      <button className="od-sidebar-create" type="button" disabled={disabled} onClick={createProject} aria-keyshortcuts="Meta+N Control+N">
+      <button className="od-sidebar-create" type="button" disabled={disabled} onClick={createProject} aria-keyshortcuts={shortcutAriaKeys("new-project")}>
         <span className="od-sidebar-create-label"><CanvasIcon name="newProject" size={14} />{t("desktop.sidebar.newProject")}</span>
-        <span className="od-sidebar-create-shortcut" aria-hidden="true"><kbd>{modifier}</kbd><kbd>N</kbd></span>
+        <span className="od-sidebar-create-shortcut" aria-hidden="true"><kbd>{shortcutKeys("new-project")}</kbd></span>
       </button>
       <div className="od-sidebar-heading" ref={searchRoot}>
         {searching ? <div className="od-sidebar-search-field">
@@ -129,7 +109,7 @@ export function DesktopSidebar({ open, currentId, switchingStatus, disabled, onT
         </div> : <>
           <span className="od-sidebar-label">{t("desktop.sidebar.projects")}</span>
           <button ref={searchButton} className="od-sidebar-search-toggle" type="button" onClick={() => setSearching(true)}
-            aria-label={t("canvas.project.search")} aria-expanded={false} aria-keyshortcuts="Meta+K Control+K" title={`${t("canvas.project.search")} (${modifier}K)`}><CanvasIcon name="search" size={14} /></button>
+            aria-label={t("canvas.project.search")} aria-expanded={false} title={t("canvas.project.search")}><CanvasIcon name="search" size={14} /></button>
         </>}
       </div>
       <span className="od-sidebar-switch-status" role="status">{switchingStatus}</span>
@@ -161,7 +141,7 @@ export function DesktopSidebar({ open, currentId, switchingStatus, disabled, onT
       <button type="button" onClick={onToggle} aria-expanded={open} aria-controls="od-project-sidebar" title={t("desktop.sidebar.toggle")} aria-label={t("desktop.sidebar.toggle")}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
       </button>
-      {!open && <button type="button" disabled={disabled} onClick={createProject} title={`${t("desktop.sidebar.newProject")} (${modifier}N)`} aria-label={t("desktop.sidebar.newProject")} aria-keyshortcuts="Meta+N Control+N"><CanvasIcon name="newProject" size={18} /></button>}
+      {!open && <button type="button" disabled={disabled} onClick={createProject} title={`${t("desktop.sidebar.newProject")} (${shortcutKeys("new-project")})`} aria-label={t("desktop.sidebar.newProject")} aria-keyshortcuts={shortcutAriaKeys("new-project")}><CanvasIcon name="newProject" size={18} /></button>}
     </div>
   </div>;
 }

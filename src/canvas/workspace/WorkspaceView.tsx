@@ -3,6 +3,8 @@ import type { EditSession } from "./EditSession.tsx";
 import { projectDisplayName } from "../projectDisplayName";
 import { persistCurrentDocument } from "../projectManagement";
 import { DesktopSidebar } from "./DesktopSidebar";
+import { useAppShortcuts } from "./useAppShortcuts";
+import { shortcutAriaKeys, shortcutKeys } from "../shortcuts";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -579,6 +581,21 @@ export function WorkspaceView({ rt, editingState, editSession }: {
       runLayoutPending.current = false;
     }
   };
+  const [projectPickerRequest, setProjectPickerRequest] = useState(0);
+  useAppShortcuts({
+    enabled: ready && !switching && !help && !settingsOpen,
+    onNewProject: createDesktopProject,
+    onSwitchProject: () => setProjectPickerRequest((n) => n + 1),
+    onSettings: () => {
+      setSettingsCategory("general");
+      setSettingsOpen(true);
+    },
+    onAssistant: () => {
+      if (assistantOpen) setAssistantOpen(false);
+      else showAssistant();
+    },
+  });
+
   const [showSwitching, setShowSwitching] = useState(false);
   useEffect(() => {
     if (!switching) {
@@ -1107,6 +1124,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
           />
           <ProjectSelector
             currentId={doc.id}
+            openSignal={projectPickerRequest}
             editNameForId={editProjectNameId}
             readOnly={readOnly}
             name={projectDisplayName(t, doc.title, doc.defaultNameIndex)}
@@ -1261,7 +1279,8 @@ export function WorkspaceView({ rt, editingState, editSession }: {
             actionLabel: tool.unavailable
               ? t(tool.labelKey)
               : t("canvas.rail.add", { label: t(tool.labelKey) }),
-            shortcut: tool.kind === "text" ? "T" : undefined,
+            shortcut:
+              tool.kind === "text" ? shortcutKeys("add-text") : undefined,
             unavailable: tool.unavailable,
             onClick: tool.unavailable ? undefined : () => addNode(tool.kind),
           })),
@@ -1280,9 +1299,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
             label: t("canvas.rail.upload"),
             preserveCollapsedOnFocusRestore: true,
             actionLabel: t("canvas.rail.uploadLocal"),
-            shortcut: navigator.platform.includes("Mac")
-              ? "Meta+O"
-              : "Control+O",
+            shortcut: shortcutKeys("upload"),
             onClick: () => openFilePicker(),
           },
         ]}
@@ -1365,6 +1382,8 @@ export function WorkspaceView({ rt, editingState, editSession }: {
           <IconButton
             name="settings"
             label={t("canvas.workspace.toolbar.settings")}
+            shortcut={shortcutKeys("settings")}
+            ariaKeyshortcuts={shortcutAriaKeys("settings")}
             active={settingsOpen}
             onClick={() => {
               setZoomMenu(false);
@@ -1411,7 +1430,8 @@ export function WorkspaceView({ rt, editingState, editSession }: {
           <IconButton
             name="undo"
             label={t("canvas.workspace.toolbar.undo")}
-            shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
+            shortcut={shortcutKeys("undo")}
+            ariaKeyshortcuts={shortcutAriaKeys("undo")}
             tooltipDelay={0}
             disabled={readOnly || !businessHistory.undo || historyReplaying}
             onClick={() => replayHistory()}
@@ -1419,9 +1439,8 @@ export function WorkspaceView({ rt, editingState, editSession }: {
           <IconButton
             name="redo"
             label={t("canvas.workspace.toolbar.redo")}
-            shortcut={
-              navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
-            }
+            shortcut={shortcutKeys("redo")}
+            ariaKeyshortcuts={shortcutAriaKeys("redo")}
             tooltipDelay={0}
             disabled={readOnly || !businessHistory.redo || historyReplaying}
             onClick={() => replayHistory(true)}
@@ -1497,11 +1516,15 @@ export function WorkspaceView({ rt, editingState, editSession }: {
         <IconButton
           name="help"
           label={t("canvas.workspace.toolbar.help")}
-          shortcut="?"
+          shortcut={shortcutKeys("help")}
+          ariaKeyshortcuts={shortcutAriaKeys("help")}
           onClick={() => setHelp(true)}
         />
-        <button
+        <TooltipButton
           className="cw-chat-button"
+          label={t("canvas.workspace.toolbar.chat")}
+          shortcut={shortcutKeys("assistant")}
+          aria-keyshortcuts={shortcutAriaKeys("assistant")}
           aria-controls="canvas-assistant"
           aria-expanded={assistantOpen}
           onClick={() =>
@@ -1509,7 +1532,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
           }
         >
           <CanvasIcon name="star" size={18} />{t("canvas.workspace.toolbar.chat")}
-        </button>
+        </TooltipButton>
       </div>
       {selectedEdges.length > 0 && selected.length === 0 && (
         <div
@@ -2172,14 +2195,14 @@ export function WorkspaceView({ rt, editingState, editSession }: {
                 <CanvasIcon name="plus" size={16} />
                 <span>{t("canvas.workspace.menu.addDownstream")}</span>
               </button>
-              {menuButton(t("canvas.workspace.menu.copy"), "copy", copy, "⌘ C")}
-              {menuButton(t("canvas.workspace.menu.cut"), "copy", cut, "⌘ X")}
-              {menuButton(t("canvas.workspace.menu.paste"), "copy", () => paste(), "⌘ V")}
-              {menuButton(t("canvas.workspace.selection.duplicate"), "copy", () => paste(true), "⌘ D")}
+              {menuButton(t("canvas.workspace.menu.copy"), "copy", copy, shortcutKeys("copy"))}
+              {menuButton(t("canvas.workspace.menu.cut"), "copy", cut, shortcutKeys("cut"))}
+              {menuButton(t("canvas.workspace.menu.paste"), "copy", () => paste(), shortcutKeys("paste"))}
+              {menuButton(t("canvas.workspace.selection.duplicate"), "copy", () => paste(true), shortcutKeys("duplicate"))}
               <hr />
-              {menuButton(t("canvas.workspace.selection.group"), "group", group, "⌘ G")}
+              {menuButton(t("canvas.workspace.selection.group"), "group", group, shortcutKeys("group"))}
               {selected.length > 1 && menuButton(t("canvas.workspace.kind.stack"), "stack", stack)}
-              {menuButton(t("canvas.workspace.menu.ungroup"), "group", ungroup, "⌘ ⇧ G")}
+              {menuButton(t("canvas.workspace.menu.ungroup"), "group", ungroup, shortcutKeys("ungroup"))}
               {runLayoutGroup && !lockedIds.has(runLayoutGroup.id) &&
                 menuButton(
                   t(runLayoutGroup.autoLayout === "run"
@@ -2355,7 +2378,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
                 onClick={() => openFilePicker()}
               >
                 <CanvasIcon name="upload" />
-                {t("canvas.workspace.help.upload")}
+                {t("canvas.rail.uploadLocal")}
               </button>
               <h3>{t("canvas.workspace.panel.canvasAssets")}</h3>
               <div className="cw-asset-grid">

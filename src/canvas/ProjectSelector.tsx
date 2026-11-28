@@ -12,6 +12,7 @@ import {
 } from "../backend/workspace";
 import { errorMessage } from "../backend/api";
 import { useT } from "../i18n/I18nProvider";
+import { shortcutAriaKeys, shortcutKeys } from "./shortcuts";
 
 const ACTION_MENU_HEIGHT = 92;
 
@@ -31,9 +32,12 @@ export function ProjectSelector({
   onRename,
   onRenameProject,
   onDeleteProject,
+  openSignal,
 }: {
   currentId: string;
   readOnly?: boolean;
+  /** Bumped by the app-wide shortcut to open the list without the trigger. */
+  openSignal?: number;
   editNameForId?: string | null;
   name: string;
   disabled: boolean;
@@ -226,6 +230,10 @@ export function ProjectSelector({
     if (open) searchInput.current?.focus();
     else setQuery("");
   }, [open]);
+  useEffect(() => {
+    if (!openSignal || disabled) return;
+    setOpen(true);
+  }, [openSignal, disabled]);
   return (
     <div
       className="cw-project-selector"
@@ -340,7 +348,8 @@ export function ProjectSelector({
           ref={trigger}
           disabled={disabled || busy}
           aria-label={t("canvas.project.switch")}
-          title={t("canvas.project.switch")}
+          aria-keyshortcuts={shortcutAriaKeys("switch-project")}
+          title={`${t("canvas.project.switch")} (${shortcutKeys("switch-project")})`}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
@@ -521,6 +530,7 @@ export function ProjectSelector({
           <button
             className="cw-project-create"
             role="menuitem"
+            aria-keyshortcuts={shortcutAriaKeys("new-project")}
             disabled={readOnly || busy || loading || disabled}
             onClick={() => {
               setOpen(false);
@@ -528,6 +538,8 @@ export function ProjectSelector({
             }}
           >
             <span>{t("canvas.project.create")}</span>
+            {/* Visible hint only: the accessible name stays the action's. */}
+            <kbd aria-hidden="true">{shortcutKeys("new-project")}</kbd>
             <CanvasIcon name="plus" size={20} />
           </button>
           {actions && (

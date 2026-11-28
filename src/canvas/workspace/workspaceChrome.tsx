@@ -10,6 +10,7 @@ import { incomingReferenceNodes } from "../generationReferenceContent.ts";
 import { type CanvasDocument, type CanvasNodeData, type CanvasNodeKind, type Point } from "../model";
 
 import type { MessageKey } from "../../i18n/types";
+import { helpShortcutRows } from "../shortcuts";
 import { type CanvasToolId } from "../toolCatalog";
 import { TooltipButton } from "../TooltipButton";
 import { type PortSide } from "../useCanvasReferences";
@@ -66,40 +67,51 @@ export const jobTime = (locale: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-/** Shortcut hints name the keys the running platform actually has. */
+/**
+ * Help rows: gestures stay prose, key combinations come from the shortcut
+ * registry so the dialog cannot advertise a key the workspace does not handle.
+ */
 export const helpShortcuts = (
   mac: boolean,
   t: (key: MessageKey) => string,
-): Array<[string, string]> =>
-  mac
-    ? [
-        [t("canvas.workspace.help.pan"), t("canvas.workspace.help.panKeys")],
-        [t("canvas.workspace.help.zoom"), t("canvas.workspace.help.zoomKeys")],
-        [t("canvas.workspace.help.marquee"), t("canvas.workspace.help.marqueeKeys")],
-        [t("canvas.workspace.help.tools"), t("canvas.workspace.help.toolsKeys")],
-        [t("canvas.workspace.help.upload"), t("canvas.workspace.help.uploadKeys")],
-        [t("canvas.workspace.help.undoRedo"), t("canvas.workspace.help.undoRedoKeys")],
-        [t("canvas.workspace.help.clipboard"), t("canvas.workspace.help.clipboardKeys")],
-        [t("canvas.workspace.help.group"), t("canvas.workspace.help.groupKeys")],
-        [t("canvas.workspace.help.fit"), t("canvas.workspace.help.fitKeys")],
-        [t("canvas.workspace.help.nudge"), t("canvas.workspace.help.nudgeKeys")],
-        [t("canvas.workspace.help.delete"), t("canvas.workspace.help.deleteKeys")],
-        [t("canvas.workspace.help.toggleAssistant"), t("canvas.workspace.help.doubleShift")],
-      ]
-    : [
-        [t("canvas.workspace.help.pan"), t("canvas.workspace.help.panKeys")],
-        [t("canvas.workspace.help.zoom"), t("canvas.workspace.help.zoomKeysPc")],
-        [t("canvas.workspace.help.marquee"), t("canvas.workspace.help.marqueeKeys")],
-        [t("canvas.workspace.help.tools"), t("canvas.workspace.help.toolsKeys")],
-        [t("canvas.workspace.help.upload"), t("canvas.workspace.help.uploadKeysPc")],
-        [t("canvas.workspace.help.undoRedo"), t("canvas.workspace.help.undoRedoKeysPc")],
-        [t("canvas.workspace.help.clipboard"), t("canvas.workspace.help.clipboardKeysPc")],
-        [t("canvas.workspace.help.group"), t("canvas.workspace.help.groupKeysPc")],
-        [t("canvas.workspace.help.fit"), t("canvas.workspace.help.fitKeys")],
-        [t("canvas.workspace.help.nudge"), t("canvas.workspace.help.nudgeKeys")],
-        [t("canvas.workspace.help.delete"), t("canvas.workspace.help.deleteKeysPc")],
-        [t("canvas.workspace.help.toggleAssistant"), t("canvas.workspace.help.doubleShift")],
-      ];
+): Array<[string, string]> => [
+  [t("canvas.workspace.help.pan"), t("canvas.workspace.help.panKeys")],
+  [
+    t("canvas.workspace.help.zoom"),
+    t(
+      mac
+        ? "canvas.workspace.help.zoomKeys"
+        : "canvas.workspace.help.zoomKeysPc",
+    ),
+  ],
+  [
+    t("canvas.workspace.help.marquee"),
+    t("canvas.workspace.help.marqueeKeys"),
+  ],
+  [t("canvas.workspace.help.tools"), t("canvas.workspace.help.toolsKeys")],
+  [
+    t("canvas.workspace.help.clipboard"),
+    t(
+      mac
+        ? "canvas.workspace.help.clipboardKeys"
+        : "canvas.workspace.help.clipboardKeysPc",
+    ),
+  ],
+  [
+    t("canvas.workspace.help.group"),
+    t(
+      mac
+        ? "canvas.workspace.help.groupKeys"
+        : "canvas.workspace.help.groupKeysPc",
+    ),
+  ],
+  ...helpShortcutRows(t, mac),
+  [t("canvas.workspace.help.nudge"), t("canvas.workspace.help.nudgeKeys")],
+  [
+    t("canvas.workspace.help.toggleAssistant"),
+    t("canvas.workspace.help.doubleShift"),
+  ],
+];
 export const nodeTypes = {
   image: CanvasNodeView,
   video: CanvasNodeView,
@@ -166,6 +178,7 @@ export function IconButton({
   highlighted = active,
   disabled,
   shortcut,
+  ariaKeyshortcuts,
   size,
   tooltipSide = "top",
   tooltipDelay = 200,
@@ -177,6 +190,7 @@ export function IconButton({
   highlighted?: boolean;
   disabled?: boolean;
   shortcut?: string;
+  ariaKeyshortcuts?: string;
   size?: number;
   tooltipSide?: "top" | "bottom" | "left" | "right";
   tooltipDelay?: number;
@@ -185,6 +199,7 @@ export function IconButton({
     <TooltipButton
       className={`cw-icon-button ${highlighted ? "is-active" : ""}`}
       aria-label={label}
+      aria-keyshortcuts={ariaKeyshortcuts}
       label={label}
       shortcut={shortcut}
       tooltipSide={tooltipSide}

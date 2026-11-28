@@ -33,6 +33,7 @@ const workflows = [
   { name: "minimax h3", script: "tests/browser/minimax_h3.mjs" },
   { name: "provider settings", script: "tests/browser/provider_settings.mjs" },
   { name: "new model discovery", script: "tests/browser/new_model_discovery.mjs" },
+  { name: "shortcut hints", script: "tests/browser/shortcuts.mjs" },
   { name: "Zhipu model settings feedback", script: "tests/browser/zhipu_provider.mjs" },
   { name: "capability discovery", script: "tests/browser/capability_discovery.mjs" },
   { name: "canvas composer placement", script: "tests/browser/canvas_composer_placement.mjs" },
