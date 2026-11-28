@@ -9,6 +9,7 @@ import pytest
 
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
+from test_creation_canvas_service import project  # noqa: F401 (pytest fixture)
 
 
 pytestmark = pytest.mark.cpu
@@ -269,19 +270,26 @@ def test_upload_rejects_real_duration_and_actual_container_mismatch():
 
 
 @pytest.fixture
-def voice_api(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
+def drama_voice(tmp_path, monkeypatch):
     from opendirector.application.voice_library import VoiceLibrary
-    from opendirector.infrastructure.local_projects import LocalProjects
     from opendirector.infrastructure.model_configs import ModelConfigs
-    from opendirector_api.main import create_app
-    configs = ModelConfigs(tmp_path)
-    public = configs.save('audio', 'http://voice.test/v1', 'Drama3', '', connection_type='self_hosted', protocol='openai', auth_mode='none')
+
     original = VoiceLibrary.__init__
     def handle(request):
         if request.method == 'GET': return httpx.Response(200, json={'voices': ['default'], 'uploaded_voices': []})
         return httpx.Response(200, json={'success': True, 'voice': {'id': 'alice', 'name': 'Alice', 'ref_text': 'hello'}})
     monkeypatch.setattr(VoiceLibrary, '__init__', lambda self, configs, transport=None: original(self, configs, httpx.MockTransport(handle)))
+    configs = ModelConfigs(tmp_path)
+    public = configs.save('audio', 'http://voice.test/v1', 'Drama3', '', connection_type='self_hosted', protocol='openai', auth_mode='none')
+    return configs, public
+
+
+@pytest.fixture
+def voice_api(tmp_path, drama_voice):
+    from fastapi.testclient import TestClient
+    from opendirector.infrastructure.local_projects import LocalProjects
+    from opendirector_api.main import create_app
+    _, public = drama_voice
     with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'}) as client:
         yield client, public
 
@@ -385,26 +393,19 @@ def test_moss_create_does_not_require_vllm_consent():
     assert service.create(value['id'], wav(), filename='sample.wav', name='Alice')['voiceId'] == 'cloud-id'
 
 
-def test_agent_voice_operations_share_service_and_confine_recording_path(tmp_path):
+def test_agent_voice_operations_share_service_and_confine_recording_path(project, tmp_path, drama_voice):
     import asyncio
     from opendirector.agent.tools import AgentTools
-    from opendirector.infrastructure.creation_projects import CreationProjects
-    from opendirector.infrastructure.local_projects import LocalProjects
-    from opendirector.infrastructure.model_configs import ModelConfigs
-    configs = ModelConfigs(tmp_path)
-    public = configs.save('audio', 'http://voice.test/v1', 'Drama3', '', connection_type='self_hosted', protocol='openai', auth_mode='none')
-    service = library(configs.resolve(public['id'], 'audio'), lambda request: httpx.Response(200, json=
-        {'voices': ['default'], 'uploaded_voices': []} if request.method == 'GET' else
-        {'success': True, 'voice': {'id': 'alice', 'name': 'Alice', 'ref_text': 'hello'}}))
-    business = AgentTools(CreationProjects(LocalProjects(tmp_path)), None, configs)
-    business.voices = service
-    project_id, turn_id = uuid4(), uuid4()
+    projects, project_id, session = project
+    configs, public = drama_voice
+    business = AgentTools(projects, None, configs)
+    turn_id = uuid4()
     work = tmp_path / 'work'; work.mkdir()
     audio = work / 'sample.wav'; audio.write_bytes(wav())
     async def execute(name, arguments):
-        return await business.execute(project_id, turn_id, 'session', name, name, arguments, [], None, execution_directory=work)
+        return await business.execute(project_id, turn_id, session, name, name, arguments, [], None, execution_directory=work)
     listed = asyncio.run(execute('voice_list', {'modelConfigId': public['id']}))
-    assert listed == service.list(public['id'])
+    assert listed == business.voices.list(public['id'])
     arguments = dict(modelConfigId=public['id'], connectionId=listed['connectionId'], path=str(audio), name='Alice', consent='consent-fixture-01', refText='hello')
     created = asyncio.run(execute('voice_create', arguments))
     assert created['voiceId'] == 'alice' and created['refText'] == 'hello'

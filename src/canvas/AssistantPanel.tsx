@@ -12,7 +12,18 @@ import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
 import { AssistantReply } from "./AssistantReply";
 import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
-import { ModelPicker } from "./AssistantPickers";
+import { ModePicker, ModelPicker } from "./AssistantPickers";
+import { QuestionAnswerPanel } from "./QuestionAnswerPanel.tsx";
+import {
+  applyComposerAnswerInput,
+  applyCustomAnswerText,
+  isQuestionAnswered,
+  readQuestionDraft,
+  resolveNextAnswerAction,
+  writeQuestionDraft,
+  type QuestionAnswerDraftItem,
+  type QuestionGroupDraft,
+} from "./questionAnswerDrafts.ts";
 import { SkillPicker } from "./SkillPicker";
 import { CanvasIcon } from "./CanvasIcon";
 import {
@@ -115,6 +126,14 @@ export function AssistantPanel({
   const projectReferences = useProjectMentionAssets(documentId);
   const editor = useRef<ChatReferenceEditorHandle>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [dismissedDecisionIds, setDismissedDecisionIds] = useState<string[]>(
+    [],
+  );
+  const [questionDraftState, setQuestionDraft] = useState<{
+    scope: string;
+    answers: QuestionGroupDraft;
+  } | null>(null);
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{assetId: string; anchor: DOMRect} | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -334,14 +353,118 @@ export function AssistantPanel({
   const hoveredAsset = mediaPreview && displayedAssets.find(item => item.id === mediaPreview.assetId);
 
   const latestUser = value.messages.at(-2);
-  const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
+  const latestTurnId =
+    latestReply?.role === "assistant"
+      ? (latestReply.turnId ??
+        (latestUser?.role === "user" ? latestUser.id : undefined))
+      : undefined;
+  const latestTrace = latestReply?.role === "assistant" && latestTurnId &&
     new URLSearchParams({
       traceProject: documentId,
       ...(value.conversationId ? { conversation: value.conversationId } : {}),
-      turn: latestUser.id,
+      turn: latestTurnId,
       runtime: latestReply.runtime === "default" ? "opencode" : latestReply.runtime ?? "opencode",
       ...(latestReply.status === "streaming" ? { live: "1" } : {}),
     });
+  const decisionsById = new Map(
+    (value.decisions ?? []).map((item) => [item.requestId, item]),
+  );
+  const tasksById = new Map(
+    (value.tasks ?? []).map((item) => [item.taskId, item]),
+  );
+  const latestWaitingDecision =
+    [...(value.decisions ?? [])]
+      .reverse()
+      .find((item) => item.status === "waiting_input") ?? null;
+  const activeExpandedDecision =
+    !readOnly &&
+    latestWaitingDecision &&
+    !dismissedDecisionIds.includes(latestWaitingDecision.requestId)
+      ? latestWaitingDecision
+      : null;
+  const answerScope = activeExpandedDecision
+    ? `${documentId}:${activeExpandedDecision.taskId}:${activeExpandedDecision.requestId}`
+    : null;
+  const questionDraft = questionDraftState?.scope === answerScope
+    ? questionDraftState.answers
+    : {};
+
+  useEffect(() => {
+    if (!activeExpandedDecision || !answerScope) {
+      setQuestionDraft(null);
+      setActiveQuestionIndex(0);
+      return;
+    }
+    setSlashQuery(null);
+    const saved = readQuestionDraft(
+      documentId,
+      activeExpandedDecision.taskId,
+      activeExpandedDecision.requestId,
+    );
+    setQuestionDraft({ scope: answerScope, answers: saved });
+    const firstUnanswered = activeExpandedDecision.questions.findIndex(
+      (q) => !isQuestionAnswered(q, saved[q.id]),
+    );
+    setActiveQuestionIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
+  }, [answerScope]);
+
+  const updateQuestionDraft = (
+    questionId: string,
+    updater: (
+      current: QuestionAnswerDraftItem | undefined,
+    ) => QuestionAnswerDraftItem,
+  ): QuestionGroupDraft => {
+    if (!activeExpandedDecision || !answerScope) return questionDraft;
+    const next: QuestionGroupDraft = {
+      ...questionDraft,
+      [questionId]: updater(questionDraft[questionId]),
+    };
+    writeQuestionDraft(
+      documentId,
+      activeExpandedDecision.taskId,
+      activeExpandedDecision.requestId,
+      next,
+    );
+    setQuestionDraft({ scope: answerScope, answers: next });
+    return next;
+  };
+
+  const safeQuestionIndex = activeExpandedDecision
+    ? Math.min(
+        activeQuestionIndex,
+        Math.max(0, activeExpandedDecision.questions.length - 1),
+      )
+    : 0;
+  const activeQuestion =
+    activeExpandedDecision?.questions[safeQuestionIndex] ?? null;
+  const answerText = activeQuestion ? questionDraft[activeQuestion.id]?.composerText ?? "" : "";
+  const typedAnswerText = answerText.trim();
+  const composerReferencesDisabled = referenceDisabled || Boolean(answerScope);
+  const composerPlaceholder = activeQuestion
+    ? activeExpandedDecision!.questions.length > 1
+      ? t("assistant.question.composerPlaceholderStep", {
+          current: safeQuestionIndex + 1,
+          total: activeExpandedDecision!.questions.length,
+        })
+      : t("assistant.question.composerPlaceholder")
+    : undefined;
+
+  const submitComposer = () => {
+    nearBottom.current = true;
+    if (activeExpandedDecision && activeQuestion) {
+      if (locked || chat.changing || chat.submittingDecision || !typedAnswerText) return;
+      const nextDraft = updateQuestionDraft(activeQuestion.id, (prev) =>
+        applyCustomAnswerText(prev, typedAnswerText),
+      );
+      const action = resolveNextAnswerAction(activeExpandedDecision.questions, nextDraft, safeQuestionIndex);
+      if (!action) return;
+      if ("nextIndex" in action) setActiveQuestionIndex(action.nextIndex);
+      else void chat.answerDecision(activeExpandedDecision.requestId, action.answers);
+      return;
+    }
+    pendingReferences.cancel();
+    void chat.send();
+  };
 
   return (
     <aside
@@ -360,6 +483,12 @@ export function AssistantPanel({
           event.preventDefault();
           event.stopPropagation();
           if (mediaPreview) setMediaPreview(null);
+          else if (activeExpandedDecision)
+            setDismissedDecisionIds((ids) =>
+              ids.includes(activeExpandedDecision.requestId)
+                ? ids
+                : [...ids, activeExpandedDecision.requestId],
+            );
           else onClose();
         }
       }}
@@ -367,7 +496,7 @@ export function AssistantPanel({
         if (event.dataTransfer.types.includes("Files")) {
           event.preventDefault();
           event.stopPropagation();
-          setDragOver(true);
+          if (!answerScope) setDragOver(true);
         }
       }}
       onDragLeave={(event) => {
@@ -379,7 +508,7 @@ export function AssistantPanel({
           event.preventDefault();
           event.stopPropagation();
           setDragOver(false);
-          void upload([...event.dataTransfer.files]);
+          if (!answerScope) void upload([...event.dataTransfer.files]);
         }
       }}
     >
@@ -427,13 +556,46 @@ export function AssistantPanel({
         )}
         {value.messages.map((message, index) => {
           const previous = value.messages[index - 1];
+          const messageTurnId =
+            message.role === "assistant"
+              ? (message.turnId ??
+                (previous?.role === "user" ? previous.id : undefined))
+              : undefined;
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&
-            previous?.role === "user" && new URLSearchParams({
+            messageTurnId && new URLSearchParams({
               traceProject: documentId,
               ...(value.conversationId ? { conversation: value.conversationId } : {}),
-              turn: previous.id,
+              turn: messageTurnId,
               runtime: message.runtime === "default" ? "opencode" : message.runtime ?? "opencode",
             });
+          const messageDecision =
+            message.role === "assistant"
+              ? ((message.decisionRequestId
+                  ? decisionsById.get(message.decisionRequestId)
+                  : undefined) ??
+                value.decisions?.find((item) => item.messageId === message.id) ??
+                null)
+              : null;
+          const messageTask =
+            message.role === "assistant"
+              ? ((message.taskId ? tasksById.get(message.taskId) : undefined) ??
+                (messageTurnId
+                  ? value.tasks?.find(
+                      (item) =>
+                        item.taskId === messageTurnId ||
+                        item.segmentTurnIds.includes(messageTurnId),
+                    )
+                  : undefined) ??
+                null)
+              : null;
+          const showPlanConfirmation = Boolean(
+            messageTask?.plan &&
+              messageTurnId &&
+              messageTask.plan.updatedAtTurnId === messageTurnId &&
+              (!messageDecision ||
+                messageDecision.status === "completed" ||
+                messageDecision.status === "invalidated"),
+          );
           return (
           <article
             key={message.id}
@@ -455,6 +617,56 @@ export function AssistantPanel({
                   message={message}
                   thinking={chat.thinkingNow}
                   t={t}
+                  decision={messageDecision}
+                  task={messageTask}
+                  showPlanConfirmation={showPlanConfirmation}
+                  decisionExpanded={
+                    Boolean(messageDecision) &&
+                    activeExpandedDecision?.requestId ===
+                      messageDecision?.requestId
+                  }
+                  busy={readOnly || chat.sending || chat.submittingDecision}
+                  confirming={
+                    Boolean(messageTask) &&
+                    chat.confirmingTaskId === messageTask?.taskId
+                  }
+                  conflictNotice={
+                    Boolean(messageDecision) &&
+                    chat.conflictDecisionIds.includes(
+                      messageDecision!.requestId,
+                    )
+                  }
+                  onToggleDecision={
+                    readOnly
+                      ? undefined
+                      : (requestId) =>
+                          setDismissedDecisionIds((ids) =>
+                            ids.filter((id) => id !== requestId),
+                          )
+                  }
+                  onContinueDecision={
+                    readOnly
+                      ? undefined
+                      : (continuationId) => {
+                          nearBottom.current = true;
+                          void chat.continueDecision(continuationId);
+                        }
+                  }
+                  onConfirmPlan={
+                    readOnly
+                      ? undefined
+                      : (taskId, planRevision) => {
+                          nearBottom.current = true;
+                          void chat.confirmPlan(taskId, planRevision);
+                        }
+                  }
+                  onAdjustPlan={
+                    readOnly
+                      ? undefined
+                      : (taskId, planRevision) => {
+                          void chat.adjustPlan(taskId, planRevision);
+                        }
+                  }
                   onSuggestion={showSuggestions && message === latestReply ? (text) => {
                     if (!latest.current.showSuggestions || latest.current.value !== value) return;
                     editor.current?.replaceText(text);
@@ -549,18 +761,44 @@ export function AssistantPanel({
             </button>
           </div>
         )}
+        {activeExpandedDecision &&
+          activeExpandedDecision.status === "waiting_input" && (
+            <QuestionAnswerPanel
+              decision={activeExpandedDecision}
+              draft={questionDraft}
+              activeIndex={safeQuestionIndex}
+              submitting={chat.submittingDecision}
+              disabled={readOnly || !chat.loaded || chat.changing}
+              onChangeIndex={setActiveQuestionIndex}
+              onUpdateDraft={updateQuestionDraft}
+              onDefer={() =>
+                setDismissedDecisionIds((ids) =>
+                  ids.includes(activeExpandedDecision.requestId)
+                    ? ids
+                    : [...ids, activeExpandedDecision.requestId],
+                )
+              }
+              onEditCustomInComposer={(_questionId, text) => {
+                editor.current?.replaceText(text);
+                editor.current?.focus();
+              }}
+              onSubmit={async (requestId, answers) => {
+                nearBottom.current = true;
+                await chat.answerDecision(requestId, answers);
+              }}
+              t={t}
+            />
+          )}
         <form
-          className="cw-assistant-composer"
+          className={`cw-assistant-composer${activeExpandedDecision ? " is-answering-question" : ""}`}
           aria-label={t("assistant.panel.composer")}
           inert={readOnly}
           onSubmit={(event) => {
             event.preventDefault();
-            pendingReferences.cancel();
-            nearBottom.current = true;
-            void chat.send();
+            submitComposer();
           }}
         >
-          {pending && (
+          {pending && !answerScope && (
             <div
               className="cw-pending-references"
               data-pending-references
@@ -606,22 +844,24 @@ export function AssistantPanel({
             </div>
           )}
           <ChatReferenceEditor
-            key={`${documentId}:${value.conversationId}`}
+            key={activeQuestion ? `${answerScope}:${activeQuestion.id}` : `${documentId}:${value.conversationId}`}
             ref={editor}
-            onSlashChange={setSlashQuery}
-            skillsEnabled={chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills !== false}
-            scope={documentId}
+            placeholder={composerPlaceholder}
+            onSlashChange={answerScope ? undefined : setSlashQuery}
+            skillsEnabled={!answerScope && currentRuntime?.supportsSkills !== false}
+            scope={answerScope ?? documentId}
             value={(() => {
+              if (answerScope) return answerText ? [{ type: "text", text: answerText }] : [];
               const content = referenceContent(value.draft, value.assets.map(asset => asset.id), value.assets, value.draftContent, t);
               return value.skills?.length && !content.some(part => part.type === "skill") ? [...content, ...value.skills.map(name => ({type: "skill" as const, name}))] : content;
             })()}
             assets={chat.referenceAssets}
             previews={assetPreviews}
             options={mentionOptions}
-            referencesDisabled={!open || referenceDisabled}
+            referencesDisabled={!open || composerReferencesDisabled}
             disabled={locked}
             onChoose={chooseMention}
-            onPasteReference={async (part, signal) => {
+            onPasteReference={answerScope ? undefined : async (part, signal) => {
               if (part.binding === "asset") {
                 const asset =
                   projectReferences.assets.find(
@@ -689,24 +929,25 @@ export function AssistantPanel({
             loading={projectReferences.loading}
             loadError={projectReferences.error}
             onConfirmPending={
-              pending ? (at) => void confirmPending(at.end) : undefined
+              pending && !answerScope ? (at) => void confirmPending(at.end) : undefined
             }
-            onChange={chat.setContent}
-            onPasteFiles={(files) => void upload(files)}
-            onSubmit={() => {
-              nearBottom.current = true;
-              pendingReferences.cancel();
-              void chat.send();
-            }}
+            onChange={activeQuestion ? (content) => {
+              const text = content.map((part) => part.type === "text" ? part.text : "").join("");
+              updateQuestionDraft(activeQuestion.id, (item) =>
+                applyComposerAnswerInput(item, text),
+              );
+            } : chat.setContent}
+            onPasteFiles={(files) => { if (!answerScope) void upload(files); }}
+            onSubmit={submitComposer}
           />
-          <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />
+          {!answerScope && <AttachmentStrip projectId={documentId} assets={value.assets.map(resolveAsset)} />}
           <div className="cw-assistant-toolbar">
             <button
               type="button"
               className="cw-assistant-icon-button"
               aria-label={t("assistant.panel.upload")}
               title={t("assistant.panel.uploadHint")}
-              disabled={referenceDisabled || value.assets.length >= 64}
+              disabled={composerReferencesDisabled || value.assets.length >= 64}
               onClick={() => fileInput.current?.click()}
             >
               <span className="cw-assistant-symbol cw-assistant-symbol-plus" aria-hidden="true">+</span>
@@ -716,7 +957,7 @@ export function AssistantPanel({
               className="cw-assistant-icon-button"
               aria-label={t("assistant.panel.mention")}
               title={t("assistant.panel.mentionHint")}
-              disabled={referenceDisabled}
+              disabled={composerReferencesDisabled}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => editor.current?.openPicker()}
             >
@@ -738,7 +979,7 @@ export function AssistantPanel({
               projectId={documentId}
               selected={value.skills ?? []}
               slashQuery={slashQuery}
-              disabled={referenceDisabled || chat.sending || chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills === false}
+              disabled={composerReferencesDisabled || currentRuntime?.supportsSkills === false}
               onChange={(skills, fromSlash) => editor.current?.setSkill(skills[0] ?? null, fromSlash)}
             />
             <ModelPicker
@@ -750,6 +991,12 @@ export function AssistantPanel({
               onConfigure={onOpenSettings}
             />
             <div className="cw-assistant-toolbar-spacer" />
+            <ModePicker
+              value={chat.taskMode}
+              askSupported={chat.askModeSupported}
+              disabled={!chat.loaded || chat.sending}
+              onChange={chat.setTaskMode}
+            />
             {chat.sending ? (
               <button
                 type="button"
@@ -767,7 +1014,14 @@ export function AssistantPanel({
                 className="cw-assistant-send"
                 aria-label={t("assistant.panel.send")}
                 title={t("assistant.panel.send")}
-                disabled={!chat.canSend || locked || !value.draft.trim()}
+                disabled={
+                  activeExpandedDecision
+                    ? locked ||
+                      chat.changing ||
+                      chat.submittingDecision ||
+                      !typedAnswerText
+                    : !chat.canSend || locked || !value.draft.trim()
+                }
               >
                 <CanvasIcon name="arrow" size={19} />
               </button>
@@ -828,7 +1082,7 @@ export function AssistantPanel({
         accept="image/*,.heic,.heif,video/*,audio/*,text/*,.md,.markdown,.txt"
         aria-label={t("assistant.panel.selectFiles")}
         onChange={(event) => {
-          if (event.target.files?.length) void upload([...event.target.files]);
+          if (!answerScope && event.target.files?.length) void upload([...event.target.files]);
           event.target.value = "";
         }}
       />

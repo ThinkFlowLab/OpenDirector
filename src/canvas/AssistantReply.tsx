@@ -1,11 +1,20 @@
 import { memo, useMemo, useState } from "react";
 import { Streamdown } from "streamdown";
 import type { LinkSafetyModalProps } from "streamdown";
-import type { ChatMessage, ChatTool } from "../backend/chat";
+import type {
+  ChatMessage,
+  ChatTool,
+  DecisionRecord,
+  LogicalTaskRecord,
+} from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { AssistantLinkInfo } from "./AssistantLinkInfo";
+import {
+  PlanConfirmationCard,
+  QuestionSummaryCard,
+} from "./QuestionSummaryCard.tsx";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
 import { assistantCitationFormatter } from "./assistantCitations.ts";
@@ -25,7 +34,7 @@ function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
     <details className={`cw-chat-activity is-${tool.status}`}>
       <summary>
         <CanvasIcon
-          name="sparkle"
+          name={tool.name === "ask_user" ? "help" : "sparkle"}
           size={15}
         />
         <span>{toolLabel(tool, t)}</span>
@@ -97,11 +106,33 @@ export const AssistantReply = memo(function AssistantReply({
   message,
   thinking,
   onSuggestion,
+  decision = null,
+  task = null,
+  showPlanConfirmation = false,
+  decisionExpanded = false,
+  busy = false,
+  confirming = false,
+  conflictNotice = false,
+  onToggleDecision,
+  onContinueDecision,
+  onConfirmPlan,
+  onAdjustPlan,
   t = defaultTranslate,
 }: {
   message: ChatMessage;
   thinking: boolean;
   onSuggestion?: (text: string) => void;
+  decision?: DecisionRecord | null;
+  task?: LogicalTaskRecord | null;
+  showPlanConfirmation?: boolean;
+  decisionExpanded?: boolean;
+  busy?: boolean;
+  confirming?: boolean;
+  conflictNotice?: boolean;
+  onToggleDecision?: (requestId: string) => void;
+  onContinueDecision?: (continuationId: string) => void;
+  onConfirmPlan?: (taskId: string, planRevision: number) => void;
+  onAdjustPlan?: (taskId: string, planRevision: number) => void;
   /** Injected by the panel; standalone mounts fall back to the active locale. */
   t?: Translate;
 }) {
@@ -139,7 +170,11 @@ export const AssistantReply = memo(function AssistantReply({
   const suggestionBlock = useMemo(() => parseSuggestedReplies(tail), [tail]);
   const parsed = suggestionBlock?.suggestions;
   const suggestions = parsed && parsed.options.length >= 3 ? parsed : null;
-  const suggest = message.status === "complete" ? onSuggestion : undefined;
+  const hideSuggestionsForDecision = decision?.status === "waiting_input";
+  const suggest =
+    message.status === "complete" && !hideSuggestionsForDecision
+      ? onSuggestion
+      : undefined;
   const copyTail = suggestions?.prefix || (suggestionBlock?.textWithoutMarker ?? hidePartialSuggestionMarker(tail));
   const tailText = suggestions && suggest ? suggestions.prefix : parsed === null ? tail : copyTail;
   const renderPart = (part: ReturnType<typeof replySections>["reply"][number]) => part.type === "text"
@@ -168,6 +203,27 @@ export const AssistantReply = memo(function AssistantReply({
         <div className="cw-chat-activity-detail">{sections.activity.map(renderPart)}</div>
       </details>}
       {sections.reply.map(renderPart)}
+      {decision && (
+        <QuestionSummaryCard
+          decision={decision}
+          expanded={decisionExpanded}
+          busy={busy}
+          conflictNotice={conflictNotice}
+          onToggleExpand={onToggleDecision}
+          onContinue={onContinueDecision}
+          t={t}
+        />
+      )}
+      {showPlanConfirmation && task && (
+        <PlanConfirmationCard
+          task={task}
+          busy={busy}
+          confirming={confirming}
+          onConfirm={onConfirmPlan}
+          onAdjust={onAdjustPlan}
+          t={t}
+        />
+      )}
       {suggestions && suggest && (
         <div className="cw-chat-suggestions" role="group" aria-label={t("assistant.reply.suggestions")}>
           {suggestions.options.map((text) => (
@@ -184,6 +240,7 @@ export const AssistantReply = memo(function AssistantReply({
       {timing && <small className="cw-assistant-message-status cw-assistant-turn-timing">{timing}</small>}
       {!message.text &&
         !message.tools?.length &&
+        !decision &&
         message.status !== "streaming" && (
           <p className="cw-chat-progress">{t("assistant.reply.empty")}</p>
         )}

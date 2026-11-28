@@ -19,6 +19,80 @@ def service(store):
     return CreationTimelinePackages(store)
 
 
+@pytest.fixture
+def document(project, tmp_path):
+    store, pid, session = project
+    timeline, _, _ = timeline_document(project, tmp_path)
+    assert send(store, pid, 'editor.create', session=session, document=timeline).status == 'applied'
+    return timeline
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('fault', ['assistant_receipt', 'terminal_journal', 'unreadable_journal'])
+async def test_agent_plan_recovers_timeline_import_receipt_after_restart(project, agent_plan, document, monkeypatch, fault):
+    from unittest.mock import Mock
+    from uuid import UUID, uuid5
+    from opendirector.agent.decisions import DecisionStore, PlanConfirmInput, step_operation_id
+    from opendirector.agent.tools import AgentTools
+    from opendirector.domain.creation.timeline_packages import TimelinePackageExportFile
+    from opendirector.infrastructure.creation_files import file_identity
+    from opendirector.infrastructure.creation_projects import CreationProjects
+    from opendirector.infrastructure.local_projects import LocalProjects
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    from opendirector.infrastructure.timeline_package_imports import TimelinePackageImports
+
+    store, pid, session = project
+    tools = AgentTools(store, None, ModelConfigs(store.local.repository))
+    decisions = tools.decisions
+    plan = agent_plan(decisions, 'Import the timeline')
+    task_id = UUID(plan['taskId'])
+    turn = UUID(decisions.claim_plan_execution(pid, session, task_id, PlanConfirmInput(planRevision=1))['continuationId'])
+    decisions.mark_model_dispatched(pid, task_id, turn)
+    operation_id = step_operation_id(plan, plan['plan']['steps'][0])
+    work = store.root / 'Unified' / 'agent-runs' / str(turn) / 'work'
+    work.mkdir(parents=True)
+    service(store).export_execution_file(pid, TimelinePackageExportFile(
+        editorId=document['id'], revision=1, path='saved.timeline.zip',
+    ), execution_directory=work)
+    fingerprint, _ = file_identity(work / 'saved.timeline.zip')
+
+    with monkeypatch.context() as fault_injection:
+        if fault == 'assistant_receipt':
+            fault_injection.setattr(decisions, 'record_accepted_receipt', Mock(side_effect=RuntimeError('After import commit')))
+        else:
+            write_journal = TimelinePackageImports.write
+
+            def interrupt_terminal(self, project_id, request, receipt):
+                if receipt.status != 'applied':
+                    return write_journal(self, project_id, request, receipt)
+                if fault == 'unreadable_journal':
+                    fault_injection.setattr(TimelinePackageImports, 'read', Mock(side_effect=ProjectError('Journal unavailable', 409)))
+                    raise OSError('Terminal journal unavailable')
+                raise RuntimeError('Stopped after import committed')
+
+            fault_injection.setattr(TimelinePackageImports, 'write', interrupt_terminal)
+        with pytest.raises((RuntimeError, ProjectError)):
+            await tools.execute(pid, turn, session, f'cli:{operation_id}', 'timeline_package_import', {
+                'path': 'saved.timeline.zip', 'operationId': str(operation_id), 'archiveFingerprint': fingerprint,
+            }, [], None, 'codex', work)
+        assert len(decisions.get_task(pid, task_id)['pendingWrites']) == 1
+        if fault == 'unreadable_journal':
+            state = decisions.public_state(pid, plan['conversationId'])['tasks'][0]
+            assert state['stage'] == 'status_unknown' and not state['acceptedReceipts']
+            assert state['pendingWrites'][0]['dispatchState'] == 'dispatched'
+
+    imported = service(store).receipt(pid, operation_id)
+    assert imported.status == ('applied' if fault == 'assistant_receipt' else 'registered')
+    final = store.receipt(pid, uuid5(operation_id, 'apply'))
+    before = store.snapshot(pid)
+    restored = CreationProjects(LocalProjects(store.local.repository))
+    state = DecisionStore(restored).public_state(pid, plan['conversationId'])['tasks'][0]
+    assert state['stage'] == 'completed' and not state['pendingWrites']
+    assert state['acceptedReceipts'][0]['receipt']['result']['editorId'] == str(imported.editorId)
+    assert state['acceptedReceipts'][0]['receipt']['result']['receipt'] == final.model_dump(mode='json')
+    assert restored.snapshot(pid) == before and len(before.editorDocuments) == 2
+
+
 def stage(store, pid, session, path):
     from opendirector.application.creation_assets import CreationAssets
     handle = uuid4()
@@ -61,7 +135,7 @@ def test_package_keeps_heif_extensions_and_original_bytes(project, suffix):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('component', ['work', 'turn', 'agent-runs'])
-async def test_agent_package_tools_reject_replaced_execution_root_and_ancestors(project, tmp_path, component):
+async def test_agent_package_tools_reject_replaced_execution_root_and_ancestors(project, document, tmp_path, component):
     import hashlib
     import shutil
     from opendirector.agent.context import RunContext
@@ -70,8 +144,6 @@ async def test_agent_package_tools_reject_replaced_execution_root_and_ancestors(
     from opendirector.infrastructure.model_configs import ModelConfigs
     from process_helpers import directory_link
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     before = store.snapshot(pid)
     folder, turn = store.root / 'Unified', uuid4()
     work = folder / 'agent-runs' / str(turn) / 'work'
@@ -153,10 +225,8 @@ def test_package_exports_exact_revision_readonly_and_imports_real_resources(proj
 
 
 @pytest.mark.parametrize('damage', ['traversal', 'duplicate', 'capability', 'hash', 'missing', 'unmapped'])
-def test_package_rejects_entire_invalid_archive_before_registration(project, tmp_path, damage):
+def test_package_rejects_entire_invalid_archive_before_registration(project, document, tmp_path, damage):
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     package = service(store).export(pid, document['id'], 1)
     with zipfile.ZipFile(package) as archive:
         entries = {name: archive.read(name) for name in archive.namelist()}
@@ -219,10 +289,8 @@ def test_package_logical_identity_dedup_and_recovery_after_registration(project,
         service(store).import_package(pid, {**request, 'archiveFingerprint': 'sha256:' + '0' * 64}, session=session)
 
 
-def test_package_replacement_rejects_stale_revision_without_overwriting(project, tmp_path):
+def test_package_replacement_rejects_stale_revision_without_overwriting(project, document):
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     package = service(store).export(pid, document['id'], 1)
     doc = store.snapshot(pid).editorDocuments[0]
     changed = doc.model_dump(mode='json'); changed['data']['overlays'][0]['text'] = 'B'
@@ -234,15 +302,13 @@ def test_package_replacement_rejects_stale_revision_without_overwriting(project,
     assert service(store).import_package(pid, request, session=session) == result
 
 
-def test_api_cli_package_roundtrip(project, tmp_path, monkeypatch):
+def test_api_cli_package_roundtrip(project, document, tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import httpx
     from typer.testing import CliRunner
     from opendirector import cli
     from opendirector_api.main import create_app
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     api = TestClient(create_app(store.local), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session})
     exported = api.get(f'/api/creation/projects/{pid}/timelines/{document["id"]}/package?revision=1')
     assert exported.status_code == 200
@@ -350,12 +416,10 @@ async def test_live_agent_gateway_package_roundtrip_scopes_files_without_large_j
     socket_dir.cleanup()
 
 
-def test_package_retry_after_process_restart_and_new_session_recovers_staged_resource(project, tmp_path, monkeypatch):
+def test_package_retry_after_process_restart_and_new_session_recovers_staged_resource(project, document, monkeypatch):
     from opendirector.infrastructure.creation_projects import CreationProjects
     from opendirector.infrastructure.local_projects import LocalProjects
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     request = stage(store, pid, session, service(store).export(pid, document['id'], 1))
     packages = service(store)
     def interrupted(*args, **kwargs): raise OSError('interrupted before register commit')
@@ -383,12 +447,10 @@ def test_package_errors_are_localized(project, tmp_path, language, expected):
 
 
 @pytest.mark.parametrize('damage', ['blank_source', 'duplicate_json', 'symlink', 'crc'])
-def test_package_malformed_content_is_rejected_before_asset_writes(project, tmp_path, damage):
+def test_package_malformed_content_is_rejected_before_asset_writes(project, document, tmp_path, damage):
     from hashlib import sha256
     import struct
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     package = service(store).export(pid, document['id'], 1)
     with zipfile.ZipFile(package) as archive:
         entries = {name:archive.read(name) for name in archive.namelist()}
@@ -438,11 +500,9 @@ async def test_export_response_removes_temporary_package_when_client_disconnects
     assert not path.exists()
 
 
-def test_package_rejects_excessive_declared_entry_count_before_directory_parsing(project, tmp_path):
+def test_package_rejects_excessive_declared_entry_count_before_directory_parsing(project, document):
     import struct
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     package = service(store).export(pid, document['id'], 1)
     raw = bytearray(package.read_bytes())
     eocd = raw.rfind(b'PK\x05\x06')
@@ -538,13 +598,11 @@ def test_package_rejects_effective_directory_override_before_constructing_zipfil
     assert constructions == [], 'Untrusted directory must be bounded before ZipInfo allocation'
 
 
-def test_package_recovers_final_batch_commit_before_terminal_journal_write(project, tmp_path, monkeypatch):
+def test_package_recovers_final_batch_commit_before_terminal_journal_write(project, document, monkeypatch):
     from uuid import uuid5
     from opendirector.infrastructure.creation_projects import CreationProjects
     from opendirector.infrastructure.local_projects import LocalProjects
     store, pid, session = project
-    document, _, _ = timeline_document(project, tmp_path)
-    assert send(store, pid, 'editor.create', session=session, document=document).status == 'applied'
     request = stage(store, pid, session, service(store).export(pid, document['id'], 1))
     before = store.snapshot(pid)
     packages = service(store)

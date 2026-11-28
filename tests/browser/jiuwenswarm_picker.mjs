@@ -176,6 +176,11 @@ try {
   await page
     .getByLabel("技能：character-replacement", { exact: true })
     .waitFor();
+  await page.locator("[data-assistant-mode-toggle]").click();
+  assert.equal(
+    await page.locator('[data-assistant-mode-option="ask"]').isDisabled(),
+    true,
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({

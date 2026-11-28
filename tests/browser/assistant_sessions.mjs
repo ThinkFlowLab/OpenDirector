@@ -398,6 +398,141 @@ try {
   await until(() => api(path), (value) => value.messages.length === edited.messages.length + 2 &&
     value.messages.at(-1)?.status === "complete", "Complete the manually submitted turn");
 
+  const waitForConversation = (matches, label) => until(() => api(path), matches, label);
+  const savedDraft = (text) => waitForConversation((state) => state.draft === text, `Persist draft "${text}"`);
+  const expectComposer = (text) => until(editorText, (value) => value === text, `Restore composer "${text}"`);
+  const mode = panel.locator("[data-assistant-mode-toggle]");
+  await mode.click();
+  await panel.locator('[data-assistant-mode-option="ask"]').click();
+  await editor.fill("请先询问时长，再规划验收短片");
+  await send.click();
+  const deciding = await waitForConversation((value) =>
+    value.decisions?.some((decision) => decision.status === "waiting_input") && !value.activeTurnId,
+    "Wait for the first session to release its turn");
+  const question = deciding.decisions.find((decision) => decision.status === "waiting_input");
+  const decidingTitle = (await api(path + "/conversations")).items.find(
+    (item) => item.id === deciding.conversationId,
+  ).title;
+  const answeringSession = picker.getByTitle(decidingTitle, { exact: true });
+  const switchLanguage = async (label, locale) => {
+    await page.locator(".cw-language-toggle").getByRole("button", { name: label, exact: true }).click();
+    await page.locator(`html[lang="${locale}"]`).waitFor({ state: "attached" });
+  };
+  const card = panel.locator(`[data-question-summary-card="${question.requestId}"]`);
+  const answerPanel = page.locator(`#canvas-assistant [data-question-answer-panel="${question.requestId}"]`);
+  await answerPanel.getByText("8 秒（推荐）", { exact: true }).waitFor();
+  await switchLanguage("EN", "en-US");
+  await answerPanel.getByText("8 秒 (Recommended)", { exact: true }).waitFor();
+  await switchLanguage("中文", "zh-CN");
+  await answerPanel.locator('[data-question-option="8"]').press("ArrowDown");
+  assert.equal(await answerPanel.locator(":focus").getAttribute("data-question-option"), "15");
+  const defer = answerPanel.locator("[data-question-defer-button]");
+  await defer.click();
+  const normalDraft = "留给下一轮的普通聊天草稿";
+  await editor.fill(normalDraft);
+  await savedDraft(normalDraft);
+  await card.click();
+  await answerPanel.waitFor();
+  assert.equal(await editorText(), "");
+  assert.equal(await send.isEnabled(), false);
+  const customAnswer = "12 秒，自定义结尾";
+  await editor.fill(customAnswer);
+  await defer.click();
+  assert.equal(await editorText(), normalDraft);
+  await card.click();
+  await expectComposer(customAnswer);
+  const answersPattern = /\/assistant\/decisions\/[^/]+\/answers$/;
+  // Fetch the real receipt, then hold it until the browser has switched conversations.
+  const intercepted = Promise.withResolvers();
+  await page.route(answersPattern, (route) => intercepted.resolve(route), { times: 1 });
+  await send.click();
+  const answerRoute = await intercepted.promise;
+  const response = await answerRoute.fetch();
+  const answerReceipt = await response.json();
+  assert.equal(answerReceipt.status, "answer_saved");
+  assert.equal(answerReceipt.task.conversationId, deciding.conversationId);
+  assert.equal(answerReceipt.decision.answers[0].customText, customAnswer);
+  assert.equal((await api(path)).draft, normalDraft);
+  await create.click();
+  const other = await waitForConversation((value) =>
+    value.conversationId !== deciding.conversationId, "Switch away from the answering session");
+  await editor.fill("另一会话的草稿");
+  await savedDraft("另一会话的草稿");
+  const unexpectedStarts = [];
+  const observe = (request) => {
+    if (request.url().includes("/assistant/continuations/")) unexpectedStarts.push(request.url());
+  };
+  page.on("request", observe);
+  const answerDelivered = page.waitForResponse((response) => answersPattern.test(response.url()));
+  await answerRoute.fulfill({ response });
+  await (await answerDelivered).finished();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.locator("[data-question-answer-panel]").waitFor({ state: "detached" });
+  const stable = await api(path);
+  assert.equal(stable.conversationId, other.conversationId);
+  assert.deepEqual(stable.messages, []);
+  assert.equal(await editorText(), "另一会话的草稿");
+  assert.equal(await card.count(), 0);
+  assert.deepEqual(unexpectedStarts, []);
+  page.off("request", observe);
+  await history.click();
+  await answeringSession.click();
+  await expectComposer(normalDraft);
+  await card.locator(".cw-question-continue-button").click();
+  const confirmPlan = panel.locator("[data-confirm-plan-button]");
+  await confirmPlan.waitFor();
+  await page.reload();
+  await show();
+  await confirmPlan.waitFor();
+  assert.equal(await mode.getAttribute("data-mode"), "ask");
+
+  await create.click();
+  await waitForConversation((value) => value.conversationId !== deciding.conversationId,
+    "Open a conversation without an Ask task");
+  assert.equal(await mode.getAttribute("data-mode"), "auto");
+  await history.click();
+  await answeringSession.click();
+  await confirmPlan.waitFor();
+  assert.equal(await mode.getAttribute("data-mode"), "ask");
+  await panel.locator(".cw-plan-confirmation-steps").getByText("工程变更", { exact: true }).waitFor();
+  await switchLanguage("EN", "en-US");
+  await page.locator("#canvas-assistant").getByRole("button", { name: "Confirm and execute", exact: true }).waitFor();
+  await page.locator("#canvas-assistant .cw-plan-confirmation-steps")
+    .getByText("Project change", { exact: true }).waitFor();
+  await switchLanguage("中文", "zh-CN");
+  assert.equal(await mode.getAttribute("data-mode"), "ask");
+
+  const taskState = (state) => state.tasks?.find((task) => task.taskId === question.taskId);
+  await confirmPlan.click();
+  const failed = await waitForConversation((state) =>
+    !state.activeTurnId && taskState(state)?.stage === "execution_failed", "Finish a rejected execution");
+  assert.equal(await mode.getAttribute("data-mode"), "auto");
+  await panel.locator("[data-adjust-plan-button]").click();
+  await confirmPlan.waitFor({ state: "visible" });
+  await expectComposer(normalDraft);
+  assert.equal(await mode.getAttribute("data-mode"), "ask");
+
+  const refinement = page.waitForRequest((request) =>
+    request.method() === "POST" && request.url().endsWith("/assistant/turns"));
+  await editor.fill("请改版计划");
+  await send.click();
+  assert.equal((await refinement).postDataJSON().mode, "ask");
+  const refinedPlan = await waitForConversation((state) =>
+    !state.activeTurnId && taskState(state)?.plan?.summary === "已保留自定义结尾并改版计划。", "Save the next plan in the original task");
+  assert.equal(taskState(refinedPlan).planRevision, taskState(failed).planRevision + 2);
+
+  await api("/creation-test-assistant-gate", { open: false });
+  await panel.locator(`[data-plan-revision="${taskState(refinedPlan).planRevision}"] [data-confirm-plan-button]`).click();
+  const executing = await waitForConversation((state) =>
+    state.activeTurnId && taskState(state)?.stage === "executing",
+    "Execution must have a service-assigned turn ID");
+  await panel.locator('[data-assistant-mode-toggle][data-mode="auto"]').waitFor();
+  const stopped = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/stop"));
+  await panel.getByRole("button", { name: "停止回复", exact: true }).click();
+  assert.ok((await stopped).url().endsWith(`/${executing.activeTurnId}/stop`));
+  await waitForConversation((value) =>
+    !value.activeTurnId && value.messages.at(-1)?.status === "stopped", "Stop the confirmed execution");
+
   // History stays inside a narrow assistant, closes outside, and all header controls fit.
   await panel.evaluate((element) =>
     element.style.setProperty("--assistant-width", "300px"),

@@ -81,6 +81,8 @@ class LocalProjects:
         self.root = self.repository / "projects"
         self.state_dir = self.repository / ".opendirector"
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        self._wall_origin = time.time()
+        self._mono_origin = time.monotonic()
         self.lock = FileLock(self.state_dir / "catalog.lock", timeout=15)
         self.database = self.state_dir / "catalog.sqlite3"
         with self.transaction() as db:
@@ -90,7 +92,11 @@ class LocalProjects:
                     path TEXT NOT NULL DEFAULT ''
                 );
             """)
-            db.execute("DELETE FROM sessions WHERE expires<=?", (time.time(),))
+            db.execute("DELETE FROM sessions WHERE expires<=?", (self.now(),))
+
+    def now(self) -> float:
+        """Epoch-scaled monotonic clock so NTP/wall-clock steps never expire live leases early."""
+        return self._wall_origin + (time.monotonic() - self._mono_origin)
 
 
     @contextmanager
@@ -125,20 +131,21 @@ class LocalProjects:
     def acquire_edit_lease(self, db: sqlite3.Connection, project: dict[str, str], session: str, *, persistent=False) -> None:
         identifier(session)
         project_id = project["id"]
+        now = self.now()
         if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND id NOT LIKE ? AND expires>?",
-                      (project_id, session, self._AGENT_SESSION_PREFIX + "%", time.time())).fetchone():
+                      (project_id, session, self._AGENT_SESSION_PREFIX + "%", now)).fetchone():
             raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="project_open_elsewhere")
-        lease = db.execute("SELECT path, expires FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, time.time())).fetchone()
+        lease = db.execute("SELECT path, expires FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, now)).fetchone()
         if lease and lease["path"] != project["path"]:
             raise ProjectError("项目目录已在应用外改名或移动，请复制未保存内容并刷新页面。", 409)
-        expires = float("inf") if persistent or (lease and lease["expires"] == float("inf")) else time.time() + self.LEASE_SECONDS
+        expires = float("inf") if persistent or (lease and lease["expires"] == float("inf")) else now + self.LEASE_SECONDS
         db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,expires=excluded.expires,path=excluded.path", (session, project_id, expires, project["path"]))
 
 
     def editor(self, db, project_id, *, now=None):
         return db.execute(
             "SELECT id FROM sessions WHERE project_id=? AND id NOT LIKE ? AND expires>?",
-            (project_id, self._AGENT_SESSION_PREFIX + "%", time.time() if now is None else now),
+            (project_id, self._AGENT_SESSION_PREFIX + "%", self.now() if now is None else now),
         ).fetchone()
 
     def editing_state(self, db, project_id, session):
@@ -157,7 +164,7 @@ class LocalProjects:
 
     def start_agent_session(self, db, project_id, path: Path, session: str):
         """Called in the transaction that validates the browser lease and accepts the turn."""
-        now = time.time()
+        now = self.now()
         db.execute("DELETE FROM sessions WHERE expires<=? AND id LIKE ?",
                    (now, self._AGENT_SESSION_PREFIX + "%"))
         db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?)",
@@ -165,7 +172,7 @@ class LocalProjects:
 
     def renew_agent_session(self, session: str) -> bool:
         with self.transaction() as db:
-            now = time.time()
+            now = self.now()
             return bool(db.execute("UPDATE sessions SET expires=? WHERE id=? AND expires>?",
                                    (now + self.LEASE_SECONDS, self.agent_session_key(session), now)).rowcount)
 

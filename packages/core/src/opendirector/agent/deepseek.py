@@ -143,7 +143,7 @@ async def model_choices(selected=None):
             await terminate(process, group=True)
 
 
-async def run(process, work, blocks, model, thinking, server, observe, session_id=None):
+async def run(process, work, blocks, model, thinking, server, observe, session_id=None, *, before_prompt=None):
     client = Client(process, observe)
     try:
         async with asyncio.timeout(30):
@@ -152,6 +152,8 @@ async def run(process, work, blocks, model, thinking, server, observe, session_i
                 await client.request('session/set_config_option', {'sessionId': client.session, 'configId': 'model', 'value': model})
             if thinking != 'auto':
                 await client.request('session/set_config_option', {'sessionId': client.session, 'configId': 'reasoning_effort', 'value': thinking})
+        if before_prompt is not None:
+            await before_prompt()
         result = await client.request('session/prompt', {'sessionId': client.session,
             'prompt': [{'type': 'text', 'text': block} for block in blocks]})
         if result['stopReason'] != 'end_turn':

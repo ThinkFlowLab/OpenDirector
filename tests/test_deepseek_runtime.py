@@ -56,6 +56,10 @@ for line in sys.stdin:
  req=json.loads(line)
  if req['method']=='session/set_config_option':
   assert req['params']['value'] in {'route/default','route/other'}
+  if mode == 'reject_config':
+   write(dict(method='session/update',params=dict(sessionId=sid,update=dict(sessionUpdate='agent_thought_chunk',content=dict(type='text',text='Preflight')))))
+   write(dict(id=req['id'],error=dict(code=-32000,message='Model temporarily unavailable')))
+   continue
   model['currentValue']=req['params']['value']
   result(req, {'configOptions':[model]+([reasoning] if mode=='efforts' else [])})
  elif req['method']=='session/close':
@@ -65,6 +69,23 @@ for line in sys.stdin:
  elif req['method']=='session/prompt':
   assert Path(os.environ['PWD']).samefile(Path.cwd())
   blocks=[block['text'] for block in req['params']['prompt']]
+  if mode in {'ask_decision','reject_config','answer_decision','execute_plan','lose_prompt'}:
+   with Path(os.environ['DEEPSEEK_PROMPTS']).open('a', encoding='utf-8') as log: log.write(mode + '\n')
+   if mode == 'lose_prompt': raise SystemExit(42)
+   cli = shutil.which('opendirector')
+   if mode == 'ask_decision':
+    payload = dict(questions=[dict(id='duration', question='Duration?', options=[dict(id='8', label='8 seconds', impact='Brief')])])
+    subprocess.run([cli,'ask-user','--file','-'],input=json.dumps(payload),text=True,check=True,capture_output=True)
+   elif mode == 'answer_decision':
+    assert '12 seconds' in blocks[-1]
+    subprocess.run([cli,'plan','save','--summary','Write a 12-second storyboard','--step','Save DeepSeek storyboard'],check=True,capture_output=True)
+   else:
+    import re
+    op = re.search(r'"step-1":\s*"([0-9a-f-]+)"', blocks[-1]).group(1)
+    outcome = json.loads(subprocess.check_output([cli,'--operation-id',op,'asset','write-text','--name','deepseek-plan.md','--text','12-second storyboard'],text=True))
+    assert outcome['status'] == 'applied', outcome
+   result(req,dict(stopReason='end_turn'))
+   continue
   execution_context = blocks[0 if resumed else 1]
   assert '3 to 5 distinct suggestions' in execution_context, 'missing suggested reply count'
   assert 'at most 80 characters per suggestion' in execution_context, 'missing suggested reply length limit'
@@ -127,6 +148,53 @@ def cli(tmp_path, monkeypatch):
 
 def test_catalog_from_acp_config(cli):
     assert asyncio.run(deepseek.model_choices()) == [dict(id='route/default',label='Default model',efforts=[],isDefault=True)]
+
+
+@pytest.mark.parametrize('after_failure', ['answer_decision', 'lose_prompt'])
+def test_acp_checkpoint_follows_model_config_and_precedes_prompt(cli, tmp_path, monkeypatch, after_failure):
+    from test_agent_decisions import ask_turn, frames, open_project, session_headers, submit_answer
+
+    prompts = tmp_path / 'prompts.log'
+    monkeypatch.setenv('DEEPSEEK_PROMPTS', str(prompts))
+    monkeypatch.setenv('DEEPSEEK_TEST', 'ask_decision')
+    with TestClient(create_app(LocalProjects(tmp_path)), headers=session_headers()) as client:
+        _, root = open_project(client, 'ACP continuation')
+        conv = ask_turn(client, root, 'Plan', runtime='deepseek', runtimeModel='route/default')
+        answer = submit_answer(client, root, conv['decisions'][0], 'duration', 'custom', customText='12 seconds')
+        url = root + f"/assistant/continuations/{answer['continuationId']}"
+        monkeypatch.setenv('DEEPSEEK_TEST', 'reject_config')
+        end = frames(client.post(url))[-1]
+        assert end['error']
+        assert end['conversation']['decisions'][0]['status'] == 'resume_failed'
+        assert end['conversation']['tasks'][0]['stage'] == 'answer_saved'
+        assert prompts.read_text().splitlines() == ['ask_decision']
+
+        monkeypatch.setenv('DEEPSEEK_TEST', after_failure)
+        end = frames(client.post(url))[-1]
+        assert prompts.read_text().splitlines() == ['ask_decision', after_failure]
+        if after_failure == 'answer_decision':
+            assert end['error'] is None
+            task = end['conversation']['tasks'][0]
+            assert task['stage'] == 'waiting_confirmation'
+            monkeypatch.setenv('DEEPSEEK_TEST', 'execute_plan')
+            exec_end = frames(client.post(
+                root + f"/assistant/tasks/{task['taskId']}/confirm-plan",
+                json={'planRevision': task['planRevision']},
+            ))[-1]
+            assert exec_end['error'] is None
+            done_task = exec_end['conversation']['tasks'][0]
+            assert done_task['stage'] == 'completed'
+            assert done_task['plan']['steps'][0]['status'] == 'completed'
+            assert done_task['acceptedReceipts'][0]['type'] == 'asset.writeText'
+            assert done_task['acceptedReceipts'][0]['status'] == 'applied'
+            snapshot = client.get(root).json()
+            assert [a['name'] for a in snapshot['assets']] == ['deepseek-plan.md']
+            assert snapshot['assets'][0]['provenance']['agentRuntime'] == 'deepseek'
+        else:
+            assert end['conversation']['decisions'][0]['status'] == 'status_unknown'
+            retry = client.post(url)
+            assert retry.status_code == 409 and retry.json()['code'] == 'continuation_status_unknown'
+            assert prompts.read_text().splitlines() == ['ask_decision', after_failure]
 
 
 @pytest.mark.parametrize('mode', ['success', 'incomplete', 'permission'])

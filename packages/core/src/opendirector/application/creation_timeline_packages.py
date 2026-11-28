@@ -118,8 +118,8 @@ class CreationTimelinePackages:
             target.unlink(missing_ok=True)
 
     def import_execution_file(self, project_id, request, *, execution_directory, session):
-        handle = uuid5(request.operationId, 'archive-upload')
-        value = TimelinePackageImportRequest(**request.model_dump(exclude={'path'}), uploadHandle=handle)
+        value = self._execution_import_request(request)
+        handle = value.uploadHandle
         # Replays use the durable fixed request and never need to reopen input bytes.
         prior = self.imports.read(project_id, request.operationId)
         if prior is not None:
@@ -275,6 +275,38 @@ class CreationTimelinePackages:
     def receipt(self, project_id, operation_id):
         return self.imports.receipt(project_id, operation_id)
 
+    @staticmethod
+    def _execution_import_request(request):
+        return TimelinePackageImportRequest(
+            **request.model_dump(exclude={'path'}), uploadHandle=uuid5(request.operationId, 'archive-upload'),
+        )
+
+    def reconcile_execution_import(self, project_id, request):
+        """Read the journal and final project receipt without dispatching an import."""
+        record = self.imports.read(project_id, request.operationId)
+        if record is None:
+            return None
+        if record['request'] != self._execution_import_request(request).model_dump(mode='json'):
+            raise timeline_error('timeline_import_conflict', 409)
+        receipt = TimelinePackageImportReceipt.model_validate(record['receipt'])
+        if receipt.status != 'registered':
+            return receipt
+        try:
+            result = self.projects.receipt(project_id, uuid5(request.operationId, 'apply'))
+        except ProjectError as error:
+            if error.status != 404:
+                raise
+            return receipt
+        return self._finish_import_receipt(receipt, result)
+
+    @staticmethod
+    def _finish_import_receipt(receipt, result):
+        return receipt.model_copy(update={
+            'status': 'applied' if result.status in {'applied', 'noop'} else 'rejected',
+            'receipt': result,
+            'errorCode': None,
+        })
+
     def import_package(self, project_id, request, *, session=None, source='ui'):
         request = TimelinePackageImportRequest.model_validate(request)
         with self.imports.lock(project_id, request.operationId):
@@ -364,7 +396,7 @@ class CreationTimelinePackages:
                     command = parse_command(dict(commandId=uuid5(request.operationId, 'apply'), projectId=project_id,
                         type='creation.batch', expectedVersions=versions, payload=dict(operations=operations)))
                     result = self.projects.execute(command, session=session, source=source)
-                    receipt = receipt.model_copy(update={'status': 'applied' if result.status in {'applied', 'noop'} else 'rejected', 'receipt': result, 'errorCode': None})
+                    receipt = self._finish_import_receipt(receipt, result)
                     self.imports.write(project_id, request, receipt)
                     archive.unlink(missing_ok=True)
                     return receipt

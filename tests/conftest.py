@@ -14,6 +14,23 @@ from opendirector.wiring import configure_runtime
 configure_runtime()
 
 
+@pytest.fixture
+def agent_plan(project):
+    from uuid import uuid4, uuid5
+
+    from opendirector.agent.decisions import UpdatePlanInput
+
+    _, project_id, _ = project
+
+    def draft(decisions, summary, steps=()):
+        task_id = uuid4()
+        decisions.begin_task(project_id, uuid5(project_id, 'assistant'), task_id,
+                             mode='ask', runtime='codex', referenced_asset_ids=[])
+        return decisions.save_plan(project_id, task_id, UpdatePlanInput(summary=summary, steps=list(steps)))['task']
+
+    return draft
+
+
 @pytest.fixture(autouse=True)
 def optional_capability_endpoint(monkeypatch):
     """Existing provider doubles predate discovery: never query real hosts.

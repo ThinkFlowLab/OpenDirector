@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setLeaseRecovery } from "../src/backend/api.ts";
 import {
   attachChat,
   ChatTurnEnded,
   conversation,
+  streamDecisionContinuation,
+  streamPlanConfirmation,
   type ChatEvent,
 } from "../src/backend/chat.ts";
 
@@ -62,4 +65,62 @@ test("the running turn id stays out of the conversation that drafts are saved fr
   assert.equal(result.activeTurnId, "turn-1");
   assert.equal("activeTurnId" in result.conversation, false);
   assert.equal(result.conversation.messages[0]!.status, "streaming");
+});
+
+test("streaming continuation and plan confirmation recover a lapsed lease once", async (t) => {
+  const saved = { messages: [], draft: "", assets: [], thinking: "auto", modelSelections: {} };
+  const expired = () =>
+    Response.json({ detail: "会话已过期", code: "session_expired" }, { status: 409 });
+  let renewedCount = 0;
+  setLeaseRecovery(async (projectId) => {
+    assert.equal(projectId, "project-1");
+    renewedCount += 1;
+    return true;
+  });
+  t.after(() => setLeaseRecovery(undefined));
+
+  let attempts = 0;
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    attempts += 1;
+    if (attempts === 1 || attempts === 3) return expired();
+    assert.ok(url.includes("/continuations/cont-1") || url.includes("/tasks/task-1/confirm-plan"));
+    return sse([
+      { type: "start", turnId: "seg-1", conversation: saved },
+      { type: "end", turnId: "seg-1", nextTurnId: null, conversation: saved, error: null },
+    ]);
+  });
+
+  const seen: string[] = [];
+  await streamDecisionContinuation(
+    "project-1",
+    "cont-1",
+    new AbortController().signal,
+    (event) => seen.push(event.type),
+  );
+  await streamPlanConfirmation(
+    "project-1",
+    "task-1",
+    1,
+    new AbortController().signal,
+    (event) => seen.push(event.type),
+  );
+  assert.equal(renewedCount, 2);
+  assert.equal(attempts, 4);
+  assert.deepEqual(seen, ["start", "end", "start", "end"]);
+});
+
+test("an interrupted chained turn after nextTurnId is still reported as interrupted", async (t) => {
+  const saved = { messages: [], draft: "", assets: [], thinking: "auto", modelSelections: {} };
+  t.mock.method(globalThis, "fetch", async () =>
+    sse([
+      { type: "start", turnId: "turn-1", conversation: saved },
+      { type: "end", turnId: "turn-1", nextTurnId: "turn-2", conversation: saved, error: null },
+      { type: "start", turnId: "turn-2", conversation: saved },
+      { type: "delta", text: "一半" },
+    ]),
+  );
+  await assert.rejects(
+    attachChat("project-1", "turn-1", new AbortController().signal, () => {}),
+    /中断|interrupted/i,
+  );
 });

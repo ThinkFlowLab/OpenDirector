@@ -1,14 +1,17 @@
 """Business commands shared by every agent runtime."""
 import asyncio
+from contextlib import asynccontextmanager
 from opendirector.application.model_availability import ModelAvailability
 import difflib
+import hashlib
+import json
 import shutil
 from pathlib import Path
 from typing import get_args
 from uuid import UUID, uuid5
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from opendirector.domain.creation.base import agent_command_id
+from opendirector.agent.decisions import AskUserInput, CompleteStepInput, DecisionStore, UpdatePlanInput
 from opendirector.application.creation_artifacts import publish_artifact
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_timeline_packages import CreationTimelinePackages
@@ -19,7 +22,7 @@ from opendirector.integrations.chat_completions import ChatCompletions
 from opendirector.application.voice_library import VoiceLibrary
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.base import ObjectVersion
-from opendirector.domain.creation.commands import Query, COMMAND_MODELS, parse_command
+from opendirector.domain.creation.commands import Query, COMMAND_MODELS, command_fingerprint, parse_command
 from opendirector.domain.creation.models import ModelSnapshot
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.voices import VOICE_CREATE_TEXT_LIMITS
@@ -60,7 +63,7 @@ COMMANDS = {name: model for name, model in COMMAND_MODELS.items()
 for command_name, command_model in COMMANDS.items():
     assert command_model.__doc__ and command_model.__doc__.strip(), f'Missing command metadata: {command_name}'
 SYSTEM = '''You are OpenDirector, a video creation assistant.
-Respond directly when the user's request can be answered without project state or tool execution.
+Unless the turn specifies ASK MODE (`ask`), respond directly when the user's request can be answered without project state or tool execution.
 When the task needs project capabilities, run the opendirector executable on PATH through the harness's native shell tool.
 Run opendirector capabilities once, and inspect a command with opendirector COMMAND --help-field payload only when one field's shape is unclear. Do not run --help for each command.
 Accepted receipts return ready-to-run next commands with current revisions; use them instead of re-reading the project.
@@ -92,6 +95,44 @@ SUGGESTED_REPLIES = (
     'and a blank line. Use no inline formatting, links, checkboxes or extra commentary in the list. '
     'After the list, leave a blank line and put the marker shown below on the final line, then end the reply.\n\n'
     '[opendirector-replies]: #\n\n'
+)
+
+def build_ask_mode_guidance(current_plan: dict | None = None) -> str:
+    base = (
+        'Interaction mode for this turn: ASK MODE (`ask`) — Mandatory Interactive Clarification Stage.\n'
+        'The user explicitly selected ASK MODE (`ask`) for this turn. This instruction OVERRIDES the general "respond directly" rule.\n'
+        'Project write commands and generation submissions are locked by the gateway until the user answers your questions and confirms the resulting plan.\n'
+        'Even if the request is pure creative writing (such as scripts, worldbuilding, character profiles, or storyboards) or refines an existing plan in this conversation, '
+        'do NOT write out the requested deliverable or final revised plan in prose first, and do NOT ask questions in plain text.\n'
+        'Instead, you MUST first call `opendirector ask-user --file questions.json` (or `--file -` via stdin) through the native shell tool to submit 1 to 4 structured questions '
+        'covering the key creative or technical choices that shape the requested result (for example: character arc/relationship tension, narrative perspective, tone, pacing, target duration, shot structure, or scope changes).\n'
+        'Write `questions.json` in the execution directory as UTF-8 JSON with this structure:\n'
+        '{"questions":[{"id":"duration","question":"视频成片的目标时长是多少？","multiSelect":false,"required":true,'
+        '"options":[{"id":"8s","label":"8 秒","impact":"采用紧凑的三镜头叙事，适合快速展示核心画面。"},'
+        '{"id":"5s","label":"5 秒","impact":"浓缩为单主镜头与结尾定格，节奏最快。"},'
+        '{"id":"15s","label":"15 秒","impact":"展开完整起承转合，留出环境铺垫与呼吸感。"}]}]}\n'
+        'Order `options` from highest recommendation to lowest. Do NOT include "(Recommended)" or "（推荐）" in `label` (the UI adds the badge automatically). '
+        'Every option MUST include `id`, `label`, and a one-sentence `impact` explaining what changes if selected.\n'
+        'Once `opendirector ask-user` returns `status: "waiting_input"`, output 1 brief sentence introducing the question and END THIS TURN IMMEDIATELY without calling any more tools and without outputting `[opendirector-replies]: #`.\n'
+        'Whenever you save a plan via `opendirector plan save`, keep your prose reply to 1 to 3 brief sentences on key choices or trade-offs and do NOT repeat the numbered step list in Markdown (the UI renders the saved plan card directly below your reply).\n'
+    )
+    if current_plan and isinstance(current_plan, dict):
+        plan_view = {
+            'revision': current_plan.get('revision'),
+            'summary': current_plan.get('summary'),
+            'steps': [step.get('content') for step in current_plan.get('steps', []) if isinstance(step, dict)],
+        }
+        base += (
+            'Active unconfirmed plan in this conversation (to be refined into the next revision AFTER the user answers your new question):\n'
+            + json.dumps(plan_view, ensure_ascii=False)
+            + '\nDo NOT deliver the expanded content or save the revised plan yet — ask your structured clarification question(s) for the user’s latest refinement request first via `opendirector ask-user`.\n'
+        )
+    return base
+
+
+AUTO_MODE_GUIDANCE = (
+    'Interaction mode for this task: AUTO MODE (`auto`). '
+    'Do not ask the user about inferable preferences; proceed directly unless required inputs are missing or explicit authorization is required.\n'
 )
 
 
@@ -306,6 +347,23 @@ def tools() -> list[dict]:
          ['modelConfigId', 'connectionId', 'voiceId']),
     ]:
         result.append(tool_schema(name, description, {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}))
+    result.append(tool_schema(
+        'ask_user',
+        'Persist 1 to 4 structured decision questions for the user and pause the current task segment until the user answers. '
+        'Options are ordered from highest recommendation to lowest without hardcoding recommendation markers in option labels; '
+        'each option includes a one-sentence impact describing what changes if selected.',
+        AskUserInput.model_json_schema(),
+    ))
+    result.append(tool_schema(
+        'update_plan',
+        'Persist a versioned plan snapshot for the current logical task and enter the waiting_confirmation stage.',
+        UpdatePlanInput.model_json_schema(),
+    ))
+    result.append(tool_schema(
+        'complete_step',
+        'Record the outcome of an inspection step in the confirmed execution plan.',
+        CompleteStepInput.model_json_schema(),
+    ))
     return result
 
 
@@ -325,6 +383,17 @@ class AgentTools:
         self.availability = getattr(generation, 'availability', None) or ModelAvailability(configs)
         self.assets = CreationAssets(projects)
         self.voices = getattr(generation, 'voices', None) or VoiceLibrary(configs)
+        self.decisions = DecisionStore(projects)
+        self._write_locks: dict[UUID, asyncio.Lock] = {}
+
+    def write_lock(self, project_id: UUID) -> asyncio.Lock:
+        return self._write_locks.setdefault(project_id, asyncio.Lock())
+
+    @asynccontextmanager
+    async def _dispatch_write(self, project_id: UUID, turn_id: UUID, command_id: str, session: str):
+        async with self.write_lock(project_id):
+            await asyncio.to_thread(self.decisions.begin_pending_write, project_id, turn_id, command_id, session)
+            yield
 
     async def execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
                       name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None,
@@ -336,6 +405,122 @@ class AgentTools:
                 runtimeModel=runtime_model, thinking=thinking) if native_runtime or config else None
             return await self.prompt_optimization.rewrite(project_id, item_id, value.prompt,
                 value.inlineReferences, value.preferredModelId, selection)
+        args = (project_id, turn_id, session, call_id, name, arguments, roots, config, native_runtime, execution_directory)
+        if name not in {'timeline_package_import', 'voice_create', 'voice_delete'}:
+            result = await self._execute(*args)
+            if call_id.startswith('cli:') and not (isinstance(result, dict) and result.get('error')) and name in {
+                'read_project', 'query', 'read', 'model_availability', 'voice_list', 'timeline_package_export',
+            }:
+                await asyncio.to_thread(
+                    self.decisions.record_step_completion, project_id, turn_id, call_id, name, 'completed',
+                )
+            return result
+        import_request = TimelinePackageImportFile.model_validate(arguments) if name == 'timeline_package_import' else None
+        command_id = await asyncio.to_thread(self.decisions.command_id_for_write, project_id, turn_id, call_id)
+        command = {'commandId': str(command_id), 'type': name, 'payload': arguments}
+        fingerprint = hashlib.sha256(json.dumps(command, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        replayed = await asyncio.to_thread(
+            self.decisions.record_pending_write, project_id, turn_id, call_id, command, fingerprint, session=session,
+        )
+        if replayed is not None:
+            return replayed.get('result', replayed)
+        async with self.write_lock(project_id):
+            dispatched = False
+
+            def mark_dispatched():
+                nonlocal dispatched
+                self.decisions.begin_pending_write(project_id, turn_id, str(command_id), session)
+                dispatched = True
+
+            try:
+                if import_request is not None:
+                    await asyncio.to_thread(mark_dispatched)
+                    result = await self._execute(*args)
+                else:
+                    result = await asyncio.to_thread(
+                        self._execute_voice_write, name, arguments, execution_directory, mark_dispatched,
+                    )
+            except (ProjectError, ValueError, KeyError, OSError) as failure:
+                if dispatched:
+                    if import_request is None:
+                        raise
+                    # An unreadable journal leaves the existing dispatch unresolved.
+                    receipt = await asyncio.to_thread(
+                        CreationTimelinePackages(self.projects).reconcile_execution_import, project_id, import_request,
+                    )
+                    if receipt is not None:
+                        if receipt.status == 'registered':
+                            raise
+                        result = receipt.model_dump(mode='json')
+                    else:
+                        dispatched = False
+                if not dispatched:
+                    code = failure.code if isinstance(failure, ProjectError) else None
+                    failure._retryable_pre_write = await asyncio.to_thread(
+                        self.decisions.record_pre_write_failure,
+                        project_id, turn_id, call_id, command, fingerprint, str(failure), code,
+                    )
+                    raise
+            if name != 'timeline_package_import' or result['status'] != 'registered':
+                status = result['status'] if name == 'timeline_package_import' else 'applied'
+                await asyncio.to_thread(
+                    self.decisions.record_accepted_receipt, project_id, turn_id, call_id, command, fingerprint,
+                    {'status': status, 'result': result},
+                )
+            return result
+
+    def _execute_voice_write(self, name, arguments, execution_directory, mark_dispatched):
+        model_id = str(UUID(arguments['modelConfigId']))
+        connection = arguments['connectionId']
+        if name == 'voice_delete':
+            self.voices.delete(model_id, arguments['voiceId'], connection, before_submit=mark_dispatched)
+            return {'deleted': True, 'voiceId': arguments['voiceId'], 'connectionId': connection}
+        target = Path(arguments['path'])
+        if execution_directory is None:
+            raise ProjectError('只能上传本轮执行目录内的录音。', 403)
+        _, capabilities = self.voices._config(model_id)
+        with execution_file(execution_directory, str(target)) as stream:
+            data = stream.read(capabilities['maxBytes'] + 1)
+        return self.voices.create(
+            model_id, data, filename=target.name, name=arguments['name'], consent=arguments.get('consent'),
+            connection_id=connection, ref_text=arguments.get('refText'),
+            speaker_description=arguments.get('speakerDescription'), before_submit=mark_dispatched,
+        )
+
+    async def _execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
+                       name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None,
+                       execution_directory: Path | None) -> JsonValue:
+        if name == 'ask_user':
+            payload = AskUserInput.model_validate(arguments)
+            recorded = await asyncio.to_thread(self.decisions.record_question, project_id, turn_id, call_id, payload)
+            return {
+                'status': 'waiting_input',
+                'requestId': recorded['decision']['requestId'],
+                'taskId': recorded['task']['taskId'],
+                'planRevision': recorded['task']['planRevision'],
+                'decision': recorded['decision'],
+                'task': recorded['task'],
+                'message': 'Question persisted. Stop this turn immediately and wait for the user answer without calling any more tools.',
+            }
+        if name == 'update_plan':
+            payload = UpdatePlanInput.model_validate(arguments)
+            saved = await asyncio.to_thread(self.decisions.save_plan, project_id, turn_id, payload)
+            return {
+                'status': 'waiting_confirmation',
+                'taskId': saved['task']['taskId'],
+                'planRevision': saved['plan']['revision'],
+                'plan': saved['plan'],
+                'task': saved['task'],
+            }
+        if name == 'complete_step':
+            payload = CompleteStepInput.model_validate(arguments)
+            completed = await asyncio.to_thread(
+                self.decisions.record_step_completion,
+                project_id, turn_id, call_id, 'complete_step', payload.summary, step_id=payload.stepId,
+            )
+            if completed is None:
+                raise ProjectError('找不到待标记的计划步骤。', 404, code='missing_object')
+            return completed
         if name in {'timeline_package_export', 'timeline_package_import'}:
             with self.projects.local.transaction() as db:
                 project_directory, _, _ = self.projects._load(db, project_id)
@@ -348,25 +533,10 @@ class AgentTools:
             receipt = await asyncio.to_thread(packages.import_execution_file, project_id, request, execution_directory=work, session=session)
             return receipt.model_dump(mode='json')
 
-        if name in {'voice_list', 'voice_create', 'voice_delete'}:
+        if name == 'voice_list':
             model_id = str(UUID(arguments['modelConfigId']))
-            if name == 'voice_list':
-                return await asyncio.to_thread(self.voices.list, model_id, page_size=arguments.get('pageSize'),
-                                               after=arguments.get('after'), connection_id=arguments.get('connectionId'))
-            if name == 'voice_delete':
-                await asyncio.to_thread(self.voices.delete, model_id, arguments['voiceId'], arguments['connectionId'])
-                return {'deleted': True, 'voiceId': arguments['voiceId'], 'connectionId': arguments['connectionId']}
-            target = Path(arguments['path'])
-            if execution_directory is None:
-                raise ProjectError('只能上传本轮执行目录内的录音。', 403)
-            _, capabilities = self.voices._config(model_id)
-            def recording():
-                with execution_file(execution_directory, str(target)) as stream:
-                    return stream.read(capabilities['maxBytes'] + 1)
-            data = await asyncio.to_thread(recording)
-            return await asyncio.to_thread(self.voices.create, model_id, data, filename=target.name,
-                name=arguments['name'], consent=arguments.get('consent'), connection_id=arguments['connectionId'],
-                ref_text=arguments.get('refText'), speaker_description=arguments.get('speakerDescription'))
+            return await asyncio.to_thread(self.voices.list, model_id, page_size=arguments.get('pageSize'),
+                                           after=arguments.get('after'), connection_id=arguments.get('connectionId'))
         if name == 'read_project':
             snapshot = await asyncio.to_thread(self.projects.snapshot, project_id)
             return {'project': snapshot.model_dump(mode='json'), 'models': self.availability.catalog(), 'commands': list(COMMANDS),
@@ -388,7 +558,9 @@ class AgentTools:
             except ValidationError as failure:
                 # A rejected query must name the accepted types rather than echo a
                 # tag list the model has to reinterpret.
-                raise ProjectError(query_guidance(failure)) from None
+                err = ProjectError(query_guidance(failure))
+                err._invalid_tool_input = True
+                raise err from None
             result = await CreationCanvas(self.projects).query(query)
             if query.type == 'asset.preview' and 'preview' in result:
                 with self.projects.local.transaction() as db:
@@ -464,28 +636,79 @@ class AgentTools:
             return command_help(schema, arguments.get('path', ''), project_id)
         if name != 'execute_command':
             raise ProjectError('未知业务工具。')
-        command = parse_command({**arguments, 'projectId': str(project_id),
-            'commandId': str(agent_command_id(turn_id, call_id))})
+        command_id = await asyncio.to_thread(self.decisions.command_id_for_write, project_id, turn_id, call_id)
+        command = parse_command({**arguments, 'projectId': str(project_id), 'commandId': str(command_id)})
         if command.type == 'creation.batch' and any(operation.type not in COMMANDS for operation in command.payload.operations):
             raise ProjectError('批量命令包含未开放的 Agent 操作。', 403)
-        if command.type == 'generation.submit':
-            receipt = await self.generation.execute(command, session=session, source='agent', agent_origin=(turn_id, call_id))
-        elif command.type in {'job.cancel', 'job.recover'}:
-            receipt = await self.generation.execute(command, session=session, source='agent')
-        elif command.type in {'asset.writeText', 'artifact.publish'}:
-            if config is not None:
-                provenance = AssetProvenance(source='agent_written', agentRunId=turn_id,
-                    modelSnapshot=ModelSnapshot(modelConfigId=config['id'], kind='agent', modelId=config['modelId'],
-                        url=config['url'], protocol=config['protocol'], connectionType=config['connectionType']))
+        command_dict = command.model_dump(mode='json')
+        input_fp = command_fingerprint(command)
+        replayed = await asyncio.to_thread(
+            self.decisions.record_pending_write,
+            project_id,
+            turn_id,
+            call_id,
+            command_dict,
+            input_fp,
+            session=session,
+        )
+        if replayed is not None:
+            return replayed
+        async with self._dispatch_write(project_id, turn_id, str(command_id), session):
+            return await self._execute_project_write(
+                project_id, turn_id, session, call_id, command, command_dict, input_fp, config, native_runtime,
+                execution_directory,
+            )
+
+    async def _execute_project_write(
+        self, project_id, turn_id, session, call_id, command, command_dict, input_fp, config, native_runtime,
+        execution_directory,
+    ):
+        try:
+            if command.type == 'generation.submit':
+                receipt = await self.generation.execute(command, session=session, source='agent', agent_origin=(turn_id, call_id))
+            elif command.type in {'job.cancel', 'job.recover'}:
+                receipt = await self.generation.execute(command, session=session, source='agent')
+            elif command.type in {'asset.writeText', 'artifact.publish'}:
+                if config is not None:
+                    provenance = AssetProvenance(source='agent_written', agentRunId=turn_id,
+                        modelSnapshot=ModelSnapshot(modelConfigId=config['id'], kind='agent', modelId=config['modelId'],
+                            url=config['url'], protocol=config['protocol'], connectionType=config['connectionType']))
+                else:
+                    provenance = AssetProvenance(source='agent_written', agentRunId=turn_id, agentRuntime=native_runtime)
+                if command.type == 'artifact.publish':
+                    with self.projects.local.transaction() as db:
+                        project_directory, _, _ = self.projects._load(db, project_id)
+                    receipt = await asyncio.to_thread(publish_artifact, self.assets, command,
+                        execution_directory=execution_directory or project_directory / 'agent-runs' / str(turn_id) / 'work', session=session, provenance=provenance)
+                else:
+                    receipt = await asyncio.to_thread(self.assets.execute, command, session=session, source='agent', provenance=provenance)
             else:
-                provenance = AssetProvenance(source='agent_written', agentRunId=turn_id, agentRuntime=native_runtime)
-            if command.type == 'artifact.publish':
-                with self.projects.local.transaction() as db:
-                    project_directory, _, _ = self.projects._load(db, project_id)
-                receipt = await asyncio.to_thread(publish_artifact, self.assets, command,
-                    execution_directory=execution_directory or project_directory / 'agent-runs' / str(turn_id) / 'work', session=session, provenance=provenance)
-            else:
-                receipt = await asyncio.to_thread(self.assets.execute, command, session=session, source='agent', provenance=provenance)
-        else:
-            receipt = await asyncio.to_thread(self.projects.execute, command, session=session, source='agent')
-        return receipt.model_dump(mode='json')
+                receipt = await asyncio.to_thread(self.projects.execute, command, session=session, source='agent')
+        except (ProjectError, ValueError, KeyError, OSError, ValidationError) as failure:
+            committed = await asyncio.to_thread(self.projects.replay, command)
+            if committed is not None:
+                receipt_dict = committed.model_dump(mode='json')
+                await asyncio.to_thread(
+                    self.decisions.record_accepted_receipt,
+                    project_id, turn_id, call_id, command_dict, input_fp, receipt_dict,
+                )
+                return receipt_dict
+            code = failure.code if isinstance(failure, ProjectError) else None
+            await asyncio.to_thread(
+                self.decisions.record_pre_write_failure,
+                project_id, turn_id, call_id, command_dict, input_fp, str(failure), code,
+            )
+            failure._retryable_pre_write = True
+            raise
+        receipt_dict = receipt.model_dump(mode='json')
+        if receipt_dict.get('status') in {'applied', 'accepted', 'noop', 'rejected'}:
+            await asyncio.to_thread(
+                self.decisions.record_accepted_receipt,
+                project_id,
+                turn_id,
+                call_id,
+                command_dict,
+                input_fp,
+                receipt_dict,
+            )
+        return receipt_dict

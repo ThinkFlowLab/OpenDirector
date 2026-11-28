@@ -1,6 +1,6 @@
 """CLI runtimes use native skills and a turn-scoped business CLI."""
 import asyncio
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 import json
 import os
 from pathlib import Path
@@ -10,7 +10,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from urllib.request import getproxies
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from opendirector.agent.model_gateway import ModelGateway
 from opendirector.agent import cli_transport, deepseek, windows_powershell
@@ -19,7 +19,7 @@ from opendirector.agent.context import RunContext
 from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
-from opendirector.agent.tools import ROOT, SUGGESTED_REPLIES, SYSTEM
+from opendirector.agent.tools import AUTO_MODE_GUIDANCE, ROOT, SUGGESTED_REPLIES, SYSTEM, build_ask_mode_guidance
 from opendirector.installation import BUNDLED
 from opendirector.agent.skill_snapshot import prepare_skills
 from opendirector.agent.directory_links import link_directory, unlink_directory
@@ -197,17 +197,23 @@ class NativeRuntime:
         queue = asyncio.Queue(maxsize=128)
         pending = set()
         token = secrets.token_urlsafe(32)
-        process = pump = stderr_task = None
+        process = pump = stderr_task = waiting_guard = None
         with TemporaryDirectory(prefix='od-agent-', dir=None if os.name == 'nt' else '/tmp') as temporary:
             reuse_workspace = session_directory is not None and runtime in {'codex', 'claude', 'deepseek'}
-            work = session_directory if reuse_workspace else (directory / 'agent-runs' / str(turn_id) / 'work').resolve()
+            candidate_work = (directory / 'agent-runs' / str(turn_id) / 'work').resolve()
+            if reuse_workspace:
+                work = session_directory
+            elif not candidate_work.exists():
+                work = candidate_work
+            else:
+                work = (directory / 'agent-runs' / str(uuid4()) / 'work').resolve()
             work.mkdir(parents=True, exist_ok=reuse_workspace)
             gateway.execution_directory = work
             # OpenCode emits session events in the session's original instance
             # directory. Keep that engine directory stable, while the gateway,
             # CLI, skills and all published outputs remain scoped to this turn.
             native_work = session_directory or work
-            server = model_server = model = None
+            server = model_server = model = workspace_socket = None
             permissions = AsyncExitStack()
             try:
                 if runtime == 'deepseek':
@@ -227,19 +233,22 @@ class NativeRuntime:
                 roots = prepare_skills(work, catalog)
                 roots += [Path(item['filePath']).resolve().parent for item in catalog]
                 gateway.roots = roots
-                endpoint = str(Path(temporary) / 'cli.sock')
+                private_endpoint = str(Path(temporary) / 'cli.sock')
+                if runtime == 'deepseek' and sys.platform == 'linux':
+                    workspace_socket = work / f'.opendirector-{turn_id.hex[:12]}.sock'
+                endpoint = str(workspace_socket) if workspace_socket else private_endpoint
                 server, bridge_env = await cli_transport.start_server(gateway, queue, endpoint, pending)
                 if run.runtime == 'default':
                     model = ModelGateway(
                         config, thinking, token, str(project_id), str(turn_id), self.transport,
-                        trace_path=work.parent.with_suffix('.model.jsonl'),
+                        trace_path=directory / 'agent-runs' / f'{turn_id}.model.jsonl',
                     )
                 model_server = await asyncio.start_server(model.connect, '127.0.0.1', 0) if model else None
                 model_url = f'http://127.0.0.1:{model_server.sockets[0].getsockname()[1]}' if model_server else ''
                 deepseek_server = None
                 if runtime == 'deepseek':
                     env = cli_transport.environment(work, endpoint, bridge_env)
-                    args, _, deepseek_server = deepseek.command(work, endpoint, token, bridge_env)
+                    args, _, deepseek_server = deepseek.command(work, private_endpoint, token, bridge_env)
                 else:
                     args, env = command(run.runtime, work, endpoint, token,
                         config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
@@ -256,13 +265,23 @@ class NativeRuntime:
                         args += ['resume', session_id, '-']
                     else:
                         args += ['--session' if runtime == 'opencode' else '--resume', session_id]
+                mode_guidance = ''
+                if run.mode == 'ask' and run.task_stage == 'planning':
+                    mode_guidance = build_ask_mode_guidance(run.current_plan)
+                elif run.mode == 'auto' and run.task_stage == 'running':
+                    mode_guidance = AUTO_MODE_GUIDANCE
+                include_suggestions = (
+                    run.mode == 'auto'
+                    and run.task_stage not in {'planning', 'waiting_input', 'resuming', 'waiting_confirmation'}
+                )
                 execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
                     'Set the native shell workdir to this execution directory for file and media operations. '
                     'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
                     'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.\n'
-                    + SUGGESTED_REPLIES)
+                    + mode_guidance
+                    + (SUGGESTED_REPLIES if include_suggestions else ''))
                 prompt = execution_context + '\n' + json.dumps(context[-1:] if session_id else context, ensure_ascii=False)
                 skill_instruction = ''
                 if selected:
@@ -291,6 +310,8 @@ class NativeRuntime:
                         del stderr_tail[:-8192]
                 stderr_task = asyncio.create_task(drain_stderr())
                 if runtime != 'deepseek':
+                    if run.on_dispatched is not None:
+                        await run.on_dispatched()
                     process.stdin.write(prompt.encode() + b'\n')
                     await process.stdin.drain()
                     process.stdin.close()
@@ -301,12 +322,29 @@ class NativeRuntime:
                         diagnostic = diagnostic.replace(config['apiKey'], '[redacted]')
                     await queue.put({'native': {'type': 'diagnostic', 'stderr': diagnostic,
                                                 'exitCode': process.returncode}})
+                terminated_for_waiting = False
+                async def finish_waiting():
+                    nonlocal terminated_for_waiting
+                    await gateway.waiting_event.wait()
+                    with suppress(TimeoutError):
+                        await asyncio.wait_for(process.wait(), 10)
+                        return
+                    terminated_for_waiting = True
+                    await terminate(process, group=True)
+
+                waiting_guard = asyncio.create_task(finish_waiting()) if hasattr(gateway, 'waiting_event') else None
                 async def output():
+                    nonlocal terminated_for_waiting
                     try:
                         reported_session = None
+                        saw_completion_event = False
                         if runtime == 'deepseek':
                             async def observe(raw):
+                                nonlocal terminated_for_waiting
                                 await queue.put({'native': raw})
+                                if hasattr(gateway, 'attempted_after_waiting') and gateway.attempted_after_waiting.is_set():
+                                    terminated_for_waiting = True
+                                    await terminate(process, group=True)
                             blocks = [execution_context] if session_id else [SYSTEM, execution_context]
                             if skill_instruction:
                                 blocks.append(skill_instruction)
@@ -314,8 +352,15 @@ class NativeRuntime:
                                 blocks.append('Conversation history\n' + json.dumps(context[:-1], ensure_ascii=False))
                             if context:
                                 blocks.append('Current user request\n' + context[-1]['content'])
-                            reported_session = await deepseek.run(process, work, blocks, runtime_model, thinking,
-                                                            deepseek_server, observe, session_id)
+                            try:
+                                reported_session = await deepseek.run(
+                                    process, work, blocks, runtime_model, thinking, deepseek_server, observe,
+                                    session_id, before_prompt=run.on_dispatched,
+                                )
+                                saw_completion_event = reported_session is not None
+                            except ProjectError:
+                                if not terminated_for_waiting:
+                                    raise
                         else:
                             while line := await process.stdout.readline():
                                 raw = json.loads(line)
@@ -326,19 +371,34 @@ class NativeRuntime:
                                     reported_session = raw.get('sessionID') or reported_session
                                 elif runtime == 'claude':
                                     reported_session = raw.get('session_id') or reported_session
+                                event_type = raw.get('type')
+                                if runtime == 'codex' and event_type == 'turn.completed':
+                                    saw_completion_event = True
+                                elif runtime == 'opencode' and event_type == 'step_finish':
+                                    saw_completion_event = raw.get('part', {}).get('reason') == 'stop'
+                                elif runtime == 'claude' and event_type == 'result' and not raw.get('is_error'):
+                                    saw_completion_event = True
+                                elif run.mode == 'auto' and run.task_stage == 'running' and event_type in {'item.completed', 'text', 'assistant'}:
+                                    saw_completion_event = True
                                 if (previous_session and reported_session != previous_session
                                         or session_id and reported_session and reported_session != session_id):
                                     raise ProjectError('Harness 返回了不同的会话 ID。', 502)
                                 await queue.put({'native': raw})
-                        if await process.wait():
-                            await record_exit()
-                            raise ProjectError(f'{runtime} 进程退出（{process.returncode}），请检查 CLI 登录和配置。', 502)
-                        if reported_session:
+                                if hasattr(gateway, 'attempted_after_waiting') and gateway.attempted_after_waiting.is_set():
+                                    terminated_for_waiting = True
+                                    await terminate(process, group=True)
+                                    break
+                        exit_code = await process.wait()
+                        if exit_code:
+                            if not terminated_for_waiting:
+                                await record_exit()
+                                raise ProjectError(f'{runtime} 进程退出（{process.returncode}），请检查 CLI 登录和配置。', 502)
+                        elif reported_session and saw_completion_event and not terminated_for_waiting:
                             run.save_native_session(reported_session, selection,
                                 engine_directory=native_work,
-                                work_turn_id=run.turn_id if native_work == work and not reuse_workspace else UUID(native_work.parent.name))
+                                work_turn_id=UUID(native_work.parent.name))
                     except ProjectError:
-                        if runtime == 'deepseek' and process.returncode:
+                        if runtime == 'deepseek' and process.returncode and not terminated_for_waiting:
                             await record_exit()
                         raise
                     finally:
@@ -358,11 +418,16 @@ class NativeRuntime:
                             yield event
                     await pump
             finally:
+                if waiting_guard is not None:
+                    waiting_guard.cancel()
+                    await asyncio.gather(waiting_guard, return_exceptions=True)
                 try:
                     await gateway.close()
                     if server:
                         server.close()
                         await server.wait_closed()
+                    if workspace_socket:
+                        workspace_socket.unlink(missing_ok=True)
                     if model_server:
                         model.closed = True
                         model_server.close()

@@ -7,7 +7,9 @@ const headers = { "X-OpenDirector-Request": "1", "Content-Type": "application/js
 async function call(path, body) {
   const response = await fetch(api + path, { headers, ...(body ? { method: "POST", body: JSON.stringify(body) } : {}) });
   assert.ok(response.ok, await response.clone().text());
-  return response.json();
+  const result = await response.json();
+  assert.notEqual(result.status, 'rejected', JSON.stringify({ type: body?.type, ...result }));
+  return result;
 }
 assert.equal((await call("/api/creation-test-health")).isolated, true);
 const browser = await launchBrowser();
@@ -112,11 +114,86 @@ try {
   await shown(third).locator('.cw-node-placeholder').click({ position: { x: 8, y: 8 } });
   await page.waitForTimeout(250);
   assert.deepEqual(await selection(), [third]);
+  // A due autosave must not republish the old document when a remote
+  // refresh installs its baseline before React renders the hidden node.
+  await page.evaluate(async ({ projectId, itemId }) => {
+    const { workspaceProjection } = await import('/src/backend/workspace.ts');
+    const projection = workspaceProjection(projectId);
+    const descriptor = Object.getOwnPropertyDescriptor(projection, 'baseline');
+    if (!descriptor || !('value' in descriptor) || !descriptor.configurable ||
+        !descriptor.value.nodes.some((node) => node.id === itemId))
+      throw new Error('Expected a visible item in the configurable baseline');
+    const nativeSetTimeout = window.setTimeout;
+    let baseline = descriptor.value, due, invoked = 0, restored = false;
+    const timers = new Set();
+    window.setTimeout = function (callback, delay, ...args) {
+      if (typeof callback !== 'function' || ![450, 900].includes(Number(delay)) ||
+          !(new Error().stack ?? '').includes('useWorkspaceDocument.ts'))
+        return nativeSetTimeout.call(window, callback, delay, ...args);
+      const timer = nativeSetTimeout.call(window, () => {
+        timers.delete(timer);
+        due = () => callback.apply(window, args);
+      }, delay);
+      timers.add(timer);
+      return timer;
+    };
+    const restore = () => {
+      if (restored) return;
+      restored = true;
+      window.setTimeout = nativeSetTimeout;
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+      due = undefined;
+      Object.defineProperty(projection, 'baseline', { ...descriptor, value: baseline });
+    };
+    Object.defineProperty(projection, 'baseline', {
+      configurable: true,
+      enumerable: descriptor.enumerable,
+      get: () => baseline,
+      set: (next) => {
+        baseline = next;
+        if (next.nodes.some((node) => node.id === itemId) || !due) return;
+        const callback = due;
+        restore();
+        queueMicrotask(() => { invoked++; callback(); });
+      },
+    });
+    window.__remoteAutosave = {
+      ready: () => !!due,
+      report: () => ({ invoked, restored: restored && window.setTimeout === nativeSetTimeout }),
+      restore,
+    };
+  }, { projectId, itemId: first });
+  // The selected node's composer can cover fixed coordinates and consume the
+  // gesture. Find exposed canvas and verify the pan actually schedules a save.
+  const panStart = await page.evaluate(() => {
+    const pane = document.querySelector('.react-flow__pane');
+    const rect = pane.getBoundingClientRect();
+    for (let y = Math.max(80, rect.top + 40); y < Math.min(innerHeight, rect.bottom) - 60; y += 80) {
+      for (let x = Math.max(80, rect.left + 40); x < Math.min(innerWidth, rect.right) - 70; x += 80) {
+        if ([0, 0.5, 1].every((t) => document.elementFromPoint(x + 30 * t, y + 20 * t) === pane))
+          return { x, y };
+      }
+    }
+  });
+  assert.ok(panStart, 'expected exposed canvas for the autosave gesture');
+  const beforeAutosavePan = await transform();
+  await page.mouse.move(panStart.x, panStart.y);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(panStart.x + 30, panStart.y + 20, { steps: 5 });
+  await page.mouse.up({ button: 'middle' });
+  await page.waitForFunction((before) =>
+    document.querySelector('.react-flow__viewport').getAttribute('style') !== before, beforeAutosavePan);
+  await page.waitForFunction(() => window.__remoteAutosave.ready());
   await editor.fill('保留我的视图和输入焦点');
   const hidden = await send('canvas.hide', { itemId: first });
   assert.equal(hidden.status, 'applied');
   await shown(first).waitFor({ state: 'detached' });
   await page.waitForTimeout(250);
+  assert.deepEqual(await page.evaluate(() => window.__remoteAutosave.report()), { invoked: 1, restored: true });
+  const afterRefresh = (await read()).canvasItems.find((item) => item.id === first);
+  assert.equal(afterRefresh.visible, false, 'the old autosave must not re-show a hidden node');
+  assert.equal(afterRefresh.revision, hidden.changed.find((item) => item.id === first).revision);
   const beforeUndo = await transform(), selectedBeforeUndo = await selection();
   const undone = await send('history.undo', { targetCommandId: hidden.commandId });
   assert.equal(undone.status, 'applied');
@@ -130,6 +207,8 @@ try {
   await page.waitForTimeout(1200); // Flush independent viewport preferences.
   await page.reload();
   await page.getByText('Saved on this device', { exact: true }).waitFor();
+  await page.waitForFunction((viewport) =>
+    document.querySelector('.react-flow__viewport').getAttribute('style') === viewport, beforeUndo);
   if (!(await editor.isVisible())) await page.locator('.cw-chat-button').click();
   await editor.fill('重开后仍保留视图');
   headers['X-OpenDirector-Session'] = await page.evaluate(async () => (await import('/src/backend/api.ts')).sessionId);
@@ -192,7 +271,8 @@ try {
   const final = await read();
   assert.deepEqual(final.canvasItems.map((item) => item.position), [...snapshot.canvasItems.map((item) => item.position), { x: 25000, y: 25000 }, { x: 15000, y: 12000 }]);
   assert.equal(final.jobs.length, 0);
-  console.log(JSON.stringify({ passed: true, checks: ["assistant occlusion", "center origin and distant nodes", "preserve focus and selection", "respect pointer gesture and multi-selection", "undo and redo preserve viewport", "re-show hidden node after reopen", "show previously registered hidden identity", "redo creation preserves viewport", "fresh nodes still reveal", "unchanged authored positions"] }));
+  console.log(JSON.stringify({ passed: true, checks: ["assistant occlusion", "center origin and distant nodes", "preserve focus and selection", "respect pointer gesture and multi-selection", "due autosave cannot undo remote hide", "undo and redo preserve viewport", "viewport persists after refresh", "re-show hidden node after reopen", "show previously registered hidden identity", "redo creation preserves viewport", "fresh nodes still reveal", "unchanged authored positions"] }));
 } finally {
+  await page.evaluate(() => window.__remoteAutosave?.restore()).catch(() => {});
   await browser.close();
 }

@@ -196,6 +196,7 @@ const icons: Record<string, ReactNode> = {
   referenceArrowsHorizontal: <path d="M3 9h18l-5-4M21 15H3l5 4" />,
   referenceArrowsVertical: <path d="M9 21V3L5 8M15 3v18l4-5" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  chevronLeft: <path d="m15 18-6-6 6-6" />,
   chevronRight: <path d="m9 6 6 6-6 6" />,
   camera: (
     <>
@@ -412,6 +413,12 @@ const icons: Record<string, ReactNode> = {
       <rect x="3" y="14" width="7" height="7" rx="2" />
       <rect x="14" y="14" width="7" height="7" rx="2" />
     </>
+  ),
+  chatBubble: (
+    <path d="M12 4c4.97 0 9 3.47 9 7.75S16.97 19.5 12 19.5c-1.48 0-2.88-.31-4.11-.86L3.8 20l1.18-3.47A7.2 7.2 0 0 1 3 11.75C3 7.47 7.03 4 12 4Z" />
+  ),
+  infinity: (
+    <path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8Z" />
   ),
 };
 const aliases: Record<string, string> = {

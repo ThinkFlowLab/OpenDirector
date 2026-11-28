@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { CanvasIcon as Icon } from "./CanvasIcon";
 import type { ModelConfig, ModelKind } from "../backend/rules";
 import { isGenerationModel } from "../backend/rules";
-import type { ModelSelections } from "../backend/chat";
+import type { InteractionMode, ModelSelections } from "../backend/chat";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 
@@ -293,6 +293,63 @@ export function ModelPicker({
   );
 }
 
+function useListboxMenu(
+  open: boolean,
+  setOpen: (open: boolean) => void,
+  root: { current: HTMLDivElement | null },
+  menu: { current: HTMLDivElement | null },
+) {
+  useEffect(() => {
+    if (!open) return;
+    (
+      menu.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]:not(:disabled)') ??
+      menu.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+    )?.focus();
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("focusin", dismiss);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("focusin", dismiss);
+    };
+  }, [open, root, menu, setOpen]);
+}
+
+function listboxMenuKeys(
+  event: KeyboardEvent<HTMLDivElement>,
+  setOpen: (open: boolean) => void,
+  trigger: { current: HTMLButtonElement | null },
+) {
+  if (event.key === "Escape" || event.key === "Tab") {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      trigger.current?.focus();
+    }
+    setOpen(false);
+    return;
+  }
+  const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  if (!items.length) return;
+  const current = items.indexOf(document.activeElement as HTMLButtonElement);
+  const next =
+    event.key === "ArrowDown"
+      ? (current + 1) % items.length
+      : event.key === "ArrowUp"
+        ? (current - 1 + items.length) % items.length
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? items.length - 1
+            : null;
+  if (next !== null) {
+    event.preventDefault();
+    items[next]?.focus();
+  }
+}
+
 export function ChoicePicker({
   label,
   icon,
@@ -314,57 +371,7 @@ export function ChoicePicker({
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const selected = options.find((option) => option.id === value);
-  useEffect(() => {
-    if (!open) return;
-    (
-      menu.current?.querySelector<HTMLButtonElement>(
-        '[aria-selected="true"]',
-      ) ?? menu.current?.querySelector<HTMLButtonElement>("button")
-    )?.focus();
-    const dismiss = (event: Event) => {
-      if (event.target instanceof Node && !root.current?.contains(event.target))
-        setOpen(false);
-    };
-    document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("focusin", dismiss);
-    return () => {
-      document.removeEventListener("pointerdown", dismiss);
-      document.removeEventListener("focusin", dismiss);
-    };
-  }, [open]);
-  function keys(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape" || event.key === "Tab") {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      if (event.key === "Tab") {
-        setOpen(false);
-        return;
-      }
-      trigger.current?.focus();
-      setOpen(false);
-      return;
-    }
-    const items = [
-      ...event.currentTarget.querySelectorAll<HTMLButtonElement>("button"),
-    ];
-    const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      event.key === "ArrowDown"
-        ? (current + 1) % items.length
-        : event.key === "ArrowUp"
-          ? (current - 1 + items.length) % items.length
-          : event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? items.length - 1
-              : null;
-    if (next !== null) {
-      event.preventDefault();
-      items[next]?.focus();
-    }
-  }
+  useListboxMenu(open, setOpen, root, menu);
   return (
     <div ref={root} className="chat-picker">
       <button
@@ -392,7 +399,7 @@ export function ChoicePicker({
         <Icon name="chevron" />
       </button>
       {open && (
-        <div ref={menu} className="chat-picker-menu" onKeyDown={keys}>
+        <div ref={menu} className="chat-picker-menu" onKeyDown={(e) => listboxMenuKeys(e, setOpen, trigger)}>
           <div className="picker-heading">{label}</div>
           <div role="listbox" aria-label={label}>
             {options.map((option) => (
@@ -416,6 +423,124 @@ export function ChoicePicker({
               </button>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ModePicker({
+  value,
+  askSupported,
+  disabled = false,
+  onChange,
+}: {
+  value: InteractionMode;
+  askSupported: boolean;
+  disabled?: boolean;
+  onChange: (value: InteractionMode) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const label = t("assistant.mode.label");
+  const currentLabel = value === "ask" ? t("assistant.mode.ask") : t("assistant.mode.auto");
+  const options: {
+    id: InteractionMode;
+    icon: "chatBubble" | "infinity";
+    label: string;
+    description: string;
+    disabled?: boolean;
+  }[] = [
+    {
+      id: "ask",
+      icon: "chatBubble",
+      label: t("assistant.mode.ask"),
+      description: askSupported ? t("assistant.mode.askDescription") : t("assistant.mode.unsupportedHint"),
+      disabled: !askSupported,
+    },
+    {
+      id: "auto",
+      icon: "infinity",
+      label: t("assistant.mode.auto"),
+      description: t("assistant.mode.autoDescription"),
+    },
+  ];
+  useEffect(() => {
+    if (disabled && open) setOpen(false);
+  }, [disabled, open]);
+  useListboxMenu(open, setOpen, root, menu);
+  return (
+    <div ref={root} className="cw-mode-picker">
+      <button
+        ref={trigger}
+        type="button"
+        className={`cw-assistant-mode-toggle is-${value}${open ? " is-open" : ""}`}
+        data-assistant-mode-toggle
+        data-mode={value}
+        disabled={disabled}
+        aria-label={t("assistant.choice.aria", { label, value: currentLabel })}
+        title={
+          !askSupported
+            ? t("assistant.mode.unsupportedHint")
+            : value === "ask"
+              ? t("assistant.mode.askHint")
+              : t("assistant.mode.autoHint")
+        }
+        aria-haspopup="listbox"
+        aria-expanded={open && !disabled}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <Icon name={value === "ask" ? "chatBubble" : "infinity"} size={14} />
+        <span>{currentLabel}</span>
+        <Icon name="chevron" size={11} className="cw-mode-picker-chevron" />
+      </button>
+      {open && !disabled && (
+        <div
+          ref={menu}
+          id={menuId}
+          className="cw-mode-picker-menu"
+          role="listbox"
+          aria-label={label}
+          onKeyDown={(e) => listboxMenuKeys(e, setOpen, trigger)}
+        >
+          {options.map((option) => {
+            const selected = value === option.id;
+            return (
+              <button
+                type="button"
+                key={option.id}
+                role="option"
+                data-assistant-mode-option={option.id}
+                aria-selected={selected}
+                disabled={option.disabled}
+                tabIndex={-1}
+                className={`cw-mode-option${selected ? " is-selected" : ""}`}
+                onClick={() => {
+                  onChange(option.id);
+                  setOpen(false);
+                  trigger.current?.focus();
+                }}
+              >
+                <Icon name={option.icon} size={18} className="cw-mode-option-icon" />
+                <span className="cw-mode-option-copy">
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+                {selected && <Icon name="check" size={16} className="cw-mode-option-check" />}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import pytest
 
 from opendirector.agent.tools import AgentTools, tools
 from opendirector.domain.projects import ProjectError
+from test_creation_canvas_service import project  # noqa: F401 (project is a fixture)
 
 
 pytestmark = pytest.mark.cpu
@@ -41,33 +42,34 @@ def test_voice_list_uses_shared_registry_pagination(options):
     assert page == registry.list.return_value
 
 
-def create_voice(business, work, path):
-    return asyncio.run(business.execute(uuid4(), uuid4(), 'session', 'call', 'voice_create',
+def create_voice(business, project, work, path):
+    _, project_id, session = project
+    return asyncio.run(business.execute(project_id, uuid4(), session, 'call', 'voice_create',
         {'modelConfigId': str(uuid4()), 'connectionId': 'scope-a', 'name': 'Voice',
          'path': str(path), 'consent': 'consent-recording-id'}, [], None, execution_directory=work))
 
 
-def voice_business():
+def voice_business(project):
     registry = Mock()
     registry._config.return_value = (None, {'maxBytes': 100})
     registry.create.return_value = {'id': 'created'}
-    return AgentTools(None, SimpleNamespace(voices=registry), None), registry
+    return AgentTools(project[0], SimpleNamespace(voices=registry), None), registry
 
 
 @pytest.mark.parametrize('absolute', [False, True])
-def test_voice_create_reads_execution_recording(tmp_path, absolute):
-    business, registry = voice_business()
+def test_voice_create_reads_execution_recording(project, tmp_path, absolute):
+    business, registry = voice_business(project)
     recording = tmp_path / 'recording.wav'
     recording.write_bytes(b'recording')
-    assert create_voice(business, tmp_path, recording if absolute else recording.name) == {'id': 'created'}
+    assert create_voice(business, project, tmp_path, recording if absolute else recording.name) == {'id': 'created'}
     assert registry.create.call_args.args[1] == b'recording'
     assert registry.create.call_args.kwargs['filename'] == 'recording.wav'
 
 
 @pytest.mark.parametrize('component', ['work', 'turn'])
-def test_voice_create_rejects_redirected_execution_root(tmp_path, component):
+def test_voice_create_rejects_redirected_execution_root(project, tmp_path, component):
     from process_helpers import directory_link
-    business, registry = voice_business()
+    business, registry = voice_business(project)
     work = tmp_path / 'turn/work'
     work.mkdir(parents=True)
     anchor = work if component == 'work' else work.parent
@@ -79,19 +81,19 @@ def test_voice_create_rejects_redirected_execution_root(tmp_path, component):
     directory_link(anchor, outside)
     try:
         with pytest.raises((OSError, ProjectError)):
-            create_voice(business, work, work / 'recording.wav')
+            create_voice(business, project, work, work / 'recording.wav')
         registry.create.assert_not_called()
     finally:
         anchor.rmdir() if os.name == 'nt' else anchor.unlink()
 
 
-def test_voice_create_rejects_hardlink(tmp_path):
-    business, registry = voice_business()
+def test_voice_create_rejects_hardlink(project, tmp_path):
+    business, registry = voice_business(project)
     work = tmp_path / 'work'
     work.mkdir()
     outside = tmp_path / 'private.wav'
     outside.write_bytes(b'private recording')
     os.link(outside, work / 'recording.wav')
     with pytest.raises((OSError, ProjectError)):
-        create_voice(business, work, work / 'recording.wav')
+        create_voice(business, project, work, work / 'recording.wav')
     registry.create.assert_not_called()

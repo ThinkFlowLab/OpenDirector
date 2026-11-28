@@ -681,3 +681,47 @@ def test_background_turn_keeps_write_session_and_checks_revisions(assistant, mon
     with store.transaction() as db:
         assert db.execute('SELECT 1 FROM sessions WHERE id=?',
                           (store.agent_session_key(run_session),)).fetchone() is None
+
+
+def test_background_turn_lease_survives_wall_clock_jump(assistant, monkeypatch):
+    from opendirector.infrastructure import local_projects
+
+    client, path, _ = assistant
+    root = path.removesuffix('/assistant')
+    project_id = root.rsplit('/', 1)[1]
+    browser_session = client.headers['X-OpenDirector-Session']
+    monkeypatch.setattr(LocalProjects, 'LEASE_SECONDS', 1.5)
+    assert client.post(root + '/open').status_code == 200
+    release = threading.Event()
+    results = {}
+
+    async def stream(self, run, gateway):
+        results['store'] = gateway.business.projects.local
+        yield {'type': 'delta', 'text': 'Waiting'}
+        assert await asyncio.to_thread(release.wait, 10)
+        results['asset'] = (await gateway.call('publish', 'execute_command', {
+            'type': 'asset.writeText', 'payload': {'name': 'ClockJump.md', 'text': 'Survived NTP step'},
+        })).value
+        yield {'type': 'delta', 'text': 'Done'}
+
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', runtime_stream)
+    monkeypatch.setattr(NativeRuntime, 'stream', stream)
+    turn_id = str(uuid4())
+    disconnect_turn(client, path, turn_id)
+    try:
+        assert client.delete('/api/creation/sessions/' + browser_session).status_code == 200
+        real_time = local_projects.time.time
+        monkeypatch.setattr(local_projects.time, 'time', lambda: real_time() + 10.0)
+        rename = {
+            'type': 'project.rename', 'projectId': project_id, 'commandId': str(uuid4()),
+            'payload': {'name': 'Moved during NTP step'},
+            'expectedVersions': [{'objectType': 'project', 'id': project_id, 'revision': 1}],
+        }
+        assert client.post(root + '/commands', json=rename).status_code == 409
+    finally:
+        release.set()
+
+    response = client.get(path + f'/turns/{turn_id}/events')
+    if response.status_code == 200:
+        assert frames(response)[-1]['error'] is None
+    assert results['asset'].get('status') == 'applied', results['asset']

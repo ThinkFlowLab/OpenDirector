@@ -489,14 +489,15 @@ def test_loopback_http_discovery_checks_real_route_without_inference(tmp_path):
 
 @pytest.mark.parametrize('live', [False, True])
 def test_cli_availability_uses_shared_read_or_refresh(live, monkeypatch):
-    client = Mock(live=live, opened=False)
+    client = Mock(live=live, opened=False, operation_id=None)
     client.request.return_value = client.call.return_value = {'revision': 'test', 'models': []}
     monkeypatch.setattr(cli, 'Client', Mock(return_value=client))
     model = str(uuid4())
     result = CliRunner().invoke(cli.app, ['model', 'availability', '--refresh', '--manual', '--model', model])
     assert result.exit_code == 0, result.output
     if live:
-        client.call.assert_called_once_with('model_availability', {'refresh': True, 'manual': True, 'configIds': [model]})
+        client.call.assert_called_once_with('model_availability',
+            {'refresh': True, 'manual': True, 'configIds': [model]}, identity=None)
     else:
         client.request.assert_called_once_with('POST', '/api/model-configs/availability', json={'manual': True, 'configIds': [model]})
 
