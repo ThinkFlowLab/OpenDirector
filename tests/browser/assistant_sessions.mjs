@@ -116,12 +116,15 @@ try {
   await panel.getByRole("button", { name: "发送消息", exact: true }).click();
   await until(
     () => api(path),
-    (value) => value.messages.at(-1)?.status === "complete",
-    "First reply must be persisted",
+    (value) =>
+      value.messages.at(-1)?.status === "complete" &&
+      value.activeTurnId === undefined,
+    "First reply must be persisted and release the active turn",
   );
   await panel
     .getByText("已收到创作要求。这是隔离测试回复。", { exact: true })
     .waitFor();
+  await panel.getByRole("button", { name: "停止回复", exact: true }).waitFor({ state: "hidden" });
 
   await editor.fill("海边草稿");
   await panel.getByLabel("选择对话参考文件", { exact: true }).setInputFiles({
