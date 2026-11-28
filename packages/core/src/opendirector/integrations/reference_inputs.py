@@ -5,7 +5,7 @@ import json
 
 from opendirector.domain.input_rules import MAX_REFERENCES, input_rules
 from opendirector.domain.rule_facts import (
-    CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES,
+    CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, REFERENCE_MEDIA_SECONDS, TEXT_REFERENCE_BYTES, keyframe_frame,
 )
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.minimax_image import validate_minimax_image_reference
@@ -197,7 +197,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                     raise ProjectError(f'“{meta["name"]}”不能作为关键帧：需为不超过大小限制的 PNG、JPEG 或 WEBP 图片。')
                 for milliseconds in pinned:
                     result['guides'].append({'assetId': str(meta['id']), 'name': meta['name'], 'data': data, 'mime': guide_mime,
-                                             'frame': round(milliseconds * 24 / 1000)})
+                                             'frame': keyframe_frame(milliseconds)})
                     result['manifest'].append({**entry, 'role': 'keyframe', 'frameTimeMs': milliseconds})
                 if all(value['role'] == 'keyframe' for value in asset_roles):
                     source_metadata.pop()

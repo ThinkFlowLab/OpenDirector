@@ -166,7 +166,7 @@ export const errors = {
     "This model does not support keyframes. Clear the times on the images or choose another model.",
   "errors.rules.keyframeCount": "Up to {limit} keyframes.",
   "errors.rules.keyframeTime": "A keyframe must be earlier than the end of the video ({seconds} s).",
-  "errors.rules.keyframeDuplicate": "Two keyframes cannot share the same time.",
+  "errors.rules.keyframeDuplicate": "Two keyframes cannot land on the same frame. Keep their times at least 1/24 second apart.",
   "errors.rules.keyframeReference":
     "Keyframes also need at least one unpinned reference image or a reference video.",
   "errors.rules.serviceInputLimit": "Up to {limit} {kind} inputs; currently {current}.",

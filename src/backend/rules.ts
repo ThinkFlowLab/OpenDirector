@@ -771,10 +771,11 @@ export function backendBlocker(
     const limit = rules.maxKeyframes ?? 0;
     if (!limit) return tNow("errors.rules.keyframeUnsupported");
     if (keyframes.length > limit) return tNow("errors.rules.keyframeCount", { limit });
-    const times = keyframes.map((item) => Math.round((item.seconds ?? 0) * 1000));
-    if (times.some((time) => time >= settings.durationSeconds * 1000))
+    // A guide is pinned to one output frame (24 per second), so times are compared as the frames they land on.
+    const frames = keyframes.map((item) => keyframeFrame(item.seconds ?? 0));
+    if (frames.some((frame) => frame >= Math.round(settings.durationSeconds * KEYFRAME_FPS)))
       return tNow("errors.rules.keyframeTime", { seconds: settings.durationSeconds });
-    if (new Set(times).size !== times.length) return tNow("errors.rules.keyframeDuplicate");
+    if (new Set(frames).size !== frames.length) return tNow("errors.rules.keyframeDuplicate");
     if (!references.some((item) => item.role === "reference" && ["image", "video"].includes(String(item.node.data.kind))))
       return tNow("errors.rules.keyframeReference");
   }
@@ -804,6 +805,11 @@ export function backendBlocker(
   return null;
 }
 
+/** H3 output rate: a keyframe time is pinned to one of these frames. Mirrors rule_facts.keyframe_frame. */
+export const KEYFRAME_FPS = 24;
+export const keyframeFrame = (seconds: number) =>
+  Math.round((Math.round(seconds * 1000) * KEYFRAME_FPS) / 1000);
+
 /** The same budget applies to following nodes, pinned assets and expanded subjects. */
 export function referenceBudgetIssue(
   sources: readonly CanvasNode[],
@@ -812,7 +818,7 @@ export function referenceBudgetIssue(
 ) {
   const usable = settings
     ? backendReferences(settings, sources, config)
-        .filter((ref) => ref.role !== "continuation")
+        .filter((ref) => ref.role !== "continuation" && ref.role !== "keyframe")
         .map((ref) => ref.node)
     : sources.flatMap((node) =>
         node.type === "subject" ? subjectReferenceNodes(node) : [node],

@@ -28,11 +28,12 @@ def generation_fields(parameters, *, frame_indices=None, continue_from=None, con
     fields.update(size=parameters.get('size', '832x480'), num_inference_steps=steps,
                   guidance_scale=1, fps=24, seed=parameters.get('seed', 1234))
     if continue_from is not None:
-        # The service samples a window over the earlier job's cached latent tail; latents cannot change size.
         extra['continue_from'] = continue_from
-        width, height = continue_size or (None, None)
-        if width and height:
-            fields['size'] = f'{width}x{height}'
+    # The service samples a window over the earlier job's cached latent tail; latents cannot change size.
+    # The capability check knows the size before the job has an ID to continue from, and checks what is sent.
+    width, height = continue_size or (None, None)
+    if width and height:
+        fields['size'] = f'{width}x{height}'
     return fields, extra
 
 

@@ -14,7 +14,7 @@ from opendirector.domain.generation import GenerationFailure, ResultCheck
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.reference_windows import windows_reference_videos
 from opendirector.domain.rule_facts import (
-    CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, LYRICS_MAX_LENGTH, MAX_REFERENCES,
+    CONTROL_VIDEO_SECONDS, FASTH3_MEDIA_REFERENCE_LIMIT, FRAME_IMAGE_LIMIT, KEYFRAME_FPS, keyframe_frame, LYRICS_MAX_LENGTH, MAX_REFERENCES,
     MUSIC_SECONDS_INITIAL, MUSIC_SECONDS_MAX, MUSIC_SECONDS_MIN, PROMPT_MAX_LENGTH,
     REFERENCE_MEDIA_SECONDS, STORED_VOICE_PATTERN, TEXT_DEFAULT_MAX_TOKENS, TEXT_MAX_TOKENS,
     duration_matches, effective_video_mode, generate_audio_options, prompt_optional_with_media,
@@ -403,10 +403,12 @@ def validate_keyframes(spec, rules, keyframes, *, has_reference):
     times = [ref.frameTimeMs for ref in keyframes]
     if any(value is None for value in times):
         raise ProjectError('每个关键帧都需要指定时间点。', 422, code='keyframe_time')
-    if seconds is not None and any(value >= seconds * 1000 for value in times):
+    # A guide is pinned to one output frame, so times are compared as the frames they land on.
+    frames = [keyframe_frame(value) for value in times]
+    if seconds is not None and any(frame >= round(seconds * KEYFRAME_FPS) for frame in frames):
         raise ProjectError(f'关键帧的时间点必须早于视频结束（{seconds:g} 秒）。', 422, code='keyframe_time')
-    if len(set(times)) != len(times):
-        raise ProjectError('两个关键帧不能指定同一个时间点。', 422, code='keyframe_time')
+    if len(set(frames)) != len(frames):
+        raise ProjectError('两个关键帧不能落在同一帧上，请把时间点至少错开 1/24 秒。', 422, code='keyframe_time')
 
 
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = (),
@@ -449,7 +451,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')
     if spec.promptContent and any(isinstance(part, PromptReference) and part.referenceId not in {ref.referenceId for ref in references} for part in spec.promptContent):
         raise ValueError('提示词引用了未解析的参考素材。')
-    keyframes = [ref for ref in references if ref.role == 'keyframe' and ref.transmission != 'context_only']
+    # Every keyframe is checked, also one a mode would otherwise leave out as context: it must be refused, not dropped.
+    keyframes = [ref for ref in references if ref.role == 'keyframe']
     # A keyframe is pinned to the output's timeline as a guide; it is not one of the model's reference pictures.
     references = tuple(ref for ref in references if ref not in keyframes)
     transmitted = [ref for ref in references if ref.role != 'continuation' and ref.transmission != 'context_only']

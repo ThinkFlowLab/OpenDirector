@@ -11,7 +11,7 @@ import { workspaceProjection } from "../../backend/workspace";
 import { lockedNodeIds } from "../hierarchy";
 import { captureEditorSource, validateNodeActionSource, type LinkedMediaResult, type ResultSource } from "../linkedResults";
 import { type CanvasDocument, type CanvasNode, type CanvasNodeData } from "../model";
-import { createVideoExtensionDraft } from "../nodeActionWorkflow";
+import { continuesOwnClip, createVideoExtensionDraft } from "../nodeActionWorkflow";
 import { getNodeGenerationSettings } from "../NodeComposer";
 import { resourceFromNode } from "../operations";
 
@@ -285,12 +285,14 @@ export function useWorkspaceEditor(rt: WorkspaceRuntime, readOnly: boolean) {
         return;
       }
       // A model that continues its own clips (H3) extends seamlessly from cached latents.
+      // Any other clip has no latents on the service and stays a reference video.
       const draft = next.document.nodes.find((node) => node.id === next.ids[0]);
       const settings =
         draft && getNodeGenerationSettings(draft, backendCatalog.models);
       if (
         draft &&
         settings &&
+        continuesOwnClip(source, settings.modelConfigId) &&
         backendModel(
           settings,
           backendCatalog.models,

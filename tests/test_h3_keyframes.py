@@ -39,8 +39,8 @@ def model(**extra):
     return ModelConfigPublic(id=uuid4(), inputRules=input_rules(config), **config)
 
 
-def picture(role='reference', time=None, kind='image'):
-    return ResolvedReference(referenceId=uuid4(), role=role, frameTimeMs=time,
+def picture(role='reference', time=None, kind='image', transmission='content'):
+    return ResolvedReference(referenceId=uuid4(), role=role, frameTimeMs=time, transmission=transmission,
         asset=AssetRef(assetId=uuid4(), revision=1, fingerprint='sha256:' + '0' * 64, kind=kind),
         metadata=MediaMetadata(mimeType='image/png' if kind == 'image' else 'video/mp4', size=10, width=32, height=24,
                                durationSeconds=None if kind == 'image' else 5))
@@ -62,7 +62,10 @@ def test_submission_accepts_keyframes_beside_a_reference():
     (lambda: (picture('keyframe', 1000),), '普通参考'),
     (lambda: (picture(), picture('keyframe', None)), '时间点'),
     (lambda: (picture(), picture('keyframe', 5000)), '早于视频结束'),
-    (lambda: (picture(), picture('keyframe', 1000), picture('keyframe', 1000)), '同一个时间点'),
+    (lambda: (picture(), picture('keyframe', 1000), picture('keyframe', 1000)), '同一帧'),
+    # A guide is pinned to a frame: 1.00 s and 1.02 s are both frame 24, and 4.99 s rounds to the frame past the last.
+    (lambda: (picture(), picture('keyframe', 1000), picture('keyframe', 1020)), '同一帧'),
+    (lambda: (picture(), picture('keyframe', 4990)), '早于视频结束'),
     (lambda: (picture(), *[picture('keyframe', 100 * n) for n in range(9)]), '最多指定 8 个'),
 ])
 def test_submission_rejects_invalid_keyframes(references, message):
@@ -79,6 +82,42 @@ def test_keyframes_need_reference_mode_and_a_supporting_model():
     plain = model(videoAdapter='standard')
     with pytest.raises(ProjectError, match='不支持指定帧'):
         validate_generation(spec(plain, 'first_frame'), plain, (picture('keyframe', 1000),), submitting=True)
+
+
+def test_a_keyframe_a_mode_leaves_out_is_refused_and_not_dropped():
+    """First-frame mode resolves an extra picture as context only; a keyframe among them must still be answered."""
+    omni = model(videoAdapter='fasth3_dual')
+    first = picture('first_frame')
+    with pytest.raises(ProjectError, match='素材参考模式') as error:
+        validate_generation(spec(omni, 'first_frame'), omni, (first, picture('keyframe', 2000, transmission='context_only')), submitting=True)
+    assert error.value.code == 'keyframe_mode'
+
+
+def test_keyframe_codes_reach_clients_and_read_in_english():
+    from typing import get_args
+
+    from opendirector.domain.creation.commands import IssueCode
+    from opendirector_api.localization import localized_error_for_language
+
+    def flat(annotation):
+        return {name for item in get_args(annotation) for name in (flat(item) if get_args(item) else {item})}
+
+    codes = {'keyframe_unsupported', 'keyframe_mode', 'keyframe_kind', 'keyframe_count', 'keyframe_needs_reference', 'keyframe_time'}
+    assert codes <= flat(IssueCode)
+    for code in codes:
+        english = localized_error_for_language('en-US', chinese='关键帧必须是图片。', status=422, code=code)
+        assert english.isascii() and 'keyframe' in english.lower()
+        assert localized_error_for_language('zh-CN', chinese='关键帧必须是图片。', status=422, code=code) == '关键帧必须是图片。'
+
+
+def test_the_cli_refuses_a_time_that_is_not_a_finite_number():
+    from typer.testing import CliRunner
+
+    from opendirector.cli import app
+    for moment in ('inf', 'nan', '1e400', 'soon'):
+        result = CliRunner().invoke(app, ['--project', str(uuid4()), 'video', 'create', '--model', str(uuid4()), '--prompt', 'x', '--duration', '5',
+                                          '--x', '0', '--y', '0', '--reference-item', str(uuid4()), '--keyframe', f'{uuid4()}@{moment}'])
+        assert not isinstance(result.exception, OverflowError), moment
 
 
 def fixture(times=(1250, 4583)):

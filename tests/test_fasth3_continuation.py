@@ -35,6 +35,16 @@ def test_fields_name_the_source_job_and_keep_its_canvas():
     assert 'continue_from' not in generation_fields({'duration': 5})[1]
 
 
+def test_the_capability_check_sees_the_size_the_continuation_sends():
+    """The check runs before the job has an ID to continue from, and must still see the source's size."""
+    from opendirector.integrations.generation_capability_parameters import generation_capability_parameters
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1', 'modelId': 'Pika-H3', 'videoAdapter': 'fasth3'}
+    parameters = {'duration': 5, 'size': '832x480'}
+    checked = generation_capability_parameters(config, 'video', parameters, video_mode='continuation', continue_size=(768, 1344))
+    sent, _ = generation_fields(parameters, continue_from='video_gen_1', continue_size=(768, 1344))
+    assert checked['size'] == sent['size'] == '768x1344'
+
+
 def fixture(source_job, **source_meta):
     video = {'id': str(uuid4()), 'name': 'part1.mp4', 'kind': 'video', 'type': 'video/mp4', 'fingerprint': 'fixture',
              'durationMs': 5167, 'width': 768, 'height': 1344, 'generationTaskId': 'task-1', **source_meta}

@@ -39,7 +39,7 @@ def recorded(monkeypatch, adapter):
 
     monkeypatch.setattr(adapter, '_job', job)
     monkeypatch.setattr(adapter, '_conformed', lambda source, *_: source)
-    monkeypatch.setattr(adapter, '_frame', lambda source, seconds: b'frame-%.3f-of-' % seconds + source)
+    monkeypatch.setattr(adapter, '_source_still', lambda source, mask: b'source-still-of-' + source)
     monkeypatch.setattr(adapter, '_last_edited_frame', lambda clip, end: b'last-frame-before-%r-of-' % end + clip)
     return calls, reported, submitted
 
@@ -59,7 +59,7 @@ def test_edit_request_is_ref2va_on_the_fixed_schedule_with_a_source_frame_as_ref
     assert {key: str(value) for key, value in checked.items() if key not in {'width', 'height'}} == {key: str(value) for key, value in sent.items()}
     assert fields['prompt'] == '<Picture 1> 把背景换成月夜' and 'negative_prompt' not in fields
     assert [name for name, _ in files] == ['input_references', 'source_video', 'video_noise_mask', 'audio_noise_mask']
-    assert files[0][1][1] == b'frame-0.000-of-video'
+    assert files[0][1][1] == b'source-still-of-video'
     assert json.loads(files[2][1][1]) == [[0.0, 1.0]] and json.loads(files[3][1][1]) == 0.0
 
 
@@ -69,7 +69,7 @@ def test_a_boxed_redraw_runs_again_with_its_own_last_edited_frame_as_reference(m
     calls, reported, submitted = recorded(monkeypatch, adapter)
     result = asyncio.run(adapter.edit_video(CONFIG, VideoEditRequest(prompt='moon', source=b'video', seconds=5, width=768, height=1344,
                                                                     picture=EditMask(1.0, region=((1.0, 0.0),))), submitted=submitted))
-    assert [files[0][1][1] for _, files in calls] == [b'frame-0.000-of-video', b'last-frame-before-None-of-draft-1']
+    assert [files[0][1][1] for _, files in calls] == [b'source-still-of-video', b'last-frame-before-None-of-draft-1']
     # Apart from the reference picture the second request is the first one again, on the same source and mask.
     assert calls[0][0] == calls[1][0] and calls[0][1][1:] == calls[1][1][1:]
     assert result.data == b'draft-2'
@@ -85,20 +85,51 @@ def test_a_boxed_redraw_that_stops_early_takes_the_last_frame_it_covers(monkeypa
     assert calls[1][1][0][1][1] == b'last-frame-before-3.0-of-draft-1'
 
 
-@pytest.mark.parametrize('mask, moment', [
-    (EditMask(1.0, None, 1.0, 3.0), 0.0),      # the clip opens on kept frames: its first frame is the look to keep
-    (EditMask(1.0, None, None, 2.5), 2.5),     # the span opens the clip: the first kept frame comes after it
-    (EditMask(1.0, None, 0.0, 2.5), 2.5),
-    (EditMask(1.0, None), 0.0),                # nothing is kept, so there is no better frame than the first
-    (None, 0.0),
-], ids=['span-inside', 'span-opens-clip', 'span-from-zero', 'whole-clip', 'sound-only'])
-def test_a_whole_frame_redraw_runs_once_on_a_frame_it_keeps(monkeypatch, mask, moment):
+@pytest.mark.parametrize('mask', [EditMask(1.0, None, 1.0, 3.0), EditMask(1.0, None, 0.0, 2.5), EditMask(1.0, None), None],
+                         ids=['span-inside', 'span-opens-clip', 'whole-clip', 'sound-only'])
+def test_a_whole_frame_redraw_runs_once(monkeypatch, mask):
     adapter = FastH3VideoEdit()
     calls, _, submitted = recorded(monkeypatch, adapter)
     result = asyncio.run(adapter.edit_video(CONFIG, VideoEditRequest(prompt='green dress', source=b'video', seconds=5, width=768, height=1344,
                                                                     picture=mask, sound=EditMask(1.0)), submitted=submitted))
     assert len(calls) == 1 and result.data == b'draft-1'
-    assert calls[0][1][0][1][1] == b'frame-%.3f-of-video' % moment
+    assert calls[0][1][0][1][1] == b'source-still-of-video'
+
+
+@pytest.fixture(scope='module')
+def two_tone(tmp_path_factory):
+    """Two seconds at 24 fps: red for the first second, blue for the second, under three seconds of sound."""
+    import shutil
+    import subprocess
+    if not shutil.which('ffmpeg'):
+        pytest.skip('FFmpeg is required to build the clip')
+    clip = tmp_path_factory.mktemp('edit') / 'clip.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=64x48:r=24:d=1', '-f', 'lavfi', '-i', 'color=c=blue:s=64x48:r=24:d=1',
+                    '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]',
+                    '-map', '[v]', '-map', '2:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(clip)], check=True)
+    return clip.read_bytes()
+
+
+def colour(still):
+    from io import BytesIO
+
+    from PIL import Image
+    red, _, blue = Image.open(BytesIO(still)).convert('RGB').getpixel((32, 24))
+    return 'red' if red > 200 and blue < 60 else 'blue' if blue > 200 and red < 60 else (red, blue)
+
+
+@pytest.mark.parametrize('mask, expected', [
+    (None, 'red'),                                # nothing redrawn in the picture: the clip's first frame
+    (EditMask(1.0, ((1.0, 0.0),)), 'red'),        # a boxed redraw starts from the first frame too
+    (EditMask(1.0, None, 1.0, 1.5), 'red'),       # the clip opens on kept frames
+    (EditMask(1.0, None, 0.0, 1.0), 'blue'),      # the span opens the clip: the first kept frame is frame 24
+    (EditMask(1.0, None, None, 0.5), 'red'),      # ... and here frame 12, still in the first second
+    (EditMask(1.0, None, 0.0, 2.0), 'red'),       # the span runs to the clip's real end: nothing is kept after it
+    (EditMask(1.0, None, 0.0, 2.9), 'red'),       # ... also when it ends inside the sound that outlasts the picture
+    (EditMask(1.0, None, 0.0, 47 / 24), 'blue'),  # the very last frame is kept
+], ids=['no-picture-mask', 'boxed', 'span-inside', 'span-opens-clip', 'short-opening-span', 'span-to-the-end', 'span-past-the-picture', 'last-frame-kept'])
+def test_the_source_still_is_a_frame_the_edit_keeps(two_tone, mask, expected):
+    assert colour(FastH3VideoEdit._source_still(two_tone, mask)) == expected
 
 
 def test_the_final_picture_is_found_when_the_sound_runs_longer(tmp_path):

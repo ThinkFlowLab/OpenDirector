@@ -780,11 +780,6 @@ class FastH3VideoEdit(VllmOmniVideo):
         return {**values, 'num_inference_steps': 8, 'guidance_scale': 1}, {'task': 'ref2va', 'audio_flow_shift': 3}
 
     @classmethod
-    def _frame(cls, data, seconds):
-        with media.Workspace() as work:
-            return media.frame_at(work.write('in.mp4', data), seconds, work.path / 'frame.png')
-
-    @classmethod
     def _last_edited_frame(cls, data, end: float | None):
         """The last frame a redraw covers: the clip's final picture, or the one before `end` when the edit stops earlier."""
         with media.Workspace() as work:
@@ -796,19 +791,26 @@ class FastH3VideoEdit(VllmOmniVideo):
             return media.frame_at(path, max(moment - 0.5 / cls.FPS, 0.0), work.path / 'frame.png')
 
     @classmethod
-    def _source_reference(cls, mask: EditMask | None, seconds: float) -> float:
-        """When in the source clip to take the look to keep: its first frame, unless that frame is redrawn whole.
+    def _source_still(cls, data, mask: EditMask | None):
+        """The frame of the source clip that shows the look to keep: its first, unless that frame is redrawn whole.
 
         A redraw of a whole-frame time span that opens the clip takes the first frame after the span, which
-        shows the look the kept part has, rather than a frame the edit replaces.
+        shows the look the kept part has, rather than a frame the edit replaces. A span that runs to the
+        clip's real end keeps nothing, so the first frame stays the only look there is.
         """
-        opens_clip = mask is not None and mask.region is None and not mask.start and mask.end is not None and mask.end < seconds
-        return mask.end if opens_clip else 0.0
+        with media.Workspace() as work:
+            path = work.write('in.mp4', data)
+            moment = 0.0
+            if mask is not None and mask.region is None and not mask.start and mask.end is not None:
+                kept = math.ceil(mask.end * cls.FPS - 1e-6)  # picture_mask redraws frames below end * FPS
+                if kept <= round(media.last_frame_time(path) * cls.FPS):
+                    # Half a frame early: a seek lands on the first picture at or after it.
+                    moment = max(kept - 0.5, 0.0) / cls.FPS
+            return media.frame_at(path, moment, work.path / 'frame.png')
 
     async def edit_video(self, config, request: VideoEditRequest, *, submitted=None) -> MediaResult:
         values, extra = self.edit_parameters(request.seconds, request.width, request.height)
         frames = values['num_frames']
-        seconds = frames / self.FPS
         width, height = map(int, values['size'].split('x'))
         source = await blocking(self._conformed, request.source, width, height)
         # Guidance is fixed at 1 on these weights, so there is no negative prompt to send.
@@ -820,7 +822,7 @@ class FastH3VideoEdit(VllmOmniVideo):
             files = [('input_references', ('reference.png', still, 'image/png')), ('source_video', ('source.mp4', source, 'video/mp4')), *masks]
             return await self._job(config, fields, files, submitted)
 
-        still = await blocking(self._frame, source, self._source_reference(request.picture, seconds))
+        still = await blocking(self._source_still, source, request.picture)
         mask = request.picture
         if mask is not None and mask.region is not None:
             draft = await redraw(still)

@@ -430,12 +430,17 @@ export function NodeComposer({
     (node) => node.data.kind === "image",
   );
   // H3 reference mode: any connected image can also be pinned at a moment of the output.
+  // The boxes stay while a time is set, also after a change to a model or mode without keyframes:
+  // otherwise the blocker would ask to clear times that nothing on screen can clear.
   const pinnableFrames =
     mode === "video" &&
     backend &&
+    frameCandidates.length > 0 &&
     (settings.videoMode ?? "reference") === "reference" &&
-    (config?.inputRules.maxKeyframes ?? 0) > 0 &&
-    frameCandidates.length > 0;
+    ((config?.inputRules.maxKeyframes ?? 0) > 0 ||
+      frameCandidates.some((node) =>
+        settings.pinnedFrames?.some((frame) => frame.nodeId === node.id),
+      ));
   const serviceSeconds = backendDurations(config);
   const duration =
     backend && mode === "video"

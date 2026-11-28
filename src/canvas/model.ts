@@ -1217,5 +1217,20 @@ export function mapSettingsNodeReferences(
     if (after === undefined) delete next[key];
     else next[key] = after;
   }
+  if (settings.pinnedFrames?.length) {
+    // A time whose picture is not part of the copy has nothing to pin and is dropped.
+    const pinned = settings.pinnedFrames.flatMap((frame) => {
+      const nodeId = resolve(frame.nodeId);
+      return nodeId === undefined ? [] : [{ ...frame, nodeId }];
+    });
+    const unchanged =
+      pinned.length === settings.pinnedFrames.length &&
+      pinned.every((frame, index) => frame.nodeId === settings.pinnedFrames![index]!.nodeId);
+    if (!unchanged) {
+      if (next === settings) next = { ...settings };
+      if (pinned.length) next.pinnedFrames = pinned;
+      else delete next.pinnedFrames;
+    }
+  }
   return next;
 }

@@ -746,7 +746,7 @@ def video_create(ctx: typer.Context,
         item, _, seconds = value.partition("@")
         try:
             pinned.append((UUID(item), round(float(seconds) * 1000)))
-        except ValueError:
+        except (ValueError, OverflowError):  # also inf and nan, which cannot be rounded
             raise ProjectError(f"--keyframe expects ITEM_UUID@SECONDS, got {value!r}.") from None
         if pinned[-1][1] < 0:
             raise ProjectError("--keyframe time must not be negative.")

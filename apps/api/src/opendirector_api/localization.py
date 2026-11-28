@@ -16,6 +16,12 @@ from opendirector.domain.capabilities import Capability
 from opendirector.domain.capability_messages import english_capability_message, missing_tool_model_message
 
 ENGLISH_BY_CODE = {
+    'keyframe_unsupported': 'This model or mode does not support keyframes. Clear the keyframe times or choose another model.',
+    'keyframe_mode': 'Keyframes work in material-reference mode only, not with first/last frames, continuation or structure control.',
+    'keyframe_kind': 'A keyframe must be an image.',
+    'keyframe_count': 'There are more keyframes than this model accepts.',
+    'keyframe_needs_reference': 'Keyframes also need at least one ordinary reference image or video.',
+    'keyframe_time': 'Each keyframe needs its own time, earlier than the end of the video and at least 1/24 second from the others.',
     'higgsfield_model': 'Choose MAGI-2 with the official Higgsfield Open API address.',
     'higgsfield_key': 'Enter your Higgsfield Open KEY_ID:KEY_SECRET.',
     'higgsfield_output': 'MAGI-2 supports 1080p and whole-second durations from 4 to 30 seconds.',
