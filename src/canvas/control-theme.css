@@ -513,7 +513,7 @@ button[aria-expanded="true"] [data-dropdown-chevron] {
   :where(p, small) {
   color: var(--cw-control-muted);
 }
-:root[data-theme="light"] .cw-composer :is(.cw-reference-chip, .cw-frame-slot) {
+:root[data-theme="light"] .cw-composer :is(.cw-reference-chip, .cw-frame-slot, .cw-keyframe) {
   background: var(--cw-control-fill);
   color: var(--cw-control-muted);
   border-color: var(--cw-control-border);

@@ -53,7 +53,7 @@ def generation_capability_parameters(config, kind, parameters, *, has_images=Fal
                 has_audio=has_audio, continue_size=continue_size))
         elif profile == 'fasth3-omni':
             from opendirector.integrations.fasth3 import generation_fields
-            fields, extra = generation_fields(parameters, frame_indices=frame_indices)
+            fields, extra = generation_fields(parameters, frame_indices=frame_indices, continue_size=continue_size)
             result = {**fields, **extra}
         else:
             result = {key: parameters[key] for key in ('size',) if key in parameters}

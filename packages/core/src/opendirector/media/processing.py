@@ -152,6 +152,16 @@ def frame_at(path: Path, seconds: float, out: Path) -> bytes:
     return out.read_bytes()
 
 
+def last_frame_time(path: Path) -> float:
+    """When a clip shows its final picture. Its sound may run longer, so the file's length does not say."""
+    value = json.loads(_run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-count_packets',
+                             '-show_entries', 'stream=nb_read_packets,r_frame_rate', '-of', 'json', str(path)], timeout=60))
+    picture = (value.get('streams') or [{}])[0]
+    numerator, _, denominator = (picture.get('r_frame_rate') or '24/1').partition('/')
+    fps = float(numerator) / float(denominator or 1) if float(denominator or 1) else 24.0
+    return max(int(picture.get('nb_read_packets') or 1) - 1, 0) / (fps or 24.0)
+
+
 def _normalized(source: Path, out: Path, info: dict, *, start=None, end=None):
     """One segment re-encoded to the reference size, rate and stereo AAC (silence when missing)."""
     width, height, fps = info['width'] - info['width'] % 2, info['height'] - info['height'] % 2, info['fps']
@@ -195,6 +205,17 @@ def trim(source: Path, seconds: float, out: Path) -> Path:
     _run(['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-t', f'{seconds:.3f}', '-c:v', 'libx264', '-preset', 'veryfast',
           '-crf', '18', '-c:a', 'aac', str(out)])
     return out
+
+
+def clip(data: bytes, start: float, end: float) -> bytes:
+    """Seconds [start, end) of a video as H.264/AAC MP4, keeping its size, frame rate and soundtrack."""
+    with Workspace() as workspace:
+        source, out = workspace.write('source', data), workspace.path / 'clip.mp4'
+        # Decoding from an input-side seek and limiting the output length is frame-exact when re-encoding.
+        _run(['ffmpeg', '-v', 'error', '-y', '-ss', f'{max(start, 0):.3f}', '-i', str(source), '-t', f'{end - start:.3f}',
+              '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+              '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', str(out)])
+        return out.read_bytes()
 
 
 def upscale(source: Path, long_edge: int, out: Path) -> bytes:

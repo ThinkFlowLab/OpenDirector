@@ -47,6 +47,8 @@ export interface InputRules {
   audioBytes?: number | null;
   referenceMediaMinSeconds?: number | null;
   referenceMediaSeconds?: number | null;
+  /** Pictures that can be pinned at chosen moments of a generated video; absent when unsupported. */
+  maxKeyframes?: number;
   requestBytes?: number;
   maxPromptCharacters?: number | null;
   voiceRequired?: boolean | null;
@@ -99,7 +101,9 @@ export interface ModelConfig {
 
 export interface BackendReference {
   node: CanvasNode;
-  role: "reference" | "firstFrame" | "lastFrame" | "continuation" | "control";
+  role: "reference" | "firstFrame" | "lastFrame" | "continuation" | "control" | "keyframe";
+  /** For role keyframe: seconds from the start of the output where the picture is pinned. */
+  seconds?: number;
 }
 
 /** SAM configurations serve editing tools, including legacy vision entries. */
@@ -315,15 +319,41 @@ export function backendReferences(
         .map((node) => ({ node, role: "reference" as const })),
     ];
   }
-  return usable.map((node) => ({
-    node,
-    role:
-      settings.videoMode === "continuation" && node.data.kind === "video"
-        ? "continuation"
-        : settings.videoMode === "control" && node.data.kind === "video"
-          ? "control"
-          : "reference",
-  }));
+  return usable.map((node) => {
+    const pinned = settings.mode === "video" ? pinnedFrameSeconds(settings, node.data.kind, node.id) : undefined;
+    if (pinned !== undefined) return { node, role: "keyframe" as const, seconds: pinned };
+    return {
+      node,
+      role:
+        settings.videoMode === "continuation" && node.data.kind === "video"
+          ? ("continuation" as const)
+          : settings.videoMode === "control" && node.data.kind === "video"
+            ? ("control" as const)
+            : ("reference" as const),
+    };
+  });
+}
+
+/** Seconds at which a connected image is pinned to the output, when the node is in reference mode. */
+export function pinnedFrameSeconds(
+  settings: Pick<GenerationSettings, "videoMode" | "pinnedFrames"> | undefined,
+  sourceKind: string | undefined,
+  sourceId: string | undefined,
+): number | undefined {
+  if (!settings || sourceKind !== "image" || !sourceId) return undefined;
+  if ((settings.videoMode ?? "reference") !== "reference") return undefined;
+  return settings.pinnedFrames?.find((frame) => frame.nodeId === sourceId)?.seconds;
+}
+
+/** Keyframe time for a saved reference, in the backend's milliseconds; undefined for every other role. */
+export function canvasReferenceFrameTime(
+  settings: Pick<GenerationSettings, "videoMode" | "pinnedFrames"> | undefined,
+  sourceKind: string | undefined,
+  ref: { binding: string; source: { id?: string } | { assetId: string } },
+): number | undefined {
+  const sourceId = ref.binding === "follow_current" && "id" in ref.source ? ref.source.id : undefined;
+  const seconds = pinnedFrameSeconds(settings, sourceKind, sourceId);
+  return seconds === undefined ? undefined : Math.round(seconds * 1000);
 }
 
 /** Canvas slot assignment for a saved reference. The backend stores this role. */
@@ -331,7 +361,7 @@ export function canvasReferenceRole(
   settings:
     | Pick<
         GenerationSettings,
-        "videoMode" | "firstFrameNodeId" | "lastFrameNodeId"
+        "videoMode" | "firstFrameNodeId" | "lastFrameNodeId" | "pinnedFrames"
       >
     | undefined,
   sourceKind: string | undefined,
@@ -340,8 +370,9 @@ export function canvasReferenceRole(
     role?: string | null;
     source: { id?: string } | { assetId: string };
   },
-): "reference" | "first_frame" | "last_frame" | "continuation" | "control" {
+): "reference" | "first_frame" | "last_frame" | "continuation" | "control" | "keyframe" {
   const sourceId = "id" in ref.source ? ref.source.id : undefined;
+  if (canvasReferenceFrameTime(settings, sourceKind, ref) !== undefined) return "keyframe";
   if (settings?.videoMode === "continuation" && sourceKind === "video") {
     return "continuation";
   }
@@ -734,9 +765,24 @@ export function backendBlocker(
         return tNow("errors.rules.controlDuration", { low, high });
     }
   }
+  const keyframes = references.filter((item) => item.role === "keyframe");
+  if (keyframes.length) {
+    // Keyframes are timeline guides beside the reference pictures, with their own limit.
+    const limit = rules.maxKeyframes ?? 0;
+    if (!limit) return tNow("errors.rules.keyframeUnsupported");
+    if (keyframes.length > limit) return tNow("errors.rules.keyframeCount", { limit });
+    // A guide is pinned to one output frame (24 per second), so times are compared as the frames they land on.
+    const frames = keyframes.map((item) => keyframeFrame(item.seconds ?? 0));
+    if (frames.some((frame) => frame >= Math.round(settings.durationSeconds * KEYFRAME_FPS)))
+      return tNow("errors.rules.keyframeTime", { seconds: settings.durationSeconds });
+    if (new Set(frames).size !== frames.length) return tNow("errors.rules.keyframeDuplicate");
+    if (!references.some((item) => item.role === "reference" && ["image", "video"].includes(String(item.node.data.kind))))
+      return tNow("errors.rules.keyframeReference");
+  }
   const count = (kind: string) =>
     references.filter(
-      (item) => item.role !== "continuation" && item.role !== "control" && item.node.data.kind === kind,
+      (item) =>
+        item.role !== "continuation" && item.role !== "control" && item.role !== "keyframe" && item.node.data.kind === kind,
     ).length;
   for (const kind of ["image", "video", "audio"] as const) {
     const limit = availabilityInputLimit(config, profile, kind);
@@ -759,6 +805,11 @@ export function backendBlocker(
   return null;
 }
 
+/** H3 output rate: a keyframe time is pinned to one of these frames. Mirrors rule_facts.keyframe_frame. */
+export const KEYFRAME_FPS = 24;
+export const keyframeFrame = (seconds: number) =>
+  Math.round((Math.round(seconds * 1000) * KEYFRAME_FPS) / 1000);
+
 /** The same budget applies to following nodes, pinned assets and expanded subjects. */
 export function referenceBudgetIssue(
   sources: readonly CanvasNode[],
@@ -767,7 +818,7 @@ export function referenceBudgetIssue(
 ) {
   const usable = settings
     ? backendReferences(settings, sources, config)
-        .filter((ref) => ref.role !== "continuation")
+        .filter((ref) => ref.role !== "continuation" && ref.role !== "keyframe")
         .map((ref) => ref.node)
     : sources.flatMap((node) =>
         node.type === "subject" ? subjectReferenceNodes(node) : [node],

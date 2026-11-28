@@ -35,7 +35,7 @@ import { mediaBlobDataUrl } from "../canvas/localMediaRuntime.ts";
 import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
 import { assemblyResource, staleAssembly } from "../canvas/editorAssembly.ts";
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
-import { canvasReferenceRole, MUSIC_SECONDS } from "./rules.ts";
+import { canvasReferenceFrameTime, canvasReferenceRole, MUSIC_SECONDS } from "./rules.ts";
 import {
   assetReference,
   CreationClient,
@@ -860,6 +860,15 @@ export class CreationProjection {
                     ? "lastFrameNodeId"
                     : "firstFrameNodeId"
                 ] = frame.source.id;
+            const pinned = currentReferences.flatMap((ref) =>
+              ref.targetSpecId === spec.id &&
+              ref.role === "keyframe" &&
+              ref.binding === "follow_current" &&
+              typeof ref.frameTimeMs === "number"
+                ? [{ nodeId: ref.source.id, seconds: ref.frameTimeMs / 1000 }]
+                : [],
+            );
+            if (pinned.length) node.data.settings.pinnedFrames = pinned;
           }
           const selected = snapshot.results.find(
             (r) => r.id === spec.currentResultId,
@@ -1873,11 +1882,15 @@ export class CreationProjection {
             ? items.get(ref.source.id)?.kind
             : ref.source.kind;
         const role = canvasReferenceRole(settings, sourceKind, ref);
-        if (role !== ref.role) {
+        const frameTimeMs = canvasReferenceFrameTime(settings, sourceKind, ref);
+        if (role !== ref.role || (frameTimeMs ?? null) !== (ref.frameTimeMs ?? null)) {
           expect("reference", ref);
+          const { frameTimeMs: _previous, ...rest } = ref;
           operations.push({
             type: "reference.update",
-            payload: { reference: { ...ref, role } },
+            payload: {
+              reference: { ...rest, role, ...(frameTimeMs !== undefined ? { frameTimeMs } : {}) },
+            },
           });
         }
       }
@@ -1894,9 +1907,13 @@ export class CreationProjection {
                   ?.type ?? items.get(ref.source.id)?.kind)
               : ref.source.kind;
           const role = canvasReferenceRole(settings, sourceKind, ref);
+          const frameTimeMs = canvasReferenceFrameTime(settings, sourceKind, ref);
+          const { frameTimeMs: _previous, ...rest } = ref;
           operations[index] = {
             type: op.type,
-            payload: { reference: { ...ref, role } },
+            payload: {
+              reference: { ...rest, role, ...(frameTimeMs !== undefined ? { frameTimeMs } : {}) },
+            },
           };
         }
       }

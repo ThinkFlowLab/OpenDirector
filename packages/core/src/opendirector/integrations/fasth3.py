@@ -4,9 +4,10 @@ import re
 
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.references import project_content
+from opendirector.domain.rule_facts import REFERENCE_MEDIA_SECONDS
 
 
-def generation_fields(parameters, *, frame_indices=None):
+def generation_fields(parameters, *, frame_indices=None, continue_from=None, continue_size=None):
     """Prepare the same FastH3 fields for capability checks and HTTP submission."""
     from opendirector.integrations.vllm_omni import FPS, video_frame_parameters
     fields = {}
@@ -26,6 +27,13 @@ def generation_fields(parameters, *, frame_indices=None):
         steps = parameters.get('num_inference_steps', 20)
     fields.update(size=parameters.get('size', '832x480'), num_inference_steps=steps,
                   guidance_scale=1, fps=24, seed=parameters.get('seed', 1234))
+    if continue_from is not None:
+        extra['continue_from'] = continue_from
+    # The service samples a window over the earlier job's cached latent tail; latents cannot change size.
+    # The capability check knows the size before the job has an ID to continue from, and checks what is sent.
+    width, height = continue_size or (None, None)
+    if width and height:
+        fields['size'] = f'{width}x{height}'
     return fields, extra
 
 
@@ -93,7 +101,8 @@ def video_parameters(node, records, *, duration_seconds=None):
     # Legacy callers without that field retain the prompt/source/default policy.
     seconds = float(duration_seconds) if duration_seconds is not None else (
         float(next(group for group in explicit.groups() if group)) if explicit else (
-            max(4.0, basis['durationMs'] / 1000) if edit else 5.0))
+            # An over-long source is sent as its final reference window, so an edit covers that window.
+            max(4.0, min(basis['durationMs'] / 1000, REFERENCE_MEDIA_SECONDS)) if edit else 5.0))
     if not 4 <= seconds <= 15:
         raise ProjectError('当前 FastH3 支持生成 4—15 秒的视频，请调整输出时长；未提交生成。')
     requested_frames = round(seconds * 24)

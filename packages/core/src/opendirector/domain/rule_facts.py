@@ -477,3 +477,11 @@ def typescript_module():
     facts = json.dumps(facts_payload(), ensure_ascii=False, indent=2)
     vectors = json.dumps(derivation_vectors(), ensure_ascii=False, indent=2)
     return _TYPESCRIPT.replace('__FACTS__', facts).replace('__VECTORS__', vectors)
+
+
+KEYFRAME_FPS = 24  # H3 output rate; timeline guides are addressed by frame
+
+
+def keyframe_frame(milliseconds: int) -> int:
+    """The output frame a keyframe time is pinned to."""
+    return round(milliseconds * KEYFRAME_FPS / 1000)

@@ -131,6 +131,17 @@ def test_continuation_does_not_claim_video_upload_but_honors_route_pause(service
     assert availability.decision(config, request)['status'] == 'unknown'
 
 
+def test_a_keyframe_is_not_counted_as_a_reference_image(service):
+    configs, saved, state, availability = service
+    config = {**private(configs, saved), 'kind': 'video', 'protocol': 'vllm_omni'}
+    spec = SimpleNamespace(kind='video', parameters=SimpleNamespace(videoMode='reference'))
+    guide = SimpleNamespace(asset=SimpleNamespace(kind='image'), transmission='content', role='keyframe')
+    ordinary = SimpleNamespace(asset=SimpleNamespace(kind='image'), transmission='content', role='reference')
+    request = generation_request(config, spec, [ordinary, guide, guide])
+    # The guides travel beside the request's declared inputs; only the reference picture is one of them.
+    assert dict(request.input_counts) == {'text': 1, 'image': 1, 'reference_image': 1}
+
+
 @pytest.mark.parametrize('route,unavailable', [
     ({'method': 'POST', 'path': '/v1/videos', 'transport': 'http', 'exposure': 'disabled'}, True),
     ({'method': 'GET', 'path': '/v1/videos', 'transport': 'http', 'exposure': 'disabled'}, False),

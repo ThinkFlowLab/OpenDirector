@@ -63,6 +63,8 @@ class InputRules(Contract):
     maxImages: Count = Field(description='Maximum reference image count.')
     maxVideos: Count = Field(description='Maximum reference video count.')
     maxAudios: Count = Field(description='Maximum reference audio count.')
+    maxKeyframes: Count = Field(default=0, exclude_if=lambda value: not value,
+        description='Maximum pictures that can be pinned at chosen moments of a generated video; omitted when unsupported.')
     imageBytes: Count = Field(description='Maximum bytes per reference image.')
     videoBytes: Count = Field(description='Maximum bytes per reference video.')
     audioBytes: Count | None = Field(default=None, exclude_if=lambda value: value is None,

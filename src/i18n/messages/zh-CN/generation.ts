@@ -164,6 +164,11 @@ export const generation = {
   "generation.lyricsReferencePlaceholder":
     "歌词（可选，留空生成纯音乐）。按参照音乐的段落和乐句填写，段落标签单独成一行，例如：\n[verse]\n雨落在窗前\n[chorus]\n说不出的话，让旋律回答",
 
+  "generation.keyframes.title": "指定帧：给图片填一个时间，生成的视频会在那一刻出现这个画面",
+  "generation.keyframes.placeholder": "不指定",
+  "generation.keyframes.unit": "秒",
+  "generation.keyframes.untitled": "未命名图片",
+  "generation.keyframes.time": "把“{title}”钉在第几秒",
   "generation.frame.title": "首尾帧参考",
   "generation.frame.first": "首帧",
   "generation.frame.last": "尾帧",

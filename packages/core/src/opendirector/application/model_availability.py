@@ -74,7 +74,8 @@ def generation_request(config, spec, references, *, parameters=None):
     candidates = requests_for(config)
     if not candidates:
         return None
-    transmitted = [item for item in references if item.transmission == 'content']
+    # A keyframe travels as a timeline guide beside the request's declared inputs, so it counts toward none of them.
+    transmitted = [item for item in references if item.transmission == 'content' and getattr(item, 'role', None) != 'keyframe']
     kinds = {item.asset.kind for item in transmitted}
     if spec.kind == 'image':
         profile = 'image_to_image' if 'image' in kinds else 'text_to_image'

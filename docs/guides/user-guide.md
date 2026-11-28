@@ -47,6 +47,17 @@ example vLLM's 4096 default) rejects every request with HTTP 400.
 
 For vLLM-Omni video connections, enter fractional seconds directly, for example `6.583333`. The CLI accepts `opendirector video create --duration 6.583333` together with the other required options. Read `opendirector video create --help` and `opendirector model list` first; `inputRules.fractionalDuration` identifies support, and each output's duration list defines the allowed range. H3 can align output to its supported frame count, so inspect the actual result duration before assembling segments.
 
+A vLLM-Omni material-reference model (the FastH3-Omni request shape, which Pika H3 adapters also use) reads at most 15 seconds of reference video in total. A longer video is accepted and sent as its final part: one video contributes its last 15 seconds, and when several videos together exceed the limit, the short ones stay whole while the longest are cut to an equal length, each keeping its end. **Extend** therefore continues from the end of a long clip. The project keeps the original video; only the uploaded reference is cut, with its sound. Trim the clip yourself first when you need a different part. Other providers still refuse reference videos beyond their own limit.
+
+Self-hosted H3 models add four ways to condition a video. They work on native MiniMax-H3 and on models using the FastH3-Omni request shape alike, except where noted:
+
+- **Continue**: generate a video with the model, choose **Extend** on it, and the next clip continues from where it ended, picture and sound. This only continues clips this same service generated and still holds; for an uploaded video, **Extend** uses the video as a reference instead.
+- **Keyframes**: in material-reference mode, each connected image shows a time box above the prompt. Give an image a time and the video shows that picture at that moment; leave it empty and the image stays an ordinary reference. Up to eight keyframes, each earlier than the end of the video and at least 1/24 second from the others (a keyframe is pinned to one frame), and at least one image or video must stay unpinned. Copying the node together with its pictures keeps the times. The CLI takes `opendirector video create --keyframe ITEM_UUID@SECONDS`.
+- **Redraw part of a video**: **Partial reshoot**, **Video edit** and **Subtitle erasure** redraw a time span or a boxed region and keep the rest of the clip. On a model that uses the FastH3-Omni request format, a boxed redraw is generated twice so that the change is there from the first frame, which takes about twice as long.
+- **Structure control**: connect a depth video and choose structure control, as before. This needs a service started with the ControlNet weights and is available on the FastH3-Omni request shape.
+
+Structure control, continuation and keyframes cannot be combined in one generation.
+
 To use few-step H3 adapters such as Pika Flex Turbo, which need a LoRA and their own step count on every request, or to offer several such variants from one vLLM-Omni server, see the [video gateway](video-gateway.md) that starts with OpenDirector.
 
 For detailed video settings, see [Video model capability configuration](video-model-capabilities.md). When no explicit output specification is provided, use **Auto** or **Service default duration**.

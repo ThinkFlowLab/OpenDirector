@@ -62,6 +62,19 @@ def capability_parameters(fields, extra):
     return result
 
 
+def timeline_guide_parts(prepared):
+    """H3 timeline guides for the prepared keyframes: the manifest field and its uploads, or nothing.
+
+    Guided requests must ask for lossless quality; cache acceleration is rejected with guides.
+    """
+    guides = prepared.get('guides') or []
+    if not guides:
+        return {}, []
+    manifest = [{'frame_index': guide['frame'], 'image': {'upload_index': index}} for index, guide in enumerate(guides)]
+    files = [('guide_files', (guide['name'], guide['data'], guide['mime'])) for guide in guides]
+    return {'timeline_guides': json.dumps(manifest), 'quality': 'lossless'}, files
+
+
 def _upload(data_uri, name):
     header, payload = data_uri.split(',', 1)
     mime = header.removeprefix('data:').split(';', 1)[0]
@@ -107,6 +120,9 @@ class VllmOmniGeneration:
             prepared = {**prepared, 'images': []}
         files.extend(('input_references', _upload(image, f'image_{index}')) for index, image in enumerate(prepared['images'], 1))
         files.extend(('input_references', _upload(audio, f'audio_{index}')) for index, audio in enumerate(prepared['audios'], 1))
+        guide_fields, guide_files = timeline_guide_parts(prepared)
+        fields.update(guide_fields)
+        files.extend(guide_files)
         fields['extra_params'] = json.dumps(extra)
         return fields, files
 

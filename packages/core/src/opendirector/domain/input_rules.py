@@ -13,6 +13,8 @@ from .bigmodel_image import is_bigmodel_image
 from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
+# H3 timeline guides: pictures pinned at chosen frames of the output; the service accepts eight entries.
+H3_KEYFRAMES = 8
 
 
 def _adapter_rules(config):
@@ -112,14 +114,17 @@ def _adapter_rules(config):
         # references) stays zero.
         rules.update(profile='vllm-omni-h3', allowedKinds=['text', 'image', 'video', 'audio'], maxImages=9, maxAudios=3,
                      imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference', 'continuation'],
-                     outputResolutions=['480P', '768P'])
+                     outputResolutions=['480P', '768P'], maxKeyframes=H3_KEYFRAMES)
         return rules
     if kind == 'video' and config.get('protocol') == 'vllm_omni' and adapter in {'fasth3', 'fasth3_dual'}:
         rules.update(profile='fasth3-omni', allowedKinds=['text', 'image', 'video', 'audio'],
                      maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
-                     requestBytes=160 * 1024 * 1024, videoModes=['reference', 'control'], outputResolutions=['480P', '768P'])
+                     requestBytes=160 * 1024 * 1024, videoModes=['reference', 'control', 'continuation'],
+                     outputResolutions=['480P', '768P'], maxKeyframes=H3_KEYFRAMES)
+        # continuation: every H3 weight set continues its own clips from cached latents (continue_from);
+        # the source video is named by job ID and never uploaded.
         if adapter == 'fasth3_dual':
-            rules.update(videoModes=['reference', 'first_frame', 'control'], frameRoles=['first_frame', 'last_frame'])
+            rules.update(videoModes=['reference', 'first_frame', 'control', 'continuation'], frameRoles=['first_frame', 'last_frame'])
         return rules
     if kind == 'video' and config.get('protocol') == 'vllm_omni':
         rules.update(profile='standard-video', maxImages=1, videoModes=['first_frame'])

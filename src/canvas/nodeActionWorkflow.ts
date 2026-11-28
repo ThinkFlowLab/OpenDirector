@@ -9,9 +9,24 @@ import {
   type ResultSource,
 } from "./linkedResults.ts";
 import { tNow } from "../i18n/messages.ts";
-import { createNode, type CanvasDocument } from "./model.ts";
+import { createNode, type CanvasDocument, type CanvasNode } from "./model.ts";
 
 /** Source toolbar action creates a new connected draft; generation later fills that draft. */
+/**
+ * Whether a clip can be continued from the service's own cached latents: only one that the same model
+ * configuration generated. An upload, an edit or another model's clip is extended as a reference video.
+ */
+export function continuesOwnClip(
+  source: Pick<CanvasNode, "data">,
+  modelConfigId: string | undefined,
+): boolean {
+  return (
+    Boolean(modelConfigId) &&
+    source.data.generationProvenance?.source === "generated" &&
+    source.data.settings?.modelConfigId === modelConfigId
+  );
+}
+
 export function createVideoExtensionDraft(
   document: CanvasDocument,
   source: Readonly<ResultSource>,

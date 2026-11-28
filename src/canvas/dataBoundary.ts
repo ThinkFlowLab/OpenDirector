@@ -47,6 +47,7 @@ const SETTINGS_KEYS = [
   "firstFrameNodeId",
   "lastFrameNodeId",
   "frameSlotsInitialized",
+  "pinnedFrames",
   "audioCreationType",
   "audioMode",
   "voiceName",
@@ -117,6 +118,15 @@ export function isGenerationSettings(
     (value.lastFrameNodeId === undefined || nonempty(value.lastFrameNodeId)) &&
     (value.frameSlotsInitialized === undefined ||
       typeof value.frameSlotsInitialized === "boolean") &&
+    (value.pinnedFrames === undefined ||
+      (Array.isArray(value.pinnedFrames) &&
+        value.pinnedFrames.every(
+          (frame) =>
+            record(frame) &&
+            nonempty(frame.nodeId) &&
+            finite(frame.seconds) &&
+            Number(frame.seconds) >= 0,
+        ))) &&
     (value.audioCreationType === undefined ||
       value.audioCreationType === "audio" ||
       value.audioCreationType === "music") &&
