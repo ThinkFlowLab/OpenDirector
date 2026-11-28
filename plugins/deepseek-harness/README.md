@@ -6,7 +6,7 @@ Create media from a DSH conversation, follow generation progress, and open the s
 
 ## Install and connect
 
-Use DSH **0.2.2-rc.1** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
+Use DSH **0.2.2-rc.1 or later in the 0.2 line** with Node.js **24.9.0 or newer** and `pnpm` on `PATH`. Start OpenDirector using the [installation guide](../../docs/guides/installation.md). From this plugin directory, package it and create a Web profile before adding the bundle:
 
 ```sh
 npm pack
@@ -145,4 +145,4 @@ node test/creation.integration.mjs
 
 This checks project creation, a saved PNG candidate, result selection and replay, edit-session conflicts, and an accepted job completing while the plugin is disabled. It requires the fixture's health marker before writing. `OPENDIRECTOR_FIXTURE_URL` can select another fixture port; the test uses generated fixture images rather than a model service.
 
-The package pins its DSH compatibility to `0.2.2-rc.1`; DSH is in developer preview, so check compatibility before upgrading the host. OpenDirector’s own installation requirements are maintained in its installation guide.
+The package declares DSH compatibility as `>=0.2.2-rc.1 <0.3.0-0` (a 0.2-line minimum, not an exact host version). DSH is in developer preview, so check compatibility before upgrading the host. OpenDirector’s own installation requirements are maintained in its installation guide.
