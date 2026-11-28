@@ -484,3 +484,80 @@ def test_batch_video_cards_keep_distinct_adapter_and_output_settings(api):
     first, second = response.json()
     assert first['videoCapabilities']['outputs'][0]['resolution'] == '540P'
     assert second['videoCapabilities'] is None and second['inputRules']['profile'] == 'vllm-omni-h3'
+
+
+def connection_payload(**changes):
+    return {
+        "url": "https://models.example/v1",
+        "apiKey": "test-secret",
+        "entries": [
+            {"kind": "agent", "modelIds": ["chat-a", "chat-b"]},
+            {"kind": "image", "protocol": "openai", "modelIds": ["image-a"]},
+        ],
+        **changes,
+    }
+
+
+def test_connection_saves_every_kind_under_one_provider_id(api):
+    client, store = api
+    response = client.post("/api/model-configs/connections", json=connection_payload())
+    assert response.status_code == 200, response.text
+    assert "test-secret" not in response.text
+    receipt = response.json()
+    assert receipt["rejected"] == []
+    assert receipt["kinds"] == ["agent", "image"]
+    assert sorted(item["kind"] for item in receipt["saved"]) == ["agent", "agent", "image"]
+    listed = client.get("/api/model-configs").json()
+    assert {item["providerId"] for item in listed} == {receipt["providerId"]}
+    raw = json.loads((store.state_dir / "models.json").read_text())
+    assert len(raw["services"]) == 1
+    assert (store.state_dir / "models.json").read_text().count("test-secret") == 1
+
+
+def test_connection_reports_partial_failure_and_a_retry_reuses_the_same_provider_id(api):
+    client, store = api
+    response = client.post("/api/model-configs/connections", json=connection_payload(entries=[
+        {"kind": "agent", "modelIds": ["chat-a"]},
+        {"kind": "video", "protocol": "openai", "modelIds": ["video-a"]},
+    ]))
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert [item["kind"] for item in receipt["saved"]] == ["agent"]
+    assert [item["kind"] for item in receipt["rejected"]] == ["video"]
+    assert receipt["rejected"][0]["code"] == "invalid_input"
+    assert receipt["kinds"] == ["agent"]
+    retried = client.post("/api/model-configs/connections", json=connection_payload(providerId=receipt["providerId"], entries=[
+        {"kind": "video", "protocol": "minimax_video_v2", "modelIds": ["MiniMax-H3"]},
+    ]))
+    assert retried.status_code == 200, retried.text
+    retry_receipt = retried.json()
+    assert retry_receipt["providerId"] == receipt["providerId"]
+    assert retry_receipt["kinds"] == ["agent", "video"]
+    assert {item["providerId"] for item in client.get("/api/model-configs").json()} == {receipt["providerId"]}
+
+
+def test_connection_rejects_duplicate_kinds_unknown_connections_and_bad_address(api):
+    client, store = api
+    before = (store.state_dir / "models.json").read_bytes() if (store.state_dir / "models.json").exists() else None
+    for payload in (
+        connection_payload(entries=[{"kind": "agent", "modelIds": ["a"]}, {"kind": "agent", "modelIds": ["b"]}]),
+        connection_payload(providerId=str(uuid4())),
+        connection_payload(url="file:///private"),
+        connection_payload(entries=[]),
+    ):
+        response = client.post("/api/model-configs/connections", json=payload)
+        assert response.status_code in {400, 404, 422}, response.text
+        assert "test-secret" not in response.text
+    path = store.state_dir / "models.json"
+    assert (path.read_bytes() if path.exists() else None) == before
+
+
+def test_connection_with_no_saveable_entry_fails_without_writing(api):
+    client, store = api
+    response = client.post("/api/model-configs/connections", json=connection_payload(entries=[
+        {"kind": "video", "protocol": "openai", "modelIds": ["video-a"]},
+    ]))
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_input"
+    path = store.state_dir / "models.json"
+    assert not path.exists() or json.loads(path.read_text())["models"] == []

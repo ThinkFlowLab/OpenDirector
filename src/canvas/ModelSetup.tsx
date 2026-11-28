@@ -20,10 +20,11 @@ function modelSetupMissing(models: ModelConfig[]) {
   return kinds.filter(kind => !models.some(model => model.kind === kind && isGenerationModel(model)));
 }
 
-export function ModelSetup({ catalog, onClose, onConfigure }: {
+export function ModelSetup({ catalog, onClose, onConfigure, onAddConnection }: {
   catalog: BackendModels;
   onClose: () => void;
   onConfigure: (kind: SetupKind) => void;
+  onAddConnection?: () => void;
 }) {
   const { t, locale, setLocale } = useI18n();
   const missing = modelSetupMissing(catalog.models);
@@ -57,6 +58,11 @@ export function ModelSetup({ catalog, onClose, onConfigure }: {
     <footer className="cw-model-setup-footer">
       <p>{t("modelSetup.external")}</p>
       <div>
+        {onAddConnection && (
+          <button className="cw-settings-button" disabled={!catalog.connected} onClick={onAddConnection}>
+            {t("models.connection.add")}
+          </button>
+        )}
         <button className="cw-settings-button cw-settings-button-primary" disabled={!catalog.connected} onClick={() => next ? onConfigure(next) : onClose()}>
           {t(next ? `modelSetup.${next}Action` : "modelSetup.done")}
         </button></div>

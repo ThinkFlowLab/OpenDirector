@@ -687,3 +687,75 @@
 .cw-model-input-details dd { margin: 0; }
 .cw-model-input-details small { display: block; }
 .cw-model-input-details summary small { display: inline; margin-inline-start: 8px; }
+
+/* Multi-modal connection: one address and credential, one section per modality. */
+.cw-connection-editor .cw-model-editor-footer { flex-wrap: wrap; }
+.cw-connection-editor .cw-model-editor-footer > .cw-model-note { flex: 1 1 100%; margin: 0 0 4px; }
+.cw-connection-kinds {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 14px;
+  border: 1px solid var(--settings-border);
+  border-radius: 10px;
+}
+.cw-connection-kinds > legend {
+  padding: 0 6px;
+  color: var(--settings-muted);
+  font-size: var(--settings-caption-size);
+}
+.cw-connection-kind {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+}
+.cw-connection-kind-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.cw-connection-kind-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+.cw-connection-kind-protocol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--settings-muted);
+  font-size: var(--settings-caption-size);
+}
+.cw-connection-kind-protocol select { max-width: 320px; }
+.cw-connection-kind-count {
+  margin-left: auto;
+  color: var(--settings-muted);
+  font-size: var(--settings-caption-size);
+}
+.cw-connection-kind-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.cw-connection-model {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--settings-caption-size);
+  overflow-wrap: anywhere;
+}
+.cw-connection-receipt {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+  font-size: var(--settings-caption-size);
+  line-height: 1.5;
+}
+.cw-connection-receipt ul { margin: 6px 0 0; padding-left: 18px; }

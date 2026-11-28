@@ -8,6 +8,7 @@ import { MODEL_KINDS, type BackendModels } from "../backend/models.ts";
 import type { ModelConfig } from "../backend/rules.ts";
 import { useT } from "../i18n/I18nProvider";
 import { ModelServiceForm, type SettingsModelKind } from "./ModelServiceForm";
+import { ModelConnectionForm } from "./ModelConnectionForm";
 import { CanvasIcon } from "./CanvasIcon";
 import "./model-settings.css";
 
@@ -26,6 +27,7 @@ export function ModelSettings({
     kind: SettingsModelKind;
     model?: ModelConfig;
   } | null>(null);
+  const [addingConnection, setAddingConnection] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -59,7 +61,11 @@ export function ModelSettings({
     if (visibleIds && catalog.connected) void checkAvailability(visibleIds.split(","));
   }, [visibleIds, catalog.connected, checkAvailability]);
   if (category === null) return <div className="cw-model-settings">
-    <ModelSetup catalog={catalog} onClose={onClose} onConfigure={setCategory} />
+    {addingConnection
+      ? <ModelConnectionForm catalog={catalog} onClose={() => setAddingConnection(false)}
+          onSaved={() => setAddingConnection(false)} />
+      : <ModelSetup catalog={catalog} onClose={onClose} onConfigure={setCategory}
+          onAddConnection={() => setAddingConnection(true)} />}
   </div>;
   return (
     <div className="cw-model-settings">
@@ -75,7 +81,13 @@ export function ModelSettings({
         </div>
       )}
       {catalog.connected &&
-        (editing ? (
+        (addingConnection ? (
+          <ModelConnectionForm
+            catalog={catalog}
+            onClose={() => setAddingConnection(false)}
+            onSaved={() => setAddingConnection(false)}
+          />
+        ) : editing ? (
           <ModelServiceForm
             key={editing.model?.id ?? editing.kind}
             kind={editing.kind}
@@ -114,6 +126,15 @@ export function ModelSettings({
               </div>
               {services.length > 0 && (
                 <button
+                  className="cw-settings-button"
+                  onClick={() => setAddingConnection(true)}
+                >
+                  <CanvasIcon name="plus" size={15} />
+                  {t("models.connection.add")}
+                </button>
+              )}
+              {services.length > 0 && (
+                <button
                   className="cw-settings-button cw-settings-button-primary"
                   onClick={() => setEditing({ kind: category })}
                 >
@@ -138,6 +159,12 @@ export function ModelSettings({
                     onClick={() => setEditing({ kind: category })}
                   >
                     {t("models.services.add")}
+                  </button>
+                  <button
+                    className="cw-settings-button"
+                    onClick={() => setAddingConnection(true)}
+                  >
+                    {t("models.connection.add")}
                   </button>
                 </div>
               )}

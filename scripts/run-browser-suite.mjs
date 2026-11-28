@@ -81,6 +81,7 @@ const workflows = [
     env: { PYTHON: "python" },
   },
   { name: "first-run setup", script: "tests/browser/first_run.mjs" },
+  { name: "multimodal connection", script: "tests/browser/model_connection.mjs" },
   { name: "model editor hosts", script: "tests/browser/model_editor_hosts.mjs" },
 ];
 

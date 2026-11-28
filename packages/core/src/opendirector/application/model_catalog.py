@@ -60,6 +60,48 @@ class ModelCatalog:
     def delete(self, config_id):
         self.configs.delete(config_id)
 
+    async def discover_many(self, kinds, url, api_key, *, connection_type='api', auth_mode=None, proxy_mode=None,
+                            provider_id=None):
+        """Read model declarations for several modalities of one address.
+
+        One modality failing does not abort the others; each result carries its
+        own error so the caller can retry only that part.
+        """
+        existing = self._connection_key_source(provider_id)
+        if existing and existing.get('url') == (url or '').strip() and not api_key:
+            api_key = existing.get('apiKey', '')
+        outcomes = await asyncio.gather(*(
+            self._discover_one(kind['kind'], url, api_key, connection_type=connection_type,
+                               protocol=kind.get('protocol'), auth_mode=auth_mode, proxy_mode=proxy_mode)
+            for kind in kinds))
+        return [{'kind': kind['kind'], 'protocol': outcome['protocol'], 'models': outcome['models'], 'error': outcome['error']}
+                for kind, outcome in zip(kinds, outcomes)]
+
+    def _connection_key_source(self, provider_id):
+        if not provider_id:
+            return None
+        return next((dict(row) for row, private in self.configs.catalog_snapshot()
+                     if row.get('providerId') == str(provider_id)), None)
+
+    async def _discover_one(self, kind, url, api_key, *, connection_type, protocol, auth_mode, proxy_mode):
+        try:
+            config = _draft(kind, url, 'discovery', api_key, connection_type, protocol, auth_mode, proxy_mode)
+            models = await read_service_models(config)
+            return {'protocol': config['protocol'], 'models': list(dict.fromkeys(item['id'] for item in models)), 'error': None}
+        except ProjectError as error:
+            resolved = None
+            try:
+                resolved = connection_fields(kind, connection_type, protocol, auth_mode, proxy_mode)['protocol']
+            except ProjectError:
+                pass
+            return {'protocol': resolved, 'models': [], 'error': {'code': error.code, 'message': str(error)}}
+
+    def save_connection(self, entries, url, api_key, *, connection_type='api', auth_mode=None, proxy_mode=None,
+                        capability_auto_check=None, provider_id=None):
+        return self.configs.save_connection(url, api_key, entries, connection_type=connection_type,
+                                            auth_mode=auth_mode, proxy_mode=proxy_mode,
+                                            capability_auto_check=capability_auto_check, provider_id=provider_id)
+
     def delete_service(self, config_id):
         self.configs.delete_service(config_id)
 

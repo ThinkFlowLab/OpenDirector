@@ -219,3 +219,36 @@ def test_preferences_round_trip_through_the_settings_store(tmp_path):
     assert service.get() == {'removeWatermark': True}
     assert service.update({'removeWatermark': False}) == {'removeWatermark': False}
     assert Preferences(tmp_path).get() == {'removeWatermark': False}
+
+
+def test_discover_many_isolates_kind_failures_and_keeps_each_protocol(tmp_path, monkeypatch):
+    configs = ModelConfigs(tmp_path)
+    seen = []
+
+    async def read(config):
+        seen.append(config)
+        if config['kind'] == 'agent':
+            raise ProjectError('读取模型声明失败（HTTP 401），未修改配置。', code='model_list_http_error')
+        return [{'id': f"{config['kind']}-a"}, {'id': f"{config['kind']}-b"}]
+
+    monkeypatch.setattr('opendirector.application.model_catalog.read_service_models', read)
+    results = asyncio.run(ModelCatalog(configs).discover_many(
+        [{'kind': 'agent'}, {'kind': 'image', 'protocol': 'openai'}, {'kind': 'video', 'protocol': 'minimax_video_v2'}],
+        'https://models.example/v1', 'typed-secret'))
+    assert [item['kind'] for item in results] == ['agent', 'image', 'video']
+    assert results[0]['models'] == []
+    assert results[0]['error']['code'] == 'model_list_http_error'
+    assert results[1] == {'kind': 'image', 'protocol': 'openai', 'models': ['image-a', 'image-b'], 'error': None}
+    assert results[2]['protocol'] == 'minimax_video_v2' and results[2]['models']
+    assert all(item['apiKey'] == 'typed-secret' for item in seen)
+    assert not (tmp_path / '.opendirector' / 'models.json').exists()
+
+
+def test_discover_many_reports_an_incompatible_protocol_as_that_kind_error(tmp_path, monkeypatch):
+    calls, read = _reader([{'id': 'unused'}])
+    monkeypatch.setattr('opendirector.application.model_catalog.read_service_models', read)
+    results = asyncio.run(ModelCatalog(ModelConfigs(tmp_path)).discover_many(
+        [{'kind': 'video', 'protocol': 'openai'}], 'https://models.example/v1', 'typed-secret'))
+    assert results[0]['models'] == []
+    assert results[0]['error']['code'] == 'invalid_input'
+    assert calls == []

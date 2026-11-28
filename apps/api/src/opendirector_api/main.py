@@ -34,6 +34,7 @@ from opendirector_api.examples import router as example_routes
 from opendirector_api.localization import localized_error
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
+    ConnectionDiscoveryRequest, ConnectionSaveRequest,
     ToolTaskCreate, ToolPlacement, ImageSelectionCreate, AvailabilityRefresh, AvailabilityCatalog,
     ModelAvailability as ModelAvailabilityResponse)
 
@@ -262,6 +263,23 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                                         str(value.configId) if value.configId else None, connection_type=value.connectionType,
                                         protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode)
         return {'models': models}
+
+    @app.post('/api/model-configs/discover-many')
+    async def discover_connection_models(value: ConnectionDiscoveryRequest):
+        return {'results': await catalog.discover_many(
+            [{'kind': entry.kind, 'protocol': entry.protocol} for entry in value.kinds],
+            value.url, value.apiKey.get_secret_value(), connection_type=value.connectionType,
+            auth_mode=value.authMode, proxy_mode=value.proxyMode)}
+
+    @app.post('/api/model-configs/connections')
+    def save_connection(value: ConnectionSaveRequest):
+        return catalog.save_connection(
+            [{'kind': entry.kind, 'protocol': entry.protocol, 'modelIds': entry.modelIds,
+              'modelOptions': entry.modelOptions} for entry in value.entries],
+            value.url, value.apiKey.get_secret_value(), connection_type=value.connectionType,
+            auth_mode=value.authMode, proxy_mode=value.proxyMode,
+            capability_auto_check=value.capabilityAutoCheck,
+            provider_id=str(value.providerId) if value.providerId else None)
 
     @app.post('/api/model-configs/test-agent')
     async def test_agent_model(value: AgentModelTest):
