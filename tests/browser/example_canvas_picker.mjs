@@ -117,7 +117,15 @@ try {
   await dialog.waitFor();
   // The catalog ships with the app, so the rows carry its titles.
   await dialog.getByText("图像创作示例画布", { exact: true }).waitFor();
-  await dialog.getByRole("button", { name: "关闭", exact: true }).first().click();
+  // Importing through the picker closes it on its own, so the imported canvas
+  // is reachable without a second click.
+  await dialog
+    .locator(".cw-example-item")
+    .filter({ hasText: "图像创作示例画布" })
+    .getByRole("button", { name: "下载并导入", exact: true })
+    .click();
+  await dialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
 
   // 3. A page instead of an archive is reported inline, and nothing is imported.
   await page.unroute(samplePattern);
